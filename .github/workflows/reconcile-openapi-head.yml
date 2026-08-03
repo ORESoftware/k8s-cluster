@@ -1,0 +1,171 @@
+name: Reconcile OpenAPI PR head
+
+on:
+  push:
+    branches:
+      - agent/code-first-openapi-routes
+    paths:
+      - '.github/workflows/reconcile-openapi-head.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: reconcile-push-openapi-head
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact writable branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/code-first-openapi-routes
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Setup Rust 1.88
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.88.0'
+          components: rustfmt, clippy
+
+      - name: Apply reviewed routing and dependency fixes
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, before: str, after: str) -> None:
+              file = Path(path)
+              source = file.read_text()
+              if source.count(before) != 1:
+                  raise SystemExit(f"{path}: expected exactly one replacement target")
+              file.write_text(source.replace(before, after, 1))
+
+          replace_once(
+              'src/http_api.rs',
+              'const PUSH_BODY_LIMIT: usize = 512 * 1024;',
+              'pub(crate) const PUSH_BODY_LIMIT: usize = 512 * 1024;',
+          )
+          replace_once(
+              'src/contact/http.rs',
+              'const CONTACT_BODY_LIMIT: usize = 768 * 1024;',
+              'pub(crate) const CONTACT_BODY_LIMIT: usize = 768 * 1024;',
+          )
+          replace_once(
+              'src/api_docs.rs',
+              'use axum::extract::State;',
+              'use axum::extract::{DefaultBodyLimit, State};',
+          )
+          replace_once(
+              'src/api_docs.rs',
+              'use crate::contact::http::{ContactApiState, contact_openapi_router};\nuse crate::http_api::{ApiState, RequestAuthenticator, push_openapi_router};',
+              'use crate::contact::http::{\n    CONTACT_BODY_LIMIT, ContactApiState, contact_openapi_router,\n};\nuse crate::http_api::{\n    PUSH_BODY_LIMIT, ApiState, RequestAuthenticator, push_openapi_router,\n};',
+          )
+          replace_once(
+              'src/api_docs.rs',
+              '''    Ok(push_router
+                  .with_state(push_state)
+                  .merge(contact_router.with_state(contact_state))
+                  .merge(docs_router.with_state(docs_state)))''',
+              '''    let push_router = push_router
+                  .with_state(push_state)
+                  .layer(DefaultBodyLimit::max(PUSH_BODY_LIMIT));
+              let contact_router = contact_router
+                  .with_state(contact_state)
+                  .layer(DefaultBodyLimit::max(CONTACT_BODY_LIMIT));
+
+              Ok(push_router
+                  .merge(contact_router)
+                  .merge(docs_router.with_state(docs_state)))''',
+          )
+
+          cargo = Path('Cargo.toml')
+          source = cargo.read_text()
+          replacements = {
+              'utoipa = { git = "https://github.com/juhaku/utoipa", rev = "aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a", package = "utoipa" }':
+                  'utoipa = { version = "=5.5.0", git = "https://github.com/juhaku/utoipa", rev = "aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a", package = "utoipa" }',
+              'utoipa-axum = { git = "https://github.com/juhaku/utoipa", rev = "aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a", package = "utoipa-axum" }':
+                  'utoipa-axum = { version = "=0.2.0", git = "https://github.com/juhaku/utoipa", rev = "aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a", package = "utoipa-axum" }',
+              'utoipa-scalar = { git = "https://github.com/juhaku/utoipa", rev = "aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a", package = "utoipa-scalar" }':
+                  'utoipa-scalar = { version = "=0.3.0", git = "https://github.com/juhaku/utoipa", rev = "aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a", package = "utoipa-scalar" }',
+          }
+          for before, after in replacements.items():
+              if source.count(before) != 1:
+                  raise SystemExit('Cargo.toml: dependency replacement target changed')
+              source = source.replace(before, after, 1)
+          cargo.write_text(source)
+          PY
+
+      - name: Format, resolve, compile, lint, and test
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo check --all-targets --all-features
+          cargo fmt --all -- --check
+          cargo check --locked --all-targets --all-features
+          cargo clippy --locked --all-targets --all-features -- -D warnings
+          cargo test --locked --all-targets --all-features
+
+      - name: Regenerate deterministic contract artifacts
+        run: |
+          set -euo pipefail
+          cargo run --locked --quiet -- --export-openapi=internal > generated/openapi.internal.json
+          cargo run --locked --quiet -- --export-openapi=public > generated/openapi.public.json
+          cargo run --locked --quiet -- --export-openapi=internal > /tmp/openapi.internal.2.json
+          cargo run --locked --quiet -- --export-openapi=public > /tmp/openapi.public.2.json
+          cmp generated/openapi.internal.json /tmp/openapi.internal.2.json
+          cmp generated/openapi.public.json /tmp/openapi.public.2.json
+          python3 -m json.tool generated/openapi.internal.json >/dev/null
+          python3 -m json.tool generated/openapi.public.json >/dev/null
+
+      - name: Verify contract visibility and body-limit composition
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          internal = json.loads(Path('generated/openapi.internal.json').read_text())
+          public = json.loads(Path('generated/openapi.public.json').read_text())
+          expected_public = {
+              '/healthz', '/readyz', '/v1/contact/readyz',
+              '/openapi.json', '/api/docs.json', '/api/docs', '/docs/api',
+          }
+          sensitive = {
+              '/v1/push/jobs', '/v1/push/jobs/batch',
+              '/v1/contact/jobs', '/v1/contact/jobs/batch',
+              '/internal/openapi.json', '/internal/docs/api',
+          }
+          assert set(public['paths']) == expected_public
+          assert set(internal['paths']) == expected_public | sensitive
+          assert public['x-dd-contract-scope'] == 'public'
+          assert internal['x-dd-contract-scope'] == 'internal'
+          assert 'securitySchemes' not in public.get('components', {})
+          schemas = public['components']['schemas']
+          assert 'PushJob' not in schemas and 'ContactJob' not in schemas
+          assert {'ServiceHealth', 'ReadinessResponse', 'ContactReadinessResponse'} <= set(schemas)
+          PY
+          grep --fixed-strings --quiet '.layer(DefaultBodyLimit::max(PUSH_BODY_LIMIT))' src/api_docs.rs
+          grep --fixed-strings --quiet '.layer(DefaultBodyLimit::max(CONTACT_BODY_LIMIT))' src/api_docs.rs
+          git diff --check
+
+      - name: Remove transport and commit reconciled product head
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/reconcile-openapi-head.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          test -z "$(git diff --cached --name-only | grep 'reconcile-openapi-head' || true)"
+          git commit -m 'fix(DEN-600): preserve limits and minimize public contract'
+          git push origin HEAD:agent/code-first-openapi-routes
