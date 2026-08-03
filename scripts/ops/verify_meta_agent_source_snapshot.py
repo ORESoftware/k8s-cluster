@@ -4,8 +4,8 @@
 The script performs read-only GitHub Git Database API calls against one exact
 commit, walks only the bounded directory path that owns the sealed bundle and
 publisher, removes both base64 layers from the bundle carrier, and verifies all
-reviewed digests and refs before any repository-administration credential is
-needed.
+reviewed digests and publishable branch refs before any repository-
+administration credential is needed.
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ ASSET_NAME_PATTERN = re.compile(r"^meta\.part[^/]+$")
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 PUBLISHER_NAME = "publish_meta_control_plane.py"
+ALLOWED_AUXILIARY_REFS = frozenset({"HEAD"})
 
 
 class VerificationError(RuntimeError):
@@ -45,6 +46,7 @@ class SnapshotResult:
     bundle_sha256: str
     publisher_sha256: str
     heads: Mapping[str, str]
+    auxiliary_heads: Mapping[str, str]
     bundle_path: Path
     publisher_path: Path
 
@@ -52,6 +54,7 @@ class SnapshotResult:
         return json.dumps(
             {
                 "asset_count": self.asset_count,
+                "auxiliary_heads": dict(sorted(self.auxiliary_heads.items())),
                 "bundle_path": str(self.bundle_path),
                 "bundle_sha256": self.bundle_sha256,
                 "heads": dict(sorted(self.heads.items())),
@@ -229,6 +232,38 @@ def parse_bundle_heads(bundle_path: Path) -> Mapping[str, str]:
     return observed
 
 
+def validate_bundle_heads(
+    observed_heads: Mapping[str, str],
+    expected_heads: Mapping[str, str],
+) -> tuple[Mapping[str, str], Mapping[str, str]]:
+    """Validate publishable branches separately from non-pushable pseudo-refs."""
+
+    branch_heads = {
+        ref: sha for ref, sha in observed_heads.items() if ref.startswith("refs/heads/")
+    }
+    auxiliary_heads = {
+        ref: sha for ref, sha in observed_heads.items() if not ref.startswith("refs/heads/")
+    }
+    if branch_heads != dict(expected_heads):
+        raise VerificationError(
+            "bundle branch refs do not exactly match the reviewed branch inventory"
+        )
+
+    unsupported = sorted(set(auxiliary_heads) - ALLOWED_AUXILIARY_REFS)
+    if unsupported:
+        raise VerificationError(
+            "bundle contains unsupported auxiliary refs: " + ", ".join(unsupported)
+        )
+
+    expected_shas = frozenset(expected_heads.values())
+    for ref, sha in auxiliary_heads.items():
+        if sha not in expected_shas:
+            raise VerificationError(
+                f"bundle auxiliary ref {ref} points outside the reviewed branch SHAs"
+            )
+    return branch_heads, auxiliary_heads
+
+
 def reconstruct_and_verify(
     *,
     client: GitHubClient,
@@ -341,10 +376,9 @@ def reconstruct_and_verify(
     run_git(["init", "--bare", "--quiet", str(repository_context)])
     run_git(["-C", str(repository_context), "bundle", "verify", str(bundle_path)])
     observed_heads = parse_bundle_heads(bundle_path)
-    if observed_heads != dict(expected_heads):
-        raise VerificationError(
-            "bundle refs do not exactly match the reviewed ref inventory"
-        )
+    branch_heads, auxiliary_heads = validate_bundle_heads(
+        observed_heads, expected_heads
+    )
 
     return SnapshotResult(
         source_sha=source_sha,
@@ -352,7 +386,8 @@ def reconstruct_and_verify(
         asset_count=len(sealed_parts),
         bundle_sha256=observed_bundle_sha256,
         publisher_sha256=observed_publisher_sha256,
-        heads=observed_heads,
+        heads=branch_heads,
+        auxiliary_heads=auxiliary_heads,
         bundle_path=bundle_path,
         publisher_path=publisher_path,
     )
