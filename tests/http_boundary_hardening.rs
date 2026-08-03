@@ -33,8 +33,8 @@ fn push_job() -> PushJob {
             data: BTreeMap::new(),
         },
         options: PushOptions {
-            priority: PushPriority::Normal,
             ttl_seconds: None,
+            priority: PushPriority::Normal,
             collapse_key: None,
             dry_run: false,
         },
@@ -174,11 +174,12 @@ async fn malformed_bearer_variants_are_rejected_without_echoing_secrets() {
 
 #[tokio::test]
 async fn authentication_precedes_batch_shape_disclosure() {
+    let empty_batch = serde_json::to_vec(&json!({"jobs": []})).unwrap();
     let unauthenticated_push = push_app(false)
         .oneshot(
             Request::post("/v1/push/jobs/batch")
                 .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(r#"{"jobs":[]}"#))
+                .body(Body::from(empty_batch.clone()))
                 .unwrap(),
         )
         .await
@@ -190,7 +191,7 @@ async fn authentication_precedes_batch_shape_disclosure() {
             Request::post("/v1/push/jobs/batch")
                 .header(header::CONTENT_TYPE, "application/json")
                 .header(header::AUTHORIZATION, format!("Bearer {SECRET}"))
-                .body(Body::from(r#"{"jobs":[]}"#))
+                .body(Body::from(empty_batch.clone()))
                 .unwrap(),
         )
         .await
@@ -205,20 +206,19 @@ async fn authentication_precedes_batch_shape_disclosure() {
         .oneshot(
             Request::post("/v1/contact/jobs/batch")
                 .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(r#"{"jobs":[]}"#))
+                .body(Body::from(empty_batch.clone()))
                 .unwrap(),
         )
         .await
         .unwrap();
     assert_eq!(unauthenticated_contact.status(), StatusCode::UNAUTHORIZED);
 
-    let request = ContactBatchRequest { jobs: Vec::new() };
     let authenticated_contact = contact_app(true)
         .oneshot(
             Request::post("/v1/contact/jobs/batch")
                 .header(header::CONTENT_TYPE, "application/json")
                 .header(header::AUTHORIZATION, format!("Bearer {SECRET}"))
-                .body(Body::from(serde_json::to_vec(&request).unwrap()))
+                .body(Body::from(empty_batch))
                 .unwrap(),
         )
         .await
@@ -282,8 +282,8 @@ async fn contact_unauthorized_response_never_echoes_recipient_data() {
     assert!(!rendered.contains(SECRET));
 }
 
-#[tokio::test]
-async fn empty_batch_payload_serializes_to_the_documented_shape() {
-    let request = ContactBatchRequest { jobs: Vec::new() };
-    assert_eq!(serde_json::to_value(request).unwrap(), json!({"jobs": []}));
+#[test]
+fn empty_contact_batch_deserializes_from_the_documented_shape() {
+    let request: ContactBatchRequest = serde_json::from_value(json!({"jobs": []})).unwrap();
+    assert!(request.jobs.is_empty());
 }
