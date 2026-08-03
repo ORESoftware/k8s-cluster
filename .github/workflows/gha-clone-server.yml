@@ -70,114 +70,57 @@ jobs:
               raise SystemExit('expected exactly two unboxed response guard signatures')
           if source.count('return response;') != 6:
               raise SystemExit('expected exactly six guarded response returns')
-          source = source.replace(
-              '-> Result<(), Response> {',
-              '-> Result<(), Box<Response>> {',
-          )
           source = source.replace('return response;', 'return *response;')
 
-          old_auth = '''fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Box<Response>> {
-              let Some(expected) = state.config.auth_secret.as_deref() else {
-                  return Err((
-                      StatusCode::SERVICE_UNAVAILABLE,
-                      Json(json!({ "error": "GHA_CLONE_AUTH_SECRET is not configured" })),
-                  )
-                      .into_response());
-              };
-              let presented = headers
-                  .get("x-server-auth")
-                  .or_else(|| headers.get("x-gha-clone-auth"))
-                  .and_then(|value| value.to_str().ok());
-              if presented.is_some_and(|value| digest_eq(value, expected)) {
-                  Ok(())
-              } else {
-                  Err((
-                      StatusCode::UNAUTHORIZED,
-                      Json(json!({ "error": "unauthorized" })),
-                  )
-                      .into_response())
-              }
-          }'''
-          new_auth = '''fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Box<Response>> {
-              let Some(expected) = state.config.auth_secret.as_deref() else {
-                  return Err(Box::new(
-                      (
-                          StatusCode::SERVICE_UNAVAILABLE,
-                          Json(json!({ "error": "GHA_CLONE_AUTH_SECRET is not configured" })),
-                      )
-                          .into_response(),
-                  ));
-              };
-              let presented = headers
-                  .get("x-server-auth")
-                  .or_else(|| headers.get("x-gha-clone-auth"))
-                  .and_then(|value| value.to_str().ok());
-              if presented.is_some_and(|value| digest_eq(value, expected)) {
-                  Ok(())
-              } else {
-                  Err(Box::new(
-                      (
-                          StatusCode::UNAUTHORIZED,
-                          Json(json!({ "error": "unauthorized" })),
-                      )
-                          .into_response(),
-                  ))
-              }
-          }'''
-          old_repo = '''fn require_allowed_repository(
-              repository: &str,
-              state: &AppState,
-          ) -> Result<(), Box<Response>> {
-              if state.config.allowed_repositories.contains(repository) {
-                  Ok(())
-              } else {
-                  Err((
-                      StatusCode::FORBIDDEN,
-                      Json(json!({
-                          "error": "repository is not allowlisted",
-                          "repository": repository
-                      })),
-                  )
-                      .into_response())
-              }
-          }'''
-          new_repo = '''fn require_allowed_repository(
-              repository: &str,
-              state: &AppState,
-          ) -> Result<(), Box<Response>> {
-              if state.config.allowed_repositories.contains(repository) {
-                  Ok(())
-              } else {
-                  Err(Box::new(
-                      (
-                          StatusCode::FORBIDDEN,
-                          Json(json!({
-                              "error": "repository is not allowlisted",
-                              "repository": repository
-                          })),
-                      )
-                          .into_response(),
-                  ))
-              }
-          }'''
-          if old_auth not in source:
-              raise SystemExit('expected auth guard body not found')
-          if old_repo not in source:
-              raise SystemExit('expected repository guard body not found')
-          source = source.replace(old_auth, new_auth, 1).replace(old_repo, new_repo, 1)
+          auth_start = source.index('fn require_auth(')
+          repo_start = source.index('\nfn require_allowed_repository(', auth_start)
+          digest_start = source.index('\nfn digest_eq(', repo_start)
+          auth = source[auth_start:repo_start]
+          repo = source[repo_start:digest_start]
+
+          auth = auth.replace(
+              '-> Result<(), Response> {',
+              '-> Result<(), Box<Response>> {',
+              1,
+          )
+          auth = auth.replace('return Err((', 'return Err(Box::new((', 1)
+          auth = auth.replace('.into_response());', '.into_response()));', 1)
+          auth = auth.replace('Err((', 'Err(Box::new((', 1)
+          auth = auth.replace('.into_response())', '.into_response()))', 1)
+
+          repo = repo.replace(
+              '-> Result<(), Response> {',
+              '-> Result<(), Box<Response>> {',
+              1,
+          )
+          repo = repo.replace('Err((', 'Err(Box::new((', 1)
+          repo = repo.replace('.into_response())', '.into_response()))', 1)
+          source = source[:auth_start] + auth + repo + source[digest_start:]
           main.write_text(source)
 
           contract = Path('remote/tests/general/gha-clone-server-config.test.ts')
-          text = contract.read_text()
-          old = '''    const escaped = resource.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
-              assert.match(kustomization, new RegExp(`- ${escaped}`));'''
-          new = '''    assert.ok(
-                kustomization.includes(`- ${resource}`),
-                `${resource} is missing from dd-next-runtime kustomization`,
-              );'''
-          if old not in text:
-              raise SystemExit('expected regex assertion not found')
-          contract.write_text(text.replace(old, new, 1))
+          lines = contract.read_text().splitlines()
+          repaired = []
+          removed_escape = False
+          replaced_assertion = False
+          for line in lines:
+              if 'const escaped = resource.replace' in line:
+                  removed_escape = True
+                  continue
+              if removed_escape and 'assert.match(kustomization' in line:
+                  repaired.extend([
+                      '    assert.ok(',
+                      '      kustomization.includes(`- ${resource}`),',
+                      '      `${resource} is missing from dd-next-runtime kustomization`,',
+                      '    );',
+                  ])
+                  replaced_assertion = True
+                  removed_escape = False
+                  continue
+              repaired.append(line)
+          if not replaced_assertion:
+              raise SystemExit('expected render assertion marker not found')
+          contract.write_text('\n'.join(repaired) + '\n')
           PY
           cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all
       - name: Commit exact repair when needed
