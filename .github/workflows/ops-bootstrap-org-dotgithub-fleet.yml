@@ -2,6 +2,11 @@ name: Bootstrap organization .github governance fleet
 run-name: Bootstrap organization .github governance fleet from issue 615
 
 on:
+  pull_request:
+    paths:
+      - scripts/ops/bootstrap_org_dotgithub_repositories.py
+      - tests/ops/test_bootstrap_org_dotgithub_repositories.py
+      - .github/workflows/ops-bootstrap-org-dotgithub-fleet.yml
   issue_comment:
     types: [created]
 
@@ -15,6 +20,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate-pr:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out pull-request revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compile publisher and run bounded tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ops/bootstrap_org_dotgithub_repositories.py
+          python3 -m unittest tests/ops/test_bootstrap_org_dotgithub_repositories.py -v
+
   publish:
     if: >-
       !github.event.issue.pull_request &&
