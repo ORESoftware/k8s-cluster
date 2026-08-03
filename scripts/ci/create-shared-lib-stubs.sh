@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# Create minimal compile-time stand-ins for the three monorepo path dependencies
-# used by Quaestor. A clean GitHub checkout does not contain ../../libs, so the
-# old CI never compiled the service at all. These stubs mirror only the public
-# interfaces Quaestor consumes; production builds in the k8s-cluster workspace
-# continue to use the real shared crates.
+# Create minimal compile-time source stand-ins for the three monorepo path
+# dependencies used by Quaestor. A clean GitHub checkout does not contain
+# ../../libs, so the old CI never compiled the service at all.
 #
-# The script never overwrites a real shared crate. Interface drift in Quaestor
-# therefore breaks CI, while developers with the monorepo checkout still compile
-# against the canonical implementations.
+# IMPORTANT: each generated Cargo.toml mirrors the canonical manifest in
+# ORESoftware/k8s-libs-and-shared-defs. Cargo.lock records path-package
+# dependency edges; a simplified manifest would make `cargo --locked` request a
+# lockfile rewrite and hide real dependency drift. Only the Rust implementation
+# is minimized here.
+#
+# The script never overwrites a real shared crate. Developers and production
+# workspace builds therefore continue to compile against the canonical code.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -31,9 +34,28 @@ if create_if_missing "$telemetry_dir"; then
 name = "dd-telemetry"
 version = "0.1.0"
 edition = "2021"
+description = "Shared OpenTelemetry tracing + structured-logging init for the Rust services in k8s-cluster/remote. Call dd_telemetry::init(\"dd-foo\") at the top of main and add dd_telemetry::http_trace_layer() to your axum Router. Explicit instrumentation only — no monkey-patching."
+
+[lib]
+path = "src/lib.rs"
 
 [dependencies]
-tower = "0.5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
+tracing-opentelemetry = "0.27"
+opentelemetry = "0.26"
+opentelemetry_sdk = { version = "0.26", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.26", default-features = false, features = [
+    "trace",
+    "http-proto",
+    "reqwest-client",
+    "reqwest-rustls",
+] }
+opentelemetry-http = "0.26"
+opentelemetry-semantic-conventions = "0.16"
+tower-http = { version = "0.6", features = ["trace"] }
+http = "1"
+tokio = { version = "1", features = ["rt"] }
 TOML
   cat >"$telemetry_dir/src/lib.rs" <<'RS'
 #[must_use]
@@ -43,8 +65,10 @@ pub fn init(_service_name: &str) -> OtelGuard {
     OtelGuard
 }
 
-pub fn http_trace_layer() -> tower::layer::util::Identity {
-    tower::layer::util::Identity::new()
+pub fn http_trace_layer() -> tower_http::trace::TraceLayer<
+    tower_http::classify::SharedClassifier<tower_http::classify::ServerErrorsAsFailures>,
+> {
+    tower_http::trace::TraceLayer::new_for_http()
 }
 RS
 fi
@@ -59,12 +83,15 @@ edition = "2021"
 
 [dependencies]
 async-nats = "=0.38.0"
+futures-util = "0.3"
 serde = { version = "1", features = ["derive"] }
-tokio = { version = "1", features = ["rt", "macros"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }
+tracing = { version = "0.1", optional = true }
 
 [features]
 default = ["tracing"]
-tracing = []
+tracing = ["dep:tracing"]
 TOML
   cat >"$wal_dir/src/lib.rs" <<'RS'
 use std::future::Future;
@@ -146,6 +173,12 @@ if create_if_missing "$subjects_dir"; then
 name = "dd-nats-subject-defs"
 version = "0.1.0"
 edition = "2021"
+description = "Generated Rust constants, formatters and parsers for dd NATS subject conventions. Do not edit by hand."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
 TOML
   cat >"$subjects_dir/src/lib.rs" <<'RS'
 pub const BILLING_ANCHORS_SUBJECT: &str = "dd.remote.billing.anchors";
