@@ -1,6 +1,6 @@
+use axum::Json;
 use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
-use axum::Json;
 use uuid::Uuid;
 
 use crate::api::auth::{self, Principal};
