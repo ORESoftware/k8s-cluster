@@ -1,0 +1,140 @@
+name: Materialize DEN-1549 failover implementation
+
+on:
+  push:
+    branches:
+      - agent/den-1549-sonus-gha-failover-20260803
+    paths:
+      - ".github/den1549/payload.part.*"
+      - ".github/workflows/materialize-den-1549.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: materialize-den-1549
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the implementation branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: agent/den-1549-sonus-gha-failover-20260803
+
+      - name: Verify and materialize the reviewed payload
+        shell: bash
+        env:
+          EXPECTED_SHA256: 5439c94e8a2bfd01e8d236170ee94b8276097cbdacb7da866eba481657c1c479
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path, PurePosixPath
+          import base64
+          import hashlib
+          import io
+          import os
+          import tarfile
+
+          expected_paths = {
+              ".github/workflows/sonus-arc-scaffold.yml",
+              "docs/github-actions-self-hosted-failover.md",
+              "remote/argocd/ci-runners/sonus-auris/README.md",
+              "remote/argocd/ci-runners/sonus-auris/base/externalsecrets.yaml",
+              "remote/argocd/ci-runners/sonus-auris/base/kustomization.yaml",
+              "remote/argocd/ci-runners/sonus-auris/base/namespace.yaml",
+              "remote/argocd/ci-runners/sonus-auris/base/resource-policy.yaml",
+              "remote/argocd/ci-runners/sonus-auris/base/runner-networkpolicy.yaml",
+              "remote/argocd/ci-runners/sonus-auris/gha-clone-server-policy.configmap.template.yaml",
+              "remote/argocd/ci-runners/sonus-auris/gha-clone-server.deployment.template.yaml",
+              "remote/argocd/ci-runners/sonus-auris/sonus-arc-github.externalsecret.template.yaml",
+              "remote/argocd/ci-runners/sonus-auris/sonus-ci-runner-set.application.template.yaml",
+              "remote/argocd/ci-runners/sonus-auris/sonus-ci-smoke.workflow.template.yml",
+              "remote/argocd/ci-runners/sonus-auris-arc-plan.md",
+              "remote/argocd/ci-runners/validate-sonus-arc-scaffold.py",
+              "remote/argocd/clusters/aws/gha-ci.applications.yaml",
+              "remote/argocd/clusters/aws/kustomization.yaml",
+              "remote/argocd/clusters/hetzner/gha-ci.applications.yaml",
+              "remote/argocd/clusters/hetzner/kustomization.yaml",
+              "remote/deployments/gha-clone-server-rs/Cargo.toml",
+              "remote/deployments/gha-clone-server-rs/Dockerfile",
+              "remote/deployments/gha-clone-server-rs/README.md",
+              "remote/deployments/gha-clone-server-rs/src/lib.rs",
+              "remote/deployments/gha-clone-server-rs/src/main.rs",
+          }
+
+          parts = sorted(Path(".github/den1549").glob("payload.part.*"))
+          assert len(parts) == 8, f"expected 8 payload parts, found {len(parts)}"
+          encoded = b"".join(path.read_bytes() for path in parts)
+          payload = base64.b64decode(encoded, validate=True)
+          actual_sha256 = hashlib.sha256(payload).hexdigest()
+          assert actual_sha256 == os.environ["EXPECTED_SHA256"], (
+              f"payload digest mismatch: {actual_sha256}"
+          )
+
+          with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as archive:
+              members = archive.getmembers()
+              actual_paths = {member.name for member in members}
+              assert actual_paths == expected_paths, (
+                  f"payload path mismatch: missing={expected_paths - actual_paths}; "
+                  f"unexpected={actual_paths - expected_paths}"
+              )
+              for member in members:
+                  relative = PurePosixPath(member.name)
+                  assert not relative.is_absolute()
+                  assert ".." not in relative.parts
+                  assert member.isfile(), f"non-file payload member: {member.name}"
+                  source = archive.extractfile(member)
+                  assert source is not None
+                  destination = Path(*relative.parts)
+                  destination.parent.mkdir(parents=True, exist_ok=True)
+                  destination.write_bytes(source.read())
+
+          for part in parts:
+              part.unlink()
+          Path(".github/workflows/materialize-den-1549.yml").unlink()
+          PY
+
+      - name: Run the credential-free static contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile remote/argocd/ci-runners/validate-sonus-arc-scaffold.py
+          python3 remote/argocd/ci-runners/validate-sonus-arc-scaffold.py
+          git diff --check
+          if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- \
+            .github/workflows/sonus-arc-scaffold.yml \
+            docs/github-actions-self-hosted-failover.md \
+            remote/argocd/ci-runners \
+            remote/argocd/clusters/aws \
+            remote/argocd/clusters/hetzner \
+            remote/deployments/gha-clone-server-rs; then
+            echo "conflict marker found" >&2
+            exit 1
+          fi
+
+      - name: Commit the materialized implementation and remove staging files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A -- \
+            .github/den1549 \
+            .github/workflows/materialize-den-1549.yml \
+            .github/workflows/sonus-arc-scaffold.yml \
+            docs/github-actions-self-hosted-failover.md \
+            remote/argocd/ci-runners \
+            remote/argocd/clusters/aws \
+            remote/argocd/clusters/hetzner \
+            remote/deployments/gha-clone-server-rs
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "no materialized changes found" >&2
+            exit 1
+          fi
+          git commit -m "feat(DEN-1549): add Sonus AWS/Hetzner Actions failover"
+          git push origin HEAD:agent/den-1549-sonus-gha-failover-20260803
