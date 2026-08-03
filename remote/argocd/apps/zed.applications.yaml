@@ -31,6 +31,8 @@ kind: Application
 metadata:
   name: dd-zed-api-server
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   project: zed
   source:
@@ -50,6 +52,8 @@ kind: Application
 metadata:
   name: dd-zed-web-server
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   project: zed
   source:
