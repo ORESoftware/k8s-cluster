@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-billing-server
+  namespace: default
+spec:
+  template:
+    metadata:
+      annotations:
+        dd.dev/auth-revision: '2026-08-02-shared-auth-tenant-grants'
+    spec:
+      containers:
+        - name: billing-server
+          env:
+            # The endpoint and service credential are deliberately separate.
+            # Shared Auth uses the credential to protect /auth/introspect; the
+            # customer access token is sent only in the JSON request body.
+            - name: BILLING_SHARED_AUTH_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-billing-server-secrets
+                  key: shared_auth_base_url
+            - name: BILLING_SHARED_AUTH_INTROSPECT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-billing-server-secrets
+                  key: shared_auth_introspect_secret
+            - name: BILLING_SHARED_AUTH_ISSUER
+              valueFrom:
+                secretKeyRef:
+                  name: dd-billing-server-secrets
+                  key: shared_auth_issuer
+            - name: BILLING_SHARED_AUTH_AUDIENCE
+              valueFrom:
+                secretKeyRef:
+                  name: dd-billing-server-secrets
+                  key: shared_auth_audience
+            - name: BILLING_SHARED_AUTH_TIMEOUT_MS
+              value: '1500'
+            - name: BILLING_SHARED_AUTH_REQUIRE_SESSION_ID
+              value: 'true'
+
+            # Production never falls back to the process-wide service bearer on
+            # tenant routes. It remains configured only as a migration/break-
+            # glass credential for non-tenant control-plane calls until config
+            # cleanup removes that legacy requirement completely.
+            - name: BILLING_TENANT_ROUTES_REQUIRE_USER_JWT
+              value: 'true'
+            - name: BILLING_TENANT_MUTATIONS_REQUIRE_STEP_UP
+              value: 'true'
+
+            # The embedded HTMX admin still uses a separate static credential.
+            # Keep it off in production until it is fronted by a Shared Auth-
+            # aware gateway/session adapter; the JSON membership API is the
+            # supported administration surface in this rollout.
+            - name: BILLING_ADMIN_UI_ENABLED
+              value: 'false'
+
+            # Direct per-service Supabase verification has been retired. Shared
+            # Auth owns provider verification and session revocation.
+            - name: BILLING_SUPABASE_URL
+              $patch: delete
