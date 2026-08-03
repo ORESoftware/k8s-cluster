@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gha-clone-server
+  namespace: default
+  labels:
+    app: gha-clone-server
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/limit-connections: "20"
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/proxy-body-size: 1m
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - hello.95-217-171-250.sslip.io
+      secretName: gateway-public-tls
+  rules:
+    - host: hello.95-217-171-250.sslip.io
+      http:
+        paths:
+          - path: /ci/github/webhook
+            pathType: Exact
+            backend:
+              service:
+                name: gha-clone-server
+                port:
+                  number: 8117
