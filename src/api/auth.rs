@@ -148,7 +148,7 @@ pub fn authorize_request(
         },
     }
 
-    if !policy.require_step_up_for_mutations || action == Action::Read {
+    if action == Action::Read {
         return Ok(());
     }
     let TenantScope::Tenant(tenant_id) = scope else {
@@ -157,15 +157,24 @@ pub fn authorize_request(
         return Ok(());
     };
     let Principal::User(user) = principal else {
+        if policy.require_step_up_for_mutations {
+            tracing::warn!(
+                tenant.id = %tenant_id,
+                "legacy service credential cannot perform a hardened tenant mutation"
+            );
+            return Err(StatusCode::FORBIDDEN);
+        }
         tracing::warn!(
             tenant.id = %tenant_id,
-            "legacy service credential cannot perform a hardened tenant mutation"
+            "legacy service credential accepted for a tenant mutation during the full migration window"
         );
-        return Err(StatusCode::FORBIDDEN);
+        return Ok(());
     };
     let Some(grant) = &user.grant else {
         return Err(StatusCode::FORBIDDEN);
     };
+    // The write scope is independent of the step-up rollout flag. Turning
+    // off fresh-AAL2 enforcement must never turn a reader into a writer.
     if !grant.has_scope(SCOPE_FINANCIAL_WRITE) {
         tracing::warn!(
             auth.subject = %user.identity.subject,
@@ -173,6 +182,9 @@ pub fn authorize_request(
             "financial mutation rejected: membership lacks billing:write"
         );
         return Err(StatusCode::FORBIDDEN);
+    }
+    if !policy.require_step_up_for_mutations {
+        return Ok(());
     }
     if !user.identity.assurance.is_aal2() {
         tracing::warn!(
@@ -654,6 +666,75 @@ mod tests {
                 Err(StatusCode::FORBIDDEN)
             );
         }
+    }
+
+    #[test]
+    fn write_scope_remains_required_when_step_up_is_temporarily_disabled() {
+        let policy = AuthzPolicy {
+            require_user_jwt: true,
+            require_step_up_for_mutations: false,
+        };
+        let read_only = user(tenant(TENANT_A), &[SCOPE_BILLING_READ], Aal::Aal1, NOW);
+        assert_eq!(
+            authorize_request(
+                &read_only,
+                TenantScope::Tenant(tenant(TENANT_A)),
+                Action::Mutate,
+                policy,
+                NOW
+            ),
+            Err(StatusCode::FORBIDDEN)
+        );
+
+        let writer = user(
+            tenant(TENANT_A),
+            &[SCOPE_BILLING_READ, SCOPE_BILLING_WRITE],
+            Aal::Aal1,
+            NOW,
+        );
+        assert_eq!(
+            authorize_request(
+                &writer,
+                TenantScope::Tenant(tenant(TENANT_A)),
+                Action::Mutate,
+                policy,
+                NOW
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn legacy_service_mutations_require_the_full_migration_window() {
+        let migration = AuthzPolicy {
+            require_user_jwt: false,
+            require_step_up_for_mutations: false,
+        };
+        assert_eq!(
+            authorize_request(
+                &Principal::Service,
+                TenantScope::Tenant(tenant(TENANT_A)),
+                Action::Mutate,
+                migration,
+                NOW
+            ),
+            Ok(())
+        );
+
+        let step_up_on = AuthzPolicy {
+            require_user_jwt: false,
+            require_step_up_for_mutations: true,
+        };
+        assert_eq!(
+            authorize_request(
+                &Principal::Service,
+                TenantScope::Tenant(tenant(TENANT_A)),
+                Action::Mutate,
+                step_up_on,
+                NOW
+            ),
+            Err(StatusCode::FORBIDDEN)
+        );
     }
 
     #[test]

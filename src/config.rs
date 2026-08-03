@@ -115,17 +115,16 @@ pub struct Config {
     /// as long as it is off.
     pub tenant_routes_require_user_jwt: bool,
 
-    /// Require a *fresh AAL2* session and an explicit financial scope for every
-    /// human-initiated **mutation** of a tenant's ledger state (`POST`/`PUT`/
-    /// `PATCH`/`DELETE` on `/v1/tenants/{tenant_id}/...`). Reads, unscoped
-    /// provisioning calls, and provider webhooks are unaffected.
+    /// Require a *fresh AAL2* session for every human-initiated mutation
+    /// of a tenant's ledger state. The tenant-local `billing:write` scope is
+    /// enforced regardless of this flag; disabling step-up never turns a reader
+    /// into a writer. Reads, unscoped provisioning calls, and provider webhooks
+    /// are unaffected.
     ///
-    /// Defaults to `false` — a *migration window*, like
-    /// [`Self::tenant_routes_require_user_jwt`]: existing user tokens may not
-    /// carry `aal2`/`financial_scopes` yet, so flipping it on before the issuer
-    /// stamps them would lock out legitimate callers. The server logs a WARN
-    /// every boot while it is off. Turn it on once Shared Auth issues stepped-up,
-    /// scoped tokens.
+    /// Defaults to `false` only as a time-boxed assurance migration window for
+    /// callers whose Shared Auth sessions cannot yet step up. The server logs a
+    /// WARN every boot while it is off. Production enables it after the issuer's
+    /// durable MFA/passkey ceremony contract is deployed.
     pub step_up_required_for_mutations: bool,
 
     /// Refuse outbound HTTP to private / loopback / link-local IPs.
