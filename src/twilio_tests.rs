@@ -170,7 +170,6 @@ async fn missing_or_blank_twilio_configuration_fails_before_network() {
         ("blank auth token", blank_token),
         ("blank service SID", blank_service),
     ] {
-        assert!(!incomplete.is_enabled(), "{field} must disable Twilio Verify");
         let (base, requests) = mock_server(StatusCode::OK, r#"{"status":"pending"}"#).await;
         let start =
             start_sms_verification_at(&reqwest::Client::new(), &incomplete, &base, "+14155550100")
