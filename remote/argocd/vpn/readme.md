@@ -104,10 +104,10 @@ you intentionally want a clean reinitialization.
 The bastion service also expects `SERVER_AUTH_SECRET` in `dd/remote-dev/agent-secrets`, matching
 the rest of the remote runtime.
 
-The phone endpoint additionally needs a Cloudflare API token scoped to `Zone:DNS:Edit` for the
-`fiducia.cloud` zone. Store it in AWS Secrets Manager at `dd/remote-dev/cloudflare`, property
-`CLOUDFLARE_DNS_API_TOKEN`. The VPN app owns a dedicated ExternalSecret named
-`argocd-mobile-cloudflare-dns-api-token` and a dedicated ClusterIssuer named
+The phone endpoint additionally needs a Cloudflare API token with `Zone:DNS:Edit` and
+`Zone:Zone:Read`, restricted to the `fiducia.cloud` zone. Store it in AWS Secrets Manager at
+`dd/remote-dev/cloudflare`, property `CLOUDFLARE_DNS_API_TOKEN`. The VPN app owns a dedicated
+ExternalSecret named `argocd-mobile-cloudflare-dns-api-token` and a dedicated ClusterIssuer named
 `letsencrypt-prod-dns01-argocd-mobile`. Their target Secret and ACME account key are distinct from
 the optional public-gateway certificate migration, so Argo CD never gives two applications shared
 ownership of the same certificate-control-plane resources.
