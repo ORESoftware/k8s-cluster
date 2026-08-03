@@ -112,11 +112,12 @@ Partner/status updates use `docs/operations/managed-beta-communication-templates
 ### 5.3 Quorum, leader, or one-site failure
 
 1. Confirm which members are voters, current leader/term, commit index, follower lag, and whether a healthy majority remains.
-2. Do not restart, replace, or upgrade a second voter while one is unhealthy or catching up.
-3. Remove unhealthy public origins and allow only validated membership-bound routing hints.
-4. Treat mutation timeouts as ambiguous; retry only through the documented idempotency contract.
-5. Verify partner workloads stop on lost renewal and reject stale fencing tokens downstream.
-6. Replace/recover the failed member follower-first with a stable new identity; verify full catch-up before restoring redundancy.
+2. During planned maintenance or a controlled upgrade, change **one healthy follower at a time and the leader last**.
+3. During incident recovery, do not restart, replace, or upgrade a second voter while one is unhealthy or catching up.
+4. Remove unhealthy public origins and allow only validated membership-bound routing hints.
+5. Treat mutation timeouts as ambiguous; retry only through the documented idempotency contract.
+6. Verify partner workloads stop on lost renewal and reject stale fencing tokens downstream.
+7. Replace/recover the failed member follower-first with a stable new identity; verify full catch-up before restoring redundancy.
 
 ### 5.4 Restore or rollback event
 
