@@ -1,0 +1,52 @@
+# Zed bootstrap Applications for the AWS cluster.
+#
+# Keep source revisions and commit-tagged images aligned. The protected
+# zed-infra certification resolves these same tags to OCI digests and proves
+# their source/interface labels before production promotion.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-zed-api-server
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: zed
+  source:
+    repoURL: https://github.com/zed-pkg/zed-api-server.rs.git
+    targetRevision: 3d2d4c98024e5bf718dc79c2648bd10d7759a31c
+    path: k8s/overlays/aws
+    kustomize:
+      images:
+        - ghcr.io/zed-pkg/zed-api-server=ghcr.io/zed-pkg/zed-api-server:3d2d4c98024e5bf718dc79c2648bd10d7759a31c # gitleaks:allow -- immutable OCI source-commit tag
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: zed
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-zed-web-server
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: zed
+  source:
+    repoURL: https://github.com/zed-pkg/zed-web-server.rs.git
+    targetRevision: 75f5ac4e35e121485af75588ce453f350e0cabbc
+    path: k8s/overlays/aws
+    kustomize:
+      images:
+        - ghcr.io/zed-pkg/zed-web-server=ghcr.io/zed-pkg/zed-web-server:75f5ac4e35e121485af75588ce453f350e0cabbc # gitleaks:allow -- immutable OCI source-commit tag
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: zed
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - ServerSideApply=true

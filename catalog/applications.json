@@ -3084,7 +3084,7 @@
       "name": "dd-ws-loadtest-rs-rust-wss"
     },
     {
-      "declaration_count": 1,
+      "declaration_count": 2,
       "declarations": [
         {
           "application_namespace": "argocd",
@@ -3094,14 +3094,42 @@
             "server": "https://kubernetes.default.svc"
           },
           "document_index": 0,
-          "manifest_path": "remote/argocd/apps/zed.applications.yaml",
+          "manifest_path": "remote/argocd/apps/zed.aws.applications.yaml",
           "project": "zed",
           "sources": [
             {
               "chart": "",
-              "path": "k8s",
+              "path": "k8s/overlays/aws",
               "repo_url": "https://github.com/zed-pkg/zed-api-server.rs.git",
-              "target_revision": "main"
+              "target_revision": "3d2d4c98024e5bf718dc79c2648bd10d7759a31c"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "ServerSideApply=true"
+            ]
+          }
+        },
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "zed",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/apps/zed.hetzner.applications.yaml",
+          "project": "zed",
+          "sources": [
+            {
+              "chart": "",
+              "path": "k8s/overlays/hetzner",
+              "repo_url": "https://github.com/zed-pkg/zed-api-server.rs.git",
+              "target_revision": "3d2d4c98024e5bf718dc79c2648bd10d7759a31c"
             }
           ],
           "sync_policy": {
@@ -3115,7 +3143,7 @@
           }
         }
       ],
-      "duplicate_name": false,
+      "duplicate_name": true,
       "name": "dd-zed-api-server"
     },
     {
@@ -3125,18 +3153,118 @@
           "application_namespace": "argocd",
           "destination": {
             "name": "",
+            "namespace": "argocd",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/aws/zed.bootstrap.application.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "main"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=false",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-zed-bootstrap-aws"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "argocd",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/hetzner/zed.bootstrap.application.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "main"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=false",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-zed-bootstrap-hetzner"
+    },
+    {
+      "declaration_count": 2,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
             "namespace": "zed",
             "server": "https://kubernetes.default.svc"
           },
           "document_index": 1,
-          "manifest_path": "remote/argocd/apps/zed.applications.yaml",
+          "manifest_path": "remote/argocd/apps/zed.aws.applications.yaml",
           "project": "zed",
           "sources": [
             {
               "chart": "",
-              "path": "k8s",
+              "path": "k8s/overlays/aws",
               "repo_url": "https://github.com/zed-pkg/zed-web-server.rs.git",
-              "target_revision": "main"
+              "target_revision": "75f5ac4e35e121485af75588ce453f350e0cabbc"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "ServerSideApply=true"
+            ]
+          }
+        },
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "zed",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 1,
+          "manifest_path": "remote/argocd/apps/zed.hetzner.applications.yaml",
+          "project": "zed",
+          "sources": [
+            {
+              "chart": "",
+              "path": "k8s/overlays/hetzner",
+              "repo_url": "https://github.com/zed-pkg/zed-web-server.rs.git",
+              "target_revision": "75f5ac4e35e121485af75588ce453f350e0cabbc"
             }
           ],
           "sync_policy": {
@@ -3150,7 +3278,7 @@
           }
         }
       ],
-      "duplicate_name": false,
+      "duplicate_name": true,
       "name": "dd-zed-web-server"
     },
     {
@@ -3778,12 +3906,12 @@
     "source": "tracked Argo CD Application manifests"
   },
   "summary": {
-    "application_documents": 114,
-    "applications": 79,
+    "application_documents": 118,
+    "applications": 81,
     "default_destination_namespace_declarations": 53,
-    "default_project_declarations": 91,
-    "duplicate_names": 15,
+    "default_project_declarations": 93,
+    "duplicate_names": 17,
     "gitlink_render_path_violations": 0,
-    "in_repo_source_declarations": 74
+    "in_repo_source_declarations": 76
   }
 }
