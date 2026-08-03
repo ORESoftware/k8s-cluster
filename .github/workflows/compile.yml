@@ -43,13 +43,16 @@ jobs:
       - name: Compile the complete test graph
         run: cargo test --locked --no-run
 
-      - name: Run Shared Auth and tenant authorization tests
+      - name: Run security and authorization suites
         shell: bash
         run: |
           set -euo pipefail
           cargo test --locked shared_auth::
           cargo test --locked memberships::
           cargo test --locked api::auth::
+          cargo test --locked api::oauth::
+          cargo test --locked config::
+          cargo test --locked error::
 
   membership-invariants:
     name: postgres-membership-invariants
@@ -142,7 +145,7 @@ jobs:
         working-directory: workspace/services/quaestor-ledger-server.rs
         run: cargo check --locked --all-targets
 
-      - name: Compile and run the authorization tests against real shared crates
+      - name: Compile and run the security suites against real shared crates
         shell: bash
         working-directory: workspace/services/quaestor-ledger-server.rs
         run: |
@@ -151,3 +154,6 @@ jobs:
           cargo test --locked shared_auth::
           cargo test --locked memberships::
           cargo test --locked api::auth::
+          cargo test --locked api::oauth::
+          cargo test --locked config::
+          cargo test --locked error::
