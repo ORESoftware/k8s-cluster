@@ -9,8 +9,8 @@
 use std::fmt;
 
 pub use crate::shared_auth::{
-    Aal, AuthError, SharedAuthIdentity as SupabaseIdentity,
-    SharedAuthVerifier as SupabaseVerifier, bearer_token,
+    Aal, AuthError, SharedAuthIdentity as SupabaseIdentity, SharedAuthVerifier as SupabaseVerifier,
+    bearer_token,
 };
 
 /// Legacy deployment fields retained only so old configuration files continue
