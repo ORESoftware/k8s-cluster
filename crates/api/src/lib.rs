@@ -1,6 +1,6 @@
-//! t2v-api library surface: the axum `Router` builder and shared modules,
-//! exposed so integration tests can drive the app without binding a socket or
-//! contacting external providers. `main.rs` is a thin wrapper over this.
+//! t2v-api library surface: the Axum router, executable OpenAPI contract, and
+//! shared modules. Integration and browser tests drive the same application
+//! factory without contacting production providers.
 
 pub mod audio_io;
 pub mod auth;
@@ -9,18 +9,22 @@ pub mod error;
 pub mod handlers_speech;
 pub mod handlers_vapi;
 pub mod history;
+pub mod http_contract;
 pub mod metrics;
+pub mod openapi;
 pub mod state;
 pub mod vapi_client;
 
 use axum::extract::DefaultBodyLimit;
 use axum::middleware::from_fn_with_state;
-use axum::routing::{get, post};
-use axum::Router;
+use axum::{Extension, Router};
+use openapi::{ApiDocs, ApiDocuments};
 use state::AppState;
+use std::sync::Arc;
 use std::time::Duration;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 /// Max request body for audio uploads — matches OpenAI Whisper's 25 MB cap and
 /// bounds the DSP/FFT work a single request can trigger.
@@ -40,61 +44,96 @@ fn request_timeout() -> Duration {
     Duration::from_secs(secs)
 }
 
-pub fn app(state: AppState) -> Router {
-    // Audio uploads: larger body limit; run through the custom-FFT DSP core.
-    let audio = Router::new()
-        .route("/v1/stt", post(handlers_speech::stt))
-        .route("/v1/analyze", post(handlers_speech::analyze_audio))
-        .route(
-            "/v1/speech-to-speech",
-            post(handlers_speech::speech_to_speech),
-        )
+/// Public routes are registered and documented together. The body-limit layer
+/// remains scoped to the same audio/JSON groups as before this migration.
+fn public_contract_router() -> OpenApiRouter<AppState> {
+    let service_and_docs = OpenApiRouter::new()
+        .routes(routes!(http_contract::banner))
+        .routes(routes!(http_contract::healthz))
+        .routes(routes!(http_contract::readyz))
+        .routes(routes!(http_contract::public_openapi))
+        .routes(routes!(http_contract::public_openapi_alias))
+        .routes(routes!(http_contract::public_scalar))
+        .routes(routes!(http_contract::public_scalar_alias));
+
+    let audio = OpenApiRouter::new()
+        .routes(routes!(http_contract::stt))
+        .routes(routes!(http_contract::analyze_audio))
+        .routes(routes!(http_contract::speech_to_speech))
         .layer(DefaultBodyLimit::max(MAX_AUDIO_BODY));
 
-    // JSON action endpoints.
-    let json_actions = Router::new()
-        .route("/v1/tts", post(handlers_speech::tts))
-        .route("/v1/translate", post(handlers_speech::translate))
+    let json_actions = OpenApiRouter::new()
+        .routes(routes!(http_contract::tts))
+        .routes(routes!(http_contract::translate))
         .layer(DefaultBodyLimit::max(MAX_JSON_BODY));
 
-    // Vapi webhook: authenticated inside the handler via x-vapi-secret.
-    let webhook = Router::new()
-        .route("/vapi/webhook", post(handlers_vapi::webhook))
-        .layer(DefaultBodyLimit::max(MAX_JSON_BODY));
+    service_and_docs.merge(audio).merge(json_actions)
+}
 
-    // Operator + history endpoints: guarded by the server-auth bearer secret,
-    // and they expose stored transcripts/translations, so they fail closed.
-    let protected = Router::new()
-        .route("/v1/history/transcriptions", get(history::transcriptions))
-        .route("/v1/history/translations", get(history::translations))
-        .route("/v1/history/syntheses", get(history::syntheses))
-        .route("/v1/history/vapi-calls", get(history::vapi_calls))
-        .route("/vapi/call", post(handlers_vapi::create_call))
-        .route("/vapi/call/{id}", get(handlers_vapi::get_call))
-        .layer(from_fn_with_state(state.clone(), auth::require_server_auth))
+/// Internal but unauthenticated-at-the-router routes. Prometheus remains
+/// behavior-compatible with the existing deployment. Vapi validates its own
+/// callback secret in the established constant-time handler.
+fn internal_unprotected_contract_router() -> OpenApiRouter<AppState> {
+    let operations = OpenApiRouter::new().routes(routes!(http_contract::metrics));
+    let partner = OpenApiRouter::new()
+        .routes(routes!(http_contract::vapi_webhook))
         .layer(DefaultBodyLimit::max(MAX_JSON_BODY));
+    operations.merge(partner)
+}
 
-    let public = Router::new()
-        .route("/", get(banner))
-        .route("/healthz", get(healthz))
-        .route("/readyz", get(readyz))
-        .route("/metrics", get(metrics_handler));
+/// Operator routes are collected without middleware here so deterministic
+/// exports require no state or secrets. `app` applies the live fail-closed
+/// bearer middleware to this exact router before serving it.
+fn operator_contract_router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(http_contract::transcription_history))
+        .routes(routes!(http_contract::translation_history))
+        .routes(routes!(http_contract::synthesis_history))
+        .routes(routes!(http_contract::vapi_call_history))
+        .routes(routes!(http_contract::create_vapi_call))
+        .routes(routes!(http_contract::get_vapi_call))
+        .routes(routes!(http_contract::internal_openapi))
+        .routes(routes!(http_contract::internal_scalar))
+}
+
+/// Build both documents without reading environment configuration, opening a
+/// database, constructing provider clients, starting telemetry, or binding a
+/// socket. This is the source for committed artifacts and generated SDKs.
+pub fn openapi_documents() -> Result<ApiDocuments, String> {
+    let (_, public) = public_contract_router().split_for_parts();
+    let (_, internal_unprotected) = internal_unprotected_contract_router().split_for_parts();
+    let (_, operator) = operator_contract_router().split_for_parts();
+    openapi::finalize(public, internal_unprotected, operator)
+}
+
+pub fn app(state: AppState) -> Router {
+    let documents = openapi_documents().expect("t2v executable OpenAPI contract must assemble");
+    let docs = Arc::new(ApiDocs::new(&documents).expect("t2v API documents must serialize"));
+
+    let (public, _) = public_contract_router().split_for_parts();
+    let (internal_unprotected, _) = internal_unprotected_contract_router().split_for_parts();
+    let (operator, _) = operator_contract_router().split_for_parts();
+    let operator = operator
+        .route_layer(from_fn_with_state(
+            state.clone(),
+            auth::require_server_auth,
+        ))
+        .layer(DefaultBodyLimit::max(MAX_JSON_BODY));
 
     public
-        .merge(audio)
-        .merge(json_actions)
-        .merge(webhook)
-        .merge(protected)
+        .merge(internal_unprotected)
+        .merge(operator)
         .layer(TimeoutLayer::with_status_code(
             axum::http::StatusCode::REQUEST_TIMEOUT,
             request_timeout(),
         ))
         .layer(TraceLayer::new_for_http())
+        .layer(Extension(docs))
         .with_state(state)
 }
 
 async fn banner() -> &'static str {
-    "t2v-api — voice-to-text / text-to-voice / translation. See GET /healthz, POST /v1/stt|tts|translate|speech-to-speech|analyze.\n"
+    "t2v-api — voice-to-text / text-to-voice / translation. See GET /docs/api and GET /openapi.json for the public contract.\n"
 }
 
 async fn healthz() -> &'static str {
