@@ -13,6 +13,7 @@ on:
       - 'src/http_api.rs'
       - 'src/main.rs'
       - 'tests/browser/openapi-docs.spec.mjs'
+      - 'tests/http_boundary_hardening.rs'
   push:
     branches:
       - main
@@ -27,14 +28,18 @@ on:
       - 'src/http_api.rs'
       - 'src/main.rs'
       - 'tests/browser/openapi-docs.spec.mjs'
+      - 'tests/http_boundary_hardening.rs'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: push-openapi-browser-${{ github.workflow }}-${{ github.ref }}
+  group: push-openapi-browser-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   chromium:
@@ -60,7 +65,7 @@ jobs:
       - name: Install pinned Playwright and Chromium
         run: |
           set -euo pipefail
-          npm install --no-save --ignore-scripts @playwright/test@1.55.0
+          npm install --no-save --ignore-scripts --no-audit --no-fund @playwright/test@1.55.0
           npx playwright install --with-deps chromium
 
       - name: Start the fail-closed notification server
@@ -85,14 +90,30 @@ jobs:
           cat /tmp/push-notification-server.log >&2
           exit 1
 
-      - name: Exercise docs, contracts, aliases, and auth in Chromium
+      - name: Exercise docs, contracts, aliases, readiness, limits, and auth in Chromium
         env:
           PUSH_DOCS_BASE_URL: http://127.0.0.1:8121
         run: npx playwright test tests/browser/openapi-docs.spec.mjs --browser=chromium --workers=1 --reporter=line
 
+      - name: Assert server logs do not expose test capabilities
+        if: always()
+        run: |
+          set -euo pipefail
+          if test -f /tmp/push-notification-server.log; then
+            for secret in \
+              'fixture-device-token-that-must-never-be-echoed' \
+              'private-recipient@example.com' \
+              'Private Recipient'; do
+              if grep --fixed-strings --quiet -- "$secret" /tmp/push-notification-server.log; then
+                echo "server log leaked a test capability" >&2
+                exit 1
+              fi
+            done
+          fi
+
       - name: Upload browser evidence on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: push-openapi-browser-evidence-${{ github.sha }}
           path: |
