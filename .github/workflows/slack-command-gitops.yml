@@ -156,7 +156,7 @@ jobs:
               document for document in documents
               if identity(document) == ('Ingress', 'dd-slack-command')
           )
-          paths = re.findall(r'^\s*- path:\s*(\S+)\s*$', ingress, re.MULTILINE)
+          paths = re.findall(r'^\s*path:\s*(\S+)\s*$', ingress, re.MULTILINE)
           expected_paths = [
               '/slack/commands/ores-claude',
               '/slack/commands/ores-chatgpt',
