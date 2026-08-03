@@ -26,19 +26,11 @@ A refreshed session returns to AAL1. Refresh never extends a previous AAL2 cerem
 
 `provider`, `provider_tenant`, and `provider_subject` describe the external identity that authenticated the user. In particular, `provider_tenant` may be a Supabase project or another identity-provider namespace. Product services must not interpret it as a customer, organization, account, or billing tenant.
 
-## Application roles
+## Product-local authorization
 
-Application grants use namespaced role strings so unrelated products cannot accidentally share authorization vocabulary. The role table restricts values to lowercase ASCII letters, digits, colons, underscores, and hyphens.
+Shared Auth roles describe identity-system grants only. Customer tenancy, billing roles, financial scopes, invoice authority, and reconciliation authority belong to each product's own database and audit log. They must not be copied into user-writable identity metadata or inferred from provider provenance.
 
-Quaestor Ledger reserves:
-
-- `quaestor:tenant:<tenant-uuid>` — membership in one billing tenant;
-- `quaestor:billing:read` — read access within an entitled tenant;
-- `quaestor:billing:write` — mutation access within an entitled tenant, still subject to fresh AAL2;
-- `quaestor:reconciliation:run` — invoke reconciliation for an entitled tenant;
-- `quaestor:billing:admin` — administrative billing operations; this does not bypass tenant entitlement or step-up requirements.
-
-Roles are authorization inputs, not authentication assurance. A role alone must never imply tenant membership, AAL2, or a recent step-up.
+Quaestor Ledger therefore resolves `sub` from Shared Auth, then loads the exact tenant membership and billing scopes from Quaestor's database. Shared Auth does not mint `quaestor:*` tenant grants. A product-local role or scope is an authorization input, never authentication assurance; it cannot imply AAL2 or a recent step-up.
 
 ## Verification posture
 
