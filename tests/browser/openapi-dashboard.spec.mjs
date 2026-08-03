@@ -78,13 +78,17 @@ function rejectedWebSocketStatus(origin) {
   });
 }
 
-test('public Scalar API reference renders in Chromium', async ({ page }) => {
+test('public Scalar API reference renders only stable public operations in Chromium', async ({ page }) => {
   const response = await page.goto(`${baseURL}/api/docs`, {
     waitUntil: 'domcontentloaded',
   });
   expect(response?.status()).toBe(200);
-  await expect(page.locator('body')).toContainText(/tor-server dashboard API/i);
-  await expect(page.locator('body')).toContainText(/healthz|proxy\.pac/i);
+  const body = page.locator('body');
+  await expect(body).toContainText(/tor-server dashboard API/i);
+  await expect(body).toContainText('/openapi.json');
+  await expect(body).toContainText('/docs/{name}');
+  await expect(body).not.toContainText('/api/status');
+  await expect(body).not.toContainText('/api/fetch');
 });
 
 test('docs alias and existing markdown docs remain navigable', async ({ page }) => {
