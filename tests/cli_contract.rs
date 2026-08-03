@@ -8,8 +8,15 @@ fn run_server_with(arg: &str) -> Output {
 }
 
 fn assert_rejected_without_stdout(output: &Output) -> String {
-    assert_eq!(output.status.code(), Some(2), "unexpected status: {output:?}");
-    assert!(output.stdout.is_empty(), "CLI errors must not write to stdout");
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "unexpected status: {output:?}"
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "CLI errors must not write to stdout"
+    );
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
