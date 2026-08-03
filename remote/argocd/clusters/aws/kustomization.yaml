@@ -9,3 +9,4 @@ resources:
   - storageclass.yaml
   - applications.yaml
   - ai-agent-coordinator.applications.yaml
+  - gha-ci.applications.yaml

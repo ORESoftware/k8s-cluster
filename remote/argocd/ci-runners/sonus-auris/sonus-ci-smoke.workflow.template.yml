@@ -1,6 +1,6 @@
-# INERT TEMPLATE: copy into a trusted first-party Sonus Auris repository only
-# after the scale set is registered. Keep workflow_dispatch-only for the first
-# proof; do not expose self-hosted runners to untrusted fork pull requests.
+# INERT TEMPLATE: copy into a trusted first-party Sonus repository only after
+# the scale set is registered. Keep workflow_dispatch-only for the first proof;
+# do not expose self-hosted runners to untrusted fork pull requests.
 name: Sonus CI self-hosted smoke
 
 on:
@@ -23,16 +23,14 @@ jobs:
         run: |
           set -euo pipefail
           test "${RUNNER_OS}" = Linux
+          test "$(id -u)" != 0
+          test -n "${RUNNER_NAME:-}"
           test -x /usr/bin/git
           test -x /usr/bin/curl
           test -x /usr/bin/python3
-          test -x /usr/bin/cmake
-          test -x /usr/bin/ninja
-          test -x /usr/bin/java
-          pkg-config --exists gtk+-3.0
           test ! -e /var/run/docker.sock
+          test ! -e /run/containerd/containerd.sock
           test ! -e /var/run/secrets/kubernetes.io/serviceaccount/token
-          test "$(id -u)" != 0
           test -w "${RUNNER_TEMP}"
           test -w "${GITHUB_WORKSPACE}"
 
@@ -53,14 +51,13 @@ jobs:
           probe.rmdir()
           PY
 
-      - name: Report non-sensitive toolchain evidence
+      - name: Report non-sensitive runner evidence
         shell: bash
         run: |
           set -euo pipefail
+          printf 'runner=%s\n' "${RUNNER_NAME}"
           printf 'runner_os=%s\n' "${RUNNER_OS}"
           printf 'runner_arch=%s\n' "${RUNNER_ARCH}"
           git --version
+          curl --version | head -n 1
           python3 --version
-          cmake --version | head -n 1
-          pkg-config --modversion gtk+-3.0
-          java -version

@@ -3704,7 +3704,7 @@
           "application_namespace": "argocd",
           "destination": {
             "name": "",
-            "namespace": "arc-runners",
+            "namespace": "arc-runners-sonus",
             "server": "https://kubernetes.default.svc"
           },
           "document_index": 0,
@@ -3715,22 +3715,23 @@
               "chart": "gha-runner-scale-set",
               "path": "",
               "repo_url": "ghcr.io/actions/actions-runner-controller-charts",
-              "target_revision": "0.13.1"
+              "target_revision": "0.14.2"
             }
           ],
           "sync_policy": {
-            "automated": true,
+            "automated": false,
             "create_namespace": true,
-            "prune": true,
-            "self_heal": true,
+            "prune": false,
+            "self_heal": false,
             "sync_options": [
-              "CreateNamespace=true"
+              "CreateNamespace=true",
+              "ServerSideApply=true"
             ]
           }
         }
       ],
       "duplicate_name": false,
-      "name": "sonus-ci-runner-set"
+      "name": "sonus-ci-runner-set-template"
     },
     {
       "declaration_count": 1,
