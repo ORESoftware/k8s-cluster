@@ -106,10 +106,11 @@ the rest of the remote runtime.
 
 The phone endpoint additionally needs a Cloudflare API token scoped to `Zone:DNS:Edit` for the
 `fiducia.cloud` zone. Store it in AWS Secrets Manager at `dd/remote-dev/cloudflare`, property
-`CLOUDFLARE_DNS_API_TOKEN`. The child Argo CD app `argocd-mobile-dns01` includes only the
-ExternalSecret and `letsencrypt-prod-dns01` ClusterIssuer from
-`remote/argocd/cert-manager/dns01-cloudflare`; it deliberately does not apply the separate AWS
-gateway certificate migration.
+`CLOUDFLARE_DNS_API_TOKEN`. The VPN app owns a dedicated ExternalSecret named
+`argocd-mobile-cloudflare-dns-api-token` and a dedicated ClusterIssuer named
+`letsencrypt-prod-dns01-argocd-mobile`. Their target Secret and ACME account key are distinct from
+the optional public-gateway certificate migration, so Argo CD never gives two applications shared
+ownership of the same certificate-control-plane resources.
 
 ## Bootstrap
 
@@ -123,10 +124,19 @@ kubectl apply -f remote/argocd/apps/dd-vpn.application.yaml
 ```
 
 5. Open UDP `51820` on the EC2 security group.
-6. Watch the prerequisite app and mobile certificate become healthy:
+6. Watch the DNS-01 prerequisites and mobile certificate become healthy:
 
 ```bash
-kubectl -n argocd get application argocd-mobile-dns01
+kubectl -n cert-manager wait \
+  --for=condition=Ready \
+  externalsecret/argocd-mobile-cloudflare-dns-api-token \
+  --timeout=5m
+
+kubectl wait \
+  --for=condition=Ready \
+  clusterissuer/letsencrypt-prod-dns01-argocd-mobile \
+  --timeout=5m
+
 kubectl -n vpn wait \
   --for=condition=Ready \
   certificate/argocd-mobile-tls \
