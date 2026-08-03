@@ -1,0 +1,25 @@
+name: real web application e2e
+
+on:
+  pull_request:
+    paths:
+      - '**/*.html'
+      - '**/*.js'
+      - '**/*.jsx'
+      - '**/*.ts'
+      - '**/*.tsx'
+      - '**/*.css'
+      - 'manifest.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/opto-sync-real-web.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-web:
+    uses: zed-pkg/zed-pkg.github.io/.github/workflows/reusable-opto-sync-real-web.yml@877345a9780dd254bb7938b4bfaf74177aa7b1e0
+    permissions:
+      contents: read
