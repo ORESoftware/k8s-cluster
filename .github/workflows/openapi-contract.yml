@@ -19,6 +19,7 @@ on:
       - 'src/lib.rs'
       - 'src/main.rs'
       - 'src/redaction.rs'
+      - 'tests/http_boundary_hardening.rs'
   push:
     branches:
       - main
@@ -39,14 +40,18 @@ on:
       - 'src/lib.rs'
       - 'src/main.rs'
       - 'src/redaction.rs'
+      - 'tests/http_boundary_hardening.rs'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: push-openapi-${{ github.workflow }}-${{ github.ref }}
+  group: push-openapi-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   contract:
@@ -87,6 +92,7 @@ jobs:
 
       - name: Validate visibility, auth, and stable operations
         run: |
+          set -euo pipefail
           python3 - <<'PY'
           import json
           from pathlib import Path
