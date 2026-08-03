@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/den-319-private-fleet-contracts.yml
+      - .github/workflows/ops-dispatch-private-fleet-gaps-comment.yml
       - .github/workflows/ops-publish-missing-org-repositories-gh-profile.yml
       - scripts/ops/publish_missing_org_repositories.py
       - scripts/ops/publish_missing_org_repositories_current.py
@@ -12,11 +13,12 @@ on:
       - scripts/ops/test_repository_fleet_visibility.py
       - scripts/ops/test_repository_fleet_remote_state.py
       - scripts/ops/test_private_fleet_publisher_contract.py
-      - scripts/ops/finalize_missing_org_repositories.py
+      - scripts/ops/test_private_fleet_gap_dispatch_contract.py
   push:
     branches: [main]
     paths:
       - .github/workflows/den-319-private-fleet-contracts.yml
+      - .github/workflows/ops-dispatch-private-fleet-gaps-comment.yml
       - .github/workflows/ops-publish-missing-org-repositories-gh-profile.yml
       - scripts/ops/publish_missing_org_repositories.py
       - scripts/ops/publish_missing_org_repositories_current.py
@@ -25,7 +27,7 @@ on:
       - scripts/ops/test_repository_fleet_visibility.py
       - scripts/ops/test_repository_fleet_remote_state.py
       - scripts/ops/test_private_fleet_publisher_contract.py
-      - scripts/ops/finalize_missing_org_repositories.py
+      - scripts/ops/test_private_fleet_gap_dispatch_contract.py
   workflow_dispatch:
 
 permissions:
@@ -56,6 +58,7 @@ jobs:
             scripts/ops/test_repository_fleet_visibility.py \
             scripts/ops/test_repository_fleet_remote_state.py \
             scripts/ops/test_private_fleet_publisher_contract.py \
+            scripts/ops/test_private_fleet_gap_dispatch_contract.py \
             scripts/ops/publish_missing_org_repositories_current.py
 
       - name: Run visibility projection negative fixtures
@@ -76,6 +79,12 @@ jobs:
           set -euo pipefail
           python3 scripts/ops/test_private_fleet_publisher_contract.py -v
 
+      - name: Run trusted owner-comment dispatch contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/test_private_fleet_gap_dispatch_contract.py -v
+
       - name: Reject whitespace errors and conflict markers
         shell: bash
         run: |
@@ -83,10 +92,12 @@ jobs:
           git diff --check HEAD^ HEAD
           ! git grep -nE '^(<{7}|={7}|>{7})' -- \
             .github/workflows/den-319-private-fleet-contracts.yml \
+            .github/workflows/ops-dispatch-private-fleet-gaps-comment.yml \
             .github/workflows/ops-publish-missing-org-repositories-gh-profile.yml \
             scripts/ops/repository_fleet_visibility.py \
             scripts/ops/repository_fleet_remote_state.py \
             scripts/ops/test_repository_fleet_visibility.py \
             scripts/ops/test_repository_fleet_remote_state.py \
             scripts/ops/test_private_fleet_publisher_contract.py \
+            scripts/ops/test_private_fleet_gap_dispatch_contract.py \
             scripts/ops/publish_missing_org_repositories_current.py
