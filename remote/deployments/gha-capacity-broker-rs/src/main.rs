@@ -102,10 +102,7 @@ impl Config {
             billing_token_path,
             operator_secret,
             mutation_enabled: env_bool("GHA_MUTATION_ENABLED", false),
-            reconcile_interval: Duration::from_secs(env_u64(
-                "GHA_RECONCILE_INTERVAL_SECONDS",
-                900,
-            )),
+            reconcile_interval: Duration::from_secs(env_u64("GHA_RECONCILE_INTERVAL_SECONDS", 900)),
             organization,
             policy,
         })
@@ -325,7 +322,10 @@ fn normalize_billing_token(raw: &str) -> Result<String, String> {
     if !(20..=512).contains(&token.len()) {
         return Err("billing token length is outside the accepted bounds".to_string());
     }
-    if token.chars().any(|ch| ch.is_whitespace() || ch.is_control()) {
+    if token
+        .chars()
+        .any(|ch| ch.is_whitespace() || ch.is_control())
+    {
         return Err("billing token contains whitespace or control characters".to_string());
     }
     Ok(token.to_string())

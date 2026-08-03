@@ -97,7 +97,9 @@ fn validate_runs_on(values: &[String], field: &str) -> Result<BTreeSet<String>, 
             return Err(format!("{field} contains an empty or oversized label"));
         }
         if trimmed != value {
-            return Err(format!("{field} labels must not contain surrounding whitespace"));
+            return Err(format!(
+                "{field} labels must not contain surrounding whitespace"
+            ));
         }
         if !trimmed
             .chars()
@@ -313,7 +315,9 @@ pub fn decision_variables(
     let effective_runs_on = match decision.mode {
         ExecutionMode::Hosted | ExecutionMode::SelfHosted => {
             if decision.runs_on.is_empty() {
-                return Err("an executable capacity decision must include a runner label".to_string());
+                return Err(
+                    "an executable capacity decision must include a runner label".to_string(),
+                );
             }
             decision.runs_on.clone()
         }
