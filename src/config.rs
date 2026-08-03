@@ -1,72 +1,52 @@
-//! Environment-driven configuration.
+//! Runtime configuration for Shared Auth.
 //!
-//! Everything sensitive (provider API keys, DB URL, signing key, Management PAT) is
-//! injected via the environment — in the cluster from an `ExternalSecret`
-//! pointing at the shared `ClusterSecretStore` (`deploy/k8s/externalsecret.yaml`).
-//! Nothing here reads from disk except the PEM signing key, which may be given
-//! inline or as a path.
+//! See `.env.example` for the environment contract. Supabase projects are a
+//! registry: each upstream issuer/audience/key-set is configured explicitly and
+//! unified tokens are signed by this service.
 
-use std::net::SocketAddr;
+use std::{env, fs, net::SocketAddr, path::PathBuf, str::FromStr, time::Duration};
 
 use serde::Deserialize;
 
-use crate::error::ConfigError;
+use crate::error::AuthError;
 
-/// One Supabase project this server accepts tokens from. Each org in the
-/// account (3fa-app, athlet-o-store, fiducia-cloud, sonus-auris, …) maps to one
-/// project with its own issuer and JWKS.
-#[derive(Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
+const DEFAULT_BIND_ADDR: &str = "0.0.0.0:8080";
+const DEFAULT_ISSUER: &str = "https://auth.oresoftware.com";
+const DEFAULT_AUDIENCE: &str = "oresoftware";
+const DEFAULT_ACCESS_TTL_SECS: u64 = 900;
+const DEFAULT_REFRESH_TTL_SECS: u64 = 30 * 24 * 60 * 60;
+const DEFAULT_MAGIC_LINK_TTL_SECS: u64 = 15 * 60;
+const DEFAULT_DB_MAX_CONNECTIONS: u32 = 10;
+const DEFAULT_REDIS_KEY_PREFIX: &str = "shared-auth";
+const DEFAULT_FROM_NAME: &str = "OreSoftware";
+const DEFAULT_MAX_BODY_BYTES: usize = 64 * 1024;
+const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 15;
+const DEFAULT_WEBAUTHN_RP_NAME: &str = "OreSoftware";
+
+/// Fully pinned external identity provider configuration.
+#[derive(Clone, Debug, Deserialize)]
 pub struct SupabaseProject {
-    /// Stable slug used in logs, metrics, and the `supabase_project` mirror
-    /// column, e.g. `"fiducia-cloud"`.
-    pub name: String,
-    /// Supabase project ref, e.g. `abcdefghijklmnopqrst`. Used to derive
-    /// `issuer`/`jwks_url` when those are not given explicitly.
+    /// Stable local identifier, e.g. `fiducia-customer`.
     pub project_ref: String,
-    /// Token issuer to pin (`iss`). Defaults to
-    /// `https://<project_ref>.supabase.co/auth/v1`.
+    /// Expected `iss`. Defaults to `https://<project_ref>.supabase.co/auth/v1`.
     #[serde(default)]
     pub issuer: Option<String>,
-    /// JWKS endpoint. Defaults to `<issuer>/.well-known/jwks.json`.
+    /// Expected `aud`. Supabase commonly uses `authenticated`.
+    #[serde(default = "default_supabase_audience")]
+    pub audience: String,
+    /// Public JWKS URL. Defaults to `<issuer>/.well-known/jwks.json`.
     #[serde(default)]
     pub jwks_url: Option<String>,
-    /// Expected audience. Supabase stamps `authenticated` on end-user tokens.
-    #[serde(default = "default_audience")]
-    pub audience: String,
-    /// Name of the environment variable holding the publishable/legacy anon key.
-    /// The key itself must never appear in `AUTH_SUPABASE_PROJECTS`.
+    /// Optional publishable/anon key for the direct `/auth/v1/user` fallback.
     #[serde(default)]
-    pub publishable_key_env: Option<String>,
-    /// Name of the environment variable holding a modern server-side secret key.
-    #[serde(default)]
-    pub secret_key_env: Option<String>,
-    /// Name of the environment variable holding a legacy service-role key.
-    #[serde(default)]
-    pub service_role_key_env: Option<String>,
-    /// Legacy HS256 only: name of the environment variable holding the JWT secret.
-    /// Prefer asymmetric JWKS verification and omit this for modern projects.
-    #[serde(default)]
-    pub jwt_secret_env: Option<String>,
-    /// Resolved runtime credentials. Serde always skips these fields so secret
-    /// values cannot be embedded in the provider metadata JSON by mistake.
-    #[serde(skip)]
-    pub api_keys: SupabaseApiKeys,
-    #[serde(skip)]
-    pub hs256_secret: Option<String>,
-}
-
-/// Runtime-only Supabase credentials resolved from environment-variable names in
-/// `SupabaseProject`. This type deliberately does not implement `Debug` or
-/// `Serialize`, which keeps accidental config logging from exposing key values.
-#[derive(Clone, Default)]
-pub struct SupabaseApiKeys {
     pub publishable_key: Option<String>,
-    pub secret_key: Option<String>,
-    pub service_role_key: Option<String>,
+    /// Whether this provider is allowed to create a local principal when the
+    /// provider subject has never been seen before.
+    #[serde(default)]
+    pub allow_signup: bool,
 }
 
-fn default_audience() -> String {
+fn default_supabase_audience() -> String {
     "authenticated".to_string()
 }
 
@@ -142,12 +122,16 @@ pub struct MagicLinkConfig {
     pub allow_signup: bool,
 }
 
+fn configured(value: Option<&str>) -> bool {
+    value.is_some_and(|value| !value.trim().is_empty())
+}
+
 impl MagicLinkConfig {
     pub fn is_enabled(&self) -> bool {
-        self.sendgrid_api_key.is_some()
-            && self.otp_pepper.is_some()
-            && self.from_email.is_some()
-            && self.link_base_url.is_some()
+        configured(self.sendgrid_api_key.as_deref())
+            && configured(self.otp_pepper.as_deref())
+            && configured(self.from_email.as_deref())
+            && configured(self.link_base_url.as_deref())
     }
 }
 
@@ -160,7 +144,9 @@ pub struct TwilioVerifyConfig {
 
 impl TwilioVerifyConfig {
     pub fn is_enabled(&self) -> bool {
-        self.account_sid.is_some() && self.auth_token.is_some() && self.service_sid.is_some()
+        configured(self.account_sid.as_deref())
+            && configured(self.auth_token.as_deref())
+            && configured(self.service_sid.as_deref())
     }
 }
 
@@ -178,164 +164,95 @@ pub struct AppConfig {
     pub magic_links: MagicLinkConfig,
     pub twilio_verify: TwilioVerifyConfig,
     /// HMAC secret for `/internal/webhook/sync`. When absent the endpoint is
-    /// disabled (404), rather than exposed without authentication.
+    /// disabled and returns `401`.
     pub webhook_secret: Option<String>,
-    /// Shared service credential required to call `/auth/introspect`. When set,
-    /// callers must present `Authorization: Bearer <secret>` and unauthenticated
-    /// callers are rejected. When absent, introspection stays open for backward
-    /// compatibility and logs a one-time deprecation warning. Setting this is
-    /// strongly recommended, since introspection returns full token claims.
+    /// HMAC secret for authenticated service-to-service introspection.
     pub introspect_secret: Option<String>,
-    /// Optional CORS allow-list for browser callers.
-    pub cors_allow_origins: Vec<String>,
+    /// Explicit local-development escape hatch for anonymous introspection.
+    pub allow_unauthenticated_introspection: bool,
+    /// Master key for encrypting MFA factor secrets at rest (AES-256-GCM).
+    pub factor_encryption_key: Option<[u8; 32]>,
+    /// WebAuthn relying-party configuration. `None` leaves passkeys unavailable.
+    pub webauthn: Option<WebauthnConfig>,
+    pub max_body_bytes: usize,
+    pub request_timeout: Duration,
+}
+
+#[derive(Clone)]
+pub struct WebauthnConfig {
+    pub rp_id: String,
+    pub rp_origin: String,
+    pub rp_name: String,
 }
 
 impl AppConfig {
-    pub fn from_env() -> Result<Self, ConfigError> {
-        let bind_addr = env_or("AUTH_BIND_ADDR", "0.0.0.0:8120")
-            .parse()
-            .map_err(|_| ConfigError::Invalid("AUTH_BIND_ADDR"))?;
+    pub fn from_env() -> Result<Self, AuthError> {
+        let bind_addr = env::var("AUTH_BIND_ADDR")
+            .unwrap_or_else(|_| DEFAULT_BIND_ADDR.to_string())
+            .parse::<SocketAddr>()
+            .map_err(|_| AuthError::Configuration("AUTH_BIND_ADDR is invalid".into()))?;
 
-        // Supabase is a secondary authority. An empty registry is valid for a
-        // local-only deployment and lets future provider adapters be introduced
-        // without making Supabase a hard startup dependency.
-        let projects_json = env_or("AUTH_SUPABASE_PROJECTS", "[]");
-        let mut projects: Vec<SupabaseProject> = serde_json::from_str(&projects_json)
-            .map_err(|_| ConfigError::Invalid("AUTH_SUPABASE_PROJECTS (expected JSON array)"))?;
-        resolve_provider_secrets(&mut projects)?;
-        validate_projects(&projects)?;
+        let projects = load_projects()?;
+        if projects.is_empty() {
+            return Err(AuthError::Configuration(
+                "at least one Supabase project is required".into(),
+            ));
+        }
 
-        let ec_private_pem = load_signing_pem()?;
+        let signing_key_path = required_env("AUTH_SIGNING_KEY_FILE")?;
+        let ec_private_pem = fs::read_to_string(&signing_key_path).map_err(|error| {
+            AuthError::Configuration(format!(
+                "failed to read AUTH_SIGNING_KEY_FILE {signing_key_path:?}: {error}"
+            ))
+        })?;
         let signing = SigningConfig {
             ec_private_pem,
-            key_id: env_or("AUTH_SIGNING_KID", "shared-auth-v1"),
-            issuer: env_or("AUTH_ISSUER", "https://auth.oresoftware.dev"),
-            audience: env_or("AUTH_AUDIENCE", "oresoftware"),
-            ttl_secs: env_or("AUTH_ACCESS_TOKEN_TTL_SECS", "900")
-                .parse()
-                .map_err(|_| ConfigError::Invalid("AUTH_ACCESS_TOKEN_TTL_SECS"))?,
-        };
-        if !(60..=86_400).contains(&signing.ttl_secs) {
-            return Err(ConfigError::Invalid(
-                "AUTH_ACCESS_TOKEN_TTL_SECS must be between 60 and 86400",
-            ));
-        }
-
-        let db = match std::env::var("AUTH_DATABASE_URL")
-            .ok()
-            .filter(|s| !s.is_empty())
-        {
-            Some(url) => Some(DbConfig {
-                url,
-                max_connections: env_or("AUTH_DB_MAX_CONNECTIONS", "5")
-                    .parse()
-                    .map_err(|_| ConfigError::Invalid("AUTH_DB_MAX_CONNECTIONS"))?,
-            }),
-            None if parse_bool("AUTH_ALLOW_DBLESS", false)? => None,
-            None => return Err(ConfigError::Missing("AUTH_DATABASE_URL")),
+            key_id: env::var("AUTH_SIGNING_KEY_ID").unwrap_or_else(|_| "auth-1".into()),
+            issuer: env::var("AUTH_ISSUER").unwrap_or_else(|_| DEFAULT_ISSUER.into()),
+            audience: env::var("AUTH_AUDIENCE").unwrap_or_else(|_| DEFAULT_AUDIENCE.into()),
+            ttl_secs: env_u64("AUTH_ACCESS_TTL_SECS", DEFAULT_ACCESS_TTL_SECS)?,
         };
 
-        let redis = std::env::var("AUTH_REDIS_URL")
-            .ok()
-            .filter(|value| !value.trim().is_empty())
-            .map(|url| RedisConfig {
-                url,
-                key_prefix: env_or("AUTH_REDIS_KEY_PREFIX", "shared-auth:v1"),
-            });
-
-        let refresh_ttl_secs = env_or("AUTH_REFRESH_TOKEN_TTL_SECS", "2592000")
-            .parse()
-            .map_err(|_| ConfigError::Invalid("AUTH_REFRESH_TOKEN_TTL_SECS"))?;
-        if !(300..=31_536_000).contains(&refresh_ttl_secs) {
-            return Err(ConfigError::Invalid(
-                "AUTH_REFRESH_TOKEN_TTL_SECS must be between 300 and 31536000",
-            ));
-        }
+        let db = optional_env("AUTH_DATABASE_URL").map(|url| DbConfig {
+            url,
+            max_connections: env_u32("AUTH_DB_MAX_CONNECTIONS", DEFAULT_DB_MAX_CONNECTIONS)
+                .unwrap_or(DEFAULT_DB_MAX_CONNECTIONS),
+        });
+        let redis = optional_env("AUTH_REDIS_URL").map(|url| RedisConfig {
+            url,
+            key_prefix: env::var("AUTH_REDIS_KEY_PREFIX")
+                .unwrap_or_else(|_| DEFAULT_REDIS_KEY_PREFIX.into()),
+        });
         let sessions = SessionConfig {
-            refresh_ttl_secs,
-            allow_registration: parse_bool("AUTH_ALLOW_REGISTRATION", false)?,
+            refresh_ttl_secs: env_u64("AUTH_REFRESH_TTL_SECS", DEFAULT_REFRESH_TTL_SECS)?,
+            allow_registration: env_bool("AUTH_ALLOW_REGISTRATION", false),
         };
-
-        let magic_link_ttl_secs = env_or("AUTH_MAGIC_LINK_TTL_SECS", "900")
-            .parse()
-            .map_err(|_| ConfigError::Invalid("AUTH_MAGIC_LINK_TTL_SECS"))?;
-        if !(300..=3_600).contains(&magic_link_ttl_secs) {
-            return Err(ConfigError::Invalid(
-                "AUTH_MAGIC_LINK_TTL_SECS must be between 300 and 3600",
-            ));
-        }
-        let magic_link_base_url = optional_env("AUTH_MAGIC_LINK_BASE_URL");
-        if let Some(value) = magic_link_base_url.as_deref() {
-            validate_magic_link_base_url(value)?;
-        }
-        let from_email = optional_env("AUTH_EMAIL_FROM");
-        if from_email
-            .as_deref()
-            .is_some_and(|value| !looks_like_email(value))
-        {
-            return Err(ConfigError::Invalid("AUTH_EMAIL_FROM"));
-        }
-        let otp_pepper = optional_env("AUTH_OTP_PEPPER");
-        if otp_pepper.as_ref().is_some_and(|value| value.len() < 32) {
-            return Err(ConfigError::Invalid(
-                "AUTH_OTP_PEPPER must contain at least 32 bytes",
-            ));
-        }
         let magic_links = MagicLinkConfig {
             sendgrid_api_key: optional_env("AUTH_SENDGRID_API_KEY"),
-            otp_pepper,
-            from_email,
-            from_name: env_or("AUTH_EMAIL_FROM_NAME", "OreSoftware"),
-            link_base_url: magic_link_base_url,
-            ttl_secs: magic_link_ttl_secs,
-            allow_signup: parse_bool("AUTH_MAGIC_LINK_ALLOW_SIGNUP", false)?,
+            otp_pepper: optional_env("AUTH_OTP_PEPPER"),
+            from_email: optional_env("AUTH_EMAIL_FROM"),
+            from_name: env::var("AUTH_EMAIL_FROM_NAME")
+                .unwrap_or_else(|_| DEFAULT_FROM_NAME.into()),
+            link_base_url: optional_env("AUTH_MAGIC_LINK_BASE_URL"),
+            ttl_secs: env_u64("AUTH_MAGIC_LINK_TTL_SECS", DEFAULT_MAGIC_LINK_TTL_SECS)?,
+            allow_signup: env_bool("AUTH_MAGIC_LINK_ALLOW_SIGNUP", false),
         };
         let twilio_verify = TwilioVerifyConfig {
             account_sid: optional_env("AUTH_TWILIO_ACCOUNT_SID"),
             auth_token: optional_env("AUTH_TWILIO_AUTH_TOKEN"),
             service_sid: optional_env("AUTH_TWILIO_VERIFY_SERVICE_SID"),
         };
-        validate_twilio_identifier(
-            twilio_verify.account_sid.as_deref(),
-            "AUTH_TWILIO_ACCOUNT_SID",
-            "AC",
-        )?;
-        validate_twilio_identifier(
-            twilio_verify.service_sid.as_deref(),
-            "AUTH_TWILIO_VERIFY_SERVICE_SID",
-            "VA",
-        )?;
-
-        let webhook_secret = std::env::var("AUTH_WEBHOOK_SECRET")
-            .ok()
-            .filter(|value| !value.is_empty());
-        if webhook_secret
-            .as_ref()
-            .is_some_and(|secret| secret.len() < 32)
-        {
-            return Err(ConfigError::Invalid(
-                "AUTH_WEBHOOK_SECRET must contain at least 32 bytes",
-            ));
-        }
-
-        let introspect_secret = std::env::var("AUTH_INTROSPECT_SECRET")
-            .ok()
-            .filter(|value| !value.is_empty());
-        if introspect_secret
-            .as_ref()
-            .is_some_and(|secret| secret.len() < 32)
-        {
-            return Err(ConfigError::Invalid(
-                "AUTH_INTROSPECT_SECRET must contain at least 32 bytes",
-            ));
-        }
-
-        let cors_allow_origins = env_or("AUTH_CORS_ALLOW_ORIGINS", "")
-            .split(',')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(String::from)
-            .collect();
+        let webhook_secret = optional_env("AUTH_WEBHOOK_SECRET");
+        let introspect_secret = optional_env("AUTH_INTROSPECT_SECRET");
+        let allow_unauthenticated_introspection =
+            env_bool("AUTH_ALLOW_UNAUTHENTICATED_INTROSPECTION", false);
+        let factor_encryption_key = parse_factor_encryption_key()?;
+        let webauthn = load_webauthn()?;
+        let max_body_bytes = env_usize("AUTH_MAX_BODY_BYTES", DEFAULT_MAX_BODY_BYTES)?;
+        let request_timeout = Duration::from_secs(env_u64(
+            "AUTH_REQUEST_TIMEOUT_SECS",
+            DEFAULT_REQUEST_TIMEOUT_SECS,
+        )?);
 
         Ok(Self {
             bind_addr,
@@ -348,243 +265,188 @@ impl AppConfig {
             twilio_verify,
             webhook_secret,
             introspect_secret,
-            cors_allow_origins,
+            allow_unauthenticated_introspection,
+            factor_encryption_key,
+            webauthn,
+            max_body_bytes,
+            request_timeout,
         })
     }
 }
 
-fn optional_env(key: &str) -> Option<String> {
-    std::env::var(key)
+fn load_projects() -> Result<Vec<SupabaseProject>, AuthError> {
+    if let Ok(path) = env::var("AUTH_SUPABASE_PROJECTS_FILE") {
+        let content = fs::read_to_string(&path).map_err(|error| {
+            AuthError::Configuration(format!(
+                "failed to read AUTH_SUPABASE_PROJECTS_FILE {path:?}: {error}"
+            ))
+        })?;
+        return parse_projects(&content);
+    }
+    let inline = required_env("AUTH_SUPABASE_PROJECTS")?;
+    parse_projects(&inline)
+}
+
+fn parse_projects(value: &str) -> Result<Vec<SupabaseProject>, AuthError> {
+    let projects = serde_json::from_str::<Vec<SupabaseProject>>(value)
+        .map_err(|error| AuthError::Configuration(format!("invalid Supabase projects JSON: {error}")))?;
+    validate_projects(&projects)?;
+    Ok(projects)
+}
+
+fn validate_projects(projects: &[SupabaseProject]) -> Result<(), AuthError> {
+    for (index, project) in projects.iter().enumerate() {
+        if project.project_ref.trim().is_empty() {
+            return Err(AuthError::Configuration(format!(
+                "Supabase project at index {index} has an empty project_ref"
+            )));
+        }
+        if project.audience.trim().is_empty() {
+            return Err(AuthError::Configuration(format!(
+                "Supabase project {} has an empty audience",
+                project.project_ref
+            )));
+        }
+        if project.issuer().trim().is_empty() {
+            return Err(AuthError::Configuration(format!(
+                "Supabase project {} has an empty issuer",
+                project.project_ref
+            )));
+        }
+        if project.jwks_url().trim().is_empty() {
+            return Err(AuthError::Configuration(format!(
+                "Supabase project {} has an empty JWKS URL",
+                project.project_ref
+            )));
+        }
+        for earlier in &projects[..index] {
+            if earlier.project_ref == project.project_ref {
+                return Err(AuthError::Configuration(format!(
+                    "duplicate Supabase project_ref {}",
+                    project.project_ref
+                )));
+            }
+            if earlier.issuer() == project.issuer() {
+                return Err(AuthError::Configuration(format!(
+                    "duplicate Supabase issuer {}",
+                    project.issuer()
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn parse_factor_encryption_key() -> Result<Option<[u8; 32]>, AuthError> {
+    let Some(hex_value) = optional_env("AUTH_FACTOR_ENCRYPTION_KEY_HEX") else {
+        return Ok(None);
+    };
+    if hex_value.len() != 64 {
+        return Err(AuthError::Configuration(
+            "AUTH_FACTOR_ENCRYPTION_KEY_HEX must be 64 hexadecimal characters".into(),
+        ));
+    }
+    let mut key = [0_u8; 32];
+    for (index, chunk) in hex_value.as_bytes().chunks_exact(2).enumerate() {
+        let encoded = std::str::from_utf8(chunk).map_err(|_| {
+            AuthError::Configuration(
+                "AUTH_FACTOR_ENCRYPTION_KEY_HEX must contain only hexadecimal characters".into(),
+            )
+        })?;
+        key[index] = u8::from_str_radix(encoded, 16).map_err(|_| {
+            AuthError::Configuration(
+                "AUTH_FACTOR_ENCRYPTION_KEY_HEX must contain only hexadecimal characters".into(),
+            )
+        })?;
+    }
+    Ok(Some(key))
+}
+
+fn load_webauthn() -> Result<Option<WebauthnConfig>, AuthError> {
+    let rp_id = optional_env("AUTH_WEBAUTHN_RP_ID");
+    let rp_origin = optional_env("AUTH_WEBAUTHN_RP_ORIGIN");
+    match (rp_id, rp_origin) {
+        (None, None) => Ok(None),
+        (Some(rp_id), Some(rp_origin)) => {
+            let parsed = reqwest::Url::parse(&rp_origin).map_err(|_| {
+                AuthError::Configuration("AUTH_WEBAUTHN_RP_ORIGIN is invalid".into())
+            })?;
+            if !matches!(parsed.scheme(), "http" | "https") {
+                return Err(AuthError::Configuration(
+                    "AUTH_WEBAUTHN_RP_ORIGIN must use http or https".into(),
+                ));
+            }
+            Ok(Some(WebauthnConfig {
+                rp_id,
+                rp_origin,
+                rp_name: env::var("AUTH_WEBAUTHN_RP_NAME")
+                    .unwrap_or_else(|_| DEFAULT_WEBAUTHN_RP_NAME.into()),
+            }))
+        }
+        _ => Err(AuthError::Configuration(
+            "AUTH_WEBAUTHN_RP_ID and AUTH_WEBAUTHN_RP_ORIGIN must be set together".into(),
+        )),
+    }
+}
+
+fn required_env(name: &str) -> Result<String, AuthError> {
+    env::var(name)
         .ok()
-        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| AuthError::Configuration(format!("{name} is required")))
+}
+
+fn optional_env(name: &str) -> Option<String> {
+    env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
 }
 
-fn validate_magic_link_base_url(value: &str) -> Result<(), ConfigError> {
-    let parsed =
-        reqwest::Url::parse(value).map_err(|_| ConfigError::Invalid("AUTH_MAGIC_LINK_BASE_URL"))?;
-    let loopback_http = parsed.scheme() == "http"
-        && parsed
-            .host_str()
-            .is_some_and(|host| matches!(host, "localhost" | "127.0.0.1" | "::1"));
-    if parsed.scheme() != "https" && parsed.scheme() != "sonusauris" && !loopback_http {
-        return Err(ConfigError::Invalid(
-            "AUTH_MAGIC_LINK_BASE_URL must use HTTPS, sonusauris, or loopback HTTP",
-        ));
-    }
-    if parsed.username() != ""
-        || parsed.password().is_some()
-        || parsed.query().is_some()
-        || parsed.fragment().is_some()
-    {
-        return Err(ConfigError::Invalid(
-            "AUTH_MAGIC_LINK_BASE_URL must not contain credentials, query, or fragment",
-        ));
-    }
-    Ok(())
+fn env_bool(name: &str, default: bool) -> bool {
+    env::var(name)
+        .ok()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .map(|value| matches!(value.as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(default)
 }
 
-fn looks_like_email(value: &str) -> bool {
-    let mut parts = value.split('@');
-    let local = parts.next().unwrap_or_default();
-    let domain = parts.next().unwrap_or_default();
-    !local.is_empty()
-        && domain.contains('.')
-        && parts.next().is_none()
-        && value.len() <= 320
-        && !value.chars().any(char::is_whitespace)
-}
-
-fn validate_twilio_identifier(
-    value: Option<&str>,
-    key: &'static str,
-    prefix: &str,
-) -> Result<(), ConfigError> {
-    if value.is_some_and(|value| {
-        value.len() != 34
-            || !value.starts_with(prefix)
-            || !value.bytes().all(|byte| byte.is_ascii_alphanumeric())
-    }) {
-        return Err(ConfigError::Invalid(key));
-    }
-    Ok(())
-}
-
-fn validate_projects(projects: &[SupabaseProject]) -> Result<(), ConfigError> {
-    let mut names = std::collections::HashSet::new();
-    let mut issuers = std::collections::HashSet::new();
-    for project in projects {
-        if project.name.is_empty()
-            || project.name.len() > 64
-            || !project
-                .name
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-        {
-            return Err(ConfigError::Invalid("invalid Supabase project name"));
-        }
-        if !names.insert(project.name.clone()) || !issuers.insert(project.issuer()) {
-            return Err(ConfigError::Invalid("duplicate Supabase project or issuer"));
-        }
-        if project
-            .hs256_secret
-            .as_ref()
-            .is_some_and(|secret| secret.len() < 32)
-        {
-            return Err(ConfigError::Invalid(
-                "Supabase HS256 secrets must contain at least 32 bytes",
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn resolve_provider_secrets(projects: &mut [SupabaseProject]) -> Result<(), ConfigError> {
-    for project in projects {
-        project.api_keys = SupabaseApiKeys {
-            publishable_key: read_referenced_secret(&project.publishable_key_env)?,
-            secret_key: read_referenced_secret(&project.secret_key_env)?,
-            service_role_key: read_referenced_secret(&project.service_role_key_env)?,
-        };
-        project.hs256_secret = read_referenced_secret(&project.jwt_secret_env)?;
-    }
-    Ok(())
-}
-
-fn read_referenced_secret(env_name: &Option<String>) -> Result<Option<String>, ConfigError> {
-    let Some(env_name) = env_name.as_deref() else {
-        return Ok(None);
-    };
-    if env_name.is_empty()
-        || env_name.len() > 128
-        || !env_name.bytes().enumerate().all(|(index, byte)| {
-            byte.is_ascii_uppercase() || byte == b'_' || (index > 0 && byte.is_ascii_digit())
+fn env_u64(name: &str, default: u64) -> Result<u64, AuthError> {
+    env::var(name)
+        .ok()
+        .map(|value| {
+            u64::from_str(value.trim()).map_err(|_| {
+                AuthError::Configuration(format!("{name} must be an unsigned integer"))
+            })
         })
-    {
-        return Err(ConfigError::Invalid(
-            "Supabase credential env names must use uppercase A-Z, digits, and underscores",
-        ));
-    }
-    std::env::var(env_name)
+        .transpose()
+        .map(|value| value.unwrap_or(default))
+}
+
+fn env_u32(name: &str, default: u32) -> Result<u32, AuthError> {
+    env::var(name)
         .ok()
-        .filter(|value| !value.trim().is_empty())
-        .map(Some)
-        .ok_or(ConfigError::Invalid(
-            "referenced Supabase credential env var is missing or empty",
-        ))
+        .map(|value| {
+            u32::from_str(value.trim()).map_err(|_| {
+                AuthError::Configuration(format!("{name} must be an unsigned integer"))
+            })
+        })
+        .transpose()
+        .map(|value| value.unwrap_or(default))
 }
 
-fn parse_bool(key: &'static str, default: bool) -> Result<bool, ConfigError> {
-    match std::env::var(key)
+fn env_usize(name: &str, default: usize) -> Result<usize, AuthError> {
+    env::var(name)
         .ok()
-        .filter(|value| !value.trim().is_empty())
-        .as_deref()
-    {
-        None => Ok(default),
-        Some("1" | "true" | "TRUE" | "yes" | "YES") => Ok(true),
-        Some("0" | "false" | "FALSE" | "no" | "NO") => Ok(false),
-        Some(_) => Err(ConfigError::Invalid(key)),
-    }
+        .map(|value| {
+            usize::from_str(value.trim()).map_err(|_| {
+                AuthError::Configuration(format!("{name} must be an unsigned integer"))
+            })
+        })
+        .transpose()
+        .map(|value| value.unwrap_or(default))
 }
 
-/// Load the EC signing PEM from `AUTH_SIGNING_KEY_PEM` (inline) or
-/// `AUTH_SIGNING_KEY_FILE` (path).
-fn load_signing_pem() -> Result<String, ConfigError> {
-    if let Ok(inline) = std::env::var("AUTH_SIGNING_KEY_PEM") {
-        if !inline.trim().is_empty() {
-            return Ok(inline);
-        }
-    }
-    if let Ok(path) = std::env::var("AUTH_SIGNING_KEY_FILE") {
-        return std::fs::read_to_string(&path)
-            .map_err(|_| ConfigError::Invalid("AUTH_SIGNING_KEY_FILE unreadable"));
-    }
-    Err(ConfigError::Missing(
-        "AUTH_SIGNING_KEY_PEM or AUTH_SIGNING_KEY_FILE",
-    ))
-}
-
-fn env_or(key: &str, default: &str) -> String {
-    std::env::var(key)
-        .ok()
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| default.to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn issuer_and_jwks_derive_from_project_ref() {
-        let p = SupabaseProject {
-            name: "fiducia-cloud".into(),
-            project_ref: "abcref".into(),
-            issuer: None,
-            jwks_url: None,
-            audience: "authenticated".into(),
-            publishable_key_env: None,
-            secret_key_env: None,
-            service_role_key_env: None,
-            jwt_secret_env: None,
-            api_keys: SupabaseApiKeys::default(),
-            hs256_secret: None,
-        };
-        assert_eq!(p.issuer(), "https://abcref.supabase.co/auth/v1");
-        assert_eq!(
-            p.jwks_url(),
-            "https://abcref.supabase.co/auth/v1/.well-known/jwks.json"
-        );
-    }
-
-    #[test]
-    fn explicit_issuer_and_jwks_override_derivation() {
-        let p = SupabaseProject {
-            name: "x".into(),
-            project_ref: "r".into(),
-            issuer: Some("https://custom.example/iss".into()),
-            jwks_url: Some("https://custom.example/keys".into()),
-            audience: "authenticated".into(),
-            publishable_key_env: None,
-            secret_key_env: None,
-            service_role_key_env: None,
-            jwt_secret_env: None,
-            api_keys: SupabaseApiKeys::default(),
-            hs256_secret: None,
-        };
-        assert_eq!(p.issuer(), "https://custom.example/iss");
-        assert_eq!(p.jwks_url(), "https://custom.example/keys");
-    }
-
-    #[test]
-    fn projects_json_parses_with_defaults() {
-        let v: Vec<SupabaseProject> = serde_json::from_str(
-            r#"[{"name":"3fa-app","project_ref":"ref1"},
-                {"name":"sonus-auris","project_ref":"ref2","audience":"custom",
-                 "publishable_key_env":"AUTH_SUPABASE_SONUS_PUBLISHABLE_KEY",
-                 "jwt_secret_env":"AUTH_SUPABASE_SONUS_JWT_SECRET"}]"#,
-        )
-        .unwrap();
-        assert_eq!(v.len(), 2);
-        assert_eq!(v[0].audience, "authenticated"); // default
-        assert!(v[0].hs256_secret.is_none());
-        assert_eq!(v[1].audience, "custom");
-        assert_eq!(
-            v[1].publishable_key_env.as_deref(),
-            Some("AUTH_SUPABASE_SONUS_PUBLISHABLE_KEY")
-        );
-        assert_eq!(
-            v[1].jwt_secret_env.as_deref(),
-            Some("AUTH_SUPABASE_SONUS_JWT_SECRET")
-        );
-        assert!(v[1].hs256_secret.is_none());
-    }
-
-    #[test]
-    fn inline_provider_secrets_are_rejected() {
-        let result = serde_json::from_str::<SupabaseProject>(
-            r#"{"name":"x","project_ref":"ref","hs256_secret":"must-not-be-inline"}"#,
-        );
-        assert!(result.is_err());
-    }
+pub fn signing_key_path_from_env() -> Option<PathBuf> {
+    env::var("AUTH_SIGNING_KEY_FILE").ok().map(PathBuf::from)
 }
