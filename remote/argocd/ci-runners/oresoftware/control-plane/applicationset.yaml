@@ -1,0 +1,193 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: oresoftware-ci-arc-controllers
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            dd.dev/managed: "true"
+            # Deliberate activation gate. Add this label only after the runner
+            # groups and GitHub App secret exist in that cluster.
+            dd.dev/ci-runners: oresoftware
+  template:
+    metadata:
+      name: 'oresoftware-ci-controller-{{.name}}'
+      annotations:
+        argocd.argoproj.io/sync-wave: "0"
+      labels:
+        dd.dev/component: github-actions-runner-controller
+        dd.dev/cloud: '{{index .metadata.labels "dd.dev/cloud"}}'
+    spec:
+      project: default
+      source:
+        repoURL: ghcr.io/actions/actions-runner-controller-charts
+        chart: gha-runner-scale-set-controller
+        targetRevision: 0.14.2
+        helm:
+          skipTests: true
+          releaseName: oresoftware-ci
+          values: |
+            replicaCount: 1
+            securityContext:
+              runAsNonRoot: true
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop: ["ALL"]
+              seccompProfile:
+                type: RuntimeDefault
+            resources:
+              requests:
+                cpu: 50m
+                memory: 128Mi
+              limits:
+                cpu: "1"
+                memory: 512Mi
+      destination:
+        server: '{{.server}}'
+        namespace: arc-systems
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: oresoftware-ci-runners
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchLabels:
+            dd.dev/managed: "true"
+            dd.dev/ci-runners: oresoftware
+  template:
+    metadata:
+      name: 'oresoftware-ci-{{.name}}'
+      annotations:
+        argocd.argoproj.io/sync-wave: "10"
+      labels:
+        dd.dev/component: github-actions-runners
+        dd.dev/cloud: '{{index .metadata.labels "dd.dev/cloud"}}'
+    spec:
+      project: default
+      source:
+        repoURL: ghcr.io/actions/actions-runner-controller-charts
+        chart: gha-runner-scale-set
+        targetRevision: 0.14.2
+        helm:
+          skipTests: true
+          releaseName: oresoftware-ci
+          values: |
+            githubConfigUrl: "https://github.com/ORESoftware"
+            githubConfigSecret: oresoftware-arc-github
+
+            # Both clouds advertise one workflow label while distinct runner
+            # groups preserve provider visibility and independent failover.
+            runnerScaleSetName: oresoftware-ci
+            runnerGroup: 'oresoftware-ci-{{index .metadata.labels "dd.dev/cloud"}}'
+            minRunners: 0
+            maxRunners: 4
+
+            controllerServiceAccount:
+              namespace: arc-systems
+              name: oresoftware-ci-gha-rs-controller
+
+            containerMode:
+              type: ""
+
+            listenerTemplate:
+              spec:
+                containers:
+                  - name: listener
+                    resources:
+                      requests:
+                        cpu: 50m
+                        memory: 128Mi
+                      limits:
+                        cpu: 500m
+                        memory: 512Mi
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      capabilities:
+                        drop: ["ALL"]
+                      runAsNonRoot: true
+                      seccompProfile:
+                        type: RuntimeDefault
+
+            template:
+              spec:
+                automountServiceAccountToken: false
+                restartPolicy: Never
+                securityContext:
+                  fsGroup: 1001
+                  runAsNonRoot: true
+                  runAsUser: 1001
+                  runAsGroup: 1001
+                  seccompProfile:
+                    type: RuntimeDefault
+                containers:
+                  - name: runner
+                    # Bootstrap tag. Promote the image workflow's sha-* tag to
+                    # an immutable digest before applying the activation label.
+                    image: ghcr.io/oresoftware/oresoftware-ci-runner:main
+                    imagePullPolicy: Always
+                    command: ["/home/runner/run.sh"]
+                    resources:
+                      requests:
+                        cpu: "1"
+                        memory: 2Gi
+                        ephemeral-storage: 8Gi
+                      limits:
+                        cpu: "4"
+                        memory: 8Gi
+                        ephemeral-storage: 30Gi
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      capabilities:
+                        drop: ["ALL"]
+                      readOnlyRootFilesystem: false
+                      runAsNonRoot: true
+                      runAsUser: 1001
+                      runAsGroup: 1001
+                      seccompProfile:
+                        type: RuntimeDefault
+                    volumeMounts:
+                      - name: work
+                        mountPath: /home/runner/_work
+                      - name: tool-cache
+                        mountPath: /opt/hostedtoolcache
+                      - name: tmp
+                        mountPath: /tmp
+                volumes:
+                  - name: work
+                    emptyDir:
+                      sizeLimit: 20Gi
+                  - name: tool-cache
+                    emptyDir:
+                      sizeLimit: 8Gi
+                  - name: tmp
+                    emptyDir:
+                      sizeLimit: 2Gi
+      destination:
+        server: '{{.server}}'
+        namespace: arc-runners-oresoftware
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
