@@ -114,6 +114,35 @@ class MetaAgentEphemeralOwnerBrokerTests(unittest.TestCase):
         self.assertLess(membership, publication)
         self.assertIn('test "$membership" = admin:active', self.workflow)
 
+    def test_source_snapshot_uses_commit_tree_blob_api_without_git_fetch(self) -> None:
+        required = (
+            "source_repository='ORESoftware/k8s-cluster'",
+            'gh api "repos/${source_repository}/git/commits/${SOURCE_SHA}"',
+            'test "$(jq -er \' .sha\' <<<"$source_commit")" = "$SOURCE_SHA"'.replace("' .sha'", "'.sha'"),
+            'gh api "repos/${source_repository}/git/trees/${source_tree_sha}?recursive=1"',
+            'test "$(jq -r \' .truncated\' <<<"$source_tree")" = false'.replace("' .truncated'", "'.truncated'"),
+            '^scripts/critical-org-fleet/assets/meta\\.part[^/]+$',
+            'gh api "repos/${source_repository}/git/blobs/${asset_sha}"',
+            "publisher_relative='scripts/critical-org-fleet/publish_meta_control_plane.py'",
+            'gh api "repos/${source_repository}/git/blobs/${publisher_blob_sha}"',
+        )
+        for snippet in required:
+            with self.subTest(snippet=snippet):
+                self.assertIn(snippet, self.workflow)
+        self.assertGreaterEqual(self.workflow.count('GH_TOKEN="$workflow_token"'), 4)
+        self.assertNotIn('git -C "$source_root" remote add origin', self.workflow)
+        self.assertNotIn('git -C "$source_root" -c protocol.version=2 fetch', self.workflow)
+        self.assertNotIn('git -C "$source_root" checkout --detach FETCH_HEAD', self.workflow)
+        tree_read = self.workflow.index(
+            'gh api "repos/${source_repository}/git/trees/${source_tree_sha}?recursive=1"'
+        )
+        bundle_digest = self.workflow.index(
+            'printf \'%s  %s\\n\' "$BUNDLE_SHA256" "$bundle" | sha256sum --check --strict'
+        )
+        publication = self.workflow.index('python3 "$publisher" "$bundle"')
+        self.assertLess(tree_read, bundle_digest)
+        self.assertLess(bundle_digest, publication)
+
     def test_bundle_verify_runs_inside_initialized_source_repository(self) -> None:
         init = self.workflow.index('git init "$source_root"')
         worktree_guard = self.workflow.index(
@@ -160,6 +189,7 @@ class MetaAgentEphemeralOwnerBrokerTests(unittest.TestCase):
             "ephemeral RSA",
             "rotate the credential",
             "exact recovered Git history",
+            "commit/tree/blob API snapshot",
             "initialized source repository",
             "Linear",
         ):
