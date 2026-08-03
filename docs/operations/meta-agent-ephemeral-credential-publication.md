@@ -23,10 +23,10 @@ of that parent; PR-controlled code is never checked out or executed.
 
 Before generating an RSA key or requesting any owner credential, the broker
 runs a source preflight with the ordinary workflow-scoped read token. The
-preflight reconstructs the sealed source, verifies the bundle and publisher
-digests, verifies the exact two-ref inventory, and proves `git bundle verify`
-succeeds inside a repository context. A challenge is posted only after that
-read-only preflight succeeds.
+preflight reconstructs the exact recovered Git history from the sealed source,
+verifies the bundle and publisher digests, verifies the exact two-ref inventory,
+and proves `git bundle verify` succeeds inside a repository context. A challenge
+is posted only after that read-only preflight succeeds.
 
 After decryption, the workflow verifies the credential identifies exactly
 `ORESoftware` and has active admin membership in `meta-agents-demo` before any
@@ -69,10 +69,11 @@ whose pinned SHA-256 is verified. Unit tests construct a real two-ref Git
 bundle, split it into multiple sealed parts, expose those parts through a fake
 Git Database API, and require exact reconstruction.
 
-Bundle verification must run inside an initialized repository. `git bundle
-verify` consults repository state even for a self-contained bundle. The verifier
-creates a temporary bare repository, verifies the bundle there, enumerates its
-heads, and rejects any ref or SHA beyond the exact reviewed inventory.
+Bundle verification must run inside an initialized source repository. `git
+bundle verify` consults repository state even for a self-contained bundle. The
+verifier creates a temporary bare repository, verifies the bundle there,
+enumerates its heads, and rejects any ref or SHA beyond the exact reviewed
+inventory.
 
 ## CI proof
 
