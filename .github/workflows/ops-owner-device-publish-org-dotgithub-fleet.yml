@@ -151,7 +151,7 @@ jobs:
 
           clear_sensitive_state() {
             unset access_token device_code token_json token_response token_response_body
-            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN COMMENT_TOKEN
+            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN COMMENT_TOKEN workflow_token
           }
           report_failure() {
             status=$?
@@ -201,7 +201,8 @@ jobs:
           - Requested OAuth scopes: \`public_repo\` and \`read:org\`
           - Accepted account: \`${EXPECTED_LOGIN}\` only
           - Mutation starts only after active owner/admin membership is verified for all 36 organizations
-          - The token remains memory-only for this workflow run; revoke the authorized OAuth app after the run completes
+          - The token remains memory-only and is never persisted; the runner cannot recover it after exit
+          - This uses the GitHub CLI OAuth app; do not revoke that entire app unless you intend to reauthenticate other `gh` CLI sessions
 
           Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
           EOF
@@ -320,7 +321,7 @@ jobs:
               text = re.sub(pattern, replacement, text, flags=re.I)
           print("\n".join(text.splitlines()[-220:])[-24000:])
           PY
-            exit "$publisher_status"
+            false
           fi
 
           stage=certify-36-organization-report
@@ -344,7 +345,7 @@ jobs:
             echo '## Authorization hygiene'
             echo
             echo '- The OAuth access token was held only in runner memory and was not written to Git, Actions outputs, artifacts, issue comments, or `GITHUB_ENV`.'
-            echo '- Revoke the authorized OAuth app from GitHub account settings after reviewing this report.'
+            echo '- This used the GitHub CLI OAuth app. The one-run token was not persisted and is unrecoverable after runner exit; revoking the entire app would also require other `gh` CLI sessions to reauthenticate.'
             echo
             echo "Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo
