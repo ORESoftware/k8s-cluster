@@ -20,6 +20,6 @@ permissions:
 
 jobs:
   real-web:
-    uses: zed-pkg/zed-pkg.github.io/.github/workflows/reusable-opto-sync-real-web.yml@877345a9780dd254bb7938b4bfaf74177aa7b1e0
+    uses: zed-pkg/zed-pkg.github.io/.github/workflows/reusable-opto-sync-real-web.yml@496ed555978574090f72fad78b98c4c69ca751aa
     permissions:
       contents: read
