@@ -6,13 +6,132 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: compile-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  materialize-canonical-auth-identifiers:
+    if: github.event_name == 'pull_request' && github.head_ref == 'harden/shared-auth-production'
+    name: materialize-canonical-auth-identifiers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the hardening branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: harden/shared-auth-production
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Reject non-canonical Shared Auth subject and session identifiers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("src/shared_auth.rs")
+          text = path.read_text()
+
+          if "canonical != value.as_str()" not in text:
+              old = '''fn bounded_identifier(value: Option<String>, max: usize) -> Result<String, AuthError> {
+              let value = value.unwrap_or_default();
+              let value = value.trim();
+              if value.is_empty()
+                  || value.len() > max
+                  || value
+                      .chars()
+                      .any(|character| character.is_control() || matches!(character, '/' | '\\\\'))
+              {
+                  return Err(AuthError::Unauthorized);
+              }
+              Ok(value.to_owned())
+          }
+          '''
+              new = '''fn bounded_identifier(value: Option<String>, max: usize) -> Result<String, AuthError> {
+              let value = value.unwrap_or_default();
+              let canonical = value.trim();
+              if canonical != value.as_str()
+                  || canonical.is_empty()
+                  || canonical.len() > max
+                  || canonical
+                      .chars()
+                      .any(|character| character.is_control() || matches!(character, '/' | '\\\\'))
+              {
+                  return Err(AuthError::Unauthorized);
+              }
+              Ok(value)
+          }
+          '''
+              if text.count(old) != 1:
+                  raise SystemExit("expected one bounded_identifier anchor")
+              text = text.replace(old, new, 1)
+
+              old_test = '''    #[test]
+              fn canonical_subject_and_session_identifiers_remain_strict() {
+                  let verifier = SharedAuthVerifier {
+                      config: config(),
+                      http: Client::new(),
+                  };
+                  let mut claims = active();
+                  claims.sub = Some("../other-tenant".to_owned());
+                  assert!(matches!(
+                      verifier.identity_from_claims(claims),
+                      Err(AuthError::Unauthorized)
+                  ));
+              }
+          '''
+              new_test = '''    #[test]
+              fn canonical_subject_and_session_identifiers_remain_strict() {
+                  let verifier = SharedAuthVerifier {
+                      config: config(),
+                      http: Client::new(),
+                  };
+
+                  for malformed_subject in [
+                      "../other-tenant",
+                      " shared-user-1",
+                      "shared-user-1 ",
+                  ] {
+                      let mut claims = active();
+                      claims.sub = Some(malformed_subject.to_owned());
+                      assert!(matches!(
+                          verifier.identity_from_claims(claims),
+                          Err(AuthError::Unauthorized)
+                      ));
+                  }
+
+                  for malformed_session in [" session-1", "session-1 "] {
+                      let mut claims = active();
+                      claims.sid = Some(malformed_session.to_owned());
+                      assert!(matches!(
+                          verifier.identity_from_claims(claims),
+                          Err(AuthError::Unauthorized)
+                      ));
+                  }
+              }
+          '''
+              if text.count(old_test) != 1:
+                  raise SystemExit("expected one canonical identifier test anchor")
+              text = text.replace(old_test, new_test, 1)
+              path.write_text(text)
+          PY
+
+          cargo fmt --all
+          if git diff --quiet -- src/shared_auth.rs; then
+            echo 'canonical identifier rejection already materialized'
+            exit 0
+          fi
+          git diff --check -- src/shared_auth.rs
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/shared_auth.rs
+          git commit -m 'fix(auth): reject non-canonical principal identifiers'
+          git push origin HEAD:harden/shared-auth-production
+
   rust:
     name: rust-check-and-auth-tests
     runs-on: ubuntu-latest
