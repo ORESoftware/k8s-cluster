@@ -1,5 +1,6 @@
 //! Access-token introspection and gateway verification.
 
+use std::env;
 use std::sync::Once;
 
 use axum::{
@@ -26,23 +27,30 @@ pub struct IntrospectRequest {
     token: String,
 }
 
-/// Enforce caller authentication before introspection reveals full token claims.
-///
-/// Backward-compatible by design: when `introspect_secret` is unset the endpoint
-/// stays open (its historical behaviour) and logs a one-time deprecation warning.
-/// When the secret is configured, callers must present it as a bearer credential;
-/// unauthenticated callers are rejected with `401` before any claims are returned.
+/// Enforce service authentication before introspection reveals full token
+/// claims. The historical unauthenticated mode now requires an explicit local
+/// development opt-in; production fails closed when the secret is absent.
 fn authorize_caller(state: &AppState, headers: &HeaderMap) -> Result<(), AuthError> {
     let Some(expected) = state.config.introspect_secret.as_deref() else {
-        static WARN_ONCE: Once = Once::new();
-        WARN_ONCE.call_once(|| {
-            tracing::warn!(
-                "/auth/introspect is unauthenticated and returns full token claims to any \
-                 caller; set AUTH_INTROSPECT_SECRET to require a service credential. This \
-                 open behaviour is deprecated."
+        if allow_unauthenticated_introspection() {
+            static WARN_ONCE: Once = Once::new();
+            WARN_ONCE.call_once(|| {
+                tracing::warn!(
+                    "AUTH_ALLOW_UNAUTHENTICATED_INTROSPECTION=true: /auth/introspect returns \
+                     full token claims without a service credential. This is for isolated local \
+                     development only."
+                );
+            });
+            return Ok(());
+        }
+        static ERROR_ONCE: Once = Once::new();
+        ERROR_ONCE.call_once(|| {
+            tracing::error!(
+                "/auth/introspect is disabled because AUTH_INTROSPECT_SECRET is unset; configure \
+                 a service credential or explicitly opt into insecure local development"
             );
         });
-        return Ok(());
+        return Err(AuthError::Unavailable);
     };
     let presented = bearer(headers).ok_or(AuthError::Unauthorized)?;
     if credentials_match(expected, presented) {
@@ -50,6 +58,17 @@ fn authorize_caller(state: &AppState, headers: &HeaderMap) -> Result<(), AuthErr
     } else {
         Err(AuthError::Unauthorized)
     }
+}
+
+fn allow_unauthenticated_introspection() -> bool {
+    env::var("AUTH_ALLOW_UNAUTHENTICATED_INTROSPECTION")
+        .ok()
+        .is_some_and(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
 }
 
 /// Constant-time credential comparison via double-HMAC under a per-call random
@@ -99,6 +118,7 @@ pub async fn introspect(
             "aud": claims.aud,
             "exp": claims.exp,
             "iat": claims.iat,
+            "auth_time": claims.auth_time,
             "sid": claims.sid,
             "provider": claims.provider,
             "provider_tenant": claims.provider_tenant,
@@ -133,6 +153,9 @@ pub async fn verify(State(state): State<AppState>, headers: HeaderMap) -> impl I
             );
             insert_header(&mut output, "x-auth-roles", &claims.roles.join(","));
             insert_header(&mut output, "x-auth-aal", &claims.aal.to_string());
+            if let Some(auth_time) = claims.auth_time {
+                insert_header(&mut output, "x-auth-time", &auth_time.to_string());
+            }
             if !claims.amr.is_empty() {
                 insert_header(&mut output, "x-auth-amr", &claims.amr.join(","));
             }

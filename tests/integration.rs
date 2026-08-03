@@ -16,6 +16,7 @@ use tower::ServiceExt;
 
 const SUPA_SECRET: &str = "integration-test-secret";
 const SUPA_ISS: &str = "https://itest.supabase.co/auth/v1";
+const INTROSPECT_SECRET: &str = "introspect-service-secret-at-least-32b";
 
 /// Deterministic P-256 signing key from a fixed scalar (no transcription risk).
 fn signing_pem() -> String {
@@ -155,10 +156,10 @@ async fn jwks_exposes_our_signing_key() {
 }
 
 // The headline integration: a Supabase token in, a verifiable OreSoftware token
-// out, which then introspects as active.
+// out, which then introspects as active for an authenticated service caller.
 #[tokio::test]
 async fn exchange_then_introspect_roundtrip() {
-    let app = app().await;
+    let app = app_with_introspect_secret(INTROSPECT_SECRET).await;
     let supa = supabase_token("supa-user-1", "user@example.com");
 
     let resp = app
@@ -180,22 +181,26 @@ async fn exchange_then_introspect_roundtrip() {
         .oneshot(
             Request::post("/auth/introspect")
                 .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {INTROSPECT_SECRET}"))
                 .body(Body::from(serde_json::json!({ "token": ore }).to_string()))
                 .unwrap(),
         )
         .await
         .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
     let intro: serde_json::Value = serde_json::from_str(&body_string(resp).await).unwrap();
     assert_eq!(intro["active"], true);
     assert_eq!(intro["project"], "fiducia-cloud");
     assert_eq!(intro["supabase_user_id"], "supa-user-1");
     assert_eq!(intro["aal"], 1);
     assert_eq!(intro["amr"], serde_json::json!(["federated"]));
+    assert!(intro["auth_time"].is_null());
 }
 
 #[tokio::test]
 async fn exchange_preserves_supabase_aal2() {
-    let app = app().await;
+    let app = app_with_introspect_secret(INTROSPECT_SECRET).await;
+    let ceremony_floor = chrono::Utc::now().timestamp() - 1;
     let supa = supabase_aal2_token("supa-mfa-user", "mfa@example.com");
 
     let resp = app
@@ -215,6 +220,7 @@ async fn exchange_preserves_supabase_aal2() {
         .oneshot(
             Request::post("/auth/introspect")
                 .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {INTROSPECT_SECRET}"))
                 .body(Body::from(
                     serde_json::json!({ "token": out["access_token"] }).to_string(),
                 ))
@@ -222,9 +228,18 @@ async fn exchange_preserves_supabase_aal2() {
         )
         .await
         .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
     let intro: serde_json::Value = serde_json::from_str(&body_string(resp).await).unwrap();
     assert_eq!(intro["active"], true);
     assert_eq!(intro["aal"], 2);
+    let auth_time = intro["auth_time"]
+        .as_i64()
+        .expect("AAL2 introspection must expose the verified ceremony time");
+    let ceremony_ceiling = chrono::Utc::now().timestamp() + 1;
+    assert!(
+        (ceremony_floor..=ceremony_ceiling).contains(&auth_time),
+        "auth_time {auth_time} must come from the provider MFA ceremony"
+    );
     // AMR values are canonicalized on the way in, so the upstream "password"
     // is recorded as the RFC 8176 registered value "pwd" rather than verbatim.
     // Downstream policy therefore matches one spelling instead of every
@@ -358,6 +373,7 @@ async fn verify_endpoint_accepts_our_token_and_sets_headers() {
     assert!(resp.headers().get("x-auth-user-id").is_some());
     assert_eq!(resp.headers().get("x-auth-aal").unwrap(), "1");
     assert_eq!(resp.headers().get("x-auth-amr").unwrap(), "federated");
+    assert!(resp.headers().get("x-auth-time").is_none());
 }
 
 #[tokio::test]
@@ -382,25 +398,26 @@ async fn verify_endpoint_rejects_missing_and_bad_tokens() {
     assert_eq!(bad.status(), StatusCode::UNAUTHORIZED);
 }
 
-// A raw Supabase token is NOT an OreSoftware token; introspect reports inactive.
+// A raw Supabase token is NOT an OreSoftware token; an authenticated
+// introspection caller receives the RFC 7662 inactive shape.
 #[tokio::test]
 async fn introspect_non_ore_token_is_inactive() {
     let supa = supabase_token("x", "x@example.com");
-    let resp = app()
+    let resp = app_with_introspect_secret(INTROSPECT_SECRET)
         .await
         .oneshot(
             Request::post("/auth/introspect")
                 .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {INTROSPECT_SECRET}"))
                 .body(Body::from(serde_json::json!({ "token": supa }).to_string()))
                 .unwrap(),
         )
         .await
         .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
     let intro: serde_json::Value = serde_json::from_str(&body_string(resp).await).unwrap();
-    assert_eq!(intro["active"], false);
+    assert_eq!(intro, serde_json::json!({ "active": false }));
 }
-
-const INTROSPECT_SECRET: &str = "introspect-service-secret-at-least-32b";
 
 // With AUTH_INTROSPECT_SECRET set, an authorized caller (correct bearer) gets claims.
 #[tokio::test]
@@ -423,8 +440,8 @@ async fn introspect_authorized_caller_succeeds() {
     assert_eq!(intro["project"], "fiducia-cloud");
 }
 
-// With the secret set, an unauthenticated (or wrong-credential) caller is rejected
-// with 401 before any claims are returned.
+// With the secret set, unauthenticated, malformed, and wrong-credential callers
+// are rejected before any claims are returned.
 #[tokio::test]
 async fn introspect_rejects_unauthorized_caller() {
     let app = app_with_introspect_secret(INTROSPECT_SECRET).await;
@@ -441,10 +458,10 @@ async fn introspect_rejects_unauthorized_caller() {
         .await
         .unwrap();
     assert_eq!(no_cred.status(), StatusCode::UNAUTHORIZED);
-    // The 401 body must not leak claims.
     assert!(!body_string(no_cred).await.contains("fiducia-cloud"));
 
     let wrong_cred = app
+        .clone()
         .oneshot(
             Request::post("/auth/introspect")
                 .header("content-type", "application/json")
@@ -455,6 +472,20 @@ async fn introspect_rejects_unauthorized_caller() {
         .await
         .unwrap();
     assert_eq!(wrong_cred.status(), StatusCode::UNAUTHORIZED);
+    assert!(!body_string(wrong_cred).await.contains("reject-user"));
+
+    let malformed_scheme = app
+        .oneshot(
+            Request::post("/auth/introspect")
+                .header("content-type", "application/json")
+                .header("authorization", format!("Basic {INTROSPECT_SECRET}"))
+                .body(Body::from(serde_json::json!({ "token": ore }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(malformed_scheme.status(), StatusCode::UNAUTHORIZED);
+    assert!(!body_string(malformed_scheme).await.contains("fiducia-cloud"));
 }
 
 // With the secret set, an authorized caller passing an invalid token still gets
@@ -475,26 +506,50 @@ async fn introspect_authorized_caller_invalid_token_is_inactive() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let intro: serde_json::Value = serde_json::from_str(&body_string(resp).await).unwrap();
-    assert_eq!(intro["active"], false);
+    assert_eq!(intro, serde_json::json!({ "active": false }));
 }
 
-// Backward compatibility: with no secret configured, introspection stays open.
 #[tokio::test]
-async fn introspect_open_when_secret_unset() {
-    let app = app().await;
-    let ore = mint_ore_token(&app, "open-user").await;
-    let resp = app
+async fn introspect_authorized_caller_oversized_token_is_inactive() {
+    let oversized = "x".repeat(16 * 1024 + 1);
+    let resp = app_with_introspect_secret(INTROSPECT_SECRET)
+        .await
         .oneshot(
             Request::post("/auth/introspect")
                 .header("content-type", "application/json")
-                .body(Body::from(serde_json::json!({ "token": ore }).to_string()))
+                .header("authorization", format!("Bearer {INTROSPECT_SECRET}"))
+                .body(Body::from(
+                    serde_json::json!({ "token": oversized }).to_string(),
+                ))
                 .unwrap(),
         )
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let intro: serde_json::Value = serde_json::from_str(&body_string(resp).await).unwrap();
-    assert_eq!(intro["active"], true);
+    assert_eq!(intro, serde_json::json!({ "active": false }));
+}
+
+// Production-safe default: with no service secret configured, full-claims
+// introspection is unavailable rather than silently public.
+#[tokio::test]
+async fn introspect_fails_closed_when_secret_unset() {
+    let app = app().await;
+    let ore = mint_ore_token(&app, "closed-user").await;
+    let resp = app
+        .oneshot(
+            Request::post("/auth/introspect")
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {INTROSPECT_SECRET}"))
+                .body(Body::from(serde_json::json!({ "token": ore }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = body_string(resp).await;
+    assert!(!body.contains("fiducia-cloud"));
+    assert!(!body.contains("closed-user"));
 }
 
 // Exchange accepts the token in the JSON body too, not only the header.
