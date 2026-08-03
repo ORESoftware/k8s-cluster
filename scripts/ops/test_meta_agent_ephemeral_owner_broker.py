@@ -100,7 +100,10 @@ class MetaAgentEphemeralOwnerBrokerTests(unittest.TestCase):
     def test_plaintext_credential_is_memory_only_and_masked(self) -> None:
         self.assertIn('echo "::add-mask::$owner_token"', self.workflow)
         self.assertIn('export GH_TOKEN="$owner_token"', self.workflow)
-        self.assertIn('unset owner_token GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN', self.workflow)
+        self.assertIn(
+            "unset owner_token GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN",
+            self.workflow,
+        )
         self.assertNotIn("GITHUB_ENV", self.workflow)
         self.assertNotIn("upload-artifact", self.workflow)
         self.assertNotRegex(self.workflow, r"ghp_[A-Za-z0-9]{20,}")
@@ -109,10 +112,63 @@ class MetaAgentEphemeralOwnerBrokerTests(unittest.TestCase):
     def test_owner_identity_and_org_admin_are_verified_before_mutation(self) -> None:
         identity = self.workflow.index("gh api user --jq '.login'")
         membership = self.workflow.index("/user/memberships/orgs/meta-agents-demo")
-        publication = self.workflow.index("python3 \"$publisher\" \"$bundle\"")
+        publication = self.workflow.index('python3 "$publisher" "$bundle"')
         self.assertLess(identity, publication)
         self.assertLess(membership, publication)
         self.assertIn('test "$membership" = admin:active', self.workflow)
+
+    def test_source_snapshot_uses_commit_tree_blob_api_without_git_fetch(self) -> None:
+        required = (
+            "source_repository='ORESoftware/k8s-cluster'",
+            'gh api "repos/${source_repository}/git/commits/${SOURCE_SHA}"',
+            'test "$(jq -er \'.sha\' <<<"$source_commit")" = "$SOURCE_SHA"',
+            'gh api "repos/${source_repository}/git/trees/${source_tree_sha}?recursive=1"',
+            'test "$(jq -r \'.truncated\' <<<"$source_tree")" = false',
+            '^scripts/critical-org-fleet/assets/meta\\.part[^/]+$',
+            'gh api "repos/${source_repository}/git/blobs/${asset_sha}"',
+            "publisher_relative='scripts/critical-org-fleet/publish_meta_control_plane.py'",
+            'gh api "repos/${source_repository}/git/blobs/${publisher_blob_sha}"',
+        )
+        for snippet in required:
+            with self.subTest(snippet=snippet):
+                self.assertIn(snippet, self.workflow)
+        self.assertGreaterEqual(self.workflow.count('GH_TOKEN="$workflow_token"'), 4)
+        self.assertNotIn('git -C "$source_root" remote add origin', self.workflow)
+        self.assertNotIn(
+            'git -C "$source_root" -c protocol.version=2 fetch', self.workflow
+        )
+        self.assertNotIn(
+            'git -C "$source_root" checkout --detach FETCH_HEAD', self.workflow
+        )
+        tree_read = self.workflow.index(
+            'gh api "repos/${source_repository}/git/trees/${source_tree_sha}?recursive=1"'
+        )
+        bundle_digest = self.workflow.index(
+            "printf '%s  %s\\n' \"$BUNDLE_SHA256\" \"$bundle\" | sha256sum --check --strict"
+        )
+        publication = self.workflow.index('python3 "$publisher" "$bundle"')
+        self.assertLess(tree_read, bundle_digest)
+        self.assertLess(bundle_digest, publication)
+
+    def test_sealed_parts_are_decoded_through_both_base64_layers(self) -> None:
+        outer_decode = (
+            "jq -er '.content' <<<\"$asset_blob\" \\\n"
+            "              | tr -d '\\n' \\\n"
+            "              | base64 --decode >> \"$bundle_base64\""
+        )
+        inner_decode = 'base64 --decode "$bundle_base64" > "$bundle"'
+        digest = (
+            "printf '%s  %s\\n' \"$BUNDLE_SHA256\" \"$bundle\" "
+            "| sha256sum --check --strict"
+        )
+        self.assertIn('bundle_base64="$work/meta-agent-control-plane-den-1057.bundle.b64"', self.workflow)
+        self.assertIn(outer_decode, self.workflow)
+        self.assertIn('test -s "$bundle_base64"', self.workflow)
+        self.assertIn(inner_decode, self.workflow)
+        self.assertIn('test -s "$bundle"', self.workflow)
+        self.assertLess(self.workflow.index(outer_decode), self.workflow.index(inner_decode))
+        self.assertLess(self.workflow.index(inner_decode), self.workflow.index(digest))
+        self.assertNotIn('base64 --decode >> "$bundle"', self.workflow)
 
     def test_bundle_verify_runs_inside_initialized_source_repository(self) -> None:
         init = self.workflow.index('git init "$source_root"')
@@ -130,13 +186,13 @@ class MetaAgentEphemeralOwnerBrokerTests(unittest.TestCase):
 
     def test_exact_bundle_and_live_refs_are_verified(self) -> None:
         required = (
-            'sha256sum --check --strict',
+            "sha256sum --check --strict",
             'git -C "$source_root" bundle verify "$bundle"',
             'test "$observed_heads" = "$expected_heads"',
             'test "$main_sha" = "$EXPECTED_MAIN"',
             'test "$feature_sha" = "$EXPECTED_FEATURE"',
             '.visibility == "public"',
-            '.private == false',
+            ".private == false",
             '.default_branch == "main"',
         )
         for snippet in required:
@@ -150,9 +206,14 @@ class MetaAgentEphemeralOwnerBrokerTests(unittest.TestCase):
         self.assertIn("publish_meta_control_plane.py", self.workflow)
 
     def test_review_pr_and_carrier_cleanup_are_required(self) -> None:
-        self.assertIn('gh api --method POST "repos/${TARGET_REPOSITORY}/pulls"', self.workflow)
+        self.assertIn(
+            'gh api --method POST "repos/${TARGET_REPOSITORY}/pulls"', self.workflow
+        )
         self.assertIn("Review PR: ${pr_url}", self.workflow)
-        self.assertIn('gh api --method PATCH "repos/${REPOSITORY}/pulls/${PR_NUMBER}" -f state=closed', self.workflow)
+        self.assertIn(
+            'gh api --method PATCH "repos/${REPOSITORY}/pulls/${PR_NUMBER}" -f state=closed',
+            self.workflow,
+        )
 
     def test_documentation_names_rotation_and_non_persistence_boundary(self) -> None:
         for phrase in (
@@ -160,6 +221,8 @@ class MetaAgentEphemeralOwnerBrokerTests(unittest.TestCase):
             "ephemeral RSA",
             "rotate the credential",
             "exact recovered Git history",
+            "commit/tree/blob API snapshot",
+            "two base64 layers",
             "initialized source repository",
             "Linear",
         ):

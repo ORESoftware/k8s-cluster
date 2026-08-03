@@ -29,13 +29,41 @@ public repository idempotently, pushes only the reviewed `main` and feature
 refs without force, verifies the live metadata and SHAs, and opens the normal
 implementation PR.
 
+## Immutable source reconstruction
+
+A raw `git fetch <sha>` is not a reliable archival interface: an existing Git
+object may be readable through GitHub while no longer being advertised as a
+fetchable ref. The broker therefore reconstructs only the sealed inputs through
+a commit/tree/blob API snapshot of the exact `SOURCE_SHA`:
+
+1. read the exact Git commit object and require its returned SHA to match;
+2. read its complete recursive tree and reject a truncated response;
+3. select and lexically order only `scripts/critical-org-fleet/assets/meta.part*`
+   blobs;
+4. read each blob with the workflow-scoped token and concatenate the decoded
+   file bytes;
+5. decode the resulting sealed text into the binary Git bundle;
+6. read the one exact publisher blob from the same tree;
+7. retain the bundle and publisher SHA-256 checks before any mutation.
+
+The asset path has two base64 layers by design. GitHub's blob response base64
+encodes each tracked file, and each `meta.part*` file contains a segment of the
+base64-encoded Git bundle. The broker first removes the GitHub transport layer
+into one ordered `.bundle.b64` file, then decodes that file into the binary
+bundle whose pinned SHA-256 is verified. Focused tests require both decodes in
+that order and reject direct transport decoding into the final bundle.
+
+The decrypted owner credential is not used to retrieve source. It remains
+reserved for exact identity/organization authorization and target publication;
+the ordinary workflow token performs the read-only source snapshot.
+
 Bundle verification must run inside the initialized source repository. `git
 bundle verify` consults repository state even for a self-contained bundle, so
 invoking it from the Actions workspace can fail before publication despite a
 valid digest and exact ref inventory. The workflow therefore proves the source
 checkout is a work tree and runs `git -C "$source_root" bundle verify` before the
-sealed publisher is allowed to execute. Focused tests reject a regression to an
-unscoped workspace-level invocation.
+sealed publisher is allowed to execute. Focused tests reject both SHA-as-ref
+fetching and an unscoped workspace-level verification invocation.
 
 ## Rotation and audit
 
