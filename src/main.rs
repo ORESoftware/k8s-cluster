@@ -25,6 +25,7 @@ mod notifications;
 mod providers;
 mod scheduler;
 mod shard;
+mod shared_auth;
 mod solana;
 mod state;
 mod supabase_auth;
@@ -51,6 +52,11 @@ async fn main() -> anyhow::Result<()> {
     admin::verify_asset_integrity();
 
     let cfg = Arc::new(Config::from_env()?);
+    // The generic JWT verifier must point at Shared Auth's ES256 issuer/JWKS,
+    // and the tenant + financial step-up gates must be on before any database
+    // or provider credential is opened. Production defaults fail closed;
+    // BILLING_ALLOW_INSECURE_DEV=1 is the only implicit local-dev exemption.
+    shared_auth::validate_runtime_contract(&cfg)?;
     tracing::info!(host = %cfg.host, port = cfg.port, "billing-server-rs starting");
 
     let pool = db::connect(&cfg).await?;
