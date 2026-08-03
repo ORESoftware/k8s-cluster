@@ -6,6 +6,7 @@ on:
       - .github/workflows/ops-meta-agent-ephemeral-owner-broker.yml
       - .github/workflows/ops-meta-agent-ephemeral-owner-broker-contract.yml
       - scripts/ops/test_meta_agent_ephemeral_owner_broker.py
+      - scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py
       - docs/operations/meta-agent-ephemeral-credential-publication.md
   push:
     branches: [main]
@@ -13,6 +14,7 @@ on:
       - .github/workflows/ops-meta-agent-ephemeral-owner-broker.yml
       - .github/workflows/ops-meta-agent-ephemeral-owner-broker-contract.yml
       - scripts/ops/test_meta_agent_ephemeral_owner_broker.py
+      - scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py
       - docs/operations/meta-agent-ephemeral-credential-publication.md
 
 permissions:
@@ -43,13 +45,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/ops/test_meta_agent_ephemeral_owner_broker.py
-          python3 -m unittest -v scripts/ops/test_meta_agent_ephemeral_owner_broker.py
+          python3 -m py_compile \
+            scripts/ops/test_meta_agent_ephemeral_owner_broker.py \
+            scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py
+          python3 -m unittest -v \
+            scripts/ops/test_meta_agent_ephemeral_owner_broker.py \
+            scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py
           git diff --check
           if git grep -nE '^(<{7}|={7}|>{7})' -- \
             .github/workflows/ops-meta-agent-ephemeral-owner-broker.yml \
             .github/workflows/ops-meta-agent-ephemeral-owner-broker-contract.yml \
             scripts/ops/test_meta_agent_ephemeral_owner_broker.py \
+            scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py \
             docs/operations/meta-agent-ephemeral-credential-publication.md; then
             echo 'Git conflict markers are forbidden.' >&2
             exit 1
