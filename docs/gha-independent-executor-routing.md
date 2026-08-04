@@ -49,10 +49,11 @@ to be unavailable.
 
 Once the router attempts `POST /builds`, it does not submit the request to a
 second provider unless a future shared coordination protocol can prove the first
-provider did not accept it. A connection reset, timeout, HTTP 429, HTTP 5xx, or
-invalid accepted response is an ambiguous outcome: the first build server may
-have persisted or started the deterministic request even though the response was
-lost. Blindly trying the second provider could execute the same commit twice.
+provider did not accept it. A connection reset, timeout, HTTP 429, HTTP 5xx,
+redirect, oversized response, or invalid accepted response is an ambiguous
+outcome: the first build server may have persisted or started the deterministic
+request even though the response was lost. Blindly trying the second provider
+could execute the same commit twice.
 
 The current response therefore fails closed and instructs an operator or future
 reconciler to resolve the unchanged deterministic `requestId` through
@@ -117,9 +118,13 @@ and `hetzner`; IDs, URLs, and authentication paths must be unique.
 
 Secrets are read from absolute direct-child files beneath
 `GHA_EXECUTOR_ROUTER_SECRET_ROOT`. They are never accepted inline in the JSON,
-command-line arguments, URLs, logs, metrics, or API responses. Production uses
-Kubernetes Secret/ExternalSecret files. Plain HTTP origins are limited to
-loopback and `.svc.cluster.local`; cross-cloud endpoints require HTTPS.
+command-line arguments, URLs, logs, metrics, or API responses. Mounted secrets
+must be bounded, non-empty, single-line values without NUL, CR, or LF. Production
+uses Kubernetes Secret/ExternalSecret files.
+
+Plain HTTP origins are limited to loopback and `.svc.cluster.local`;
+cross-cloud endpoints require HTTPS. The outbound HTTP client does not follow
+redirects, so an authenticated request cannot be redirected to another host.
 
 The inbound clone-server-to-router credential is separate from the router's AWS
 and Hetzner build-server credentials.
@@ -154,7 +159,35 @@ server doubles. It proves:
   secrets.
 
 Unit tests cover URL, path, secret, executor identity, immutable request, route
-ID, and constant-time authentication contracts.
+ID, constant-time authentication, redirect refusal, and multiline-secret
+rejection.
+
+## Exact branch evidence
+
+The router implementation and refreshed lockfile were produced on commit
+`0ae1368f99ab9fb7b4ae5b55286ebd752bdbc561` after a pinned Rust 1.90 job ran:
+
+```text
+cargo check --all-targets
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked --all-targets -- --nocapture
+```
+
+The tested suite completed with:
+
+- 43 library tests;
+- 3 router-binary tests;
+- 7 dual-provider router process tests;
+- 5 meta HTTP integration tests; and
+- 7 workflow-run webhook HTTP integration tests.
+
+The process tests exercise the real compiled router, not only pure planning
+functions. The final self-removing workflow run `30872370938` completed
+successfully and committed the tested source, lockfile, redirect protection,
+multiline-secret rejection, and removal of temporary repair workflows. A normal
+reviewed documentation commit then retriggers the permanent continuity workflow
+on the same implementation for the PR merge gate.
 
 ## Activation sequence
 

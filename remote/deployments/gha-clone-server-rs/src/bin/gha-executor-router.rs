@@ -1,5 +1,4 @@
 use std::{
-    collections::BTreeMap,
     env, fs,
     path::{Path, PathBuf},
     sync::{
@@ -19,14 +18,14 @@ use axum::{
 #[path = "../executor_router.rs"]
 mod executor_router;
 use executor_router::{
-    bounded_text, digest_eq, materialize_executors, namespace_build_id,
-    parse_executor_specs, parse_namespaced_build_id, validate_build_request, validate_secret_root,
-    Executor, Provider, MAX_ERROR_CHARS_DEFAULT, MAX_EXECUTORS_DEFAULT, MAX_REQUEST_BYTES_DEFAULT,
-    MAX_SECRET_BYTES, MIN_SECRET_BYTES, ROUTER_SERVICE_NAME,
+    bounded_text, digest_eq, materialize_executors, namespace_build_id, parse_executor_specs,
+    parse_namespaced_build_id, validate_build_request, validate_secret_root, Executor, Provider,
+    MAX_ERROR_CHARS_DEFAULT, MAX_EXECUTORS_DEFAULT, MAX_REQUEST_BYTES_DEFAULT, MAX_SECRET_BYTES,
+    MIN_SECRET_BYTES, ROUTER_SERVICE_NAME,
 };
 use serde_json::{json, Value};
 use tokio::{net::TcpListener, time::Duration};
-use tracing::{info, warn};
+use tracing::info;
 
 const DEFAULT_PORT: u16 = 8126;
 const DEFAULT_SECRET_ROOT: &str = "/var/run/secrets/gha-executor-router";
@@ -141,6 +140,7 @@ async fn main() {
         client: reqwest::Client::builder()
             .connect_timeout(config.probe_timeout)
             .timeout(config.upstream_timeout)
+            .redirect(reqwest::redirect::Policy::none())
             .user_agent("gha-executor-router/0.1")
             .build()
             .expect("build executor-router HTTP client"),
@@ -322,11 +322,7 @@ async fn metrics(State(state): State<AppState>) -> Response {
         .into_response()
 }
 
-async fn submit_build(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Response {
+async fn submit_build(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
     state.metrics.requests_total.fetch_add(1, Ordering::Relaxed);
     if let Err(response) = require_auth(&headers, &state) {
         return response;
@@ -353,14 +349,26 @@ async fn submit_build(
                 .into_response();
         }
     };
-    if let Err(error) = validate_build_request(&request) {
-        state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
-        return (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(json!({ "error": error })),
-        )
-            .into_response();
-    }
+    let validated = match validate_build_request(&request) {
+        Ok(validated) => validated,
+        Err(error) => {
+            state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({
+                    "error": bounded_text(&error, state.config.max_error_chars)
+                })),
+            )
+                .into_response();
+        }
+    };
+    info!(
+        request_id = %validated.request_id,
+        repository = %validated.repository,
+        revision = %validated.revision,
+        profile = %validated.profile,
+        "validated fixed-profile executor request"
+    );
 
     let Some(executor) = first_ready_executor(&state).await else {
         state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
@@ -375,7 +383,10 @@ async fn submit_build(
             .into_response();
     };
     record_selection(&state.metrics, executor.provider);
-    state.metrics.submissions_total.fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .submissions_total
+        .fetch_add(1, Ordering::Relaxed);
 
     let response = match state
         .client
@@ -708,7 +719,12 @@ fn read_secret(path: &Path, root: &Path, label: &str) -> Result<String, String> 
     let raw = fs::read_to_string(&canonical_path)
         .map_err(|error| format!("{label} file could not be read: {error}"))?;
     let value = raw.trim().to_string();
-    if value.len() < MIN_SECRET_BYTES || value.len() > MAX_SECRET_BYTES || value.as_bytes().contains(&0) {
+    if value.len() < MIN_SECRET_BYTES
+        || value.len() > MAX_SECRET_BYTES
+        || value.as_bytes().contains(&0)
+        || value.contains('\n')
+        || value.contains('\r')
+    {
         return Err(format!(
             "{label} must contain between {MIN_SECRET_BYTES} and {MAX_SECRET_BYTES} non-NUL bytes"
         ));
@@ -841,11 +857,6 @@ mod tests {
         record_selection(&metrics, Provider::Aws);
         record_selection(&metrics, Provider::Hetzner);
         assert_eq!(metrics.aws_selections_total.load(Ordering::Relaxed), 1);
-        assert_eq!(
-            metrics
-                .hetzner_selections_total
-                .load(Ordering::Relaxed),
-            1
-        );
+        assert_eq!(metrics.hetzner_selections_total.load(Ordering::Relaxed), 1);
     }
 }

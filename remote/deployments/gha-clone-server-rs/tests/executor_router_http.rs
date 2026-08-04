@@ -352,7 +352,8 @@ async fn selects_first_ready_aws_executor_and_pins_status_to_it() {
     let router = spawn_router(&aws, &hetzner, true).await;
     let client = Client::new();
 
-    let (status, accepted, _) = response_json(submit(&client, &router, build_request()).await).await;
+    let (status, accepted, _) =
+        response_json(submit(&client, &router, build_request()).await).await;
     assert_eq!(status, StatusCode::ACCEPTED);
     assert_eq!(accepted["executorId"], "aws-primary");
     assert_eq!(accepted["provider"], "aws");
@@ -389,7 +390,8 @@ async fn readiness_failure_routes_to_hetzner_before_any_submission() {
     let router = spawn_router(&aws, &hetzner, true).await;
     let client = Client::new();
 
-    let (status, accepted, _) = response_json(submit(&client, &router, build_request()).await).await;
+    let (status, accepted, _) =
+        response_json(submit(&client, &router, build_request()).await).await;
     assert_eq!(status, StatusCode::ACCEPTED);
     assert_eq!(accepted["executorId"], "hetzner-secondary");
     assert_eq!(accepted["provider"], "hetzner");
