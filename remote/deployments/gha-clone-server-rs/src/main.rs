@@ -44,6 +44,7 @@ struct Config {
     auth_secret: Option<String>,
     webhook_secret: Option<String>,
     github_token: Option<String>,
+    github_api_base_url: String,
     build_server_url: Option<String>,
     build_server_auth: Option<String>,
     allowed_repositories: BTreeSet<String>,
@@ -73,13 +74,7 @@ impl Config {
             .unwrap_or_default();
 
         let allowed_repositories = csv_set("GHA_CLONE_ALLOWED_REPOSITORIES");
-        for repository in workflow_rules.keys() {
-            if !allowed_repositories.contains(repository) {
-                return Err(format!(
-                    "workflow rule repository {repository:?} is absent from GHA_CLONE_ALLOWED_REPOSITORIES"
-                ));
-            }
-        }
+        validate_workflow_configuration(&allowed_repositories, &workflow_rules)?;
 
         Ok(Self {
             host: env::var("HOST").unwrap_or_else(|_| "0.0.0.0".into()),
@@ -87,6 +82,7 @@ impl Config {
             auth_secret: env_optional("GHA_CLONE_AUTH_SECRET"),
             webhook_secret: env_optional("GHA_CLONE_GITHUB_WEBHOOK_SECRET"),
             github_token: env_optional("GHA_CLONE_GITHUB_TOKEN"),
+            github_api_base_url: github_api_base_url_from_env()?,
             build_server_url: env_optional("GHA_CLONE_BUILD_SERVER_URL")
                 .map(|value| value.trim_end_matches('/').to_string()),
             build_server_auth: env_optional("GHA_CLONE_BUILD_SERVER_AUTH"),
@@ -123,12 +119,14 @@ impl Config {
                 "GHA_CLONE_WEBHOOK_IGNORED_WORKFLOWS",
                 &["GHA continuity server"],
             ),
-            webhook_delivery_ttl_seconds: env_u64(
+            webhook_delivery_ttl_seconds: env_nonzero_u64(
                 "GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS",
                 86_400,
-            )?
-            .max(1),
-            max_webhook_deliveries: env_usize("GHA_CLONE_MAX_WEBHOOK_DELIVERIES", 4_096)?.max(1),
+            )?,
+            max_webhook_deliveries: env_nonzero_usize(
+                "GHA_CLONE_MAX_WEBHOOK_DELIVERIES",
+                4_096,
+            )?,
         })
     }
 
@@ -138,6 +136,18 @@ impl Config {
                 && self.build_server_url.is_some()
                 && self.build_server_auth.is_some()
                 && !self.allowed_repositories.is_empty())
+    }
+
+    fn webhook_execution_ready(&self) -> bool {
+        !self.webhook_execution_enabled
+            || (self.execution_enabled
+                && self.execution_ready()
+                && self.webhook_secret.is_some()
+                && !self.workflow_rules.is_empty())
+    }
+
+    fn ready(&self) -> bool {
+        self.execution_ready() && self.webhook_execution_ready()
     }
 }
 
@@ -282,12 +292,16 @@ async fn healthz(State(state): State<AppState>) -> Json<Value> {
         "runsRetained": state.runs.read().await.len(),
         "webhookDeliveriesRetained": state.webhook_deliveries.read().await.len(),
         "webhookFailureConclusions": state.config.webhook_failure_conclusions,
-        "webhookIgnoredWorkflows": state.config.webhook_ignored_workflows
+        "webhookIgnoredWorkflows": state.config.webhook_ignored_workflows,
+        "webhookDeliveryTtlSeconds": state.config.webhook_delivery_ttl_seconds,
+        "maxWebhookDeliveries": state.config.max_webhook_deliveries
     }))
 }
 
 async fn readyz(State(state): State<AppState>) -> Response {
-    let ready = state.config.execution_ready();
+    let execution_ready = state.config.execution_ready();
+    let webhook_execution_ready = state.config.webhook_execution_ready();
+    let ready = state.config.ready();
     (
         if ready {
             StatusCode::OK
@@ -297,7 +311,8 @@ async fn readyz(State(state): State<AppState>) -> Response {
         Json(json!({
             "ok": ready,
             "service": SERVICE_NAME,
-            "executionReady": ready
+            "executionReady": execution_ready,
+            "webhookExecutionReady": webhook_execution_ready
         })),
     )
         .into_response()
@@ -492,6 +507,7 @@ async fn github_webhook(
             Json(json!({
                 "accepted": false,
                 "event": event,
+                "delivery": delivery,
                 "reason": "event does not identify an immutable push, pull-request, or workflow-run revision"
             })),
         )
@@ -509,6 +525,7 @@ async fn github_webhook(
             StatusCode::ACCEPTED,
             Json(json!({
                 "accepted": false,
+                "delivery": delivery,
                 "repository": repository,
                 "revision": revision,
                 "reason": "no workflow mirror rules are configured for this repository"
@@ -648,6 +665,7 @@ async fn github_webhook(
             Json(json!({
                 "accepted": true,
                 "event": event,
+                "delivery": delivery,
                 "repository": repository,
                 "revision": revision,
                 "runIds": run_ids
@@ -662,6 +680,7 @@ async fn github_webhook(
             "accepted": true,
             "execution": false,
             "event": event,
+            "delivery": delivery,
             "repository": repository,
             "revision": revision,
             "plans": plans
@@ -827,7 +846,8 @@ async fn fetch_workflow(
     let mut request = state
         .client
         .get(format!(
-            "https://api.github.com/repos/{repository}/contents/{path}?ref={revision}"
+            "{}/repos/{repository}/contents/{path}?ref={revision}",
+            state.config.github_api_base_url
         ))
         .header("Accept", "application/vnd.github.raw+json");
     if let Some(token) = state.config.github_token.as_deref() {
@@ -942,7 +962,7 @@ fn prune_webhook_deliveries(
     ttl: Duration,
     max_deliveries: usize,
 ) {
-    deliveries.retain(|_, seen_at| now.duration_since(*seen_at) < ttl);
+    deliveries.retain(|_, seen_at| now.saturating_duration_since(*seen_at) < ttl);
     let remove = deliveries.len().saturating_sub(max_deliveries);
     if remove == 0 {
         return;
@@ -1043,6 +1063,103 @@ fn prune_runs(runs: &mut BTreeMap<Uuid, RunRecord>, max_runs: usize) {
     }
 }
 
+fn validate_workflow_configuration(
+    allowed_repositories: &BTreeSet<String>,
+    workflow_rules: &BTreeMap<String, Vec<String>>,
+) -> Result<(), String> {
+    for repository in allowed_repositories {
+        if !valid_repository_name(repository) {
+            return Err(format!(
+                "GHA_CLONE_ALLOWED_REPOSITORIES contains invalid repository {repository:?}"
+            ));
+        }
+    }
+
+    for (repository, paths) in workflow_rules {
+        if !allowed_repositories.contains(repository) {
+            return Err(format!(
+                "workflow rule repository {repository:?} is absent from GHA_CLONE_ALLOWED_REPOSITORIES"
+            ));
+        }
+        if paths.is_empty() {
+            return Err(format!(
+                "workflow rule repository {repository:?} must contain at least one workflow path"
+            ));
+        }
+        let mut seen = BTreeSet::new();
+        for path in paths {
+            if !valid_configured_workflow_path(path) {
+                return Err(format!(
+                    "workflow rule repository {repository:?} contains invalid path {path:?}"
+                ));
+            }
+            if !seen.insert(path) {
+                return Err(format!(
+                    "workflow rule repository {repository:?} contains duplicate path {path:?}"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn valid_repository_name(value: &str) -> bool {
+    let Some((owner, repository)) = value.split_once('/') else {
+        return false;
+    };
+    !owner.is_empty()
+        && !repository.is_empty()
+        && !repository.contains('/')
+        && [owner, repository].into_iter().all(|component| {
+            component
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+        })
+}
+
+fn valid_configured_workflow_path(value: &str) -> bool {
+    value.starts_with(".github/workflows/")
+        && (value.ends_with(".yml") || value.ends_with(".yaml"))
+        && !value.contains("..")
+        && !value.contains('\\')
+        && value.len() <= 256
+}
+
+fn github_api_base_url_from_env() -> Result<String, String> {
+    normalize_github_api_base_url(
+        &env::var("GHA_CLONE_GITHUB_API_BASE_URL")
+            .unwrap_or_else(|_| "https://api.github.com".to_string()),
+    )
+}
+
+fn normalize_github_api_base_url(value: &str) -> Result<String, String> {
+    let value = value.trim().trim_end_matches('/');
+    if value.is_empty() {
+        return Err("GHA_CLONE_GITHUB_API_BASE_URL must not be empty".to_string());
+    }
+    let parsed = reqwest::Url::parse(value)
+        .map_err(|error| format!("GHA_CLONE_GITHUB_API_BASE_URL is invalid: {error}"))?;
+    if !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err(
+            "GHA_CLONE_GITHUB_API_BASE_URL must not contain credentials, query, or fragment"
+                .to_string(),
+        );
+    }
+    let loopback_http = parsed.scheme() == "http"
+        && matches!(parsed.host_str(), Some("127.0.0.1" | "localhost" | "::1"));
+    if parsed.scheme() != "https" && !loopback_http {
+        return Err(
+            "GHA_CLONE_GITHUB_API_BASE_URL must use HTTPS; HTTP is allowed only for loopback tests"
+                .to_string(),
+        );
+    }
+    Ok(value.to_string())
+}
+
 fn csv_set(name: &str) -> BTreeSet<String> {
     env::var(name)
         .unwrap_or_default()
@@ -1121,6 +1238,24 @@ fn env_usize(name: &str, default: usize) -> Result<usize, String> {
         })
         .transpose()
         .map(|value| value.unwrap_or(default))
+}
+
+fn env_nonzero_u64(name: &str, default: u64) -> Result<u64, String> {
+    let value = env_u64(name, default)?;
+    if value == 0 {
+        Err(format!("{name} must be greater than zero"))
+    } else {
+        Ok(value)
+    }
+}
+
+fn env_nonzero_usize(name: &str, default: usize) -> Result<usize, String> {
+    let value = env_usize(name, default)?;
+    if value == 0 {
+        Err(format!("{name} must be greater than zero"))
+    } else {
+        Ok(value)
+    }
 }
 
 fn bounded_text(value: &str, max_chars: usize) -> String {
@@ -1275,6 +1410,48 @@ mod tests {
         prune_webhook_deliveries(&mut deliveries, now, Duration::from_secs(60), 1);
         assert_eq!(deliveries.len(), 1);
         assert!(deliveries.contains_key("newer"));
+    }
+
+    #[test]
+    fn workflow_configuration_is_exact_and_reviewable() {
+        let allowed = BTreeSet::from(["owner/repo".to_string()]);
+        let valid = BTreeMap::from([(
+            "owner/repo".to_string(),
+            vec![".github/workflows/ci.yml".to_string()],
+        )]);
+        assert!(validate_workflow_configuration(&allowed, &valid).is_ok());
+
+        let invalid_path = BTreeMap::from([(
+            "owner/repo".to_string(),
+            vec!["../ci.yml".to_string()],
+        )]);
+        assert!(validate_workflow_configuration(&allowed, &invalid_path)
+            .unwrap_err()
+            .contains("invalid path"));
+
+        let duplicate = BTreeMap::from([(
+            "owner/repo".to_string(),
+            vec![
+                ".github/workflows/ci.yml".to_string(),
+                ".github/workflows/ci.yml".to_string(),
+            ],
+        )]);
+        assert!(validate_workflow_configuration(&allowed, &duplicate)
+            .unwrap_err()
+            .contains("duplicate path"));
+    }
+
+    #[test]
+    fn github_api_origin_requires_https_except_loopback_tests() {
+        assert_eq!(
+            normalize_github_api_base_url("https://api.github.com/").unwrap(),
+            "https://api.github.com"
+        );
+        assert!(normalize_github_api_base_url("http://127.0.0.1:8080").is_ok());
+        assert!(normalize_github_api_base_url("http://localhost:8080/api/v3").is_ok());
+        assert!(normalize_github_api_base_url("http://example.com").is_err());
+        assert!(normalize_github_api_base_url("https://user:pass@example.com").is_err());
+        assert!(normalize_github_api_base_url("https://example.com?token=x").is_err());
     }
 
     #[test]
