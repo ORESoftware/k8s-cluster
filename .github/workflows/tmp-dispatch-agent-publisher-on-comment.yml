@@ -1,0 +1,52 @@
+name: Temporary dispatch Agent Pontifex publisher
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+concurrency:
+  group: dispatch-agent-pontifex-fiducia-publisher
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.event.issue.number == 840 &&
+      github.event.comment.body == '/run-agent-publisher'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TRACKING_ISSUE: '840'
+    steps:
+      - name: Dispatch trusted main workflow
+        run: |
+          set -euo pipefail
+          requested_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run tmp-publish-agent-pontifex-fiducia-servers.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+
+          selected=''
+          for _ in $(seq 1 30); do
+            runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/tmp-publish-agent-pontifex-fiducia-servers.yml/runs?event=workflow_dispatch&branch=main&per_page=10")"
+            selected="$(jq -c --arg requested_at "$requested_at" '
+              .workflow_runs
+              | map(select(.created_at >= $requested_at))
+              | sort_by(.created_at)
+              | reverse
+              | first
+              | if . == null then empty else {id,html_url,status,conclusion,event,head_sha,created_at} end
+            ' <<<"$runs")"
+            test -z "$selected" || break
+            sleep 2
+          done
+          test -n "$selected"
+          gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" --body \
+            "Publisher dispatched from trusted main:\n\n\`\`\`json\n${selected}\n\`\`\`"
