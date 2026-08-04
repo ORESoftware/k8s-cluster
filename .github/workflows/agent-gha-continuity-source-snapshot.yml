@@ -22,6 +22,7 @@ jobs:
       - name: Check out exact review head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 1
           persist-credentials: false
 
@@ -29,25 +30,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p artifacts
-          git rev-parse HEAD > artifacts/source-sha.txt
-          git status --porcelain=v1 > artifacts/worktree-status.txt
-          test ! -s artifacts/worktree-status.txt
-          tar \
-            --exclude=.git \
-            --exclude=artifacts/gha-continuity-source.tar.gz \
-            -czf artifacts/gha-continuity-source.tar.gz \
-            .
-          sha256sum artifacts/gha-continuity-source.tar.gz > artifacts/gha-continuity-source.tar.gz.sha256
+          test -z "$(git status --porcelain=v1)"
+          snapshot_dir="${RUNNER_TEMP}/gha-continuity-source"
+          mkdir -p "${snapshot_dir}"
+          git rev-parse HEAD > "${snapshot_dir}/source-sha.txt"
+          git status --porcelain=v1 > "${snapshot_dir}/worktree-status.txt"
+          test ! -s "${snapshot_dir}/worktree-status.txt"
+          tar --exclude=.git -czf "${snapshot_dir}/gha-continuity-source.tar.gz" .
+          sha256sum "${snapshot_dir}/gha-continuity-source.tar.gz" \
+            > "${snapshot_dir}/gha-continuity-source.tar.gz.sha256"
 
       - name: Upload immutable source snapshot
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: gha-continuity-source-${{ github.sha }}
-          path: |
-            artifacts/source-sha.txt
-            artifacts/worktree-status.txt
-            artifacts/gha-continuity-source.tar.gz
-            artifacts/gha-continuity-source.tar.gz.sha256
+          name: gha-continuity-source-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/gha-continuity-source/
           if-no-files-found: error
           retention-days: 1
