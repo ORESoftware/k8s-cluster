@@ -58,19 +58,19 @@ jobs:
           cargo test --locked --manifest-path remote/deployments/durable-worker-server-rs/Cargo.toml \
             resumes_submission_after_idempotency_record_was_committed_first -- --nocapture
 
-      - name: Publish only the reviewed source and regression test
+      - name: Publish tested source and regression test
         shell: bash
         run: |
           set -euo pipefail
-          git show 3544a2033722a1ae5b84d94b031ed2776a89da4d:.github/workflows/durable-worker-server-rs.yml \
-            > .github/workflows/durable-worker-server-rs.yml
-          rm -f .github/workflows/durable-worker-idempotency-recovery-fix.yml
           rm -f remote/deployments/durable-worker-server-rs/scripts/repair_idempotency_recovery.py
           rmdir remote/deployments/durable-worker-server-rs/scripts 2>/dev/null || true
           git diff --check
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -A
+          git add -A -- \
+            remote/deployments/durable-worker-server-rs/src/engine/mod.rs \
+            remote/deployments/durable-worker-server-rs/tests/idempotency_recovery.rs \
+            remote/deployments/durable-worker-server-rs/scripts/repair_idempotency_recovery.py
           git commit -m 'fix(workers): resume interrupted idempotent submissions'
           git push origin HEAD:agent/durable-worker-server-rs-v2
 
