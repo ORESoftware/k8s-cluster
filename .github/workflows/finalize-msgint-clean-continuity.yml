@@ -1,0 +1,161 @@
+name: Finalize clean Messaging Intel continuity delta
+
+on:
+  push:
+    branches:
+      - agent/msgint-gha-continuity-clean-20260804
+    paths:
+      - scripts/ci/apply-msgint-clean-continuity.py
+      - .github/workflows/finalize-msgint-clean-continuity.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-msgint-clean-continuity
+  cancel-in-progress: false
+
+jobs:
+  validate-and-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out current dev-derived clean branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/msgint-gha-continuity-clean-20260804
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Fetch the validated source commit and apply only product files
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin 826342499235e6938c019aca33ddf95119982b4c
+          python3 -m py_compile scripts/ci/apply-msgint-clean-continuity.py
+          python3 scripts/ci/apply-msgint-clean-continuity.py
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.90.0
+          components: rustfmt, clippy
+
+      - name: Format and verify the Rust continuity server
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 \
+            remote/deployments/build-server-rs/src/jobs.rs \
+            remote/deployments/build-server-rs/src/profiles.rs \
+            remote/deployments/build-server-rs/src/validation.rs
+          cargo fmt --all --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml
+          cargo fmt --all --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml -- --check
+          cargo clippy --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml \
+            --locked --all-targets -- -D warnings
+          cargo test --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml \
+            --locked --all-targets
+
+      - name: Check out exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Compile and test exact build-server admission and profiles
+        working-directory: remote/deployments/build-server-rs
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 --check src/jobs.rs src/profiles.rs src/validation.rs
+          cargo check --locked --all-targets
+          cargo test --locked --bin dd-build-server -- --nocapture
+
+      - name: Validate workflow and bounded fixture syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/gha-clone-server.yml .github/workflows/gha-clone-server-meta.yml remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22.23.1'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Run current dev contracts plus Messaging Intel supplement
+        working-directory: remote/tests
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts \
+            general/gha-clone-msgint-config.test.ts
+
+      - name: Execute both hardened profiles against lifecycle traps
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          source = Path('remote/deployments/build-server-rs/src/profiles.rs').read_text(encoding='utf-8')
+          image = re.search(r'const NODE_IMAGE: &str = "([^"]+)";', source)
+          if image is None or '@sha256:' not in image.group(1):
+              raise SystemExit('NODE_IMAGE is not digest-pinned')
+          output = Path(os.environ['RUNNER_TEMP'])
+          (output / 'node-profile-image').write_text(image.group(1), encoding='utf-8')
+          for profile, constant in (
+              ('node-hardened-verify', 'NODE_HARDENED_VERIFY_STEPS'),
+              ('node-hardened-test', 'NODE_HARDENED_TEST_STEPS'),
+          ):
+              match = re.search(rf'const {constant}:.*?script: r#"(.*?)"#,\n\}}\];', source, flags=re.DOTALL)
+              if match is None:
+                  raise SystemExit(f'{constant} script was not found')
+              script = output / f'{profile}.sh'
+              script.write_text(match.group(1) + '\n', encoding='utf-8')
+              script.chmod(0o500)
+          PY
+          profile_image="$(cat "$RUNNER_TEMP/node-profile-image")"
+          docker pull "$profile_image"
+          fixture="$GITHUB_WORKSPACE/remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile"
+          for profile in node-hardened-verify node-hardened-test; do
+            worktree="$(mktemp -d "$RUNNER_TEMP/${profile}.XXXXXX")"
+            cp -R "$fixture/." "$worktree/"
+            docker run --rm --pull=never \
+              --cap-drop=ALL \
+              --security-opt=no-new-privileges \
+              --pids-limit=256 \
+              --memory=2g \
+              --cpus=2 \
+              --read-only \
+              --tmpfs /tmp:rw,nosuid,nodev,noexec,size=512m \
+              --network=bridge \
+              -e CI=true \
+              -e HOME=/tmp/home \
+              -v "$worktree:/workspace:rw" \
+              -v "$RUNNER_TEMP/${profile}.sh:/profile.sh:ro" \
+              -w /workspace \
+              "$profile_image" \
+              bash /profile.sh
+          done
+
+      - name: Commit only validated clean product files
+        run: |
+          set -euo pipefail
+          git rm scripts/ci/apply-msgint-clean-continuity.py
+          git rm .github/workflows/finalize-msgint-clean-continuity.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'No clean product changes were produced' >&2
+            exit 1
+          fi
+          git commit -m 'test: add clean Messaging Intel GHA continuity proof'
+          git push origin HEAD:agent/msgint-gha-continuity-clean-20260804
