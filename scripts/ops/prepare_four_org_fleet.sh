@@ -1,8 +1,26 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+on_error() {
+  local status=$?
+  local line=${BASH_LINENO[0]:-${LINENO}}
+  local command=${BASH_COMMAND:-unknown}
+  trap - ERR
+  printf 'FLEET_PREP_ERROR status=%s line=%s command=%q\n' "$status" "$line" "$command" >&2
+  exit "$status"
+}
+trap on_error ERR
+
+fail() {
+  printf 'FLEET_PREP_ERROR %s\n' "$*" >&2
+  exit 1
+}
+
 FLEET_ROOT="${1:?usage: prepare-four-org-fleet.sh FLEET_ROOT OVERLAY_ROOT}"
 OVERLAY_ROOT="${2:?usage: prepare-four-org-fleet.sh FLEET_ROOT OVERLAY_ROOT}"
+[[ -d "$FLEET_ROOT" ]] || fail "fleet root does not exist: $FLEET_ROOT"
+[[ -d "$OVERLAY_ROOT" ]] || fail "overlay root does not exist: $OVERLAY_ROOT"
+[[ -f "$OVERLAY_ROOT/publish-all.sh" ]] || fail "overlay publisher is missing: $OVERLAY_ROOT/publish-all.sh"
 
 export GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-ChatGPT Codex}"
 export GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}"
@@ -30,39 +48,34 @@ existing_repositories_for() {
   esac
 }
 
-init_or_normalize_main() {
-  local path=$1
-  test -d "$path"
-  if [[ ! -d "$path/.git" ]]; then
-    git -C "$path" init --initial-branch=main
+normalize_existing_repository() {
+  local org=$1 repo=$2
+  local path="$FLEET_ROOT/$org/$repo"
+  [[ -d "$path" ]] || fail "expected generated repository directory is missing: $org/$repo"
+  [[ -d "$path/.git" ]] || fail "expected generated Git repository is missing: $org/$repo"
+  git -C "$path" config user.name "$GIT_AUTHOR_NAME"
+  git -C "$path" config user.email "$GIT_AUTHOR_EMAIL"
+  git -C "$path" show-ref --verify --quiet refs/heads/main \
+    || fail "generated repository has no main branch: $org/$repo"
+  git -C "$path" checkout -q main
+  git -C "$path" rev-parse --verify HEAD >/dev/null \
+    || fail "generated repository has no main commit: $org/$repo"
+
+  local dirty
+  dirty="$(git -C "$path" status --porcelain)"
+  if [[ -n "$dirty" ]]; then
+    printf 'Normalizing generated files in %s/%s:\n%s\n' "$org" "$repo" "$dirty"
     git -C "$path" add -A
-    git -C "$path" commit -m 'chore: bootstrap repository'
-  else
-    git -C "$path" config user.name "$GIT_AUTHOR_NAME"
-    git -C "$path" config user.email "$GIT_AUTHOR_EMAIL"
-    if git -C "$path" show-ref --verify --quiet refs/heads/main; then
-      git -C "$path" checkout -q main
-    elif git -C "$path" rev-parse --verify HEAD >/dev/null 2>&1; then
-      git -C "$path" branch -M main
-      git -C "$path" checkout -q main
-    else
-      git -C "$path" checkout -q -b main
-    fi
-    if ! git -C "$path" rev-parse --verify HEAD >/dev/null 2>&1; then
-      git -C "$path" add -A
-      git -C "$path" commit -m 'chore: bootstrap repository'
-    elif [[ -n "$(git -C "$path" status --porcelain)" ]]; then
-      git -C "$path" add -A
-      git -C "$path" commit -m 'chore: normalize generated repository'
-    fi
+    git -C "$path" commit -m 'chore: normalize generated repository'
   fi
-  git -C "$path" fsck --no-reflogs --full >/dev/null
-  test -z "$(git -C "$path" status --porcelain)"
+  [[ -z "$(git -C "$path" status --porcelain)" ]] \
+    || fail "generated repository remains dirty after normalization: $org/$repo"
 }
 
+printf 'FLEET_PREP_STAGE normalize-existing repositories=32\n'
 for org in "${organizations[@]}"; do
   while IFS= read -r repo; do
-    init_or_normalize_main "$FLEET_ROOT/$org/$repo"
+    normalize_existing_repository "$org" "$repo"
   done < <(existing_repositories_for "$org")
 done
 
@@ -70,8 +83,8 @@ prepare_new_repository() {
   local org=$1 repo=$2 label=$3
   local source="$OVERLAY_ROOT/$org/$repo"
   local destination="$FLEET_ROOT/$org/$repo"
-  test -d "$source"
-  test ! -e "$destination"
+  [[ -d "$source" ]] || fail "overlay source is missing: $org/$repo"
+  [[ ! -e "$destination" ]] || fail "new repository destination already exists: $org/$repo"
   mkdir -p "$destination"
   git -C "$destination" init --initial-branch=main
   cat > "$destination/README.md" <<README
@@ -98,6 +111,7 @@ IGNORE
   test -z "$(git -C "$destination" status --porcelain)"
 }
 
+printf 'FLEET_PREP_STAGE create-new repositories=16\n'
 for org in "${organizations[@]}"; do
   prefix="$(prefix_for "$org")"
   prepare_new_repository "$org" "${prefix}-clients" 'typed clients and SDKs'
@@ -110,13 +124,13 @@ prepare_worker_branch() {
   local org=$1 repo=$2
   local path="$FLEET_ROOT/$org/$repo"
   local worker_source="$OVERLAY_ROOT/$org/$repo/cloudflare-worker"
-  test -d "$worker_source"
+  [[ -d "$worker_source" ]] || fail "Cloudflare Worker overlay is missing: $org/$repo"
   git -C "$path" checkout -q main
   if git -C "$path" show-ref --verify --quiet refs/heads/agent/add-cloudflare-worker-edge; then
     echo "unexpected existing Worker feature branch in $org/$repo" >&2
     return 1
   fi
-  test ! -e "$path/cloudflare-worker"
+  [[ ! -e "$path/cloudflare-worker" ]] || fail "Cloudflare Worker already exists on generated main: $org/$repo"
   git -C "$path" checkout -q -b agent/add-cloudflare-worker-edge
   cp -a "$worker_source" "$path/cloudflare-worker"
   mkdir -p "$path/.github/workflows"
@@ -180,6 +194,7 @@ README
   test -z "$(git -C "$path" status --porcelain)"
 }
 
+printf 'FLEET_PREP_STAGE create-worker-branches repositories=4\n'
 for org in "${organizations[@]}"; do
   prefix="$(prefix_for "$org")"
   prepare_worker_branch "$org" "${prefix}-infra"
@@ -204,9 +219,10 @@ for org in "${organizations[@]}"; do
     fi
   done
 done
-[[ "$repo_count" -eq 48 ]]
-[[ "$feature_count" -eq 20 ]]
+[[ "$repo_count" -eq 48 ]] || fail "expected 48 repositories, found $repo_count"
+[[ "$feature_count" -eq 20 ]] || fail "expected 20 review branches, found $feature_count"
 
+printf 'FLEET_PREP_STAGE run-tests repositories=20\n'
 for org in "${organizations[@]}"; do
   prefix="$(prefix_for "$org")"
   for repo in "${prefix}-clients" "${prefix}-libs" "${prefix}-monorepo"; do
