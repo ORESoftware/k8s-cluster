@@ -18,6 +18,7 @@ on:
     paths:
       - remote/deployments/gha-clone-server-rs/src/lib.rs
       - remote/deployments/gha-clone-server-rs/tests/msgint_yaml_ambiguity.rs
+      - scripts/apply-msgint-yaml-ambiguity-guard.py
       - .github/workflows/msgint-yaml-ambiguity.yml
 
 permissions:
@@ -61,7 +62,9 @@ jobs:
           args: .github/workflows/msgint-yaml-ambiguity.yml
 
   finalize-guard:
-    if: ${{ github.event_name == 'push' && github.actor != 'github-actions[bot]' }}
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name == 'push' || github.head_ref == 'agent/msgint-yaml-ambiguity-tests-20260804')
     permissions:
       contents: write
     runs-on: ubuntu-24.04
