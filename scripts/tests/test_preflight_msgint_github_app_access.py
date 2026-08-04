@@ -53,7 +53,7 @@ class AccessPreflightTests(unittest.TestCase):
             self.assertEqual(timeout, 15)
             self.assertEqual(request.headers["Authorization"], f"Bearer {TOKEN}")
             self.assertNotIn(TOKEN, request.full_url)
-            self.assertEqual(request.method, "GET")
+            self.assertEqual(request.get_method(), "GET")
 
     def test_rejects_invalid_inputs_before_making_a_request(self):
         calls = []
