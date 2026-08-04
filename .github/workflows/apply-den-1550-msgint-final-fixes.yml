@@ -1,0 +1,136 @@
+name: Apply DEN-1550 Messaging Intel final fixes
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/apply-den-1550-msgint-final-fixes.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-1550-msgint-final-fixes
+  cancel-in-progress: false
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.head_ref }}
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Apply exact revision and planner-source fixes
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          def checked(path_text: str, expected: str) -> tuple[Path, str]:
+              path = Path(path_text)
+              observed = subprocess.check_output(
+                  ['git', 'hash-object', str(path)], text=True
+              ).strip()
+              if observed != expected:
+                  raise SystemExit(
+                      f'refusing drifted {path}: expected {expected}, observed {observed}'
+                  )
+              return path, path.read_text(encoding='utf-8')
+
+          def replace_once(source: str, old: str, new: str, label: str) -> str:
+              if source.count(old) != 1:
+                  raise SystemExit(f'{label} anchor was not unique')
+              return source.replace(old, new, 1)
+
+          revision = '952623b07fd83caa3a83ee27bdea293f6bd4372f'
+
+          process_path, process = checked(
+              'remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs',
+              '0d4fca73f8906f7ab9ad0f0f95087a2cdbf72735',
+          )
+          process = replace_once(
+              process,
+              'const REVISION: &str = "a9cc977d78347ec0efdbe8e6766967f80d425882";',
+              f'const REVISION: &str = "{revision}";',
+              'process revision',
+          )
+          process_path.write_text(process, encoding='utf-8')
+
+          msgint_path, msgint = checked(
+              'remote/tests/general/gha-clone-msgint-config.test.ts',
+              '854b9ffcd26398231c8f85f02d02fefea9452ca2',
+          )
+          msgint = replace_once(
+              msgint,
+              "const revision = 'a9cc977d78347ec0efdbe8e6766967f80d425882';",
+              f"const revision = '{revision}';",
+              'TypeScript revision',
+          )
+          msgint_path.write_text(msgint, encoding='utf-8')
+
+          generic_path, generic = checked(
+              'remote/tests/general/gha-clone-server-config.test.ts',
+              'd4ed47cb822669c0d57feee7e0ce95ed6b0a2e8c',
+          )
+          generic = replace_once(
+              generic,
+              "const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';\n",
+              "const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';\n"
+              "const plannerOriginalPath =\n"
+              "  'remote/deployments/gha-clone-server-rs/src/lib_original.rs';\n",
+              'original planner path',
+          )
+          generic = replace_once(
+              generic,
+              "test('planner and dispatcher preserve the fail-closed command boundary', () => {\n"
+              "  const planner = read(plannerPath);\n",
+              "test('planner and dispatcher preserve the fail-closed command boundary', () => {\n"
+              "  const planner = `${read(plannerPath)}\\n${read(plannerOriginalPath)}`;\n",
+              'combined planner source',
+          )
+          generic_path.write_text(generic, encoding='utf-8')
+          PY
+          rustfmt --edition 2021 \
+            remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs
+
+      - name: Run exact Messaging Intel and generic continuity contracts
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all -- --check
+          cargo test --locked --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --test msgint_operator_config -- --nocapture
+          cargo test --locked --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all-targets
+          cargo clippy --locked --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all-targets -- -D warnings
+          pnpm install --frozen-lockfile --dir remote/tests
+          pnpm --dir remote/tests exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts \
+            general/gha-clone-msgint-config.test.ts
+
+      - name: Commit tested fixes and remove this one-shot workflow
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/apply-den-1550-msgint-final-fixes.yml
+          git add \
+            remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs \
+            remote/tests/general/gha-clone-msgint-config.test.ts \
+            remote/tests/general/gha-clone-server-config.test.ts
+          git diff --cached --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'test(DEN-1550): align Messaging Intel continuity contracts'
+          git push origin HEAD:${{ github.head_ref }}
