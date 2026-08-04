@@ -1,0 +1,83 @@
+name: contract-service-seaorm-branch
+
+on:
+  push:
+    branches:
+      - agent/contract-service-seaorm-20260804
+    paths:
+      - ".github/workflows/contract-service-seaorm-branch.yml"
+      - "remote/deployments/contract-service-rs/**"
+      - "remote/libs"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: contract-service-seaorm-branch
+  cancel-in-progress: true
+
+jobs:
+  generate-lock-and-verify:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.actor == 'ORESoftware'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      EXPECTED_SHARED_COMMIT: 3c84cab532b27d328378f09fba5841f02644ae3b
+      SERVICE_DIR: remote/deployments/contract-service-rs
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+          submodules: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: "1.97.0"
+          components: rustfmt, clippy
+      - name: Pin the public shared schema and generated SeaORM adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          git init -q remote/libs
+          git -C remote/libs remote add origin \
+            https://github.com/ORESoftware/k8s-libs-and-shared-defs.git
+          GIT_TERMINAL_PROMPT=0 git -C remote/libs fetch \
+            --no-tags --depth=1 origin "$EXPECTED_SHARED_COMMIT"
+          git -C remote/libs checkout -q --detach FETCH_HEAD
+          test "$(git -C remote/libs rev-parse HEAD)" = "$EXPECTED_SHARED_COMMIT"
+          test -z "$(git -C remote/libs status --porcelain=v1 --untracked-files=all)"
+      - name: Validate the authority and mutation policy before compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test "$SERVICE_DIR/scripts/seaorm-policy.test.mjs"
+          node "$SERVICE_DIR/scripts/check-seaorm-policy.mjs"
+      - name: Generate the lock and execute the exact Rust suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$SERVICE_DIR"
+          cargo generate-lockfile
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets
+          cargo check --locked --all-targets
+          ! grep -RInE \
+            '(^|[^A-Za-z0-9_])sqlx::(query|query_as|query_scalar|migrate!)|\bPgPool(Options)?\b|^sqlx[[:space:]]*=' \
+            Cargo.toml src
+      - name: Commit the immutable shared pin and generated lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add remote/libs "$SERVICE_DIR/Cargo.lock"
+          if git diff --cached --quiet; then
+            echo 'Shared gitlink and Cargo.lock already match the reviewed inputs.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore(contract-service): pin shared SeaORM contract and lockfile [skip ci]'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
