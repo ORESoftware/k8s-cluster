@@ -1,0 +1,75 @@
+name: durable-worker-restart-sync
+
+on:
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/durable-worker-restart-sync.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: durable-worker-restart-sync
+  cancel-in-progress: false
+
+jobs:
+  merge-current-dev-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout restart-conformance branch with full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/durable-worker-restart-conformance
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Install Rust 1.90 with lint components
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Merge exact current dev
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git fetch origin dev
+          if git merge-base --is-ancestor origin/dev HEAD; then
+            echo 'restart-conformance branch already contains current dev'
+          else
+            if ! git merge --no-ff origin/dev -m 'Merge current dev into durable worker restart conformance'; then
+              echo 'Unexpected semantic conflict while reconciling restart conformance:' >&2
+              git diff --name-only --diff-filter=U >&2
+              git merge --abort
+              exit 1
+            fi
+          fi
+
+      - name: Verify exact merged tree
+        shell: bash
+        env:
+          MANIFEST: remote/deployments/durable-worker-server-rs/Cargo.toml
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path "$MANIFEST" --all -- --check
+          cargo clippy --locked --manifest-path "$MANIFEST" --all-targets --all-features -- -D warnings
+          cargo test --locked --manifest-path "$MANIFEST" --all-targets --all-features -- --nocapture
+          cargo run --locked --quiet --manifest-path "$MANIFEST" -- --export-openapi > /tmp/openapi-1.json
+          cargo run --locked --quiet --manifest-path "$MANIFEST" -- --export-openapi > /tmp/openapi-2.json
+          cmp /tmp/openapi-1.json /tmp/openapi-2.json
+          node --test remote/tests/general/durable-worker-server-config.test.mjs
+          git diff --check
+
+      - name: Push reconciled branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin HEAD:agent/durable-worker-restart-conformance
