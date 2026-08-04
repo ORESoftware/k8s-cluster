@@ -38,15 +38,32 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          from textwrap import dedent
 
           workflow = Path('.github/workflows/materialize-den-1606-direct-hardening-once.yml')
-          text = workflow.read_text(encoding='utf-8')
-          start_marker = "          python3 - <<'PY'\n"
-          end_marker = "\n          PY\n\n      - name: Install the pinned Rust toolchain"
-          start = text.index(start_marker) + len(start_marker)
-          end = text.index(end_marker, start)
-          script = dedent(text[start:end])
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          step_name = '      - name: Apply explicit bounded-lane hardening'
+          next_step = '      - name: Install the pinned Rust toolchain'
+          try:
+              step_index = lines.index(step_name)
+              next_index = lines.index(next_step, step_index + 1)
+          except ValueError as error:
+              raise SystemExit(f'could not locate reviewed materializer step boundary: {error}')
+
+          run_index = step_index + 1
+          while run_index < next_index and lines[run_index] != '        run: |':
+              run_index += 1
+          if run_index >= next_index:
+              raise SystemExit('reviewed materializer step has no literal run block')
+
+          block = lines[run_index + 1 : next_index]
+          prefix = '          '
+          if not block or any(line and not line.startswith(prefix) for line in block):
+              raise SystemExit('reviewed materializer run block has unexpected indentation')
+          block = [line[len(prefix):] if line else '' for line in block]
+          if block[0] != "python3 - <<'PY'" or block[-1] != 'PY':
+              raise SystemExit('reviewed materializer run block has unexpected shell framing')
+
+          script = '\n'.join(block[1:-1]) + '\n'
           exec(compile(script, str(workflow), 'exec'), {'__name__': '__main__'})
           for path in (
               Path('.github/workflows/run-den-1606-materializer-once.yml'),
