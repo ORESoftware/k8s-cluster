@@ -1,0 +1,82 @@
+name: Apply DEN-1619 probe location contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-den-1619-probe-location-contract.yml
+      - docs/production/external-probe-location-contract.md
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-1619-probe-location-contract
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.repository == 'fiducia-cloud/fiducia-monorepo' && github.head_ref == 'agent/den-1619-probe-location-contract'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1619-probe-location-contract
+          persist-credentials: true
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.22.1"
+
+      - name: Update the machine-readable SLO location contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path('docs/production/managed-public-beta-slos.json')
+          doc = json.loads(path.read_text())
+          labels = doc['label_policy']['allowed_grouping_labels']
+          if 'probe_location' in labels:
+              raise SystemExit('probe_location already exists')
+          labels.insert(labels.index('cell'), 'probe_location')
+          doc['label_policy']['note'] = (
+              'The managed-beta SLO layer is trusted probe-location/cell/operation aggregate telemetry. '
+              'probe_location is injected by reviewed Prometheus scrape configuration, never self-asserted '
+              'by the probe. Customer identifiers and unbounded resource names belong only in access-controlled '
+              'audit/support systems, never Prometheus labels.'
+          )
+          availability = next(slo for slo in doc['slos'] if slo['id'] == 'SLO-AVAIL-01')
+          source = next(series for series in availability['source_series'] if series['name'] == 'fiducia_external_probe_total')
+          source['required_labels'] = ['probe_location', 'cell', 'operation_class', 'result']
+          source['producer'] = (
+              'Independent black-box probes from at least two failure-independent locations; '
+              'the trusted Prometheus scrape target injects the bounded probe_location identity'
+          )
+          source['eligibility'] = (
+              'Only configured approved-capability probes enter this series; invalid-customer-input probes use '
+              'a separate diagnostic series. Each cell must have at least two independently reviewed '
+              'probe_location values, and the exact-candidate evidence matrix must be complete for every '
+              'declared location, cell, operation class, and result.'
+          )
+          path.write_text(json.dumps(doc, indent=2) + '\n')
+          PY
+          node tools/validate-production-gates.mjs
+          node tools/validate-slo-series.mjs
+          git diff --check
+          git config user.name 'ORESoftware Automation'
+          git config user.email 'noreply@github.com'
+          git add docs/production/managed-public-beta-slos.json
+          git commit -m 'docs(DEN-1619): require trusted probe location identity'
+
+      - name: Remove the one-shot applicator and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/apply-den-1619-probe-location-contract.yml
+          git commit -m 'chore: remove one-shot probe location applicator'
+          git push origin HEAD:refs/heads/agent/den-1619-probe-location-contract
