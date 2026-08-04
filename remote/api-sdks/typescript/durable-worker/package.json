@@ -1,0 +1,32 @@
+{
+  "name": "@oresoftware/durable-worker-sdk",
+  "version": "0.1.0",
+  "description": "Dependency-free TypeScript and Node.js SDK for the ORESoftware durable worker runtime",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "index.mjs",
+    "index.d.ts",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.mjs"
+    }
+  },
+  "scripts": {
+    "check": "node --check index.mjs && node --check test/client.test.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ORESoftware/k8s-cluster.git",
+    "directory": "remote/api-sdks/typescript/durable-worker"
+  }
+}
