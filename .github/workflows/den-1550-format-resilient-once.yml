@@ -1,9 +1,9 @@
-name: Race-safe final DEN-1550 formatting proof once
+name: Finalize exact repository profile policy once
 
 on:
-  push:
-    branches:
-      - agent/build-server-exact-profile-policy-final-20260804
+  pull_request:
+    branches: [dev]
+    types: [opened, synchronize, reopened]
     paths:
       - .github/workflows/den-1550-format-resilient-once.yml
 
@@ -11,54 +11,40 @@ permissions:
   contents: write
 
 concurrency:
-  group: den-1550-format-resilient-once
+  group: den-1550-final-profile-policy
   cancel-in-progress: false
 
 jobs:
-  prove:
-    if: github.actor != 'github-actions[bot]'
+  finalize:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/build-server-exact-profile-policy-final-20260804'
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: true
           show-progress: false
 
-      - name: Fast-forward safely across carrier-only cleanup
+      - name: Verify exact bounded input
         run: |
           set -euo pipefail
-          branch='agent/build-server-exact-profile-policy-final-20260804'
-          workflow='.github/workflows/den-1550-format-resilient-once.yml'
-          trigger='${{ github.sha }}'
-          git fetch origin "$branch"
-          tip="$(git rev-parse FETCH_HEAD)"
-          if ! git merge-base --is-ancestor "$trigger" "$tip"; then
-            echo 'branch no longer descends from the workflow trigger commit' >&2
-            exit 1
-          fi
-          intervening="$(git diff --name-only "$trigger"..."$tip" | sort)"
-          if [[ -n "$intervening" && "$intervening" != "$workflow" ]]; then
-            printf 'unexpected concurrent paths after trigger:\n%s\n' "$intervening" >&2
-            exit 1
-          fi
-          git checkout -B "$branch" "$tip"
-
           base='b827d1fde69bdfc5acfeb9d8a785f184c3ce5505'
-          allowed='^(\.github/workflows/den-1550-format-resilient-once\.yml|\.github/workflows/gha-clone-server\.yml|docs/build-server-profile-repository-policy\.md|remote/argocd/dd-next-runtime/dd-build-server-gha-continuity\.patch\.yaml|remote/deployments/build-server-rs/src/(config\.rs|config/profile_policy\.rs|validation\.rs)|remote/tests/general/build-server-profile-repository-policy\.test\.mjs)$'
-          unexpected="$(git diff --name-only "$base"...HEAD | grep -Ev "$allowed" || true)"
-          if [[ -n "$unexpected" ]]; then
-            printf 'unexpected product paths:\n%s\n' "$unexpected" >&2
+          expected=$'.github/workflows/den-1550-format-resilient-once.yml\n.github/workflows/gha-clone-server.yml\ndocs/build-server-profile-repository-policy.md\nremote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml\nremote/deployments/build-server-rs/src/config.rs\nremote/deployments/build-server-rs/src/config/profile_policy.rs\nremote/deployments/build-server-rs/src/validation.rs\nremote/tests/general/build-server-profile-repository-policy.test.mjs'
+          actual="$(git diff --name-only "$base"...HEAD | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'unexpected exact-head paths:\n%s\n' "$actual" >&2
             exit 1
           fi
-          grep -Fq 'if raw_untrimmed.len() > MAX_POLICY_BYTES' \
-            remote/deployments/build-server-rs/src/config/profile_policy.rs
-          grep -Fq 'raw_policy_accepts_the_exact_byte_limit_and_rejects_one_more_byte' \
-            remote/deployments/build-server-rs/src/config/profile_policy.rs
-          grep -Fq 'raw_policy_limit_counts_utf8_bytes_before_unicode_whitespace_trimming' \
-            remote/deployments/build-server-rs/src/config/profile_policy.rs
+          policy='remote/deployments/build-server-rs/src/config/profile_policy.rs'
+          grep -Fq 'if raw_untrimmed.len() > MAX_POLICY_BYTES' "$policy"
+          grep -Fq 'raw_policy_accepts_the_exact_byte_limit_and_rejects_one_more_byte' "$policy"
+          grep -Fq 'raw_policy_limit_counts_utf8_bytes_before_unicode_whitespace_trimming' "$policy"
+          grep -Fq 'exact_repository_rule_overrides_every_supported_alias' "$policy"
 
       - name: Check out the exact private remote/libs gitlink
         uses: ./.github/actions/checkout-remote-libs
@@ -80,7 +66,7 @@ jobs:
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked --all-targets -- --nocapture
 
-      - name: Validate the permanent GitOps policy contract
+      - name: Validate permanent policy contracts
         run: |
           set -euo pipefail
           node --test remote/tests/general/build-server-profile-repository-policy.test.mjs
@@ -90,14 +76,12 @@ jobs:
         run: |
           set -euo pipefail
           base='b827d1fde69bdfc5acfeb9d8a785f184c3ce5505'
-          rm -f .github/workflows/den-1550-format-resilient-once.yml
+          rm .github/workflows/den-1550-format-resilient-once.yml
           git diff --check
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
-          if ! git diff --cached --quiet; then
-            git commit -m 'style(DEN-1550): format and reprove exact profile policy'
-          fi
+          git commit -m 'style(DEN-1550): format and reprove exact profile policy'
           expected=$'.github/workflows/gha-clone-server.yml\ndocs/build-server-profile-repository-policy.md\nremote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml\nremote/deployments/build-server-rs/src/config.rs\nremote/deployments/build-server-rs/src/config/profile_policy.rs\nremote/deployments/build-server-rs/src/validation.rs\nremote/tests/general/build-server-profile-repository-policy.test.mjs'
           actual="$(git diff --name-only "$base"...HEAD | sort)"
           if [[ "$actual" != "$expected" ]]; then
