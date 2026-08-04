@@ -225,7 +225,10 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
         "node-hardened-verify"
     );
     assert_eq!(final_run["submissions"][0]["status"], "succeeded");
-    assert_eq!(final_run["submissions"][1]["profile"], "node-verify");
+    assert_eq!(
+        final_run["submissions"][1]["profile"],
+        "node-hardened-test"
+    );
     assert_eq!(final_run["submissions"][1]["status"], "succeeded");
 
     let submissions = mock_state.submissions.lock().await;
@@ -245,12 +248,75 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
         .is_some_and(
             |value| value.starts_with("gha-clone:") && value.ends_with(":operator_config")
         ));
-    assert_eq!(submissions[1]["profile"], "node-verify");
+    assert_eq!(submissions[1]["profile"], "node-hardened-test");
     assert!(submissions[1]["requestId"]
         .as_str()
         .is_some_and(
             |value| value.starts_with("gha-clone:") && value.ends_with(":repository_tests")
         ));
+    drop(submissions);
+
+    let extra_command = workflow_yaml.replacen(
+        "          npm audit --audit-level=high\n",
+        "          npm audit --audit-level=high\n          npm publish\n",
+        1,
+    );
+    let mutable_action = workflow_yaml.replacen(
+        "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+        "actions/checkout@main",
+        1,
+    );
+    let bracket_secret = workflow_yaml.replacen(
+        "          persist-credentials: false\n",
+        "          persist-credentials: false\n        env:\n          MSGINT_META_ACCESS_TOKEN: ${{ secrets['PROD_TOKEN'] }}\n",
+        1,
+    );
+
+    for (label, rejected_yaml, expected_reason) in [
+        (
+            "extra hardened command",
+            extra_command,
+            "exact reviewed command sequence",
+        ),
+        (
+            "mutable setup action",
+            mutable_action,
+            "exact 40-hex commit SHA",
+        ),
+        ("bracket secret expression", bracket_secret, "secret-bearing"),
+    ] {
+        let response = client
+            .post(format!("{server_url}/v1/runs"))
+            .header("x-gha-clone-auth", SERVER_AUTH)
+            .json(&json!({
+                "repository": REPOSITORY,
+                "revision": REVISION,
+                "workflowPath": WORKFLOW_PATH,
+                "workflowYaml": rejected_yaml
+            }))
+            .send()
+            .await
+            .unwrap_or_else(|error| panic!("submit rejected {label} workflow: {error}"));
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{label} unexpectedly reached execution"
+        );
+        let rejected: Value = response
+            .json()
+            .await
+            .unwrap_or_else(|error| panic!("read rejected {label} response: {error}"));
+        assert_eq!(rejected["error"], "workflow is not independently executable");
+        assert!(
+            rejected.to_string().contains(expected_reason),
+            "{label} response did not explain {expected_reason}: {rejected}"
+        );
+        assert_eq!(
+            mock_state.submissions.lock().await.len(),
+            2,
+            "{label} dispatched a build despite rejection"
+        );
+    }
 
     mock_task.abort();
 }
