@@ -68,8 +68,10 @@ spec:
               value: "86400"
             - name: GHA_CLONE_MAX_WEBHOOK_DELIVERIES
               value: "4096"
+            # The clone server has no direct executor route. The authenticated
+            # router owns provider selection and status pinning.
             - name: GHA_CLONE_BUILD_SERVER_URL
-              value: http://dd-build-server.default.svc.cluster.local:8100
+              value: http://dd-gha-executor-router.default.svc.cluster.local:8126
             - name: GHA_CLONE_BUILD_POLL_SECONDS
               value: "2"
             - name: GHA_CLONE_BUILD_TIMEOUT_SECONDS
@@ -110,8 +112,8 @@ spec:
             - name: GHA_CLONE_BUILD_SERVER_AUTH
               valueFrom:
                 secretKeyRef:
-                  name: dd-gha-clone-server-secrets
-                  key: build_server_auth
+                  name: dd-gha-executor-router-secrets
+                  key: inbound_auth
           ports:
             - name: http
               containerPort: 8125
