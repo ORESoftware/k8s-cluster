@@ -1,0 +1,52 @@
+name: Fix DEN-1550 static regex once
+
+on:
+  push:
+    branches: [agent/den-1550-raw-profile-policy-bytes]
+    paths: ['.github/workflows/fix-den-1550-static-regex-once.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1550-raw-profile-policy-bytes
+          persist-credentials: true
+          fetch-depth: 0
+      - name: Make the generated static regex rustfmt-tolerant
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/apply-den-1550-raw-profile-policy-bytes.yml')
+          source = path.read_text(encoding='utf-8')
+          old_raw = r'raw_env\\("BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON"\\)'
+          new_raw = r'raw_env\\(\\s*"BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON"\\s*\\)'
+          old_first = r'first_env\\(&\\["BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON"\\]\\)'
+          new_first = r'first_env\\(\\s*&\\[\\s*"BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON"\\s*\\]\\s*\\)'
+          if source.count(old_raw) != 2:
+              raise SystemExit(f'expected two raw_env regex anchors, found {source.count(old_raw)}')
+          if source.count(old_first) != 1:
+              raise SystemExit(f'expected one first_env regex anchor, found {source.count(old_first)}')
+          source = source.replace(old_raw, new_raw).replace(old_first, new_first)
+          path.write_text(source, encoding='utf-8')
+          PY
+      - name: Remove helper and commit only the carrier correction
+        run: |
+          set -euo pipefail
+          rm .github/workflows/fix-den-1550-static-regex-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          actual="$(git diff --cached --name-only | sort)"
+          test "$actual" = '.github/workflows/apply-den-1550-raw-profile-policy-bytes.yml'
+          git diff --cached --check
+          git commit -m 'test(DEN-1550): tolerate rustfmt multiline raw-env call'
+          git push origin HEAD:agent/den-1550-raw-profile-policy-bytes
