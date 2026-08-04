@@ -200,9 +200,9 @@ jobs:
             echo '## Slack agent command browser E2E'
             echo
             echo "- Harness: \`${GITHUB_SHA}\`"
-            echo '- Bridge: `63d4d9be4343d3eeba02205ec64dd443716c5249`'
-            echo '- Coordinator: `f0adef6f384bac8024da59a26cb05e2fb9caac98`'
-            echo '- Idempotency: `Idempotency-Key == payload.run_id`'
+            echo "- Bridge: 63d4d9be4343d3eeba02205ec64dd443716c5249"
+            echo "- Coordinator: f0adef6f384bac8024da59a26cb05e2fb9caac98"
+            echo "- Idempotency: Idempotency-Key == payload.run_id"
             echo "- Run attempt: \`${GITHUB_RUN_ATTEMPT}\`"
             echo "- Evidence artifact: \`slack-agent-command-browser-e2e-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}\`"
           } >>"$GITHUB_STEP_SUMMARY"
