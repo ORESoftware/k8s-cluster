@@ -16,6 +16,9 @@ mod views;
 pub use server::run;
 
 #[cfg(test)]
+mod totp_edge_tests;
+
+#[cfg(test)]
 mod architecture_tests {
     const MAIN: &str = include_str!("main.rs");
 
