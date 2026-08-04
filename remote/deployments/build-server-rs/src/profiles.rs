@@ -37,7 +37,21 @@ const RUST_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
     name: "Rust formatting, Clippy, and tests",
     image: RUST_IMAGE,
     subdirectory: ".",
-    script: "rustup component add rustfmt clippy && cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test --all-features",
+    script: r#"set -euo pipefail
+crate_dir=.
+if [ ! -f "$crate_dir/Cargo.toml" ]; then
+  if [ -f remote/deployments/gha-clone-server-rs/Cargo.toml ]; then
+    crate_dir=remote/deployments/gha-clone-server-rs
+  else
+    echo "rust-verify requires Cargo.toml at repository root or the reviewed gha-clone-server monorepo path" >&2
+    exit 2
+  fi
+fi
+cd "$crate_dir"
+rustup component add rustfmt clippy
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-targets --all-features"#,
 }];
 
 const NODE_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
@@ -279,5 +293,16 @@ mod tests {
         for name in ["rust-verify", "node-verify", "python-verify"] {
             assert!(find(name).is_some(), "{name} should be installed");
         }
+    }
+
+    #[test]
+    fn rust_verify_has_only_the_reviewed_meta_server_monorepo_fallback() {
+        let profile = find("rust-verify").expect("rust profile");
+        let script = profile.steps[0].script;
+        assert_eq!(profile.steps[0].subdirectory, ".");
+        assert!(script.contains("remote/deployments/gha-clone-server-rs/Cargo.toml"));
+        assert!(script.contains("cargo test --locked --all-targets --all-features"));
+        assert!(!script.contains("find "));
+        assert!(!script.contains("for crate"));
     }
 }

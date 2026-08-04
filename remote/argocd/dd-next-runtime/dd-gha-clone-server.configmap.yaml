@@ -15,7 +15,7 @@ data:
     sonus-auris/sonus-auris-monorepo
   GHA_CLONE_WORKFLOW_RULES_JSON: |
     {
-      "ORESoftware/k8s-cluster": [".github/workflows/gha-clone-server.yml"],
+      "ORESoftware/k8s-cluster": [".github/workflows/gha-clone-server-meta.yml"],
       "sonus-auris/sonus-auris-interfaces": [".github/workflows/ci.yml"],
       "sonus-auris/sonus-auris-ui.dart": [".github/workflows/ci.yml", ".github/workflows/android-emulator-test.yml"]
     }
