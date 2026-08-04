@@ -1,0 +1,125 @@
+name: Build DEN-1606 transport product v2 from temporary PR
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/den-1606-build-transport-pr-builder-v2.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1606-build-transport-pr-builder-v2
+  cancel-in-progress: false
+
+jobs:
+  build-product-commit:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-1606-build-transport-builder-20260804'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out temporary builder branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1606-build-transport-builder-20260804
+          fetch-depth: 1
+          persist-credentials: true
+          show-progress: false
+
+      - name: Extract reviewed transform and use structural response boundaries
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/den-1606-build-transport-pr-builder.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          step = lines.index('      - name: Switch to clean product branch and apply transport hardening')
+          next_step = lines.index('      - name: Install pinned Rust toolchain', step + 1)
+          run_index = lines.index('        run: |', step + 1, next_step)
+          block = lines[run_index + 1 : next_step]
+          opener = next(i for i, line in enumerate(block) if line.strip() == "python3 - <<'PY'")
+          terminator = max(i for i, line in enumerate(block) if i > opener and line.strip() == 'PY')
+          prefix = '          '
+          script = '\n'.join(
+              line[len(prefix):] if line.startswith(prefix) else line
+              for line in block[opener + 1 : terminator]
+          ) + '\n'
+
+          parse_start = script.index("submit_parse = dedent('''")
+          parse_end = script.index("tests = dedent(r'''", parse_start)
+          structural = '''submit_function = text.index("async fn execute_plan(")
+          submit_parse_start = text.index(
+              "        let build: BuildJobResponse = serde_json::from_str(&body)",
+              submit_function,
+          )
+          submit_insert = text.index(
+              "        update_run(state, run_id, |run| {",
+              submit_parse_start,
+          )
+          text = (
+              text[:submit_insert]
+              + "        validate_build_job_response_id(&build, None)?;\\n"
+              + text[submit_insert:]
+          )
+
+          wait_function = text.index("async fn wait_for_build(")
+          status_parse_start = text.index(
+              "        let build: BuildJobResponse = serde_json::from_str(&body)",
+              wait_function,
+          )
+          status_insert = text.index(
+              "        match build.status.as_str() {",
+              status_parse_start,
+          )
+          text = (
+              text[:status_insert]
+              + "        validate_build_job_response_id(&build, Some(build_job_id))?;\\n"
+              + text[status_insert:]
+          )
+
+          '''.replace('          ', '')
+          script = script[:parse_start] + structural + script[parse_end:]
+          target = Path('/tmp/den-1606-build-transport.py')
+          compile(script, str(workflow), 'exec')
+          target.write_text(script, encoding='utf-8')
+          PY
+          git fetch --no-tags origin agent/den-1606-build-transport-hardening-20260804
+          git checkout -B agent/den-1606-build-transport-hardening-20260804 FETCH_HEAD
+          python3 /tmp/den-1606-build-transport.py
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate product
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Commit product-only diff
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            remote/deployments/gha-clone-server-rs/src/main.rs \
+            docs/gha-clone-build-server-boundary.md
+          unexpected="$(git diff --cached --name-only | grep -Ev '^(remote/deployments/gha-clone-server-rs/src/main\.rs|docs/gha-clone-build-server-boundary\.md)$' || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected product paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          git commit -m 'fix(DEN-1606): bind clone build-server transport and identity'
+          git push origin HEAD:agent/den-1606-build-transport-hardening-20260804
