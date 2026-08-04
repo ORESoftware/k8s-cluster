@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-gha-executor-router
+  namespace: default
+  labels:
+    app: dd-gha-executor-router
+data:
+  # Ordered placement policy. AWS is the existing independent executor. The
+  # Hetzner identity is explicit but intentionally carries no dormant endpoint
+  # or credential path until its fixed-profile build server is certified.
+  GHA_EXECUTOR_ROUTER_EXECUTORS_JSON: |
+    [
+      {
+        "id": "aws-primary",
+        "provider": "aws",
+        "enabled": true,
+        "url": "http://dd-build-server.default.svc.cluster.local:8100",
+        "authPath": "/var/run/secrets/gha-executor-router/aws-build-server-auth"
+      },
+      {
+        "id": "hetzner-secondary",
+        "provider": "hetzner",
+        "enabled": false
+      }
+    ]
