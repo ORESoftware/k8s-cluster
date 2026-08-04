@@ -21,8 +21,9 @@ Campaign execution belongs to the downstream outreach service and `DEN-833`.
 7. Persist each lead and its throttle record in one Postgres transaction, including provider, source
    URL, ICP/query, confidence, collection time, verification status, and phone candidates in
    `meta_data`.
-8. Emit one `BENEFACTOR_PIPELINE_REPORT` JSON record. Email addresses are represented by SHA-256 in
-   the report; raw recipient identifiers are not logged.
+8. Emit one `BENEFACTOR_PIPELINE_REPORT` JSON record. Email addresses, domains, phone numbers,
+   business names, source URLs, queries, and the category are represented only by SHA-256; raw
+   contact or search-strategy identifiers are not logged.
 
 ## Provider status
 
@@ -71,7 +72,9 @@ node orchestrate.mjs
 ```
 
 The report is canonicalized and sorted. Its `reportDigest` is stable for the same normalized provider
-results, provider statuses, and counters even when inputs arrive in a different order.
+results, provider statuses, and counters even when inputs arrive in a different order. All
+per-record contact, source, and search-strategy identifiers are SHA-256 values; operational fields
+such as provider, rank, confidence, verification status, and counters remain readable.
 
 ## Configuration bounds
 
@@ -106,7 +109,7 @@ node --test orchestrate.test.mjs
 
 The GitHub Actions workflow runs these checks on Node 22 and Node 24 and ratchets the source boundary:
 no direct arbitrary-domain fetch, no outreach API, provider-attributed persistence, dry-run write
-guards, and transaction/rollback coverage.
+guards, transaction/rollback coverage, and no raw contact or strategy identifiers in the report.
 
 ## Remaining DEN-260 work
 
