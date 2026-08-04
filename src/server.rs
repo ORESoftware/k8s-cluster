@@ -6,9 +6,7 @@ use tower_http::normalize_path::NormalizePathLayer;
 use crate::config::Config;
 use crate::crypto::Sealer;
 use crate::state::AppState;
-use crate::{
-    admin, api, cdc, db, events, jobs, scheduler, shared_auth_startup,
-};
+use crate::{admin, api, cdc, db, events, jobs, scheduler, shared_auth_startup};
 
 /// Initialize the billing platform resources, background jobs, and HTTP API.
 pub(crate) async fn run() -> anyhow::Result<()> {
