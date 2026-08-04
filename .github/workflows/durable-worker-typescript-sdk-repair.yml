@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/durable-worker-typescript-sdk-repair.yml'
-      - 'remote/api-sdks/typescript/durable-worker/**'
+      - 'remote/worker-sdks/typescript/durable-worker/**'
       - 'remote/tests/general/durable-worker-typescript-sdk.test.mjs'
   push:
     branches:
@@ -12,7 +12,7 @@ on:
       - main
     paths:
       - '.github/workflows/durable-worker-typescript-sdk-repair.yml'
-      - 'remote/api-sdks/typescript/durable-worker/**'
+      - 'remote/worker-sdks/typescript/durable-worker/**'
       - 'remote/tests/general/durable-worker-typescript-sdk.test.mjs'
   workflow_dispatch:
 
@@ -50,12 +50,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm --prefix remote/api-sdks/typescript/durable-worker run check
-          npm --prefix remote/api-sdks/typescript/durable-worker test
+          npm --prefix remote/worker-sdks/typescript/durable-worker run check
+          npm --prefix remote/worker-sdks/typescript/durable-worker test
           node --test remote/tests/general/durable-worker-typescript-sdk.test.mjs
 
       - name: Stress abort and lease-fencing lifecycle
-        working-directory: remote/api-sdks/typescript/durable-worker
+        working-directory: remote/worker-sdks/typescript/durable-worker
         shell: bash
         run: |
           set -euo pipefail
@@ -66,7 +66,7 @@ jobs:
           done
 
       - name: Verify intentional dependency-free package payload
-        working-directory: remote/api-sdks/typescript/durable-worker
+        working-directory: remote/worker-sdks/typescript/durable-worker
         shell: bash
         run: |
           set -euo pipefail

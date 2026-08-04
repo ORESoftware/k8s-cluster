@@ -7,13 +7,14 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const read = (path) => readFileSync(resolve(repoRoot, path), 'utf8');
 
-const root = 'remote/api-sdks/typescript/durable-worker';
+const root = 'remote/worker-sdks/typescript/durable-worker';
 const packageJson = JSON.parse(read(`${root}/package.json`));
 const source = read(`${root}/index.mjs`);
 const declarations = read(`${root}/index.d.ts`);
 const sdkTests = read(`${root}/test/client.test.mjs`);
 const readme = read(`${root}/README.md`);
 const workflow = read('.github/workflows/durable-worker-typescript-sdk.yml');
+const namespaceWorkflow = read('.github/workflows/durable-worker-sdk-namespace.yml');
 
 test('the worker SDK is dependency-free native ESM with an explicit package payload', () => {
   assert.equal(packageJson.name, '@oresoftware/durable-worker-sdk');
@@ -83,9 +84,19 @@ test('SDK CI is pinned, read-only, package-aware, and path-scoped', () => {
   assert.match(workflow, /actions\/checkout@[0-9a-f]{40}/);
   assert.match(workflow, /actions\/setup-node@[0-9a-f]{40}/);
   assert.match(workflow, /node-version:\s*'22\.23\.1'/);
+  assert.match(workflow, /remote\/worker-sdks\/typescript\/durable-worker/);
   assert.match(workflow, /npm run check/);
   assert.match(workflow, /npm test/);
   assert.match(workflow, /npm pack --dry-run --json/);
   assert.match(workflow, /durable-worker-typescript-sdk\.test\.mjs/);
   assert.doesNotMatch(workflow, /contents:\s*write/);
+});
+
+test('hand-authored worker SDKs are isolated from generated OpenAPI output', () => {
+  assert.match(root, /^remote\/worker-sdks\//);
+  assert.match(namespaceWorkflow, /permissions:\s+contents:\s*read/);
+  assert.match(namespaceWorkflow, /generate-api-sdks\.mjs --check/);
+  assert.match(namespaceWorkflow, /test ! -e "\$old"/);
+  assert.doesNotMatch(namespaceWorkflow, /contents:\s*write/);
+  assert.doesNotMatch(namespaceWorkflow, /git push/);
 });
