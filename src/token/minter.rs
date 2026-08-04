@@ -13,6 +13,8 @@ use super::assurance::AuthenticationAssurance;
 use super::claims::OreClaims;
 use super::jwks::PublicJwks;
 
+const MAX_AUTH_TIME_FUTURE_SKEW_SECS: u64 = 30;
+
 pub struct TokenMinter {
     encoding_key: EncodingKey,
     header: Header,
@@ -108,15 +110,23 @@ impl TokenMinter {
     /// `verified_auth_time` is load-bearing only for AAL2. AAL1 tokens never
     /// carry `auth_time`. For local AAL2 flows the caller passes `None`, and the
     /// completion time of the server-owned ceremony is used. Exchange adapters
-    /// pass the newest timestamp extracted from the already verified provider
+    /// pass the factor timestamp extracted from the already verified provider
     /// token; if they cannot establish one they must downgrade assurance before
-    /// calling this method.
+    /// calling this method. A future upstream timestamp is rejected here as a
+    /// second line of defense, even if the adapter already checked it.
     pub fn mint_with_auth_time(
         &self,
         context: MintContext,
         verified_auth_time: Option<u64>,
     ) -> Result<MintedToken, AuthError> {
         let now = now_secs();
+        if verified_auth_time
+            .is_some_and(|timestamp| timestamp > now.saturating_add(MAX_AUTH_TIME_FUTURE_SKEW_SECS))
+        {
+            tracing::warn!("refusing to mint token with future auth_time");
+            return Err(AuthError::Unauthorized);
+        }
+
         let expires_at = now.saturating_add(self.ttl_secs);
         let is_supabase = context.provider == "supabase";
         let assurance_level = context.assurance.level();
@@ -273,6 +283,26 @@ mod tests {
             .unwrap();
         let claims = m.verify(&minted.token).unwrap();
         assert_eq!(claims.auth_time, Some(upstream_auth_time));
+    }
+
+    #[test]
+    fn future_verified_auth_time_is_rejected() {
+        let m = minter();
+        let result = m.mint_with_auth_time(
+            MintContext {
+                shared_user_id: "shared-42".into(),
+                session_id: Some(uuid::Uuid::from_u128(42)),
+                provider: "supabase".into(),
+                provider_tenant: "fiducia-cloud".into(),
+                provider_subject: "sub-1".into(),
+                email: None,
+                email_verified: false,
+                roles: vec!["user".into()],
+                assurance: AuthenticationAssurance::step_up(&["pwd".into()], "totp"),
+            },
+            Some(now_secs().saturating_add(MAX_AUTH_TIME_FUTURE_SKEW_SECS + 1)),
+        );
+        assert!(matches!(result, Err(AuthError::Unauthorized)));
     }
 
     #[test]
