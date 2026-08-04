@@ -1,0 +1,200 @@
+name: Publish organization .github governance directly
+run-name: Publish organization .github governance directly @ ${{ github.sha }}
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ops-bootstrap-org-dotgithub-direct.yml'
+      - 'scripts/ops/bootstrap_org_dotgithub_repositories.py'
+      - 'scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py'
+      - 'scripts/ops/run_protected_org_dotgithub_publisher.sh'
+      - 'tests/ops/test_bootstrap_org_dotgithub_direct.py'
+      - 'tests/ops/test_bootstrap_org_dotgithub_repositories.py'
+      - 'tests/ops/test_bootstrap_org_dotgithub_repositories_hardened.py'
+      - 'tests/ops/test_bootstrap_org_dotgithub_protected_runner.py'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ops-bootstrap-org-dotgithub-direct.yml'
+      - 'scripts/ops/bootstrap_org_dotgithub_repositories.py'
+      - 'scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py'
+      - 'scripts/ops/run_protected_org_dotgithub_publisher.sh'
+      - 'tests/ops/test_bootstrap_org_dotgithub_direct.py'
+      - 'tests/ops/test_bootstrap_org_dotgithub_repositories.py'
+      - 'tests/ops/test_bootstrap_org_dotgithub_repositories_hardened.py'
+      - 'tests/ops/test_bootstrap_org_dotgithub_protected_runner.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-bootstrap-organization-dotgithub-fleet
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Check out the exact pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind validation to the exact head revision
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+
+      - name: Compile publishers and run bounded tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ops/run_protected_org_dotgithub_publisher.sh
+          python3 -m py_compile \
+            scripts/ops/bootstrap_org_dotgithub_repositories.py \
+            scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py
+          python3 -m unittest discover \
+            -s tests/ops \
+            -p 'test_bootstrap_org_dotgithub*.py' \
+            -v
+
+  publish:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - name: Check out the exact trusted main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind publication to exact trusted main
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Validate bounded publisher before credential access
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ops/run_protected_org_dotgithub_publisher.sh
+          python3 -m py_compile \
+            scripts/ops/bootstrap_org_dotgithub_repositories.py \
+            scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py
+          python3 -m unittest discover \
+            -s tests/ops \
+            -p 'test_bootstrap_org_dotgithub*.py' \
+            -v
+
+      - name: Configure trusted main-ref AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: direct-org-dotgithub-governance-publisher
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Publish and verify the fixed 36-organization fleet
+        id: publish
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          report="$RUNNER_TEMP/org-dotgithub-governance.md"
+          error_log="$RUNNER_TEMP/org-dotgithub-governance.stderr"
+          : > "$report"
+          : > "$error_log"
+
+          set +e
+          bash scripts/ops/run_protected_org_dotgithub_publisher.sh \
+            "$GITHUB_SHA" \
+            "$GITHUB_WORKSPACE" \
+            >"$report" \
+            2>"$error_log"
+          status=$?
+          set -e
+
+          printf 'publisher_exit_code=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          cat "$error_log" >&2
+          cat "$report"
+
+          test "$status" -eq 0
+          grep -Fq '<!-- org-dotgithub-governance-report-complete -->' "$report"
+
+      - name: Report the bounded publication result
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+        run: |
+          set -euo pipefail
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          report="$RUNNER_TEMP/org-dotgithub-governance.md"
+          error_log="$RUNNER_TEMP/org-dotgithub-governance.stderr"
+          body="$RUNNER_TEMP/org-dotgithub-result.md"
+
+          if [[ "$PUBLISH_OUTCOME" == success ]] &&
+             grep -Fq '<!-- org-dotgithub-governance-report-complete -->' "$report"; then
+            cp "$report" "$body"
+            {
+              echo
+              echo "Direct trusted-main workflow run: ${run_url}"
+              echo
+              echo "The fixed 36-organization fleet was verified. Follow-up pull requests may now add repository conventions that GitHub does not inherit automatically."
+            } >> "$body"
+          else
+            STDOUT="$report" STDERR="$error_log" python3 - <<'PY' > "$RUNNER_TEMP/org-dotgithub-redacted.log"
+          import os
+          import re
+          from pathlib import Path
+
+          fragments = []
+          for variable in ("STDERR", "STDOUT"):
+              path = Path(os.environ[variable])
+              if path.exists():
+                  fragments.append(path.read_text(errors="replace"))
+          text = "\n".join(fragments) if fragments else "publisher output was not created"
+          patterns = [
+              (r"https://x-access-token:[^@\s]+@github\.com/", "https://x-access-token:***@github.com/"),
+              (r"github_pat_[A-Za-z0-9_]{20,}", "github_pat_***"),
+              (r"gh[pousr]_[A-Za-z0-9_]{20,}", "gh*_***"),
+              (r"(Authorization:\s*Bearer\s+)[A-Za-z0-9._-]{20,}", r"\1***"),
+          ]
+          for pattern, replacement in patterns:
+              text = re.sub(pattern, replacement, text, flags=re.I)
+          print("\n".join(text.splitlines()[-220:])[-24000:])
+          PY
+            {
+              echo '# Organization `.github` direct publication failed'
+              echo
+              echo "Direct trusted-main workflow run: ${run_url}"
+              echo
+              echo '```text'
+              cat "$RUNNER_TEMP/org-dotgithub-redacted.log"
+              echo '```'
+            } > "$body"
+          fi
+
+          gh issue comment 615 --repo "$GITHUB_REPOSITORY" --body-file "$body"
+          test "$PUBLISH_OUTCOME" == success
