@@ -215,7 +215,29 @@ jobs:
           as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
           create function auth.jwt() returns jsonb
           language sql stable
-          as $$ select jsonb_build_object('aal', 'aal2') $$;
+          as $$
+            select jsonb_build_object(
+              'aal', 'aal2',
+              'amr', jsonb_build_array(jsonb_build_object('method', 'otp'))
+            )
+          $$;
+          create function public.sonus_passwordless_aal2() returns boolean
+          language sql stable
+          set search_path = ''
+          as $$
+            select
+              auth.jwt()->>'aal' = 'aal2'
+              and not exists (
+                select 1
+                from jsonb_array_elements(coalesce(auth.jwt()->'amr', '[]'::jsonb)) item
+                where lower(coalesce(item->>'method', '')) = 'password'
+              )
+              and exists (
+                select 1
+                from jsonb_array_elements(coalesce(auth.jwt()->'amr', '[]'::jsonb)) item
+                where lower(coalesce(item->>'method', '')) in ('otp', 'magiclink')
+              )
+          $$;
 
           create table public.acoustic_events (
             id uuid primary key,
@@ -252,19 +274,19 @@ jobs:
           alter table public.devices enable row level security;
           alter table public.entitlements enable row level security;
 
-          create policy acoustic_select on public.acoustic_events for select to authenticated using (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
-          create policy acoustic_insert on public.acoustic_events for insert to authenticated with check (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
-          create policy acoustic_update on public.acoustic_events for update to authenticated using (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2') with check (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
-          create policy acoustic_delete on public.acoustic_events for delete to authenticated using (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
-          create policy telemetry_select on public.client_telemetry for select to authenticated using (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
-          create policy telemetry_insert on public.client_telemetry for insert to authenticated with check (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
-          create policy consent_select on public.user_consents for select to authenticated using (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
-          create policy consent_insert on public.user_consents for insert to authenticated with check (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
-          create policy settings_select on public.user_settings for select to authenticated using (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
-          create policy settings_insert on public.user_settings for insert to authenticated with check (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
-          create policy settings_update on public.user_settings for update to authenticated using (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2') with check (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
-          create policy devices_owner on public.devices for all to authenticated using (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2') with check (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
-          create policy entitlements_select on public.entitlements for select to authenticated using (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
+          create policy acoustic_select on public.acoustic_events for select to authenticated using (auth.uid() = user_id and public.sonus_passwordless_aal2());
+          create policy acoustic_insert on public.acoustic_events for insert to authenticated with check (auth.uid() = user_id and public.sonus_passwordless_aal2());
+          create policy acoustic_update on public.acoustic_events for update to authenticated using (auth.uid() = user_id and public.sonus_passwordless_aal2()) with check (auth.uid() = user_id and public.sonus_passwordless_aal2());
+          create policy acoustic_delete on public.acoustic_events for delete to authenticated using (auth.uid() = user_id and public.sonus_passwordless_aal2());
+          create policy telemetry_select on public.client_telemetry for select to authenticated using (auth.uid() = user_id and public.sonus_passwordless_aal2());
+          create policy telemetry_insert on public.client_telemetry for insert to authenticated with check (auth.uid() = user_id and public.sonus_passwordless_aal2());
+          create policy consent_select on public.user_consents for select to authenticated using (auth.uid() = user_id and public.sonus_passwordless_aal2());
+          create policy consent_insert on public.user_consents for insert to authenticated with check (auth.uid() = user_id and public.sonus_passwordless_aal2());
+          create policy settings_select on public.user_settings for select to authenticated using (auth.uid() = user_id and public.sonus_passwordless_aal2());
+          create policy settings_insert on public.user_settings for insert to authenticated with check (auth.uid() = user_id and public.sonus_passwordless_aal2());
+          create policy settings_update on public.user_settings for update to authenticated using (auth.uid() = user_id and public.sonus_passwordless_aal2()) with check (auth.uid() = user_id and public.sonus_passwordless_aal2());
+          create policy devices_owner on public.devices for all to authenticated using (auth.uid() = user_id and public.sonus_passwordless_aal2()) with check (auth.uid() = user_id and public.sonus_passwordless_aal2());
+          create policy entitlements_select on public.entitlements for select to authenticated using (auth.uid() = user_id and public.sonus_passwordless_aal2());
           SQL
 
       - name: Prove compliant Supabase fixture is clean
