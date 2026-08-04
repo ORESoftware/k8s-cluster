@@ -43,10 +43,11 @@ jobs:
           conflicts="$(git diff --name-only --diff-filter=U | sort)"
           expected="$(printf '%s\n' \
             .github/workflows/gha-clone-server.yml \
+            remote/deployments/build-server-rs/src/profiles.rs \
             remote/tests/general/gha-clone-server-config.test.ts \
             | sort)"
           if [ "$merge_status" -eq 0 ]; then
-            echo 'Expected the reviewed two-file conflict set, but the stable merge was clean' >&2
+            echo 'Expected the reviewed three-file conflict set, but the stable merge was clean' >&2
             exit 1
           fi
           if [ "$conflicts" != "$expected" ]; then
@@ -56,6 +57,7 @@ jobs:
           python3 -m py_compile scripts/ops/resolve_den1550_current_dev.py
           python3 scripts/ops/resolve_den1550_current_dev.py
           git add .github/workflows/gha-clone-server.yml \
+                  remote/deployments/build-server-rs/src/profiles.rs \
                   remote/tests/general/gha-clone-server-config.test.ts
           remaining="$(git diff --name-only --diff-filter=U)"
           if [ -n "$remaining" ]; then
@@ -83,10 +85,12 @@ jobs:
         with:
           ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
-      - name: Compile and test build-server profiles, admission, idempotency, and NATS
+      - name: Format, compile, and test build-server profiles, admission, idempotency, and NATS
         working-directory: remote/deployments/build-server-rs
         run: |
           set -euo pipefail
+          rustfmt --edition 2021 src/profiles.rs
+          rustfmt --edition 2021 --check src/profiles.rs
           cargo check --locked --all-targets
           cargo test --locked profiles::tests -- --nocapture
           cargo test --locked validation::tests -- --nocapture
