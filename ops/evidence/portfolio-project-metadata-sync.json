@@ -1,11 +1,11 @@
 {
   "dry_run": false,
-  "generated_at": "2026-08-04T19:00:45+00:00",
+  "generated_at": "2026-08-04T19:02:57+00:00",
   "mapping_count": 41,
   "registry": "ops/registries/portfolio-project-links.csv",
   "results": [
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "3FA-app",
       "github_project_number": 1,
       "github_project_title": "3FA-app-project",
@@ -15,7 +15,7 @@
       "slack_channel_id": "C0BL6BEDYFK"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "agent-pontifex",
       "github_project_number": 1,
       "github_project_title": "agent-pontifex-project",
@@ -25,7 +25,7 @@
       "slack_channel_id": "C0BMTHH0HMH"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "akrion-sim",
       "github_project_number": 1,
       "github_project_title": "akrion-sim-project",
@@ -35,7 +35,7 @@
       "slack_channel_id": "C0BL15P8P3P"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "anticaptrad",
       "github_project_number": 1,
       "github_project_title": "anticaptrad-project",
@@ -45,7 +45,7 @@
       "slack_channel_id": "C0BMWCYEX3P"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "athlet-o",
       "github_project_number": 1,
       "github_project_title": "athlet-o-project",
@@ -55,7 +55,7 @@
       "slack_channel_id": "C0BLYPTPSFJ"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "benefactor-cc",
       "github_project_number": 1,
       "github_project_title": "benefactor-cc-project",
@@ -65,7 +65,7 @@
       "slack_channel_id": "C0BKP367N95"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "canonical-cloud",
       "github_project_number": 1,
       "github_project_title": "canonical-cloud-project",
@@ -75,7 +75,7 @@
       "slack_channel_id": "C0BMH08UD44"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "channelsiege",
       "github_project_number": 1,
       "github_project_title": "channelsiege-project",
@@ -85,7 +85,7 @@
       "slack_channel_id": "C0BMWCTMQDT"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "claritas-viz",
       "github_project_number": 1,
       "github_project_title": "claritas-viz-project",
@@ -95,7 +95,7 @@
       "slack_channel_id": "C0BMVSD3P5K"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "cliptown",
       "github_project_number": 1,
       "github_project_title": "cliptown-project",
@@ -105,7 +105,7 @@
       "slack_channel_id": "C0BLYPGGFH6"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "daedalus-fab",
       "github_project_number": 1,
       "github_project_title": "daedalus-fab-project",
@@ -115,7 +115,7 @@
       "slack_channel_id": "C0BKP3DDDPZ"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "dancing-dragons",
       "github_project_number": 4,
       "github_project_title": "dancing-dragons-project",
@@ -125,7 +125,7 @@
       "slack_channel_id": "C0BMWM4J6SH"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "declarative-migrations",
       "github_project_number": 1,
       "github_project_title": "declarative-migrations-project",
@@ -135,7 +135,7 @@
       "slack_channel_id": "C0BN3FP4DV2"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "discrete-event-systems",
       "github_project_number": 1,
       "github_project_title": "discrete-event-systems-project",
@@ -145,7 +145,7 @@
       "slack_channel_id": "C0BMZQGA410"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "drone-mngr",
       "github_project_number": 1,
       "github_project_title": "drone-mngr-project",
@@ -155,7 +155,7 @@
       "slack_channel_id": "C0BMWD264TF"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "fanwaave",
       "github_project_number": 1,
       "github_project_title": "fanwaave-project",
@@ -165,7 +165,7 @@
       "slack_channel_id": "C0BN3FMEJGL"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "fiducia-cloud",
       "github_project_number": 1,
       "github_project_title": "fiducia-cloud-project",
@@ -175,7 +175,7 @@
       "slack_channel_id": "C0BLT1GCV32"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "fifa-math",
       "github_project_number": 1,
       "github_project_title": "fifa-math-project",
@@ -185,7 +185,7 @@
       "slack_channel_id": "C0BMB9HG83G"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "file-tunnel",
       "github_project_number": 1,
       "github_project_title": "file-tunnel-project",
@@ -195,7 +195,7 @@
       "slack_channel_id": "C0BMT1K9MBM"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "gha-indie-worker",
       "github_project_number": 1,
       "github_project_title": "gha-indie-worker-project",
@@ -205,7 +205,7 @@
       "slack_channel_id": "C0BMVTP7PGD"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "hypeblitz",
       "github_project_number": 1,
       "github_project_title": "hypeblitz-project",
@@ -215,7 +215,7 @@
       "slack_channel_id": "C0BMXR1K4LE"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "hypesiege",
       "github_project_number": 1,
       "github_project_title": "hypesiege-project",
@@ -225,7 +225,7 @@
       "slack_channel_id": "C0BMF6JDSHX"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "memebank",
       "github_project_number": 1,
       "github_project_title": "memebank-project",
@@ -235,7 +235,7 @@
       "slack_channel_id": "C0BLYPLKETS"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "messaging-intel",
       "github_project_number": 1,
       "github_project_title": "messaging-intel-project",
@@ -245,7 +245,7 @@
       "slack_channel_id": "C0BKVCUUQKX"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "meta-agents-demo",
       "github_project_number": 1,
       "github_project_title": "meta-agents-demo-project",
@@ -255,7 +255,7 @@
       "slack_channel_id": "C0BMZAL168J"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "networking-components",
       "github_project_number": 1,
       "github_project_title": "networking-components-project",
@@ -265,7 +265,7 @@
       "slack_channel_id": "C0BMHU0CUMV"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "OmniBlitz",
       "github_project_number": 1,
       "github_project_title": "OmniBlitz-project",
@@ -275,7 +275,7 @@
       "slack_channel_id": "C0BMWCUGXJR"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "opto-sync",
       "github_project_number": 1,
       "github_project_title": "opto-sync-project",
@@ -285,7 +285,7 @@
       "slack_channel_id": "C0BMBARQ7N2"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "quaestor-ledger",
       "github_project_number": 1,
       "github_project_title": "quaestor-ledger-project",
@@ -295,7 +295,7 @@
       "slack_channel_id": "C0BL4E85DGA"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "rust-ssr-demos",
       "github_project_number": 1,
       "github_project_title": "rust-ssr-demos-project",
@@ -305,7 +305,7 @@
       "slack_channel_id": "C0BN1NJAE01"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "sagitta-stack",
       "github_project_number": 1,
       "github_project_title": "sagitta-stack-project",
@@ -315,7 +315,7 @@
       "slack_channel_id": "C0BMZ754YCS"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "scintilla-run",
       "github_project_number": 1,
       "github_project_title": "scintilla-run-project",
@@ -325,7 +325,7 @@
       "slack_channel_id": "C0BL4GDJHQA"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "shared-auth",
       "github_project_number": 1,
       "github_project_title": "shared-auth-project",
@@ -335,7 +335,7 @@
       "slack_channel_id": "C0BMD90HED8"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "sonus-auris",
       "github_project_number": 1,
       "github_project_title": "sonus-auris-project",
@@ -345,7 +345,7 @@
       "slack_channel_id": "C0BKSE66CD9"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "streamkore",
       "github_project_number": 1,
       "github_project_title": "streamkore-project",
@@ -355,7 +355,7 @@
       "slack_channel_id": "C0BMTHECG03"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "StreemPilot",
       "github_project_number": 1,
       "github_project_title": "StreemPilot-project",
@@ -365,7 +365,7 @@
       "slack_channel_id": "C0BMB94FL86"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "unreal-unity-poc",
       "github_project_number": 1,
       "github_project_title": "unreal-unity-poc-project",
@@ -375,7 +375,7 @@
       "slack_channel_id": "C0BMZQB1DPU"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "usa-acc",
       "github_project_number": 1,
       "github_project_title": "usa-acc-project",
@@ -385,7 +385,7 @@
       "slack_channel_id": "C0BMX821LFQ"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "voxletra",
       "github_project_number": 1,
       "github_project_title": "voxletra-project",
@@ -395,7 +395,7 @@
       "slack_channel_id": "C0BMB9GPXC6"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "zed-pkg",
       "github_project_number": 1,
       "github_project_title": "zed-pkg-project",
@@ -405,7 +405,7 @@
       "slack_channel_id": "C0BL0K0HABB"
     },
     {
-      "action": "updated",
+      "action": "unchanged",
       "github_org": "zed-pkg-test",
       "github_project_number": 1,
       "github_project_title": "zed-pkg-test-project",
@@ -416,6 +416,6 @@
     }
   ],
   "schema_version": 1,
-  "unchanged_count": 0,
-  "updated_count": 41
+  "unchanged_count": 41,
+  "updated_count": 0
 }
