@@ -25,328 +25,57 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: agent/den-1606-planner-input-hardening-20260804
-          fetch-depth: 1
+          fetch-depth: 2
           persist-credentials: true
           show-progress: false
 
-      - name: Fix effective YAML key columns and direct path bounds
+      - name: Apply the reviewed parent patch after proving product identity
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = '0a5449ded9b1e71621400a8f4c0ca205f7e52970'
+          base='0a5449ded9b1e71621400a8f4c0ca205f7e52970'
+          workflow='.github/workflows/den-1606-planner-input-finalize-once.yml'
+          git diff --quiet "$base"..HEAD -- \
+            remote/deployments/gha-clone-server-rs/src/lib.rs \
+            docs/gha-clone-planner-input-boundary.md
+          unexpected="$(git diff --name-only "$base"..HEAD | grep -Ev '^\.github/workflows/den-1606-planner-input-finalize-once\.yml$' || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected pre-finalization paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
           python3 - <<'PY'
           from pathlib import Path
-          from textwrap import dedent
+          import subprocess
 
-          path = Path('remote/deployments/gha-clone-server-rs/src/lib.rs')
-          text = path.read_text(encoding='utf-8')
-
-          validator_start = text.index('fn validate_workflow_document(source: &str) -> Result<(), String> {')
-          validator_end = text.index('pub fn build_plan(', validator_start)
-          validator = dedent(r'''
-          fn is_block_scalar_header(value: &str) -> bool {
-              let token = value.split_whitespace().next().unwrap_or_default();
-              let Some(modifiers) = token
-                  .strip_prefix('|')
-                  .or_else(|| token.strip_prefix('>'))
-              else {
-                  return false;
-              };
-              modifiers
-                  .bytes()
-                  .all(|byte| byte.is_ascii_digit() || matches!(byte, b'+' | b'-'))
-          }
-
-          fn validate_workflow_document(source: &str) -> Result<(), String> {
-              if source.as_bytes().contains(&b'\t') {
-                  return Err("workflowYaml contains a tab; indentation must use spaces".into());
-              }
-
-              let mut parents = Vec::<(usize, String)>::new();
-              let mut seen = BTreeMap::<String, BTreeSet<String>>::new();
-              let mut sequence_ordinals = BTreeMap::<String, usize>::new();
-              let mut block_scalar_indent = None::<usize>;
-
-              for (index, raw_line) in source.lines().enumerate() {
-                  let line_number = index + 1;
-                  let indent = raw_line.bytes().take_while(|byte| *byte == b' ').count();
-                  let trimmed = raw_line.trim();
-
-                  if let Some(block_indent) = block_scalar_indent {
-                      if trimmed.is_empty() || indent > block_indent {
-                          continue;
-                      }
-                      block_scalar_indent = None;
-                  }
-                  if trimmed.is_empty() || trimmed.starts_with('#') {
-                      continue;
-                  }
-                  if trimmed == "---"
-                      || trimmed.starts_with("--- ")
-                      || trimmed == "..."
-                      || trimmed.starts_with("... ")
-                  {
-                      return Err(format!(
-                          "workflowYaml line {line_number} uses a YAML document marker"
-                      ));
-                  }
-
-                  while parents
-                      .last()
-                      .is_some_and(|(parent_indent, _)| *parent_indent >= indent)
-                  {
-                      parents.pop();
-                  }
-
-                  let raw_content = raw_line[indent..].trim_end();
-                  let (content, key_indent) = if let Some(after_dash) = raw_content.strip_prefix('-') {
-                      if after_dash.is_empty() || after_dash.starts_with(' ') {
-                          let spaces_after_dash = after_dash
-                              .bytes()
-                              .take_while(|byte| *byte == b' ')
-                              .count();
-                          let parent_scope = parents
-                              .iter()
-                              .map(|(_, parent)| parent.as_str())
-                              .collect::<Vec<_>>()
-                              .join("/");
-                          let counter = sequence_ordinals
-                              .entry(format!("{parent_scope}@{indent}"))
-                              .or_default();
-                          parents.push((indent, format!("[{counter}]")));
-                          *counter += 1;
-                          (
-                              after_dash[spaces_after_dash..].trim_end(),
-                              indent + 1 + spaces_after_dash,
-                          )
-                      } else {
-                          (raw_content, indent)
-                      }
-                  } else {
-                      (raw_content, indent)
-                  };
-                  if content.is_empty() {
-                      continue;
-                  }
-                  if content.starts_with(['!', '&', '*']) {
-                      return Err(format!(
-                          "workflowYaml line {line_number} uses a YAML tag, anchor, or alias"
-                      ));
-                  }
-                  if content.starts_with('{') && content.trim() != "{}" {
-                      return Err(format!(
-                          "workflowYaml line {line_number} uses a non-empty flow mapping"
-                      ));
-                  }
-
-                  let Some((raw_key, raw_value)) = content.split_once(':') else {
-                      continue;
-                  };
-                  let key = raw_key.trim().trim_matches(['\'', '"']);
-                  let value = raw_value.trim_start();
-                  if key.is_empty() {
-                      continue;
-                  }
-                  if !key.is_ascii() {
-                      return Err(format!(
-                          "workflowYaml line {line_number} has a non-ASCII mapping key"
-                      ));
-                  }
-                  if key == "<<" {
-                      return Err(format!(
-                          "workflowYaml line {line_number} uses a YAML merge key"
-                      ));
-                  }
-                  if value.starts_with(['!', '&', '*']) {
-                      return Err(format!(
-                          "workflowYaml line {line_number} uses a YAML tag, anchor, or alias"
-                      ));
-                  }
-                  let uncommented_value = value.split('#').next().unwrap_or(value).trim_end();
-                  if uncommented_value.starts_with('{') && uncommented_value != "{}" {
-                      return Err(format!(
-                          "workflowYaml line {line_number} uses a non-empty flow mapping"
-                      ));
-                  }
-
-                  let scope = parents
-                      .iter()
-                      .map(|(_, parent)| parent.as_str())
-                      .collect::<Vec<_>>()
-                      .join("/");
-                  if !seen
-                      .entry(scope)
-                      .or_default()
-                      .insert(key.to_ascii_lowercase())
-                  {
-                      return Err(format!(
-                          "workflowYaml line {line_number} repeats mapping key {key:?}"
-                      ));
-                  }
-
-                  if is_block_scalar_header(value) {
-                      block_scalar_indent = Some(key_indent);
-                  } else if value.is_empty() {
-                      parents.push((key_indent, key.to_ascii_lowercase()));
-                  }
-              }
-              Ok(())
-          }
-
-          ''')
-          text = text[:validator_start] + validator + text[validator_end:]
-
-          path_start = text.index('fn valid_workflow_path(value: &str) -> bool {')
-          path_end = text.index('\n}\n', path_start) + 3
-          path_validator = dedent(r'''
-          fn valid_workflow_path(value: &str) -> bool {
-              const PREFIX: &str = ".github/workflows/";
-              let Some(file) = value.strip_prefix(PREFIX) else {
-                  return false;
-              };
-              !file.is_empty()
-                  && !file.contains('/')
-                  && !file.contains('\\')
-                  && !file.contains("..")
-                  && (file.ends_with(".yml") || file.ends_with(".yaml"))
-                  && file
-                      .bytes()
-                      .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
-                  && value.len() <= 256
-          }
-          ''')
-          text = text[:path_start] + path_validator + text[path_end:]
-
-          message_old = '"workflowPath must stay under .github/workflows and end in .yml or .yaml".into()'
-          message_new = '"workflowPath must be one direct ASCII .github/workflows/<file>.yml or .yaml file".into()'
-          if text.count(message_old) != 1:
-              raise SystemExit('workflow-path error message boundary drifted')
-          text = text.replace(message_old, message_new, 1)
-
-          tests = dedent(r'''
-
-          #[cfg(test)]
-          mod den_1606_planner_input_followup_tests {
-              use super::*;
-
-              fn request(yaml: &str) -> PlanRequest {
-                  PlanRequest {
-                      repository: "sonus-auris/sonus-auris-interfaces".into(),
-                      revision: "0123456789abcdef0123456789abcdef01234567".into(),
-                      workflow_path: ".github/workflows/ci.yml".into(),
-                      workflow_yaml: yaml.into(),
-                  }
-              }
-
-              #[test]
-              fn block_scalar_siblings_return_to_the_sequence_item_scope() {
-                  let valid = build_plan(
-                      &request(
-                          r#"
-          jobs:
-            test:
-              runs-on: ubuntu-latest
-              steps:
-                - name: first
-                  run: |
-                    echo ok
-                    cargo test
-                  shell: bash
-                - name: second
-                  run: cargo fmt --check
-                  shell: bash
-          "#,
-                      ),
-                      &PlannerLimits::default(),
-                  )
-                  .expect("separate sequence items may repeat mapping keys");
-                  assert!(!valid.independent_executable);
-
-                  let errors = build_plan(
-                      &request(
-                          r#"
-          jobs:
-            test:
-              runs-on: ubuntu-latest
-              steps:
-                - name: duplicate
-                  run: |
-                    echo ok
-                    cargo test
-                  shell: bash
-                  shell: sh
-          "#,
-                      ),
-                      &PlannerLimits::default(),
-                  )
-                  .unwrap_err()
-                  .join("\n");
-                  assert!(errors.contains("repeats mapping key \"shell\""), "{errors}");
-              }
-
-              #[test]
-              fn flow_mappings_and_unsafe_direct_paths_fail_closed() {
-                  let flow_errors = build_plan(
-                      &request("jobs: { test: { runs-on: ubuntu-latest } }\n"),
-                      &PlannerLimits::default(),
-                  )
-                  .unwrap_err()
-                  .join("\n");
-                  assert!(flow_errors.contains("flow mapping"), "{flow_errors}");
-
-                  for invalid in [
-                      ".github/workflows/ci file.yml",
-                      ".github/workflows/cí.yml",
-                      ".github/workflows/ci..yml",
-                  ] {
-                      let mut input = request("jobs: {}");
-                      input.workflow_path = invalid.into();
-                      let errors = build_plan(&input, &PlannerLimits::default())
-                          .unwrap_err()
-                          .join("\n");
-                      assert!(errors.contains("workflowPath"), "{invalid}: {errors}");
-                  }
-              }
-
-              #[test]
-              fn commented_document_markers_fail_closed() {
-                  let errors = build_plan(
-                      &request("--- # document one\njobs: {}\n"),
-                      &PlannerLimits::default(),
-                  )
-                  .unwrap_err()
-                  .join("\n");
-                  assert!(errors.contains("document marker"), "{errors}");
-              }
-          }
-          ''')
-          if 'mod den_1606_planner_input_followup_tests {' in text:
-              raise SystemExit('follow-up planner tests already exist')
-          text += tests
-          path.write_text(text, encoding='utf-8')
-
-          docs = Path('docs/gha-clone-planner-input-boundary.md')
-          docs.write_text(dedent('''
-          # GHA clone planner input boundary
-
-          The independent clone-server lane accepts only a deliberately bounded static subset of GitHub workflow YAML. GitHub-hosted runners and official Actions Runner Controller remain the native-semantics lanes.
-
-          ## Workflow identity
-
-          Planning accepts one exact repository identity, an immutable revision for execution, and one direct ASCII workflow file named `.github/workflows/<file>.yml` or `.yaml`. Nested paths, backslashes, repeated-dot traversal forms, non-YAML suffixes, whitespace, non-ASCII names, and empty names fail before a plan is accepted.
-
-          ## Raw YAML ambiguity checks
-
-          Before `serde_yaml` deserialization, the planner rejects tabs, YAML document markers, tags/anchors/aliases in structural positions, merge keys, duplicate block-mapping keys, non-ASCII mapping keys, and non-empty flow mappings. Each sequence item receives its own mapping scope, while duplicate keys inside one item fail closed.
-
-          Block-scalar command text is excluded from structural scanning. The scanner uses the effective mapping-key column for `- run: |`, so sibling fields return to the same sequence-item scope and cannot hide duplicate keys after a script body.
-
-          ## Bounded limits
-
-          Workflow-byte, job-count, and per-job step limits must all be strictly positive. Zero is configuration failure, not an instruction to disable the bound.
-
-          These checks are defense in depth. They do not expand the independent lane into a general GitHub Actions interpreter and do not weaken the fixed-profile compiler's fail-closed boundary.
-          '''), encoding='utf-8')
+          workflow = '.github/workflows/den-1606-planner-input-finalize-once.yml'
+          text = subprocess.check_output(
+              ['git', 'show', f'HEAD^:{workflow}'],
+              text=True,
+          )
+          lines = text.splitlines()
+          step = lines.index('      - name: Fix effective YAML key columns and direct path bounds')
+          next_step = next(
+              index for index in range(step + 1, len(lines))
+              if lines[index].startswith('      - uses: dtolnay/rust-toolchain@')
+          )
+          run_index = lines.index('        run: |', step + 1, next_step)
+          prefix = '          '
+          block = lines[run_index + 1 : next_step]
+          if any(line.strip() and not line.startswith(prefix) for line in block):
+              raise SystemExit('reviewed parent run block has unexpected indentation')
+          script = '\n'.join(
+              line[len(prefix):] if line.startswith(prefix) else ''
+              for line in block
+          ) + '\n'
+          obsolete_guard = (
+              'test "$(git rev-parse HEAD)" = '
+              "'0a5449ded9b1e71621400a8f4c0ca205f7e52970'\n"
+          )
+          if script.count(obsolete_guard) != 1:
+              raise SystemExit('reviewed parent identity guard drifted')
+          script = script.replace(obsolete_guard, '', 1)
+          Path('/tmp/den-1606-planner-finalize.sh').write_text(script, encoding='utf-8')
           PY
+          bash -euo pipefail /tmp/den-1606-planner-finalize.sh
 
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
@@ -372,7 +101,7 @@ jobs:
           git add -A
           unexpected="$(git diff --cached --name-only | grep -Ev '^(remote/deployments/gha-clone-server-rs/src/lib\.rs|docs/gha-clone-planner-input-boundary\.md|\.github/workflows/den-1606-planner-input-finalize-once\.yml)$' || true)"
           if [[ -n "$unexpected" ]]; then
-            printf 'unexpected paths:\n%s\n' "$unexpected" >&2
+            printf 'unexpected staged paths:\n%s\n' "$unexpected" >&2
             exit 1
           fi
           workflow_non_deletions="$(git diff --cached --name-only --diff-filter=ACMRTUXB -- .github/workflows || true)"
