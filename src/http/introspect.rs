@@ -45,9 +45,9 @@ fn authorize_caller(state: &AppState, headers: &HeaderMap) -> Result<(), AuthErr
 }
 
 /// Parse the service credential from exactly one unambiguous Authorization
-/// field. End-user bearer parsing remains backward compatible, but the
-/// service-to-service introspection boundary rejects duplicate fields and
-/// comma-coalesced values rather than depending on proxy/header ordering.
+/// field. HTTP authentication schemes are case-insensitive, while duplicate
+/// fields and comma-coalesced values fail closed rather than depending on
+/// proxy/header ordering.
 fn introspection_bearer(headers: &HeaderMap) -> Option<&str> {
     let mut values = headers.get_all(AUTHORIZATION).iter();
     let value = values.next()?.to_str().ok()?;
@@ -55,8 +55,8 @@ fn introspection_bearer(headers: &HeaderMap) -> Option<&str> {
         return None;
     }
 
-    let token = value.strip_prefix("Bearer ")?;
-    if token.contains(',') {
+    let (scheme, token) = value.split_once(' ')?;
+    if !scheme.eq_ignore_ascii_case("bearer") || token.contains(',') {
         return None;
     }
     let token = token.trim();
@@ -254,6 +254,11 @@ mod tests {
     fn introspection_bearer_accepts_exactly_one_authorization_field() {
         let headers = authorization_headers(&[BEARER_SECRET]);
         assert_eq!(introspection_bearer(&headers), Some(SECRET));
+
+        let lowercase = authorization_headers(&[
+            "bearer 0123456789abcdef0123456789abcdef",
+        ]);
+        assert_eq!(introspection_bearer(&lowercase), Some(SECRET));
     }
 
     #[test]
