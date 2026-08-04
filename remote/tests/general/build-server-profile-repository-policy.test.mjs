@@ -24,6 +24,15 @@ function profileRulesFromPatch() {
   return JSON.parse(match[1]);
 }
 
+function profileConstantBody(name) {
+  const marker = `const ${name}: &[ProfileStep] = &[ProfileStep {`;
+  const start = profiles.indexOf(marker);
+  assert.ok(start >= 0, `${name} constant is missing`);
+  const end = profiles.indexOf('\n}];', start);
+  assert.ok(end > start, `${name} constant is unterminated`);
+  return profiles.slice(start, end + 4);
+}
+
 test('startup compiles exact repository rules against the global profile registry', () => {
   assert.match(config, /pub\(crate\) mod profile_policy;/);
   assert.match(config, /BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON/);
@@ -90,18 +99,20 @@ test('GitOps binds each reviewed repository to only its fixed profiles', () => {
 });
 
 test('hardened Node profiles disable lifecycle scripts and preserve reviewed order', () => {
-  for (const name of ['node-hardened-verify', 'node-hardened-test']) {
+  const verify = profileConstantBody('NODE_HARDENED_VERIFY_STEPS');
+  const repositoryTest = profileConstantBody('NODE_HARDENED_TEST_STEPS');
+  for (const [name, body] of [
+    ['node-hardened-verify', verify],
+    ['node-hardened-test', repositoryTest],
+  ]) {
     assert.match(profiles, new RegExp(`name: "${name}"`));
+    assert.match(body, /npm ci --ignore-scripts/);
+    assert.doesNotMatch(body, /npm install|curl|wget|--force|\|\| true/);
   }
-  assert.match(profiles, /const NODE_HARDENED_VERIFY_STEPS/);
-  assert.match(profiles, /const NODE_HARDENED_TEST_STEPS/);
-  assert.match(profiles, /npm ci --ignore-scripts/);
-  assert.match(profiles, /npm run check/);
-  assert.match(profiles, /npm run test:operator-config/);
-  assert.match(profiles, /npm audit --audit-level=high/);
-  assert.match(profiles, /npm test/);
-  assert.doesNotMatch(profiles, /node-hardened[\s\S]{0,500}npm install/);
-  assert.doesNotMatch(profiles, /node-hardened[\s\S]{0,500}(curl|wget|--force|\|\| true)/);
+  assert.match(verify, /npm run check/);
+  assert.match(verify, /npm run test:operator-config/);
+  assert.match(verify, /npm audit --audit-level=high/);
+  assert.match(repositoryTest, /npm test/);
 });
 
 test('dedicated GHA workflow formats and runs policy and profile tests', () => {
