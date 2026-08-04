@@ -1,0 +1,103 @@
+name: Publish four organization Astro and Worker fleets once
+run-name: Publish 48 repositories with PAT-free device authorization @ ${{ github.sha }}
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-four-org-fleet-device-auth-once.yml
+      - scripts/ops/prepare_four_org_fleet.sh
+      - scripts/ops/run_four_org_device_auth_publisher.sh
+      - scripts/ops/four-org-additions-overlay-2026-08-04.tar.xz.b64.part*
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: publish-four-org-astro-worker-fleets-20260804
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install bounded publication prerequisites
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends jq openssl util-linux xz-utils
+          command -v gh
+          command -v script
+          command -v openssl
+          gh --version
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Set up stable Rust
+        uses: dtolnay/rust-toolchain@b95584d8105b5f9e576f86b45f00b4d82e8afd0d
+        with:
+          toolchain: stable
+
+      - name: Reconstruct, test, and verify the 48-repository fleet
+        shell: bash
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/four-org-cargo-target
+        run: |
+          set -Eeuo pipefail
+          umask 077
+
+          generator="$RUNNER_TEMP/bootstrap_four_org_fleets.py"
+          cat scripts/ops/bootstrap_four_org_fleets.py.xz.b64.part* \
+            | base64 --decode \
+            | xz --decompress --stdout \
+            > "$generator"
+          python3 scripts/ops/repair_four_org_generator.py "$generator"
+          python3 -m py_compile "$generator"
+
+          fleet_root="$RUNNER_TEMP/four-org-rust-bootstrap"
+          archive_root="$RUNNER_TEMP/four-org-base-archives"
+          python3 "$generator" \
+            --output "$fleet_root" \
+            --archive-dir "$archive_root" \
+            --report-json "$RUNNER_TEMP/four-org-base-report.json" \
+            --report-md "$RUNNER_TEMP/four-org-base-report.md"
+
+          overlay_archive="$RUNNER_TEMP/four-org-additions-overlay-2026-08-04.tar.xz"
+          cat scripts/ops/four-org-additions-overlay-2026-08-04.tar.xz.b64.part* \
+            | tr -d '\r\n' \
+            | base64 --decode \
+            > "$overlay_archive"
+          printf '%s  %s\n' \
+            '5787afe68091b62d6cbde1d9e094f663807742de742d3567e781365ba01779a7' \
+            "$overlay_archive" \
+            | sha256sum --check --strict
+          tar --extract --xz --file "$overlay_archive" --directory "$RUNNER_TEMP"
+
+          overlay_root="$RUNNER_TEMP/four-org-additions-overlay-2026-08-04"
+          bash scripts/ops/prepare_four_org_fleet.sh "$fleet_root" "$overlay_root"
+
+          printf 'FLEET_ROOT=%s\n' "$fleet_root" >> "$GITHUB_ENV"
+          printf 'Prepared fleet: '
+          find "$fleet_root" -mindepth 3 -maxdepth 3 -type d -name .git | wc -l
+
+      - name: Authorize once, create repositories, push commits, and open pull requests
+        shell: bash
+        env:
+          ISSUE_TOKEN: ${{ github.token }}
+          TRACKING_ISSUE: '860'
+        run: bash scripts/ops/run_four_org_device_auth_publisher.sh
