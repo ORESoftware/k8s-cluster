@@ -87,10 +87,12 @@ test('unsupported GitHub Actions semantics fail closed instead of being approxim
     'remote/deployments/build-server-rs/src/gha_workflow.rs',
   );
 
-  for (const jobKey of ['strategy', 'services', 'container', 'env']) {
-    assert.match(source, new RegExp(`"${jobKey}"`));
-  }
+  assert.match(source, /for key in job\.keys\(\)/);
+  assert.match(source, /Some\("name" \| "needs" \| "runs-on" \| "steps"\) => \{\}/);
   assert.match(source, /job-level \{key\} is unsupported by the independent worker/);
+  assert.match(source, /for key in step\.keys\(\)/);
+  assert.match(source, /Some\("name" \| "id" \| "run" \| "uses" \| "with"\) => \{\}/);
+  assert.match(source, /step must contain exactly one of run or uses/);
 
   for (const rejected of [
     'working-directory',
@@ -99,12 +101,15 @@ test('unsupported GitHub Actions semantics fail closed instead of being approxim
     'secret-bearing setup-action inputs are unsupported',
     'job mixes multiple language toolchains',
     'non-Linux native execution is unavailable',
+    'checkout input',
+    'bounded static label',
   ]) {
     assert.ok(source.includes(rejected), `missing rejection contract: ${rejected}`);
   }
   assert.match(source, /known_setup_action/);
   assert.match(source, /immutable_action_ref/);
   assert.match(source, /contains_secret_expression/);
+  assert.match(source, /validate_setup_inputs/);
 });
 
 test('execution is deployment-disabled by default and resource bounded', async () => {
@@ -129,18 +134,25 @@ test('execution is deployment-disabled by default and resource bounded', async (
   }
 });
 
-test('unit tests cover valid DAGs and adversarial workflow structures', async () => {
+test('unit tests cover valid DAGs, authenticated HTTP, and adversarial structures', async () => {
   const source = await readRepoFile(
     'remote/deployments/build-server-rs/src/gha_workflow.rs',
   );
 
   for (const unitTest of [
+    'http_plan_requires_auth_and_returns_executable_plan',
+    'http_invalid_yaml_is_bad_request_and_unsupported_yaml_is_a_plan',
+    'http_execution_is_disabled_before_any_build_is_enqueued',
     'plans_static_multi_job_workflow_into_fixed_profiles',
     'branch_revision_can_be_planned_but_not_executed',
     'rejects_mutable_actions_secrets_and_caller_selected_environments',
     'rejects_services_matrices_conditions_and_working_directories',
     'rejects_cycles_and_unknown_dependencies',
     'rejects_mixed_language_jobs_instead_of_guessing',
+    'rejects_unknown_keys_and_steps_with_both_run_and_uses',
+    'checkout_inputs_cannot_change_repository_or_credentials',
+    'malformed_action_refs_and_invalid_request_ids_fail_closed',
+    'retention_pruning_is_strict_and_preserves_active_runs',
     'plan_id_is_stable_and_changes_with_yaml',
     'build_request_is_profile_only_and_immutable',
     'workflow_path_and_yaml_limits_fail_closed',
