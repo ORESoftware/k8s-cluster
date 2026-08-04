@@ -1,3 +1,4 @@
+# Canonical cross-system registry guard.
 name: Validate portfolio project links
 
 on:
