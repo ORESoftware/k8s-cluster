@@ -47,7 +47,8 @@ require_literal '.state == "open" and .head.sha == $sha and .head.ref == $branch
 require_literal "expected exactly one stale introspection comment block"
 require_literal 'test "$(git -C "$source_root" diff --name-only)" = src/config.rs'
 require_literal "grep -Fq 'this secret is absent, introspection is disabled rather than exposed.'"
-require_literal "! grep -Fq 'introspection stays open for backward'"
+require_literal "if grep -Fq 'introspection stays open for backward'"
+require_literal 'stale fail-open introspection documentation remained after correction.'
 require_literal 'git -C "$source_root" commit -q -m '\''docs: document fail-closed introspection'\'''
 require_literal 'git -C "$source_root" -c protocol.ext.allow=never -c protocol.file.allow=never push --porcelain origin "HEAD:refs/heads/${TARGET_BRANCH}"'
 if grep -Eq 'git .*push[^\n]*(--force|-f([[:space:]]|$)|\+HEAD)' "$workflow"; then

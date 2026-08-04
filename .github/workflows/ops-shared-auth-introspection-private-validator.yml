@@ -169,8 +169,8 @@ jobs:
             fi
             body="$(mktemp "$RUNNER_TEMP/shared-auth-private-failure.XXXXXX.md")"
             {
-              printf 'Private exact-head Shared Auth validation failed at bounded stage `%s`.\n\n' "$stage"
-              printf 'Starting target: `%s@%s` (PR #%s).\n\n' "$TARGET_REPOSITORY" "$TARGET_START_SHA" "$TARGET_PR"
+              printf "Private exact-head Shared Auth validation failed at bounded stage \`%s\`.\n\n" "$stage"
+              printf "Starting target: \`%s@%s\` (PR #%s).\n\n" "$TARGET_REPOSITORY" "$TARGET_START_SHA" "$TARGET_PR"
               printf 'The owner credential was never committed, placed in an Actions output or environment file, or uploaded as an artifact. It was removed before repository code executed.\n\n'
               printf '%s\n' '```text'
               printf '%s\n' "$tail_text"
@@ -197,7 +197,7 @@ jobs:
           challenge_body="$secret_root/challenge.md"
           {
             printf '<!-- shared-auth-introspection-private-credential-challenge-v1:%s -->\n' "$nonce"
-            printf 'One-time RSA-OAEP-SHA256 challenge for a deterministic documentation correction and private exact-head validation of `%s@%s`. The private key exists only in this private runner and is destroyed on exit. Reply with the matching encrypted ciphertext marker.\n\n' "$TARGET_REPOSITORY" "$TARGET_START_SHA"
+            printf "One-time RSA-OAEP-SHA256 challenge for a deterministic documentation correction and private exact-head validation of \`%s@%s\`. The private key exists only in this private runner and is destroyed on exit. Reply with the matching encrypted ciphertext marker.\n\n" "$TARGET_REPOSITORY" "$TARGET_START_SHA"
             printf '%s\n' '```pem'
             cat "$public_key"
             printf '%s\n' '```'
@@ -303,7 +303,10 @@ jobs:
           test "$(git -C "$source_root" diff --name-only)" = src/config.rs
           test "$(git -C "$source_root" diff --numstat | awk '{print $3}')" = src/config.rs
           grep -Fq 'this secret is absent, introspection is disabled rather than exposed.' "$source_root/src/config.rs"
-          ! grep -Fq 'introspection stays open for backward' "$source_root/src/config.rs"
+          if grep -Fq 'introspection stays open for backward' "$source_root/src/config.rs"; then
+            printf 'stale fail-open introspection documentation remained after correction.\n' >&2
+            exit 1
+          fi
 
           stage=publish-fast-forward-documentation-fix
           git -C "$source_root" config user.name 'ORESoftware automation'
@@ -422,10 +425,10 @@ jobs:
             echo "Validated target: \`${TARGET_REPOSITORY}@${VALIDATED_SHA}\` (PR #${TARGET_PR})."
             echo
             echo '- deterministic fail-closed configuration documentation correction and non-force fast-forward publication'
-            echo '- `cargo fmt --all --check`'
+            echo "- \`cargo fmt --all --check\`"
             echo '- declarative PostgreSQL schema application'
-            echo '- `cargo clippy --all-targets --locked -- -D warnings`'
-            echo '- `cargo test --all-targets --locked`'
+            echo "- \`cargo clippy --all-targets --locked -- -D warnings\`"
+            echo "- \`cargo test --all-targets --locked\`"
             echo '- focused authenticated, ambiguous-credential, inactive-token, and MFA freshness contracts'
             echo '- locked release build'
             echo '- real Chromium WebAuthn ceremonies'
