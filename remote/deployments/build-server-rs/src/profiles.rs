@@ -30,7 +30,7 @@ const FLUTTER_IMAGE: &str =
     "710156900967.dkr.ecr.us-east-1.amazonaws.com/sonus-flutter-builder:3.44.2-c9a6c48423";
 const BROWSER_IMAGE: &str = "mcr.microsoft.com/playwright:v1.60.0-noble";
 const RUST_IMAGE: &str = "docker.io/library/rust:1.90-bookworm";
-const NODE_IMAGE: &str = "docker.io/library/node:22-bookworm";
+const NODE_IMAGE: &str = "docker.io/library/node:22.23.1-bookworm@sha256:5647be709086c696ff32edaaf1c70cd26d1da6ab2b39c32f3c7b4c4a31957e37";
 const PYTHON_IMAGE: &str = "docker.io/library/python:3.13-bookworm";
 
 const RUST_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
@@ -85,7 +85,8 @@ if [ ! -f package-lock.json ] && [ ! -f npm-shrinkwrap.json ]; then
   echo "node-hardened-verify requires package-lock.json or npm-shrinkwrap.json" >&2
   exit 2
 fi
-npm ci --ignore-scripts
+export npm_config_ignore_scripts=true
+npm ci --ignore-scripts --no-audit --no-fund
 npm run check
 npm run test:operator-config
 npm audit --audit-level=high"#,
@@ -100,8 +101,11 @@ if [ ! -f package-lock.json ] && [ ! -f npm-shrinkwrap.json ]; then
   echo "node-hardened-test requires package-lock.json or npm-shrinkwrap.json" >&2
   exit 2
 fi
-npm ci --ignore-scripts
-npm test"#,
+export npm_config_ignore_scripts=true
+npm ci --ignore-scripts --no-audit --no-fund
+npm run check
+npm test
+npm audit --audit-level=high"#,
 }];
 
 const PYTHON_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
@@ -215,7 +219,8 @@ pub const SPECS: &[ProfileSpec] = &[
     ProfileSpec {
         name: "node-hardened-test",
         platform: "linux",
-        description: "Lifecycle-script-free lockfile install and complete Node repository tests",
+        description:
+            "Lifecycle-script-free Node syntax checks, complete tests, and high-severity audit",
         steps: NODE_HARDENED_TEST_STEPS,
         artifact_paths: &[],
     },
@@ -327,6 +332,10 @@ mod tests {
                 assert!(!step.script.trim().is_empty());
                 assert!(!step.script.contains("curl | sh"));
                 assert!(!step.script.contains("wget | sh"));
+                if profile.name.starts_with("node-") {
+                    assert_eq!(step.image, NODE_IMAGE);
+                    assert!(step.image.contains("@sha256:"));
+                }
             }
         }
     }
@@ -349,8 +358,11 @@ mod tests {
         let profile = find("node-hardened-verify").expect("hardened Node profile");
         let script = profile.steps[0].script;
         assert_eq!(profile.steps[0].subdirectory, ".");
+        let exported = script
+            .find("export npm_config_ignore_scripts=true")
+            .expect("lifecycle suppression export");
         let install = script
-            .find("npm ci --ignore-scripts")
+            .find("npm ci --ignore-scripts --no-audit --no-fund")
             .expect("install step");
         let check = script.find("npm run check").expect("check step");
         let focused = script
@@ -359,7 +371,7 @@ mod tests {
         let audit = script
             .find("npm audit --audit-level=high")
             .expect("audit step");
-        assert!(install < check && check < focused && focused < audit);
+        assert!(exported < install && install < check && check < focused && focused < audit);
         assert!(script.contains("package-lock.json"));
         assert!(!script.contains("npm install"));
         assert!(!script.contains("|| true"));
@@ -369,14 +381,21 @@ mod tests {
     }
 
     #[test]
-    fn hardened_node_test_profile_disables_lifecycle_scripts() {
+    fn hardened_node_test_profile_disables_all_lifecycle_hooks() {
         let profile = find("node-hardened-test").expect("hardened Node test profile");
         let script = profile.steps[0].script;
+        let exported = script
+            .find("export npm_config_ignore_scripts=true")
+            .expect("lifecycle suppression export");
         let install = script
-            .find("npm ci --ignore-scripts")
+            .find("npm ci --ignore-scripts --no-audit --no-fund")
             .expect("install step");
+        let check = script.find("npm run check").expect("check step");
         let test = script.find("npm test").expect("test step");
-        assert!(install < test);
+        let audit = script
+            .find("npm audit --audit-level=high")
+            .expect("audit step");
+        assert!(exported < install && install < check && check < test && test < audit);
         assert!(script.contains("package-lock.json"));
         assert!(!script.contains("npm install"));
         assert!(!script.contains("|| true"));
