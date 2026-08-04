@@ -46,6 +46,8 @@ Every published image carries an SPDX SBOM and max-mode SLSA provenance. CI read
 
 The capacity broker is published only by `.github/workflows/gha-capacity-broker-image.yml`. Adding its Docker target to the ledger renderer does not retroactively create a broker release record. The first authoritative broker digest exists only after a trusted `dev` publication completes and issue #702 contains the exact record.
 
+A trusted publication retry is safe and idempotent. When a trusted push produces no exact `(source_sha, target)` ledger record, publication is incomplete even if a mutable tag or package page is visible. Operators must not infer a digest, copy a tag into GitOps, or add a ledger comment by hand. A later reviewed `dev` push touching the broker image contract may retry publication for its own exact source SHA; only the workflow-created, validated issue record becomes release authority.
+
 ## GHA continuity OCI release digest ledger
 
 The trusted publishers append one validated machine-readable record per target to `ORESoftware/k8s-cluster#702`. The allowed target/image identities are exactly:
