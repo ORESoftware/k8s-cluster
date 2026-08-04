@@ -49,9 +49,13 @@ jobs:
           node-version: '22'
 
       - name: Set up stable Rust
-        uses: dtolnay/rust-toolchain@b95584d8105b5f9e576f86b45f00b4d82e8afd0d
-        with:
-          toolchain: stable
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+          rustc --version
+          cargo --version
 
       - name: Reconstruct, test, and verify the 48-repository fleet
         shell: bash
