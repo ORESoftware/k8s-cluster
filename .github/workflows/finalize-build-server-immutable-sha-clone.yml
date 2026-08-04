@@ -1,3 +1,4 @@
+# One-shot workflow: validates, commits, and removes its own scaffolding.
 name: Finalize immutable build-server checkout hardening
 
 on:
