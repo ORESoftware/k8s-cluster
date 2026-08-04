@@ -1,6 +1,11 @@
 name: Finalize PR 684 Rust formatting
 
 on:
+  push:
+    branches:
+      - agent/den-1550-msgint-current-dev-v4
+    paths:
+      - '.github/workflows/finalize-pr-684-rustfmt.yml'
   pull_request:
     branches: [dev]
     paths:
