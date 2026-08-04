@@ -325,3 +325,103 @@ jobs:
         if: ${{ always() }}
         shell: bash
         run: docker buildx rm "$BUILDX_BUILDER" >/dev/null 2>&1 || true
+
+  receipt:
+    if: ${{ always() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish)) }}
+    needs: [validate, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write # Report trusted broker publication failures to issue 702.
+    steps:
+      - name: Verify the release record or append a fail-closed publication receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: "702"
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+          VALIDATE_RESULT: ${{ needs.validate.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          WORKFLOW_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          comments="${RUNNER_TEMP}/capacity-broker-publication-comments.json"
+          payload="${RUNNER_TEMP}/capacity-broker-publication-receipt.json"
+          release_marker="<!-- gha-continuity-oci-release:${SOURCE_SHA}:capacity-broker -->"
+          receipt_marker="<!-- gha-continuity-oci-publication-receipt:${SOURCE_SHA}:capacity-broker -->"
+
+          gh api --paginate --slurp \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "repos/${SOURCE_REPOSITORY}/issues/${ISSUE}/comments?per_page=100" \
+            >"$comments"
+
+          read -r release_present receipt_present < <(
+            python3 - "$comments" "$release_marker" "$receipt_marker" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          pages = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          comments = []
+          for page in pages:
+              if isinstance(page, list):
+                  comments.extend(page)
+          bodies = [item.get('body', '') for item in comments if isinstance(item, dict)]
+          print(
+              'true' if any(sys.argv[2] in body for body in bodies) else 'false',
+              'true' if any(sys.argv[3] in body for body in bodies) else 'false',
+          )
+          PY
+          )
+
+          if [[ "$release_present" == 'true' ]]; then
+            {
+              echo '### Capacity-broker publication receipt'
+              echo
+              echo '- Release ledger record: present'
+              echo "- Source SHA: \`${SOURCE_SHA}\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [[ "$receipt_present" != 'true' ]]; then
+            python3 - "$payload" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          marker = f"<!-- gha-continuity-oci-publication-receipt:{os.environ['SOURCE_SHA']}:capacity-broker -->"
+          record = {
+              'schema_version': 1,
+              'repository': os.environ['SOURCE_REPOSITORY'],
+              'source_sha': os.environ['SOURCE_SHA'],
+              'target': 'capacity-broker',
+              'validate_result': os.environ['VALIDATE_RESULT'],
+              'publish_result': os.environ['PUBLISH_RESULT'],
+              'release_record_present': False,
+              'run_url': os.environ['WORKFLOW_RUN_URL'],
+          }
+          body = marker + '\n```json\n' + json.dumps(record, separators=(',', ':')) + '\n```\n'
+          Path(sys.argv[1]).write_text(json.dumps({'body': body}), encoding='utf-8')
+          PY
+            gh api --method POST \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "repos/${SOURCE_REPOSITORY}/issues/${ISSUE}/comments" \
+              --input "$payload" >/dev/null
+          fi
+
+          {
+            echo '### Capacity-broker publication receipt'
+            echo
+            echo '- Release ledger record: missing'
+            echo "- Validate result: \`${VALIDATE_RESULT}\`"
+            echo "- Publish result: \`${PUBLISH_RESULT}\`"
+            echo "- Run: ${WORKFLOW_RUN_URL}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo 'trusted capacity-broker publication completed without an authoritative ledger record' >&2
+          exit 1
