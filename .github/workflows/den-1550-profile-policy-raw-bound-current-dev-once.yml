@@ -35,12 +35,14 @@ jobs:
           set -euo pipefail
           base='${{ github.event.pull_request.base.sha }}'
           branch='agent/den-1550-profile-policy-raw-bound-current-dev'
+          source_branch='agent/build-server-exact-profile-policy-final-20260804'
           workflow='.github/workflows/den-1550-profile-policy-raw-bound-current-dev-once.yml'
           policy='remote/deployments/build-server-rs/src/config/profile_policy.rs'
 
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git fetch origin "$base" agent/build-server-exact-profile-policy-final-20260804
+          git fetch origin "$base"
+          git fetch origin "$source_branch:refs/remotes/origin/$source_branch"
           git checkout -B "$branch" '${{ github.event.pull_request.head.sha }}'
           git merge --no-edit "$base"
 
@@ -50,8 +52,7 @@ jobs:
             exit 1
           fi
 
-          source_ref="$(git rev-parse FETCH_HEAD)"
-          git show "$source_ref:$policy" > "$policy"
+          git show "refs/remotes/origin/$source_branch:$policy" > "$policy"
           git diff --check
 
           grep -Fq 'if raw_untrimmed.len() > MAX_POLICY_BYTES' "$policy"
