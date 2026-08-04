@@ -96,8 +96,14 @@ fn invalid_unsigned_limits_fail_before_network_startup() {
 }
 
 #[test]
-fn webhook_retention_bounds_must_be_nonzero() {
+fn all_runtime_safety_bounds_must_be_nonzero() {
     for name in [
+        "GHA_CLONE_MAX_WORKFLOW_BYTES",
+        "GHA_CLONE_MAX_JOBS",
+        "GHA_CLONE_MAX_STEPS_PER_JOB",
+        "GHA_CLONE_BUILD_POLL_SECONDS",
+        "GHA_CLONE_BUILD_TIMEOUT_SECONDS",
+        "GHA_CLONE_MAX_RUNS",
         "GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS",
         "GHA_CLONE_MAX_WEBHOOK_DELIVERIES",
     ] {
@@ -228,6 +234,46 @@ fn github_api_base_url_rejects_unsafe_origins() {
     ] {
         assert_configuration_error(
             BTreeMap::from([("GHA_CLONE_GITHUB_API_BASE_URL", value)]),
+            expected,
+        );
+    }
+}
+
+#[test]
+fn build_server_url_rejects_unsafe_origins() {
+    for (value, expected) in [
+        (
+            "http://example.com",
+            "must use HTTPS; HTTP is allowed only for loopback tests or Kubernetes service DNS",
+        ),
+        (
+            "http://10.0.0.10:8123",
+            "must use HTTPS; HTTP is allowed only for loopback tests or Kubernetes service DNS",
+        ),
+        (
+            "http://extra.dd-build-server.remote.svc:8123",
+            "must use HTTPS; HTTP is allowed only for loopback tests or Kubernetes service DNS",
+        ),
+        (
+            "https://user:pass@example.com",
+            "must not contain credentials, query, or fragment",
+        ),
+        (
+            "https://example.com?token=x",
+            "must not contain credentials, query, or fragment",
+        ),
+        (
+            "https://example.com/#fragment",
+            "must not contain credentials, query, or fragment",
+        ),
+        (
+            "https://example.com/api",
+            "must be an origin without a path",
+        ),
+        ("not-a-url", "GHA_CLONE_BUILD_SERVER_URL is invalid:"),
+    ] {
+        assert_configuration_error(
+            BTreeMap::from([("GHA_CLONE_BUILD_SERVER_URL", value)]),
             expected,
         );
     }

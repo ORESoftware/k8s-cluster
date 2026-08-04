@@ -7,7 +7,7 @@ use std::{
 
 use axum::{
     body::Bytes,
-    extract::{Path, State},
+    extract::{DefaultBodyLimit, Path, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -29,6 +29,10 @@ use tokio::{
 use tracing::{error, info};
 
 use uuid::Uuid;
+
+const UPSTREAM_RESPONSE_BODY_BYTES_MAX: usize = 64 * 1024;
+const REQUEST_BODY_JSON_EXPANSION_FACTOR: usize = 2;
+const REQUEST_BODY_ENVELOPE_BYTES: usize = 64 * 1024;
 
 mod run_reservation;
 
@@ -225,6 +229,17 @@ fn validate_build_job_response_id(
     Ok(())
 }
 
+fn validate_build_submission_response(build: &BuildJobResponse) -> Result<(), String> {
+    validate_build_job_response_id(build, None)?;
+    if !matches!(build.status.as_str(), "queued" | "running") {
+        return Err(format!(
+            "build server returned invalid accepted status {:?}",
+            build.status
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct BuildServerRequest<'a> {
@@ -278,6 +293,12 @@ fn build_http_client() -> Result<reqwest::Client, String> {
 }
 
 fn router(state: AppState) -> Router {
+    let request_body_limit = state
+        .config
+        .limits
+        .max_workflow_bytes
+        .saturating_mul(REQUEST_BODY_JSON_EXPANSION_FACTOR)
+        .saturating_add(REQUEST_BODY_ENVELOPE_BYTES);
     Router::new()
         .route("/", get(descriptor))
         .route("/healthz", get(healthz))
@@ -287,6 +308,7 @@ fn router(state: AppState) -> Router {
         .route("/v1/runs", post(create_run))
         .route("/v1/runs/:id", get(get_run))
         .route("/webhooks/github", post(github_webhook))
+        .layer(DefaultBodyLimit::max(request_body_limit))
         .with_state(state)
 }
 
@@ -805,26 +827,27 @@ async fn execute_plan(state: &AppState, run_id: Uuid, plan: WorkflowPlan) -> Res
         };
         let response = state
             .client
-            .post(format!("{build_server_url}/builds"))
+            .post(build_server_endpoint(build_server_url, &["builds"])?)
             .header("x-build-server-auth", build_server_auth)
             .json(&request)
             .send()
             .await
             .map_err(|error| format!("build server submission failed for {job_id}: {error}"))?;
-        let status = response.status();
-        let body = response
-            .text()
-            .await
-            .map_err(|error| format!("build server response read failed: {error}"))?;
+        let (status, body) = read_response_bounded(
+            response,
+            UPSTREAM_RESPONSE_BODY_BYTES_MAX,
+            "build server submission response",
+        )
+        .await?;
         if status != StatusCode::ACCEPTED {
             return Err(format!(
                 "build server rejected {job_id} with HTTP {status}: {}",
-                bounded_text(&body, 1024)
+                bounded_bytes(&body, 1024)
             ));
         }
-        let build: BuildJobResponse = serde_json::from_str(&body)
+        let build: BuildJobResponse = serde_json::from_slice(&body)
             .map_err(|error| format!("build server returned invalid job JSON: {error}"))?;
-        validate_build_job_response_id(&build, None)?;
+        validate_build_submission_response(&build)?;
         update_run(state, run_id, |run| {
             run.submissions.push(BuildSubmission {
                 job_id: job_id.clone(),
@@ -888,23 +911,27 @@ async fn wait_for_build(
         }
         let response = state
             .client
-            .get(format!("{build_server_url}/builds/{build_job_id}"))
+            .get(build_server_endpoint(
+                build_server_url,
+                &["builds", build_job_id],
+            )?)
             .header("x-build-server-auth", build_server_auth)
             .send()
             .await
             .map_err(|error| format!("build status request failed: {error}"))?;
-        let status = response.status();
-        let body = response
-            .text()
-            .await
-            .map_err(|error| format!("build status response read failed: {error}"))?;
+        let (status, body) = read_response_bounded(
+            response,
+            UPSTREAM_RESPONSE_BODY_BYTES_MAX,
+            "build status response",
+        )
+        .await?;
         if status != StatusCode::OK {
             return Err(format!(
                 "build status returned HTTP {status}: {}",
-                bounded_text(&body, 1024)
+                bounded_bytes(&body, 1024)
             ));
         }
-        let build: BuildJobResponse = serde_json::from_str(&body)
+        let build: BuildJobResponse = serde_json::from_slice(&body)
             .map_err(|error| format!("build status JSON is invalid: {error}"))?;
         validate_build_job_response_id(&build, Some(build_job_id))?;
         match build.status.as_str() {
@@ -938,20 +965,21 @@ async fn fetch_workflow(
         .await
         .map_err(|error| format!("GitHub workflow fetch failed: {error}"))?;
     let status = response.status();
-    let body = response
-        .text()
-        .await
-        .map_err(|error| format!("GitHub workflow response read failed: {error}"))?;
+    let max_body_bytes = if status.is_success() {
+        state.config.limits.max_workflow_bytes
+    } else {
+        UPSTREAM_RESPONSE_BODY_BYTES_MAX
+    };
+    let (status, body) =
+        read_response_bounded(response, max_body_bytes, "GitHub workflow response").await?;
     if !status.is_success() {
         return Err(format!(
             "GitHub workflow fetch returned HTTP {status}: {}",
-            bounded_text(&body, 512)
+            bounded_bytes(&body, 512)
         ));
     }
-    if body.len() > state.config.limits.max_workflow_bytes {
-        return Err("GitHub workflow exceeds configured byte limit".into());
-    }
-    Ok(body)
+    String::from_utf8(body)
+        .map_err(|error| format!("GitHub workflow response is not UTF-8: {error}"))
 }
 
 fn webhook_paths(
@@ -1075,6 +1103,26 @@ fn webhook_revision(event: &str, payload: &Value) -> Option<String> {
     .map(str::to_string)
 }
 
+enum HeaderAuthority<'a> {
+    Absent,
+    Present(&'a str),
+    Invalid,
+}
+
+fn single_header_authority<'a>(headers: &'a HeaderMap, name: &'static str) -> HeaderAuthority<'a> {
+    let mut values = headers.get_all(name).iter();
+    let Some(first) = values.next() else {
+        return HeaderAuthority::Absent;
+    };
+    if values.next().is_some() {
+        return HeaderAuthority::Invalid;
+    }
+    match first.to_str() {
+        Ok(value) => HeaderAuthority::Present(value),
+        Err(_) => HeaderAuthority::Invalid,
+    }
+}
+
 #[allow(clippy::result_large_err)] // Axum guard returns a response only when a request is rejected.
 fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Response> {
     let Some(expected) = state.config.auth_secret.as_deref() else {
@@ -1084,10 +1132,13 @@ fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Response> {
         )
             .into_response());
     };
-    let presented = headers
-        .get("x-server-auth")
-        .or_else(|| headers.get("x-gha-clone-auth"))
-        .and_then(|value| value.to_str().ok());
+    let server_auth = single_header_authority(headers, "x-server-auth");
+    let clone_auth = single_header_authority(headers, "x-gha-clone-auth");
+    let presented = match (server_auth, clone_auth) {
+        (HeaderAuthority::Present(value), HeaderAuthority::Absent)
+        | (HeaderAuthority::Absent, HeaderAuthority::Present(value)) => Some(value),
+        _ => None,
+    };
     if presented.is_some_and(|value| digest_eq(value, expected)) {
         Ok(())
     } else {
@@ -1389,8 +1440,59 @@ fn env_nonzero_usize(name: &str, default: usize) -> Result<usize, String> {
     }
 }
 
+fn build_server_endpoint(base: &str, segments: &[&str]) -> Result<reqwest::Url, String> {
+    let mut url = reqwest::Url::parse(base)
+        .map_err(|error| format!("configured build server origin is invalid: {error}"))?;
+    {
+        let mut path = url
+            .path_segments_mut()
+            .map_err(|_| "configured build server origin cannot be a base URL".to_string())?;
+        path.clear();
+        for segment in segments {
+            path.push(segment);
+        }
+    }
+    Ok(url)
+}
+
+async fn read_response_bounded(
+    mut response: reqwest::Response,
+    max_bytes: usize,
+    context: &str,
+) -> Result<(StatusCode, Vec<u8>), String> {
+    let status = response.status();
+    let max_bytes_u64 = u64::try_from(max_bytes).unwrap_or(u64::MAX);
+    if response
+        .content_length()
+        .is_some_and(|length| length > max_bytes_u64)
+    {
+        return Err(format!("{context} exceeds {max_bytes}-byte limit"));
+    }
+    let capacity = response
+        .content_length()
+        .and_then(|length| usize::try_from(length).ok())
+        .unwrap_or(0)
+        .min(max_bytes);
+    let mut body = Vec::with_capacity(capacity);
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| format!("{context} read failed: {error}"))?
+    {
+        if body.len().saturating_add(chunk.len()) > max_bytes {
+            return Err(format!("{context} exceeds {max_bytes}-byte limit"));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok((status, body))
+}
+
 fn bounded_text(value: &str, max_chars: usize) -> String {
     value.chars().take(max_chars).collect()
+}
+
+fn bounded_bytes(value: &[u8], max_chars: usize) -> String {
+    bounded_text(&String::from_utf8_lossy(value), max_chars)
 }
 
 fn now_ms() -> u128 {
@@ -1635,6 +1737,50 @@ mod tests {
             error: None,
         };
         assert!(validate_build_job_response_id(&too_long, None).is_err());
+    }
+
+    #[test]
+    fn authentication_header_authority_rejects_duplicates() {
+        let mut headers = HeaderMap::new();
+        assert!(matches!(
+            single_header_authority(&headers, "x-server-auth"),
+            HeaderAuthority::Absent
+        ));
+        headers.append("x-server-auth", "first".parse().unwrap());
+        assert!(matches!(
+            single_header_authority(&headers, "x-server-auth"),
+            HeaderAuthority::Present("first")
+        ));
+        headers.append("x-server-auth", "second".parse().unwrap());
+        assert!(matches!(
+            single_header_authority(&headers, "x-server-auth"),
+            HeaderAuthority::Invalid
+        ));
+    }
+
+    #[test]
+    fn build_server_endpoint_uses_encoded_path_segments() {
+        let endpoint = build_server_endpoint(
+            "https://build.example.com",
+            &["builds", "build:abc.def_123"],
+        )
+        .unwrap();
+        assert_eq!(
+            endpoint.as_str(),
+            "https://build.example.com/builds/build:abc.def_123"
+        );
+    }
+
+    #[test]
+    fn submission_status_is_validated_before_state_mutation() {
+        let unknown = BuildJobResponse {
+            id: "build-1".into(),
+            status: "mystery".into(),
+            error: None,
+        };
+        assert!(validate_build_submission_response(&unknown)
+            .unwrap_err()
+            .contains("invalid accepted status"));
     }
 
     #[tokio::test]
