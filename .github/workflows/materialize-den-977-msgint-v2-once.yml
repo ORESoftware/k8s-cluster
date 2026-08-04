@@ -1,0 +1,153 @@
+# One-shot runner for scripts/ci/materialize-den-977-msgint.py.
+# It pushes product files only; the connected GitHub App removes carriers later.
+name: Materialize DEN-977 Messaging Intel v2 once
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/materialize-den-977-msgint-v2-once.yml
+      - scripts/ci/materialize-den-977-msgint.py
+
+permissions:
+  contents: write
+
+concurrency:
+  group: materialize-den-977-msgint-v2
+  cancel-in-progress: true
+
+jobs:
+  reconcile:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-977-msgint-current-dev-v6-20260804'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-977-msgint-current-dev-v6-20260804
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Fetch immutable reconciliation inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin \
+            +refs/heads/dev:refs/remotes/origin/dev \
+            +refs/heads/agent/den-1550-msgint-stable-final:refs/remotes/origin/agent/den-1550-msgint-stable-final
+
+      - name: Reconcile the reviewed 21-file product surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/materialize-den-977-msgint.py
+          git diff --check
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate the complete clone-server product
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Validate complete build-server and fixed profiles
+        working-directory: remote/deployments/build-server-rs
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 --check src/jobs.rs src/nats_submit.rs src/profiles.rs src/validation.rs
+          cargo check --locked --all-targets
+          cargo test --locked profiles::tests -- --nocapture
+          cargo test --locked validation::tests -- --nocapture
+          cargo test --locked idempotency_tests -- --nocapture
+          cargo test --locked nats_submit::tests -- --nocapture
+
+      - name: Execute lifecycle-script-free Node profile fixture
+        working-directory: remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm run check
+          npm run test:operator-config
+          npm audit --audit-level=high
+          npm test
+
+      - name: Validate permanent TypeScript and workflow contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          cd remote/tests
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts \
+            general/gha-clone-msgint-config.test.ts \
+            general/gha-clone-streempilot-config.test.ts
+          node --test general/gha-executor-router-activation.test.mjs
+          cd ../..
+          docker run --rm -v "$PWD:/repo:ro" -w /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            .github/workflows/gha-clone-server.yml \
+            .github/workflows/gha-clone-server-meta.yml \
+            remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml
+          bash -n remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh
+
+      - name: Commit product paths only
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >"${RUNNER_TEMP}/allowed-paths" <<'EOF'
+          .github/workflows/gha-clone-server.yml
+          docs/gha-profile-repository-admission.md
+          remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml
+          remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml
+          remote/deployments/build-server-rs/readme.md
+          remote/deployments/build-server-rs/src/profiles.rs
+          remote/deployments/build-server-rs/src/validation.rs
+          remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/package-lock.json
+          remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/package.json
+          remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/src/operator-config.mjs
+          remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/test/operator-config.test.mjs
+          remote/deployments/gha-clone-server-rs/README.md
+          remote/deployments/gha-clone-server-rs/src/lib.rs
+          remote/deployments/gha-clone-server-rs/src/msgint_contract.rs
+          remote/deployments/gha-clone-server-rs/src/planner.rs
+          remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml
+          remote/deployments/gha-clone-server-rs/tests/msgint_exact_contract.rs
+          remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs
+          remote/deployments/gha-clone-server-rs/tests/planner_adversarial.rs
+          remote/tests/general/gha-clone-msgint-config.test.ts
+          remote/tests/general/gha-clone-server-config.test.ts
+          EOF
+          changed="$(git diff --name-only | sort)"
+          unexpected="$(comm -23 <(printf '%s\n' "$changed") <(sort "${RUNNER_TEMP}/allowed-paths") || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected product paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          test -n "$changed"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          while IFS= read -r path; do
+            [[ -n "$path" ]] && git add -- "$path"
+          done <"${RUNNER_TEMP}/allowed-paths"
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+          git commit -m 'test(DEN-977): add exact Messaging Intel continuity on latest dev'
+          git push origin HEAD:agent/den-977-msgint-current-dev-v6-20260804
