@@ -19,7 +19,12 @@ fn compile(workflow: &str) -> WorkflowPlan {
         &request(REPOSITORY, REVISION, WORKFLOW_PATH, workflow),
         &PlannerLimits::default(),
     )
-    .unwrap_or_else(|errors| panic!("Messaging Intel workflow should parse: {}", errors.join("\n")))
+    .unwrap_or_else(|errors| {
+        panic!(
+            "Messaging Intel workflow should parse: {}",
+            errors.join("\n")
+        )
+    })
 }
 
 fn job<'a>(plan: &'a WorkflowPlan, id: &str) -> &'a gha_clone_server::JobPlan {
@@ -37,7 +42,10 @@ fn exact_fixture_compiles_to_hardened_operator_then_repository_profiles() {
     assert_eq!(plan.repository, REPOSITORY);
     assert_eq!(plan.revision, REVISION);
     assert_eq!(plan.workflow_path, WORKFLOW_PATH);
-    assert_eq!(plan.topological_order, ["operator_config", "repository_tests"]);
+    assert_eq!(
+        plan.topological_order,
+        ["operator_config", "repository_tests"]
+    );
 
     let operator = job(&plan, "operator_config");
     assert_eq!(
@@ -58,7 +66,12 @@ fn exact_fixture_compiles_to_hardened_operator_then_repository_profiles() {
 #[test]
 fn reserved_repository_path_and_revision_mismatches_are_terminal() {
     let cases = [
-        request(REPOSITORY, REVISION, ".github/workflows/other.yml", WORKFLOW),
+        request(
+            REPOSITORY,
+            REVISION,
+            ".github/workflows/other.yml",
+            WORKFLOW,
+        ),
         request(
             "lookalike/msgint-connectors",
             REVISION,
@@ -148,5 +161,8 @@ fn unrelated_workflow_retains_legacy_classifier_behavior() {
     );
     let plan = build_plan(&unrelated, &PlannerLimits::default())
         .expect("unrelated workflow should retain legacy planning");
-    assert_eq!(job(&plan, "test").independent_profile.as_deref(), Some("node-verify"));
+    assert_eq!(
+        job(&plan, "test").independent_profile.as_deref(),
+        Some("node-verify")
+    );
 }
