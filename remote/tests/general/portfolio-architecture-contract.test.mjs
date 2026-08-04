@@ -7,15 +7,19 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "../../..");
 const contractPath = resolve(repoRoot, "docs/architecture/portfolio-contract.json");
+const catalogPath = resolve(repoRoot, "docs/architecture/portfolio-organizations.json");
 const contract = JSON.parse(await readFile(contractPath, "utf8"));
+const catalog = JSON.parse(await readFile(catalogPath, "utf8"));
 
 const expectedOrganizations = [
   "3FA-app",
   "ORESoftware",
   "OmniBlitz",
   "StreemPilot",
+  "agent-pontifex",
   "akrion-sim",
   "anticaptrad",
+  "apostille-me",
   "athlet-o",
   "benefactor-cc",
   "canonical-cloud",
@@ -26,8 +30,14 @@ const expectedOrganizations = [
   "declarative-migrations",
   "discrete-event-systems",
   "drone-mngr",
+  "embedded-alerts",
+  "evento-globolo",
+  "fanwaave",
   "fiducia-cloud",
+  "fifa-math",
   "file-tunnel",
+  "gha-indie-worker",
+  "hacker-house-medellin",
   "hypeblitz",
   "hypesiege",
   "memebank",
@@ -42,24 +52,43 @@ const expectedOrganizations = [
   "shared-auth",
   "sonus-auris",
   "streamkore",
-  "usa-acc",
   "unreal-unity-poc",
+  "usa-acc",
   "voxletra",
   "zed-pkg",
   "zed-pkg-test"
 ].sort();
 
 test("catalog covers every connected GitHub installation exactly once", () => {
-  const names = contract.organizations.map((organization) => organization.name);
+  const names = catalog.organizations.map((organization) => organization.name);
   assert.equal(new Set(names).size, names.length, "organization names must be unique");
+  assert.equal(catalog.organization_count, names.length);
+  assert.equal(catalog.organization_count, 45);
   assert.deepEqual([...names].sort(), expectedOrganizations);
+});
+
+test("the original inline classifications remain represented in the live catalog", () => {
+  const liveByName = new Map(
+    catalog.organizations.map((organization) => [organization.name, organization])
+  );
+
+  for (const organization of contract.organizations) {
+    const live = liveByName.get(organization.name);
+    assert.ok(live, `inline organization ${organization.name} is missing from the live catalog`);
+    assert.equal(live.class, organization.class, `class changed for ${organization.name}`);
+    assert.equal(
+      live.lifecycle,
+      organization.lifecycle,
+      `lifecycle changed for ${organization.name}`
+    );
+  }
 });
 
 test("organization classes cannot silently become production dependencies", () => {
   const validClasses = new Set(["platform", "product", "research", "test-fixture", "reserved"]);
   const validLifecycles = new Set(["active", "incubating", "research", "test", "reserved"]);
 
-  for (const organization of contract.organizations) {
+  for (const organization of catalog.organizations) {
     assert.ok(validClasses.has(organization.class), `invalid class for ${organization.name}`);
     assert.ok(
       validLifecycles.has(organization.lifecycle),
@@ -81,7 +110,38 @@ test("organization classes cannot silently become production dependencies", () =
         `${organization.name} must not be a production dependency`
       );
     }
+
+    if (organization.repository_visibility?.startsWith("no repositories visible")) {
+      assert.equal(
+        organization.production_dependency_allowed,
+        false,
+        `${organization.name} has no visible release authority`
+      );
+    }
   }
+});
+
+test("new agent and CI platforms have explicit non-overlapping boundaries", () => {
+  const byName = new Map(
+    catalog.organizations.map((organization) => [organization.name, organization])
+  );
+  const pontifex = byName.get("agent-pontifex");
+  const gha = byName.get("gha-indie-worker");
+
+  assert.equal(pontifex.class, "platform");
+  assert.ok(pontifex.platform_boundary.owns.includes("model routing and budget enforcement"));
+  assert.ok(
+    pontifex.platform_boundary.calls.some((entry) => entry.includes("gha-indie-worker"))
+  );
+  assert.ok(
+    pontifex.platform_boundary.does_not_own.includes("GitHub Actions workflow semantics")
+  );
+
+  assert.equal(gha.class, "platform");
+  assert.ok(gha.platform_boundary.owns.includes("GitHub Actions-compatible worker execution"));
+  assert.ok(gha.platform_boundary.calls.some((entry) => entry.includes("k8s-cluster")));
+  assert.ok(gha.platform_boundary.does_not_own.includes("general coding-agent model routing"));
+  assert.ok(gha.platform_boundary.does_not_own.includes("arbitrary caller-selected shell execution"));
 });
 
 test("repository roles encode one-way interfaces, clients, services, workers, and MCP", () => {
