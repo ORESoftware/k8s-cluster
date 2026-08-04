@@ -106,7 +106,7 @@ jobs:
           diff -u "$expected" "$actual"
           git config user.name 'ORESoftware CI'
           git config user.email 'ci@oresoftware.com'
-          git add -- \
+          git add -f -- \
             .github/workflows/finalize-den-1597-router.yml \
             .github/workflows/gha-clone-server.yml \
             remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs
