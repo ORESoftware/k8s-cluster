@@ -38,7 +38,9 @@ The following remain as immutable audit and disaster-recovery inputs:
 - publisher SHA-256
   `e2fe6eaa622db02a54f83e27a822f64ad4b54971c883f97bbda4ac0a4db5d278`;
 - `scripts/critical-org-fleet/assets/meta.part*`;
-- `scripts/critical-org-fleet/publish_meta_control_plane.py`;
+- `scripts/ops/publish_meta_agent_control_plane_from_actions.sh`, which
+  reconstructs and verifies the pinned publisher from the immutable source;
+- `scripts/ops/verify_meta_agent_source_snapshot.py`;
 - `docs/operations/meta-agent-ephemeral-credential-publication.md`;
 - credential-free source-snapshot verification and the publication evidence in
   Linear issues DEN-1057, DEN-1058, and DEN-319.
