@@ -53,8 +53,7 @@ jobs:
             remote/argocd/dd-next-runtime/dd-gha-executor-router.networkpolicy.yaml \
             remote/argocd/dd-next-runtime/dd-gha-executor-router.service.yaml \
             remote/argocd/dd-next-runtime/kustomization.yaml \
-            remote/tests/general/gha-clone-server-config.test.ts \
-            remote/tests/general/gha-executor-router-config.test.mjs
+            remote/tests/general/gha-clone-server-config.test.ts
 
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
