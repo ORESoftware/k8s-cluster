@@ -26,6 +26,14 @@ const mirrorRepositories = [
   'StreemPilot/streempilot-interfaces',
 ];
 
+const reviewedSetupActions = new Set([
+  'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
+  'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020',
+  'dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30',
+]);
+
+const fixtures = [apiFixture, webFixture, interfacesFixture];
+
 test('StreemPilot repositories and mirror paths are exact allowlist entries', () => {
   for (const repository of mirrorRepositories) {
     assert.ok(config.includes(repository), `${repository} is not allowlisted`);
@@ -42,7 +50,7 @@ test('StreemPilot repositories and mirror paths are exact allowlist entries', ()
 });
 
 test('mirror fixtures match the reviewed workflow path and remain manual-only', () => {
-  for (const fixture of [apiFixture, webFixture, interfacesFixture]) {
+  for (const fixture of fixtures) {
     assert.match(fixture, /^name: CI mirror/m);
     assert.match(fixture, /^on:\s*\n\s+workflow_dispatch:/m);
     assert.doesNotMatch(fixture, /^\s+(?:push|pull_request|schedule):/m);
@@ -51,6 +59,20 @@ test('mirror fixtures match the reviewed workflow path and remain manual-only', 
       fixture,
       /strategy:|services:|container:|working-directory:|timeout-minutes:/,
     );
+  }
+});
+
+test('mirror setup actions use only exact reviewed commit identities', () => {
+  for (const fixture of fixtures) {
+    const actions = [...fixture.matchAll(/^\s+- uses:\s+([^\s#]+)\s*$/gm)].map(
+      (match) => match[1],
+    );
+    assert.ok(actions.length > 0, 'fixture has no setup actions');
+    for (const action of actions) {
+      assert.ok(reviewedSetupActions.has(action), `unreviewed action ${action}`);
+      assert.match(action, /@[0-9a-f]{40}$/);
+    }
+    assert.doesNotMatch(fixture, /@(v\d+|main|master|stable)(?:\s|$)/m);
   }
 });
 
