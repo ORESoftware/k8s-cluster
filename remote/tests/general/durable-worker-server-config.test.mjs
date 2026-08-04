@@ -131,7 +131,7 @@ test('CI destroys and restores both JetStream and the control plane before accep
   assert.match(workflow, /restart_recovery\.mjs[\s\\]+verify/);
   assert.match(workflow, /docker volume rm --force dd-durable-worker-nats-data/);
   assert.match(operations, /Restart recovery drill/);
-  assert.match(operations, /terminates both the Rust control plane and the NATS process/);
+  assert.match(operations, /terminates both the Rust control\s+plane and the NATS process/);
 });
 
 test('restart recovery proves persisted idempotency, output receipts, and stale-lease fencing', () => {
