@@ -67,7 +67,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo check --locked --all-targets
-          cargo test --locked --lib -- --nocapture
+          cargo test --locked --bin dd-build-server -- --nocapture
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
