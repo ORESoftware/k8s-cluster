@@ -22,7 +22,9 @@ RUN apt-get update \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /usr/local/bin/threefa-sync-server /usr/local/bin/threefa-sync-server
-COPY .cli-flags.toml /app/.cli-flags.toml
+# The service resolves executable-owned policy from ../share/threefa-backend;
+# WORKDIR is deliberately not part of the production trust boundary.
+COPY .cli-flags.toml /usr/local/share/threefa-backend/.cli-flags.toml
 
 ENV BIND_ADDR=0.0.0.0:8080
 EXPOSE 8080
