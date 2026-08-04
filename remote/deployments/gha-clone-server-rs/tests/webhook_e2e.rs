@@ -3,7 +3,7 @@ use std::{
     net::TcpListener as StdTcpListener,
     process::{Child, Command, Stdio},
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
 };
@@ -239,6 +239,7 @@ struct MockBuildState {
     submissions: Arc<Mutex<Vec<Value>>>,
     auth_headers: Arc<Mutex<Vec<Option<String>>>>,
     next_id: Arc<AtomicUsize>,
+    complete: Arc<AtomicBool>,
 }
 
 struct MockBuildServer {
@@ -255,10 +256,19 @@ impl Drop for MockBuildServer {
 
 impl MockBuildServer {
     async fn start() -> Self {
+        Self::start_with_completion(true).await
+    }
+
+    async fn start_running() -> Self {
+        Self::start_with_completion(false).await
+    }
+
+    async fn start_with_completion(complete: bool) -> Self {
         let state = MockBuildState {
             submissions: Arc::new(Mutex::new(Vec::new())),
             auth_headers: Arc::new(Mutex::new(Vec::new())),
             next_id: Arc::new(AtomicUsize::new(0)),
+            complete: Arc::new(AtomicBool::new(complete)),
         };
         let app = Router::new()
             .route("/builds", post(mock_build_submit))
@@ -276,6 +286,10 @@ impl MockBuildServer {
             state,
             task,
         }
+    }
+
+    fn complete(&self) {
+        self.state.complete.store(true, Ordering::SeqCst);
     }
 }
 
@@ -303,10 +317,18 @@ async fn mock_build_submit(
         .into_response()
 }
 
-async fn mock_build_status(Path(id): Path<String>) -> Json<Value> {
+async fn mock_build_status(
+    State(state): State<MockBuildState>,
+    Path(id): Path<String>,
+) -> Json<Value> {
+    let status = if state.complete.load(Ordering::SeqCst) {
+        "succeeded"
+    } else {
+        "running"
+    };
     Json(json!({
         "id": id,
-        "status": "succeeded",
+        "status": status,
         "error": null
     }))
 }
@@ -747,4 +769,77 @@ async fn webhook_execution_readiness_requires_every_prerequisite() {
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(body["executionReady"], true);
     assert_eq!(body["webhookExecutionReady"], false);
+}
+
+#[tokio::test]
+async fn capacity_rejection_rolls_back_delivery_claim_and_retry_dispatches_once() {
+    let github = MockGithub::start(rust_workflow(), 0).await;
+    let build = MockBuildServer::start_running().await;
+    let mut env = execution_env(&github, &build);
+    env.insert("GHA_CLONE_MAX_RUNS", "1".to_string());
+    env.insert("GHA_CLONE_BUILD_TIMEOUT_SECONDS", "30".to_string());
+    let server = spawn_server(env).await;
+    let client = Client::new();
+
+    let first_response = client
+        .post(format!("{}/v1/runs", server.base_url))
+        .header("x-server-auth", AUTH_SECRET)
+        .json(&json!({
+            "repository": REPOSITORY,
+            "revision": REVISION,
+            "workflowPath": WORKFLOW_PATH,
+            "workflowYaml": rust_workflow()
+        }))
+        .send()
+        .await
+        .expect("direct run request");
+    let (status, first) = response_json(first_response).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    let first_run_id = first["id"].as_str().expect("first run id").to_string();
+
+    let mut submitted = false;
+    for _ in 0..200 {
+        if build.state.submissions.lock().await.len() == 1 {
+            submitted = true;
+            break;
+        }
+        sleep(Duration::from_millis(10)).await;
+    }
+    assert!(submitted, "first run never reached the build server");
+
+    let payload = workflow_run_payload("completed", Some("failure"), "CI", WORKFLOW_PATH);
+    let delivery = "71111111-1111-4111-8111-111111111111";
+    let rejected = post_workflow_run(&client, &server, delivery, &payload).await;
+    let (status, rejected) = response_json(rejected).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(rejected["error"], "run capacity is full");
+    assert_eq!(rejected["maxRuns"], 1);
+    assert_eq!(rejected["activeRuns"], 1);
+    assert_eq!(rejected["requestedRuns"], 1);
+    assert_eq!(build.state.submissions.lock().await.len(), 1);
+
+    let after_rejection = health(&client, &server).await;
+    assert_eq!(after_rejection["runsRetained"], 1);
+    assert_eq!(after_rejection["webhookDeliveriesRetained"], 0);
+
+    build.complete();
+    let first_terminal = wait_for_terminal_run(&client, &server, &first_run_id).await;
+    assert_eq!(first_terminal["status"], "succeeded");
+
+    let retry = post_workflow_run(&client, &server, delivery, &payload).await;
+    let (status, retry) = response_json(retry).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert_eq!(retry["accepted"], true);
+    let retry_run_id = retry["runIds"][0]
+        .as_str()
+        .expect("retry run id")
+        .to_string();
+    let retry_terminal = wait_for_terminal_run(&client, &server, &retry_run_id).await;
+    assert_eq!(retry_terminal["status"], "succeeded");
+    assert_eq!(build.state.submissions.lock().await.len(), 2);
+
+    let after_retry = health(&client, &server).await;
+    assert_eq!(after_retry["runsRetained"], 1);
+    assert_eq!(after_retry["webhookDeliveriesRetained"], 1);
+    assert_eq!(github.state.requests.lock().await.len(), 2);
 }
