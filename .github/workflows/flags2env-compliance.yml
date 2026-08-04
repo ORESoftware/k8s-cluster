@@ -1,0 +1,38 @@
+name: flags2env consumer compliance
+
+on:
+  pull_request:
+    paths:
+      - .cli-flags.toml
+      - Cargo.toml
+      - Cargo.lock
+      - src/flags.rs
+      - deploy/Dockerfile
+      - .github/scripts/flags2env-runtime-smoke.sh
+      - .github/workflows/flags2env-compliance.yml
+  push:
+    branches: [main]
+    paths:
+      - .cli-flags.toml
+      - Cargo.toml
+      - Cargo.lock
+      - src/flags.rs
+      - deploy/Dockerfile
+      - .github/scripts/flags2env-runtime-smoke.sh
+      - .github/workflows/flags2env-compliance.yml
+
+permissions:
+  contents: read
+
+jobs:
+  compliance:
+    uses: ORESoftware/flags-2-env/.github/workflows/reusable-consumer-compliance.yml@2e3120b4a615093308eda89036456a565fea0dcf
+    with:
+      tooling_ref: 2e3120b4a615093308eda89036456a565fea0dcf
+      parser_ref: 377bff1a4e7424eb98377997a232ddc0fc700f59
+      kind: server
+      command_name: threefa-sync-server
+      contract_path: .cli-flags.toml
+      rust_manifest_path: Cargo.toml
+      cargo_lock_path: Cargo.lock
+      runtime_smoke_script: .github/scripts/flags2env-runtime-smoke.sh
