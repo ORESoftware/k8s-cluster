@@ -1,3 +1,4 @@
+# Activated after the workflow was established on the default branch.
 name: Ensure organization Projects once
 run-name: Ensure canonical organization Projects @ ${{ github.sha }}
 
