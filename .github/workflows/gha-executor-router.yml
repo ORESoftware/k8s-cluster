@@ -64,45 +64,37 @@ jobs:
           rustc --version --verbose
           cargo --version --verbose
 
-      - name: Generate the initial deterministic lockfile when absent
+      - name: Require the reviewed deterministic lockfile
         run: |
           set -euo pipefail
-          if [[ ! -f "$LOCKFILE" ]]; then
-            cargo generate-lockfile --manifest-path "$MANIFEST"
-          fi
           test -s "$LOCKFILE"
+          cargo metadata --locked --no-deps --format-version 1 \
+            --manifest-path "$MANIFEST" >/dev/null
 
       - name: Check formatting
         run: cargo fmt --all --check --manifest-path "$MANIFEST"
 
       - name: Run executor-routing tests
-        run: cargo test --manifest-path "$MANIFEST" --all-targets --all-features
+        run: cargo test --locked --manifest-path "$MANIFEST" --all-targets --all-features
 
       - name: Deny Rust warnings
-        run: cargo clippy --manifest-path "$MANIFEST" --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --manifest-path "$MANIFEST" --all-targets --all-features -- -D warnings
 
       - name: Prove caller-controlled execution fields are absent
         run: |
           set -euo pipefail
-          ! grep -R --line-number --extended-regexp \
+          if grep -R --line-number --extended-regexp \
             'caller.*(command|image|endpoint)|Command::new|/var/run/docker.sock|hostPath:' \
-            remote/deployments/gha-executor-router-rs/src
+            remote/deployments/gha-executor-router-rs/src; then
+            echo 'caller-controlled execution or host authority found in router source' >&2
+            exit 1
+          fi
           grep -F '#[serde(rename_all = "camelCase", deny_unknown_fields)]' \
             remote/deployments/gha-executor-router-rs/src/lib.rs
           grep -F 'fallback was not attempted' \
             remote/deployments/gha-executor-router-rs/src/lib.rs
           grep -F 'the job was not resubmitted' \
             remote/deployments/gha-executor-router-rs/src/lib.rs
-
-      - name: Upload generated lockfile for the initial review commit
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: gha-executor-router-lock-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ env.LOCKFILE }}
-          if-no-files-found: error
-          retention-days: 7
-          include-hidden-files: false
 
   manifests:
     name: GitOps, workflow syntax, and secret boundary
@@ -172,11 +164,9 @@ jobs:
           test "$RUNNER_OS" = Linux
           test -n "$RUNNER_NAME"
           test ! -e /var/run/docker.sock
+          test -s "$LOCKFILE"
           rustup toolchain install stable --profile minimal --component rustfmt,clippy
           rustup default stable
-          if [[ ! -f "$LOCKFILE" ]]; then
-            cargo generate-lockfile --manifest-path "$MANIFEST"
-          fi
           cargo fmt --all --check --manifest-path "$MANIFEST"
-          cargo test --manifest-path "$MANIFEST" --all-targets --all-features
-          cargo clippy --manifest-path "$MANIFEST" --all-targets --all-features -- -D warnings
+          cargo test --locked --manifest-path "$MANIFEST" --all-targets --all-features
+          cargo clippy --locked --manifest-path "$MANIFEST" --all-targets --all-features -- -D warnings
