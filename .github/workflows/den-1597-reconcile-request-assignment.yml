@@ -25,7 +25,7 @@ jobs:
           persist-credentials: true
           show-progress: false
 
-      - name: Reconcile with the reviewed dev and OCI baseline
+      - name: Reconcile with current dev and remove superseded workflow machinery
         shell: bash
         run: |
           set -euo pipefail
@@ -33,7 +33,6 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git fetch --no-tags origin dev
           git merge --no-edit origin/dev
-
           git checkout origin/dev -- \
             .github/workflows/gha-continuity-images.yml \
             docs/gha-continuity-images.md \
@@ -46,7 +45,7 @@ jobs:
           git rm -f --ignore-unmatch \
             .github/workflows/apply-den-1597-assignment-ci-fixes-once.yml
 
-      - name: Box authentication failures and preserve split-module policy anchors
+      - name: Apply the reviewed auth-boundary and policy-anchor fixes
         shell: bash
         run: |
           set -euo pipefail
@@ -56,26 +55,25 @@ jobs:
 
           security_path = Path('remote/deployments/gha-clone-server-rs/src/executor_router_service/security.rs')
           security = security_path.read_text()
-          signatures = {
+          replacements = {
               'pub(super) fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Response> {':
                   'pub(super) fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Box<Response>> {',
               'fn unauthorized(state: &AppState) -> Result<(), Response> {':
                   'fn unauthorized(state: &AppState) -> Result<(), Box<Response>> {',
           }
-          for old, new in signatures.items():
-              count = security.count(old)
-              if count != 1:
-                  raise SystemExit(f'expected one authentication signature {old!r}, found {count}')
+          for old, new in replacements.items():
+              if security.count(old) != 1:
+                  raise SystemExit(f'expected exactly one auth signature: {old}')
               security = security.replace(old, new, 1)
 
-          error_pattern = re.compile(
-              r'''    Err\(\(\n'''
-              r'''        StatusCode::UNAUTHORIZED,\n'''
-              r'''        Json\(json!\(\{ "error": "unauthorized" \}\)\),\n'''
-              r'''    \)\n'''
-              r'''        \.into_response\(\)\)\n'''
+          pattern = re.compile(
+              r'    Err\(\(\n'
+              r'        StatusCode::UNAUTHORIZED,\n'
+              r'        Json\(json!\(\{ "error": "unauthorized" \}\)\),\n'
+              r'    \)\n'
+              r'        \.into_response\(\)\)\n'
           )
-          error_replacement = '''    Err(Box::new(
+          replacement = '''    Err(Box::new(
               (
                   StatusCode::UNAUTHORIZED,
                   Json(json!({ "error": "unauthorized" })),
@@ -83,15 +81,15 @@ jobs:
                   .into_response(),
           ))
           '''
-          security, count = error_pattern.subn(error_replacement, security)
+          security, count = pattern.subn(replacement, security)
           if count != 1:
-              raise SystemExit(f'expected one unauthorized response expression, found {count}')
+              raise SystemExit(f'expected one unauthorized response, found {count}')
           security_path.write_text(security)
 
-          for relative in [
+          for relative in (
               'remote/deployments/gha-clone-server-rs/src/executor_router_service/assignment.rs',
               'remote/deployments/gha-clone-server-rs/src/executor_router_service/upstream.rs',
-          ]:
+          ):
               path = Path(relative)
               text = path.read_text()
               old = '''    if let Err(response) = security::require_auth(&headers, &state) {
@@ -103,11 +101,10 @@ jobs:
               }
               '''
               if text.count(old) != 1:
-                  raise SystemExit(f'expected one authentication return in {relative}')
+                  raise SystemExit(f'expected one auth return in {relative}')
               path.write_text(text.replace(old, new, 1))
 
           shim_path = Path('remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs')
-          shim = shim_path.read_text()
           plain = '''#[path = "../executor_router_service.rs"]
           mod executor_router_service;
 
@@ -131,19 +128,20 @@ jobs:
               executor_router_service::run().await;
           }
           '''
+          shim = shim_path.read_text()
           if shim == plain:
               shim_path.write_text(anchored)
           elif shim != anchored:
-              raise SystemExit('executor-router shim changed outside the reviewed split-module contract')
+              raise SystemExit('router shim changed outside the reviewed contract')
           PY
 
-      - name: Install the pinned Rust toolchain
+      - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: '1.90.0'
           components: rustfmt, clippy
 
-      - name: Format and verify every continuity-server target
+      - name: Format and verify every Rust target
         working-directory: remote/deployments/gha-clone-server-rs
         shell: bash
         run: |
@@ -152,7 +150,7 @@ jobs:
           cargo test --locked --all-targets
           cargo clippy --locked --all-targets -- -D warnings
 
-      - name: Install the pinned Node contract toolchain
+      - name: Install pinned Node contract toolchain
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 10.33.0
@@ -174,31 +172,14 @@ jobs:
             general/gha-clone-server-config.test.ts \
             general/gha-clone-webhook-config.test.ts
 
-      - name: Publish a current-dev product-only branch
+      - name: Publish one product-only current-dev branch
         shell: bash
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           git rm .github/workflows/den-1597-reconcile-request-assignment.yml
-
-          git add -A -- \
-            .github/workflows/apply-den-1597-assignment-ci-fixes-once.yml \
-            .github/workflows/den-1597-reconcile-request-assignment.yml \
-            .github/workflows/gha-continuity-images.yml \
-            docs/gha-continuity-images.md \
-            docs/gha-executor-assignment-contract.md \
-            remote/argocd/observability/k8s-resource-exporter.configmap.yaml \
-            remote/argocd/observability/k8s-resource-exporter.deployment.yaml \
-            remote/deployments/gha-clone-server-rs/.dockerignore \
-            remote/deployments/gha-clone-server-rs/Dockerfile \
-            remote/deployments/gha-clone-server-rs/scripts/smoke-container-images.sh \
-            remote/deployments/gha-clone-server-rs/scripts/validate-image-export.py \
-            remote/deployments/gha-clone-server-rs/src/executor_router_service.rs \
-            remote/deployments/gha-clone-server-rs/src/executor_router_service/assignment.rs \
-            remote/deployments/gha-clone-server-rs/src/executor_router_service/security.rs \
-            remote/deployments/gha-clone-server-rs/src/executor_router_service/upstream.rs \
-            remote/deployments/gha-clone-server-rs/tests/executor_router_assignment.rs
+          git add -A
           git add -f remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs
 
           allowed='^(.github/workflows/apply-den-1597-assignment-ci-fixes-once\.yml|.github/workflows/den-1597-reconcile-request-assignment\.yml|.github/workflows/gha-continuity-images\.yml|docs/gha-continuity-images\.md|docs/gha-executor-assignment-contract\.md|remote/argocd/observability/k8s-resource-exporter\.(configmap|deployment)\.yaml|remote/deployments/gha-clone-server-rs/(\.dockerignore|Dockerfile|scripts/(smoke-container-images\.sh|validate-image-export\.py)|src/bin/gha-executor-router\.rs|src/executor_router_service\.rs|src/executor_router_service/(assignment|security|upstream)\.rs|tests/executor_router_assignment\.rs))$'
