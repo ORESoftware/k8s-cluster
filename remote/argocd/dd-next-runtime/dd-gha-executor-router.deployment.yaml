@@ -57,6 +57,8 @@ spec:
               value: main
             - name: GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED
               value: "false"
+            # The binary's fail-closed default resolves the mounted Secret root;
+            # only the required direct-child credential path is declared here.
             - name: GHA_EXECUTOR_ROUTER_AUTH_PATH
               value: /var/run/secrets/gha-executor-router/inbound-auth
             - name: GHA_EXECUTOR_ROUTER_EXECUTORS_JSON
