@@ -12,6 +12,7 @@ on:
       - scripts/ops/tests/test_portfolio_project_links.py
       - scripts/ops/tests/test_sync_portfolio_project_links.py
       - docs/portfolio-project-linking.md
+      - docs/daily-portfolio-project-sync.md
       - .github/workflows/validate-portfolio-project-links.yml
   push:
     branches:
@@ -25,6 +26,7 @@ on:
       - scripts/ops/tests/test_portfolio_project_links.py
       - scripts/ops/tests/test_sync_portfolio_project_links.py
       - docs/portfolio-project-linking.md
+      - docs/daily-portfolio-project-sync.md
       - .github/workflows/validate-portfolio-project-links.yml
   schedule:
     # GitHub cron is UTC. The reconciler selects the expression that maps to
