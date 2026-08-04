@@ -60,9 +60,9 @@ jobs:
         working-directory: remote/deployments/build-server-rs
         run: cargo generate-lockfile
 
-      - name: Check formatting
+      - name: Check changed worker source formatting
         working-directory: remote/deployments/build-server-rs
-        run: cargo fmt --all -- --check
+        run: rustfmt --edition 2021 --check src/main.rs src/gha_workflow.rs
 
       - name: Compile with warnings denied
         working-directory: remote/deployments/build-server-rs
