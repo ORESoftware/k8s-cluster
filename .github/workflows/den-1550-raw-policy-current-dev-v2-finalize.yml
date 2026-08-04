@@ -152,11 +152,39 @@ jobs:
         run: |
           set -euo pipefail
           base='3917b9d453adf589f3c998566e13a3b4ac52851f'
-          rm .github/workflows/den-1550-raw-policy-current-dev-v2-finalize.yml
+          carrier='.github/workflows/den-1550-raw-policy-current-dev-v2-finalize.yml'
+
+          # `cargo fmt --all` validates the whole crate but this old branch has
+          # unrelated formatting drift. Keep that validation evidence while
+          # restoring every non-product file before staging the reviewed fix.
+          git restore --source=HEAD -- \
+            remote/deployments/build-server-rs/src/ecr.rs \
+            remote/deployments/build-server-rs/src/exec.rs \
+            remote/deployments/build-server-rs/src/gh_secrets.rs \
+            remote/deployments/build-server-rs/src/http.rs \
+            remote/deployments/build-server-rs/tests/profile_policy_http.rs
+
+          rm "$carrier"
           git diff --check
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -A
+          git add -- \
+            remote/deployments/build-server-rs/src/config.rs \
+            remote/deployments/build-server-rs/src/config/profile_policy.rs \
+            remote/tests/general/build-server-profile-repository-policy.test.mjs \
+            "$carrier"
+
+          expected_staged=$'.github/workflows/den-1550-raw-policy-current-dev-v2-finalize.yml\nremote/deployments/build-server-rs/src/config.rs\nremote/deployments/build-server-rs/src/config/profile_policy.rs\nremote/tests/general/build-server-profile-repository-policy.test.mjs'
+          actual_staged="$(git diff --cached --name-only | sort)"
+          if [[ "$actual_staged" != "$expected_staged" ]]; then
+            printf 'unexpected staged paths:\n%s\n' "$actual_staged" >&2
+            exit 1
+          fi
+          if [[ -n "$(git diff --name-only)" ]]; then
+            printf 'unstaged paths remain after scope cleanup:\n%s\n' "$(git diff --name-only)" >&2
+            exit 1
+          fi
+
           git commit -m 'security(DEN-1550): preserve and bound raw profile policy bytes'
           expected=$'remote/deployments/build-server-rs/src/config.rs\nremote/deployments/build-server-rs/src/config/profile_policy.rs\nremote/tests/general/build-server-profile-repository-policy.test.mjs'
           actual="$(git diff --name-only "$base"...HEAD | sort)"
