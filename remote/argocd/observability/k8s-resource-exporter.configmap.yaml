@@ -25,7 +25,7 @@ data:
     PORT = os.environ.get("KUBERNETES_SERVICE_PORT", "443")
     BASE_URL = "https://%s:%s" % (HOST, PORT)
     SCRAPE_TIMEOUT = float(os.environ.get("SCRAPE_TIMEOUT_SECONDS", "5"))
-    DEFAULT_WATCH_NAMESPACES = "ai-agent-coordinator,ai-ml,airbyte,anon-proxy,arc-runners-sonus,athleto,big-data,canonical-cloud,daedalus,default,fiducia,headlamp,kafka,messaging,observability,presence,scintilla,shared-auth,spark,threefa,vpn,zed"
+    DEFAULT_WATCH_NAMESPACES = "ai-agent-coordinator,ai-ml,airbyte,anon-proxy,arc-runners-sonus,arc-runners-streempilot,athleto,big-data,canonical-cloud,daedalus,default,fiducia,headlamp,kafka,messaging,observability,presence,scintilla,shared-auth,spark,threefa,vpn,zed"
     DEFAULT_WATCH_APPS = (
         "dd-agent-worker-broker,dd-ai-agent-coordinator,dd-ai-ml-pipeline,dd-akka-ws-server,dd-apostille-services-server,"
         "dd-athleto-app-rs,dd-athleto-backend,dd-bastion,"
@@ -52,7 +52,7 @@ data:
         "dd-ws-loadtest-rs-akkaws-akkastreams,dd-ws-loadtest-rs-akkaws-asyncjava,"
         "dd-ws-loadtest-rs-dart,dd-ws-loadtest-rs-fsharp-rx,dd-ws-loadtest-rs-gcs,"
         "dd-ws-loadtest-rs-go-wss,dd-ws-loadtest-rs-rust-wss,gcs,gcs-kafka,"
-        "gcs-mongodb,gcs-rabbitmq,gcs-router,gha-capacity-broker-sonus,headlamp,minio,presence,reloader,"
+        "gcs-mongodb,gcs-rabbitmq,gcs-router,gha-capacity-broker-sonus,gha-capacity-broker-streempilot,headlamp,minio,presence,reloader,"
         "spark,spark-master,spark-worker,airflow,benefactor-backend-rs,dd-agent-sim-server,"
         "dd-ai-agent-bridge,dd-akrion-web-server-rs,dd-alertmanager,dd-benefactor-marketing-rs,"
         "dd-canonical-cloud,dd-chaos,dd-constraint-scheduler,dd-data-viz-rs,dd-dataset-labeling,"

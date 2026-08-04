@@ -42,8 +42,13 @@ crate_dir=.
 if [ ! -f "$crate_dir/Cargo.toml" ]; then
   if [ -f remote/deployments/gha-clone-server-rs/Cargo.toml ]; then
     crate_dir=remote/deployments/gha-clone-server-rs
+  elif [ -f generated/rust/Cargo.toml ] \
+    && [ -f generated/rust/Cargo.lock ] \
+    && [ -f schema/domain.schema.json ] \
+    && [ -f nats/subjects.json ]; then
+    crate_dir=generated/rust
   else
-    echo "rust-verify requires Cargo.toml at repository root or the reviewed gha-clone-server monorepo path" >&2
+    echo "rust-verify requires Cargo.toml at repository root, the reviewed gha-clone-server monorepo path, or the reviewed generated-interface crate shape" >&2
     exit 2
   fi
 fi
@@ -59,20 +64,25 @@ const NODE_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
     image: NODE_IMAGE,
     subdirectory: ".",
     script: r#"set -euo pipefail
+package_manager=
 if [ -f pnpm-lock.yaml ]; then
   corepack enable
   pnpm install --frozen-lockfile
-  pnpm test
+  package_manager=pnpm
 elif [ -f yarn.lock ]; then
   corepack enable
   yarn install --immutable
-  yarn test
+  package_manager=yarn
 elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
   npm ci
-  npm test
+  package_manager=npm
 else
   echo "node-verify requires pnpm-lock.yaml, yarn.lock, package-lock.json, or npm-shrinkwrap.json" >&2
   exit 2
+fi
+"$package_manager" test
+if node -e 'const p=require("./package.json"); process.exit(p.scripts && p.scripts[process.argv[1]] ? 0 : 1)' check:typescript; then
+  "$package_manager" run check:typescript
 fi"#,
 }];
 
@@ -172,7 +182,8 @@ pub const SPECS: &[ProfileSpec] = &[
     ProfileSpec {
         name: "node-verify",
         platform: "linux",
-        description: "Lockfile-strict Node dependency installation and repository tests",
+        description:
+            "Lockfile-strict Node dependency installation, tests, and optional TypeScript contract checks",
         steps: NODE_VERIFY_STEPS,
         artifact_paths: &[],
     },
@@ -296,13 +307,28 @@ mod tests {
     }
 
     #[test]
-    fn rust_verify_has_only_the_reviewed_meta_server_monorepo_fallback() {
+    fn rust_verify_has_only_reviewed_monorepo_fallbacks() {
         let profile = find("rust-verify").expect("rust profile");
         let script = profile.steps[0].script;
         assert_eq!(profile.steps[0].subdirectory, ".");
         assert!(script.contains("remote/deployments/gha-clone-server-rs/Cargo.toml"));
+        assert!(script.contains("generated/rust/Cargo.toml"));
+        assert!(script.contains("generated/rust/Cargo.lock"));
+        assert!(script.contains("schema/domain.schema.json"));
+        assert!(script.contains("nats/subjects.json"));
         assert!(script.contains("cargo test --locked --all-targets --all-features"));
         assert!(!script.contains("find "));
         assert!(!script.contains("for crate"));
+    }
+
+    #[test]
+    fn node_verify_runs_optional_typescript_contracts_after_locked_tests() {
+        let profile = find("node-verify").expect("node profile");
+        let script = profile.steps[0].script;
+        assert!(script.contains("pnpm install --frozen-lockfile"));
+        assert!(script.contains("yarn install --immutable"));
+        assert!(script.contains("npm ci"));
+        assert!(script.contains("check:typescript"));
+        assert!(script.contains("process.exit"));
     }
 }

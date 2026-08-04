@@ -498,6 +498,19 @@ async fn github_webhook(
     if let Err(response) = require_allowed_repository(&repository, &state) {
         return response;
     }
+    if event != "workflow_run" {
+        return (
+            StatusCode::ACCEPTED,
+            Json(json!({
+                "accepted": false,
+                "event": event,
+                "delivery": delivery,
+                "repository": repository,
+                "reason": "only workflow_run events may trigger the failure fallback"
+            })),
+        )
+            .into_response();
+    }
     let Some(revision) = webhook_revision(event, &payload) else {
         return (
             StatusCode::ACCEPTED,
