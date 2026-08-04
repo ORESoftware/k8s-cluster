@@ -72,7 +72,7 @@ jobs:
             -u GITHUB_TOKEN \
             -u GITHUB_REPOSITORY_ADMIN_TOKEN \
             -u GIT_ASKPASS \
-            bash /tmp/publish-agent-pontifex-fiducia.sh || status=\$?
+            bash -lc 'exec bash /tmp/publish-agent-pontifex-fiducia.sh' || status=\$?
           rm -f /tmp/publish-agent-pontifex-fiducia.sh
           exit \$status
           EOF
