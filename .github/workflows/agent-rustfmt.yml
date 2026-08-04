@@ -1,9 +1,7 @@
 name: agent-rustfmt-once
 
 on:
-  push:
-    branches:
-      - agent/stripe-checkout-sessions
+  pull_request:
     paths:
       - .github/workflows/agent-rustfmt.yml
 
