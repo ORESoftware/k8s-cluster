@@ -4,8 +4,6 @@ import test from 'node:test';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../../..');
-const runtime = resolve(root, 'remote/argocd/dd-next-runtime');
-const crate = resolve(root, 'remote/deployments/gha-clone-server-rs');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 
 const paths = {
@@ -24,6 +22,7 @@ const paths = {
   cloneNetworkPolicy:
     'remote/argocd/dd-next-runtime/dd-gha-clone-server.networkpolicy.yaml',
   kustomization: 'remote/argocd/dd-next-runtime/kustomization.yaml',
+  workflow: '.github/workflows/gha-clone-server.yml',
   routerSource:
     'remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs',
   routerContracts:
@@ -128,7 +127,7 @@ test('router deployment remains absent and execution-disabled with file-mounted 
   );
 });
 
-test('ExternalSecret separates inbound router and AWS executor credentials', () => {
+test('ExternalSecret separates inbound router and AWS executor credentials while omitting Hetzner', () => {
   const externalSecret = read(paths.externalSecret);
   requireContains(
     externalSecret,
@@ -146,6 +145,7 @@ test('ExternalSecret separates inbound router and AWS executor credentials', () 
     2,
     'unexpected router secret authority added',
   );
+  assert.doesNotMatch(externalSecret, /hetzner/i);
   assert.doesNotMatch(externalSecret, /ghp_|github_pat_|stringData:|data:\s*\n\s+[^-]/i);
 });
 
@@ -188,7 +188,7 @@ test('clone server routes only to the internal router and uses distinct authorit
   );
 });
 
-test('network policies permit only clone-to-router and router-to-executor paths', () => {
+test('network policies permit only clone-to-router and router-to-AWS paths before Hetzner activation', () => {
   const routerPolicy = read(paths.networkPolicy);
   requireContains(
     routerPolicy,
@@ -198,11 +198,14 @@ test('network policies permit only clone-to-router and router-to-executor paths'
       'port: 8126',
       'app: dd-build-server',
       'port: 8100',
-      'port: 443',
-      '169.254.0.0/16',
+      'kubernetes.io/metadata.name: kube-system',
+      'port: 53',
+      'No public HTTPS egress is admitted while the Hetzner executor is disabled.',
     ],
     'router NetworkPolicy',
   );
+  assert.doesNotMatch(routerPolicy, /cidr:\s*0\.0\.0\.0\/0/);
+  assert.doesNotMatch(routerPolicy, /port:\s*443/);
 
   const clonePolicy = read(paths.cloneNetworkPolicy);
   requireContains(
@@ -212,6 +215,21 @@ test('network policies permit only clone-to-router and router-to-executor paths'
   );
   const egress = clonePolicy.split('  egress:\n')[1] ?? '';
   assert.ok(!egress.includes('port: 8100'), 'clone server retains direct build egress');
+});
+
+test('disabled Hetzner state is consistent across inventory, credentials, and egress', () => {
+  const configMap = read(paths.configMap);
+  const externalSecret = read(paths.externalSecret);
+  const networkPolicy = read(paths.networkPolicy);
+  const deployment = read(paths.deployment);
+
+  assert.match(configMap, /"id": "hetzner-secondary"/);
+  assert.match(configMap, /"provider": "hetzner"/);
+  assert.match(configMap, /"enabled": false/);
+  assert.doesNotMatch(configMap, /hetzner[^\n]*(?:url|authPath)/i);
+  assert.doesNotMatch(externalSecret, /hetzner/i);
+  assert.doesNotMatch(networkPolicy, /port:\s*443|cidr:\s*0\.0\.0\.0\/0/);
+  assert.equal(envValue(deployment, 'GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED'), 'false');
 });
 
 test('service and kustomization make the zero-replica router Argo-trackable', () => {
@@ -274,6 +292,21 @@ test('router code and live tests retain the no-duplicate failover boundary', () 
       'explicit_rejection_does_not_submit_to_the_second_provider',
     ],
     'router live tests',
+  );
+});
+
+test('continuity workflow exercises router contracts and renders the complete overlay', () => {
+  const workflow = read(paths.workflow);
+  requireContains(
+    workflow,
+    [
+      'general/gha-executor-router-config.test.mjs',
+      'cargo clippy --locked --all-targets -- -D warnings',
+      'cargo test --locked --all-targets',
+      'kubectl kustomize remote/argocd/dd-next-runtime',
+      'persist-credentials: false',
+    ],
+    'continuity workflow',
   );
 });
 
