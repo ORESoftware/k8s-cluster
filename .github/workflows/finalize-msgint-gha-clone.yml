@@ -59,8 +59,10 @@ jobs:
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked --all-targets
 
-      - name: Validate the fixed build profile source
-        run: rustfmt --edition 2021 --check remote/deployments/build-server-rs/src/profiles.rs
+      - name: Format and validate the fixed build profile source
+        run: |
+          rustfmt --edition 2021 remote/deployments/build-server-rs/src/profiles.rs
+          rustfmt --edition 2021 --check remote/deployments/build-server-rs/src/profiles.rs
 
       - name: Lint the bounded Messaging Intel workflow fixture
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
