@@ -8,12 +8,17 @@ on:
       - agent/durable-worker-server-rs-v2
     paths:
       - '.github/workflows/durable-worker-idempotency-recovery-fix.yml'
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/durable-worker-idempotency-recovery-fix.yml'
 
 permissions:
   contents: write
 
 concurrency:
-  group: durable-worker-idempotency-recovery-fix-${{ github.ref }}
+  group: durable-worker-idempotency-recovery-fix-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -45,11 +50,11 @@ jobs:
           engine_path = Path('remote/deployments/durable-worker-server-rs/src/engine/mod.rs')
           engine = engine_path.read_text()
           start_marker = '''        let (run_id, idempotent_replay) = if let Some(idempotency_key) =
-              request.idempotency_key.as_deref()
-          {'''.replace('              request', '            request').replace('\n          {', '\n        {')
+            request.idempotency_key.as_deref()
+        {'''
           end_marker = '''        } else {
-              (Uuid::new_v4().to_string(), false)
-          };'''.replace('              (Uuid', '            (Uuid').replace('\n          };', '\n        };')
+            (Uuid::new_v4().to_string(), false)
+        };'''
           start = engine.find(start_marker)
           if start < 0:
               raise SystemExit('submit_run idempotency start marker not found')
