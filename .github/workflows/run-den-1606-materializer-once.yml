@@ -1,3 +1,4 @@
+# Triggered after connector review on 2026-08-04; this file self-deletes on success.
 name: Run DEN-1606 direct hardening materializer once
 
 on:
