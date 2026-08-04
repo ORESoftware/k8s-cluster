@@ -20,10 +20,12 @@ CLOUD_TEMPLATES = {
 GENERIC_RUNNER_TEMPLATE = (
     BASE / "streempilot-ci-runner-set.application.template.yaml.tpl"
 )
-CATALOG_VISIBLE_APPLICATION_PATHS = (
+BROKER_TEMPLATE = BASE / "gha-capacity-broker.deployment.template.yaml.tpl"
+CATALOG_VISIBLE_TEMPLATE_PATHS = (
     BASE / "aws.applications.template.yaml",
     BASE / "hetzner.applications.template.yaml",
     BASE / "streempilot-ci-runner-set.application.template.yaml",
+    BASE / "gha-capacity-broker.deployment.template.yaml",
 )
 
 
@@ -76,7 +78,7 @@ def policy_json(text: str) -> dict[str, object]:
     return value
 
 
-def check_files_and_catalog_boundary() -> None:
+def check_files_and_discovery_boundary() -> None:
     required = (
         "README.md",
         "base/kustomization.yaml",
@@ -85,7 +87,7 @@ def check_files_and_catalog_boundary() -> None:
         "base/resource-policy.yaml",
         "base/runner-networkpolicy.yaml",
         "gha-capacity-broker-policy.configmap.template.yaml",
-        "gha-capacity-broker.deployment.template.yaml",
+        "gha-capacity-broker.deployment.template.yaml.tpl",
         "streempilot-ci-runner-set.application.template.yaml.tpl",
         "streempilot-arc-github.externalsecret.template.yaml",
         "streempilot-ci-smoke.workflow.template.yml",
@@ -95,22 +97,25 @@ def check_files_and_catalog_boundary() -> None:
     for relative in required:
         read(BASE / relative)
 
-    for path in CATALOG_VISIBLE_APPLICATION_PATHS:
+    for path in CATALOG_VISIBLE_TEMPLATE_PATHS:
         require(
             not path.exists(),
-            f"inert Application template is catalog-visible: {path.relative_to(ROOT)}",
+            f"inert resource template is discovery-visible: {path.relative_to(ROOT)}",
         )
 
     for path in BASE.rglob("*.yaml"):
         text = read(path)
         require(
-            "kind: Application" not in text,
-            f"catalog-visible YAML contains an inert Argo Application: {path.relative_to(ROOT)}",
+            not re.search(r"(?m)^kind:\s*(Application|Deployment|StatefulSet|DaemonSet)\s*$", text),
+            f"catalog/observability-visible YAML contains an inert workload: {path.relative_to(ROOT)}",
         )
 
-    for path in (*CLOUD_TEMPLATES.values(), GENERIC_RUNNER_TEMPLATE):
+    for path in (*CLOUD_TEMPLATES.values(), GENERIC_RUNNER_TEMPLATE, BROKER_TEMPLATE):
         require(path.name.endswith(".yaml.tpl"), f"template suffix is not inert: {path.name}")
+
+    for path in (*CLOUD_TEMPLATES.values(), GENERIC_RUNNER_TEMPLATE):
         require("kind: Application" in read(path), f"{path.name} is not an Application template")
+    require("kind: Deployment" in read(BROKER_TEMPLATE), "broker template is not a Deployment")
 
 
 def check_inert_boundary() -> None:
@@ -132,6 +137,7 @@ def check_inert_boundary() -> None:
             ".yaml.tpl",
             "aws.applications",
             "hetzner.applications",
+            "gha-capacity-broker",
         ),
         "base kustomization",
     )
@@ -148,7 +154,7 @@ def check_inert_boundary() -> None:
             f"{cloud} runner set lacks gate",
         )
 
-    broker = read(BASE / "gha-capacity-broker.deployment.template.yaml")
+    broker = read(BROKER_TEMPLATE)
     require("REPLACE_GHA_CAPACITY_BROKER_IMAGE_DIGEST" in broker, "broker image is not digest-gated")
     require(
         'name: GHA_MUTATION_ENABLED\n              value: "false"' in broker,
@@ -237,7 +243,7 @@ def check_three_apps() -> None:
         "ExternalSecret contract",
     )
 
-    broker = read(BASE / "gha-capacity-broker.deployment.template.yaml")
+    broker = read(BROKER_TEMPLATE)
     require_tokens(
         broker,
         (
@@ -399,7 +405,7 @@ def check_docs_and_credentials() -> None:
 
 
 def main() -> None:
-    check_files_and_catalog_boundary()
+    check_files_and_discovery_boundary()
     check_inert_boundary()
     check_namespace_and_network()
     check_three_apps()
