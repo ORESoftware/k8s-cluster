@@ -79,7 +79,7 @@ for (const route of ROUTES) {
         "default-src 'self'",
         "script-src 'none'",
         "object-src 'none'",
-        "base-uri 'self'",
+        "base-uri 'none'",
         "form-action 'self'",
         "frame-src 'none'",
       ]) {
@@ -93,8 +93,10 @@ for (const route of ROUTES) {
         "strict-origin-when-cross-origin",
       );
 
-      // The policy above is only honest if the page really has no scripts.
+      // The policy above is only honest if the page really has no scripts or
+      // document-wide base URL override.
       await expect(page.locator("script")).toHaveCount(0);
+      await expect(page.locator("base")).toHaveCount(0);
     });
 
     test("has no duplicate element ids", async ({ page }) => {
