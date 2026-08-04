@@ -1,0 +1,47 @@
+name: Apply DEN-539 3FA planner patch on exact branch
+
+on:
+  push:
+    branches:
+      - agent/den-539-threefa-planner-20260804
+    paths:
+      - '.github/workflows/apply-den-539-threefa-planner-push-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.ref_name == 'agent/den-539-threefa-planner-20260804'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref_name }}
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt
+      - name: Apply and validate exact planner patch
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/apply_den_539_threefa_planner.py
+          cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all
+          cargo test --locked --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --lib hardened_and_generated_command_sequences_are_exact
+          cargo test --locked --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --test threefa_planner
+          git diff --check
+      - name: Commit product-only result
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A -- \
+            remote/deployments/gha-clone-server-rs/src/lib.rs \
+            .github/workflows/apply-den-539-threefa-planner-once.yml \
+            .github/workflows/apply-den-539-threefa-planner-push-once.yml \
+            scripts/ops/apply_den_539_threefa_planner.py
+          git diff --cached --check
+          git commit -m 'DEN-539 compile exact 3FA hardened workflow profiles'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
