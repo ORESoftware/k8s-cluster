@@ -4,8 +4,7 @@ on:
   pull_request:
     paths:
       - 'remote/deployments/gha-clone-server-rs/**'
-      - 'remote/deployments/build-server-rs/src/profiles.rs'
-      - 'remote/deployments/build-server-rs/readme.md'
+      - 'remote/deployments/build-server-rs/**'
       - 'remote/argocd/dd-next-runtime/dd-gha-clone-server*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
@@ -19,8 +18,7 @@ on:
     branches: [main, dev]
     paths:
       - 'remote/deployments/gha-clone-server-rs/**'
-      - 'remote/deployments/build-server-rs/src/profiles.rs'
-      - 'remote/deployments/build-server-rs/readme.md'
+      - 'remote/deployments/build-server-rs/**'
       - 'remote/argocd/dd-next-runtime/dd-gha-clone-server*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
@@ -82,15 +80,18 @@ jobs:
         with:
           toolchain: '1.90.0'
           components: rustfmt
-      - name: Check the modified fixed-profile source formatting
+      - name: Check build-server formatting
         working-directory: remote/deployments/build-server-rs
-        run: rustfmt --edition 2021 --check src/profiles.rs
+        run: cargo fmt --all -- --check
       - name: Compile the build server against the exact private library gitlink
         working-directory: remote/deployments/build-server-rs
         run: cargo check --locked --all-targets
       - name: Test the fixed-profile registry and meta fallback
         working-directory: remote/deployments/build-server-rs
         run: cargo test --locked profiles::tests -- --nocapture
+      - name: Test build request idempotency and retry semantics
+        working-directory: remote/deployments/build-server-rs
+        run: cargo test --locked idempotency_tests -- --nocapture
 
   contracts:
     runs-on: ubuntu-latest
