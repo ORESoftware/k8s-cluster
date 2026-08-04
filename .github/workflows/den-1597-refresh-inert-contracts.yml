@@ -9,7 +9,7 @@ permissions:
 
 concurrency:
   group: den-1597-refresh-inert-contracts-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   verify-and-publish:
@@ -227,7 +227,7 @@ jobs:
           git rm .github/workflows/den-1597-refresh-inert-contracts.yml
           git add remote/tests/general/gha-clone-server-config.test.ts
           git diff --cached --check
-          unexpected="$(git diff --cached --name-only | grep -Ev '^remote/tests/general/gha-clone-server-config\.test\.ts$' || true)"
+          unexpected="$(git diff --cached --name-only | grep -Ev '^(.github/workflows/den-1597-refresh-inert-contracts\.yml|remote/tests/general/gha-clone-server-config\.test\.ts)$' || true)"
           if [[ -n "$unexpected" ]]; then
             echo 'unexpected staged files:' >&2
             echo "$unexpected" >&2
