@@ -31,7 +31,7 @@ regex = '''\bIQoJ[A-Za-z0-9+/=_\-]{180,}\b'''
 tags = ["aws", "credentials", "sts", "session"]
 
 [allowlist]
-description = "Files where the AWS shapes are intentionally referenced for redaction logic and tests."
+description = "Files where AWS shapes are intentionally referenced and one exact synthetic executor-router test value that has no production credential source."
 paths = [
   '''remote/deployments/dev-server/src/server\.ts''',
   '''remote/deployments/dev-server/dist/server\.(js|js\.map)''',
@@ -39,4 +39,7 @@ paths = [
   '''remote/tests/.*''',
   '''\.github/workflows/secret-scan\.yml''',
   '''\.github/gitleaks\.toml''',
+]
+regexes = [
+  '''incoming-secret-1234''',
 ]
