@@ -9,7 +9,7 @@ on:
       - 'crates/api/**'
       - 'docs/openapi-rollout.md'
       - 'e2e/playwright.api.config.ts'
-      - 'e2e/tests/api-docs.spec.ts'
+      - 'e2e/tests/api-docs*.spec.ts'
       - 'generated/**'
   push:
     branches:
@@ -21,7 +21,7 @@ on:
       - 'crates/api/**'
       - 'docs/openapi-rollout.md'
       - 'e2e/playwright.api.config.ts'
-      - 'e2e/tests/api-docs.spec.ts'
+      - 'e2e/tests/api-docs*.spec.ts'
       - 'generated/**'
   workflow_dispatch:
 
