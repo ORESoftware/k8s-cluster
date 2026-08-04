@@ -1,11 +1,21 @@
 name: Finalize Messaging Intel semantic compiler hardening
 
-# This branch-only finalizer commits product files only. Its workflow and
+# This same-repository finalizer commits product files only. Its workflow and
 # deterministic transformer are removed after the validated source commit lands.
 on:
   push:
     branches:
       - agent/msgint-gha-clone-semantic-hardening-20260804
+    paths:
+      - scripts/ci/apply-msgint-semantic-hardening.py
+      - .github/workflows/finalize-msgint-semantic-hardening.yml
+  pull_request:
+    branches:
+      - agent/msgint-gha-clone-operator-verify-20260804
+    types:
+      - opened
+      - synchronize
+      - reopened
     paths:
       - scripts/ci/apply-msgint-semantic-hardening.py
       - .github/workflows/finalize-msgint-semantic-hardening.yml
