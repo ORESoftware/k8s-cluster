@@ -9,9 +9,7 @@ use tokio::{fs, time::timeout};
 
 use crate::config::Config;
 use crate::ecr::login_to_ecr;
-use crate::exec::{
-    append_log, redacted_build_args, run_logged_command, run_logged_command_inner,
-};
+use crate::exec::{append_log, redacted_build_args, run_logged_command, run_logged_command_inner};
 use crate::state::{AppState, SERVICE_NAME};
 use crate::types::{BuildJobRecord, BuildRequest, BuildStatus, NatsSubmitError};
 use crate::util::{now_ms, sha256_hex};
@@ -600,9 +598,7 @@ pub(crate) async fn enqueue_build(
                 state.counters.rejected.fetch_add(1, Ordering::Relaxed);
                 return Err((
                     StatusCode::CONFLICT,
-                    format!(
-                        "requestId {request_id} is already bound to a different build request"
-                    ),
+                    format!("requestId {request_id} is already bound to a different build request"),
                 ));
             }
 
@@ -681,7 +677,10 @@ pub(crate) async fn enqueue_build(
 }
 
 /// NATS intake: parse a build-server.v1 document and enqueue it.
-pub(crate) async fn submit_from_nats(state: &AppState, payload: &[u8]) -> Result<(), NatsSubmitError> {
+pub(crate) async fn submit_from_nats(
+    state: &AppState,
+    payload: &[u8],
+) -> Result<(), NatsSubmitError> {
     let request: BuildRequest = serde_json::from_slice(payload).map_err(|error| {
         NatsSubmitError::Invalid(format!("invalid build request JSON: {error}"))
     })?;
@@ -695,7 +694,6 @@ pub(crate) async fn submit_from_nats(state: &AppState, payload: &[u8]) -> Result
         Err((_, message)) => Err(NatsSubmitError::Invalid(message)),
     }
 }
-
 
 #[cfg(test)]
 mod idempotency_tests {
@@ -716,8 +714,10 @@ mod idempotency_tests {
 
     fn test_config(max_jobs: usize, max_queued: usize) -> Config {
         Config {
-            work_root: std::env::temp_dir()
-                .join(format!("dd-build-server-idempotency-{}", uuid::Uuid::new_v4())),
+            work_root: std::env::temp_dir().join(format!(
+                "dd-build-server-idempotency-{}",
+                uuid::Uuid::new_v4()
+            )),
             git_bin: "git".to_string(),
             git_http_auth_header: None,
             nerdctl_bin: "nerdctl".to_string(),
@@ -726,13 +726,11 @@ mod idempotency_tests {
             containerd_namespace: "dd-build-test".to_string(),
             allowed_repo_prefixes: vec!["https://github.com/ORESoftware/".to_string()],
             allowed_image_prefixes: vec![
-                "710156900967.dkr.ecr.us-east-1.amazonaws.com/".to_string(),
+                "710156900967.dkr.ecr.us-east-1.amazonaws.com/".to_string()
             ],
             allowed_namespaces: HashSet::from(["default".to_string()]),
             allowed_profiles: HashSet::from(["playwright".to_string()]),
-            allowed_profile_repo_prefixes: vec![
-                "https://github.com/ORESoftware/".to_string(),
-            ],
+            allowed_profile_repo_prefixes: vec!["https://github.com/ORESoftware/".to_string()],
             profile_cpus: "2".to_string(),
             profile_memory: "2g".to_string(),
             profile_pids_limit: "512".to_string(),
@@ -844,10 +842,7 @@ mod idempotency_tests {
         let request_id = "gha-clone:plan-2:rust";
         enqueue_build(
             &state,
-            profile_request(
-                request_id,
-                "0123456789abcdef0123456789abcdef01234567",
-            ),
+            profile_request(request_id, "0123456789abcdef0123456789abcdef01234567"),
             "http",
         )
         .await
@@ -855,10 +850,7 @@ mod idempotency_tests {
 
         let (status, message) = enqueue_build(
             &state,
-            profile_request(
-                request_id,
-                "89abcdef0123456789abcdef0123456789abcdef",
-            ),
+            profile_request(request_id, "89abcdef0123456789abcdef0123456789abcdef"),
             "http",
         )
         .await
@@ -875,10 +867,7 @@ mod idempotency_tests {
         let state = test_state(16, 1);
         let blocker = enqueue_build(
             &state,
-            profile_request(
-                "blocker",
-                "0123456789abcdef0123456789abcdef01234567",
-            ),
+            profile_request("blocker", "0123456789abcdef0123456789abcdef01234567"),
             "http",
         )
         .await
@@ -887,10 +876,7 @@ mod idempotency_tests {
         let retry_id = "gha-clone:plan-3:node";
         let (status, _) = enqueue_build(
             &state,
-            profile_request(
-                retry_id,
-                "89abcdef0123456789abcdef0123456789abcdef",
-            ),
+            profile_request(retry_id, "89abcdef0123456789abcdef0123456789abcdef"),
             "http",
         )
         .await
@@ -906,10 +892,7 @@ mod idempotency_tests {
 
         let retry = enqueue_build(
             &state,
-            profile_request(
-                retry_id,
-                "89abcdef0123456789abcdef0123456789abcdef",
-            ),
+            profile_request(retry_id, "89abcdef0123456789abcdef0123456789abcdef"),
             "http",
         )
         .await
@@ -949,13 +932,11 @@ mod idempotency_tests {
         .expect("second accepted and pruning runs");
 
         assert!(!state.jobs.read().await.contains_key(&first.id));
-        assert!(
-            !state
-                .recent_request_ids
-                .read()
-                .await
-                .contains("gha-clone:plan-4:first")
-        );
+        assert!(!state
+            .recent_request_ids
+            .read()
+            .await
+            .contains("gha-clone:plan-4:first"));
 
         let replacement = enqueue_build(&state, first_request, "http")
             .await
