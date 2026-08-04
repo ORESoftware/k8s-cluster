@@ -1,0 +1,240 @@
+name: Finalize stable DEN-1550 Messaging Intel continuity
+
+on:
+  pull_request:
+    branches:
+      - dev
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/finalize-den-1550-stable-pr.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-den-1550-stable-pr
+  cancel-in-progress: false
+
+jobs:
+  validate-and-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out the isolated stable branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1550-msgint-stable-final
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Reconcile stale expectations with permanent planner behavior
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          contract = Path('remote/tests/general/gha-clone-server-config.test.ts')
+          source = contract.read_text(encoding='utf-8')
+          declaration = "const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';\n"
+          expanded = declaration + (
+              "const genericPlannerPath =\n"
+              "  'remote/deployments/gha-clone-server-rs/src/planner.rs';\n"
+          )
+          if 'const genericPlannerPath =' not in source:
+              if source.count(declaration) != 1:
+                  raise SystemExit('unexpected planner declaration state')
+              source = source.replace(declaration, expanded, 1)
+          old_read = (
+              "test('planner and dispatcher preserve the fail-closed command boundary', () => {\n"
+              "  const planner = read(plannerPath);\n"
+          )
+          new_read = (
+              "test('planner and dispatcher preserve the fail-closed command boundary', () => {\n"
+              "  const planner = read(genericPlannerPath);\n"
+          )
+          if old_read in source:
+              source = source.replace(old_read, new_read, 1)
+          elif new_read not in source:
+              raise SystemExit('unexpected generic planner read state')
+          old_secret = (
+              '  assert.match(planner, /secret-bearing env\\/with values are unsupported/);\n'
+          )
+          new_secret = (
+              '  assert.match(planner, /secret-bearing setup inputs are unsupported/);\n'
+              '  assert.match(planner, /secret-bearing step environments are unsupported/);\n'
+              '  assert.match(planner, /fixed profiles do not forward caller-selected variables/);\n'
+          )
+          if old_secret in source:
+              source = source.replace(old_secret, new_secret, 1)
+          elif new_secret not in source:
+              raise SystemExit('unexpected static secret/environment assertion state')
+          contract.write_text(source, encoding='utf-8')
+
+          adversarial = Path(
+              'remote/deployments/gha-clone-server-rs/tests/planner_adversarial.rs'
+          )
+          source = adversarial.read_text(encoding='utf-8')
+          immutable = '0123456789abcdef0123456789abcdef01234567'
+          for old, new in (
+              ('actions/setup-node@abc', f'actions/setup-node@{immutable}'),
+              ('ACTIONS/CHECKOUT@abc', f'ACTIONS/CHECKOUT@{immutable}'),
+              ('Actions/Setup-Node@abc', f'Actions/Setup-Node@{immutable}'),
+          ):
+              source = source.replace(old, new)
+          old_reason = '        "secret-bearing env/with values are unsupported",\n'
+          new_reasons = (
+              '        "secret-bearing step environments are unsupported",\n'
+              '        "secret-bearing setup inputs are unsupported",\n'
+          )
+          if old_reason in source:
+              source = source.replace(old_reason, new_reasons, 1)
+          elif 'secret-bearing setup inputs are unsupported' not in source:
+              raise SystemExit('unexpected adversarial reason inventory')
+
+          function_anchor = 'fn secret_github_token_and_oidc_contexts_fail_closed()'
+          start_marker = '    for id in ["compact_secret", "github_token", "oidc"] {'
+          end_marker = '    assert!(!plan.independent_executable);'
+          replacement = '''    assert!(job(&plan, "compact_secret")
+              .independent_reasons
+              .iter()
+              .any(|reason| reason.contains("secret-bearing setup inputs")));
+          for id in ["github_token", "oidc"] {
+              assert!(job(&plan, id)
+                  .independent_reasons
+                  .iter()
+                  .any(|reason| reason.contains("secret-bearing step environments")));
+          }
+          assert!(!plan.independent_executable);'''
+          function_start = source.index(function_anchor)
+          if start_marker in source[function_start:]:
+              start = source.index(start_marker, function_start)
+              end = source.index(end_marker, start) + len(end_marker)
+              source = source[:start] + replacement + source[end:]
+          elif replacement not in source[function_start:]:
+              raise SystemExit('unexpected secret-context adversarial state')
+          adversarial.write_text(source, encoding='utf-8')
+
+          admission = Path('docs/gha-profile-repository-admission.md')
+          source = admission.read_text(encoding='utf-8')
+          old = (
+              'The GHA continuity server independently allowlists the exact '
+              '`messaging-intel/msgint-connectors` repository and '
+              '`.github/workflows/gha-clone-operator-config.yml` workflow path, '
+              'requires an immutable 40-hex revision for execution, and sends only '
+              'the canonical HTTPS repository URL plus a fixed profile name to the '
+              'build server.'
+          )
+          new = (
+              'The GHA continuity server reserves the exact '
+              '`messaging-intel/msgint-connectors` repository and '
+              '`.github/workflows/gha-clone-operator-config.yml` workflow path, '
+              'requires reviewed revision `a9cc977d78347ec0efdbe8e6766967f80d425882`, '
+              'validates the exact workflow name, trigger, ordered DAG, action SHAs, '
+              'action inputs, and command arrays before privileged profile assignment, '
+              'and sends only the canonical HTTPS repository URL plus a fixed profile '
+              'name to the build server. A reserved identity mismatch is terminal and '
+              'cannot fall back to `node-verify`.'
+          )
+          if old in source:
+              source = source.replace(old, new, 1)
+          elif new not in source:
+              raise SystemExit('unexpected admission documentation state')
+          admission.write_text(source, encoding='utf-8')
+          PY
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Format and validate every clone-server target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Compile and test build-server admission and delivery semantics
+        working-directory: remote/deployments/build-server-rs
+        run: |
+          set -euo pipefail
+          cargo check --locked --all-targets
+          cargo test --locked profiles::tests -- --nocapture
+          cargo test --locked validation::tests -- --nocapture
+          cargo test --locked idempotency_tests -- --nocapture
+          cargo test --locked nats_submit::tests -- --nocapture
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22.23.1'
+
+      - name: Prove lifecycle scripts remain disabled
+        working-directory: remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile
+        run: |
+          set -euo pipefail
+          rm -f LIFECYCLE_RAN
+          npm ci --ignore-scripts
+          npm run check
+          npm run test:operator-config
+          npm audit --audit-level=high
+          npm test
+          test ! -e LIFECYCLE_RAN
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - name: Run all permanent continuity contracts
+        working-directory: remote/tests
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts \
+            general/gha-clone-msgint-config.test.ts
+
+      - name: Validate workflow and fixture syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/gha-clone-server.yml remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml
+
+      - name: Validate webhook registration shell syntax
+        run: bash -n remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh
+
+      - name: Restrict and commit only validated permanent changes
+        run: |
+          set -euo pipefail
+          actual="$(git diff --name-only | sort)"
+          allowed="$(printf '%s\n' \
+            docs/gha-profile-repository-admission.md \
+            remote/deployments/gha-clone-server-rs/src/lib.rs \
+            remote/deployments/gha-clone-server-rs/src/msgint_contract.rs \
+            remote/deployments/gha-clone-server-rs/tests/msgint_exact_contract.rs \
+            remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs \
+            remote/deployments/gha-clone-server-rs/tests/planner_adversarial.rs \
+            remote/tests/general/gha-clone-server-config.test.ts \
+            | sort)"
+          unexpected="$(comm -23 <(printf '%s\n' "$actual") <(printf '%s\n' "$allowed"))"
+          if [ -n "$unexpected" ]; then
+            printf 'unexpected finalizer drift:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add $actual
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'No permanent stable-branch fixes were produced' >&2
+            exit 1
+          fi
+          git commit -m 'test(DEN-1550): finalize stable Messaging Intel continuity'
+          git push origin HEAD:agent/den-1550-msgint-stable-final
