@@ -11,11 +11,21 @@ case "$child_script" in
 esac
 test -f "$child_script"
 
+# The caller supplies only an RSA-OAEP ciphertext envelope over stdin. It is
+# safe to store in Git, but keeping it out of argv prevents accidental process
+# listing or shell-history coupling.
+envelope_line=""
+IFS= read -r envelope_line || true
+
 stage="protected-prerequisites"
 work="$(mktemp -d /tmp/requested-mcp-broker.XXXXXX)"
+key_root="/var/lib/oresoftware/requested-mcp-token-envelope"
+private_key="$key_root/private.pem"
+public_key="$key_root/public.pem"
 cleanup() {
   unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
   unset encoded_pat raw_pat secret_json credential_source ec2_home
+  unset envelope_line envelope_fingerprint envelope_ciphertext actual_fingerprint
   rm -rf "$work"
 }
 on_error() {
@@ -31,6 +41,57 @@ valid_token() {
   test -n "${1:-}" &&
     [[ "$1" != *$'\n'* && "$1" != *$'\r'* &&
        "$1" != *$'\t'* && "$1" != *' '* ]]
+}
+
+consume_one_time_envelope() {
+  stage="one-time-envelope-validation"
+  command -v openssl >/dev/null 2>&1
+  command -v base64 >/dev/null 2>&1
+  command -v sha256sum >/dev/null 2>&1
+  test -r "$private_key"
+  test -r "$public_key"
+  test "$(stat -c '%a' "$private_key")" = 600
+
+  if [[ ! "$envelope_line" =~ ^MCP_TOKEN_ENVELOPE_V1[[:space:]]fingerprint=([0-9a-f]{64})[[:space:]]ciphertext=([A-Za-z0-9+/=]+)$ ]]; then
+    printf 'MCP_PUBLISHER_ERROR stage=one-time-envelope-validation code=67\n'
+    exit 67
+  fi
+  envelope_fingerprint="${BASH_REMATCH[1]}"
+  envelope_ciphertext="${BASH_REMATCH[2]}"
+
+  actual_fingerprint="$(
+    openssl pkey -pubin -in "$public_key" -outform DER 2>/dev/null \
+      | sha256sum \
+      | awk '{print $1}'
+  )"
+  test "$actual_fingerprint" = "$envelope_fingerprint"
+
+  printf '%s' "$envelope_ciphertext" | base64 --decode > "$work/token.enc"
+  test "$(stat -c '%s' "$work/token.enc")" -eq 512
+
+  stage="one-time-envelope-decryption"
+  openssl pkeyutl \
+    -decrypt \
+    -inkey "$private_key" \
+    -pkeyopt rsa_padding_mode:oaep \
+    -pkeyopt rsa_oaep_md:sha256 \
+    -pkeyopt rsa_mgf1_md:sha256 \
+    -in "$work/token.enc" \
+    -out "$work/token.bin" \
+    >/dev/null 2>&1
+  raw_pat="$(cat "$work/token.bin")"
+  rm -f "$work/token.enc" "$work/token.bin"
+  valid_token "$raw_pat"
+
+  GH_TOKEN="$raw_pat"
+  credential_source="one-time-rsa-envelope"
+  unset raw_pat envelope_line envelope_ciphertext
+
+  # Consume the private key exactly once, even if the downstream GitHub
+  # preflight later rejects the token. A retry requires a fresh reviewed key
+  # and ciphertext pair rather than silently reusing credential material.
+  rm -f "$private_key" "$public_key"
+  rmdir "$key_root" 2>/dev/null || true
 }
 
 stage="protected-credential"
@@ -95,8 +156,8 @@ if test -z "$GH_TOKEN" && command -v kubectl >/dev/null 2>&1; then
 fi
 unset raw_pat encoded_pat
 
-# Last protected fallback: an authenticated ORESoftware gh profile owned by the
-# unprivileged publication account.
+# Last protected persistent fallback: an authenticated ORESoftware gh profile
+# owned by the unprivileged publication account.
 if test -z "$GH_TOKEN" && command -v sudo >/dev/null 2>&1 && command -v getent >/dev/null 2>&1; then
   ec2_home="$(getent passwd ec2-user | awk -F: '$1 == "ec2-user" { print $6 }')"
   case "$ec2_home" in
@@ -117,6 +178,12 @@ if test -z "$GH_TOKEN" && command -v sudo >/dev/null 2>&1 && command -v getent >
   fi
 fi
 unset raw_pat
+
+# If no durable protected credential exists, consume the reviewed one-time
+# envelope generated for this publication only.
+if ! valid_token "$GH_TOKEN"; then
+  consume_one_time_envelope
+fi
 
 if ! valid_token "$GH_TOKEN"; then
   printf 'MCP_PUBLISHER_ERROR stage=protected-credential code=65\n'
