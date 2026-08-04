@@ -6,11 +6,13 @@ on:
       - agent/msgint-gha-private-auth-rotation-20260804
     paths:
       - scripts/apply-msgint-gha-private-auth-rotation.py
+      - scripts/fix-msgint-gha-private-auth-rotation-fixtures.py
       - .github/workflows/finalize-msgint-gha-private-auth-rotation.yml
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
       - scripts/apply-msgint-gha-private-auth-rotation.py
+      - scripts/fix-msgint-gha-private-auth-rotation-fixtures.py
       - .github/workflows/finalize-msgint-gha-private-auth-rotation.yml
 
 permissions:
@@ -45,23 +47,24 @@ jobs:
           toolchain: '1.90.0'
           components: rustfmt, clippy
 
-      - name: Apply the reviewed source transformation
-        run: python3 scripts/apply-msgint-gha-private-auth-rotation.py
+      - name: Apply the reviewed source transformation and fixture hardening
+        run: |
+          python3 scripts/apply-msgint-gha-private-auth-rotation.py
+          python3 scripts/fix-msgint-gha-private-auth-rotation-fixtures.py
 
       - name: Format and test the continuity server
         working-directory: remote/deployments/gha-clone-server-rs
         run: |
           cargo fmt --all
           cargo clippy --locked --all-targets -- -D warnings
-          cargo test --locked --all-targets
+          cargo test --locked --all-targets -- --nocapture
 
-      - name: Format and compile the build-server credential path
+      - name: Format, lint, and test every build-server target
         working-directory: remote/deployments/build-server-rs
         run: |
           cargo fmt --all
-          cargo check --locked --all-targets
-          cargo test --locked git_credential_tests -- --nocapture
-          cargo test --locked profiles::tests -- --nocapture
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
 
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
@@ -71,25 +74,27 @@ jobs:
           node-version: '22'
           cache: pnpm
           cache-dependency-path: remote/tests/pnpm-lock.yaml
+
       - name: Validate deployment and token-file contracts
         working-directory: remote/tests
         run: |
           pnpm install --frozen-lockfile
           pnpm exec tsx --test general/gha-clone-server-config.test.ts
 
-      - name: Remove one-shot transformation scaffolding
-        run: |
-          rm scripts/apply-msgint-gha-private-auth-rotation.py
-          rm .github/workflows/finalize-msgint-gha-private-auth-rotation.yml
-
-      - name: Commit clean source changes
+      - name: Commit only validated product changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add \
+            remote/deployments/gha-clone-server-rs \
+            remote/deployments/build-server-rs \
+            remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml \
+            remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml \
+            remote/argocd/dd-next-runtime/dd-gha-clone-server.externalsecret.yaml \
+            remote/tests/general/gha-clone-server-config.test.ts
           git diff --cached --check
           if git diff --cached --quiet; then
-            echo "No source changes produced" >&2
+            echo "No product source changes produced" >&2
             exit 1
           fi
           git commit -m "feat: reload private repository tokens without restarts"
