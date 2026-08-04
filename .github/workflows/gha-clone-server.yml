@@ -13,6 +13,7 @@ on:
       - 'docs/gha-continuity-architecture.md'
       - '.github/actionlint.yaml'
       - '.github/workflows/gha-clone-server.yml'
+      - '.github/workflows/gha-clone-server-meta.yml'
   push:
     branches: [main, dev]
     paths:
@@ -26,6 +27,7 @@ on:
       - 'docs/gha-continuity-architecture.md'
       - '.github/actionlint.yaml'
       - '.github/workflows/gha-clone-server.yml'
+      - '.github/workflows/gha-clone-server-meta.yml'
   workflow_dispatch:
     inputs:
       run_arc_smoke:
@@ -59,7 +61,7 @@ jobs:
       - name: Run Clippy
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo clippy --locked --all-targets -- -D warnings
-      - name: Run unit tests
+      - name: Run unit and meta integration tests
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo test --locked --all-targets
 
@@ -70,10 +72,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Validate workflow syntax
+      - name: Validate orchestration workflow syntax
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
           args: .github/workflows/gha-clone-server.yml
+      - name: Validate bounded meta workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/gha-clone-server-meta.yml
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 10.33.0
