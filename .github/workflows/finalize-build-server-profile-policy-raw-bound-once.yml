@@ -1,0 +1,149 @@
+# One-shot semantic repair and cleanup for the exact repository/profile policy.
+# A successful run leaves only the seven permanent product and contract files.
+name: Finalize build-server exact-profile raw-byte bound once
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/finalize-build-server-profile-policy-raw-bound-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-build-server-profile-policy-raw-bound
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/build-server-exact-profile-policy-20260804'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/build-server-exact-profile-policy-20260804
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Bound the original environment value before normalization
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/deployments/build-server-rs/src/config/profile_policy.rs')
+          source = path.read_text(encoding='utf-8')
+          start_marker = '    let Some(raw) = exact_rules_json'
+          end_marker = '    let rules: Vec<ExactRepositoryRule> ='
+          start = source.find(start_marker)
+          end = source.find(end_marker, start + len(start_marker))
+          if start < 0 or end < 0 or source.find(start_marker, start + 1) >= 0:
+              raise SystemExit('exact-profile parser boundary is not unique')
+
+          current = source[start:end]
+          replacement = '''    let Some(raw) = exact_rules_json else {
+              return Ok(compiled);
+          };
+          if raw.len() > MAX_POLICY_BYTES {
+              return Err(format!(
+                  "BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON exceeds {MAX_POLICY_BYTES} bytes"
+              ));
+          }
+          let raw = raw.trim();
+          if raw.is_empty() {
+              return Ok(compiled);
+          }
+
+          '''
+          if current == replacement:
+              pass
+          elif '.map(str::trim)' in current and 'MAX_POLICY_BYTES' in current:
+              source = source[:start] + replacement + source[end:]
+              path.write_text(source, encoding='utf-8')
+          else:
+              raise SystemExit('exact-profile parser has unreviewed semantic drift')
+          PY
+          git diff --check
+
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate the complete build-server policy surface
+        working-directory: remote/deployments/build-server-rs
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 src/config/profile_policy.rs
+          rustfmt --edition 2021 --check \
+            src/config.rs \
+            src/config/profile_policy.rs \
+            src/jobs.rs \
+            src/nats_submit.rs \
+            src/profiles.rs \
+            src/validation.rs
+          cargo check --locked --all-targets
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked config::profile_policy::tests -- --nocapture
+          cargo test --locked validation::tests -- --nocapture
+          cargo test --locked profiles::tests -- --nocapture
+          cargo test --locked idempotency_tests -- --nocapture
+          cargo test --locked nats_submit::tests -- --nocapture
+
+      - name: Validate the permanent repository policy contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          cd remote/tests
+          pnpm install --frozen-lockfile --ignore-scripts
+          node --test general/build-server-profile-repository-policy.test.mjs
+
+      - name: Commit only the self-cleaned seven-file product
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          expected_libs="$(git rev-parse HEAD:remote/libs)"
+          test -n "$expected_libs"
+          test -d remote/libs
+          git -C remote/libs reset --hard "$expected_libs"
+          git -C remote/libs clean -ffd
+          test "$(git -C remote/libs rev-parse HEAD)" = "$expected_libs"
+          git diff --quiet -- remote/libs
+
+          carriers=(
+            .github/workflows/den-1550-policy-byte-bound-finalize-once.yml
+            .github/workflows/fix-profile-policy-raw-size-once.yml
+            .github/workflows/repair-build-server-profile-policy-size-once.yml
+            .github/workflows/finalize-build-server-profile-policy-raw-bound-once.yml
+          )
+          rm -f -- "${carriers[@]}"
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          allowed='^(\.github/workflows/(den-1550-policy-byte-bound-finalize-once|fix-profile-policy-raw-size-once|repair-build-server-profile-policy-size-once|finalize-build-server-profile-policy-raw-bound-once)\.yml|\.github/workflows/gha-clone-server\.yml|docs/build-server-profile-repository-policy\.md|remote/argocd/dd-next-runtime/dd-build-server-gha-continuity\.patch\.yaml|remote/deployments/build-server-rs/src/(config\.rs|config/profile_policy\.rs|validation\.rs)|remote/tests/general/build-server-profile-repository-policy\.test\.mjs)$'
+          unexpected="$(git diff --cached --name-only | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected staged paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          for carrier in "${carriers[@]}"; do
+            test ! -e "$carrier"
+          done
+          git diff --cached --check
+          git commit -m 'security: bound exact repository profile policy before trimming'
+          git push origin HEAD:agent/build-server-exact-profile-policy-20260804
