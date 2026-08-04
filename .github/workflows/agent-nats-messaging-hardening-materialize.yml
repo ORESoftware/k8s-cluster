@@ -6,11 +6,13 @@ on:
       - dev
     paths:
       - '.github/workflows/agent-nats-messaging-hardening-materialize.yml'
+      - '.github/materialize/nats-hardening/**'
   push:
     branches:
       - agent/nats-messaging-otel-openapi-hardening-20260804
     paths:
       - '.github/workflows/agent-nats-messaging-hardening-materialize.yml'
+      - '.github/materialize/nats-hardening/**'
   workflow_dispatch:
 
 permissions:
