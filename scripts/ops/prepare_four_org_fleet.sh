@@ -43,8 +43,8 @@ existing_repositories_for() {
   case "$1" in
     apostille-me) printf '%s\n' apme-api apme-cli apme-infra apme-interfaces apme-sync apme-web-dioxus apme-web-leptos apme-web-mash ;;
     evento-globolo) printf '%s\n' evgl-api evgl-cli evgl-infra evgl-interfaces evgl-sync evgl-dioxus-web evgl-leptos-web evgl-mash-web ;;
-    hacker-house-medellin) printf '%s\n' hhm-api hhm-cli hhm-infra hhm-interfaces hhm-sync hhm-web-dioxus hhm-web-leptos hhm-web-mash ;;
-    embedded-alerts) printf '%s\n' eal-api eal-cli eal-infra eal-interfaces eal-sync eal-web-dioxus eal-web-leptos eal-web-mash ;;
+    hacker-house-medellin) printf '%s\n' hhm-api hhm-cli hhm-infra hhm-interfaces hhm-sync hhm-dioxus-web hhm-leptos-web hhm-mash-web ;;
+    embedded-alerts) printf '%s\n' eal-api eal-cli eal-infra eal-interfaces eal-sync eal-dioxus-web eal-leptos-web eal-mash-web ;;
   esac
 }
 
@@ -201,7 +201,19 @@ for org in "${organizations[@]}"; do
 done
 
 mkdir -p "$FLEET_ROOT/scripts"
-install -m 0755 "$OVERLAY_ROOT/publish-all.sh" "$FLEET_ROOT/scripts/publish-all.sh"
+publisher="$FLEET_ROOT/scripts/publish-all.sh"
+install -m 0755 "$OVERLAY_ROOT/publish-all.sh" "$publisher"
+sed -i \
+  -e 's/hhm-web-dioxus/hhm-dioxus-web/g' \
+  -e 's/hhm-web-leptos/hhm-leptos-web/g' \
+  -e 's/hhm-web-mash/hhm-mash-web/g' \
+  -e 's/eal-web-dioxus/eal-dioxus-web/g' \
+  -e 's/eal-web-leptos/eal-leptos-web/g' \
+  -e 's/eal-web-mash/eal-mash-web/g' \
+  "$publisher"
+if grep -Eq '(hhm|eal)-web-(dioxus|leptos|mash)' "$publisher"; then
+  fail 'publisher still contains legacy Hacker House or Embedded Alerts web-repository names'
+fi
 
 repo_count=0
 feature_count=0
