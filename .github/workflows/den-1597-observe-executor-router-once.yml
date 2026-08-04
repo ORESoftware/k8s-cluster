@@ -1,0 +1,88 @@
+name: DEN-1597 observe executor router once
+
+on:
+  push:
+    branches:
+      - agent/den-1597-continuity-oci-images-20260804
+    paths:
+      - '.github/workflows/den-1597-observe-executor-router-once.yml'
+      - '.github/patches/den-1597-observe-executor-router.trigger'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1597-observe-executor-router
+  cancel-in-progress: false
+
+jobs:
+  patch-test-and-remove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the exact branch revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1597-continuity-oci-images-20260804
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Add the router to both exporter allowlists
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          paths = [
+              Path('remote/argocd/observability/k8s-resource-exporter.configmap.yaml'),
+              Path('remote/argocd/observability/k8s-resource-exporter.deployment.yaml'),
+          ]
+          old = 'dd-build-server,dd-gha-clone-server,'
+          new = 'dd-build-server,dd-gha-clone-server,dd-gha-executor-router,'
+          for path in paths:
+              text = path.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one insertion point, found {count}')
+              path.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Prove complete observability coverage
+        working-directory: remote/tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm run check:observability-coverage
+
+      - name: Remove the one-shot files and commit only reviewed outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper='.github/workflows/den-1597-observe-executor-router-once.yml'
+          trigger='.github/patches/den-1597-observe-executor-router.trigger'
+          config='remote/argocd/observability/k8s-resource-exporter.configmap.yaml'
+          deployment='remote/argocd/observability/k8s-resource-exporter.deployment.yaml'
+          rm -f "$helper" "$trigger"
+          git diff --check
+
+          changed="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n%s\n%s\n%s\n' "$helper" "$trigger" "$config" "$deployment" | sort)"
+          test "$changed" = "$expected"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "$helper" "$trigger" "$config" "$deployment"
+          git commit -m 'fix(DEN-1597): monitor executor-router workload'
+          git push origin HEAD:agent/den-1597-continuity-oci-images-20260804
