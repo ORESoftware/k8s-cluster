@@ -46,22 +46,25 @@ jobs:
       - name: Compile the complete test graph
         run: cargo test --locked --no-run
 
-      - name: Run security and authorization suites
+      - name: Run security authorization and financial-audit suites
         shell: bash
         run: |
           set -euo pipefail
           cargo test --locked shared_auth::
           cargo test --locked shared_auth_startup::
           cargo test --locked memberships::
+          cargo test --locked financial_audit::
           cargo test --locked api::auth::
           cargo test --locked api::oauth::
+          cargo test --locked api::ledger::
+          cargo test --locked ledger::
           cargo test --locked config::
           cargo test --locked error::
 
-  membership-invariants:
-    name: postgres-membership-invariants
+  postgres-invariants:
+    name: postgres-financial-invariants
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:17-alpine
@@ -94,12 +97,13 @@ jobs:
           sudo apt-get install --yes --no-install-recommends postgresql-client
 
       - name: Prove tenant membership invariants under concurrency
-        shell: bash
         run: bash scripts/ci/test-tenant-membership-invariants.sh
 
-      - name: Prove membership audit events are append-only and well-formed
-        shell: bash
+      - name: Prove membership audit events are append-only and well formed
         run: bash scripts/ci/test-tenant-membership-audit.sh
+
+      - name: Prove financial mutation and actor attribution are atomic
+        run: bash scripts/ci/test-financial-operation-audit.sh
 
   real-shared-libs:
     name: real-shared-libs-contract
@@ -119,7 +123,7 @@ jobs:
         shell: bash
         run: |
           echo 'QUAESTOR_SHARED_REPOS_READ_TOKEN is not configured.'
-          echo 'Stub-backed compilation and all authorization/PostgreSQL suites remain blocking.'
+          echo 'Stub-backed compilation and authorization/PostgreSQL suites remain blocking.'
           echo 'Configure a read-only GitHub App or deploy-key credential to enable the pinned real-crate contract.'
 
       - name: Check out pinned real shared crates
@@ -153,7 +157,7 @@ jobs:
         working-directory: workspace/services/quaestor-ledger-server.rs
         run: cargo check --locked --all-targets
 
-      - name: Compile and run the security suites against real shared crates
+      - name: Compile and run security and financial-audit suites against real shared crates
         if: env.SHARED_REPOS_TOKEN != ''
         shell: bash
         working-directory: workspace/services/quaestor-ledger-server.rs
@@ -163,7 +167,10 @@ jobs:
           cargo test --locked shared_auth::
           cargo test --locked shared_auth_startup::
           cargo test --locked memberships::
+          cargo test --locked financial_audit::
           cargo test --locked api::auth::
           cargo test --locked api::oauth::
+          cargo test --locked api::ledger::
+          cargo test --locked ledger::
           cargo test --locked config::
           cargo test --locked error::

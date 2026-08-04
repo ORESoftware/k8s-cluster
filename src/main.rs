@@ -17,6 +17,7 @@ mod entity;
 mod error;
 mod events;
 mod fiducia;
+mod financial_audit;
 mod jobs;
 mod ledger;
 mod locks;
