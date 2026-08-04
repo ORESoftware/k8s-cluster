@@ -121,15 +121,9 @@ async fn wait_for_server(server: &mut ServerProcess) {
 fn dormant_env() -> BTreeMap<&'static str, String> {
     let mut env = BTreeMap::new();
     env.insert("GHA_CLONE_AUTH_SECRET", AUTH_SECRET.to_string());
-    env.insert(
-        "GHA_CLONE_ALLOWED_REPOSITORIES",
-        REPOSITORY.to_string(),
-    );
+    env.insert("GHA_CLONE_ALLOWED_REPOSITORIES", REPOSITORY.to_string());
     env.insert("GHA_CLONE_EXECUTION_ENABLED", "false".to_string());
-    env.insert(
-        "GHA_CLONE_WEBHOOK_EXECUTION_ENABLED",
-        "false".to_string(),
-    );
+    env.insert("GHA_CLONE_WEBHOOK_EXECUTION_ENABLED", "false".to_string());
     env
 }
 
@@ -410,28 +404,14 @@ async fn webhook_guards_reject_bad_inputs_before_any_github_fetch() {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(value["error"], "missing X-Hub-Signature-256");
 
-    let response = post_webhook(
-        &client,
-        &server,
-        "issues",
-        &body,
-        Some("sha256=00"),
-    )
-    .await;
+    let response = post_webhook(&client, &server, "issues", &body, Some("sha256=00")).await;
     let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(value["error"], "invalid GitHub webhook signature");
 
     let invalid_json = b"{";
     let signature = webhook_signature(invalid_json);
-    let response = post_webhook(
-        &client,
-        &server,
-        "issues",
-        invalid_json,
-        Some(&signature),
-    )
-    .await;
+    let response = post_webhook(&client, &server, "issues", invalid_json, Some(&signature)).await;
     let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(value["error"]
@@ -462,14 +442,7 @@ async fn webhook_guards_reject_bad_inputs_before_any_github_fetch() {
     }))
     .unwrap();
     let signature = webhook_signature(&forbidden);
-    let response = post_webhook(
-        &client,
-        &server,
-        "push",
-        &forbidden,
-        Some(&signature),
-    )
-    .await;
+    let response = post_webhook(&client, &server, "push", &forbidden, Some(&signature)).await;
     let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(value["repository"], "other/repo");
@@ -479,14 +452,7 @@ async fn webhook_guards_reject_bad_inputs_before_any_github_fetch() {
     }))
     .unwrap();
     let signature = webhook_signature(&unsupported);
-    let response = post_webhook(
-        &client,
-        &server,
-        "issues",
-        &unsupported,
-        Some(&signature),
-    )
-    .await;
+    let response = post_webhook(&client, &server, "issues", &unsupported, Some(&signature)).await;
     let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::ACCEPTED);
     assert_eq!(value["accepted"], false);
@@ -497,20 +463,11 @@ async fn webhook_guards_reject_bad_inputs_before_any_github_fetch() {
     }))
     .unwrap();
     let signature = webhook_signature(&short_revision);
-    let response = post_webhook(
-        &client,
-        &server,
-        "push",
-        &short_revision,
-        Some(&signature),
-    )
-    .await;
+    let response =
+        post_webhook(&client, &server, "push", &short_revision, Some(&signature)).await;
     let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(
-        value["error"],
-        "webhook revision is not a full commit SHA"
-    );
+    assert_eq!(value["error"], "webhook revision is not a full commit SHA");
 
     let no_rules = serde_json::to_vec(&json!({
         "repository": { "full_name": REPOSITORY },
@@ -518,14 +475,7 @@ async fn webhook_guards_reject_bad_inputs_before_any_github_fetch() {
     }))
     .unwrap();
     let signature = webhook_signature(&no_rules);
-    let response = post_webhook(
-        &client,
-        &server,
-        "push",
-        &no_rules,
-        Some(&signature),
-    )
-    .await;
+    let response = post_webhook(&client, &server, "push", &no_rules, Some(&signature)).await;
     let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::ACCEPTED);
     assert_eq!(value["accepted"], false);
@@ -610,9 +560,7 @@ async fn mock_submit(
         MockMode::RejectSubmission => {
             (StatusCode::INTERNAL_SERVER_ERROR, "simulated rejection").into_response()
         }
-        MockMode::InvalidSubmissionJson => {
-            (StatusCode::ACCEPTED, "not-json").into_response()
-        }
+        MockMode::InvalidSubmissionJson => (StatusCode::ACCEPTED, "not-json").into_response(),
         _ => {
             let index = state.next_id.fetch_add(1, Ordering::SeqCst) + 1;
             (
