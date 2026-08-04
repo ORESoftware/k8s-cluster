@@ -113,12 +113,18 @@ test('all continuity and executor-router resources participate in the shared ren
   assert.match(read(routerServicePath), /port:\s*8126/);
 });
 
-test('continuity deployment is registered with both resource exporter inventories', () => {
+test('continuity and executor-router deployments are registered with both resource exporter inventories', () => {
   for (const path of [observabilityConfigPath, observabilityDeploymentPath]) {
+    const inventory = read(path);
     assert.match(
-      read(path),
+      inventory,
       /dd-build-server,dd-gha-clone-server,/,
       `${path} must watch dd-gha-clone-server immediately after dd-build-server`,
+    );
+    assert.match(
+      inventory,
+      /dd-gha-clone-server,dd-gha-executor-router,/,
+      `${path} must watch dd-gha-executor-router immediately after dd-gha-clone-server`,
     );
   }
 });
