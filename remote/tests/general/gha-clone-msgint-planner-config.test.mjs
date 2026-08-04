@@ -43,6 +43,12 @@ test('contract pins exact identity, revision, workflow, actions, inputs, DAG, an
     'messaging-intel/msgint-connectors',
     'a9cc977d78347ec0efdbe8e6766967f80d425882',
     '.github/workflows/gha-clone-operator-config.yml',
+    'node-hardened-verify',
+    'node-hardened-test',
+  ]) {
+    assert.ok(contract.includes(marker), `contract is missing ${marker}`);
+  }
+  for (const marker of [
     'Messaging Intel GHA clone operator verification',
     'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
     'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020',
@@ -50,14 +56,12 @@ test('contract pins exact identity, revision, workflow, actions, inputs, DAG, an
     'persist-credentials',
     'operator_config',
     'repository_tests',
-    'node-hardened-verify',
-    'node-hardened-test',
     'npm ci --ignore-scripts',
     'npm run test:operator-config',
     'npm audit --audit-level=high',
   ]) {
     assert.ok(contract.includes(marker), `contract is missing ${marker}`);
-    assert.ok(fixture.includes(marker) || marker.startsWith('node-hardened-'), `fixture is missing ${marker}`);
+    assert.ok(fixture.includes(marker), `fixture is missing ${marker}`);
   }
   assert.match(contract, /trigger must be exactly workflow_dispatch without inputs/);
   assert.match(contract, /job set or order differs from the reviewed two-job DAG/);
