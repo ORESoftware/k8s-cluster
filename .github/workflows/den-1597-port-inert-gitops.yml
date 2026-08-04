@@ -1,7 +1,9 @@
 name: DEN-1597 port inert GitOps onto merged router core
 
 on:
-  pull_request:
+  push:
+    branches:
+      - agent/den-1597-router-gitops-on-core-20260804
     paths:
       - '.github/patches/den-1597-port-inert-gitops.trigger'
       - '.github/workflows/den-1597-port-inert-gitops.yml'
@@ -17,8 +19,7 @@ jobs:
   port-verify-and-remove:
     if: >-
       github.repository == 'ORESoftware/k8s-cluster' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.head_ref == 'agent/den-1597-router-gitops-on-core-20260804'
+      github.ref == 'refs/heads/agent/den-1597-router-gitops-on-core-20260804'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
