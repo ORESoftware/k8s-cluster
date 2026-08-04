@@ -226,18 +226,8 @@ impl Config {
                 1,
                 90,
             )?),
-            poll_hint_seconds: env_bounded_u64(
-                "GHA_EXECUTOR_ROUTER_POLL_HINT_SECONDS",
-                2,
-                1,
-                30,
-            )?,
-            max_routes: env_bounded_usize(
-                "GHA_EXECUTOR_ROUTER_MAX_ROUTES",
-                1024,
-                1,
-                4096,
-            )?,
+            poll_hint_seconds: env_bounded_u64("GHA_EXECUTOR_ROUTER_POLL_HINT_SECONDS", 2, 1, 30)?,
+            max_routes: env_bounded_usize("GHA_EXECUTOR_ROUTER_MAX_ROUTES", 1024, 1, 4096)?,
             max_request_bytes: env_bounded_usize(
                 "GHA_EXECUTOR_ROUTER_MAX_REQUEST_BYTES",
                 16 * 1024,
@@ -391,18 +381,10 @@ gha_executor_router_routes{{state=\"ambiguous\"}} {ambiguous}\n",
         usize::from(state.config.enabled),
         state.config.executors.len()
     );
-    (
-        [(header::CONTENT_TYPE, "text/plain; version=0.0.4")],
-        body,
-    )
-        .into_response()
+    ([(header::CONTENT_TYPE, "text/plain; version=0.0.4")], body).into_response()
 }
 
-async fn create_build(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Response {
+async fn create_build(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
     if let Err(response) = require_auth(&headers, &state) {
         return response;
     }
@@ -431,7 +413,11 @@ async fn create_build(
         }
     };
     if let Err(detail) = validate_build_request(&request) {
-        return json_error(StatusCode::UNPROCESSABLE_ENTITY, "invalid_build_request", detail);
+        return json_error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_build_request",
+            detail,
+        );
     }
     let canonical = serde_json::to_vec(&request).expect("serializable build request");
     let request_hash = hex::encode(Sha256::digest(&canonical));
@@ -471,8 +457,12 @@ async fn create_build(
                 let outcome = submit_to_executors(&state, &request, &request_hash).await;
                 match outcome {
                     SubmissionOutcome::Accepted(route) => {
-                        finish_route(&state, &request.request_id, RouteState::Accepted(route.clone()))
-                            .await;
+                        finish_route(
+                            &state,
+                            &request.request_id,
+                            RouteState::Accepted(route.clone()),
+                        )
+                        .await;
                         let _ = done.send(true);
                         return accepted_response(&route, false);
                     }
@@ -687,7 +677,8 @@ async fn submit_to_executors(
                 ))
             }
         };
-        if validate_upstream_id(&upstream.id).is_err() || validate_status(&upstream.status).is_err() {
+        if validate_upstream_id(&upstream.id).is_err() || validate_status(&upstream.status).is_err()
+        {
             return SubmissionOutcome::Ambiguous(ambiguous_route(
                 request,
                 executor,
@@ -748,7 +739,7 @@ async fn release_pending_route(state: &AppState, request_id: &str, request_hash:
     let remove = routes
         .get(request_id)
         .map(|entry| {
-            entry.request_hash == request_hash && matches!(entry.state, RouteState::Pending(_))
+            entry.request_hash == request_hash && matches!(&entry.state, RouteState::Pending(_))
         })
         .unwrap_or(false);
     if remove {
@@ -767,7 +758,7 @@ async fn update_route_status(state: &AppState, request_id: &str, status: &str) {
 fn prune_oldest_accepted(routes: &mut BTreeMap<String, RouteEntry>) -> bool {
     let victim = routes
         .iter()
-        .filter(|(_, entry)| matches!(entry.state, RouteState::Accepted(_)))
+        .filter(|(_, entry)| matches!(&entry.state, RouteState::Accepted(_)))
         .min_by_key(|(_, entry)| entry.created_at_ms)
         .map(|(request_id, _)| request_id.clone());
     if let Some(victim) = victim {
@@ -780,7 +771,7 @@ fn prune_oldest_accepted(routes: &mut BTreeMap<String, RouteEntry>) -> bool {
 
 fn route_counts(routes: &BTreeMap<String, RouteEntry>) -> (usize, usize, usize) {
     routes.values().fold((0, 0, 0), |mut counts, entry| {
-        match entry.state {
+        match &entry.state {
             RouteState::Pending(_) => counts.0 += 1,
             RouteState::Accepted(_) => counts.1 += 1,
             RouteState::Ambiguous(_) => counts.2 += 1,
@@ -899,7 +890,8 @@ fn validate_secret_path(value: &str) -> Result<(), String> {
 
 fn read_secret(name: &str, path: &str) -> Result<String, String> {
     validate_secret_path(path)?;
-    let value = fs::read_to_string(path).map_err(|error| format!("{name} is unreadable: {error}"))?;
+    let value =
+        fs::read_to_string(path).map_err(|error| format!("{name} is unreadable: {error}"))?;
     let value = value.trim().to_string();
     if value.len() < 16 || value.len() > 4096 || value.chars().any(char::is_control) {
         return Err(format!(
@@ -909,7 +901,7 @@ fn read_secret(name: &str, path: &str) -> Result<String, String> {
     Ok(value)
 }
 
-fn validate_build_request(request: &BuildRequest) -> Result<&'static str, &'static str> {
+fn validate_build_request(request: &BuildRequest) -> Result<(), &'static str> {
     if request.schema_version != "build-server.v1" {
         return Err("schemaVersion must be build-server.v1");
     }
@@ -917,11 +909,7 @@ fn validate_build_request(request: &BuildRequest) -> Result<&'static str, &'stat
         return Err("jobKind must be run-profile");
     }
     validate_repository_url(&request.repo_url)?;
-    if request.git_ref.len() != 40
-        || !request
-            .git_ref
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit())
+    if request.git_ref.len() != 40 || !request.git_ref.bytes().all(|byte| byte.is_ascii_hexdigit())
     {
         return Err("gitRef must be a full immutable 40-hex commit SHA");
     }
@@ -929,13 +917,14 @@ fn validate_build_request(request: &BuildRequest) -> Result<&'static str, &'stat
         .map_err(|_| "profile must be a bounded lowercase token")?;
     if request.request_id.is_empty()
         || request.request_id.len() > 128
-        || !request.request_id.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b':' | b'.' | b'_' | b'-')
-        })
+        || !request
+            .request_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b':' | b'.' | b'_' | b'-'))
     {
         return Err("requestId must be a bounded deterministic token");
     }
-    Ok("ok")
+    Ok(())
 }
 
 fn validate_repository_url(value: &str) -> Result<(), &'static str> {
@@ -1035,7 +1024,8 @@ async fn bounded_response_body(response: reqwest::Response) -> Result<Bytes, &'s
 }
 
 fn endpoint_url(base: &Url, suffix: &str) -> Url {
-    base.join(suffix).expect("validated base URL and safe suffix")
+    base.join(suffix)
+        .expect("validated base URL and safe suffix")
 }
 
 fn namespaced_route_id(executor_id: &str, upstream_id: &str) -> String {
@@ -1058,7 +1048,11 @@ fn ambiguous_route(
 }
 
 fn accepted_response(route: &RouteRecord, reused: bool) -> Response {
-    (StatusCode::ACCEPTED, Json(routed_body(route, reused, false))).into_response()
+    (
+        StatusCode::ACCEPTED,
+        Json(routed_body(route, reused, false)),
+    )
+        .into_response()
 }
 
 fn routed_response(route: &RouteRecord, reused: bool, upstream_error_present: bool) -> Response {
@@ -1149,12 +1143,7 @@ fn env_u16(name: &str, default: u16) -> Result<u16, String> {
     }
 }
 
-fn env_bounded_u64(
-    name: &str,
-    default: u64,
-    minimum: u64,
-    maximum: u64,
-) -> Result<u64, String> {
+fn env_bounded_u64(name: &str, default: u64, minimum: u64, maximum: u64) -> Result<u64, String> {
     let value = match env::var(name) {
         Ok(value) => value
             .trim()
@@ -1226,7 +1215,9 @@ mod tests {
     #[test]
     fn base_urls_allow_https_cluster_dns_and_loopback_only() {
         assert!(validate_base_url("https://builds.example.com").is_ok());
-        assert!(validate_base_url("http://dd-build-server.dd-next-runtime.svc.cluster.local").is_ok());
+        assert!(
+            validate_base_url("http://dd-build-server.dd-next-runtime.svc.cluster.local").is_ok()
+        );
         assert!(validate_base_url("http://127.0.0.1:18080").is_ok());
         assert!(validate_base_url("http://builds.example.com").is_err());
         assert!(validate_base_url("ftp://builds.example.com").is_err());
