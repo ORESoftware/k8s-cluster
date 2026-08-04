@@ -124,6 +124,8 @@ Example:
 }
 ```
 
+A 40-hex `gitRef` is treated as an immutable commit identity: the server initializes an empty checkout, fetches that exact object with depth one, and checks it out detached. It never passes a commit SHA to `git clone --branch` and never falls back to a mutable branch or default-branch tip. Human-readable branch and tag names continue to use the bounded shallow-clone path.
+
 Each profile container is CPU-, memory-, PID-, capability-, and privilege-limited. Every profile
 runs with all Linux capabilities dropped. Flutter, Android, and Linux desktop dependencies are
 preinstalled in the revision-pinned cluster image, so profile jobs neither install packages at
