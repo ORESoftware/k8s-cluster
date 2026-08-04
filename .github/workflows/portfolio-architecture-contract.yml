@@ -6,6 +6,7 @@ on:
       - dev
     paths:
       - docs/architecture/portfolio-contract.json
+      - docs/architecture/portfolio-organizations.json
       - docs/architecture/portfolio-boundaries.md
       - remote/tests/general/portfolio-architecture-contract.test.mjs
       - .github/workflows/portfolio-architecture-contract.yml
@@ -15,6 +16,7 @@ on:
       - main
     paths:
       - docs/architecture/portfolio-contract.json
+      - docs/architecture/portfolio-organizations.json
       - docs/architecture/portfolio-boundaries.md
       - remote/tests/general/portfolio-architecture-contract.test.mjs
       - .github/workflows/portfolio-architecture-contract.yml
