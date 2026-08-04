@@ -199,6 +199,68 @@ a { color: inherit; text-decoration: none; }
 .card__list li { display: flex; gap: .55rem; align-items: flex-start; color: var(--text-muted); font-size: .9rem; }
 .card__list li::before { content: ""; flex: 0 0 auto; margin-top: .45rem; width: 6px; height: 6px; border-radius: 50%; background: var(--purple-500); }
 
+/* ---- AI agent ownership boundary ---- */
+.agent-boundary {
+  margin-top: 2rem;
+  padding: 1.8rem;
+  border: 1px solid var(--navy-border);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(20,29,66,0.68), rgba(10,16,36,0.72));
+}
+.agent-boundary__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-bottom: 1.4rem;
+}
+.agent-boundary__head h3 { margin: .9rem 0 .35rem; font-size: 1.45rem; }
+.agent-boundary__head p { margin: 0; max-width: 680px; color: var(--text-muted); }
+.agent-boundary__head .btn { flex: 0 0 auto; }
+.agent-boundary__layers { display: grid; grid-template-columns: repeat(3, 1fr); gap: .8rem; }
+.agent-boundary__layers article {
+  padding: 1rem;
+  border: 1px solid var(--navy-border);
+  border-radius: 10px;
+  background: rgba(7,11,26,0.45);
+}
+.agent-boundary__layers span {
+  display: block;
+  margin-bottom: .35rem;
+  color: var(--purple-400);
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.agent-boundary__layers strong { display: block; font-size: .9rem; }
+.agent-boundary__layers p { margin: .5rem 0 0; color: var(--text-faint); font-size: .84rem; }
+.agent-boundary__layers .agent-boundary__fiducia {
+  border-color: rgba(168,85,247,0.55);
+  box-shadow: inset 0 0 28px rgba(126,34,206,0.12);
+}
+.agent-boundary__code {
+  margin: 1rem 0 0;
+  overflow: hidden;
+  border: 1px solid var(--navy-border);
+  border-radius: 10px;
+  background: var(--navy-900);
+}
+.agent-boundary__code figcaption {
+  padding: .65rem 1rem;
+  border-bottom: 1px solid var(--navy-border);
+  color: var(--text-faint);
+  font-size: .8rem;
+}
+.agent-boundary__code pre {
+  margin: 0;
+  padding: 1rem;
+  overflow-x: auto;
+  color: #bae6fd;
+  font: .82rem/1.65 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.agent-boundary__note { margin: .8rem 0 0; color: var(--text-faint); font-size: .84rem; }
+
 /* ---- How / Raft ---- */
 .raft { display: grid; grid-template-columns: 1.05fr 1fr; gap: 3rem; align-items: center; }
 .raft__steps { display: grid; gap: 1.1rem; }
@@ -253,6 +315,8 @@ a { color: inherit; text-decoration: none; }
   .section__head h2 { font-size: 2rem; }
   .cta h2 { font-size: 2rem; }
   .grid-3 { grid-template-columns: 1fr; }
+  .agent-boundary__head { align-items: flex-start; flex-direction: column; }
+  .agent-boundary__layers { grid-template-columns: 1fr; }
   .stats__grid { grid-template-columns: repeat(2, 1fr); gap: 1.6rem; }
   .raft { grid-template-columns: 1fr; gap: 2rem; }
   .nav__links { display: none; }

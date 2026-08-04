@@ -112,6 +112,19 @@ const terminal = `<span class="tok-cmd">$</span> curl -X POST https://api.fiduci
   <span class="tok-key">"lease_expires"</span>: <span class="tok-str">"2026-06-26T19:41:12Z"</span>,
   <span class="tok-key">"quorum"</span>: <span class="tok-str">"3/5 committed"</span>
 }`;
+
+const agentClaimExample = `loop {
+  let claim = fiducia.claim(task_id, worker_id, lease_ttl).await?;
+  while work.is_running() {
+    fiducia.renew(task_id, claim.fencing_token).await?;
+    work.advance_one_safe_step().await?;
+  }
+  durable_store.commit_if_fence_is_current(
+    task_id,
+    claim.fencing_token,
+    work.result(),
+  ).await?;
+}`;
 ---
 
 <Layout>
@@ -290,6 +303,47 @@ const terminal = `<span class="tok-cmd">$</span> curl -X POST https://api.fiduci
               <li>Service discovery tracks live agents and tools</li>
             </ul>
           </article>
+        </div>
+
+        <div class="agent-boundary reveal">
+          <div class="agent-boundary__head">
+            <div>
+              <span class="badge">Coordination, not cognition</span>
+              <h3>Put each responsibility in the right layer</h3>
+              <p>Fiducia coordinates agent processes. It does not plan tasks, choose models,
+                store transcripts, judge semantic correctness, or prevent hallucinations.</p>
+            </div>
+            <a
+              class="btn btn--ghost"
+              href="https://github.com/fiducia-cloud/fiducia-ai-agent-manager.rs/tree/main/tools/reference-fleet"
+              rel="noreferrer"
+            >Run the reference fleet</a>
+          </div>
+
+          <div class="agent-boundary__layers" aria-label="AI agent fleet ownership layers">
+            <article>
+              <span>1 · Durable workflow layer</span>
+              <strong>Postgres · queue · object store · vector DB</strong>
+              <p>Tasks, prompts, transcripts, artifacts, embeddings, and run history.</p>
+            </article>
+            <article class="agent-boundary__fiducia">
+              <span>2 · Fiducia coordination layer</span>
+              <strong>Leases · fencing · elections · quotas · watches</strong>
+              <p>Shared authority, finite capacity, liveness, failover, and no-duplicate scheduling.</p>
+            </article>
+            <article>
+              <span>3 · Agent worker layer</span>
+              <strong>Planner · coder · researcher · reviewer</strong>
+              <p>Reasoning, tool execution, output validation, and human escalation.</p>
+            </article>
+          </div>
+
+          <figure class="agent-boundary__code">
+            <figcaption>Task claim → lease renewal → fenced durable commit</figcaption>
+            <pre><code>{agentClaimExample}</code></pre>
+          </figure>
+          <p class="agent-boundary__note">Exactly-once external effects still require the target
+            system to enforce a fencing token or stable idempotency key.</p>
         </div>
       </div>
     </section>
