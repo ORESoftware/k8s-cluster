@@ -94,22 +94,34 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          path = Path('remote/deployments/gha-clone-server-rs/tests/http_api.rs')
-          text = path.read_text(encoding='utf-8')
+          http_path = Path('remote/deployments/gha-clone-server-rs/tests/http_api.rs')
+          http_text = http_path.read_text(encoding='utf-8')
 
           poll_old = '    env.insert("GHA_CLONE_BUILD_POLL_SECONDS", "0".to_string());\n'
           poll_new = '    env.insert("GHA_CLONE_BUILD_POLL_SECONDS", "1".to_string());\n'
-          if text.count(poll_old) != 1:
+          if http_text.count(poll_old) != 1:
               raise SystemExit('integration fixture polling boundary drifted')
-          text = text.replace(poll_old, poll_new, 1)
+          http_text = http_text.replace(poll_old, poll_new, 1)
 
           timeout_old = '        (MockMode::KeepRunning, 0, "exceeded 0 seconds"),\n'
           timeout_new = '        (MockMode::KeepRunning, 1, "exceeded 1 seconds"),\n'
-          if text.count(timeout_old) != 1:
+          if http_text.count(timeout_old) != 1:
               raise SystemExit('integration fixture timeout boundary drifted')
-          text = text.replace(timeout_old, timeout_new, 1)
+          http_text = http_text.replace(timeout_old, timeout_new, 1)
+          http_path.write_text(http_text, encoding='utf-8')
 
-          path.write_text(text, encoding='utf-8')
+          streempilot_path = Path(
+              'remote/deployments/gha-clone-server-rs/tests/streempilot_http.rs'
+          )
+          streempilot_text = streempilot_path.read_text(encoding='utf-8')
+          streempilot_old = '        .env("GHA_CLONE_BUILD_POLL_SECONDS", "0")\n'
+          streempilot_new = '        .env("GHA_CLONE_BUILD_POLL_SECONDS", "1")\n'
+          if streempilot_text.count(streempilot_old) != 1:
+              raise SystemExit('Streempilot polling fixture boundary drifted')
+          streempilot_path.write_text(
+              streempilot_text.replace(streempilot_old, streempilot_new, 1),
+              encoding='utf-8',
+          )
           PY
 
       - name: Install pinned Rust toolchain
@@ -136,8 +148,9 @@ jobs:
           git add \
             remote/deployments/gha-clone-server-rs/src/main.rs \
             remote/deployments/gha-clone-server-rs/tests/http_api.rs \
+            remote/deployments/gha-clone-server-rs/tests/streempilot_http.rs \
             docs/gha-clone-build-server-boundary.md
-          unexpected="$(git diff --cached --name-only | grep -Ev '^(remote/deployments/gha-clone-server-rs/(src/main\.rs|tests/http_api\.rs)|docs/gha-clone-build-server-boundary\.md)$' || true)"
+          unexpected="$(git diff --cached --name-only | grep -Ev '^(remote/deployments/gha-clone-server-rs/(src/main\.rs|tests/(http_api|streempilot_http)\.rs)|docs/gha-clone-build-server-boundary\.md)$' || true)"
           if [[ -n "$unexpected" ]]; then
             printf 'unexpected product paths:\n%s\n' "$unexpected" >&2
             exit 1
