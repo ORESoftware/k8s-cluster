@@ -459,6 +459,10 @@ pub(super) fn json_err(status: StatusCode, message: &str) -> Response {
 }
 
 /// Rejects a request with `503` when a feature flag is off, recording the metric.
+#[expect(
+    clippy::result_large_err,
+    reason = "Axum Response is returned immediately at this terminal HTTP boundary"
+)]
 pub(super) fn require_enabled(
     state: &BlockchainState,
     enabled: bool,
@@ -478,6 +482,10 @@ pub(super) fn require_enabled(
 }
 
 /// Constant-time check of the shared blockchain execute/broadcast auth header.
+#[expect(
+    clippy::result_large_err,
+    reason = "Axum Response is returned immediately at this terminal HTTP boundary"
+)]
 pub(super) fn authorize_execute(
     state: &BlockchainState,
     headers: &HeaderMap,

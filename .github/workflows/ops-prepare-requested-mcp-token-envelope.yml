@@ -1,0 +1,163 @@
+name: Prepare requested MCP token envelope
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/ops/prepare_requested_mcp_token_envelope.sh
+      - .github/workflows/ops-prepare-requested-mcp-token-envelope.yml
+      - .github/requested-mcp-token-envelope.prepare
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+concurrency:
+  group: ops-prepare-requested-mcp-token-envelope
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'ORESoftware/k8s-cluster' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Initialize bounded status
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' validation > "$RUNNER_TEMP/mcp-envelope-stage"
+          : > "$RUNNER_TEMP/mcp-envelope-public-key"
+          : > "$RUNNER_TEMP/mcp-envelope-error"
+
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Validate exact envelope preparer
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat .github/requested-mcp-token-envelope.prepare)" = "prepare-requested-mcp-token-envelope-v1"
+          bash -n scripts/ops/prepare_requested_mcp_token_envelope.sh
+          grep -qF 'rsa_padding_mode:oaep' scripts/ops/prepare_requested_mcp_token_envelope.sh
+          grep -qF 'rsa_oaep_md:sha256' scripts/ops/prepare_requested_mcp_token_envelope.sh
+          grep -qF 'rsa_mgf1_md:sha256' scripts/ops/prepare_requested_mcp_token_envelope.sh
+          ! grep -E 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}' \
+            scripts/ops/prepare_requested_mcp_token_envelope.sh
+          printf '%s\n' aws-oidc > "$RUNNER_TEMP/mcp-envelope-stage"
+
+      - name: Configure AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: requested-mcp-token-envelope
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Generate one-time key on protected SSM host
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: |
+          set -euo pipefail
+          test -n "${INSTANCE_ID:-}"
+          printf '%s\n' ssm-dispatch > "$RUNNER_TEMP/mcp-envelope-stage"
+
+          encoded_script="$(base64 --wrap=0 scripts/ops/prepare_requested_mcp_token_envelope.sh)"
+          remote_command="script=/tmp/prepare-requested-mcp-token-envelope.sh; log=/tmp/prepare-requested-mcp-token-envelope.log; printf '%s' '$encoded_script' | base64 --decode > \"\$script\"; chmod 700 \"\$script\"; status=0; bash \"\$script\" >\"\$log\" 2>&1 || status=\$?; tail -c 12000 \"\$log\" 2>/dev/null || true; rm -f \"\$script\" \"\$log\"; exit \$status"
+          parameters="$RUNNER_TEMP/mcp-envelope-parameters.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "Prepare one-time requested MCP token envelope at ${GITHUB_SHA}" \
+              --parameters "file://$parameters" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+          echo "ssm_command_id=$command_id"
+          printf '%s\n' ssm-wait > "$RUNNER_TEMP/mcp-envelope-stage"
+
+          status=Pending
+          for _ in $(seq 1 240); do
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query Status \
+                --output text 2>/dev/null || true
+            )"
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut|Cancelling) break ;;
+            esac
+            sleep 3
+          done
+          printf 'ssm-remote-%s\n' "$status" > "$RUNNER_TEMP/mcp-envelope-stage"
+
+          invocation="$RUNNER_TEMP/mcp-envelope-invocation.json"
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent}' \
+            --output json > "$invocation"
+
+          jq -r '.Stdout // ""' "$invocation" \
+            | grep -E '^MCP_TOKEN_ENVELOPE_PUBLIC_KEY fingerprint=[0-9a-f]{64} key=[A-Za-z0-9+/=]+$' \
+            | tail -n 1 > "$RUNNER_TEMP/mcp-envelope-public-key" || true
+          jq -r '.Stdout // ""' "$invocation" \
+            | grep -E '^MCP_TOKEN_ENVELOPE_ERROR stage=[a-z0-9-]+ code=[0-9]+$' \
+            | tail -n 1 > "$RUNNER_TEMP/mcp-envelope-error" || true
+
+          test "$(jq -r '.Status' "$invocation")" = Success
+          test "$status" = Success
+          test "$(wc -l < "$RUNNER_TEMP/mcp-envelope-public-key")" -eq 1
+          test ! -s "$RUNNER_TEMP/mcp-envelope-error"
+          printf '%s\n' prepared > "$RUNNER_TEMP/mcp-envelope-stage"
+
+      - name: Report bounded result
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          stage="$(cat "$RUNNER_TEMP/mcp-envelope-stage" 2>/dev/null || printf unknown)"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          body="$RUNNER_TEMP/mcp-envelope-comment.md"
+          {
+            echo "### Requested MCP token-envelope preparation"
+            echo
+            echo "- Trusted revision: \`${GITHUB_SHA}\`"
+            echo "- Run: ${run_url}"
+            echo "- Job status: \`${JOB_STATUS}\`"
+            echo "- Last bounded stage: \`${stage}\`"
+            if [[ -s "$RUNNER_TEMP/mcp-envelope-error" ]]; then
+              echo "- Classified error: \`$(cat "$RUNNER_TEMP/mcp-envelope-error")\`"
+            fi
+            if [[ "$JOB_STATUS" = success && "$stage" = prepared ]]; then
+              line="$(cat "$RUNNER_TEMP/mcp-envelope-public-key")"
+              fingerprint="${line#*fingerprint=}"
+              fingerprint="${fingerprint%% key=*}"
+              key="${line#* key=}"
+              echo "- Public-key fingerprint: \`${fingerprint}\`"
+              echo
+              echo "Public key (base64-encoded PEM; safe to disclose):"
+              echo
+              echo '```text'
+              echo "$key"
+              echo '```'
+            else
+              echo
+              echo "No private key, PAT, credential value, raw SSM response, or unclassified host output is included."
+            fi
+          } > "$body"
+          gh issue comment 800 --repo ORESoftware/k8s-cluster --body-file "$body"

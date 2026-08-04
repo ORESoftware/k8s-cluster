@@ -69,7 +69,7 @@ pub(super) fn validate_hex_blob(
     if raw.is_empty() {
         return Err(format!("{label} must not be empty"));
     }
-    if raw.len() % 2 != 0 {
+    if !raw.len().is_multiple_of(2) {
         return Err(format!("{label} must have an even number of hex digits"));
     }
     if !raw.bytes().all(|b| b.is_ascii_hexdigit()) {

@@ -1,0 +1,34 @@
+name: Observe new product fleet bootstrap (2026-08-04)
+
+on:
+  workflow_run:
+    workflows: ["Bootstrap new product fleets (2026-08-04)"]
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  report:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.event.workflow_run.head_repository.full_name == 'ORESoftware/k8s-cluster'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TRACKING_ISSUE: '849'
+    steps:
+      - name: Record the guarded run conclusion
+        shell: bash
+        env:
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_NAME: ${{ github.event.workflow_run.name }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+          body="Guarded fleet bootstrap completed.\n\n- Workflow: \`${RUN_NAME}\`\n- Conclusion: **${RUN_CONCLUSION}**\n- Trusted SHA: \`${RUN_SHA}\`\n- Run ID: \`${RUN_ID}\`\n- Run: ${RUN_URL}"
+          gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" --body "$body"
