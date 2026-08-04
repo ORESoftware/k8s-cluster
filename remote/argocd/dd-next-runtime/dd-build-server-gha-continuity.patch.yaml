@@ -10,7 +10,7 @@ spec:
         - name: build-server
           env:
             - name: BUILD_SERVER_ALLOWED_PROFILES
-              value: rust-verify,node-verify,python-verify,flutter-verify,flutter-android-debug,flutter-web-release,flutter-linux-release,flutter-linux-desktop-entrypoint,flutter-web-e2e,playwright,puppeteer,browser-e2e
+              value: rust-verify,node-verify,node-hardened-verify,node-hardened-test,python-verify,flutter-verify,flutter-android-debug,flutter-web-release,flutter-linux-release,flutter-linux-desktop-entrypoint,flutter-web-e2e,playwright,puppeteer,browser-e2e
             - name: BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON
               value: >-
-                [{"repository":"https://github.com/ORESoftware/k8s-cluster.git","profiles":["rust-verify"]}]
+                [{"repository":"https://github.com/ORESoftware/k8s-cluster.git","profiles":["rust-verify"]},{"repository":"https://github.com/messaging-intel/msgint-connectors.git","profiles":["node-hardened-verify","node-hardened-test"]}]
