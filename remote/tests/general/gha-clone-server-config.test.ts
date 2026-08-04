@@ -51,6 +51,12 @@ test('GHA continuity service is installed fail-closed with no cluster identity',
   assert.doesNotMatch(deployment, /hostPath:/);
   assert.doesNotMatch(deployment, /docker\.sock|containerd\.sock|buildkitd\.sock/);
   assert.match(deployment, /name:\s*dd-gha-clone-server-secrets/);
+  assert.match(
+    deployment,
+    /name:\s*GHA_CLONE_GITHUB_TOKEN_FILE\s+value:\s*\/var\/run\/secrets\/gha-clone-github\/github_app_installation_token/,
+  );
+  assert.doesNotMatch(deployment, /name:\s*GHA_CLONE_GITHUB_TOKEN\s+valueFrom:/);
+  assert.match(deployment, /name:\s*github-token\s+secret:\s+secretName:\s*dd-gha-clone-server-secrets/);
 });
 
 test('all service resources participate in the dd-next-runtime render', () => {
@@ -154,6 +160,8 @@ test('build server exposes fixed Rust, Node, and Python continuity profiles', ()
 
   const continuityPatch = read(continuityPatchPath);
   assert.match(continuityPatch, /node-hardened-verify/);
+  assert.match(continuityPatch, /name:\s*BUILD_SERVER_GIT_TOKEN_FILE/);
+  assert.match(continuityPatch, /github_app_installation_token/);
   assert.match(
     continuityPatch,
     /https:\/\/github\.com\/messaging-intel\/msgint-connectors\.git/,
@@ -195,6 +203,7 @@ test('meta integration test starts the real server and submits its own workflow'
   assert.match(integration, /"profile"\], "rust-verify"/);
   assert.match(integration, /GHA_CLONE_EXECUTION_ENABLED", "true"/);
   assert.match(integration, /env_remove\("GHA_CLONE_GITHUB_TOKEN"\)/);
+  assert.match(integration, /env_remove\("GHA_CLONE_GITHUB_TOKEN_FILE"\)/);
 });
 
 test('Messaging Intel integration starts the real server and dispatches both fixed profiles', () => {
@@ -206,6 +215,7 @@ test('Messaging Intel integration starts the real server and dispatches both fix
   assert.match(integration, /node-verify/);
   assert.match(integration, /submissions\.len\(\), 2/);
   assert.match(integration, /env_remove\("GHA_CLONE_GITHUB_TOKEN"\)/);
+  assert.match(integration, /env_remove\("GHA_CLONE_GITHUB_TOKEN_FILE"\)/);
 });
 
 test('Messaging Intel mirror remains independently compilable and non-secret', () => {

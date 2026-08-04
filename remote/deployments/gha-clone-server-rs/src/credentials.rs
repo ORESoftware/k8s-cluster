@@ -140,8 +140,10 @@ mod tests {
             "FILE",
         )
         .is_err());
-        assert!(TokenSource::from_values(None, Some("relative/token".into()), "INLINE", "FILE")
-            .is_err());
+        assert!(
+            TokenSource::from_values(None, Some("relative/token".into()), "INLINE", "FILE")
+                .is_err()
+        );
     }
 
     #[test]
@@ -157,10 +159,12 @@ mod tests {
         .expect("token source")
         .expect("configured source");
         assert_eq!(source.kind(), "file");
-        assert_eq!(source.read().expect("first read"), "ghs_first_installation_token_123456");
+        assert_eq!(
+            source.read().expect("first read"),
+            "ghs_first_installation_token_123456"
+        );
 
-        fs::write(&path, "ghs_second_installation_token_654321\n")
-            .expect("write rotated token");
+        fs::write(&path, "ghs_second_installation_token_654321\n").expect("write rotated token");
         assert_eq!(
             source.read().expect("rotated read"),
             "ghs_second_installation_token_654321"

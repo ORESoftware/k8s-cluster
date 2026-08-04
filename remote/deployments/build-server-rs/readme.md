@@ -131,6 +131,8 @@ runtime nor require elevated capabilities. Repository code still executes inside
 profile jobs remain limited to trusted, allowlisted GitHub repositories. Artifacts are archived
 from fixed paths only and retrieved through the authenticated artifact endpoint.
 
+`BUILD_SERVER_GIT_TOKEN_FILE` is the preferred private-clone credential. It is read for every git process so a projected short-lived GitHub App token can rotate without restarting the pod. `BUILD_SERVER_GIT_TOKEN` and the legacy `GH_PAT` remain compatibility fallbacks only when no file source is configured.
+
 `BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES` is a second, narrower allowlist applied only to
 executable profile jobs. The cluster permits the `ORESoftware` and `sonus-auris` organizations and
 one exact HTTPS repository URL for `messaging-intel/msgint-connectors`; adding

@@ -1,16 +1,105 @@
-use std::{collections::HashSet, env, path::PathBuf, time::Duration};
+use std::{
+    collections::HashSet,
+    env, fmt, fs,
+    path::{Component, Path, PathBuf},
+    time::Duration,
+};
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 
 use crate::{fiducia, gh_secrets, profiles, webhooks};
 
+const MAX_GIT_TOKEN_BYTES: usize = 4096;
+const MIN_GIT_TOKEN_BYTES: usize = 20;
+
+#[derive(Clone)]
+pub(crate) enum GitCredentialSource {
+    Inline(String),
+    File(PathBuf),
+}
+
+impl fmt::Debug for GitCredentialSource {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Inline(_) => formatter.write_str("Inline(<redacted>)"),
+            Self::File(path) => formatter.debug_tuple("File").field(path).finish(),
+        }
+    }
+}
+
+impl GitCredentialSource {
+    fn from_environment() -> Option<Self> {
+        if let Some(path) = first_env(&["BUILD_SERVER_GIT_TOKEN_FILE"]) {
+            return Some(Self::File(PathBuf::from(path)));
+        }
+        first_env(&["BUILD_SERVER_GIT_TOKEN", "GH_PAT"]).map(Self::Inline)
+    }
+
+    fn token(&self) -> Result<String, String> {
+        let token = match self {
+            Self::Inline(token) => token.clone(),
+            Self::File(path) => {
+                validate_git_token_path(path)?;
+                let metadata = fs::metadata(path)
+                    .map_err(|_| "build-server GitHub token file is unavailable".to_string())?;
+                if !metadata.is_file() {
+                    return Err("build-server GitHub token path is not a regular file".to_string());
+                }
+                if metadata.len() as usize > MAX_GIT_TOKEN_BYTES {
+                    return Err("build-server GitHub token file exceeds the byte limit".to_string());
+                }
+                fs::read_to_string(path)
+                    .map_err(|_| "build-server GitHub token file could not be read".to_string())?
+                    .trim()
+                    .to_string()
+            }
+        };
+        validate_git_token(&token)?;
+        Ok(token)
+    }
+
+    fn authorization_header(&self) -> Result<String, String> {
+        let token = self.token()?;
+        Ok(format!(
+            "AUTHORIZATION: basic {}",
+            BASE64.encode(format!("x-access-token:{token}"))
+        ))
+    }
+}
+
+fn validate_git_token_path(path: &Path) -> Result<(), String> {
+    if !path.is_absolute()
+        || path.to_string_lossy().len() > 4096
+        || path
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err(
+            "BUILD_SERVER_GIT_TOKEN_FILE must be a bounded absolute path without '..'".to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn validate_git_token(token: &str) -> Result<(), String> {
+    if token.len() < MIN_GIT_TOKEN_BYTES || token.len() > MAX_GIT_TOKEN_BYTES {
+        return Err(format!(
+            "build-server GitHub token must contain between {MIN_GIT_TOKEN_BYTES} and {MAX_GIT_TOKEN_BYTES} bytes"
+        ));
+    }
+    if token.chars().any(char::is_whitespace) || token.chars().any(char::is_control) {
+        return Err("build-server GitHub token must be a single printable token".to_string());
+    }
+    Ok(())
+}
+
 #[derive(Clone)]
 pub(crate) struct Config {
     pub(crate) work_root: PathBuf,
     pub(crate) git_bin: String,
-    /// Precomputed Basic authorization header for trusted private GitHub clones.
-    /// Never serialized or written to command logs.
-    pub(crate) git_http_auth_header: Option<String>,
+    /// Reloadable credential for trusted private GitHub clones. The file
+    /// source is read for every git process so projected Secret rotation is live.
+    pub(crate) git_credential_source: Option<GitCredentialSource>,
     pub(crate) nerdctl_bin: String,
     pub(crate) kubectl_bin: String,
     pub(crate) tar_bin: String,
@@ -81,6 +170,19 @@ pub(crate) struct Config {
     pub(crate) lambda_url: String,
     pub(crate) lambda_function_id: Option<String>,
     pub(crate) lambda_auth_secret: Option<String>,
+}
+
+impl Config {
+    pub(crate) fn git_http_auth_header(&self) -> Result<Option<String>, String> {
+        self.git_credential_source
+            .as_ref()
+            .map(GitCredentialSource::authorization_header)
+            .transpose()
+    }
+
+    pub(crate) fn git_credentials_ready(&self) -> bool {
+        self.git_http_auth_header().is_ok()
+    }
 }
 
 pub(crate) fn first_env(keys: &[&str]) -> Option<String> {
@@ -186,13 +288,10 @@ pub(crate) fn config_from_env() -> Config {
     .unwrap_or_default();
 
     let coordination_enabled = env_bool("BUILD_SERVER_COORDINATION_ENABLED", false);
-    let github_token = first_env(&["BUILD_SERVER_GIT_TOKEN", "GH_PAT"]);
-    let git_http_auth_header = github_token.as_deref().map(|token| {
-        format!(
-            "AUTHORIZATION: basic {}",
-            BASE64.encode(format!("x-access-token:{token}"))
-        )
-    });
+    // A mounted token file has precedence over legacy environment tokens.
+    // The file is re-read for each clone, allowing short-lived installation
+    // tokens to rotate without restarting the build-server pod.
+    let git_credential_source = GitCredentialSource::from_environment();
     let fiducia_url = env_value(
         "FIDUCIA_LOCK_URL",
         "http://fiducia-load-balance.fiducia.svc.cluster.local:8088",
@@ -215,7 +314,7 @@ pub(crate) fn config_from_env() -> Config {
             "/var/lib/dd-build-server/jobs",
         )),
         git_bin: env_value("BUILD_SERVER_GIT_BIN", "git"),
-        git_http_auth_header,
+        git_credential_source,
         nerdctl_bin: env_value("BUILD_SERVER_NERDCTL_BIN", "/usr/local/bin/nerdctl"),
         kubectl_bin: env_value("BUILD_SERVER_KUBECTL_BIN", "/usr/bin/kubectl"),
         tar_bin: env_value("BUILD_SERVER_TAR_BIN", "/bin/tar"),
@@ -315,5 +414,51 @@ pub(crate) fn config_from_env() -> Config {
         ),
         lambda_function_id: first_env(&["BUILD_SERVER_LAMBDA_FUNCTION_ID"]),
         lambda_auth_secret: first_env(&["BUILD_SERVER_LAMBDA_AUTH_SECRET"]),
+    }
+}
+
+#[cfg(test)]
+mod git_credential_tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temporary_path() -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "dd-build-server-git-token-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn token_file_is_reloaded_and_debug_output_is_redacted() {
+        let path = temporary_path();
+        fs::write(&path, "ghs_first_build_token_123456789\n").expect("write first token");
+        let source = GitCredentialSource::File(path.clone());
+        let first = source.authorization_header().expect("first header");
+        fs::write(&path, "ghs_second_build_token_987654321\n").expect("write rotated token");
+        let second = source.authorization_header().expect("second header");
+        assert_ne!(first, second);
+        assert_eq!(
+            format!(
+                "{:?}",
+                GitCredentialSource::Inline("ghs_secret_token_123456789".into())
+            ),
+            "Inline(<redacted>)"
+        );
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn token_files_must_be_bounded_absolute_and_tokens_single_line() {
+        assert!(validate_git_token_path(Path::new("relative/token")).is_err());
+        assert!(validate_git_token_path(Path::new("/safe/../token")).is_err());
+        let oversized = PathBuf::from(format!("/{}", "a".repeat(4097)));
+        assert!(validate_git_token_path(&oversized).is_err());
+        assert!(validate_git_token("ghs_token_with whitespace_123456").is_err());
+        assert!(validate_git_token("short").is_err());
     }
 }
