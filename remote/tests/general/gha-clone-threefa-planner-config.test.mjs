@@ -16,6 +16,9 @@ const fixture = read(
 const plannerTest = read(
   'remote/deployments/gha-clone-server-rs/tests/threefa_planner.rs',
 );
+const httpTest = read(
+  'remote/deployments/gha-clone-server-rs/tests/threefa_http.rs',
+);
 const documentation = read('docs/gha-threefa-interfaces-planner.md');
 const workflow = read('.github/workflows/gha-clone-server.yml');
 
@@ -98,10 +101,27 @@ test('planner tests cover exact mappings, command mutations, and revision immuta
   assert.match(plannerTest, /exact 40-hex commit SHA/);
 });
 
-test('documentation and permanent workflow preserve the plan-only boundary', () => {
-  assert.match(documentation, /does not enable the continuity service/);
-  assert.match(documentation, /deployment remains at zero replicas/);
-  assert.match(documentation, /later PR must prove real-process dispatch/);
+test('real-process proof exercises ordered authenticated dispatch and zero-submission rejection', () => {
+  assert.match(httpTest, /CARGO_BIN_EXE_gha-clone-server/);
+  assert.match(httpTest, /route\("\/builds", post\(mock_submit\)\)/);
+  assert.match(httpTest, /x-build-server-auth/);
+  assert.match(httpTest, /node_contracts[\s\S]*node-hardened-test/);
+  assert.match(httpTest, /generated_rust[\s\S]*rust-generated-verify/);
+  assert.match(httpTest, /gha-clone/);
+  assert.match(httpTest, /exact_retry_reuses_each_deterministic_build_request_identity/);
+  assert.match(httpTest, /"main"/);
+  assert.match(httpTest, /3FA-app\/unreviewed-repository/);
+  assert.match(httpTest, /npm audit --audit-level=high/);
+  assert.match(httpTest, /submissions\.lock\(\)\.await\.is_empty\(\)/);
+  assert.doesNotMatch(httpTest, /GHA_CLONE_GITHUB_TOKEN",\s*[^)]/);
+});
+
+test('documentation and permanent workflow preserve the inactive live boundary', () => {
+  assert.match(documentation, /actual `gha-clone-server` binary/);
+  assert.match(documentation, /deterministic `gha-clone:\{planId\}:\{jobId\}`/);
+  assert.match(documentation, /zero replicas/);
+  assert.match(documentation, /not a live private-source run/);
+  assert.match(documentation, /least-privilege GitHub App/);
   assert.match(documentation, /action-reference immutability is tracked separately/);
   assert.match(workflow, /remote\/deployments\/gha-clone-server-rs\/\*\*/);
   assert.match(workflow, /remote\/argocd\/dd-next-runtime\/dd-gha-clone-server\.configmap\.yaml/);
