@@ -1,0 +1,149 @@
+# Final thin wrapper over the compiling v3 carrier. It wires the validated
+# build-server origin into Config, fixes strict Clippy, and deletes every carrier.
+name: Run DEN-1606 direct hardening materializer v4 once
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [synchronize]
+    paths:
+      - .github/workflows/run-den-1606-materializer-v4-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: run-den-1606-direct-hardening-materializer-v4
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-1606-clone-server-direct-hardening'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1606-clone-server-direct-hardening
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Execute v3 and finish the product wiring
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          carrier = Path('.github/workflows/run-den-1606-materializer-v3-once.yml')
+          lines = carrier.read_text(encoding='utf-8').splitlines()
+          step = lines.index(
+              '      - name: Execute the reviewed transform with raw Rust escape literals'
+          )
+          next_step = next(
+              index for index in range(step + 1, len(lines))
+              if lines[index].startswith('      - uses: dtolnay/rust-toolchain@')
+          )
+          run_index = next(
+              index for index in range(step + 1, next_step)
+              if lines[index] == '        run: |'
+          )
+          block = lines[run_index + 1 : next_step]
+          opener = next(
+              index for index, line in enumerate(block)
+              if line.strip() == "python3 - <<'PY'"
+          )
+          terminator = max(
+              index for index, line in enumerate(block)
+              if index > opener and line.strip() == 'PY'
+          )
+          prefix = '          '
+          script = '\n'.join(
+              line[len(prefix):] if line.startswith(prefix) else line
+              for line in block[opener + 1 : terminator]
+          ) + '\n'
+          exec(compile(script, str(carrier), 'exec'), {'__name__': '__main__'})
+
+          main_path = Path('remote/deployments/gha-clone-server-rs/src/main.rs')
+          main = main_path.read_text(encoding='utf-8')
+
+          field_start = main.find(
+              '            build_server_url: env_optional("GHA_CLONE_BUILD_SERVER_URL")'
+          )
+          field_end = main.find('            build_server_auth:', field_start)
+          if field_start == -1 or field_end == -1:
+              raise SystemExit('generated build-server Config field boundary is missing')
+          main = (
+              main[:field_start]
+              + '            build_server_url: build_server_url_from_env()?,\n'
+              + main[field_end:]
+          )
+
+          clone_call = 'if !reserve_runs(&state, &[record.clone()]).await {'
+          if main.count(clone_call) != 1:
+              raise SystemExit('generated single-run reservation call drifted')
+          main = main.replace(
+              clone_call,
+              'if !reserve_runs(&state, std::slice::from_ref(&record)).await {',
+              1,
+          )
+          main_path.write_text(main, encoding='utf-8')
+
+          for path in (
+              '.github/workflows/materialize-den-1606-direct-hardening-once.yml',
+              '.github/workflows/run-den-1606-materializer-once.yml',
+              '.github/workflows/run-den-1606-materializer-pr-once.yml',
+              '.github/workflows/run-den-1606-materializer-v2-once.yml',
+              '.github/workflows/run-den-1606-materializer-v3-once.yml',
+              '.github/workflows/run-den-1606-semantic-materializer-once.yml',
+              '.github/workflows/run-den-1606-materializer-v4-once.yml',
+          ):
+              Path(path).unlink(missing_ok=True)
+          PY
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate every clone-server target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Validate continuity contracts
+        working-directory: remote/tests
+        run: |
+          set -euo pipefail
+          corepack enable
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts
+
+      - name: Commit the self-cleaned product
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          allowed='^(docs/gha-indie-worker-clone-reconciliation\.md|remote/deployments/gha-clone-server-rs/(README\.md|src/(lib|main)\.rs)|\.github/workflows/(materialize-den-1606-direct-hardening-once|run-den-1606-materializer-once|run-den-1606-materializer-pr-once|run-den-1606-materializer-v2-once|run-den-1606-materializer-v3-once|run-den-1606-semantic-materializer-once|run-den-1606-materializer-v4-once)\.yml)$'
+          unexpected="$(git diff --cached --name-only | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected staged paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          workflow_non_deletions="$(git diff --cached --name-only --diff-filter=ACMRTUXB -- .github/workflows || true)"
+          if [[ -n "$workflow_non_deletions" ]]; then
+            printf 'workflow carriers must be deletions only:\n%s\n' "$workflow_non_deletions" >&2
+            exit 1
+          fi
+          git commit -m 'fix(DEN-1606): harden the bounded clone-server lane directly'
+          git push origin HEAD:agent/den-1606-clone-server-direct-hardening
