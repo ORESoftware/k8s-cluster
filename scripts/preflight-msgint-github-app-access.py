@@ -14,6 +14,7 @@ from typing import Any
 
 API_BASE = "https://api.github.com"
 MAX_RESPONSE_BYTES = 1024 * 1024
+MIN_TOKEN_BYTES = 20
 MAX_TOKEN_BYTES = 4096
 REVISION_RE = re.compile(r"[a-f0-9]{40}")
 
@@ -36,8 +37,11 @@ def _validate_inputs(repository: str, revision: str, token: str) -> None:
         raise PreflightError("unexpected repository identity")
     if REVISION_RE.fullmatch(revision) is None:
         raise PreflightError("MSGINT_REVISION must be a lowercase 40-hex commit")
-    if not token or len(token.encode("utf-8")) > MAX_TOKEN_BYTES:
-        raise PreflightError("GitHub App token is missing or exceeds the byte limit")
+    token_bytes = len(token.encode("utf-8"))
+    if token_bytes < MIN_TOKEN_BYTES or token_bytes > MAX_TOKEN_BYTES:
+        raise PreflightError(
+            "GitHub App token is missing or outside the accepted byte bounds"
+        )
     if any(character.isspace() or not character.isprintable() for character in token):
         raise PreflightError("GitHub App token must be a single printable value")
 
