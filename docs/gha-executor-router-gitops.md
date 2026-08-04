@@ -2,7 +2,7 @@
 
 Linear: DEN-1597  
 Parent: DEN-1550  
-Core router: pull request #645  
+Core router: pull request #665
 Last reviewed: 2026-08-04
 
 ## Purpose
@@ -74,6 +74,10 @@ The Kubernetes Secret projects them as direct-child, mode-0400 files:
 The route inventory contains paths, not secret values. The router rejects
 traversal, indirect children, duplicate paths, missing files, short values,
 symlink escapes, and oversized credential data.
+
+The clone-server ExternalSecret intentionally does not import the old direct
+`build_server_auth` value. The planner receives only the router inbound
+credential; provider credentials remain confined to the router Secret.
 
 `hetzner_build_server_auth` is not requested or mounted while the Hetzner entry
 is disabled. Do not put a classic GitHub personal access token in this backing

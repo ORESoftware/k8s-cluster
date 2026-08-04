@@ -63,6 +63,33 @@ test('GHA continuity service is installed fail-closed with no cluster identity',
   assert.match(deployment, /name:\s*dd-gha-clone-server-secrets/);
 });
 
+test('source-bootstrap pods cannot be activated before immutable images exist', () => {
+  const cloneDeployment = read(deploymentPath);
+  const routerDeployment = read(routerDeploymentPath);
+  for (const [name, deployment, executionGate] of [
+    [
+      'clone server',
+      cloneDeployment,
+      /name:\s*GHA_CLONE_EXECUTION_ENABLED\s+value:\s*"false"/,
+    ],
+    [
+      'executor router',
+      routerDeployment,
+      /name:\s*GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED\s+value:\s*"false"/,
+    ],
+  ] as const) {
+    assert.match(deployment, /\breplicas:\s*0\b/, `${name} must stay scaled to zero`);
+    assert.match(deployment, executionGate, `${name} execution must stay disabled`);
+    assert.match(deployment, /image:\s*docker\.io\/library\/rust:1\.90-bookworm/);
+    assert.match(deployment, /git[\s\S]*?clone[\s\S]*?cargo run --release/);
+    assert.doesNotMatch(
+      deployment,
+      /image:\s*\S+@sha256:[0-9a-f]{64}/,
+      `${name} bootstrap manifest must be replaced atomically by an immutable-image activation change`,
+    );
+  }
+});
+
 test('all continuity and executor-router resources participate in the shared render', () => {
   const kustomization = read(kustomizationPath);
   for (const resource of [
@@ -103,10 +130,11 @@ test('clone-server secret mapping names values without committing credential mat
     'auth_secret',
     'github_webhook_secret',
     'github_app_installation_token',
-    'build_server_auth',
   ]) {
     assert.match(secret, new RegExp(`property: ${property}`));
   }
+  assert.doesNotMatch(secret, /build_server_auth/);
+  assert.match(secret, /Direct executor credentials belong only to/);
   assert.doesNotMatch(
     secret,
     /ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|BEGIN (?:RSA |EC )?PRIVATE KEY/,
