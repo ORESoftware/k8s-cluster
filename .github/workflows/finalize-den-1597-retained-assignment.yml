@@ -1,0 +1,978 @@
+name: Finalize DEN-1597 retained executor assignments
+
+on:
+  push:
+    branches:
+      - agent/den-1597-retained-assignment-core-20260804
+    paths:
+      - .github/workflows/finalize-den-1597-retained-assignment.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-den-1597-retained-assignment
+  cancel-in-progress: false
+
+jobs:
+  harden:
+    if: github.repository == 'ORESoftware/k8s-cluster' && github.ref == 'refs/heads/agent/den-1597-retained-assignment-core-20260804'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out the exact isolated branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1597-retained-assignment-core-20260804
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Add retained assignment semantics and adversarial process tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          binary_path = Path('remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs')
+          tests_path = Path('remote/deployments/gha-clone-server-rs/tests/executor_router_http.rs')
+          docs_path = Path('docs/gha-independent-executor-routing.md')
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, found {count}')
+              return text.replace(old, new)
+
+          def replace_regex(text: str, pattern: str, new: str, label: str) -> str:
+              updated, count = re.subn(pattern, new, text, flags=re.S)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one regex match, found {count}')
+              return updated
+
+          binary = binary_path.read_text()
+          binary = replace_once(
+              binary,
+              '''#[path = "../executor_router.rs"]
+          mod executor_router;
+          use executor_router::{
+              bounded_text, digest_eq, materialize_executors, namespace_build_id, parse_executor_specs,
+              parse_namespaced_build_id, validate_build_request, validate_secret_root, Executor, Provider,
+              MAX_ERROR_CHARS_DEFAULT, MAX_EXECUTORS_DEFAULT, MAX_REQUEST_BYTES_DEFAULT, MAX_SECRET_BYTES,
+              MIN_SECRET_BYTES, ROUTER_SERVICE_NAME,
+          };''',
+              '''#[path = "../executor_router.rs"]
+          mod executor_router;
+          #[path = "../executor_router_assignments.rs"]
+          mod executor_router_assignments;
+          use executor_router::{
+              bounded_text, digest_eq, materialize_executors, namespace_build_id, parse_executor_specs,
+              parse_namespaced_build_id, validate_build_request, validate_secret_root, Executor, Provider,
+              ValidatedBuildRequest, MAX_ERROR_CHARS_DEFAULT, MAX_EXECUTORS_DEFAULT,
+              MAX_REQUEST_BYTES_DEFAULT, MAX_SECRET_BYTES, MIN_SECRET_BYTES, ROUTER_SERVICE_NAME,
+          };
+          use executor_router_assignments::{
+              request_fingerprint, AssignmentRegistry, BeginClaim, HttpResult, InflightClaim,
+              SubmissionOutcome,
+          };''',
+              'assignment module import',
+          )
+          binary = replace_once(
+              binary,
+              '''    max_error_chars: usize,
+              probe_timeout: Duration,''',
+              '''    max_error_chars: usize,
+              max_assignments: usize,
+              probe_timeout: Duration,''',
+              'config assignment capacity field',
+          )
+          binary = replace_once(
+              binary,
+              '''        let max_error_chars = env_usize(
+                      "GHA_EXECUTOR_ROUTER_MAX_ERROR_CHARS",
+                      MAX_ERROR_CHARS_DEFAULT,
+                  )?;
+                  if max_request_bytes == 0 || max_upstream_body_bytes == 0 || max_error_chars == 0 {
+                      return Err("request, upstream-body, and error bounds must be positive".to_string());
+                  }''',
+              '''        let max_error_chars = env_usize(
+                      "GHA_EXECUTOR_ROUTER_MAX_ERROR_CHARS",
+                      MAX_ERROR_CHARS_DEFAULT,
+                  )?;
+                  let max_assignments = env_usize("GHA_EXECUTOR_ROUTER_MAX_ASSIGNMENTS", 1024)?;
+                  if max_request_bytes == 0
+                      || max_upstream_body_bytes == 0
+                      || max_error_chars == 0
+                      || max_assignments == 0
+                  {
+                      return Err(
+                          "request, upstream-body, error, and assignment bounds must be positive"
+                              .to_string(),
+                      );
+                  }
+                  if max_assignments > 100_000 {
+                      return Err(
+                          "GHA_EXECUTOR_ROUTER_MAX_ASSIGNMENTS must be at most 100000".to_string(),
+                      );
+                  }''',
+              'config assignment capacity parsing',
+          )
+          binary = replace_once(
+              binary,
+              '''            max_error_chars,
+                      probe_timeout: Duration::from_millis''',
+              '''            max_error_chars,
+                      max_assignments,
+                      probe_timeout: Duration::from_millis''',
+              'config assignment capacity initialization',
+          )
+          binary = replace_once(
+              binary,
+              '''    ambiguous_submissions_total: AtomicU64,
+              status_requests_total: AtomicU64,''',
+              '''    ambiguous_submissions_total: AtomicU64,
+              duplicate_hits_total: AtomicU64,
+              request_conflicts_total: AtomicU64,
+              assignment_capacity_rejections_total: AtomicU64,
+              status_requests_total: AtomicU64,''',
+              'assignment metrics fields',
+          )
+          binary = replace_once(
+              binary,
+              '''    client: reqwest::Client,
+              metrics: Arc<Metrics>,
+          }''',
+              '''    client: reqwest::Client,
+              metrics: Arc<Metrics>,
+              assignments: AssignmentRegistry,
+          }''',
+              'app state assignment registry',
+          )
+          binary = replace_once(
+              binary,
+              '''    let state = AppState {
+                  client: reqwest::Client::builder()''',
+              '''    let assignments = AssignmentRegistry::new(config.max_assignments)
+                  .expect("validated positive assignment capacity");
+              let state = AppState {
+                  client: reqwest::Client::builder()''',
+              'registry initialization',
+          )
+          binary = replace_once(
+              binary,
+              '''        config: Arc::new(config),
+                  metrics: Arc::new(Metrics::default()),
+              };''',
+              '''        config: Arc::new(config),
+                  metrics: Arc::new(Metrics::default()),
+                  assignments,
+              };''',
+              'registry state initialization',
+          )
+
+          binary = replace_regex(
+              binary,
+              r'''async fn healthz\(State\(state\): State<AppState>\) -> Json<Value> \{.*?\n\}\n\nasync fn readyz''',
+              '''async fn healthz(State(state): State<AppState>) -> Json<Value> {
+              let assignments = state.assignments.counts().await;
+              Json(json!({
+                  "ok": true,
+                  "service": ROUTER_SERVICE_NAME,
+                  "executionEnabled": state.config.execution_enabled,
+                  "configuredExecutors": state.config.executor_specs,
+                  "enabledExecutors": state.config.executors.len(),
+                  "authConfigured": !state.config.inbound_auth.is_empty(),
+                  "assignmentCapacity": state.config.max_assignments,
+                  "assignments": {
+                      "accepted": assignments.accepted,
+                      "ambiguous": assignments.ambiguous,
+                      "inflight": assignments.inflight
+                  }
+              }))
+          }
+
+          async fn readyz''',
+              'health assignment counts',
+          )
+
+          binary = replace_regex(
+              binary,
+              r'''async fn metrics\(State\(state\): State<AppState>\) -> Response \{.*?\n\}\n\nasync fn submit_build''',
+              '''async fn metrics(State(state): State<AppState>) -> Response {
+              let metrics = &state.metrics;
+              let assignments = state.assignments.counts().await;
+              let body = format!(
+                  "# HELP gha_executor_router_requests_total Authenticated and unauthenticated HTTP build/status requests.\\n\\
+                   # TYPE gha_executor_router_requests_total counter\\n\\
+                   gha_executor_router_requests_total {}\\n\\
+                   # HELP gha_executor_router_rejected_total Requests rejected before upstream acceptance.\\n\\
+                   # TYPE gha_executor_router_rejected_total counter\\n\\
+                   gha_executor_router_rejected_total {}\\n\\
+                   # HELP gha_executor_router_readiness_failures_total Executor readiness probes that failed or returned non-success.\\n\\
+                   # TYPE gha_executor_router_readiness_failures_total counter\\n\\
+                   gha_executor_router_readiness_failures_total {}\\n\\
+                   # HELP gha_executor_router_submissions_total Upstream build submissions attempted after readiness selection.\\n\\
+                   # TYPE gha_executor_router_submissions_total counter\\n\\
+                   gha_executor_router_submissions_total {}\\n\\
+                   # HELP gha_executor_router_submissions_accepted_total Upstream build submissions accepted.\\n\\
+                   # TYPE gha_executor_router_submissions_accepted_total counter\\n\\
+                   gha_executor_router_submissions_accepted_total {}\\n\\
+                   # HELP gha_executor_router_ambiguous_submissions_total Submission attempts retained because acceptance could not be proven or rejected.\\n\\
+                   # TYPE gha_executor_router_ambiguous_submissions_total counter\\n\\
+                   gha_executor_router_ambiguous_submissions_total {}\\n\\
+                   # HELP gha_executor_router_duplicate_hits_total Exact request retries served without another readiness probe or POST.\\n\\
+                   # TYPE gha_executor_router_duplicate_hits_total counter\\n\\
+                   gha_executor_router_duplicate_hits_total {}\\n\\
+                   # HELP gha_executor_router_request_conflicts_total Reused request IDs whose immutable request content differed.\\n\\
+                   # TYPE gha_executor_router_request_conflicts_total counter\\n\\
+                   gha_executor_router_request_conflicts_total {}\\n\\
+                   # HELP gha_executor_router_assignment_capacity_rejections_total New requests rejected because the bounded assignment registry was full.\\n\\
+                   # TYPE gha_executor_router_assignment_capacity_rejections_total counter\\n\\
+                   gha_executor_router_assignment_capacity_rejections_total {}\\n\\
+                   # HELP gha_executor_router_assignments Retained or inflight assignments by state and bounded provider label.\\n\\
+                   # TYPE gha_executor_router_assignments gauge\\n\\
+                   gha_executor_router_assignments{{state=\"accepted\",provider=\"aws\"}} {}\\n\\
+                   gha_executor_router_assignments{{state=\"accepted\",provider=\"hetzner\"}} {}\\n\\
+                   gha_executor_router_assignments{{state=\"ambiguous\",provider=\"aws\"}} {}\\n\\
+                   gha_executor_router_assignments{{state=\"ambiguous\",provider=\"hetzner\"}} {}\\n\\
+                   gha_executor_router_assignments{{state=\"inflight\",provider=\"unassigned\"}} {}\\n\\
+                   # HELP gha_executor_router_status_requests_total Namespaced build status requests.\\n\\
+                   # TYPE gha_executor_router_status_requests_total counter\\n\\
+                   gha_executor_router_status_requests_total {}\\n\\
+                   # HELP gha_executor_router_executor_selections_total Selected executors by provider.\\n\\
+                   # TYPE gha_executor_router_executor_selections_total counter\\n\\
+                   gha_executor_router_executor_selections_total{{provider=\"aws\"}} {}\\n\\
+                   gha_executor_router_executor_selections_total{{provider=\"hetzner\"}} {}\\n",
+                  metrics.requests_total.load(Ordering::Relaxed),
+                  metrics.rejected_total.load(Ordering::Relaxed),
+                  metrics.readiness_failures_total.load(Ordering::Relaxed),
+                  metrics.submissions_total.load(Ordering::Relaxed),
+                  metrics.submissions_accepted_total.load(Ordering::Relaxed),
+                  metrics.ambiguous_submissions_total.load(Ordering::Relaxed),
+                  metrics.duplicate_hits_total.load(Ordering::Relaxed),
+                  metrics.request_conflicts_total.load(Ordering::Relaxed),
+                  metrics
+                      .assignment_capacity_rejections_total
+                      .load(Ordering::Relaxed),
+                  assignments.accepted_aws,
+                  assignments.accepted_hetzner,
+                  assignments.ambiguous_aws,
+                  assignments.ambiguous_hetzner,
+                  assignments.inflight,
+                  metrics.status_requests_total.load(Ordering::Relaxed),
+                  metrics.aws_selections_total.load(Ordering::Relaxed),
+                  metrics.hetzner_selections_total.load(Ordering::Relaxed),
+              );
+              (
+                  [(
+                      header::CONTENT_TYPE,
+                      "text/plain; version=0.0.4; charset=utf-8",
+                  )],
+                  body,
+              )
+                  .into_response()
+          }
+
+          async fn submit_build''',
+              'assignment metrics',
+          )
+
+          binary = replace_regex(
+              binary,
+              r'''async fn submit_build\(State\(state\): State<AppState>, headers: HeaderMap, body: Bytes\) -> Response \{.*?\n\}\n\nasync fn get_build''',
+              '''async fn submit_build(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
+              state.metrics.requests_total.fetch_add(1, Ordering::Relaxed);
+              if let Err(response) = require_auth(&headers, &state) {
+                  return response;
+              }
+              if !state.config.execution_enabled {
+                  state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
+                  return result_response(HttpResult::new(
+                      StatusCode::SERVICE_UNAVAILABLE,
+                      json!({
+                          "error": "executor routing is disabled",
+                          "hint": "enable only after at least one executor and its mounted credential have passed readiness and no-duplicate smoke tests"
+                      }),
+                  ));
+              }
+              let request: Value = match serde_json::from_slice(&body) {
+                  Ok(value) => value,
+                  Err(_) => {
+                      state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
+                      return result_response(HttpResult::new(
+                          StatusCode::BAD_REQUEST,
+                          json!({ "error": "build request must be valid JSON" }),
+                      ));
+                  }
+              };
+              let validated = match validate_build_request(&request) {
+                  Ok(validated) => validated,
+                  Err(error) => {
+                      state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
+                      return result_response(HttpResult::new(
+                          StatusCode::UNPROCESSABLE_ENTITY,
+                          json!({
+                              "error": bounded_text(&error, state.config.max_error_chars)
+                          }),
+                      ));
+                  }
+              };
+              let request_hash = request_fingerprint(
+                  &validated.request_id,
+                  &validated.repository,
+                  &validated.revision,
+                  &validated.profile,
+              );
+              info!(
+                  request_id = %validated.request_id,
+                  repository = %validated.repository,
+                  revision = %validated.revision,
+                  profile = %validated.profile,
+                  "validated fixed-profile executor request"
+              );
+
+              let claim = match state
+                  .assignments
+                  .begin(&validated.request_id, request_hash)
+                  .await
+              {
+                  BeginClaim::Retained(result) => {
+                      state
+                          .metrics
+                          .duplicate_hits_total
+                          .fetch_add(1, Ordering::Relaxed);
+                      return result_response(result);
+                  }
+                  BeginClaim::Wait(claim) => {
+                      state
+                          .metrics
+                          .duplicate_hits_total
+                          .fetch_add(1, Ordering::Relaxed);
+                      return result_response(claim.wait().await);
+                  }
+                  BeginClaim::Conflict => {
+                      state
+                          .metrics
+                          .request_conflicts_total
+                          .fetch_add(1, Ordering::Relaxed);
+                      return result_response(HttpResult::new(
+                          StatusCode::CONFLICT,
+                          json!({
+                              "error": "requestId is already bound to different immutable request content",
+                              "requestId": validated.request_id
+                          }),
+                      ));
+                  }
+                  BeginClaim::Capacity => {
+                      state
+                          .metrics
+                          .assignment_capacity_rejections_total
+                          .fetch_add(1, Ordering::Relaxed);
+                      return result_response(HttpResult::new(
+                          StatusCode::SERVICE_UNAVAILABLE,
+                          json!({
+                              "error": "bounded executor assignment registry is full",
+                              "submissionAttempted": false,
+                              "retryGuidance": "do not restart to discard assignment evidence; configure durable Fiducia/Postgres assignment storage before increasing capacity"
+                          }),
+                      ));
+                  }
+                  BeginClaim::Owner(claim) => claim,
+              };
+
+              let outcome = submit_once(&state, &request, &validated, &claim).await;
+              let response = outcome.response.clone();
+              state
+                  .assignments
+                  .complete(&validated.request_id, &claim, outcome)
+                  .await;
+              result_response(response)
+          }
+
+          async fn submit_once(
+              state: &AppState,
+              request: &Value,
+              validated: &ValidatedBuildRequest,
+              claim: &Arc<InflightClaim>,
+          ) -> SubmissionOutcome {
+              let Some(executor) = first_ready_executor(state).await else {
+                  state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
+                  return SubmissionOutcome::transient(
+                      StatusCode::SERVICE_UNAVAILABLE,
+                      json!({
+                          "error": "no reviewed executor is ready",
+                          "retryable": true,
+                          "submissionAttempted": false
+                      }),
+                  );
+              };
+              if claim
+                  .select_executor(&executor.id, executor.provider.as_str())
+                  .await
+                  .is_err()
+              {
+                  state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
+                  return SubmissionOutcome::transient(
+                      StatusCode::INTERNAL_SERVER_ERROR,
+                      json!({ "error": "executor assignment state is invalid" }),
+                  );
+              }
+              record_selection(&state.metrics, executor.provider);
+              state
+                  .metrics
+                  .submissions_total
+                  .fetch_add(1, Ordering::Relaxed);
+
+              let response = match state
+                  .client
+                  .post(format!("{}/builds", executor.base_url))
+                  .header("x-build-server-auth", &executor.auth)
+                  .json(request)
+                  .send()
+                  .await
+              {
+                  Ok(response) => response,
+                  Err(_) => {
+                      state
+                          .metrics
+                          .ambiguous_submissions_total
+                          .fetch_add(1, Ordering::Relaxed);
+                      return SubmissionOutcome::ambiguous(ambiguous_submission_body(
+                          &executor.id,
+                          executor.provider,
+                          &validated.request_id,
+                          None,
+                      ));
+                  }
+              };
+              let status = response.status();
+              if status != StatusCode::ACCEPTED {
+                  if status.is_client_error() && status != StatusCode::TOO_MANY_REQUESTS {
+                      state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
+                      return SubmissionOutcome::transient(
+                          status,
+                          json!({
+                              "error": "selected executor rejected the fixed-profile request",
+                              "executorId": executor.id,
+                              "provider": executor.provider.as_str(),
+                              "requestId": validated.request_id,
+                              "upstreamStatus": status.as_u16(),
+                              "automaticFailover": false
+                          }),
+                      );
+                  }
+                  state
+                      .metrics
+                      .ambiguous_submissions_total
+                      .fetch_add(1, Ordering::Relaxed);
+                  return SubmissionOutcome::ambiguous(ambiguous_submission_body(
+                      &executor.id,
+                      executor.provider,
+                      &validated.request_id,
+                      Some(status),
+                  ));
+              }
+
+              let body = match read_bounded_body(response, state.config.max_upstream_body_bytes).await {
+                  Ok(body) => body,
+                  Err(_) => {
+                      state
+                          .metrics
+                          .ambiguous_submissions_total
+                          .fetch_add(1, Ordering::Relaxed);
+                      return SubmissionOutcome::ambiguous(ambiguous_submission_body(
+                          &executor.id,
+                          executor.provider,
+                          &validated.request_id,
+                          Some(StatusCode::ACCEPTED),
+                      ));
+                  }
+              };
+              let mut value: Value = match serde_json::from_slice(&body) {
+                  Ok(value) => value,
+                  Err(_) => {
+                      state
+                          .metrics
+                          .ambiguous_submissions_total
+                          .fetch_add(1, Ordering::Relaxed);
+                      return SubmissionOutcome::ambiguous(ambiguous_submission_body(
+                          &executor.id,
+                          executor.provider,
+                          &validated.request_id,
+                          Some(StatusCode::ACCEPTED),
+                      ));
+                  }
+              };
+              let Some(object) = value.as_object_mut() else {
+                  state
+                      .metrics
+                      .ambiguous_submissions_total
+                      .fetch_add(1, Ordering::Relaxed);
+                  return SubmissionOutcome::ambiguous(ambiguous_submission_body(
+                      &executor.id,
+                      executor.provider,
+                      &validated.request_id,
+                      Some(StatusCode::ACCEPTED),
+                  ));
+              };
+              let Some(upstream_id) = object.get("id").and_then(Value::as_str) else {
+                  state
+                      .metrics
+                      .ambiguous_submissions_total
+                      .fetch_add(1, Ordering::Relaxed);
+                  return SubmissionOutcome::ambiguous(ambiguous_submission_body(
+                      &executor.id,
+                      executor.provider,
+                      &validated.request_id,
+                      Some(StatusCode::ACCEPTED),
+                  ));
+              };
+              let route_id = match namespace_build_id(&executor.id, upstream_id) {
+                  Ok(route_id) => route_id,
+                  Err(_) => {
+                      state
+                          .metrics
+                          .ambiguous_submissions_total
+                          .fetch_add(1, Ordering::Relaxed);
+                      return SubmissionOutcome::ambiguous(ambiguous_submission_body(
+                          &executor.id,
+                          executor.provider,
+                          &validated.request_id,
+                          Some(StatusCode::ACCEPTED),
+                      ));
+                  }
+              };
+              object.insert("id".into(), Value::String(route_id));
+              object.insert("executorId".into(), Value::String(executor.id.clone()));
+              object.insert(
+                  "provider".into(),
+                  Value::String(executor.provider.as_str().to_string()),
+              );
+              object.insert(
+                  "requestId".into(),
+                  Value::String(validated.request_id.clone()),
+              );
+              state
+                  .metrics
+                  .submissions_accepted_total
+                  .fetch_add(1, Ordering::Relaxed);
+              SubmissionOutcome::accepted(value)
+          }
+
+          async fn get_build''',
+              'content-bound submission flow',
+          )
+
+          binary = replace_regex(
+              binary,
+              r'''fn ambiguous_submission\(executor_id: &str, status: Option<StatusCode>\) -> Response \{.*?\n\}\n\n#\[allow\(clippy::result_large_err\)\]''',
+              '''fn ambiguous_submission_body(
+              executor_id: &str,
+              provider: Provider,
+              request_id: &str,
+              status: Option<StatusCode>,
+          ) -> Value {
+              json!({
+                  "error": "executor submission outcome is ambiguous; automatic provider failover is blocked to prevent duplicate work",
+                  "executorId": executor_id,
+                  "provider": provider.as_str(),
+                  "requestId": request_id,
+                  "upstreamStatus": status.map(|value| value.as_u16()),
+                  "automaticFailover": false,
+                  "assignmentRetained": true,
+                  "retryGuidance": "the exact requestId now returns this retained result without another readiness probe or POST; reconcile through shared build-server/Fiducia state before operator intervention"
+              })
+          }
+
+          fn result_response(result: HttpResult) -> Response {
+              (result.status, Json(result.body)).into_response()
+          }
+
+          #[allow(clippy::result_large_err)]''',
+              'ambiguous retained result helper',
+          )
+          binary = replace_once(
+              binary,
+              '''        let response = ambiguous_submission("aws-primary", Some(StatusCode::SERVICE_UNAVAILABLE));
+                  assert_eq!(response.status(), StatusCode::BAD_GATEWAY);''',
+              '''        let body = ambiguous_submission_body(
+                      "aws-primary",
+                      Provider::Aws,
+                      "request-one",
+                      Some(StatusCode::SERVICE_UNAVAILABLE),
+                  );
+                  let response = result_response(HttpResult::new(StatusCode::BAD_GATEWAY, body));
+                  assert_eq!(response.status(), StatusCode::BAD_GATEWAY);''',
+              'unit ambiguous helper',
+          )
+          binary_path.write_text(binary)
+
+          tests = tests_path.read_text()
+          tests = replace_once(
+              tests,
+              '''        atomic::{AtomicU16, AtomicUsize, Ordering},''',
+              '''        atomic::{AtomicU16, AtomicU64, AtomicUsize, Ordering},''',
+              'test atomic imports',
+          )
+          tests = replace_once(
+              tests,
+              '''    ready_status: Arc<AtomicU16>,
+              post_status: Arc<AtomicU16>,''',
+              '''    ready_status: Arc<AtomicU16>,
+              ready_count: Arc<AtomicUsize>,
+              post_status: Arc<AtomicU16>,
+              post_delay_ms: Arc<AtomicU64>,''',
+              'mock readiness and delay fields',
+          )
+          tests = replace_once(
+              tests,
+              '''            ready_status: Arc::new(AtomicU16::new(StatusCode::OK.as_u16())),
+                      post_status: Arc::new(AtomicU16::new(StatusCode::ACCEPTED.as_u16())),''',
+              '''            ready_status: Arc::new(AtomicU16::new(StatusCode::OK.as_u16())),
+                      ready_count: Arc::new(AtomicUsize::new(0)),
+                      post_status: Arc::new(AtomicU16::new(StatusCode::ACCEPTED.as_u16())),
+                      post_delay_ms: Arc::new(AtomicU64::new(0)),''',
+              'mock readiness and delay init',
+          )
+          tests = replace_once(
+              tests,
+              '''    fn set_post(&self, status: StatusCode) {
+                  self.post_status.store(status.as_u16(), Ordering::Relaxed);
+              }
+
+              fn set_get''',
+              '''    fn set_post(&self, status: StatusCode) {
+                  self.post_status.store(status.as_u16(), Ordering::Relaxed);
+              }
+
+              fn set_post_delay_ms(&self, delay_ms: u64) {
+                  self.post_delay_ms.store(delay_ms, Ordering::Relaxed);
+              }
+
+              fn set_get''',
+              'mock delay setter',
+          )
+          tests = replace_once(
+              tests,
+              '''async fn mock_ready(State(state): State<MockExecutorState>) -> Response {
+              let status = StatusCode::from_u16(state.ready_status.load(Ordering::Relaxed)).unwrap();''',
+              '''async fn mock_ready(State(state): State<MockExecutorState>) -> Response {
+              state.ready_count.fetch_add(1, Ordering::Relaxed);
+              let status = StatusCode::from_u16(state.ready_status.load(Ordering::Relaxed)).unwrap();''',
+              'mock readiness counter',
+          )
+          tests = replace_once(
+              tests,
+              '''    state.post_count.fetch_add(1, Ordering::Relaxed);
+              state.received_auth.lock().await.push(''',
+              '''    state.post_count.fetch_add(1, Ordering::Relaxed);
+              let delay_ms = state.post_delay_ms.load(Ordering::Relaxed);
+              if delay_ms > 0 {
+                  sleep(Duration::from_millis(delay_ms)).await;
+              }
+              state.received_auth.lock().await.push(''',
+              'mock post delay',
+          )
+          tests = replace_once(
+              tests,
+              '''    "GHA_EXECUTOR_ROUTER_MAX_ERROR_CHARS",
+              "GHA_EXECUTOR_ROUTER_PROBE_TIMEOUT_MS",''',
+              '''    "GHA_EXECUTOR_ROUTER_MAX_ERROR_CHARS",
+              "GHA_EXECUTOR_ROUTER_MAX_ASSIGNMENTS",
+              "GHA_EXECUTOR_ROUTER_PROBE_TIMEOUT_MS",''',
+              'test env assignment capacity',
+          )
+          tests = replace_once(
+              tests,
+              '''        .env("GHA_EXECUTOR_ROUTER_PROBE_TIMEOUT_MS", "250")
+                  .env("GHA_EXECUTOR_ROUTER_UPSTREAM_TIMEOUT_SECONDS", "2")''',
+              '''        .env("GHA_EXECUTOR_ROUTER_MAX_ASSIGNMENTS", "64")
+                  .env("GHA_EXECUTOR_ROUTER_PROBE_TIMEOUT_MS", "250")
+                  .env("GHA_EXECUTOR_ROUTER_UPSTREAM_TIMEOUT_SECONDS", "2")''',
+              'test assignment capacity env',
+          )
+          tests = replace_once(
+              tests,
+              '''fn build_request() -> Value {
+              json!({
+                  "schemaVersion": "build-server.v1",
+                  "jobKind": "run-profile",
+                  "repoUrl": "https://github.com/ORESoftware/k8s-cluster.git",
+                  "gitRef": REVISION,
+                  "profile": "rust-verify",
+                  "requestId": "gha-clone:plan-1:rust"
+              })
+          }''',
+              '''fn build_request_with(request_id: &str, profile: &str) -> Value {
+              json!({
+                  "schemaVersion": "build-server.v1",
+                  "jobKind": "run-profile",
+                  "repoUrl": "https://github.com/ORESoftware/k8s-cluster.git",
+                  "gitRef": REVISION,
+                  "profile": profile,
+                  "requestId": request_id
+              })
+          }
+
+          fn build_request() -> Value {
+              build_request_with("gha-clone:plan-1:rust", "rust-verify")
+          }''',
+              'parameterized build request',
+          )
+          tests = replace_once(
+              tests,
+              '''async fn response_json(response: reqwest::Response) -> (StatusCode, Value, String) {''',
+              '''async fn wait_for_count(counter: &AtomicUsize, expected: usize) {
+              for _ in 0..300 {
+                  if counter.load(Ordering::Relaxed) >= expected {
+                      return;
+                  }
+                  sleep(Duration::from_millis(10)).await;
+              }
+              panic!(
+                  "counter did not reach {expected}; observed {}",
+                  counter.load(Ordering::Relaxed)
+              );
+          }
+
+          async fn response_json(response: reqwest::Response) -> (StatusCode, Value, String) {''',
+              'test wait helper',
+          )
+          tests = replace_once(
+              tests,
+              '''    assert_eq!(aws.state.post_count.load(Ordering::Relaxed), 1);
+              assert_eq!(hetzner.state.post_count.load(Ordering::Relaxed), 0);
+              assert!(!text.contains(&aws.state.failure_marker));
+              assert!(!text.contains("upstream-body-secret"));
+          }''',
+              '''    assert_eq!(aws.state.ready_count.load(Ordering::Relaxed), 1);
+              assert_eq!(aws.state.post_count.load(Ordering::Relaxed), 1);
+              assert_eq!(hetzner.state.ready_count.load(Ordering::Relaxed), 0);
+              assert_eq!(hetzner.state.post_count.load(Ordering::Relaxed), 0);
+              assert!(!text.contains(&aws.state.failure_marker));
+              assert!(!text.contains("upstream-body-secret"));
+
+              aws.state.set_ready(StatusCode::SERVICE_UNAVAILABLE);
+              let (retry_status, retry_body, _) =
+                  response_json(submit(&client, &router, build_request()).await).await;
+              assert_eq!(retry_status, StatusCode::BAD_GATEWAY);
+              assert_eq!(retry_body, body);
+              assert_eq!(aws.state.ready_count.load(Ordering::Relaxed), 1);
+              assert_eq!(aws.state.post_count.load(Ordering::Relaxed), 1);
+              assert_eq!(hetzner.state.ready_count.load(Ordering::Relaxed), 0);
+              assert_eq!(hetzner.state.post_count.load(Ordering::Relaxed), 0);
+
+              let changed = build_request_with("gha-clone:plan-1:rust", "node-verify");
+              let (conflict_status, conflict, _) =
+                  response_json(submit(&client, &router, changed).await).await;
+              assert_eq!(conflict_status, StatusCode::CONFLICT);
+              assert!(conflict["error"].as_str().unwrap().contains("different immutable"));
+              assert_eq!(aws.state.post_count.load(Ordering::Relaxed), 1);
+              assert_eq!(hetzner.state.post_count.load(Ordering::Relaxed), 0);
+          }''',
+              'ambiguous retry and conflict coverage',
+          )
+
+          insertion = '''
+          #[tokio::test]
+          async fn accepted_retry_is_retained_and_changed_content_conflicts() {
+              let aws = spawn_mock_executor("aws").await;
+              let hetzner = spawn_mock_executor("hetzner").await;
+              let router = spawn_router(&aws, &hetzner, true).await;
+              let client = Client::new();
+
+              let (status, accepted, _) =
+                  response_json(submit(&client, &router, build_request()).await).await;
+              assert_eq!(status, StatusCode::ACCEPTED);
+              aws.state.set_ready(StatusCode::SERVICE_UNAVAILABLE);
+
+              let (retry_status, retry, _) =
+                  response_json(submit(&client, &router, build_request()).await).await;
+              assert_eq!(retry_status, StatusCode::ACCEPTED);
+              assert_eq!(retry, accepted);
+              assert_eq!(aws.state.ready_count.load(Ordering::Relaxed), 1);
+              assert_eq!(aws.state.post_count.load(Ordering::Relaxed), 1);
+              assert_eq!(hetzner.state.ready_count.load(Ordering::Relaxed), 0);
+              assert_eq!(hetzner.state.post_count.load(Ordering::Relaxed), 0);
+
+              let changed = build_request_with("gha-clone:plan-1:rust", "node-verify");
+              let (conflict_status, _, _) =
+                  response_json(submit(&client, &router, changed).await).await;
+              assert_eq!(conflict_status, StatusCode::CONFLICT);
+              assert_eq!(aws.state.post_count.load(Ordering::Relaxed), 1);
+          }
+
+          #[tokio::test]
+          async fn concurrent_exact_duplicates_submit_once_and_inflight_conflicts() {
+              let aws = spawn_mock_executor("aws").await;
+              let hetzner = spawn_mock_executor("hetzner").await;
+              aws.state.set_post_delay_ms(300);
+              let router = spawn_router(&aws, &hetzner, true).await;
+              let client = Client::new();
+              let first_client = client.clone();
+              let first_url = router.base_url.clone();
+              let first = tokio::spawn(async move {
+                  let response = first_client
+                      .post(format!("{first_url}/builds"))
+                      .header("x-build-server-auth", ROUTER_AUTH)
+                      .json(&build_request())
+                      .send()
+                      .await
+                      .unwrap();
+                  response_json(response).await
+              });
+              wait_for_count(&aws.state.post_count, 1).await;
+
+              let duplicate = submit(&client, &router, build_request());
+              let changed = submit(
+                  &client,
+                  &router,
+                  build_request_with("gha-clone:plan-1:rust", "node-verify"),
+              );
+              let ((duplicate_status, duplicate_body, _), (changed_status, _, _)) = tokio::join!(
+                  async { response_json(duplicate.await).await },
+                  async { response_json(changed.await).await }
+              );
+              let (owner_status, owner_body, _) = first.await.unwrap();
+
+              assert_eq!(owner_status, StatusCode::ACCEPTED);
+              assert_eq!(duplicate_status, StatusCode::ACCEPTED);
+              assert_eq!(duplicate_body, owner_body);
+              assert_eq!(changed_status, StatusCode::CONFLICT);
+              assert_eq!(aws.state.ready_count.load(Ordering::Relaxed), 1);
+              assert_eq!(aws.state.post_count.load(Ordering::Relaxed), 1);
+              assert_eq!(hetzner.state.ready_count.load(Ordering::Relaxed), 0);
+              assert_eq!(hetzner.state.post_count.load(Ordering::Relaxed), 0);
+          }
+
+          #[tokio::test]
+          async fn post_429_is_ambiguous_and_exact_retry_never_resubmits() {
+              let aws = spawn_mock_executor("aws").await;
+              let hetzner = spawn_mock_executor("hetzner").await;
+              aws.state.set_post(StatusCode::TOO_MANY_REQUESTS);
+              let router = spawn_router(&aws, &hetzner, true).await;
+              let client = Client::new();
+
+              let (status, first, _) =
+                  response_json(submit(&client, &router, build_request()).await).await;
+              assert_eq!(status, StatusCode::BAD_GATEWAY);
+              aws.state.set_ready(StatusCode::SERVICE_UNAVAILABLE);
+              let (retry_status, retry, _) =
+                  response_json(submit(&client, &router, build_request()).await).await;
+              assert_eq!(retry_status, StatusCode::BAD_GATEWAY);
+              assert_eq!(retry, first);
+              assert_eq!(aws.state.ready_count.load(Ordering::Relaxed), 1);
+              assert_eq!(aws.state.post_count.load(Ordering::Relaxed), 1);
+              assert_eq!(hetzner.state.ready_count.load(Ordering::Relaxed), 0);
+              assert_eq!(hetzner.state.post_count.load(Ordering::Relaxed), 0);
+          }
+
+          #[tokio::test]
+          async fn post_timeout_is_ambiguous_and_exact_retry_never_resubmits() {
+              let aws = spawn_mock_executor("aws").await;
+              let hetzner = spawn_mock_executor("hetzner").await;
+              aws.state.set_post_delay_ms(2_500);
+              let router = spawn_router(&aws, &hetzner, true).await;
+              let client = Client::new();
+
+              let (status, first, _) =
+                  response_json(submit(&client, &router, build_request()).await).await;
+              assert_eq!(status, StatusCode::BAD_GATEWAY);
+              aws.state.set_ready(StatusCode::SERVICE_UNAVAILABLE);
+              let (retry_status, retry, _) =
+                  response_json(submit(&client, &router, build_request()).await).await;
+              assert_eq!(retry_status, StatusCode::BAD_GATEWAY);
+              assert_eq!(retry, first);
+              assert_eq!(aws.state.ready_count.load(Ordering::Relaxed), 1);
+              assert_eq!(aws.state.post_count.load(Ordering::Relaxed), 1);
+              assert_eq!(hetzner.state.ready_count.load(Ordering::Relaxed), 0);
+              assert_eq!(hetzner.state.post_count.load(Ordering::Relaxed), 0);
+          }
+
+          '''
+          tests = replace_once(
+              tests,
+              '''#[test]
+          fn malformed_startup_configuration_exits_before_binding() {''',
+              insertion + '''#[test]
+          fn malformed_startup_configuration_exits_before_binding() {''',
+              'new retained assignment process tests',
+          )
+          tests_path.write_text(tests)
+
+          docs = docs_path.read_text()
+          marker = '## Activation gates\n'
+          if marker not in docs:
+              marker = '## Activation'
+          section = '''## Retained assignment safety floor
+
+The router now binds every deterministic `requestId` to a canonical fingerprint
+of the exact repository, immutable revision, fixed profile, schema, and job
+kind. It reserves a bounded in-process claim before executor selection and
+stores the selected executor before the only `POST /builds` attempt.
+
+Exact concurrent or later retries return the retained accepted response or the
+retained ambiguous reconciliation error without another readiness probe or
+POST. A changed payload using an accepted, ambiguous, or inflight ID returns
+HTTP 409. The registry fails closed when full rather than evicting ambiguity
+evidence and exposing a cross-provider duplicate window.
+
+This registry is deliberately a safety floor, not durable HA. GitOps remains
+zero-replica and execution-disabled. Production activation is restricted to
+one router replica until the same content-bound assignment is persisted and
+fenced through Fiducia/Postgres. Router restart, multi-replica routing, or
+post-attempt cross-provider takeover remains prohibited until that durable
+state and shared artifact contract are reviewed.
+
+'''
+          if section.strip() not in docs:
+              index = docs.find(marker)
+              if index < 0:
+                  docs = docs.rstrip() + '\n\n' + section
+              else:
+                  docs = docs[:index] + section + docs[index:]
+          docs_path.write_text(docs)
+          PY
+
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Format and validate every router target
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=remote/deployments/gha-clone-server-rs/Cargo.toml
+          cargo fmt --manifest-path "$manifest" --all
+          cargo test --locked --manifest-path "$manifest" --all-targets
+          cargo clippy --locked --manifest-path "$manifest" --all-targets -- -D warnings
+          git diff --check
+
+      - name: Remove the one-shot helper and push only reviewed paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/finalize-den-1597-retained-assignment.yml
+          expected="$RUNNER_TEMP/expected-paths.txt"
+          actual="$RUNNER_TEMP/actual-paths.txt"
+          printf '%s\n' \
+            .github/workflows/finalize-den-1597-retained-assignment.yml \
+            docs/gha-independent-executor-routing.md \
+            remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs \
+            remote/deployments/gha-clone-server-rs/tests/executor_router_http.rs \
+            | sort > "$expected"
+          git diff --name-only | sort > "$actual"
+          diff -u "$expected" "$actual"
+          git config user.name 'ORESoftware CI'
+          git config user.email 'ci@oresoftware.com'
+          git add -f -- \
+            .github/workflows/finalize-den-1597-retained-assignment.yml \
+            docs/gha-independent-executor-routing.md \
+            remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs \
+            remote/deployments/gha-clone-server-rs/tests/executor_router_http.rs
+          git commit -m 'fix(DEN-1597): retain content-bound executor assignments'
+          git push origin HEAD:agent/den-1597-retained-assignment-core-20260804
