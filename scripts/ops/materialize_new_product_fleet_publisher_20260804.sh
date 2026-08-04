@@ -6,7 +6,7 @@ destination="${1:?destination path required}"
 repo_root="${2:-$(git rev-parse --show-toplevel)}"
 chunk_dir="$repo_root/scripts/ops/new-product-fleets-20260804"
 raw_expected_sha256=681149a614e9d4c6619c7c94d254b8ab374ae464d71aaf945fa45d892fc712bd
-expected_sha256=bde70ffe5c1a656f797fd349ae8324aa33ee2f5c5844000b3c0dc2b8a55f8d77
+expected_sha256=abf745061eb32e01af46be6e1b5bc6f97abdb011aac87c8649e60ef06b23e274
 
 test -d "$chunk_dir"
 mapfile -t chunks < <(find "$chunk_dir" -maxdepth 1 -type f -name 'publisher.py.gz.b64.part-*' | sort)
@@ -50,6 +50,25 @@ replacements = [
                 serde_json::to_string(&payload)?
             };
             println!("{rendered}");
+''',
+        1,
+    ),
+    (
+        '''                        match update {
+                            Ok(update) if sender.send(Message::Text(update)).await.is_err() => break,
+                            Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+                            Err(broadcast::error::RecvError::Closed) => break,
+                        }
+''',
+        '''                        match update {
+                            Ok(update) => {
+                                if sender.send(Message::Text(update)).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Err(broadcast::error::RecvError::Lagged(_)) => {}
+                            Err(broadcast::error::RecvError::Closed) => break,
+                        }
 ''',
         1,
     ),
