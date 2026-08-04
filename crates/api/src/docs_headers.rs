@@ -18,7 +18,13 @@ const DOCS_PATHS: &[&str] = &[
     "/internal/docs/api",
 ];
 const HTML_DOCS_PATHS: &[&str] = &["/api/docs", "/docs/api", "/internal/docs/api"];
-const OPERATOR_PREFIXES: &[&str] = &["/internal/", "/v1/history/", "/vapi/call"];
+
+fn is_operator_path(path: &str) -> bool {
+    path.starts_with("/internal/")
+        || path.starts_with("/v1/history/")
+        || path == "/vapi/call"
+        || path.starts_with("/vapi/call/")
+}
 
 fn append_vary_authorization(headers: &mut HeaderMap) {
     let already_varies = headers
@@ -31,7 +37,10 @@ fn append_vary_authorization(headers: &mut HeaderMap) {
         return;
     }
 
-    match headers.get(header::VARY).and_then(|value| value.to_str().ok()) {
+    match headers
+        .get(header::VARY)
+        .and_then(|value| value.to_str().ok())
+    {
         Some(existing) if !existing.trim().is_empty() => {
             if let Ok(value) = HeaderValue::from_str(&format!("{existing}, Authorization")) {
                 headers.insert(header::VARY, value);
@@ -63,9 +72,7 @@ fn apply_common(headers: &mut HeaderMap) {
 pub async fn apply(request: Request<Body>, next: Next) -> Response {
     let path = request.uri().path().to_owned();
     let is_docs = DOCS_PATHS.contains(&path.as_str());
-    let is_operator = OPERATOR_PREFIXES
-        .iter()
-        .any(|prefix| path.starts_with(prefix));
+    let is_operator = is_operator_path(&path);
     let is_html = HTML_DOCS_PATHS.contains(&path.as_str());
 
     let mut response = next.run(request).await;
@@ -106,15 +113,11 @@ mod tests {
     fn operator_and_docs_classification_is_fail_closed_and_exact() {
         assert!(DOCS_PATHS.contains(&"/openapi.json"));
         assert!(HTML_DOCS_PATHS.contains(&"/internal/docs/api"));
-        assert!(OPERATOR_PREFIXES
-            .iter()
-            .any(|prefix| "/v1/history/translations".starts_with(prefix)));
-        assert!(OPERATOR_PREFIXES
-            .iter()
-            .any(|prefix| "/vapi/call/abc".starts_with(prefix)));
-        assert!(!OPERATOR_PREFIXES
-            .iter()
-            .any(|prefix| "/vapi/webhook".starts_with(prefix)));
+        assert!(is_operator_path("/v1/history/translations"));
+        assert!(is_operator_path("/vapi/call"));
+        assert!(is_operator_path("/vapi/call/abc"));
+        assert!(!is_operator_path("/vapi/callback"));
+        assert!(!is_operator_path("/vapi/webhook"));
         assert!(!DOCS_PATHS.contains(&"/internal/openapi.json/extra"));
     }
 
