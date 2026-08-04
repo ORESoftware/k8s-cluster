@@ -1,0 +1,48 @@
+name: DEN-1550 apply build idempotency CI patch
+
+on:
+  push:
+    branches:
+      - agent/den-1550-build-idempotency-20260804
+    paths:
+      - .github/patches/den-1550-build-idempotency-ci.patch
+      - .github/workflows/den-1550-apply-build-idempotency-ci.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1550-build-idempotency-ci-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact branch revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Apply reviewed CI patch and remove one-shot materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch_path='.github/patches/den-1550-build-idempotency-ci.patch'
+          workflow_path='.github/workflows/den-1550-apply-build-idempotency-ci.yml'
+          target='.github/workflows/gha-clone-server.yml'
+
+          git apply --check "$patch_path"
+          git apply "$patch_path"
+          rm -f "$patch_path" "$workflow_path"
+
+          git diff --check
+          grep -Fq "remote/deployments/build-server-rs/**" "$target"
+          grep -Fq 'cargo test --locked idempotency_tests -- --nocapture' "$target"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "$target" "$patch_path" "$workflow_path"
+          git commit -m 'test(DEN-1550): run build idempotency CI'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
