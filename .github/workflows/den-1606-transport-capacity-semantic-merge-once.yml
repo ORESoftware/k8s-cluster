@@ -33,18 +33,21 @@ jobs:
           set -euo pipefail
           base='a14072064f25d7b49807656d4231f93d335a6d55'
           transport='6d050a5c516c0dcc1c13646fe8742dfed477346c'
-          capacity='a14072064f25d7b49807656d4231f93d335a6d55'
 
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
 
-          # The transport commit predates atomic run admission. Resolve its
-          # overlapping main.rs hunk in transport-first order, then reapply the
-          # capacity commit's main.rs patch so neither safety boundary wins by
-          # textual accident.
+          # Apply the reviewed transport change on top of the already-merged
+          # atomic-admission base. Git's semantic three-way merge preserves the
+          # capacity code because the overlapping hunks are compatible; prove
+          # those safety boundaries explicitly rather than replaying an empty
+          # patch and pretending one side won.
           git cherry-pick -X theirs "$transport"
-          git show "$capacity" -- remote/deployments/gha-clone-server-rs/src/main.rs \
-            | git apply --3way
+          main='remote/deployments/gha-clone-server-rs/src/main.rs'
+          grep -Fq 'reserve_run_records' "$main"
+          grep -Fq 'reserve_runs_or_response' "$main"
+          grep -Fq 'rollback_delivery_claim' "$main"
+          grep -Fq 'StatusCode::TOO_MANY_REQUESTS' "$main"
 
           python3 - <<'PY'
           from pathlib import Path
