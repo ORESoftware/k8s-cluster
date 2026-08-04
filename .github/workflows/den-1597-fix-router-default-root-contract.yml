@@ -1,0 +1,83 @@
+name: DEN-1597 fix router default-root contract
+
+on:
+  push:
+    branches:
+      - agent/den-1597-register-executor-router-observability
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1597-fix-router-default-root-contract
+  cancel-in-progress: false
+
+jobs:
+  fix-and-verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1597-register-executor-router-observability
+          persist-credentials: true
+      - name: Replace stale manifest override assertion with source-default contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("remote/tests/general/gha-clone-server-config.test.ts")
+          text = path.read_text(encoding="utf-8")
+          old = '''  assert.match(
+            deployment,
+            /name:\\s*GHA_EXECUTOR_ROUTER_SECRET_ROOT\\s+value:\\s*\\/var\\/run\\/secrets\\/gha-executor-router/,
+          );
+          '''
+          new = '''  assert.doesNotMatch(deployment, /GHA_EXECUTOR_ROUTER_SECRET_ROOT/);
+          assert.match(
+            read(routerSourcePath),
+            /const DEFAULT_SECRET_ROOT: &str = "\\/var\\/run\\/secrets\\/gha-executor-router";/,
+          );
+          '''
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f"expected one stale secret-root assertion, found {count}")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22.23.1'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - name: Validate observability and continuity contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node remote/tools/check-observability-coverage.mjs
+          cd remote/tests
+          pnpm install --frozen-lockfile
+          pnpm exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts
+      - name: Commit only the verified contract correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/den-1597-fix-router-default-root-contract.yml
+          git add remote/tests/general/gha-clone-server-config.test.ts
+          git diff --cached --check
+          unexpected="$(git diff --cached --name-only | grep -Ev '^remote/tests/general/gha-clone-server-config\.test\.ts$' || true)"
+          if [[ -n "$unexpected" ]]; then
+            echo "unexpected staged files:" >&2
+            echo "$unexpected" >&2
+            exit 1
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'test(DEN-1597): verify router identity-root default'
+          git push origin HEAD:agent/den-1597-register-executor-router-observability
