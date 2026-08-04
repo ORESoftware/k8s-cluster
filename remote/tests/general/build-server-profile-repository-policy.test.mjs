@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
@@ -79,6 +79,16 @@ test('dedicated GHA workflow formats and runs policy tests and static contracts'
   assert.match(workflow, /build-server-profile-repository-policy\.test\.mjs/);
   assert.match(workflow, /dd-build-server-gha-continuity\.patch\.yaml/);
   assert.match(workflow, /docs\/build-server-profile-repository-policy\.md/);
+});
+
+test('temporary branch-writing workflows are absent from the review surface', () => {
+  for (const path of [
+    '.github/workflows/format-build-server-profile-policy-once.yml',
+    '.github/workflows/den-1550-profile-policy-finalize-once.yml',
+    '.github/workflows/format-canonical-profile-policy-once.yml',
+  ]) {
+    assert.equal(existsSync(join(root, path)), false, `${path} must self-delete before review`);
+  }
 });
 
 test('documentation states exact precedence, alias handling, and startup failure', () => {
