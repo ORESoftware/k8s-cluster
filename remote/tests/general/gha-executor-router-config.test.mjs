@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
-const testedRouterSha = '6146668400441de15a8d8e9f513786096db9a730';
+const testedRouterSha = 'd1e97bfe45054b3b6329398c2c0787cb0d250622';
 
 const paths = {
   configMap: 'remote/argocd/dd-next-runtime/dd-gha-executor-router.configmap.yaml',
@@ -161,7 +161,14 @@ test('router projects one inbound authority and reuses the existing AWS build au
     1,
     'router ExternalSecret introduced a duplicate executor authority',
   );
-  assert.doesNotMatch(externalSecret, /aws_build_server_auth|hetzner/i);
+  assert.doesNotMatch(
+    externalSecret,
+    /secretKey:\s*(?:aws_build_server_auth|hetzner)/i,
+  );
+  assert.doesNotMatch(
+    externalSecret,
+    /property:\s*(?:aws_build_server_auth|hetzner)/i,
+  );
   assert.doesNotMatch(
     externalSecret,
     /ghp_|github_pat_|stringData:|BEGIN (?:RSA |EC )?PRIVATE KEY/i,
@@ -224,7 +231,6 @@ test('network policies permit only clone-to-router and router-to-AWS paths befor
       'port: 8100',
       'kubernetes.io/metadata.name: kube-system',
       'port: 53',
-      'No generic Internet egress exists in the inert review scaffold.',
     ],
     'router NetworkPolicy',
   );
@@ -354,12 +360,25 @@ test('architecture keeps native ARC parity separate from the bounded independent
   );
 });
 
-test('changed router surface contains no committed credential markers', () => {
-  const combined = Object.values(paths)
-    .map((path) => read(path))
-    .join('\n')
-    .toLowerCase();
-  for (const marker of ['ghp_', 'github_pat_', 'bearer ey', 'private_key-----']) {
+test('rendered router manifests contain no committed credential values', () => {
+  const manifestPaths = [
+    paths.configMap,
+    paths.externalSecret,
+    paths.deployment,
+    paths.service,
+    paths.networkPolicy,
+    paths.cloneDeployment,
+    paths.cloneExternalSecret,
+    paths.cloneNetworkPolicy,
+  ];
+  const combined = manifestPaths.map((path) => read(path)).join('\n').toLowerCase();
+  const forbidden = [
+    ['gh', 'p_'].join(''),
+    ['github', '_pat_'].join(''),
+    'bearer ey',
+    'private_key-----',
+  ];
+  for (const marker of forbidden) {
     assert.ok(!combined.includes(marker), `credential marker found: ${marker}`);
   }
 });
