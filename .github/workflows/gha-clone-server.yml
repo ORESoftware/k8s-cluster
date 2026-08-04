@@ -12,6 +12,7 @@ on:
       - 'remote/tests/general/gha-clone-server-config.test.ts'
       - 'docs/gha-continuity-architecture.md'
       - '.github/actionlint.yaml'
+      - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/gha-clone-server.yml'
       - '.github/workflows/gha-clone-server-meta.yml'
   push:
@@ -26,6 +27,7 @@ on:
       - 'remote/tests/general/gha-clone-server-config.test.ts'
       - 'docs/gha-continuity-architecture.md'
       - '.github/actionlint.yaml'
+      - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/gha-clone-server.yml'
       - '.github/workflows/gha-clone-server-meta.yml'
   workflow_dispatch:
@@ -72,6 +74,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           toolchain: '1.90.0'
