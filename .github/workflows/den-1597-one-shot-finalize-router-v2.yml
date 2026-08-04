@@ -163,12 +163,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git rm -f \
+          for path in \
             .github/workflows/den-1597-one-shot-finalize-router-v2.yml \
             .github/workflows/den-1597-one-shot-finalize-router.yml \
             .github/workflows/den-1597-one-shot-router-lock-and-hardening.yml \
             .github/workflows/den-1597-one-shot-router-clippy.yml \
             .github/workflows/den-1597-one-shot-security-hardening.yml
+          do
+            if git ls-files --error-unmatch "$path" >/dev/null 2>&1; then
+              git rm -f "$path"
+            fi
+          done
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
