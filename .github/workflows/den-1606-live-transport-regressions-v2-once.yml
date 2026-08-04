@@ -1,0 +1,342 @@
+name: Finalize focused DEN-1606 live transport regressions once
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/den-1606-live-transport-regressions-v2-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1606-live-transport-regressions-v2
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-1606-live-transport-regressions-v2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - name: Checkout the exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1606-live-transport-regressions-v2
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Add focused adversarial process tests
+        run: |
+          set -euo pipefail
+          base='3917b9d453adf589f3c998566e13a3b4ac52851f'
+          carrier='.github/workflows/den-1606-live-transport-regressions-v2-once.yml'
+          actual="$(git diff --name-only "$base"...HEAD)"
+          if [[ "$actual" != "$carrier" ]]; then
+            printf 'unexpected pre-transform paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/deployments/gha-clone-server-rs/tests/http_api.rs')
+          text = path.read_text(encoding='utf-8')
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label} drifted: expected one match, found {count}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              '''    InvalidSubmissionId,
+              UnknownSubmissionStatus,
+          ''',
+              '''    InvalidSubmissionId,
+              RedirectSubmission,
+              UnknownSubmissionStatus,
+          ''',
+              'mock mode enum',
+          )
+          replace_once(
+              '''    next_id: Arc<AtomicUsize>,
+          ''',
+              '''    next_id: Arc<AtomicUsize>,
+              status_requests: Arc<AtomicUsize>,
+          ''',
+              'status request counter field',
+          )
+          replace_once(
+              '''            next_id: Arc::new(AtomicUsize::new(0)),
+          ''',
+              '''            next_id: Arc::new(AtomicUsize::new(0)),
+                      status_requests: Arc::new(AtomicUsize::new(0)),
+          ''',
+              'status request counter initialization',
+          )
+          replace_once(
+              '''        MockMode::InvalidSubmissionId => (
+                      StatusCode::ACCEPTED,
+                      Json(json!({ "id": "..", "status": "queued", "error": null })),
+                  )
+                      .into_response(),
+                  MockMode::UnknownSubmissionStatus => (
+          ''',
+              '''        MockMode::InvalidSubmissionId => (
+                      StatusCode::ACCEPTED,
+                      Json(json!({ "id": "..", "status": "queued", "error": null })),
+                  )
+                      .into_response(),
+                  MockMode::RedirectSubmission => {
+                      axum::response::Redirect::temporary("/redirected").into_response()
+                  }
+                  MockMode::UnknownSubmissionStatus => (
+          ''',
+              'redirecting submission mock',
+          )
+          replace_once(
+              '''async fn mock_status(State(state): State<MockBuildState>, Path(id): Path<String>) -> Response {
+                  match state.mode {
+          ''',
+              '''async fn mock_status(State(state): State<MockBuildState>, Path(id): Path<String>) -> Response {
+                  state.status_requests.fetch_add(1, Ordering::SeqCst);
+                  match state.mode {
+          ''',
+              'status request accounting',
+          )
+
+          old_cases = '''    let cases = [
+                  (
+                      MockMode::RejectSubmission,
+                      2,
+                      "build server rejected rust with HTTP 500",
+                  ),
+                  (
+                      MockMode::InvalidSubmissionJson,
+                      2,
+                      "build server returned invalid job JSON",
+                  ),
+                  (MockMode::InvalidSubmissionId, 2, "invalid job ID"),
+                  (
+                      MockMode::UnknownSubmissionStatus,
+                      2,
+                      "invalid accepted status",
+                  ),
+                  (
+                      MockMode::OversizedSubmissionBody,
+                      2,
+                      "submission response exceeds 65536-byte limit",
+                  ),
+                  (MockMode::FailBuild, 2, "ended as failed: simulated failure"),
+                  (MockMode::UnknownStatus, 2, "unknown status"),
+                  (
+                      MockMode::InvalidStatusJson,
+                      2,
+                      "build status JSON is invalid",
+                  ),
+                  (MockMode::MismatchedStatusId, 2, "mismatched job ID"),
+                  (
+                      MockMode::OversizedStatusBody,
+                      2,
+                      "status response exceeds 65536-byte limit",
+                  ),
+                  (MockMode::KeepRunning, 1, "exceeded 1 seconds"),
+              ];
+
+              for (mode, timeout, expected) in cases {
+          '''
+          new_cases = '''    let cases = [
+                  (
+                      MockMode::RejectSubmission,
+                      2,
+                      "build server rejected rust with HTTP 500",
+                      false,
+                  ),
+                  (
+                      MockMode::InvalidSubmissionJson,
+                      2,
+                      "build server returned invalid job JSON",
+                      false,
+                  ),
+                  (MockMode::InvalidSubmissionId, 2, "invalid job ID", false),
+                  (
+                      MockMode::RedirectSubmission,
+                      2,
+                      "build server rejected rust with HTTP 307",
+                      false,
+                  ),
+                  (
+                      MockMode::UnknownSubmissionStatus,
+                      2,
+                      "invalid accepted status",
+                      false,
+                  ),
+                  (
+                      MockMode::OversizedSubmissionBody,
+                      2,
+                      "submission response exceeds 65536-byte limit",
+                      false,
+                  ),
+                  (
+                      MockMode::FailBuild,
+                      2,
+                      "ended as failed: simulated failure",
+                      true,
+                  ),
+                  (MockMode::UnknownStatus, 2, "unknown status", true),
+                  (
+                      MockMode::InvalidStatusJson,
+                      2,
+                      "build status JSON is invalid",
+                      true,
+                  ),
+                  (MockMode::MismatchedStatusId, 2, "mismatched job ID", true),
+                  (
+                      MockMode::OversizedStatusBody,
+                      2,
+                      "status response exceeds 65536-byte limit",
+                      true,
+                  ),
+                  (MockMode::KeepRunning, 1, "exceeded 1 seconds", true),
+              ];
+
+              for (mode, timeout, expected, should_poll) in cases {
+          '''
+          replace_once(old_cases, new_cases, 'failure-mode case table')
+          replace_once(
+              '''        assert!(
+                      run["error"].as_str().unwrap().contains(expected),
+                      "mode {mode:?} expected {expected:?}: {run}"
+                  );
+              }
+          }
+
+          #[tokio::test]
+          async fn active_run_capacity_is_atomic_and_rejects_before_second_submission() {
+          ''',
+              '''        assert!(
+                      run["error"].as_str().unwrap().contains(expected),
+                      "mode {mode:?} expected {expected:?}: {run}"
+                  );
+                  let status_requests = mock.state.status_requests.load(Ordering::SeqCst);
+                  if should_poll {
+                      assert!(status_requests >= 1, "mode {mode:?} never polled build status");
+                  } else {
+                      assert_eq!(
+                          status_requests, 0,
+                          "mode {mode:?} polled an untrusted build identity"
+                      );
+                  }
+              }
+          }
+
+          #[tokio::test]
+          async fn active_run_capacity_is_atomic_and_rejects_before_second_submission() {
+          ''',
+              'poll-before-trust assertion',
+          )
+
+          zero_bounds = r'''
+
+          #[test]
+          fn zero_runtime_bounds_fail_configuration_before_bind() {
+              for name in [
+                  "GHA_CLONE_MAX_WORKFLOW_BYTES",
+                  "GHA_CLONE_MAX_JOBS",
+                  "GHA_CLONE_MAX_STEPS_PER_JOB",
+                  "GHA_CLONE_BUILD_POLL_SECONDS",
+                  "GHA_CLONE_BUILD_TIMEOUT_SECONDS",
+                  "GHA_CLONE_MAX_RUNS",
+                  "GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS",
+                  "GHA_CLONE_MAX_WEBHOOK_DELIVERIES",
+              ] {
+                  let mut command = Command::new(SERVER_BINARY);
+                  for &variable in SERVER_ENV_VARS {
+                      command.env_remove(variable);
+                  }
+                  let mut child = command
+                      .env(name, "0")
+                      .env("RUST_LOG", "error")
+                      .stdout(Stdio::null())
+                      .stderr(Stdio::piped())
+                      .spawn()
+                      .expect("run invalid clone-server configuration");
+
+                  let mut exit_status = None;
+                  for _ in 0..200 {
+                      exit_status = child.try_wait().expect("read invalid-config process");
+                      if exit_status.is_some() {
+                          break;
+                      }
+                      std::thread::sleep(std::time::Duration::from_millis(10));
+                  }
+                  let Some(exit_status) = exit_status else {
+                      let _ = child.kill();
+                      let _ = child.wait();
+                      panic!("{name}=0 started a server instead of failing configuration");
+                  };
+
+                  let mut stderr = String::new();
+                  if let Some(mut pipe) = child.stderr.take() {
+                      std::io::Read::read_to_string(&mut pipe, &mut stderr)
+                          .expect("read invalid-config stderr");
+                  }
+                  assert_eq!(exit_status.code(), Some(2), "{name}: {stderr}");
+                  assert!(
+                      stderr.contains(name) && stderr.contains("greater than zero"),
+                      "{name}: {stderr}"
+                  );
+              }
+          }
+          '''
+          anchor = '\n#[tokio::test]\nasync fn live_execution_dispatches_fixed_profiles_in_topological_order()'
+          if text.count(anchor) != 1 or 'zero_runtime_bounds_fail_configuration_before_bind' in text:
+              raise SystemExit('zero-bound process-test insertion boundary drifted')
+          text = text.replace(anchor, zero_bounds + anchor, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          git diff --check
+          grep -Fq 'RedirectSubmission' remote/deployments/gha-clone-server-rs/tests/http_api.rs
+          grep -Fq 'status_requests' remote/deployments/gha-clone-server-rs/tests/http_api.rs
+          grep -Fq 'zero_runtime_bounds_fail_configuration_before_bind' remote/deployments/gha-clone-server-rs/tests/http_api.rs
+
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate every clone-server target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Commit and push the one-file test ratchet
+        run: |
+          set -euo pipefail
+          base='3917b9d453adf589f3c998566e13a3b4ac52851f'
+          rm .github/workflows/den-1606-live-transport-regressions-v2-once.yml
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'test(DEN-1606): prove clone transport trust boundaries live'
+          expected='remote/deployments/gha-clone-server-rs/tests/http_api.rs'
+          actual="$(git diff --name-only "$base"...HEAD)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'unexpected final product paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          git push origin HEAD:agent/den-1606-live-transport-regressions-v2
