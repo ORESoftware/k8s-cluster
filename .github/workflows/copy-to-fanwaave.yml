@@ -28,7 +28,6 @@ jobs:
       DESTINATION_REPOSITORY: fanwaave/push-notification-server.rs
       EXPECTED_LOGIN: ORESoftware
       TRACKING_ISSUE: "33"
-      GH_CONFIG_DIR: ${{ runner.temp }}/fanwaave-copy-owner-auth
 
     steps:
       - name: Check out the exact default branch
@@ -44,6 +43,8 @@ jobs:
 
       - name: Create and copy the Fanwaave repository
         shell: bash
+        env:
+          GH_CONFIG_DIR: ${{ runner.temp }}/fanwaave-copy-owner-auth
         run: bash scripts/ops/copy_to_fanwaave.sh
 
       - name: Record a failed copy attempt
