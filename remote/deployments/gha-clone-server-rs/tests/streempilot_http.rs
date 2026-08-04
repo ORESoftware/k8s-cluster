@@ -86,7 +86,7 @@ async fn spawn_server(mock: &MockBuildServer) -> ServerProcess {
         .env("GHA_CLONE_WEBHOOK_EXECUTION_ENABLED", "false")
         .env("GHA_CLONE_BUILD_SERVER_URL", &mock.base_url)
         .env("GHA_CLONE_BUILD_SERVER_AUTH", BUILD_AUTH)
-        .env("GHA_CLONE_BUILD_POLL_SECONDS", "0")
+        .env("GHA_CLONE_BUILD_POLL_SECONDS", "1")
         .env("GHA_CLONE_BUILD_TIMEOUT_SECONDS", "5")
         .stdout(Stdio::null())
         .stderr(Stdio::null());

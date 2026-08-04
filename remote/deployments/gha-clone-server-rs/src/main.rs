@@ -88,26 +88,28 @@ impl Config {
             webhook_secret: env_optional("GHA_CLONE_GITHUB_WEBHOOK_SECRET"),
             github_token: env_optional("GHA_CLONE_GITHUB_TOKEN"),
             github_api_base_url: github_api_base_url_from_env()?,
-            build_server_url: env_optional("GHA_CLONE_BUILD_SERVER_URL")
-                .map(|value| value.trim_end_matches('/').to_string()),
+            build_server_url: build_server_url_from_env()?,
             build_server_auth: env_optional("GHA_CLONE_BUILD_SERVER_AUTH"),
             allowed_repositories,
             workflow_rules,
             execution_enabled: env_bool("GHA_CLONE_EXECUTION_ENABLED", false)?,
             webhook_execution_enabled: env_bool("GHA_CLONE_WEBHOOK_EXECUTION_ENABLED", false)?,
             limits: PlannerLimits {
-                max_workflow_bytes: env_usize(
+                max_workflow_bytes: env_nonzero_usize(
                     "GHA_CLONE_MAX_WORKFLOW_BYTES",
                     gha_clone_server::MAX_WORKFLOW_BYTES_DEFAULT,
                 )?,
-                max_jobs: env_usize("GHA_CLONE_MAX_JOBS", gha_clone_server::MAX_JOBS_DEFAULT)?,
-                max_steps_per_job: env_usize(
+                max_jobs: env_nonzero_usize(
+                    "GHA_CLONE_MAX_JOBS",
+                    gha_clone_server::MAX_JOBS_DEFAULT,
+                )?,
+                max_steps_per_job: env_nonzero_usize(
                     "GHA_CLONE_MAX_STEPS_PER_JOB",
                     gha_clone_server::MAX_STEPS_PER_JOB_DEFAULT,
                 )?,
             },
-            build_poll_seconds: env_u64("GHA_CLONE_BUILD_POLL_SECONDS", 2)?,
-            build_timeout_seconds: env_u64("GHA_CLONE_BUILD_TIMEOUT_SECONDS", 3600)?,
+            build_poll_seconds: env_nonzero_u64("GHA_CLONE_BUILD_POLL_SECONDS", 2)?,
+            build_timeout_seconds: env_nonzero_u64("GHA_CLONE_BUILD_TIMEOUT_SECONDS", 3600)?,
             max_runs: env_nonzero_usize("GHA_CLONE_MAX_RUNS", 256)?,
             webhook_failure_conclusions: csv_lower_set_or_default(
                 "GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS",
@@ -202,6 +204,27 @@ struct BuildJobResponse {
     error: Option<String>,
 }
 
+fn valid_build_job_id(value: &str) -> bool {
+    !matches!(value, "" | "." | "..")
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':'))
+}
+
+fn validate_build_job_response_id(
+    build: &BuildJobResponse,
+    expected: Option<&str>,
+) -> Result<(), String> {
+    if !valid_build_job_id(&build.id) {
+        return Err("build server returned an invalid job ID".into());
+    }
+    if expected.is_some_and(|expected| build.id != expected) {
+        return Err("build status returned a mismatched job ID".into());
+    }
+    Ok(())
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct BuildServerRequest<'a> {
@@ -229,12 +252,7 @@ async fn main() {
     let address = format!("{}:{}", config.host, config.port);
     let state = AppState {
         config: Arc::new(config),
-        client: reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(60))
-            .user_agent("gha-clone-server/0.1")
-            .build()
-            .expect("reqwest client"),
+        client: build_http_client().expect("reqwest client"),
         runs: Arc::new(RwLock::new(BTreeMap::new())),
         webhook_deliveries: Arc::new(RwLock::new(BTreeMap::new())),
     };
@@ -247,6 +265,16 @@ async fn main() {
         .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("server");
+}
+
+fn build_http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(60))
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent("gha-clone-server/0.1")
+        .build()
+        .map_err(|error| format!("failed to build HTTP client: {error}"))
 }
 
 fn router(state: AppState) -> Router {
@@ -796,6 +824,7 @@ async fn execute_plan(state: &AppState, run_id: Uuid, plan: WorkflowPlan) -> Res
         }
         let build: BuildJobResponse = serde_json::from_str(&body)
             .map_err(|error| format!("build server returned invalid job JSON: {error}"))?;
+        validate_build_job_response_id(&build, None)?;
         update_run(state, run_id, |run| {
             run.submissions.push(BuildSubmission {
                 job_id: job_id.clone(),
@@ -877,6 +906,7 @@ async fn wait_for_build(
         }
         let build: BuildJobResponse = serde_json::from_str(&body)
             .map_err(|error| format!("build status JSON is invalid: {error}"))?;
+        validate_build_job_response_id(&build, Some(build_job_id))?;
         match build.status.as_str() {
             "succeeded" | "failed" => return Ok(build),
             "queued" | "running" => {
@@ -1161,6 +1191,69 @@ fn valid_configured_workflow_path(value: &str) -> bool {
         && !value.contains("..")
         && !value.contains('\\')
         && value.len() <= 256
+}
+
+fn build_server_url_from_env() -> Result<Option<String>, String> {
+    env_optional("GHA_CLONE_BUILD_SERVER_URL")
+        .map(|value| normalize_build_server_url(&value))
+        .transpose()
+}
+
+fn valid_dns_label(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let (Some(first), Some(last)) = (bytes.first(), bytes.last()) else {
+        return false;
+    };
+    bytes.len() <= 63
+        && first.is_ascii_alphanumeric()
+        && last.is_ascii_alphanumeric()
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
+}
+
+fn is_kubernetes_service_dns(host: &str) -> bool {
+    let labels = host.split('.').collect::<Vec<_>>();
+    match labels.as_slice() {
+        [service, namespace, "svc"] | [service, namespace, "svc", "cluster", "local"] => {
+            valid_dns_label(service) && valid_dns_label(namespace)
+        }
+        _ => false,
+    }
+}
+
+fn normalize_build_server_url(value: &str) -> Result<String, String> {
+    let value = value.trim().trim_end_matches('/');
+    if value.is_empty() {
+        return Err("GHA_CLONE_BUILD_SERVER_URL must not be empty".into());
+    }
+    let parsed = reqwest::Url::parse(value)
+        .map_err(|error| format!("GHA_CLONE_BUILD_SERVER_URL is invalid: {error}"))?;
+    if !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err(
+            "GHA_CLONE_BUILD_SERVER_URL must not contain credentials, query, or fragment".into(),
+        );
+    }
+    if parsed.path() != "/" {
+        return Err("GHA_CLONE_BUILD_SERVER_URL must be an origin without a path".into());
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "GHA_CLONE_BUILD_SERVER_URL must contain a host".to_string())?;
+    let loopback_http =
+        parsed.scheme() == "http" && matches!(host, "127.0.0.1" | "localhost" | "::1" | "[::1]");
+    let kubernetes_http = parsed.scheme() == "http" && is_kubernetes_service_dns(host);
+    if parsed.scheme() != "https" && !loopback_http && !kubernetes_http {
+        return Err(
+            "GHA_CLONE_BUILD_SERVER_URL must use HTTPS; HTTP is allowed only for loopback tests or Kubernetes service DNS"
+                .into(),
+        );
+    }
+    Ok(value.to_string())
 }
 
 fn github_api_base_url_from_env() -> Result<String, String> {
@@ -1488,5 +1581,83 @@ mod tests {
         assert!(normalize_github_api_base_url("http://example.com").is_err());
         assert!(normalize_github_api_base_url("https://user:pass@example.com").is_err());
         assert!(normalize_github_api_base_url("https://example.com?token=x").is_err());
+    }
+
+    #[test]
+    fn build_server_origin_is_credential_free_and_transport_safe() {
+        assert_eq!(
+            normalize_build_server_url("https://build.example.com/").unwrap(),
+            "https://build.example.com"
+        );
+        assert!(normalize_build_server_url("http://127.0.0.1:8123").is_ok());
+        assert!(normalize_build_server_url("http://localhost:8123").is_ok());
+        assert!(
+            normalize_build_server_url("http://dd-build-server.remote.svc.cluster.local:8123")
+                .is_ok()
+        );
+        assert!(normalize_build_server_url("http://dd-build-server.remote.svc:8123").is_ok());
+        assert!(normalize_build_server_url("http://[::1]:8123").is_ok());
+        assert!(
+            normalize_build_server_url("http://extra.dd-build-server.remote.svc:8123").is_err()
+        );
+        assert!(normalize_build_server_url("http://dd_build.remote.svc:8123").is_err());
+        assert!(normalize_build_server_url("http://-build.remote.svc:8123").is_err());
+        assert!(normalize_build_server_url("http://10.0.0.10:8123").is_err());
+        assert!(normalize_build_server_url("http://build.example.com").is_err());
+        assert!(normalize_build_server_url("http://service.svc.evil.example").is_err());
+        assert!(normalize_build_server_url("https://user:pass@build.example.com").is_err());
+        assert!(normalize_build_server_url("https://build.example.com/api").is_err());
+        assert!(normalize_build_server_url("https://build.example.com?token=x").is_err());
+    }
+
+    #[test]
+    fn build_job_response_identity_is_validated_and_bound() {
+        let valid = BuildJobResponse {
+            id: "build:0123-abc_def.test".into(),
+            status: "queued".into(),
+            error: None,
+        };
+        assert!(validate_build_job_response_id(&valid, None).is_ok());
+        assert!(validate_build_job_response_id(&valid, Some(&valid.id)).is_ok());
+        assert!(validate_build_job_response_id(&valid, Some("different")).is_err());
+
+        for id in ["", ".", "..", "../build?token=x", "build/child"] {
+            let invalid = BuildJobResponse {
+                id: id.into(),
+                status: "queued".into(),
+                error: None,
+            };
+            assert!(validate_build_job_response_id(&invalid, None).is_err());
+        }
+        let too_long = BuildJobResponse {
+            id: "a".repeat(129),
+            status: "queued".into(),
+            error: None,
+        };
+        assert!(validate_build_job_response_id(&too_long, None).is_err());
+    }
+
+    #[tokio::test]
+    async fn configured_http_client_does_not_follow_redirects() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route(
+                "/start",
+                get(|| async { axum::response::Redirect::temporary("/final") }),
+            )
+            .route("/final", get(|| async { StatusCode::OK }));
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let response = build_http_client()
+            .unwrap()
+            .get(format!("http://{address}/start"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+        server.abort();
     }
 }
