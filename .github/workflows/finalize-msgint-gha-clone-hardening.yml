@@ -6,6 +6,7 @@ on:
       - agent/msgint-gha-clone-operator-verify-20260804
     paths:
       - scripts/ci/apply-msgint-gha-clone-hardening.py
+      - scripts/ci/repair-msgint-gha-clone-hardening-patcher.py
       - .github/workflows/finalize-msgint-gha-clone-hardening.yml
   pull_request:
     branches:
@@ -16,6 +17,7 @@ on:
       - reopened
     paths:
       - scripts/ci/apply-msgint-gha-clone-hardening.py
+      - scripts/ci/repair-msgint-gha-clone-hardening-patcher.py
       - .github/workflows/finalize-msgint-gha-clone-hardening.yml
 
 permissions:
@@ -37,9 +39,11 @@ jobs:
           ref: agent/msgint-gha-clone-operator-verify-20260804
           fetch-depth: 0
 
-      - name: Validate and apply the deterministic patch
+      - name: Repair, validate, and apply the deterministic patch
         run: |
           set -euo pipefail
+          python3 -m py_compile scripts/ci/repair-msgint-gha-clone-hardening-patcher.py
+          python3 scripts/ci/repair-msgint-gha-clone-hardening-patcher.py
           python3 -m py_compile scripts/ci/apply-msgint-gha-clone-hardening.py
           python3 scripts/ci/apply-msgint-gha-clone-hardening.py
 
@@ -98,6 +102,7 @@ jobs:
         if: github.event_name == 'push'
         run: |
           git rm scripts/ci/apply-msgint-gha-clone-hardening.py
+          git rm scripts/ci/repair-msgint-gha-clone-hardening-patcher.py
           git rm .github/workflows/finalize-msgint-gha-clone-hardening.yml
 
       - name: Commit the validated source changes
