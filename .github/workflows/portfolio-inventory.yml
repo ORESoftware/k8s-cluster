@@ -1,0 +1,38 @@
+name: portfolio inventory
+
+on:
+  pull_request:
+    paths:
+      - ".gitmodules"
+      - ".github/workflows/portfolio-inventory.yml"
+      - "README.md"
+      - "scripts/check-portfolio-inventory.py"
+  push:
+    branches: [main]
+    paths:
+      - ".gitmodules"
+      - ".github/workflows/portfolio-inventory.yml"
+      - "README.md"
+      - "scripts/check-portfolio-inventory.py"
+  workflow_dispatch:
+  schedule:
+    - cron: "17 7 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: portfolio-inventory-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gitlink-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Compare the README inventory with .gitmodules
+        run: python3 scripts/check-portfolio-inventory.py

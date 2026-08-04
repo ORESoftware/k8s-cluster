@@ -10,7 +10,7 @@ apps/
   zed-cli/              the `zed` CLI
   zed-api-server.rs/    registry REST API
   zed-web-server.rs/    registry web UI (MASH)
-  zed-clients/          SDKs (rust/ts/python/go)
+  zed-clients/          ten SDKs: Rust/WASM/TypeScript/Python/Go/Dart/Gleam/Erlang/Java/Swift
   zed-sync/             offline-first sync engine
   zed-infra/            terraform + k8s app-of-apps
   zed-docs/             architecture docs
@@ -71,6 +71,16 @@ sibling layout `../zed-interfaces` needs — no floating checkout anywhere. It
 also runs the cross-stack Playwright suite (Postgres + both servers + the
 CLI). It runs on push/PR, nightly, and on demand, since the change that
 invalidates a pin usually lands in a *different* repo.
+
+## Portfolio inventory ratchet
+
+`.gitmodules` is the executable source of truth for the exact sibling set.
+[`scripts/check-portfolio-inventory.py`](scripts/check-portfolio-inventory.py)
+compares those gitlinks with the human-readable `apps/` inventory above and
+fails on missing, duplicate, renamed, or undocumented repositories. The check
+is deliberately narrower than the full governed-fleet catalog in DEN-627: it
+protects this exact pinned integration set without creating a second portfolio
+registry.
 
 ## License
 
