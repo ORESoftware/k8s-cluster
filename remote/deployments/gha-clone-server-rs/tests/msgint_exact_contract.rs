@@ -1,7 +1,7 @@
 use gha_clone_server::{build_plan, PlanRequest, PlannerLimits};
 
 const REPOSITORY: &str = "messaging-intel/msgint-connectors";
-const REVISION: &str = "a9cc977d78347ec0efdbe8e6766967f80d425882";
+const REVISION: &str = "952623b07fd83caa3a83ee27bdea293f6bd4372f";
 const WORKFLOW_PATH: &str = ".github/workflows/gha-clone-operator-config.yml";
 const REVIEWED: &str = r#"name: Messaging Intel GHA clone operator verification
 on:
