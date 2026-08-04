@@ -31,10 +31,11 @@ regex = '''\bIQoJ[A-Za-z0-9+/=_\-]{180,}\b'''
 tags = ["aws", "credentials", "sts", "session"]
 
 [allowlist]
-description = "Files and one exact synthetic fixture used by credential-shape detection and redaction tests."
+description = "Files and exact synthetic fixtures used by credential-shape detection and redaction tests."
 regexTarget = "secret"
 regexes = [
   '''^ghp_a{30}$''',
+  '''^ghp_abcdefghijklmnopqrstuvwxyz123456$''',
 ]
 paths = [
   '''remote/deployments/dev-server/src/server\.ts''',
