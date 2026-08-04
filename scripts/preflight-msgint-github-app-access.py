@@ -38,7 +38,7 @@ def _validate_inputs(repository: str, revision: str, token: str) -> None:
         raise PreflightError("MSGINT_REVISION must be a lowercase 40-hex commit")
     if not token or len(token.encode("utf-8")) > MAX_TOKEN_BYTES:
         raise PreflightError("GitHub App token is missing or exceeds the byte limit")
-    if any(character.isspace() or character.iscontrol() for character in token):
+    if any(character.isspace() or not character.isprintable() for character in token):
         raise PreflightError("GitHub App token must be a single printable value")
 
 
