@@ -96,11 +96,20 @@ jobs:
 
           path = Path('remote/deployments/gha-clone-server-rs/tests/http_api.rs')
           text = path.read_text(encoding='utf-8')
-          old = '    env.insert("GHA_CLONE_BUILD_POLL_SECONDS", "0".to_string());\n'
-          new = '    env.insert("GHA_CLONE_BUILD_POLL_SECONDS", "1".to_string());\n'
-          if text.count(old) != 1:
+
+          poll_old = '    env.insert("GHA_CLONE_BUILD_POLL_SECONDS", "0".to_string());\n'
+          poll_new = '    env.insert("GHA_CLONE_BUILD_POLL_SECONDS", "1".to_string());\n'
+          if text.count(poll_old) != 1:
               raise SystemExit('integration fixture polling boundary drifted')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          text = text.replace(poll_old, poll_new, 1)
+
+          timeout_old = '        (MockMode::KeepRunning, 0, "exceeded 0 seconds"),\n'
+          timeout_new = '        (MockMode::KeepRunning, 1, "exceeded 1 seconds"),\n'
+          if text.count(timeout_old) != 1:
+              raise SystemExit('integration fixture timeout boundary drifted')
+          text = text.replace(timeout_old, timeout_new, 1)
+
+          path.write_text(text, encoding='utf-8')
           PY
 
       - name: Install pinned Rust toolchain
