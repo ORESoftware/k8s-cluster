@@ -1,0 +1,5 @@
+DEN-266 Google Chat delta reconciliation trigger.
+
+Scope: refresh the fixed alex-alex-me export, reconcile records after the 2026-08-01 snapshot, and commit only sanitized content-free evidence.
+
+No credential or message body is stored in this trigger.
