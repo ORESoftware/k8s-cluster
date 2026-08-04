@@ -1,0 +1,90 @@
+name: Repair private Shared Auth validator lint
+
+on:
+  push:
+    branches:
+      - agent/shared-auth-introspection-private-validator
+    paths:
+      - .github/workflows/repair-shared-auth-private-validator-lint.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.repository == '3FA-app/3fa-backend.rs'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
+        with:
+          ref: agent/shared-auth-introspection-private-validator
+          fetch-depth: 1
+      - name: Apply exact lint-preserving rewrites
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/ops-shared-auth-introspection-private-validator.yml')
+          contract = Path('scripts/tests/shared-auth-introspection-private-validator-contract.sh')
+
+          workflow_replacements = [
+              (
+                  r'''            printf 'Private exact-head Shared Auth validation failed at bounded stage `%s`.\n\n' "$stage"''',
+                  r'''            printf "Private exact-head Shared Auth validation failed at bounded stage \`%s\`.\n\n" "$stage"''',
+              ),
+              (
+                  r'''            printf 'Starting target: `%s@%s` (PR #%s).\n\n' "$TARGET_REPOSITORY" "$TARGET_START_SHA" "$TARGET_PR"''',
+                  r'''            printf "Starting target: \`%s@%s\` (PR #%s).\n\n" "$TARGET_REPOSITORY" "$TARGET_START_SHA" "$TARGET_PR"''',
+              ),
+              (
+                  r'''            printf 'One-time RSA-OAEP-SHA256 challenge for a deterministic documentation correction and private exact-head validation of `%s@%s`. The private key exists only in this private runner and is destroyed on exit. Reply with the matching encrypted ciphertext marker.\n\n' "$TARGET_REPOSITORY" "$TARGET_START_SHA"''',
+                  r'''            printf "One-time RSA-OAEP-SHA256 challenge for a deterministic documentation correction and private exact-head validation of \`%s@%s\`. The private key exists only in this private runner and is destroyed on exit. Reply with the matching encrypted ciphertext marker.\n\n" "$TARGET_REPOSITORY" "$TARGET_START_SHA"''',
+              ),
+              (
+                  r'''          ! grep -Fq 'introspection stays open for backward' "$source_root/src/config.rs"''',
+                  r'''          if grep -Fq 'introspection stays open for backward' "$source_root/src/config.rs"; then
+            printf 'stale fail-open introspection documentation remained after correction.\n' >&2
+            exit 1
+          fi''',
+              ),
+              (
+                  r'''            echo '- `cargo fmt --all --check`' ''',
+                  r'''            echo "- \`cargo fmt --all --check\`" ''',
+              ),
+              (
+                  r'''            echo '- `cargo clippy --all-targets --locked -- -D warnings`' ''',
+                  r'''            echo "- \`cargo clippy --all-targets --locked -- -D warnings\`" ''',
+              ),
+              (
+                  r'''            echo '- `cargo test --all-targets --locked`' ''',
+                  r'''            echo "- \`cargo test --all-targets --locked\`" ''',
+              ),
+          ]
+
+          text = workflow.read_text()
+          for old, new in workflow_replacements:
+              if text.count(old) != 1:
+                  raise SystemExit(f'expected exactly one workflow match: {old!r}')
+              text = text.replace(old, new)
+          workflow.write_text(text)
+
+          old_contract = '''require_literal "! grep -Fq 'introspection stays open for backward'"'''
+          new_contract = '''require_literal "if grep -Fq 'introspection stays open for backward'"
+          require_literal 'stale fail-open introspection documentation remained after correction.' '''
+          contract_text = contract.read_text()
+          if contract_text.count(old_contract) != 1:
+              raise SystemExit('expected exactly one stale contract assertion')
+          contract.write_text(contract_text.replace(old_contract, new_contract))
+          PY
+
+          rm -- .github/workflows/repair-shared-auth-private-validator-lint.yml
+          git diff --check
+          bash scripts/tests/shared-auth-introspection-private-validator-contract.sh
+          git config user.name 'ORESoftware automation'
+          git config user.email 'automation@users.noreply.github.com'
+          git add -A
+          git commit -m 'ci: satisfy validator action lint'
+          git push origin HEAD:agent/shared-auth-introspection-private-validator
