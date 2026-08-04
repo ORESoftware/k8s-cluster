@@ -1,0 +1,111 @@
+name: Finalize DEN-1606 atomic run capacity from PR once
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [synchronize]
+    paths:
+      - .github/workflows/den-1606-run-capacity-pr-finalize-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1606-run-capacity-pr-finalize-once
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-1606-run-capacity-hardening-20260804'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1606-run-capacity-hardening-20260804
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Execute the reviewed bounded transformation
+        run: |
+          set -euo pipefail
+          base='a7d730abd874a1ee39875bbe5a2274aa681b480a'
+          expected=$'.github/workflows/den-1606-run-capacity-finalize-once.yml\n.github/workflows/den-1606-run-capacity-pr-finalize-once.yml\ndocs/gha-clone-run-capacity-boundary.md\nremote/deployments/gha-clone-server-rs/src/run_reservation.rs'
+          actual="$(git diff --name-only "$base"...HEAD | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'unexpected pre-transform paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+
+          carrier = Path('.github/workflows/den-1606-run-capacity-finalize-once.yml')
+          lines = carrier.read_text(encoding='utf-8').splitlines()
+          step = lines.index('      - name: Integrate atomic reservation and real-process regressions')
+          next_step = next(
+              index for index in range(step + 1, len(lines))
+              if lines[index].startswith('      - uses: dtolnay/rust-toolchain@')
+          )
+          run_index = lines.index('        run: |', step + 1, next_step)
+          block = lines[run_index + 1 : next_step]
+          opener = next(
+              index for index, line in enumerate(block)
+              if line.strip() == "python3 - <<'PY'"
+          )
+          terminator = max(
+              index for index, line in enumerate(block)
+              if index > opener and line.strip() == 'PY'
+          )
+          prefix = '          '
+          script_lines = block[opener + 1 : terminator]
+          if any(line.strip() and not line.startswith(prefix) for line in script_lines):
+              raise SystemExit('reviewed transformation has unexpected indentation')
+          script = '\n'.join(
+              line[len(prefix):] if line.startswith(prefix) else ''
+              for line in script_lines
+          ) + '\n'
+          exec(compile(script, str(carrier), 'exec'), {'__name__': '__main__'})
+          PY
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate every clone-server target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Commit the self-cleaned five-file product
+        run: |
+          set -euo pipefail
+          base='a7d730abd874a1ee39875bbe5a2274aa681b480a'
+          rm \
+            .github/workflows/den-1606-run-capacity-finalize-once.yml \
+            .github/workflows/den-1606-run-capacity-pr-finalize-once.yml
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          workflow_non_deletions="$(git diff --cached --name-only --diff-filter=ACMRTUXB -- .github/workflows || true)"
+          if [[ -n "$workflow_non_deletions" ]]; then
+            printf 'temporary workflows must be deletion-only:\n%s\n' "$workflow_non_deletions" >&2
+            exit 1
+          fi
+          git commit -m 'fix(DEN-1606): reserve clone runs atomically'
+          expected=$'docs/gha-clone-run-capacity-boundary.md\nremote/deployments/gha-clone-server-rs/src/main.rs\nremote/deployments/gha-clone-server-rs/src/run_reservation.rs\nremote/deployments/gha-clone-server-rs/tests/http_api.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs'
+          actual="$(git diff --name-only "$base"...HEAD | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'unexpected final product paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          git push origin HEAD:agent/den-1606-run-capacity-hardening-20260804
