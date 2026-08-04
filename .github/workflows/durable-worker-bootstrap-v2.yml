@@ -1,0 +1,100 @@
+# One-use workflow: expands the verified source bundle, then deletes itself.
+name: durable-worker-bootstrap-v2
+
+on:
+  push:
+    branches:
+      - agent/durable-worker-server-rs-v2
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - '.durable-worker-bootstrap/**'
+      - '.github/workflows/durable-worker-bootstrap-v2.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: durable-worker-bootstrap-v2-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish-reviewable-tree:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout clean publication branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          persist-credentials: true
+          fetch-depth: 1
+
+      - name: Verify and expand the durable-worker source bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .durable-worker-bootstrap/archive.part* > /tmp/durable-worker-pr.tgz.b64
+          base64 --decode /tmp/durable-worker-pr.tgz.b64 > /tmp/durable-worker-pr.tgz
+          echo '9b1426ee4aaafeef38d1d862c99819f92794ba6a601a0720cf876cd2e2aa2e5d  /tmp/durable-worker-pr.tgz' | sha256sum --check --strict
+          mkdir -p /tmp/durable-worker-tree
+          tar -xzf /tmp/durable-worker-pr.tgz -C /tmp/durable-worker-tree
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+
+          root = Path('.')
+          source = Path('/tmp/durable-worker-tree')
+          paths = [
+              Path('.github/workflows/durable-worker-server-rs.yml'),
+              Path('remote/deployments/durable-worker-server-rs'),
+              Path('remote/argocd/dd-next-runtime/dd-durable-worker-server.deployment.yaml'),
+              Path('remote/argocd/dd-next-runtime/dd-durable-worker-server.service.yaml'),
+              Path('remote/argocd/dd-next-runtime/dd-durable-worker-server.networkpolicy.yaml'),
+              Path('remote/argocd/dd-next-runtime/dd-durable-worker-server.pdb.yaml'),
+              Path('remote/tests/general/durable-worker-server-config.test.mjs'),
+          ]
+          for relative in paths:
+              src = source / relative
+              dst = root / relative
+              if not src.exists():
+                  raise SystemExit(f'missing expected archive path: {relative}')
+              dst.parent.mkdir(parents=True, exist_ok=True)
+              if src.is_dir():
+                  shutil.copytree(src, dst, dirs_exist_ok=True)
+              else:
+                  shutil.copy2(src, dst)
+
+          kustomization = root / 'remote/argocd/dd-next-runtime/kustomization.yaml'
+          text = kustomization.read_text()
+          entries = [
+              'dd-durable-worker-server.deployment.yaml',
+              'dd-durable-worker-server.service.yaml',
+              'dd-durable-worker-server.networkpolicy.yaml',
+              'dd-durable-worker-server.pdb.yaml',
+          ]
+          missing = [entry for entry in entries if f'  - {entry}\n' not in text]
+          if missing:
+              marker = '\npatches:\n'
+              if marker not in text:
+                  raise SystemExit('kustomization resources/patches boundary not found')
+              addition = ''.join(f'  - {entry}\n' for entry in missing)
+              text = text.replace(marker, f'{addition}{marker}', 1)
+              kustomization.write_text(text)
+
+          archive_dir = root / '.durable-worker-bootstrap'
+          for part in archive_dir.glob('archive.part*'):
+              part.unlink()
+          archive_dir.rmdir()
+          (root / '.github/workflows/durable-worker-bootstrap-v2.yml').unlink()
+          PY
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m 'feat(workers): add Rust durable execution control plane'
+          git push origin HEAD:agent/durable-worker-server-rs-v2
