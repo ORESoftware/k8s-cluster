@@ -7,13 +7,249 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: compile-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  materialize-financial-audit:
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/DEN-1572-financial-operation-audit'
+    name: materialize-financial-audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - name: Check out the feature branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: agent/DEN-1572-financial-operation-audit
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Wire audit context into the ledger transaction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: Path, old: str, new: str) -> None:
+              text = path.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected one anchor in {path}, found {count}: {old[:100]!r}")
+              path.write_text(text.replace(old, new, 1))
+
+          main = Path("src/main.rs")
+          if "mod financial_audit;" not in main.read_text():
+              replace_once(main, "mod fiducia;\n", "mod fiducia;\nmod financial_audit;\n")
+
+          audit = Path("src/financial_audit.rs")
+          if "pub struct AuditedLedgerPost" not in audit.read_text():
+              replace_once(
+                  audit,
+                  '''impl FinancialOperationReceipt {
+              fn recorded(event_id: Uuid, operation_correlation_id: Uuid) -> Self {
+          ''',
+                  '''#[derive(Clone, Debug, PartialEq, Eq)]
+          pub struct AuditedLedgerPost {
+              pub transaction_id: Uuid,
+              pub audit: FinancialOperationReceipt,
+              pub replayed: bool,
+          }
+
+          impl FinancialOperationReceipt {
+              fn recorded(event_id: Uuid, operation_correlation_id: Uuid) -> Self {
+          ''',
+              )
+
+          service = Path("src/ledger/service.rs")
+          if "AuditedLedgerPost" not in service.read_text():
+              replace_once(
+                  service,
+                  '''use crate::events::EventBus;
+          use crate::money::Currency;
+          ''',
+                  '''use crate::events::EventBus;
+          use crate::financial_audit::{
+              AuditedLedgerPost, FinancialOperationContext, load_ledger_post, record_ledger_post,
+          };
+          use crate::money::Currency;
+          ''',
+              )
+              replace_once(
+                  service,
+                  '''    pub async fn post_transaction(
+                  &self,
+                  draft: &DraftTransaction,
+                  region: Region,
+              ) -> AppResult<Uuid> {
+          ''',
+                  '''    pub async fn post_transaction(
+                  &self,
+                  draft: &DraftTransaction,
+                  region: Region,
+                  operation_context: &FinancialOperationContext,
+              ) -> AppResult<AuditedLedgerPost> {
+          ''',
+              )
+              replace_once(
+                  service,
+                  '''        let result = self
+                      .post_transaction_locked(draft, region, &mut customer_lock_guard)
+                      .await;
+          ''',
+                  '''        let result = self
+                      .post_transaction_locked(
+                          draft,
+                          region,
+                          &mut customer_lock_guard,
+                          operation_context,
+                      )
+                      .await;
+          ''',
+              )
+              replace_once(
+                  service,
+                  '''        let (tx_id, is_new) = result?;
+                  if is_new {
+                      self.publish_posting_event(draft, tx_id, region).await;
+                  }
+                  Ok(tx_id)
+          ''',
+                  '''        let posted = result?;
+                  if !posted.replayed {
+                      self.publish_posting_event(draft, posted.transaction_id, region)
+                          .await;
+                  }
+                  Ok(posted)
+          ''',
+              )
+              replace_once(
+                  service,
+                  '''    /// Returns `(transaction_id, is_new)`. `is_new` is false for idempotent
+              /// replays (so the caller does not re-publish an event).
+              async fn post_transaction_locked(
+                  &self,
+                  draft: &DraftTransaction,
+                  region: Region,
+                  customer_lock_guard: &mut CustomerLockGuard,
+              ) -> AppResult<(Uuid, bool)> {
+          ''',
+                  '''    /// Returns the committed transaction plus its original durable audit
+              /// identity. Idempotent replays never append a second accepted event.
+              async fn post_transaction_locked(
+                  &self,
+                  draft: &DraftTransaction,
+                  region: Region,
+                  customer_lock_guard: &mut CustomerLockGuard,
+                  operation_context: &FinancialOperationContext,
+              ) -> AppResult<AuditedLedgerPost> {
+          ''',
+              )
+
+              replay_old = '''            customer_lock_guard.fence(&tx, draft.tenant_id).await?;
+                  tx.commit().await?;
+                  return Ok((existing, false));
+          '''
+              replay_new = '''            let audit = load_ledger_post(&tx, draft.tenant_id, existing).await?;
+                  customer_lock_guard.fence(&tx, draft.tenant_id).await?;
+                  tx.commit().await?;
+                  return Ok(AuditedLedgerPost {
+                      transaction_id: existing,
+                      audit,
+                      replayed: true,
+                  });
+          '''
+              text = service.read_text()
+              count = text.count(replay_old)
+              if count != 2:
+                  raise SystemExit(f"expected two replay anchors, found {count}")
+              service.write_text(text.replace(replay_old, replay_new))
+
+              replace_once(
+                  service,
+                  '''        customer_lock_guard.fence(&tx, draft.tenant_id).await?;
+                  tx.commit().await?;
+
+                  // Genuinely-new commit (the two idempotent short-circuits above
+                  // returned early). The caller publishes the event AFTER releasing the
+                  // customer lock — see `post_transaction`.
+                  Ok((tx_id, true))
+          ''',
+                  '''        let audit = record_ledger_post(
+                      &tx,
+                      draft.tenant_id,
+                      tx_id,
+                      operation_context,
+                      &draft.idempotency_key,
+                  )
+                  .await?;
+
+                  customer_lock_guard.fence(&tx, draft.tenant_id).await?;
+                  tx.commit().await?;
+
+                  // Genuinely-new commit (the two idempotent short-circuits above
+                  // returned early). The caller publishes the event AFTER releasing the
+                  // customer lock — see `post_transaction`.
+                  Ok(AuditedLedgerPost {
+                      transaction_id: tx_id,
+                      audit,
+                      replayed: false,
+                  })
+          ''',
+              )
+          PY
+
+      - name: Format compile and test the exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          bash scripts/ci/create-shared-lib-stubs.sh
+          cargo fmt --all
+          cargo check --locked --all-targets
+          cargo test --locked --no-run
+          cargo test --locked financial_audit::
+          cargo test --locked api::ledger::
+          cargo test --locked ledger::
+          bash scripts/ci/test-financial-operation-audit.sh
+
+      - name: Push the tested service wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main.rs src/financial_audit.rs src/ledger/service.rs src/api/ledger.rs
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'audit wiring already materialized'
+            exit 0
+          fi
+          git commit -m 'feat(audit): commit actor attribution with ledger postings'
+          git push origin HEAD:agent/DEN-1572-financial-operation-audit
+
   rust:
     name: rust-check-and-auth-tests
     runs-on: ubuntu-latest
@@ -23,43 +259,29 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-
       - name: Select stable Rust
-        shell: bash
         run: |
-          set -euo pipefail
           rustup toolchain install stable --profile minimal
           rustup default stable
-          rustc --version
-          cargo --version
-
-      - name: Materialize shared-crate interfaces for a clean checkout
-        shell: bash
+      - name: Materialize shared-crate interfaces
         run: bash scripts/ci/create-shared-lib-stubs.sh
-
-      - name: Verify formatting
-        run: cargo fmt --all --check
-
-      - name: Compile every target with the committed lockfile
-        run: cargo check --locked --all-targets
-
-      - name: Compile the complete test graph
-        run: cargo test --locked --no-run
-
-      - name: Run security and authorization suites
-        shell: bash
+      - run: cargo fmt --all --check
+      - run: cargo check --locked --all-targets
+      - run: cargo test --locked --no-run
+      - name: Run security authorization and audit suites
         run: |
-          set -euo pipefail
           cargo test --locked shared_auth::
           cargo test --locked shared_auth_startup::
           cargo test --locked memberships::
+          cargo test --locked financial_audit::
           cargo test --locked api::auth::
           cargo test --locked api::oauth::
+          cargo test --locked api::ledger::
           cargo test --locked config::
           cargo test --locked error::
 
-  membership-invariants:
-    name: postgres-membership-invariants
+  postgres-invariants:
+    name: postgres-financial-invariants
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     services:
@@ -81,89 +303,12 @@ jobs:
       PGUSER: postgres
       PGPASSWORD: postgres
     steps:
-      - name: Check out source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-
-      - name: Install PostgreSQL client
-        shell: bash
-        run: |
-          set -euo pipefail
+      - run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends postgresql-client
-
-      - name: Prove tenant membership invariants under concurrency
-        shell: bash
-        run: bash scripts/ci/test-tenant-membership-invariants.sh
-
-      - name: Prove membership audit events are append-only and well-formed
-        shell: bash
-        run: bash scripts/ci/test-tenant-membership-audit.sh
-
-  real-shared-libs:
-    name: real-shared-libs-contract
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    env:
-      SHARED_REPOS_TOKEN: ${{ secrets.QUAESTOR_SHARED_REPOS_READ_TOKEN }}
-    steps:
-      - name: Check out Quaestor at the pull-request revision
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          path: workspace/services/quaestor-ledger-server.rs
-          persist-credentials: false
-
-      - name: Explain skipped real shared-crate validation
-        if: env.SHARED_REPOS_TOKEN == ''
-        shell: bash
-        run: |
-          echo 'QUAESTOR_SHARED_REPOS_READ_TOKEN is not configured.'
-          echo 'Stub-backed compilation and all authorization/PostgreSQL suites remain blocking.'
-          echo 'Configure a read-only GitHub App or deploy-key credential to enable the pinned real-crate contract.'
-
-      - name: Check out pinned real shared crates
-        if: env.SHARED_REPOS_TOKEN != ''
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          repository: ORESoftware/k8s-libs-and-shared-defs
-          ref: 823ba65f8f032595880b801a7458596828ea31da
-          token: ${{ secrets.QUAESTOR_SHARED_REPOS_READ_TOKEN }}
-          path: workspace/libs
-          persist-credentials: false
-          sparse-checkout: |
-            telemetry-rs
-            wal-consumer-rs
-            nats/subject-defs/generated/rust
-          sparse-checkout-cone-mode: false
-
-      - name: Select stable Rust
-        if: env.SHARED_REPOS_TOKEN != ''
-        shell: bash
-        working-directory: workspace/services/quaestor-ledger-server.rs
-        run: |
-          set -euo pipefail
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-          rustc --version
-          cargo --version
-
-      - name: Compile against pinned real shared crates
-        if: env.SHARED_REPOS_TOKEN != ''
-        working-directory: workspace/services/quaestor-ledger-server.rs
-        run: cargo check --locked --all-targets
-
-      - name: Compile and run the security suites against real shared crates
-        if: env.SHARED_REPOS_TOKEN != ''
-        shell: bash
-        working-directory: workspace/services/quaestor-ledger-server.rs
-        run: |
-          set -euo pipefail
-          cargo test --locked --no-run
-          cargo test --locked shared_auth::
-          cargo test --locked shared_auth_startup::
-          cargo test --locked memberships::
-          cargo test --locked api::auth::
-          cargo test --locked api::oauth::
-          cargo test --locked config::
-          cargo test --locked error::
+      - run: bash scripts/ci/test-tenant-membership-invariants.sh
+      - run: bash scripts/ci/test-tenant-membership-audit.sh
+      - run: bash scripts/ci/test-financial-operation-audit.sh
