@@ -1,0 +1,80 @@
+name: Daedalus ARC continuity
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/daedalus-arc-continuity.yml"
+      - "docs/operations/daedalus-github-actions-continuity.md"
+      - "remote/argocd/ci-runners/daedalus-fab/**"
+      - "remote/argocd/ci-runners/validate-daedalus-arc-continuity.py"
+      - "remote/argocd/clusters/aws/daedalus-ci.applications.yaml"
+      - "remote/argocd/clusters/aws/kustomization.yaml"
+      - "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml"
+      - "remote/argocd/clusters/hetzner/kustomization.yaml"
+      - "scripts/ops/gha_continuity_status.py"
+      - "scripts/ops/test_gha_continuity_status.py"
+  push:
+    branches: [dev]
+    paths:
+      - ".github/workflows/daedalus-arc-continuity.yml"
+      - "docs/operations/daedalus-github-actions-continuity.md"
+      - "remote/argocd/ci-runners/daedalus-fab/**"
+      - "remote/argocd/ci-runners/validate-daedalus-arc-continuity.py"
+      - "remote/argocd/clusters/aws/daedalus-ci.applications.yaml"
+      - "remote/argocd/clusters/aws/kustomization.yaml"
+      - "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml"
+      - "remote/argocd/clusters/hetzner/kustomization.yaml"
+      - "scripts/ops/gha_continuity_status.py"
+      - "scripts/ops/test_gha_continuity_status.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daedalus-arc-continuity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  workflow-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: Validate GitHub Actions workflow
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: ./.github/workflows/daedalus-arc-continuity.yml
+
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: Compile continuity tools
+        run: |
+          python3 -m py_compile \
+            scripts/ops/gha_continuity_status.py \
+            scripts/ops/test_gha_continuity_status.py \
+            remote/argocd/ci-runners/validate-daedalus-arc-continuity.py
+      - name: Test fail-closed lane selection
+        run: python3 -m unittest -v scripts/ops/test_gha_continuity_status.py
+      - name: Validate ARC, credential, smoke, and documentation contracts
+        run: python3 remote/argocd/ci-runners/validate-daedalus-arc-continuity.py
+      - name: Render AWS overlay
+        run: kubectl kustomize remote/argocd/clusters/aws > /tmp/daedalus-aws-rendered.yaml
+      - name: Render Hetzner overlay
+        run: kubectl kustomize remote/argocd/clusters/hetzner > /tmp/daedalus-hetzner-rendered.yaml
+      - name: Verify rendered Daedalus application inventory
+        run: |
+          set -euo pipefail
+          for cloud in aws hetzner; do
+            rendered="/tmp/daedalus-${cloud}-rendered.yaml"
+            test "$(grep -c '^  name: dd-daedalus-ci-runner-prereqs$' "$rendered")" -eq 1
+            test "$(grep -c '^  name: dd-daedalus-ci-arc-controller$' "$rendered")" -eq 1
+            test "$(grep -c '^  name: dd-daedalus-ci-runner-set$' "$rendered")" -eq 1
+          done
