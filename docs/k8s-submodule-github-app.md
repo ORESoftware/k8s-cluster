@@ -68,6 +68,10 @@ token output file. Validation requires:
   set, independent of response order;
 - no duplicate requested or returned repository names.
 
+Successful token creation alone is not authorization evidence. The returned
+permission and repository metadata are part of the authorization decision and
+must satisfy every exact-scope check before the token becomes usable.
+
 Missing repository proof, substituted repositories, duplicate repositories, or
 any broader permission fail closed. The token is written to a mode-`0600` temporary file
 only after those checks pass and is revoked after the corresponding owner batch.
