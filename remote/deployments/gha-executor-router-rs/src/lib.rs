@@ -57,10 +57,17 @@ impl Provider {
 pub struct ExecutorSpec {
     pub id: String,
     pub provider: Provider,
-    pub base_url: String,
-    pub auth_secret_file: PathBuf,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub base_url: Option<String>,
+    #[serde(default)]
+    pub auth_secret_file: Option<PathBuf>,
 }
 
+fn default_enabled() -> bool {
+    true
+}
 #[derive(Clone, Debug)]
 struct Executor {
     id: String,
@@ -194,18 +201,47 @@ fn build_executors(
 ) -> Result<Vec<Executor>, String> {
     if specs.len() > max_executors {
         return Err(format!(
-            "configured {} executors, above the bounded maximum {max_executors}",
+            "configured {} executor identities, above the bounded maximum {max_executors}",
             specs.len()
         ));
     }
+
+    let mut ids = BTreeSet::new();
+    let mut providers = BTreeSet::new();
     let mut executors = Vec::with_capacity(specs.len());
     for spec in specs {
         require_executor_id(&spec.id)?;
-        let base_url = validate_base_url(&spec.base_url)?;
-        require_absolute_secret_path(&spec.auth_secret_file, "executor authSecretFile")?;
+        if !ids.insert(spec.id.clone()) {
+            return Err(format!("duplicate executor id {:?}", spec.id));
+        }
+        if !providers.insert(spec.provider.as_str()) {
+            return Err(format!(
+                "duplicate provider {:?}; configure at most one identity per provider",
+                spec.provider.as_str()
+            ));
+        }
+
+        if !spec.enabled {
+            if spec.base_url.is_some() || spec.auth_secret_file.is_some() {
+                return Err(format!(
+                    "disabled executor {} must omit baseUrl and authSecretFile",
+                    spec.id
+                ));
+            }
+            continue;
+        }
+
+        let base_url = spec
+            .base_url
+            .ok_or_else(|| format!("enabled executor {} requires baseUrl", spec.id))?;
+        let auth_secret_file = spec
+            .auth_secret_file
+            .ok_or_else(|| format!("enabled executor {} requires authSecretFile", spec.id))?;
+        let base_url = validate_base_url(&base_url)?;
+        require_absolute_secret_path(&auth_secret_file, "executor authSecretFile")?;
         let auth_secret = if execution_enabled {
             Some(read_secret_file(
-                &spec.auth_secret_file,
+                &auth_secret_file,
                 &format!("{} executor auth", spec.id),
             )?)
         } else {
@@ -215,14 +251,13 @@ fn build_executors(
             id: spec.id,
             provider: spec.provider,
             base_url,
-            auth_secret_file: spec.auth_secret_file,
+            auth_secret_file,
             auth_secret,
         });
     }
     validate_executor_set(&executors)?;
     Ok(executors)
 }
-
 fn validate_executor_set(executors: &[Executor]) -> Result<(), String> {
     let mut ids = BTreeSet::new();
     let mut providers = BTreeSet::new();
@@ -506,7 +541,7 @@ impl Inflight {
 struct Metrics {
     submissions: AtomicU64,
     accepted: AtomicU64,
-    fallback_attempts: AtomicU64,
+    readiness_skips: AtomicU64,
     contract_rejections: AtomicU64,
     exhausted: AtomicU64,
     duplicate_hits: AtomicU64,
@@ -530,6 +565,7 @@ impl Engine {
         let client = reqwest::Client::builder()
             .connect_timeout(config.request_timeout)
             .timeout(config.request_timeout)
+            .redirect(reqwest::redirect::Policy::none())
             .user_agent("gha-executor-router/0.1")
             .build()
             .map_err(|error| format!("failed to build HTTP client: {error}"))?;
@@ -609,126 +645,182 @@ impl Engine {
         public_result
     }
 
-    async fn submit_fresh(&self, request: &BuildRequest) -> Result<Route, RouterError> {
+    async fn select_ready_executor(&self) -> Result<Executor, RouterError> {
         for executor in &self.config.executors {
             let auth = executor.auth_secret.as_deref().ok_or_else(|| {
                 RouterError::unavailable("executor_not_ready", "executor auth is unavailable")
             })?;
             let response = self
                 .client
-                .post(format!("{}/builds", executor.base_url))
+                .get(format!("{}/readyz", executor.base_url))
                 .header("x-build-server-auth", auth)
-                .json(request)
                 .send()
                 .await;
             let response = match response {
                 Ok(response) => response,
                 Err(error) => {
-                    self.metrics
-                        .fallback_attempts
-                        .fetch_add(1, Ordering::Relaxed);
+                    self.metrics.readiness_skips.fetch_add(1, Ordering::Relaxed);
                     warn!(
                         executor_id = %executor.id,
                         provider = executor.provider.as_str(),
                         error = %error,
-                        "executor transport failed before acceptance"
+                        "executor readiness transport failed before any build submission"
                     );
                     continue;
                 }
             };
             let status = response.status();
-            if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
-                self.metrics
-                    .fallback_attempts
-                    .fetch_add(1, Ordering::Relaxed);
+            if status != StatusCode::OK {
+                self.metrics.readiness_skips.fetch_add(1, Ordering::Relaxed);
                 warn!(
                     executor_id = %executor.id,
                     provider = executor.provider.as_str(),
                     %status,
-                    "executor returned retryable pre-acceptance status"
+                    "executor readiness was not OK before any build submission"
                 );
                 continue;
             }
-            if status != StatusCode::ACCEPTED {
-                self.metrics
-                    .contract_rejections
-                    .fetch_add(1, Ordering::Relaxed);
-                return Err(RouterError::new(
-                    if status.is_client_error() {
-                        StatusCode::UNPROCESSABLE_ENTITY
-                    } else {
-                        StatusCode::BAD_GATEWAY
-                    },
-                    "upstream_contract_rejected",
-                    format!(
-                        "executor {} rejected the fixed-profile request with HTTP {status}; fallback was not attempted",
-                        executor.id
-                    ),
-                ));
+            let body = match read_bounded(response, self.config.max_response_bytes).await {
+                Ok(body) => body,
+                Err(_) => {
+                    self.metrics.readiness_skips.fetch_add(1, Ordering::Relaxed);
+                    warn!(
+                        executor_id = %executor.id,
+                        provider = executor.provider.as_str(),
+                        "executor readiness response was unreadable before any build submission"
+                    );
+                    continue;
+                }
+            };
+            let ready = serde_json::from_slice::<Value>(&body)
+                .ok()
+                .and_then(|value| value.get("ok").and_then(Value::as_bool))
+                .unwrap_or(false);
+            if !ready {
+                self.metrics.readiness_skips.fetch_add(1, Ordering::Relaxed);
+                warn!(
+                    executor_id = %executor.id,
+                    provider = executor.provider.as_str(),
+                    "executor readiness body did not assert ok=true"
+                );
+                continue;
             }
-
-            let body = read_bounded(response, self.config.max_response_bytes)
-                .await
-                .map_err(|_| {
-                    RouterError::bad_gateway(
-                        "accepted_response_invalid",
-                        format!(
-                            "executor {} accepted the request but returned an unreadable response; refusing fallback",
-                            executor.id
-                        ),
-                    )
-                })?;
-            let accepted: BuildJob = serde_json::from_slice(&body).map_err(|_| {
-                RouterError::bad_gateway(
-                    "accepted_response_invalid",
-                    format!(
-                        "executor {} accepted the request but returned invalid job JSON; refusing fallback",
-                        executor.id
-                    ),
-                )
-            })?;
-            if !safe_token(&accepted.id, 128, b"-_:") {
-                return Err(RouterError::bad_gateway(
-                    "accepted_response_invalid",
-                    format!(
-                        "executor {} accepted the request but returned an invalid build id; refusing fallback",
-                        executor.id
-                    ),
-                ));
-            }
-            if !matches!(
-                accepted.status.as_str(),
-                "queued" | "running" | "succeeded" | "failed"
-            ) {
-                return Err(RouterError::bad_gateway(
-                    "accepted_response_invalid",
-                    format!(
-                        "executor {} accepted the request but returned an unknown status; refusing fallback",
-                        executor.id
-                    ),
-                ));
-            }
-
-            self.metrics.accepted.fetch_add(1, Ordering::Relaxed);
-            let external_id = format!("{}~{}", executor.id, accepted.id);
-            return Ok(Route {
-                request_id: request.request_id.clone(),
-                external_id,
-                executor_id: executor.id.clone(),
-                provider: executor.provider,
-                upstream_id: accepted.id.clone(),
-                accepted,
-                sequence: self.sequence.fetch_add(1, Ordering::Relaxed),
-            });
+            return Ok(executor.clone());
         }
 
         self.metrics.exhausted.fetch_add(1, Ordering::Relaxed);
         Err(RouterError::unavailable(
             "executors_unavailable",
-            "no executor accepted the deterministic request; no job was pinned",
+            "no executor reported ready before any build submission",
         ))
     }
 
+    async fn submit_fresh(&self, request: &BuildRequest) -> Result<Route, RouterError> {
+        let executor = self.select_ready_executor().await?;
+        let auth = executor.auth_secret.as_deref().ok_or_else(|| {
+            RouterError::unavailable("executor_not_ready", "executor auth is unavailable")
+        })?;
+        let response = self
+        .client
+        .post(format!("{}/builds", executor.base_url))
+        .header("x-build-server-auth", auth)
+        .json(request)
+        .send()
+        .await
+        .map_err(|error| {
+            warn!(
+                executor_id = %executor.id,
+                provider = executor.provider.as_str(),
+                error = %error,
+                "executor submission outcome is ambiguous after the POST attempt"
+            );
+            RouterError::bad_gateway(
+                "submission_outcome_ambiguous",
+                format!(
+                    "submission to executor {} failed after the POST attempt; fallback was not attempted because work may already exist",
+                    executor.id
+                ),
+            )
+        })?;
+
+        let status = response.status();
+        if status != StatusCode::ACCEPTED {
+            if status.is_client_error() && status != StatusCode::TOO_MANY_REQUESTS {
+                self.metrics
+                    .contract_rejections
+                    .fetch_add(1, Ordering::Relaxed);
+                return Err(RouterError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "upstream_contract_rejected",
+                format!(
+                    "executor {} rejected the fixed-profile request with HTTP {status}; fallback was not attempted",
+                    executor.id
+                ),
+            ));
+            }
+            return Err(RouterError::bad_gateway(
+            "submission_outcome_ambiguous",
+            format!(
+                "executor {} returned HTTP {status} after the POST attempt; fallback was not attempted because work may already exist",
+                executor.id
+            ),
+        ));
+        }
+
+        let body = read_bounded(response, self.config.max_response_bytes)
+        .await
+        .map_err(|_| {
+            RouterError::bad_gateway(
+                "accepted_response_invalid",
+                format!(
+                    "executor {} accepted the request but returned an unreadable response; fallback was not attempted",
+                    executor.id
+                ),
+            )
+        })?;
+        let accepted: BuildJob = serde_json::from_slice(&body).map_err(|_| {
+        RouterError::bad_gateway(
+            "accepted_response_invalid",
+            format!(
+                "executor {} accepted the request but returned invalid job JSON; fallback was not attempted",
+                executor.id
+            ),
+        )
+    })?;
+        if !safe_token(&accepted.id, 128, b"-_:") {
+            return Err(RouterError::bad_gateway(
+            "accepted_response_invalid",
+            format!(
+                "executor {} accepted the request but returned an invalid build id; fallback was not attempted",
+                executor.id
+            ),
+        ));
+        }
+        if !matches!(
+            accepted.status.as_str(),
+            "queued" | "running" | "succeeded" | "failed"
+        ) {
+            return Err(RouterError::bad_gateway(
+            "accepted_response_invalid",
+            format!(
+                "executor {} accepted the request but returned an unknown status; fallback was not attempted",
+                executor.id
+            ),
+        ));
+        }
+
+        self.metrics.accepted.fetch_add(1, Ordering::Relaxed);
+        let external_id = format!("{}~{}", executor.id, accepted.id);
+        Ok(Route {
+            request_id: request.request_id.clone(),
+            external_id,
+            executor_id: executor.id,
+            provider: executor.provider,
+            upstream_id: accepted.id.clone(),
+            accepted,
+            sequence: self.sequence.fetch_add(1, Ordering::Relaxed),
+        })
+    }
     async fn insert_route(&self, route: Route) {
         let mut routes = self.routes.write().await;
         while routes.by_request.len() >= self.config.max_routes {
@@ -862,9 +954,9 @@ impl Engine {
              # HELP gha_executor_router_accepted_total Requests accepted and pinned to one executor.\n\
              # TYPE gha_executor_router_accepted_total counter\n\
              gha_executor_router_accepted_total {}\n\
-             # HELP gha_executor_router_fallback_attempts_total Retryable pre-acceptance failures that advanced to another executor.\n\
-             # TYPE gha_executor_router_fallback_attempts_total counter\n\
-             gha_executor_router_fallback_attempts_total {}\n\
+             # HELP gha_executor_router_readiness_skips_total Readiness probes that skipped an executor before any build submission.\n\
+             # TYPE gha_executor_router_readiness_skips_total counter\n\
+             gha_executor_router_readiness_skips_total {}\n\
              # HELP gha_executor_router_contract_rejections_total Fail-closed upstream contract rejections.\n\
              # TYPE gha_executor_router_contract_rejections_total counter\n\
              gha_executor_router_contract_rejections_total {}\n\
@@ -885,7 +977,7 @@ impl Engine {
              gha_executor_router_poll_failures_total {}\n",
             self.metrics.submissions.load(Ordering::Relaxed),
             self.metrics.accepted.load(Ordering::Relaxed),
-            self.metrics.fallback_attempts.load(Ordering::Relaxed),
+            self.metrics.readiness_skips.load(Ordering::Relaxed),
             self.metrics.contract_rejections.load(Ordering::Relaxed),
             self.metrics.exhausted.load(Ordering::Relaxed),
             self.metrics.duplicate_hits.load(Ordering::Relaxed),
@@ -1068,9 +1160,10 @@ async fn capabilities(State(engine): State<Engine>) -> Json<Value> {
         "jobKinds": ["run-profile"],
         "providers": engine.config.executors.iter().map(|executor| executor.provider).collect::<Vec<_>>(),
         "failover": {
-            "allowed": "only before an executor returns HTTP 202",
-            "retryable": ["transport", "429", "5xx"],
-            "failClosed": ["other 4xx", "unexpected success", "malformed accepted response"],
+            "allowed": "only while probing readiness before any POST /builds attempt",
+            "readinessSkips": ["transport", "non-200", "unreadable body", "ok is not true"],
+            "postSubmissionFailover": false,
+            "postAttempt": "transport, timeout, redirect, 429, 5xx, unexpected success, and malformed acceptance all fail closed without contacting another provider",
             "afterAcceptance": "status and artifact access stay pinned; never resubmit"
         },
         "callerSelectedEndpoint": false,
@@ -1079,7 +1172,6 @@ async fn capabilities(State(engine): State<Engine>) -> Json<Value> {
         "secretsInline": false,
     }))
 }
-
 async fn metrics(State(engine): State<Engine>) -> Response {
     (
         [(
@@ -1179,11 +1271,14 @@ mod tests {
 
     #[derive(Clone)]
     struct DoubleState {
+        ready_status: StatusCode,
+        ready_body: Value,
         submit_status: StatusCode,
         poll_status: StatusCode,
         job_id: String,
         submit_body: Value,
         submit_delay: Duration,
+        ready_count: Arc<AtomicU64>,
         submit_count: Arc<AtomicU64>,
         poll_count: Arc<AtomicU64>,
     }
@@ -1191,15 +1286,23 @@ mod tests {
     impl DoubleState {
         fn new(submit_status: StatusCode, poll_status: StatusCode, job_id: &str) -> Self {
             Self {
+                ready_status: StatusCode::OK,
+                ready_body: json!({ "ok": true }),
                 submit_status,
                 poll_status,
                 job_id: job_id.to_string(),
                 submit_body: json!({ "error": "upstream-secret-body-must-not-leak" }),
                 submit_delay: Duration::ZERO,
+                ready_count: Arc::new(AtomicU64::new(0)),
                 submit_count: Arc::new(AtomicU64::new(0)),
                 poll_count: Arc::new(AtomicU64::new(0)),
             }
         }
+    }
+
+    async fn double_ready(State(state): State<DoubleState>) -> Response {
+        state.ready_count.fetch_add(1, Ordering::Relaxed);
+        (state.ready_status, Json(state.ready_body)).into_response()
     }
 
     async fn double_submit(
@@ -1251,6 +1354,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let app = Router::new()
+            .route("/readyz", get(double_ready))
             .route("/builds", post(double_submit))
             .route("/builds/:id", get(double_poll))
             .with_state(state.clone());
@@ -1317,12 +1421,14 @@ mod tests {
 
         let accepted = engine.submit(request("request-one")).await.unwrap();
         assert_eq!(accepted.id, "aws~aws-job");
+        assert_eq!(aws.ready_count.load(Ordering::Relaxed), 1);
         assert_eq!(aws.submit_count.load(Ordering::Relaxed), 1);
+        assert_eq!(hetzner.ready_count.load(Ordering::Relaxed), 0);
         assert_eq!(hetzner.submit_count.load(Ordering::Relaxed), 0);
     }
 
     #[tokio::test]
-    async fn aws_500_falls_through_to_hetzner() {
+    async fn aws_500_after_post_is_ambiguous_and_never_falls_through() {
         let (aws_url, aws) = spawn_double(DoubleState::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             StatusCode::OK,
@@ -1341,14 +1447,16 @@ mod tests {
         ]))
         .unwrap();
 
-        let accepted = engine.submit(request("request-two")).await.unwrap();
-        assert_eq!(accepted.id, "hetzner~hetzner-job");
+        let error = engine.submit(request("request-two")).await.unwrap_err();
+        assert_eq!(error.code, "submission_outcome_ambiguous");
+        assert_eq!(aws.ready_count.load(Ordering::Relaxed), 1);
         assert_eq!(aws.submit_count.load(Ordering::Relaxed), 1);
-        assert_eq!(hetzner.submit_count.load(Ordering::Relaxed), 1);
+        assert_eq!(hetzner.ready_count.load(Ordering::Relaxed), 0);
+        assert_eq!(hetzner.submit_count.load(Ordering::Relaxed), 0);
     }
 
     #[tokio::test]
-    async fn aws_429_falls_through_to_hetzner() {
+    async fn aws_429_after_post_is_ambiguous_and_never_falls_through() {
         let (aws_url, aws) = spawn_double(DoubleState::new(
             StatusCode::TOO_MANY_REQUESTS,
             StatusCode::OK,
@@ -1367,14 +1475,20 @@ mod tests {
         ]))
         .unwrap();
 
-        let accepted = engine.submit(request("request-three")).await.unwrap();
-        assert_eq!(accepted.id, "hetzner~hetzner-job");
+        let error = engine.submit(request("request-three")).await.unwrap_err();
+        assert_eq!(error.code, "submission_outcome_ambiguous");
+        assert_eq!(aws.ready_count.load(Ordering::Relaxed), 1);
         assert_eq!(aws.submit_count.load(Ordering::Relaxed), 1);
-        assert_eq!(hetzner.submit_count.load(Ordering::Relaxed), 1);
+        assert_eq!(hetzner.ready_count.load(Ordering::Relaxed), 0);
+        assert_eq!(hetzner.submit_count.load(Ordering::Relaxed), 0);
     }
 
     #[tokio::test]
-    async fn transport_failure_falls_through_before_acceptance() {
+    async fn readiness_failure_selects_hetzner_before_any_aws_submission() {
+        let mut aws_state = DoubleState::new(StatusCode::ACCEPTED, StatusCode::OK, "aws-job");
+        aws_state.ready_status = StatusCode::SERVICE_UNAVAILABLE;
+        aws_state.ready_body = json!({ "ok": false });
+        let (aws_url, aws) = spawn_double(aws_state).await;
         let (hetzner_url, hetzner) = spawn_double(DoubleState::new(
             StatusCode::ACCEPTED,
             StatusCode::OK,
@@ -1382,14 +1496,43 @@ mod tests {
         ))
         .await;
         let engine = Engine::new(config(vec![
-            executor("aws", Provider::Aws, "http://127.0.0.1:9".to_string()),
+            executor("aws", Provider::Aws, aws_url),
             executor("hetzner", Provider::Hetzner, hetzner_url),
         ]))
         .unwrap();
 
         let accepted = engine.submit(request("request-four")).await.unwrap();
         assert_eq!(accepted.id, "hetzner~hetzner-job");
+        assert_eq!(aws.ready_count.load(Ordering::Relaxed), 1);
+        assert_eq!(aws.submit_count.load(Ordering::Relaxed), 0);
+        assert_eq!(hetzner.ready_count.load(Ordering::Relaxed), 1);
         assert_eq!(hetzner.submit_count.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn post_timeout_after_readiness_is_ambiguous_and_never_falls_through() {
+        let mut aws_state = DoubleState::new(StatusCode::ACCEPTED, StatusCode::OK, "aws-job");
+        aws_state.submit_delay = Duration::from_millis(250);
+        let (aws_url, aws) = spawn_double(aws_state).await;
+        let (hetzner_url, hetzner) = spawn_double(DoubleState::new(
+            StatusCode::ACCEPTED,
+            StatusCode::OK,
+            "hetzner-job",
+        ))
+        .await;
+        let mut router_config = config(vec![
+            executor("aws", Provider::Aws, aws_url),
+            executor("hetzner", Provider::Hetzner, hetzner_url),
+        ]);
+        router_config.request_timeout = Duration::from_millis(50);
+        let engine = Engine::new(router_config).unwrap();
+
+        let error = engine.submit(request("request-timeout")).await.unwrap_err();
+        assert_eq!(error.code, "submission_outcome_ambiguous");
+        assert_eq!(aws.ready_count.load(Ordering::Relaxed), 1);
+        assert_eq!(aws.submit_count.load(Ordering::Relaxed), 1);
+        assert_eq!(hetzner.ready_count.load(Ordering::Relaxed), 0);
+        assert_eq!(hetzner.submit_count.load(Ordering::Relaxed), 0);
     }
 
     #[tokio::test]
@@ -1415,7 +1558,9 @@ mod tests {
         let error = engine.submit(request("request-five")).await.unwrap_err();
         assert_eq!(error.code, "upstream_contract_rejected");
         assert!(!error.message.contains("upstream-secret-body"));
+        assert_eq!(aws.ready_count.load(Ordering::Relaxed), 1);
         assert_eq!(aws.submit_count.load(Ordering::Relaxed), 1);
+        assert_eq!(hetzner.ready_count.load(Ordering::Relaxed), 0);
         assert_eq!(hetzner.submit_count.load(Ordering::Relaxed), 0);
     }
 
@@ -1540,6 +1685,31 @@ mod tests {
         ];
         duplicate_secret[1].auth_secret_file = duplicate_secret[0].auth_secret_file.clone();
         assert!(validate_executor_set(&duplicate_secret).is_err());
+    }
+
+    #[test]
+    fn disabled_executor_identity_must_omit_endpoint_and_secret_state() {
+        let disabled = ExecutorSpec {
+            id: "hetzner".to_string(),
+            provider: Provider::Hetzner,
+            enabled: false,
+            base_url: None,
+            auth_secret_file: None,
+        };
+        assert!(build_executors(vec![disabled], 2, false)
+            .unwrap()
+            .is_empty());
+
+        let invalid = ExecutorSpec {
+            id: "hetzner".to_string(),
+            provider: Provider::Hetzner,
+            enabled: false,
+            base_url: Some("https://dormant.example.com".to_string()),
+            auth_secret_file: None,
+        };
+        assert!(build_executors(vec![invalid], 2, false)
+            .unwrap_err()
+            .contains("must omit baseUrl and authSecretFile"));
     }
 
     #[test]
