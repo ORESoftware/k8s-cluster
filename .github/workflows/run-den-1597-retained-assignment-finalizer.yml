@@ -1,0 +1,123 @@
+name: Run DEN-1597 retained-assignment finalizer
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/finalize-den-1597-retained-assignment.yml'
+      - '.github/workflows/run-den-1597-retained-assignment-finalizer.yml'
+      - 'remote/deployments/gha-clone-server-rs/src/executor_router_assignments.rs'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1597-retained-assignment-finalizer
+  cancel-in-progress: false
+
+jobs:
+  apply-test-and-clean:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'agent/den-1597-retained-assignment-core-20260804'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out exact retained-assignment branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1597-retained-assignment-core-20260804
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Extract and apply the reviewed deterministic patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow=.github/workflows/finalize-den-1597-retained-assignment.yml
+          python3 - "$workflow" /tmp/den-1597-apply.py <<'PY'
+          from pathlib import Path
+          import sys
+
+          source = Path(sys.argv[1]).read_text()
+          start_marker = "          python3 - <<'PY'\n"
+          start = source.index(start_marker) + len(start_marker)
+          end = source.index("\n          PY\n", start)
+          lines = source[start:end].splitlines()
+          normalized = []
+          for line in lines:
+              if line.startswith('          '):
+                  normalized.append(line[10:])
+              elif line:
+                  raise SystemExit(f'unexpected heredoc indentation: {line!r}')
+              else:
+                  normalized.append('')
+          Path(sys.argv[2]).write_text('\n'.join(normalized) + '\n')
+          PY
+          python3 -m py_compile /tmp/den-1597-apply.py
+          python3 /tmp/den-1597-apply.py
+
+      - name: Run formatting, strict Clippy, and every router target
+        working-directory: remote/deployments/gha-clone-server-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Enforce the product-only retained-assignment diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm -f \
+            .github/workflows/finalize-den-1597-retained-assignment.yml \
+            .github/workflows/run-den-1597-retained-assignment-finalizer.yml
+          git diff --check
+          python3 - <<'PY'
+          import subprocess
+
+          expected = {
+              'docs/gha-independent-executor-routing.md',
+              'remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs',
+              'remote/deployments/gha-clone-server-rs/src/executor_router_assignments.rs',
+              'remote/deployments/gha-clone-server-rs/tests/executor_router_http.rs',
+              '.github/workflows/finalize-den-1597-retained-assignment.yml',
+              '.github/workflows/run-den-1597-retained-assignment-finalizer.yml',
+          }
+          changed = set(
+              subprocess.check_output(
+                  ['git', 'diff', '--name-only', 'HEAD'], text=True
+              ).splitlines()
+          )
+          if changed != expected:
+              missing = sorted(expected - changed)
+              unexpected = sorted(changed - expected)
+              raise SystemExit(
+                  f'retained-assignment diff mismatch; missing={missing}, unexpected={unexpected}'
+              )
+          PY
+
+      - name: Commit and push only the fully tested product diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A -- \
+            docs/gha-independent-executor-routing.md \
+            remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs \
+            remote/deployments/gha-clone-server-rs/src/executor_router_assignments.rs \
+            remote/deployments/gha-clone-server-rs/tests/executor_router_http.rs \
+            .github/workflows/finalize-den-1597-retained-assignment.yml \
+            .github/workflows/run-den-1597-retained-assignment-finalizer.yml
+          git commit -m 'fix(DEN-1597): retain content-bound executor assignments'
+          git push origin HEAD:agent/den-1597-retained-assignment-core-20260804
