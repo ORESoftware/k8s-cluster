@@ -12,8 +12,10 @@ organizations=(apostille-me evento-globolo hacker-house-medellin embedded-alerts
 work="$(mktemp -d "${RUNNER_TEMP:-/tmp}/four-org-device-auth.XXXXXX")"
 export GH_CONFIG_DIR="$work/gh-config"
 mkdir -m 700 -p "$GH_CONFIG_DIR"
-auth_pid=''
 comment_id=''
+oauth_token=''
+device_code=''
+user_code=''
 
 api_request() {
   local method=$1 endpoint=$2 data_file=${3:-}
@@ -40,22 +42,18 @@ delete_code_comment() {
 cleanup() {
   local status=$?
   delete_code_comment
-  if [[ -n "$auth_pid" ]] && kill -0 "$auth_pid" 2>/dev/null; then
-    kill "$auth_pid" 2>/dev/null || true
-    wait "$auth_pid" 2>/dev/null || true
-  fi
-  unset ISSUE_TOKEN
+  unset ISSUE_TOKEN GH_TOKEN oauth_token device_code user_code
   find "$work" -type f -exec sh -c 'for file do : > "$file"; done' sh {} + 2>/dev/null || true
   rm -rf "$work"
   exit "$status"
 }
 trap cleanup EXIT INT TERM
 
+command -v curl >/dev/null
 command -v gh >/dev/null
 command -v git >/dev/null
 command -v jq >/dev/null
 command -v openssl >/dev/null
-command -v script >/dev/null
 [[ -x "$FLEET_ROOT/scripts/publish-all.sh" ]]
 
 public_key="$work/device-code-recipient.pem"
@@ -74,35 +72,37 @@ expected_fingerprint='0910b9a6f418e5e898957138ba98c641e721cb3da0a36d9e6da529d2a7
 observed_fingerprint="$(openssl pkey -pubin -in "$public_key" -outform DER | sha256sum | awk '{print $1}')"
 [[ "$observed_fingerprint" == "$expected_fingerprint" ]]
 
-auth_log="$work/auth.log"
-: > "$auth_log"
-chmod 600 "$auth_log"
+# GitHub CLI's public OAuth client ID. The CLI itself embeds this identifier for
+# its browser/device flow; device authorization does not require a client secret.
+oauth_client_id='178c6fc778ccc68e1d6a'
+oauth_scopes='repo read:org gist workflow'
+device_response="$work/device-response.json"
 
-# `script` supplies the pseudo-terminal expected by GitHub CLI. Its output is
-# retained only in a private runner file so the one-time device code never
-# appears in the public Actions log.
-setsid script -qefc \
-  "env -u GH_TOKEN -u GITHUB_TOKEN GH_CONFIG_DIR='$GH_CONFIG_DIR' BROWSER=/bin/true gh auth login --hostname github.com --git-protocol https --web --scopes repo,read:org,workflow" \
-  "$auth_log" >/dev/null 2>&1 &
-auth_pid=$!
+curl --silent --show-error --fail-with-body \
+  --request POST \
+  --header 'Accept: application/json' \
+  --data-urlencode "client_id=${oauth_client_id}" \
+  --data-urlencode "scope=${oauth_scopes}" \
+  https://github.com/login/device/code \
+  > "$device_response"
 
-code=''
-for _ in $(seq 1 180); do
-  code="$(LC_ALL=C tr -cd '\11\12\15\40-\176' < "$auth_log" | grep -Eo '[A-Z0-9]{4}-[A-Z0-9]{4}' | head -n 1 || true)"
-  if [[ -n "$code" ]]; then
-    break
-  fi
-  if ! kill -0 "$auth_pid" 2>/dev/null; then
-    wait "$auth_pid" || true
-    echo 'GitHub CLI exited before producing a device authorization code.' >&2
-    exit 70
-  fi
-  sleep 1
-done
-[[ "$code" =~ ^[A-Z0-9]{4}-[A-Z0-9]{4}$ ]]
+jq -e '
+  (.device_code | type == "string" and length >= 20) and
+  (.user_code | type == "string" and test("^[A-Za-z0-9]{4}-[A-Za-z0-9]{4}$")) and
+  (.verification_uri == "https://github.com/login/device") and
+  (.expires_in | type == "number" and . >= 60 and . <= 1800) and
+  (.interval | type == "number" and . >= 1 and . <= 60)
+' "$device_response" >/dev/null
 
-echo "::add-mask::$code"
-printf '%s' "$code" > "$work/device-code.txt"
+device_code="$(jq -er '.device_code' "$device_response")"
+user_code="$(jq -er '.user_code | ascii_upcase' "$device_response")"
+verification_uri="$(jq -er '.verification_uri' "$device_response")"
+expires_in="$(jq -er '.expires_in | floor' "$device_response")"
+poll_interval="$(jq -er '.interval | floor' "$device_response")"
+echo "::add-mask::$device_code"
+echo "::add-mask::$user_code"
+
+printf '%s' "$user_code" > "$work/device-code.txt"
 openssl pkeyutl -encrypt \
   -pubin \
   -inkey "$public_key" \
@@ -117,52 +117,111 @@ jq -nc \
   --arg run_id "$GITHUB_RUN_ID" \
   --arg fingerprint "$expected_fingerprint" \
   --arg ciphertext "$ciphertext" \
+  --arg verification_uri "$verification_uri" \
+  --argjson expires_in "$expires_in" \
   '{body:(
     "PAT-free GitHub device authorization is ready for workflow run `" + $run_id + "`.\n\n" +
-    "The one-time code is RSA-OAEP-SHA256 encrypted for the active ChatGPT session; no PAT or token is stored in the repository.\n\n" +
+    "Open " + $verification_uri + " and enter the encrypted one-time code after decrypting it in the active ChatGPT session. The code expires in at most " + ($expires_in|tostring) + " seconds.\n\n" +
+    "No PAT or access token is stored in the repository or included in this comment.\n\n" +
     "`device-code-v1:" + $fingerprint + ":" + $ciphertext + "`"
   )}' > "$work/comment.json"
 comment_response="$work/comment-response.json"
 api_request POST "/issues/${TRACKING_ISSUE}/comments" "$work/comment.json" > "$comment_response"
 comment_id="$(jq -er '.id | select(type == "number")' "$comment_response")"
 echo "Encrypted device authorization payload published as temporary issue comment ${comment_id}."
-unset ciphertext code
+unset ciphertext user_code
 
-# Keep the runner alive while the user approves the short-lived code. The
-# encrypted issue comment is deleted whether authorization succeeds or fails.
-auth_complete=false
-for _ in $(seq 1 1200); do
-  if ! kill -0 "$auth_pid" 2>/dev/null; then
-    auth_complete=true
+# Poll the documented OAuth device endpoint at or below GitHub's returned
+# interval. Only stable error codes are logged; the device code and eventual
+# access token stay in private runner files and masked variables.
+token_response="$work/token-response.json"
+deadline=$((SECONDS + expires_in))
+while (( SECONDS < deadline )); do
+  sleep "$poll_interval"
+  http_status="$(
+    curl --silent --show-error \
+      --request POST \
+      --output "$token_response" \
+      --write-out '%{http_code}' \
+      --header 'Accept: application/json' \
+      --data-urlencode "client_id=${oauth_client_id}" \
+      --data-urlencode "device_code=${device_code}" \
+      --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:device_code' \
+      https://github.com/login/oauth/access_token
+  )"
+  if [[ "$http_status" != 200 ]]; then
+    echo "GitHub OAuth polling returned HTTP ${http_status}." >&2
+    exit 74
+  fi
+
+  if jq -e '(.access_token | type == "string" and length >= 20)' "$token_response" >/dev/null 2>&1; then
+    oauth_token="$(jq -er '.access_token' "$token_response")"
+    echo "::add-mask::$oauth_token"
     break
   fi
-  sleep 1
-done
-if [[ "$auth_complete" != true ]]; then
-  echo 'GitHub device authorization expired before approval.' >&2
-  exit 71
-fi
-if ! wait "$auth_pid"; then
-  echo 'GitHub CLI device authorization did not complete successfully.' >&2
-  exit 72
-fi
-auth_pid=''
-delete_code_comment
 
-GH_CONFIG_DIR="$GH_CONFIG_DIR" gh auth status --hostname github.com >/dev/null
-actor="$(GH_CONFIG_DIR="$GH_CONFIG_DIR" gh api user --jq .login)"
+  oauth_error="$(jq -r '.error // "unknown_error"' "$token_response")"
+  case "$oauth_error" in
+    authorization_pending)
+      ;;
+    slow_down)
+      returned_interval="$(jq -r '.interval // empty' "$token_response")"
+      if [[ "$returned_interval" =~ ^[0-9]+$ ]] && (( returned_interval > poll_interval && returned_interval <= 120 )); then
+        poll_interval=$returned_interval
+      else
+        poll_interval=$((poll_interval + 5))
+      fi
+      ;;
+    expired_token)
+      echo 'GitHub device authorization expired before approval.' >&2
+      exit 75
+      ;;
+    access_denied)
+      echo 'GitHub device authorization was denied.' >&2
+      exit 76
+      ;;
+    incorrect_client_credentials|incorrect_device_code|unsupported_grant_type|device_flow_disabled)
+      echo "GitHub device authorization failed with ${oauth_error}." >&2
+      exit 77
+      ;;
+    *)
+      echo "GitHub device authorization returned unexpected error code ${oauth_error}." >&2
+      exit 78
+      ;;
+  esac
+done
+
+if [[ -z "$oauth_token" ]]; then
+  echo 'GitHub device authorization expired without an access token.' >&2
+  exit 79
+fi
+delete_code_comment
+unset device_code
+
+returned_scopes="$(jq -r '.scope // ""' "$token_response" | tr -d '[:space:]')"
+for required_scope in repo read:org workflow; do
+  case ",${returned_scopes}," in
+    *",${required_scope},"*) ;;
+    *)
+      echo "GitHub OAuth grant is missing required scope ${required_scope}." >&2
+      exit 80
+      ;;
+  esac
+done
+
+export GH_TOKEN="$oauth_token"
+export GH_HOST=github.com
+actor="$(gh api user --jq .login)"
 [[ "$actor" == 'ORESoftware' ]]
 for organization in "${organizations[@]}"; do
-  membership="$(GH_CONFIG_DIR="$GH_CONFIG_DIR" gh api "user/memberships/orgs/${organization}" --jq '[.state,.role] | join(":")')"
+  membership="$(gh api "user/memberships/orgs/${organization}" --jq '[.state,.role] | join(":")')"
   if [[ "$membership" != 'active:admin' ]]; then
     echo "Authenticated actor lacks active admin membership in ${organization}." >&2
-    exit 73
+    exit 81
   fi
 done
-GH_CONFIG_DIR="$GH_CONFIG_DIR" gh auth setup-git
 
-export GH_CONFIG_DIR
-export GH_HOST=github.com
+gh auth setup-git --hostname github.com --force
 "$FLEET_ROOT/scripts/publish-all.sh" "$FLEET_ROOT"
 
 results="$FLEET_ROOT/publication-results.json"
@@ -184,7 +243,7 @@ jq -nc \
     "- Pull requests verified: **" + ($pull_request_count|tostring) + "**\n" +
     "- Astro marketing sites: **4**\n" +
     "- Cloudflare Worker packages: **4**\n\n" +
-    "The temporary OAuth configuration and encrypted device-code comment were removed."
+    "The temporary OAuth token and encrypted device-code comment were removed."
   )}' > "$work/success-comment.json"
 api_request POST "/issues/${TRACKING_ISSUE}/comments" "$work/success-comment.json" >/dev/null
 
