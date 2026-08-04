@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ORESoftware/mip-solver-node.rs/seaorm-migration.schema.json",
+  "title": "mip-solver-node.rs shared-schema SeaORM migration contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "version",
+    "issue",
+    "status",
+    "schemaAuthority",
+    "declarativeMigrations",
+    "applicationPersistence",
+    "uiPolicy",
+    "requiredEvidence"
+  ],
+  "properties": {
+    "$schema": { "const": "./seaorm-migration.schema.json" },
+    "version": { "const": 1 },
+    "issue": { "const": "rust-server-seaorm-rollout" },
+    "status": { "enum": ["migration-in-progress", "seaorm-only"] },
+    "schemaAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "commit", "schemaPath", "seaOrmAdapterPath"],
+      "properties": {
+        "repository": { "const": "ORESoftware/k8s-libs-and-shared-defs" },
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "schemaPath": { "const": "pg-defs/schema/schema.sql" },
+        "seaOrmAdapterPath": { "const": "pg-defs/rust/sea-orm" }
+      }
+    },
+    "declarativeMigrations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "version",
+        "linuxX8664Sha256",
+        "serviceStartupMigrations"
+      ],
+      "properties": {
+        "repository": { "const": "declarative-migrations/declarative-migrations" },
+        "version": { "const": "1.4.2" },
+        "linuxX8664Sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "serviceStartupMigrations": { "const": false }
+      }
+    },
+    "applicationPersistence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "targetOrm",
+        "directSqlxTarget",
+        "directTokioPostgresTarget",
+        "generatedEntitiesOnly",
+        "owner"
+      ],
+      "properties": {
+        "targetOrm": { "const": "SeaORM" },
+        "directSqlxTarget": { "const": 0 },
+        "directTokioPostgresTarget": { "const": 0 },
+        "generatedEntitiesOnly": { "const": true },
+        "owner": { "const": "mip-solver-node.rs" }
+      }
+    },
+    "uiPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maudHtmx",
+        "leptos",
+        "dioxus",
+        "rendererSpecificPersistence"
+      ],
+      "properties": {
+        "maudHtmx": { "const": "default-server-first-pages" },
+        "leptos": { "const": "analytics-and-derived-state-over-shared-repositories" },
+        "dioxus": { "const": "activity-and-cross-target-components-over-shared-repositories" },
+        "rendererSpecificPersistence": { "const": false }
+      }
+    },
+    "requiredEvidence": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "direct-sqlx-inventory",
+          "cargo-metadata",
+          "shared-schema-commit",
+          "dpm-version",
+          "postgres-17-schema-apply",
+          "restart-persistence-test",
+          "no-startup-migrations"
+        ]
+      }
+    }
+  }
+}
