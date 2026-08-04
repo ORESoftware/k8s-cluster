@@ -11,7 +11,7 @@ import threading
 import unittest
 from urllib.parse import parse_qs, urlparse
 
-from verify_benefactor_observability_live import (
+from tools.verify_benefactor_observability_live import (
     POSTGRES_READY_QUERY,
     UP_QUERY,
     VerificationError,
