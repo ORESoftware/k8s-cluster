@@ -3,6 +3,7 @@
 
 # Reconcile from the immutable atomic-capacity dev commit. Later dev movement
 # is allowed only when this reviewed commit remains its ancestor.
+# The branch-local StreemPilot fixtures and ratchets are synchronized to dev.
 
 from __future__ import annotations
 
