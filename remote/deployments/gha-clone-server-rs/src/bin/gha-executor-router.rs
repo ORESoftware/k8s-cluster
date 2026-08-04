@@ -1,5 +1,4 @@
 use std::{
-    collections::BTreeMap,
     env, fs,
     path::{Path, PathBuf},
     sync::{
@@ -26,7 +25,7 @@ use executor_router::{
 };
 use serde_json::{json, Value};
 use tokio::{net::TcpListener, time::Duration};
-use tracing::{info, warn};
+use tracing::info;
 
 const DEFAULT_PORT: u16 = 8126;
 const DEFAULT_SECRET_ROOT: &str = "/var/run/secrets/gha-executor-router";
@@ -141,6 +140,7 @@ async fn main() {
         client: reqwest::Client::builder()
             .connect_timeout(config.probe_timeout)
             .timeout(config.upstream_timeout)
+            .redirect(reqwest::redirect::Policy::none())
             .user_agent("gha-executor-router/0.1")
             .build()
             .expect("build executor-router HTTP client"),
@@ -349,14 +349,26 @@ async fn submit_build(State(state): State<AppState>, headers: HeaderMap, body: B
                 .into_response();
         }
     };
-    if let Err(error) = validate_build_request(&request) {
-        state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
-        return (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(json!({ "error": error })),
-        )
-            .into_response();
-    }
+    let validated = match validate_build_request(&request) {
+        Ok(validated) => validated,
+        Err(error) => {
+            state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({
+                    "error": bounded_text(&error, state.config.max_error_chars)
+                })),
+            )
+                .into_response();
+        }
+    };
+    info!(
+        request_id = %validated.request_id,
+        repository = %validated.repository,
+        revision = %validated.revision,
+        profile = %validated.profile,
+        "validated fixed-profile executor request"
+    );
 
     let Some(executor) = first_ready_executor(&state).await else {
         state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
@@ -710,6 +722,8 @@ fn read_secret(path: &Path, root: &Path, label: &str) -> Result<String, String> 
     if value.len() < MIN_SECRET_BYTES
         || value.len() > MAX_SECRET_BYTES
         || value.as_bytes().contains(&0)
+        || value.contains('\n')
+        || value.contains('\r')
     {
         return Err(format!(
             "{label} must contain between {MIN_SECRET_BYTES} and {MAX_SECRET_BYTES} non-NUL bytes"

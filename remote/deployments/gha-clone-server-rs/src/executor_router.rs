@@ -185,7 +185,11 @@ pub fn materialize_executors(
                 spec.id
             ));
         }
-        if auth.len() > MAX_SECRET_BYTES || auth.as_bytes().contains(&0) {
+        if auth.len() > MAX_SECRET_BYTES
+            || auth.as_bytes().contains(&0)
+            || auth.contains('\n')
+            || auth.contains('\r')
+        {
             return Err(format!(
                 "executor {} authentication secret exceeds the bounded secret contract",
                 spec.id
@@ -572,7 +576,7 @@ mod tests {
     }
 
     #[test]
-    fn URL_policy_allows_cluster_loopback_and_https_origins_only() {
+    fn url_policy_allows_cluster_loopback_and_https_origins_only() {
         for value in [
             "http://localhost:8100",
             "http://127.0.0.1:8100",
@@ -611,6 +615,10 @@ mod tests {
         let executors = materialize_executors(&specs, &root).unwrap();
         assert_eq!(executors.len(), 1);
         assert_eq!(executors[0].auth, "a".repeat(MIN_SECRET_BYTES));
+
+        fs::write(&secret, format!("{}\n{}", "a".repeat(16), "b".repeat(16))).unwrap();
+        assert!(materialize_executors(&specs, &root).is_err());
+        fs::write(&secret, "a".repeat(MIN_SECRET_BYTES)).unwrap();
 
         let nested = root.join("nested");
         fs::create_dir_all(&nested).unwrap();
