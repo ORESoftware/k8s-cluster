@@ -1,0 +1,154 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-gha-executor-router
+  namespace: default
+  labels:
+    app: dd-gha-executor-router
+spec:
+  # Activation is fail-closed. Keep at zero until both provider endpoints,
+  # three distinct mounted credentials, image evidence, and failover drills are
+  # recorded on DEN-1597.
+  replicas: 0
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-gha-executor-router
+  template:
+    metadata:
+      labels:
+        app: dd-gha-executor-router
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gha-executor-router
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              export CARGO_HOME=/tmp/cargo
+              export CARGO_TARGET_DIR=/tmp/gha-executor-router-target
+              source_root="$(mktemp -d /tmp/gha-executor-router-source.XXXXXX)"
+              git -c protocol.ext.allow=never -c protocol.file.allow=never \
+                clone --depth 1 --no-tags --branch "${GHA_EXECUTOR_ROUTER_SOURCE_REF}" -- \
+                "${GHA_EXECUTOR_ROUTER_SOURCE_URL}" "$source_root"
+              cd "$source_root/remote/deployments/gha-executor-router-rs"
+              exec cargo run --release --locked
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: "8126"
+            - name: RUST_LOG
+              value: gha_executor_router=info
+            - name: GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED
+              value: "false"
+            - name: GHA_EXECUTOR_ROUTER_AUTH_SECRET_FILE
+              value: /var/run/secrets/gha-executor-router/operator-auth
+            - name: GHA_EXECUTOR_ROUTER_EXECUTORS_JSON
+              valueFrom:
+                configMapKeyRef:
+                  name: dd-gha-executor-router
+                  key: GHA_EXECUTOR_ROUTER_EXECUTORS_JSON
+            - name: GHA_EXECUTOR_ROUTER_MAX_EXECUTORS
+              valueFrom:
+                configMapKeyRef:
+                  name: dd-gha-executor-router
+                  key: GHA_EXECUTOR_ROUTER_MAX_EXECUTORS
+            - name: GHA_EXECUTOR_ROUTER_MAX_ROUTES
+              valueFrom:
+                configMapKeyRef:
+                  name: dd-gha-executor-router
+                  key: GHA_EXECUTOR_ROUTER_MAX_ROUTES
+            - name: GHA_EXECUTOR_ROUTER_MAX_RESPONSE_BYTES
+              valueFrom:
+                configMapKeyRef:
+                  name: dd-gha-executor-router
+                  key: GHA_EXECUTOR_ROUTER_MAX_RESPONSE_BYTES
+            - name: GHA_EXECUTOR_ROUTER_REQUEST_TIMEOUT_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: dd-gha-executor-router
+                  key: GHA_EXECUTOR_ROUTER_REQUEST_TIMEOUT_SECONDS
+            - name: GHA_EXECUTOR_ROUTER_SOURCE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: dd-gha-executor-router
+                  key: GHA_EXECUTOR_ROUTER_SOURCE_URL
+            - name: GHA_EXECUTOR_ROUTER_SOURCE_REF
+              valueFrom:
+                configMapKeyRef:
+                  name: dd-gha-executor-router
+                  key: GHA_EXECUTOR_ROUTER_SOURCE_REF
+          ports:
+            - name: http
+              containerPort: 8126
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+              ephemeral-storage: 2Gi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+              ephemeral-storage: 8Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: router-secrets
+              mountPath: /var/run/secrets/gha-executor-router
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: router-secrets
+          secret:
+            secretName: dd-gha-executor-router-secrets
+            defaultMode: 0440
+            items:
+              - key: operator_auth
+                path: operator-auth
+              - key: aws_build_server_auth
+                path: aws-auth
+              - key: hetzner_build_server_auth
+                path: hetzner-auth
+        - name: tmp
+          emptyDir:
+            sizeLimit: 8Gi
