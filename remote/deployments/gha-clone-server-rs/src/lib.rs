@@ -147,11 +147,133 @@ pub fn capabilities(limits: &PlannerLimits) -> CapabilityResponse {
     }
 }
 
+fn validate_workflow_document(source: &str) -> Result<(), String> {
+    if source.as_bytes().contains(&b'\t') {
+        return Err("workflowYaml contains a tab; indentation must use spaces".into());
+    }
+
+    let mut parents = Vec::<(usize, String)>::new();
+    let mut seen = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut sequence_ordinals = BTreeMap::<String, usize>::new();
+    let mut block_scalar_indent = None::<usize>;
+
+    for (index, raw_line) in source.lines().enumerate() {
+        let line_number = index + 1;
+        let indent = raw_line.bytes().take_while(|byte| *byte == b' ').count();
+        let trimmed = raw_line.trim();
+
+        if let Some(block_indent) = block_scalar_indent {
+            if trimmed.is_empty() || indent > block_indent {
+                continue;
+            }
+            block_scalar_indent = None;
+        }
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if matches!(trimmed, "---" | "...") {
+            return Err(format!(
+                "workflowYaml line {line_number} uses a YAML document marker"
+            ));
+        }
+
+        while parents
+            .last()
+            .is_some_and(|(parent_indent, _)| *parent_indent >= indent)
+        {
+            parents.pop();
+        }
+
+        let mut content = raw_line[indent..].trim_end();
+        if content == "-" || content.starts_with("- ") {
+            let parent_scope = parents
+                .iter()
+                .map(|(_, parent)| parent.as_str())
+                .collect::<Vec<_>>()
+                .join("/");
+            let counter = sequence_ordinals
+                .entry(format!("{parent_scope}@{indent}"))
+                .or_default();
+            parents.push((indent, format!("[{counter}]")));
+            *counter += 1;
+            content = content
+                .strip_prefix('-')
+                .expect("validated sequence item")
+                .trim_start();
+        }
+        if content.is_empty() {
+            continue;
+        }
+        if content.starts_with(['!', '&', '*']) {
+            return Err(format!(
+                "workflowYaml line {line_number} uses a YAML tag, anchor, or alias"
+            ));
+        }
+
+        let Some((raw_key, raw_value)) = content.split_once(':') else {
+            continue;
+        };
+        let key = raw_key.trim().trim_matches(['\'', '"']);
+        let value = raw_value.trim_start();
+        if key.is_empty() {
+            continue;
+        }
+        if !key.is_ascii() {
+            return Err(format!(
+                "workflowYaml line {line_number} has a non-ASCII mapping key"
+            ));
+        }
+        if key == "<<" {
+            return Err(format!(
+                "workflowYaml line {line_number} uses a YAML merge key"
+            ));
+        }
+        if value.starts_with(['!', '&', '*']) {
+            return Err(format!(
+                "workflowYaml line {line_number} uses a YAML tag, anchor, or alias"
+            ));
+        }
+
+        let scope = parents
+            .iter()
+            .map(|(_, parent)| parent.as_str())
+            .collect::<Vec<_>>()
+            .join("/");
+        if !seen
+            .entry(scope)
+            .or_default()
+            .insert(key.to_ascii_lowercase())
+        {
+            return Err(format!(
+                "workflowYaml line {line_number} repeats mapping key {key:?}"
+            ));
+        }
+
+        let scalar = value.split_whitespace().next().unwrap_or_default();
+        if matches!(scalar, "|" | "|-" | "|+" | ">" | ">-" | ">+") {
+            block_scalar_indent = Some(indent);
+        }
+        if value.is_empty() {
+            parents.push((indent, key.to_ascii_lowercase()));
+        }
+    }
+    Ok(())
+}
+
 pub fn build_plan(
     request: &PlanRequest,
     limits: &PlannerLimits,
 ) -> Result<WorkflowPlan, Vec<String>> {
     let mut errors = Vec::new();
+    if limits.max_workflow_bytes == 0 {
+        errors.push("maxWorkflowBytes must be greater than zero".into());
+    }
+    if limits.max_jobs == 0 {
+        errors.push("maxJobs must be greater than zero".into());
+    }
+    if limits.max_steps_per_job == 0 {
+        errors.push("maxStepsPerJob must be greater than zero".into());
+    }
     if !valid_repository(&request.repository) {
         errors.push(
             "repository must be an owner/name identifier using GitHub-safe characters".into(),
@@ -169,6 +291,9 @@ pub fn build_plan(
     }
     if request.workflow_yaml.as_bytes().contains(&0) {
         errors.push("workflowYaml must not contain NUL bytes".into());
+    }
+    if let Err(error) = validate_workflow_document(&request.workflow_yaml) {
+        errors.push(error);
     }
     if !errors.is_empty() {
         return Err(errors);
@@ -656,10 +781,16 @@ fn valid_github_component(value: &str) -> bool {
 }
 
 fn valid_workflow_path(value: &str) -> bool {
-    value.starts_with(".github/workflows/")
-        && (value.ends_with(".yml") || value.ends_with(".yaml"))
-        && !value.contains("..")
-        && !value.contains('\\')
+    const PREFIX: &str = ".github/workflows/";
+    let Some(file) = value.strip_prefix(PREFIX) else {
+        return false;
+    };
+    !file.is_empty()
+        && !file.contains('/')
+        && !file.contains('\\')
+        && file != "."
+        && file != ".."
+        && (file.ends_with(".yml") || file.ends_with(".yaml"))
         && value.len() <= 256
 }
 
@@ -994,5 +1125,135 @@ jobs:
         assert!(verify_github_signature("secret", b"body", &signature));
         assert!(!verify_github_signature("secret", b"tampered", &signature));
         assert!(!verify_github_signature("secret", b"body", "sha1=00"));
+    }
+}
+
+#[cfg(test)]
+mod den_1606_planner_input_tests {
+    use super::*;
+
+    fn request(yaml: &str) -> PlanRequest {
+        PlanRequest {
+            repository: "sonus-auris/sonus-auris-interfaces".into(),
+            revision: "0123456789abcdef0123456789abcdef01234567".into(),
+            workflow_path: ".github/workflows/ci.yml".into(),
+            workflow_yaml: yaml.into(),
+        }
+    }
+
+    #[test]
+    fn direct_workflow_paths_only() {
+        for invalid in [
+            ".github/workflows/nested/ci.yml",
+            ".github/workflows\\ci.yml",
+            ".github/workflows/ci.txt",
+            ".github/workflows/",
+        ] {
+            let mut input = request("jobs: {}");
+            input.workflow_path = invalid.into();
+            let errors = build_plan(&input, &PlannerLimits::default())
+                .unwrap_err()
+                .join("\n");
+            assert!(errors.contains("workflowPath"), "{invalid}: {errors}");
+        }
+    }
+
+    #[test]
+    fn zero_planner_limits_fail_closed() {
+        let errors = build_plan(
+            &request("jobs: {}"),
+            &PlannerLimits {
+                max_workflow_bytes: 0,
+                max_jobs: 0,
+                max_steps_per_job: 0,
+            },
+        )
+        .unwrap_err()
+        .join("\n");
+        for field in ["maxWorkflowBytes", "maxJobs", "maxStepsPerJob"] {
+            assert!(errors.contains(field), "{errors}");
+        }
+    }
+
+    #[test]
+    fn ambiguous_block_yaml_is_rejected_before_deserialization() {
+        let cases = [
+            ("---\njobs: {}\n", "document marker"),
+            ("jobs: &jobs {}\n", "anchor"),
+            ("jobs: *jobs\n", "alias"),
+            ("jobs:\n  <<: *jobs\n", "merge key"),
+            ("jobs: {}\njobs: {}\n", "repeats mapping key"),
+            ("jóbs: {}\n", "non-ASCII"),
+            ("jobs:\n\ttest: {}\n", "tab"),
+        ];
+        for (yaml, expected) in cases {
+            let errors = build_plan(&request(yaml), &PlannerLimits::default())
+                .unwrap_err()
+                .join("\n");
+            assert!(errors.contains(expected), "{yaml:?}: {errors}");
+        }
+    }
+
+    #[test]
+    fn block_scalar_text_is_not_mistaken_for_yaml_structure() {
+        let plan = build_plan(
+            &request(
+                r#"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: script
+        run: |
+          echo ---
+          echo '&anchor *alias <<:'
+          cargo test
+      - name: second
+        run: cargo fmt --check
+"#,
+            ),
+            &PlannerLimits::default(),
+        )
+        .expect("block scalar contents are command text");
+        assert!(plan.independent_executable);
+    }
+
+    #[test]
+    fn sequence_items_have_independent_mapping_scopes() {
+        let plan = build_plan(
+            &request(
+                r#"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: format
+        run: cargo fmt --check
+      - name: test
+        run: cargo test
+"#,
+            ),
+            &PlannerLimits::default(),
+        )
+        .expect("different steps may repeat name and run keys");
+        assert!(plan.independent_executable);
+
+        let errors = build_plan(
+            &request(
+                r#"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: test
+        run: cargo test
+        run: cargo fmt --check
+"#,
+            ),
+            &PlannerLimits::default(),
+        )
+        .unwrap_err()
+        .join("\n");
+        assert!(errors.contains("repeats mapping key \"run\""), "{errors}");
     }
 }
