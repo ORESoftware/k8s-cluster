@@ -5,12 +5,18 @@ on:
   push:
     branches:
       - agent/durable-worker-server-rs-v2
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - '.durable-worker-bootstrap/**'
+      - '.github/workflows/durable-worker-bootstrap-v2.yml'
 
 permissions:
   contents: write
 
 concurrency:
-  group: durable-worker-bootstrap-v2-${{ github.ref }}
+  group: durable-worker-bootstrap-v2-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -22,6 +28,7 @@ jobs:
       - name: Checkout clean publication branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.head_ref || github.ref_name }}
           persist-credentials: true
           fetch-depth: 1
 
