@@ -1,0 +1,140 @@
+name: Publish remaining MCP fleet
+run-name: Publish remaining MCP fleet (${{ github.sha }})
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'requests/remaining-mcp-fleet-2026-08-04.json'
+      - '.github/workflows/ops-publish-remaining-mcp-fleet.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-remaining-mcp-fleet
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 190
+    steps:
+      - name: Check out exact trusted main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Configure trusted-main AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: remaining-mcp-fleet-publisher
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+      - name: Publish, test, merge, and verify from protected SSM host
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: |
+          set -euo pipefail
+          test -n "${INSTANCE_ID:-}"
+          trusted_sha="$(git rev-parse HEAD)"
+          test "$trusted_sha" = "${GITHUB_SHA}"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          remote_script="$RUNNER_TEMP/publish-remaining-mcp-fleet.sh"
+          cat > "$remote_script" <<'REMOTE_EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          umask 077
+          trusted_sha="${1:?trusted SHA required}"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          stage=initialization
+          work="$(mktemp -d /tmp/remaining-mcp-fleet.XXXXXX)"
+          cleanup() {
+            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN encoded_pat
+            unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
+            rm -rf "$work"
+          }
+          trap cleanup EXIT
+          trap 'rc=$?; printf "publisher-stage=%s status=failed rc=%s\n" "$stage" "$rc" >&2; exit "$rc"' ERR
+
+          stage=protected-credential
+          command -v kubectl >/dev/null
+          test -r /etc/kubernetes/admin.conf
+          encoded_pat="$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}')"
+          test -n "$encoded_pat"
+          GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode)"
+          unset encoded_pat
+          test -n "$GH_TOKEN"
+          [[ "$GH_TOKEN" != *$'\n'* && "$GH_TOKEN" != *$'\r'* ]]
+          export GH_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
+          printf 'publisher-stage=%s status=passed\n' "$stage"
+
+          stage=publisher-identity-and-ownership
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+          headers = {
+              'Accept':'application/vnd.github+json',
+              'Authorization':f"Bearer {os.environ['GH_TOKEN']}",
+              'X-GitHub-Api-Version':'2022-11-28',
+              'User-Agent':'remaining-mcp-fleet-publisher-preflight',
+          }
+          def get(path):
+              request=urllib.request.Request('https://api.github.com'+path,headers=headers)
+              try:
+                  with urllib.request.urlopen(request,timeout=30) as response: return json.load(response)
+              except urllib.error.HTTPError as error:
+                  error.read(4096)
+                  raise SystemExit(f'preflight {path}: HTTP {error.code}') from error
+          identity=get('/user')
+          if identity.get('login')!='ORESoftware': raise SystemExit(f"unexpected publisher identity: {identity.get('login')!r}")
+          for organization in ('cliptown','opto-sync','voxletra','zed-pkg','zed-pkg-test'):
+              membership=get(f'/user/memberships/orgs/{organization}')
+              observed=(membership.get('role'),membership.get('state'))
+              if observed!=('admin','active'): raise SystemExit(f'{organization} membership is {observed!r}')
+              print(f'{organization} owner membership verified')
+          PY
+          printf 'publisher-stage=%s status=passed\n' "$stage"
+
+          stage=trusted-source
+          git init "$work/k8s-cluster"
+          git -C "$work/k8s-cluster" remote add origin https://github.com/ORESoftware/k8s-cluster.git
+          git -C "$work/k8s-cluster" fetch --depth=1 origin "$trusted_sha"
+          git -C "$work/k8s-cluster" checkout --detach FETCH_HEAD
+          test "$(git -C "$work/k8s-cluster" rev-parse HEAD)" = "$trusted_sha"
+          cd "$work/k8s-cluster"
+          python3 -m py_compile scripts/ops/remaining_mcp_fleet.py scripts/ops/publish_remaining_mcp_fleet.py scripts/ops/test_remaining_mcp_fleet.py
+          python3 scripts/ops/test_remaining_mcp_fleet.py -v
+          printf 'publisher-stage=%s status=passed sha=%s\n' "$stage" "$trusted_sha"
+
+          stage=repository-publication
+          python3 scripts/ops/publish_remaining_mcp_fleet.py requests/remaining-mcp-fleet-2026-08-04.json | tee "$work/publication-report.log"
+          tail -c 60000 "$work/publication-report.log"
+          printf 'publisher-stage=%s status=passed\n' "$stage"
+
+          stage=complete
+          printf 'publisher-stage=%s status=success\n' "$stage"
+          REMOTE_EOF
+          chmod 700 "$remote_script"
+
+          encoded_script="$(base64 --wrap=0 "$remote_script")"
+          remote_command="printf '%s' '$encoded_script' | base64 --decode > /tmp/publish-remaining-mcp-fleet.sh; chmod 700 /tmp/publish-remaining-mcp-fleet.sh; bash /tmp/publish-remaining-mcp-fleet.sh '$trusted_sha' > /tmp/publish-remaining-mcp-fleet.log 2>&1; status=\$?; if test -f /tmp/publish-remaining-mcp-fleet.log; then tail -c 65000 /tmp/publish-remaining-mcp-fleet.log; fi; rm -f /tmp/publish-remaining-mcp-fleet.sh /tmp/publish-remaining-mcp-fleet.log; exit \$status"
+          parameters="$RUNNER_TEMP/ssm-parameters.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
+          command_id="$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --timeout-seconds 10800 --comment "Publish remaining MCP fleet from $trusted_sha" --parameters "file://$parameters" --query 'Command.CommandId' --output text)"
+          echo "ssm_command_id=$command_id"
+
+          status=Pending
+          for _ in $(seq 1 3600); do
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$status" in Success|Failed|Cancelled|TimedOut|Cancelling) break;; esac
+            sleep 3
+          done
+          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' --output json
+          test "$status" = Success
