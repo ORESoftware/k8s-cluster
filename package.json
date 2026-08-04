@@ -13,6 +13,8 @@
     "build": "astro build",
     "check:agents": "node scripts/validate-agent-instructions.mjs",
     "check": "npm run check:agents && npm run build && node scripts/verify-build.mjs && node --test tests/*.test.mjs && node scripts/verify-deployment-provenance.mjs",
+    "test:artifact": "node --test tests/pages-artifact-evidence.test.mjs",
+    "evidence:pages": "bash scripts/package-pages-artifact.sh",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "preview": "astro preview",

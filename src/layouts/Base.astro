@@ -1,7 +1,7 @@
 ---
 // Base HTML document layout. Renders <head> (title, description, favicon,
 // Open Graph tags, self-hosted font preload) and a <body><slot/> for page
-// content. Public asset URLs are prefixed with the GitHub Pages base path.
+// content. Public asset URLs are prefixed with the configured Astro base path.
 import "../styles/global.css";
 
 interface Props {
@@ -20,27 +20,31 @@ const {
 const base = import.meta.env.BASE_URL.replace(/\/+$/, "");
 const ogImage = new URL(`${base}/og.svg`, Astro.site);
 const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
-// GitHub Pages ignores `public/_headers`, so the response-header policy in that
-// file is never actually served (see the warning at the top of it). These two
-// `<meta>` equivalents are the part of that policy a static host *can* enforce,
-// and they are emitted for production builds only so `astro dev`'s HMR client
-// still loads. Directives that are invalid in `<meta>` (frame-ancestors, HSTS,
-// Permissions-Policy) still require a real header in front of the origin.
+
+// GitHub Pages ignores `public/_headers`, so enforce the active-content policy
+// browsers support in markup. Header-only controls such as HSTS,
+// frame-ancestors, COOP, CORP, nosniff, and Permissions-Policy remain documented
+// in `_headers` for a future CDN/origin migration and must not be represented as
+// active response headers today.
 //
-// The site ships no client JavaScript at all, hence `script-src 'none'`.
-// `style-src` needs 'unsafe-inline' for Astro's scoped <style> blocks and the
-// inline @font-face rule below.
+// The generated site intentionally has no client JavaScript, remote connections,
+// frames, workers, plugins, or document base override. Keep this policy aligned
+// with `public/_headers`, `tests/security-metadata.test.mjs`, and the independent
+// deployed-runtime browser gates in sonus-auris-e2e.
 const contentSecurityPolicy = [
   "default-src 'self'",
-  "base-uri 'self'",
+  "base-uri 'none'",
+  "object-src 'none'",
   "script-src 'none'",
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self'",
   "img-src 'self' data:",
-  "connect-src 'self'",
-  "form-action 'self'",
+  "media-src 'self' blob:",
+  "connect-src 'none'",
   "frame-src 'none'",
-  "object-src 'none'",
+  "worker-src 'none'",
+  "manifest-src 'self'",
+  "form-action 'self'",
   "upgrade-insecure-requests",
 ].join("; ");
 const enforceMetaCsp = import.meta.env.PROD;
@@ -63,6 +67,7 @@ const fontFaceCss = `@font-face {
       <meta http-equiv="Content-Security-Policy" content={contentSecurityPolicy} />
     )}
     <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta name="robots" content="index,follow,max-image-preview:large" />
     <link rel="icon" type="image/svg+xml" href={`${base}/favicon.svg`} />
     <meta name="generator" content={Astro.generator} />
 
