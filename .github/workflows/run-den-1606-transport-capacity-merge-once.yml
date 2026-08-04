@@ -1,0 +1,224 @@
+# PR-visible one-time semantic reconciler. The final product commit deletes this
+# carrier, the source workflow, and the bounded conflict diagnostic.
+name: Run DEN-1606 transport-capacity semantic merge once
+
+on:
+  push:
+    branches:
+      - agent/den-1606-transport-capacity-semantic-merge
+    paths:
+      - .github/workflows/run-den-1606-transport-capacity-merge-once.yml
+  pull_request:
+    branches: [dev]
+    types: [synchronize]
+    paths:
+      - .github/workflows/run-den-1606-transport-capacity-merge-once.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-1606-transport-capacity-semantic-merge
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name != 'pull_request' ||
+        (github.event.pull_request.head.repo.full_name == github.repository &&
+         github.event.pull_request.head.ref == 'agent/den-1606-transport-capacity-semantic-merge'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1606-transport-capacity-semantic-merge
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Apply the reviewed transport patch and resolve only two known meanings
+        shell: bash
+        run: |
+          set -euo pipefail
+          reviewed='6d050a5c516c0dcc1c13646fe8742dfed477346c'
+          patch="${RUNNER_TEMP}/den-1606-reviewed-transport.patch"
+          git fetch --no-tags origin "$reviewed"
+          git diff --binary "${reviewed}^" "$reviewed" >"$patch"
+
+          set +e
+          git apply --3way --index "$patch" >"${RUNNER_TEMP}/apply.stdout" 2>"${RUNNER_TEMP}/apply.stderr"
+          status=$?
+          set -e
+
+          if test "$status" -ne 0; then
+            conflicts="$(git diff --name-only --diff-filter=U | sort)"
+            expected='remote/deployments/gha-clone-server-rs/src/main.rs'
+            if test "$conflicts" != "$expected"; then
+              echo 'unknown semantic merge conflict set' >&2
+              printf 'expected:\n%s\nactual:\n%s\n' "$expected" "$conflicts" >&2
+              cat "${RUNNER_TEMP}/apply.stdout" >&2
+              cat "${RUNNER_TEMP}/apply.stderr" >&2
+              git diff --cc --no-ext-diff >&2
+              exit 1
+            fi
+
+            python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('remote/deployments/gha-clone-server-rs/src/main.rs')
+          source = path.read_text(encoding='utf-8')
+          marker = '>>>>>>> 6d050a5c (fix(DEN-1606): bind clone build-server transport and identity)\n'
+
+          poll_pattern = re.compile(
+              r'<<<<<<< HEAD\n'
+              r'(?P<indent>[ \t]+)build_poll_seconds: env_u64\("GHA_CLONE_BUILD_POLL_SECONDS", 2\)\?,\n'
+              r'(?P=indent)build_timeout_seconds: env_u64\("GHA_CLONE_BUILD_TIMEOUT_SECONDS", 3600\)\?,\n'
+              r'=======\n'
+              r'(?P=indent)build_poll_seconds: env_nonzero_u64\("GHA_CLONE_BUILD_POLL_SECONDS", 2\)\?,\n'
+              r'(?P=indent)build_timeout_seconds: env_nonzero_u64\("GHA_CLONE_BUILD_TIMEOUT_SECONDS", 3600\)\?,\n'
+              r'>>>>>>> 6d050a5c \(fix\(DEN-1606\): bind clone build-server transport and identity\)\n'
+          )
+          matches = list(poll_pattern.finditer(source))
+          if len(matches) != 1:
+              raise SystemExit(f'expected one poll/timeout conflict, found {len(matches)}')
+          indent = matches[0].group('indent')
+          resolution = (
+              f'{indent}build_poll_seconds: env_nonzero_u64('
+              '"GHA_CLONE_BUILD_POLL_SECONDS", 2)?,\n'
+              f'{indent}build_timeout_seconds: env_nonzero_u64('
+              '"GHA_CLONE_BUILD_TIMEOUT_SECONDS", 3600)?,\n'
+          )
+          source = poll_pattern.sub(resolution, source, count=1)
+
+          conflict_start = source.find('<<<<<<< HEAD\n=======\n')
+          if conflict_start < 0:
+              raise SystemExit('known test-ownership conflict is missing')
+          conflict_end = source.find(marker, conflict_start)
+          if conflict_end < 0:
+              raise SystemExit('known test-ownership conflict terminator is missing')
+          theirs_start = conflict_start + len('<<<<<<< HEAD\n=======\n')
+          theirs = source[theirs_start:conflict_end]
+
+          obsolete_start = theirs.find(
+              '    #[test]\n    fn terminal_run_pruning_never_discards_active_runs()'
+          )
+          transport_start = theirs.find(
+              '    #[test]\n    fn build_server_origin_is_credential_free_and_transport_safe()'
+          )
+          if obsolete_start < 0 or transport_start < 0 or transport_start <= obsolete_start:
+              raise SystemExit('known obsolete/new test ownership boundary changed')
+
+          # Keep the atomic reservation module as the owner of capacity/eviction
+          # invariants. Keep all reviewed origin, identity, and redirect tests.
+          transport_tests = theirs[:obsolete_start] + theirs[transport_start:]
+          source = source[:conflict_start] + transport_tests + source[conflict_end + len(marker):]
+
+          if any(token in source for token in ('<<<<<<< ', '\n=======\n', '>>>>>>> ')):
+              raise SystemExit('conflict marker survived semantic resolution')
+          if 'fn terminal_run_pruning_never_discards_active_runs()' in source:
+              raise SystemExit('obsolete prune_runs test survived semantic resolution')
+          for required in (
+              'fn build_server_origin_is_credential_free_and_transport_safe()',
+              'fn build_job_response_identity_is_validated_and_bound()',
+              'async fn configured_http_client_does_not_follow_redirects()',
+          ):
+              if required not in source:
+                  raise SystemExit(f'reviewed transport test was lost: {required}')
+
+          path.write_text(source, encoding='utf-8')
+          PY
+            git add remote/deployments/gha-clone-server-rs/src/main.rs
+          fi
+
+          test -z "$(git diff --name-only --diff-filter=U)"
+
+      - name: Prove capacity, transport, and identity invariants coexist
+        shell: bash
+        run: |
+          set -euo pipefail
+          main='remote/deployments/gha-clone-server-rs/src/main.rs'
+          reservation='remote/deployments/gha-clone-server-rs/src/run_reservation.rs'
+          for marker in \
+            'reserve_run_records' \
+            'forget_webhook_delivery' \
+            'StatusCode::TOO_MANY_REQUESTS' \
+            'build_server_url_from_env' \
+            'Policy::none()' \
+            'validate_build_job_response_id' \
+            'build status returned a mismatched job ID'
+          do
+            grep -Fq "$marker" "$main"
+          done
+          grep -Fq 'active_runs.saturating_add(requested) > max_runs' "$reservation"
+          grep -Fq 'env_nonzero_u64("GHA_CLONE_BUILD_POLL_SECONDS", 2)' "$main"
+          grep -Fq 'env_nonzero_u64("GHA_CLONE_BUILD_TIMEOUT_SECONDS", 3600)' "$main"
+          grep -Fq 'env_nonzero_usize("GHA_CLONE_MAX_RUNS", 256)' "$main"
+          grep -Fq 'GHA_CLONE_BUILD_SERVER_URL must use HTTPS' "$main"
+          test -f docs/gha-clone-run-capacity-boundary.md
+          test -f docs/gha-clone-build-server-boundary.md
+          test -z "$(grep -R -n 'fn terminal_run_pruning_never_discards_active_runs' \
+            remote/deployments/gha-clone-server-rs || true)"
+
+      - name: Run every clone-server target and real-process regression
+        working-directory: remote/deployments/gha-clone-server-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Verify bounded semantic product scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git diff --name-only --diff-filter=U)"
+          if git grep -nE '^(<<<<<<< |=======|>>>>>>> )' -- \
+            docs/gha-clone-build-server-boundary.md \
+            remote/deployments/gha-clone-server-rs; then
+            echo 'git conflict marker detected' >&2
+            exit 1
+          fi
+          expected=$'docs/gha-clone-build-server-boundary.md\nremote/deployments/gha-clone-server-rs/src/main.rs\nremote/deployments/gha-clone-server-rs/tests/http_api.rs\nremote/deployments/gha-clone-server-rs/tests/streempilot_http.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_retention.rs'
+          actual="$(git diff --name-only HEAD | sort)"
+          test "$actual" = "$expected" || {
+            echo 'unexpected semantic merge paths:' >&2
+            printf '%s\n' "$actual" >&2
+            exit 1
+          }
+
+      - name: Commit the product-only semantic merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='a14072064f25d7b49807656d4231f93d335a6d55'
+          rm -f \
+            .github/workflows/apply-den-1606-transport-capacity-semantic-merge.yml \
+            .github/workflows/run-den-1606-transport-capacity-merge-once.yml \
+            docs/den-1606-transport-merge-diagnostic.txt
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          workflow_non_deletions="$(git diff --cached --name-only --diff-filter=ACMRTUXB -- .github/workflows || true)"
+          test -z "$workflow_non_deletions"
+          git commit -m 'fix(DEN-1606): merge clone transport with atomic capacity'
+          expected=$'docs/gha-clone-build-server-boundary.md\nremote/deployments/gha-clone-server-rs/src/main.rs\nremote/deployments/gha-clone-server-rs/tests/http_api.rs\nremote/deployments/gha-clone-server-rs/tests/streempilot_http.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_retention.rs'
+          actual="$(git diff --name-only "$base"...HEAD | sort)"
+          test "$actual" = "$expected" || {
+            echo 'unexpected final product paths:' >&2
+            printf '%s\n' "$actual" >&2
+            exit 1
+          }
+          git push origin HEAD:agent/den-1606-transport-capacity-semantic-merge
