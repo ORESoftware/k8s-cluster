@@ -219,9 +219,16 @@ jobs:
         run: |
           set -euo pipefail
           git rm .github/workflows/den-1550-clean-current-dev-finalizer.yml
+          allowed='^(\.github/workflows/den-1550-clean-current-dev-finalizer\.yml|docs/gha-profile-repository-admission\.md|remote/deployments/gha-clone-server-rs/|remote/tests/general/gha-clone-server-config\.test\.ts)$'
+          unexpected="$(git status --porcelain | sed -E 's/^.. //' | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            echo 'unexpected files changed by the validator:' >&2
+            echo "$unexpected" >&2
+            exit 1
+          fi
           git add \
             docs/gha-profile-repository-admission.md \
-            remote/deployments/gha-clone-server-rs/tests/planner_adversarial.rs \
+            remote/deployments/gha-clone-server-rs \
             remote/tests/general/gha-clone-server-config.test.ts
           git diff --cached --check
           git config user.name github-actions[bot]
