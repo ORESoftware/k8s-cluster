@@ -24,6 +24,8 @@ const MAX_SESSION_ID_BYTES: usize = 128;
 pub enum ProviderMode {
     Enroll,
     Verify,
+    /// Run a non-retaining ceremony for enumeration-resistant unknown accounts.
+    Decoy,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -162,7 +164,7 @@ impl IdentityClient {
     }
 
     pub async fn status(&self, session_id: &str) -> Result<IdentityVerification, AuthError> {
-        validate_session_id(session_id)?;
+        validate_request_session_id(session_id)?;
         let url = self
             .base
             .join(&format!("v1/identity-verification/sessions/{session_id}"))
@@ -224,7 +226,7 @@ impl VoiceClient {
     }
 
     pub async fn status(&self, session_id: &str) -> Result<VoiceVerification, AuthError> {
-        validate_session_id(session_id)?;
+        validate_request_session_id(session_id)?;
         let url = self
             .base
             .join(&format!("v1/voice-verification/sessions/{session_id}"))
@@ -364,9 +366,7 @@ fn validate_request_reference(value: &str) -> Result<(), AuthError> {
     if valid_reference(value) {
         Ok(())
     } else {
-        Err(AuthError::BadRequest(
-            "invalid biometric provider reference",
-        ))
+        Err(AuthError::BadRequest("invalid biometric provider reference"))
     }
 }
 
@@ -447,6 +447,11 @@ async fn parse_json_body<T: DeserializeOwned>(mut response: Response) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decoy_mode_is_a_stable_wire_value() {
+        assert_eq!(serde_json::to_string(&ProviderMode::Decoy).unwrap(), "\"decoy\"");
+    }
 
     #[test]
     fn session_ids_cannot_escape_the_provider_path() {
