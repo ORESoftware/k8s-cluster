@@ -113,7 +113,10 @@ jobs:
               deployment,
               /name:\s*GHA_EXECUTOR_ROUTER_AUTH_PATH\s+value:\s*\/var\/run\/secrets\/gha-executor-router\/inbound-auth/,
             );
-            assert.match(deployment, /secretName:\s*dd-gha-executor-router-secrets/);
+            assert.match(
+              deployment,
+              /projected:\s+defaultMode:\s*0400[\s\S]*?name:\s*dd-gha-executor-router-secrets[\s\S]*?key:\s*inbound_auth[\s\S]*?path:\s*inbound-auth/,
+            );
             assert.match(deployment, /defaultMode:\s*0400/);
             assert.match(deployment, /key:\s*inbound_auth\s+path:\s*inbound-auth/);
             assert.match(
