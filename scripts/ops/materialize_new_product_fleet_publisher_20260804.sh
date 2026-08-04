@@ -6,7 +6,7 @@ destination="${1:?destination path required}"
 repo_root="${2:-$(git rev-parse --show-toplevel)}"
 chunk_dir="$repo_root/scripts/ops/new-product-fleets-20260804"
 raw_expected_sha256=681149a614e9d4c6619c7c94d254b8ab374ae464d71aaf945fa45d892fc712bd
-expected_sha256=1bb8b0fcc66b05b5ef7761fe35a499928e8b3bbcb52c67eed59e4cae2374c91f
+expected_sha256=bde70ffe5c1a656f797fd349ae8324aa33ee2f5c5844000b3c0dc2b8a55f8d77
 
 test -d "$chunk_dir"
 mapfile -t chunks < <(find "$chunk_dir" -maxdepth 1 -type f -name 'publisher.py.gz.b64.part-*' | sort)
@@ -25,11 +25,44 @@ import sys
 
 path = Path(sys.argv[1])
 text = path.read_text(encoding="utf-8")
-needle = "cargo fmt --all -- --check"
-replacement = "cargo fmt --all"
-if text.count(needle) != 2:
-    raise SystemExit("unexpected generated CI formatting-gate count")
-path.write_text(text.replace(needle, replacement), encoding="utf-8")
+replacements = [
+    ("cargo fmt --all -- --check", "cargo fmt --all", 2),
+    ('Html(format!("<code>{}</code>", payload))', 'Html(format!("<code>{payload}</code>"))', 1),
+    ('.route("/v1/events", post(publish_event))', '.route("/v1/realtime-events", post(publish_event))', 1),
+    ('"POST /v1/events",', '"POST /v1/realtime-events",', 1),
+    (
+        'SEED_VALUES=", ".join(json.dumps(item) for item in product.samples),',
+        'SEED_VALUES=", ".join(json.dumps(item, ensure_ascii=False) for item in product.samples),',
+        1,
+    ),
+    ('assert_eq!(merged["local"], true);', 'assert!(merged["local"].as_bool().unwrap_or_default());', 1),
+    ('assert_eq!(merged["remote"], true);', 'assert!(merged["remote"].as_bool().unwrap_or_default());', 1),
+    (
+        '''            if output == "pretty" {
+                println!("{}", serde_json::to_string_pretty(&payload)?);
+            } else {
+                println!("{}", serde_json::to_string(&payload)?);
+            }
+''',
+        '''            let rendered = if output == "pretty" {
+                serde_json::to_string_pretty(&payload)?
+            } else {
+                serde_json::to_string(&payload)?
+            };
+            println!("{rendered}");
+''',
+        1,
+    ),
+]
+for needle, replacement, expected_count in replacements:
+    observed_count = text.count(needle)
+    if observed_count != expected_count:
+        raise SystemExit(
+            f"unexpected materializer replacement count for {needle!r}: "
+            f"expected {expected_count}, observed {observed_count}"
+        )
+    text = text.replace(needle, replacement)
+path.write_text(text, encoding="utf-8")
 PY
 
 observed="$(sha256sum "$temporary" | awk '{print $1}')"
