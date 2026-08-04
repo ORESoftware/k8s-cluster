@@ -1,0 +1,33 @@
+name: Validate portfolio project links
+
+on:
+  pull_request:
+    paths:
+      - ops/registries/portfolio-project-links.csv
+      - scripts/ops/validate_portfolio_project_links.py
+      - docs/portfolio-project-linking.md
+      - .github/workflows/validate-portfolio-project-links.yml
+  push:
+    branches:
+      - main
+    paths:
+      - ops/registries/portfolio-project-links.csv
+      - scripts/ops/validate_portfolio_project_links.py
+      - docs/portfolio-project-linking.md
+      - .github/workflows/validate-portfolio-project-links.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate canonical mappings
+        run: python scripts/ops/validate_portfolio_project_links.py
