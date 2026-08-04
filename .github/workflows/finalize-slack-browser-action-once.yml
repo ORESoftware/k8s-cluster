@@ -1,0 +1,110 @@
+name: Finalize Slack browser action semantics once
+
+on:
+  push:
+    branches:
+      - agent/slack-browser-e2e-consolidated-20260804
+    paths:
+      - .github/workflows/finalize-slack-browser-action-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-slack-browser-action-once
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact PR branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/slack-browser-e2e-consolidated-20260804
+          fetch-depth: 2
+          persist-credentials: true
+          show-progress: false
+
+      - name: Apply the reviewed two-file correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_parent='265f0808398c500d4f4bd1a40446a6024a46b8c5'
+          test "$(git rev-parse HEAD^)" = "$expected_parent"
+          expected='.github/workflows/finalize-slack-browser-action-once.yml'
+          actual="$(git diff --name-only HEAD^ HEAD)"
+          test "$actual" = "$expected"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow_path = Path('.github/workflows/slack-agent-command-browser-e2e.yml')
+          workflow = workflow_path.read_text(encoding='utf-8')
+          replacements = (
+              ('agent/den-1041-ores-slash-commands', '0ba7d2d4eb8c44583503d4567af2de1f73bc5598', 3),
+              ('agent/den-1231-slack-run-envelope', '91d5da1594f2f93bce1bcf3422c0fd303d7fe514', 3),
+          )
+          for old, new, expected_count in replacements:
+              actual_count = workflow.count(old)
+              if actual_count != expected_count:
+                  raise SystemExit(
+                      f'workflow source-ref boundary drifted for {old}: '
+                      f'expected {expected_count}, got {actual_count}'
+                  )
+              workflow = workflow.replace(old, new)
+          workflow_path.write_text(workflow, encoding='utf-8')
+
+          test_path = Path('remote/tests/ui/slack-agent-command.playwright.test.mjs')
+          test = test_path.read_text(encoding='utf-8')
+          task_old = "text: 'Investigate DEN-1231 with tests',\n      trigger: 'trigger-claude-direct',"
+          task_new = "text: 'Implement DEN-1231 with tests',\n      trigger: 'trigger-claude-direct',"
+          if test.count(task_old) != 1:
+              raise SystemExit('direct Claude task boundary drifted')
+          test = test.replace(task_old, task_new, 1)
+
+          action_old = "expectedIssue: 'DEN-1231',\n      expectedAction: 'investigate',\n    });\n\n    const duplicateResponse"
+          action_new = "expectedIssue: 'DEN-1231',\n      expectedAction: 'implement',\n    });\n\n    const duplicateResponse"
+          if test.count(action_old) != 1:
+              raise SystemExit('direct Claude action assertion boundary drifted')
+          test_path.write_text(test.replace(action_old, action_new, 1), encoding='utf-8')
+          PY
+
+      - name: Validate the product-only patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          node --check remote/tests/ui/slack-agent-command.playwright.test.mjs
+          ! grep -R -F 'agent/den-1041-ores-slash-commands' \
+            .github/workflows/slack-agent-command-browser-e2e.yml
+          ! grep -R -F 'agent/den-1231-slack-run-envelope' \
+            .github/workflows/slack-agent-command-browser-e2e.yml
+          grep -Fq "text: 'Implement DEN-1231 with tests'" \
+            remote/tests/ui/slack-agent-command.playwright.test.mjs
+          grep -Fq "expectedAction: 'implement'" \
+            remote/tests/ui/slack-agent-command.playwright.test.mjs
+          docker run --rm \
+            -v "$PWD:/repo" \
+            -w /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            .github/workflows/slack-agent-command-browser-e2e.yml
+
+      - name: Commit and push the clean two-file result
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/finalize-slack-browser-action-once.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            .github/workflows/slack-agent-command-browser-e2e.yml \
+            remote/tests/ui/slack-agent-command.playwright.test.mjs
+          git diff --cached --check
+          expected=$'.github/workflows/finalize-slack-browser-action-once.yml\n.github/workflows/slack-agent-command-browser-e2e.yml\nremote/tests/ui/slack-agent-command.playwright.test.mjs'
+          actual="$(git diff --cached --name-only | sort)"
+          test "$actual" = "$expected"
+          git commit -m 'test(slack): align direct action and pin e2e sources'
+          git push origin HEAD:agent/slack-browser-e2e-consolidated-20260804
