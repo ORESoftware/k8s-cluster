@@ -1,0 +1,103 @@
+name: Messaging Intel YAML ambiguity
+
+on:
+  push:
+    branches:
+      - agent/msgint-yaml-ambiguity-tests-20260804
+    paths:
+      - remote/deployments/gha-clone-server-rs/tests/msgint_yaml_ambiguity.rs
+      - scripts/apply-msgint-yaml-ambiguity-guard.py
+      - .github/workflows/msgint-yaml-ambiguity.yml
+  pull_request:
+    branches:
+      - agent/msgint-gha-clone-hardened-clean-20260804
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - remote/deployments/gha-clone-server-rs/src/lib.rs
+      - remote/deployments/gha-clone-server-rs/tests/msgint_yaml_ambiguity.rs
+      - scripts/apply-msgint-yaml-ambiguity-guard.py
+      - .github/workflows/msgint-yaml-ambiguity.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: msgint-yaml-ambiguity-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  parser-boundary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+      - name: Check only the new adversarial test formatting
+        run: rustfmt --edition 2021 --check remote/deployments/gha-clone-server-rs/tests/msgint_yaml_ambiguity.rs
+      - name: Reject warnings in the ambiguity target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo clippy --locked --test msgint_yaml_ambiguity -- -D warnings
+      - name: Execute the ambiguity target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --test msgint_yaml_ambiguity -- --nocapture
+
+  workflow-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate this workflow with pinned actionlint
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/msgint-yaml-ambiguity.yml
+
+  finalize-guard:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name == 'push' || github.head_ref == 'agent/msgint-yaml-ambiguity-tests-20260804')
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out the live ambiguity branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/msgint-yaml-ambiguity-tests-20260804
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Apply the reviewed parser guard
+        run: python3 scripts/apply-msgint-yaml-ambiguity-guard.py
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: clippy
+      - name: Reject warnings across every clone-server target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Run every clone-server test target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --all-targets -- --nocapture
+      - name: Commit only the validated parser change
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add remote/deployments/gha-clone-server-rs/src/lib.rs
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "The ambiguity guard produced no parser change" >&2
+            exit 1
+          fi
+          git commit -m "fix(gha-clone): reject ambiguous YAML before planning"
+          git push origin HEAD:agent/msgint-yaml-ambiguity-tests-20260804
