@@ -25,111 +25,296 @@ jobs:
     timeout-minutes: 60
     env:
       FEATURE_BRANCH: agent/msgint-gha-clone-hardened-current-dev-20260804
-      REVIEW_SOURCE: 273a4d24256e18af98e04350e3d35d0f6b275f06
-      OLD_MSGINT_REVISION: 7d905806b2000479bdacb9b206f33b26a707ba5e
-      NEW_MSGINT_REVISION: 952623b07fd83caa3a83ee27bdea293f6bd4372f
+      DEV_REVISION: 4e701d8c9208956fe0890df1107168e032f335c3
     steps:
-      - name: Check out the exact current-dev feature branch
+      - name: Check out the exact feature branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: agent/msgint-gha-clone-hardened-current-dev-20260804
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Transplant the reviewed permanent non-workflow files
+      - name: Merge exact dev ancestry and resolve only audited overlaps
         shell: bash
         run: |
           set -euo pipefail
-          git fetch --no-tags origin "$REVIEW_SOURCE"
-          test "$(git rev-parse FETCH_HEAD)" = "$REVIEW_SOURCE"
-          files=(
-            docs/gha-profile-repository-admission.md
-            remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml
-            remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml
-            remote/deployments/build-server-rs/readme.md
-            remote/deployments/build-server-rs/src/profiles.rs
-            remote/deployments/build-server-rs/src/validation.rs
-            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/package-lock.json
-            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/package.json
-            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/src/operator-config.mjs
-            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/test/operator-config.test.mjs
-            remote/deployments/gha-clone-server-rs/README.md
-            remote/deployments/gha-clone-server-rs/src/lib.rs
-            remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml
-            remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs
+          git fetch --no-tags origin "$DEV_REVISION"
+          test "$(git rev-parse FETCH_HEAD)" = "$DEV_REVISION"
+
+          set +e
+          git merge --no-commit --no-ff "$DEV_REVISION"
+          merge_status=$?
+          set -e
+          if [ "$merge_status" -ne 0 ]; then
+            conflicts="$(git diff --name-only --diff-filter=U | sort)"
+            expected="$(printf '%s\n' \
+              .github/workflows/gha-clone-server.yml \
+              remote/tests/general/gha-clone-server-config.test.ts \
+              | sort)"
+            if [ "$conflicts" != "$expected" ]; then
+              printf 'unexpected merge conflicts:\n%s\n' "$conflicts" >&2
+              exit 1
+            fi
+          fi
+
+          # The feature-side workflow is already the reviewed semantic union of
+          # current executor-router/NATS coverage and Messaging Intel coverage.
+          git restore --source=HEAD --staged --worktree -- \
+            .github/workflows/gha-clone-server.yml
+
+          # Start the contract from exact dev so every new router assertion is
+          # preserved, then add the Messaging Intel boundary assertions below.
+          git restore --source="$DEV_REVISION" --staged --worktree -- \
             remote/tests/general/gha-clone-server-config.test.ts
-          )
-          for path in "${files[@]}"; do
-            mkdir -p -- "$(dirname -- "$path")"
-            git show "$REVIEW_SOURCE:$path" >"$path"
-          done
 
           python3 <<'PY'
-          import os
           from pathlib import Path
 
-          integration = Path('remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs')
-          source = integration.read_text(encoding='utf-8')
-          old = os.environ['OLD_MSGINT_REVISION']
-          new = os.environ['NEW_MSGINT_REVISION']
-          if source.count(old) != 1 or new in source:
-              raise SystemExit('unexpected Messaging Intel integration revision state')
-          integration.write_text(source.replace(old, new, 1), encoding='utf-8')
+          path = Path('remote/tests/general/gha-clone-server-config.test.ts')
+          source = path.read_text(encoding='utf-8')
 
-          planner = Path('remote/deployments/gha-clone-server-rs/tests/planner_adversarial.rs')
-          tests = planner.read_text(encoding='utf-8')
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one anchor, found {count}')
+              source = source.replace(old, new, 1)
 
-          old_reason = '        "secret-bearing env/with values are unsupported",\n'
-          new_reasons = (
-              '        "secret-bearing step environments are unsupported",\n'
-              '        "secret-bearing setup inputs are unsupported",\n'
-              '        "must use an exact 40-hex commit SHA",\n'
+          replace_once(
+              "const profilesPath = 'remote/deployments/build-server-rs/src/profiles.rs';\n",
+              """const profilesPath = 'remote/deployments/build-server-rs/src/profiles.rs';
+          const continuityPatchPath =
+            'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml';
+          const profileAdmissionDocPath = 'docs/gha-profile-repository-admission.md';
+          """,
+              'profile path constants',
           )
-          if tests.count(old_reason) != 1:
-              raise SystemExit('expected one stale combined secret-reason assertion')
-          tests = tests.replace(old_reason, new_reasons, 1)
 
-          start_anchor = '    for id in ["compact_secret", "github_token", "oidc"] {\n'
-          end_anchor = '    assert!(!plan.independent_executable);\n'
-          if tests.count(start_anchor) != 1:
-              raise SystemExit(
-                  f'expected one stale secret-context loop start, found {tests.count(start_anchor)}'
-              )
-          start = tests.find(start_anchor)
-          end = tests.find(end_anchor, start)
-          if end < 0:
-              raise SystemExit('secret-context loop end anchor was not found')
-          new_secret_checks = (
-              '    assert!(job(&plan, "compact_secret")\n'
-              '        .independent_reasons\n'
-              '        .iter()\n'
-              '        .any(|reason| reason.contains("secret-bearing setup inputs")));\n'
-              '    for id in ["github_token", "oidc"] {\n'
-              '        assert!(job(&plan, id)\n'
-              '            .independent_reasons\n'
-              '            .iter()\n'
-              '            .any(|reason| reason.contains("secret-bearing step environments")));\n'
-              '    }\n'
+          replace_once(
+              """const metaIntegrationTestPath =
+            'remote/deployments/gha-clone-server-rs/tests/meta_self_test.rs';
+          """,
+              """const metaIntegrationTestPath =
+            'remote/deployments/gha-clone-server-rs/tests/meta_self_test.rs';
+          const msgintIntegrationTestPath =
+            'remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs';
+          const msgintFixturePath =
+            'remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml';
+          """,
+              'Messaging Intel test path constants',
           )
-          tests = tests[:start] + new_secret_checks + tests[end:]
 
-          exact_sha = '0123456789abcdef0123456789abcdef01234567'
-          for action in ['ACTIONS/CHECKOUT', 'Actions/Setup-Node']:
-              stale = f'{action}@abc'
-              pinned = f'{action}@{exact_sha}'
-              if tests.count(stale) != 1 or pinned in tests:
-                  raise SystemExit(f'unexpected action-ref state for {action}')
-              tests = tests.replace(stale, pinned, 1)
+          config_start = source.index(
+              "test('config allowlists exact trusted repositories and the bounded meta workflow'"
+          )
+          profiles_start = source.index(
+              "test('build server exposes fixed Rust, Node, and Python continuity profiles'",
+              config_start,
+          )
+          config_block = r'''test('config allowlists exact trusted repositories and the bounded meta workflow', () => {
+            const config = read(configMapPath);
+            assert.match(config, /ORESoftware\/k8s-cluster/);
+            assert.match(config, /messaging-intel\/msgint-connectors/);
+            assert.match(config, /sonus-auris\/sonus-auris-interfaces/);
+            assert.match(config, /\.github\/workflows\/ci\.yml/);
+            assert.match(
+              config,
+              /"ORESoftware\/k8s-cluster": \["\.github\/workflows\/gha-clone-server-meta\.yml"\]/,
+            );
+            assert.doesNotMatch(
+              config,
+              /"ORESoftware\/k8s-cluster": \["\.github\/workflows\/gha-clone-server\.yml"\]/,
+            );
+            assert.match(
+              config,
+              /"messaging-intel\/msgint-connectors": \["\.github\/workflows\/gha-clone-operator-config\.yml"\]/,
+            );
+            assert.doesNotMatch(config, /https?:\/\/[^/\s]+\/\*|owner\/\*/);
+          });
 
-          planner.write_text(tests, encoding='utf-8')
+          '''
+          source = source[:config_start] + config_block + source[profiles_start:]
+
+          profiles_start = source.index(
+              "test('build server exposes fixed Rust, Node, and Python continuity profiles'"
+          )
+          planner_start = source.index(
+              "test('planner and dispatcher preserve the fail-closed command boundary'",
+              profiles_start,
+          )
+          profiles_block = r'''test('build server exposes fixed Rust, Node, and Python continuity profiles', () => {
+            const profiles = read(profilesPath);
+            for (const profile of [
+              'rust-verify',
+              'node-verify',
+              'node-hardened-verify',
+              'node-hardened-test',
+              'python-verify',
+            ]) {
+              assert.match(profiles, new RegExp(`name: "${profile}"`));
+            }
+            assert.match(
+              profiles,
+              /cargo clippy --locked --all-targets --all-features -- -D warnings/,
+            );
+            assert.match(
+              profiles,
+              /remote\/deployments\/gha-clone-server-rs\/Cargo\.toml/,
+            );
+            assert.match(profiles, /pnpm install --frozen-lockfile/);
+            assert.match(profiles, /npm ci --ignore-scripts/);
+            assert.match(profiles, /npm run test:operator-config/);
+            assert.match(profiles, /npm audit --audit-level=high/);
+            assert.match(profiles, /python -m pytest/);
+
+            const continuityPatch = read(continuityPatchPath);
+            assert.match(continuityPatch, /node-hardened-verify/);
+            assert.match(continuityPatch, /node-hardened-test/);
+            assert.match(
+              continuityPatch,
+              /=https:\/\/github\.com\/messaging-intel\/msgint-connectors\.git/,
+            );
+            assert.doesNotMatch(
+              continuityPatch,
+              /https:\/\/github\.com\/messaging-intel\/(?!msgint-connectors\.git)/,
+            );
+            assert.doesNotMatch(profiles, /find .*Cargo\.toml|for crate in/);
+
+            const admissionDoc = read(profileAdmissionDocPath);
+            assert.match(
+              admissionDoc,
+              /=https:\/\/github\.com\/messaging-intel\/msgint-connectors\.git/,
+            );
+            assert.match(admissionDoc, /suffix-appended lookalikes/);
+
+            const imageAssignments = [
+              ...profiles.matchAll(/const\s+[A-Z_]+_IMAGE:\s*&str\s*=\s*"([^"]+)";/g),
+            ];
+            assert.ok(imageAssignments.length >= 5, 'expected all fixed runner image assignments');
+            for (const [, image] of imageAssignments) {
+              assert.ok(!image.endsWith(':latest'), `runner image must be pinned: ${image}`);
+            }
+          });
+
+          '''
+          source = source[:profiles_start] + profiles_block + source[planner_start:]
+
+          planner_start = source.index(
+              "test('planner and dispatcher preserve the fail-closed command boundary'"
+          )
+          router_start = source.index(
+              "test('executor router code and live tests preserve no-duplicate provider pinning'",
+              planner_start,
+          )
+          planner_block = r'''test('planner and dispatcher preserve the fail-closed command boundary', () => {
+            const planner = read(plannerPath);
+            const server = read(serverPath);
+            assert.match(planner, /service containers require the isolated ARC DinD lane/);
+            assert.match(planner, /fixed profiles do not forward caller-selected variables/);
+            assert.match(planner, /secret-bearing setup inputs are unsupported/);
+            assert.match(planner, /secret-bearing step environments are unsupported/);
+            assert.match(planner, /expressions in setup inputs are unsupported/);
+            assert.match(planner, /workflow job dependency graph contains a cycle/);
+            assert.match(planner, /revision is not an exact 40-hex commit SHA/);
+            assert.match(planner, /workflow-level .* is unsupported by the independent lane/);
+            assert.match(planner, /"working-directory"/);
+            assert.match(planner, /unsupported by the fixed-profile executor/);
+            assert.match(planner, /non-Linux native execution is unavailable/);
+            assert.match(planner, /node-hardened-verify/);
+            assert.match(planner, /node-hardened-test/);
+            assert.match(planner, /exact reviewed command sequence/);
+            assert.match(planner, /exact 40-hex commit SHA/);
+            assert.match(server, /job_kind: "run-profile"/);
+            assert.match(server, /profile,/);
+            assert.doesNotMatch(server, /command:\s*&|script:\s*&|runner_image/);
+          });
+
+          '''
+          source = source[:planner_start] + planner_block + source[router_start:]
+
+          meta_anchor = "test('meta integration test starts the real server and submits its own workflow'"
+          meta_start = source.index(meta_anchor)
+          msgint_block = r'''test('Messaging Intel integration dispatches exact profiles and rejects adjacent workflows', () => {
+            const integration = read(msgintIntegrationTestPath);
+            assert.match(integration, /CARGO_BIN_EXE_gha-clone-server/);
+            assert.match(integration, /messaging-intel\/msgint-connectors/);
+            assert.match(integration, /gha-clone-operator-config\.yml/);
+            assert.match(integration, /node-hardened-verify/);
+            assert.match(integration, /node-hardened-test/);
+            assert.match(integration, /submissions\.len\(\), 2/);
+            assert.match(integration, /UNPROCESSABLE_ENTITY/);
+            assert.match(integration, /npm publish/);
+            assert.match(integration, /PROD_TOKEN/);
+            assert.match(integration, /dispatched a build despite rejection/);
+            assert.match(integration, /env_remove\("GHA_CLONE_GITHUB_TOKEN"\)/);
+          });
+
+          '''
+          source = source[:meta_start] + msgint_block + source[meta_start:]
+
+          bounded_anchor = "test('bounded meta workflow remains independently compilable'"
+          bounded_start = source.index(bounded_anchor)
+          fixture_block = r'''test('Messaging Intel mirror remains independently compilable and non-secret', () => {
+            const workflow = read(msgintFixturePath);
+            assert.match(workflow, /workflow_dispatch:/);
+            assert.match(workflow, /operator_config:/);
+            assert.match(workflow, /repository_tests:/);
+            assert.match(workflow, /needs: operator_config/);
+            assert.equal((workflow.match(/npm ci --ignore-scripts/g) ?? []).length, 2);
+            assert.match(workflow, /npm run check/);
+            assert.match(workflow, /npm run test:operator-config/);
+            assert.match(workflow, /npm audit --audit-level=high/);
+            assert.match(workflow, /npm test/);
+            assert.equal((workflow.match(/persist-credentials:\s*false/g) ?? []).length, 2);
+            assert.doesNotMatch(
+              workflow,
+              /\$\{\{|secrets\.|working-directory:|timeout-minutes:|permissions:|concurrency:/,
+            );
+            assert.doesNotMatch(workflow, /services:|container:|strategy:|\bcurl\b|\bwget\b/);
+          });
+
+          '''
+          source = source[:bounded_start] + fixture_block + source[bounded_start:]
+
+          dedicated_start = source.index(
+              "test('dedicated GitHub Actions workflow checks Rust, live router, and deployment contracts'"
+          )
+          dedicated_block = r'''test('dedicated GitHub Actions workflow checks Rust, live router, Messaging Intel, and deployment contracts', () => {
+            const workflow = read(workflowPath);
+            assert.match(workflow, /cargo fmt --all -- --check/);
+            assert.match(workflow, /cargo clippy --locked --all-targets -- -D warnings/);
+            assert.match(workflow, /cargo test --locked --all-targets/);
+            assert.match(workflow, /cargo test --locked --test executor_router_http/);
+            assert.match(workflow, /dd-gha-executor-router\*/);
+            assert.match(workflow, /gha-clone-server-config\.test\.ts/);
+            assert.match(workflow, /gha-clone-server-meta\.yml/);
+            assert.match(workflow, /msgint-operator-config\.yml/);
+            assert.match(workflow, /dd-build-server-gha-continuity\.patch\.yaml/);
+            assert.match(workflow, /actionlint@sha256:/);
+            assert.match(workflow, /run_msgint_profile_smoke/);
+            assert.match(workflow, /create-github-app-token@/);
+            assert.match(workflow, /K8S_SUBMODULE_APP_ID/);
+            assert.match(workflow, /K8S_SUBMODULE_APP_PRIVATE_KEY/);
+            assert.match(workflow, /NODE_HARDENED_TEST_STEPS/);
+            assert.match(workflow, /node-hardened-test/);
+            assert.match(workflow, /persist-credentials:\s*false/);
+            assert.doesNotMatch(workflow, /\brm\s+-rf\b/);
+            assert.doesNotMatch(
+              workflow,
+              /ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}/,
+            );
+          });
+          '''
+          source = source[:dedicated_start] + dedicated_block
+
+          path.write_text(source, encoding='utf-8')
           PY
 
-          git diff --check
-          unexpected="$(git diff --name-only | grep '^\.github/workflows/' || true)"
-          if [ -n "$unexpected" ]; then
-            printf 'non-workflow transplant modified workflow files:\n%s\n' "$unexpected" >&2
-            exit 1
-          fi
+          git add \
+            .github/workflows/gha-clone-server.yml \
+            remote/tests/general/gha-clone-server-config.test.ts
+          test -z "$(git diff --name-only --diff-filter=U)"
+          git diff --cached --check
 
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
@@ -140,27 +325,37 @@ jobs:
         working-directory: remote/deployments/gha-clone-server-rs
         run: |
           set -euo pipefail
-          cargo fmt --all
           cargo fmt --all -- --check
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked --all-targets -- --nocapture
+          cargo test --locked --test executor_router_http -- --nocapture
 
       - name: Check out the exact private remote/libs gitlink
         uses: ./.github/actions/checkout-remote-libs
         with:
           ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
-      - name: Validate build-server profiles and exact admission
+      - name: Validate build-server idempotency, NATS, profiles, and admission
         working-directory: remote/deployments/build-server-rs
         run: |
           set -euo pipefail
-          rustfmt --edition 2021 --check src/profiles.rs src/validation.rs
+          rustfmt --edition 2021 --check \
+            src/jobs.rs \
+            src/main.rs \
+            src/nats_submit.rs \
+            src/profiles.rs \
+            src/validation.rs
           cargo check --locked --all-targets
           cargo test --locked --bin dd-build-server -- --nocapture
 
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
 
       - name: Execute the credential-free hardened Node fixture
         working-directory: remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile
@@ -172,27 +367,28 @@ jobs:
           npm audit --audit-level=high
           npm test
 
-      - name: Commit only the validated permanent non-workflow files
+      - name: Validate permanent workflow and deployment contracts
+        run: |
+          set -euo pipefail
+          pnpm install --dir remote/tests --frozen-lockfile
+          pnpm --dir remote/tests exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/repo:ro" \
+            -w /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            .github/workflows/gha-clone-server.yml \
+            .github/workflows/gha-clone-server-meta.yml \
+            remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml
+
+      - name: Commit the validated semantic merge
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add \
-            docs/gha-profile-repository-admission.md \
-            remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml \
-            remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml \
-            remote/deployments/build-server-rs/readme.md \
-            remote/deployments/build-server-rs/src/profiles.rs \
-            remote/deployments/build-server-rs/src/validation.rs \
-            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile \
-            remote/deployments/gha-clone-server-rs/README.md \
-            remote/deployments/gha-clone-server-rs/src/lib.rs \
-            remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml \
-            remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs \
-            remote/deployments/gha-clone-server-rs/tests/planner_adversarial.rs \
-            remote/tests/general/gha-clone-server-config.test.ts
+          git add -A
           git diff --cached --check
-          test -z "$(git diff --cached --name-only | grep '^\.github/workflows/' || true)"
-          git commit -m 'test(gha-clone): transplant Messaging Intel hardening onto current dev'
+          git commit -m 'merge(dev): preserve router and Messaging Intel continuity'
           git push origin "HEAD:$FEATURE_BRANCH"
