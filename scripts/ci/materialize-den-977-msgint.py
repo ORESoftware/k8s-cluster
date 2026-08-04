@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fail-closed three-way reconciliation for the reviewed Messaging Intel product."""
 
-# Reconcile from the immutable planner-hardened dev commit. Later dev movement
+# Reconcile from the immutable atomic-capacity dev commit. Later dev movement
 # is allowed only when this reviewed commit remains its ancestor.
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from den977_workflow_resolver_fix import resolve_workflow
 RESOLVERS[WORKFLOW_PATH] = resolve_workflow
 RESOLVERS[LIB_PATH] = resolve_lib
 
-CURRENT_DEV_SHA = "a7d730abd874a1ee39875bbe5a2274aa681b480a"
+CURRENT_DEV_SHA = "a14072064f25d7b49807656d4231f93d335a6d55"
 REVIEWED_MSGINT_SHA = "bf4fca2e22937caf18a07dc1bd7c4494fff4b95c"
 EXPECTED_MERGE_BASE = "4e701d8c9208956fe0890df1107168e032f335c3"
 
