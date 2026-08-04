@@ -369,9 +369,10 @@ fn webhook_signature(body: &[u8]) -> String {
     format!("sha256={}", hex::encode(mac.finalize().into_bytes()))
 }
 
-async fn post_workflow_run(
+async fn post_github_event(
     client: &Client,
     server: &ServerProcess,
+    event: &str,
     delivery: &str,
     payload: &Value,
 ) -> reqwest::Response {
@@ -380,13 +381,22 @@ async fn post_workflow_run(
     client
         .post(format!("{}/webhooks/github", server.base_url))
         .header("content-type", "application/json")
-        .header("x-github-event", "workflow_run")
+        .header("x-github-event", event)
         .header("x-github-delivery", delivery)
         .header("x-hub-signature-256", signature)
         .body(body)
         .send()
         .await
-        .expect("workflow_run request")
+        .expect("GitHub webhook request")
+}
+
+async fn post_workflow_run(
+    client: &Client,
+    server: &ServerProcess,
+    delivery: &str,
+    payload: &Value,
+) -> reqwest::Response {
+    post_github_event(client, server, "workflow_run", delivery, payload).await
 }
 
 async fn get_run(client: &Client, server: &ServerProcess, id: &str) -> Value {
@@ -422,6 +432,53 @@ async fn health(client: &Client, server: &ServerProcess) -> Value {
     let (status, body) = response_json(response).await;
     assert_eq!(status, StatusCode::OK);
     body
+}
+
+#[tokio::test]
+async fn non_workflow_run_events_never_fetch_or_dispatch() {
+    let github = MockGithub::start(rust_workflow(), 0).await;
+    let build = MockBuildServer::start().await;
+    let server = spawn_server(execution_env(&github, &build)).await;
+    let client = Client::new();
+
+    let cases = [
+        (
+            "push",
+            "01111111-1111-4111-8111-111111111111",
+            json!({
+                "repository": { "full_name": REPOSITORY },
+                "after": REVISION
+            }),
+        ),
+        (
+            "pull_request",
+            "02222222-2222-4222-8222-222222222222",
+            json!({
+                "repository": { "full_name": REPOSITORY },
+                "pull_request": { "head": { "sha": REVISION } }
+            }),
+        ),
+    ];
+
+    for (event, delivery, payload) in cases {
+        let response = post_github_event(&client, &server, event, delivery, &payload).await;
+        let (status, body) = response_json(response).await;
+        assert_eq!(status, StatusCode::ACCEPTED);
+        assert_eq!(body["accepted"], false);
+        assert_eq!(body["event"], event);
+        assert_eq!(body["delivery"], delivery);
+        assert_eq!(
+            body["reason"],
+            "only workflow_run events may trigger the failure fallback"
+        );
+    }
+
+    assert!(github.state.requests.lock().await.is_empty());
+    assert!(build.state.submissions.lock().await.is_empty());
+    assert_eq!(
+        health(&client, &server).await["webhookDeliveriesRetained"],
+        0
+    );
 }
 
 #[tokio::test]
