@@ -1,0 +1,91 @@
+name: Build DEN-1606 planner-input product from temporary PR
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/den-1606-planner-input-pr-builder.yml
+      - .github/workflows/den-1606-planner-input-builder.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1606-planner-input-pr-builder
+  cancel-in-progress: false
+
+jobs:
+  build-product-commit:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-1606-planner-input-builder-20260804'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out temporary builder branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1606-planner-input-builder-20260804
+          fetch-depth: 1
+          persist-credentials: true
+          show-progress: false
+
+      - name: Extract reviewed transform and switch to clean product branch
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/den-1606-planner-input-builder.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          step = lines.index('      - name: Apply direct planner input hardening')
+          next_step = lines.index('      - name: Install pinned Rust toolchain', step + 1)
+          run_index = lines.index('        run: |', step + 1, next_step)
+          block = lines[run_index + 1 : next_step]
+          opener = next(i for i, line in enumerate(block) if line.strip() == "python3 - <<'PY'")
+          terminator = max(i for i, line in enumerate(block) if i > opener and line.strip() == 'PY')
+          prefix = '          '
+          script = '\n'.join(
+              line[len(prefix):] if line.startswith(prefix) else line
+              for line in block[opener + 1 : terminator]
+          ) + '\n'
+          target = Path('/tmp/den-1606-planner-input.py')
+          compile(script, str(workflow), 'exec')
+          target.write_text(script, encoding='utf-8')
+          PY
+          git fetch --no-tags origin agent/den-1606-planner-input-hardening-20260804
+          git checkout -B agent/den-1606-planner-input-hardening-20260804 FETCH_HEAD
+          python3 /tmp/den-1606-planner-input.py
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate product
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Commit product-only diff
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            remote/deployments/gha-clone-server-rs/src/lib.rs \
+            docs/gha-clone-planner-input-boundary.md
+          unexpected="$(git diff --cached --name-only | grep -Ev '^(remote/deployments/gha-clone-server-rs/src/lib\.rs|docs/gha-clone-planner-input-boundary\.md)$' || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected product paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          git commit -m 'fix(DEN-1606): harden clone planner inputs'
+          git push origin HEAD:agent/den-1606-planner-input-hardening-20260804
