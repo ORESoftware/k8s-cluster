@@ -20,6 +20,31 @@ const {
 const base = import.meta.env.BASE_URL.replace(/\/+$/, "");
 const ogImage = new URL(`${base}/og.svg`, Astro.site);
 const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
+// GitHub Pages ignores `public/_headers`, so the response-header policy in that
+// file is never actually served (see the warning at the top of it). These two
+// `<meta>` equivalents are the part of that policy a static host *can* enforce,
+// and they are emitted for production builds only so `astro dev`'s HMR client
+// still loads. Directives that are invalid in `<meta>` (frame-ancestors, HSTS,
+// Permissions-Policy) still require a real header in front of the origin.
+//
+// The site ships no client JavaScript at all, hence `script-src 'none'`.
+// `style-src` needs 'unsafe-inline' for Astro's scoped <style> blocks and the
+// inline @font-face rule below.
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "script-src 'none'",
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self'",
+  "img-src 'self' data:",
+  "connect-src 'self'",
+  "form-action 'self'",
+  "frame-src 'none'",
+  "object-src 'none'",
+  "upgrade-insecure-requests",
+].join("; ");
+const enforceMetaCsp = import.meta.env.PROD;
+
 const fontFaceCss = `@font-face {
   font-family: "Baloo 2";
   font-style: normal;
@@ -34,6 +59,10 @@ const fontFaceCss = `@font-face {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    {enforceMetaCsp && (
+      <meta http-equiv="Content-Security-Policy" content={contentSecurityPolicy} />
+    )}
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <link rel="icon" type="image/svg+xml" href={`${base}/favicon.svg`} />
     <meta name="generator" content={Astro.generator} />
 

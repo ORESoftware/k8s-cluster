@@ -31,8 +31,17 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # These must stay identical to the `build` job's environment. The
+      # download and store URLs come from repository variables and change what
+      # the site renders (store badges become links, desktop installer and
+      # checksum links appear), so verifying a build without them would gate
+      # publication on markup that is not the markup being published.
       - name: Verify the exact production-root static site before publication
         run: npm run check
+        env:
+          PUBLIC_RUST_DESKTOP_DOWNLOAD_BASE_URL: ${{ vars.PUBLIC_RUST_DESKTOP_DOWNLOAD_BASE_URL }}
+          PUBLIC_FLUTTER_DESKTOP_DOWNLOAD_BASE_URL: ${{ vars.PUBLIC_FLUTTER_DESKTOP_DOWNLOAD_BASE_URL }}
+          PUBLIC_DESKTOP_TESTERS_URL: ${{ vars.PUBLIC_DESKTOP_TESTERS_URL }}
 
   build:
     needs: verify

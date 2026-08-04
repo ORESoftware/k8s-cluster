@@ -3,20 +3,24 @@
 // filenames beneath a stable `.../desktop/alpha/latest` prefix. A restricted
 // Drive folder can be supplied temporarily while the R2 download host is being
 // activated.
+// Configured download hosts are validated as absolute https URLs before they
+// reach an `href`; a non-https or unparseable value is dropped rather than
+// rendered, so a bad deployment variable can never emit an active URL.
+import { httpsBaseUrl, httpsUrl } from "../lib/external-url";
+
 interface Props {
   align?: "start" | "center";
 }
 
 const { align = "start" } = Astro.props;
-const trimUrl = (value: string | undefined) => value?.trim().replace(/\/+$/, "");
-const rustDownloadBase = trimUrl(
+const rustDownloadBase = httpsBaseUrl(
   import.meta.env.PUBLIC_RUST_DESKTOP_DOWNLOAD_BASE_URL ??
     import.meta.env.PUBLIC_DESKTOP_DOWNLOAD_BASE_URL,
 );
-const flutterDownloadBase = trimUrl(
+const flutterDownloadBase = httpsBaseUrl(
   import.meta.env.PUBLIC_FLUTTER_DESKTOP_DOWNLOAD_BASE_URL,
 );
-const testerFolderUrl = trimUrl(import.meta.env.PUBLIC_DESKTOP_TESTERS_URL);
+const testerFolderUrl = httpsUrl(import.meta.env.PUBLIC_DESKTOP_TESTERS_URL);
 
 const releaseGroups = [
   {
@@ -81,13 +85,18 @@ const releaseGroups = [
       </div>
       <div class="desktop-actions">
         {group.files.map((download) => (
-          <a class="desktop-button" href={`${group.base}/${download.file}`} download>
+          <a
+            class="desktop-button"
+            href={`${group.base}/${download.file}`}
+            rel="noopener noreferrer"
+            download
+          >
             <span>{download.label}</span>
             <small>{download.detail}</small>
           </a>
         ))}
       </div>
-      <a class="checksum-link" href={`${group.base}/SHA256SUMS`}>
+      <a class="checksum-link" href={`${group.base}/SHA256SUMS`} rel="noopener noreferrer">
         Verify {group.name.toLowerCase()} checksums
       </a>
     </section>

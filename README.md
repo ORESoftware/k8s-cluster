@@ -45,6 +45,26 @@ npm run build    # outputs to ./dist
 npm run preview  # preview the production build
 ```
 
+## Test
+
+```bash
+npm run check    # build + static legal/download/metadata/link verification
+npm run test:e2e # Playwright: real Chromium against the production build
+```
+
+`npm run test:e2e` builds the site and serves it with `astro preview`, then
+drives that exact static output: every route renders with no console/page
+errors and no third-party requests, internal links and in-page anchors resolve,
+off-origin links are https with `rel="noopener noreferrer"`, nothing scrolls
+horizontally at 390px or 1440px, the release-critical privacy/product copy is
+visible, and a build made from hostile deployment variables degrades to the
+"coming soon" state instead of rendering an active URL. First run needs
+`npx playwright install chromium`; `npm run test:e2e:ui` opens the runner UI.
+
+The suite builds with placeholder store and download URLs (see
+`playwright.config.ts`) so the "downloads are configured" rendering path is
+covered regardless of local `.env`. Nothing is ever fetched from those hosts.
+
 ## Release links
 
 The site is static and never proxies installer bytes. Mobile store URLs and
