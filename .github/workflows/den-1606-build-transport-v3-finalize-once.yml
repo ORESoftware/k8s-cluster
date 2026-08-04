@@ -7,6 +7,12 @@ on:
     paths:
       - .github/workflows/den-1606-build-transport-v3-finalize-once.yml
       - scripts/finalize-den-1606-build-transport.py
+  pull_request:
+    branches: [dev]
+    types: [opened, synchronize]
+    paths:
+      - .github/workflows/den-1606-build-transport-v3-finalize-once.yml
+      - scripts/finalize-den-1606-build-transport.py
 
 permissions:
   contents: write
@@ -17,7 +23,11 @@ concurrency:
 
 jobs:
   finalize:
-    if: github.actor != 'github-actions[bot]'
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name == 'push' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.head.ref == 'agent/den-1606-build-transport-current-dev-v3'))
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
