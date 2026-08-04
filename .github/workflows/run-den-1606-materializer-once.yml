@@ -1,4 +1,5 @@
 # Re-triggered after direct branch review on 2026-08-04; self-deletes after a validated product commit.
+# Reviewed activation: run the fixed transformer and preserve only the allowlisted product diff.
 name: Run DEN-1606 direct hardening materializer once
 
 on:
