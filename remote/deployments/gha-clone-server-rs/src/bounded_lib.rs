@@ -17,6 +17,15 @@ const GENERATED_RUST_PROFILE: &str = "rust-generated-verify";
 const NODE_HARDENED_VERIFY_PROFILE: &str = "node-hardened-verify";
 const NODE_HARDENED_TEST_PROFILE: &str = "node-hardened-test";
 
+const CHECKOUT_ACTION: &str =
+    "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
+const NODE_SETUP_ACTION: &str =
+    "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020";
+const RUST_TOOLCHAIN_ACTION: &str =
+    "dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30";
+const NODE_ACTIONS: [&str; 2] = [CHECKOUT_ACTION, NODE_SETUP_ACTION];
+const GENERATED_RUST_ACTIONS: [&str; 2] = [CHECKOUT_ACTION, RUST_TOOLCHAIN_ACTION];
+
 const GENERATED_RUST_COMMANDS: [&str; 4] = [
     "cargo generate-lockfile --manifest-path generated/rust/Cargo.toml",
     "cargo fmt --manifest-path generated/rust/Cargo.toml -- --check",
@@ -32,6 +41,12 @@ const NODE_HARDENED_VERIFY_COMMANDS: [&str; 4] = [
 ];
 
 const NODE_HARDENED_TEST_COMMANDS: [&str; 2] = ["npm ci --ignore-scripts", "npm test"];
+
+#[derive(Default)]
+struct JobSteps {
+    run_commands: Vec<String>,
+    actions: Vec<String>,
+}
 
 pub fn capabilities(limits: &PlannerLimits) -> CapabilityResponse {
     let mut response = legacy::capabilities(limits);
@@ -60,23 +75,25 @@ pub fn build_plan(
         return Ok(plan);
     }
 
-    let commands = workflow_run_commands(&request.workflow_yaml)?;
+    let steps_by_job = workflow_job_steps(&request.workflow_yaml)?;
     for job in &mut plan.jobs {
-        let Some(run_commands) = commands.get(&job.id) else {
+        let Some(steps) = steps_by_job.get(&job.id) else {
             continue;
         };
-        let lower = run_commands.join("\n").to_ascii_lowercase();
+        let lower = steps.run_commands.join("\n").to_ascii_lowercase();
 
         if generated_rust_intent(&lower) {
+            enforce_exact_actions(job, &steps.actions, &GENERATED_RUST_ACTIONS);
             apply_exact_profile(
                 job,
-                generated_rust_profile(run_commands),
+                generated_rust_profile(&steps.run_commands),
                 "generated Rust jobs must use one exact reviewed command sequence in the documented order with no extra commands",
             );
         } else if hardened_node_intent(&lower) {
+            enforce_exact_actions(job, &steps.actions, &NODE_ACTIONS);
             apply_exact_profile(
                 job,
-                hardened_node_profile(run_commands),
+                hardened_node_profile(&steps.run_commands),
                 "hardened Node jobs must use one exact reviewed command sequence in the documented order with no extra commands",
             );
         }
@@ -89,6 +106,17 @@ pub fn build_plan(
 
 fn is_threefa_bounded_workflow(request: &PlanRequest) -> bool {
     request.repository == THREEFA_REPOSITORY && request.workflow_path == THREEFA_WORKFLOW_PATH
+}
+
+fn enforce_exact_actions(job: &mut JobPlan, actual: &[String], expected: &[&str]) {
+    if !actual.iter().map(String::as_str).eq(expected.iter().copied()) {
+        job.independent_supported = false;
+        job.independent_profile = None;
+        job.independent_reasons.push(
+            "3FA setup actions must match the exact reviewed pinned action sequence with no extra actions"
+                .to_string(),
+        );
+    }
 }
 
 fn apply_exact_profile(job: &mut JobPlan, profile: Option<&'static str>, rejection: &str) {
@@ -109,7 +137,7 @@ fn apply_exact_profile(job: &mut JobPlan, profile: Option<&'static str>, rejecti
     }
 }
 
-fn workflow_run_commands(source: &str) -> Result<BTreeMap<String, Vec<String>>, Vec<String>> {
+fn workflow_job_steps(source: &str) -> Result<BTreeMap<String, JobSteps>, Vec<String>> {
     let workflow: Value = serde_yaml::from_str(source)
         .map_err(|error| vec![format!("workflowYaml is not valid YAML: {error}")])?;
     let root = workflow
@@ -119,7 +147,7 @@ fn workflow_run_commands(source: &str) -> Result<BTreeMap<String, Vec<String>>, 
         .and_then(Value::as_mapping)
         .ok_or_else(|| vec!["workflow.jobs must be a mapping".to_string()])?;
 
-    let mut commands = BTreeMap::new();
+    let mut jobs_by_id = BTreeMap::new();
     for (job_id, job_value) in jobs {
         let Some(job_id) = job_id.as_str() else {
             continue;
@@ -131,24 +159,26 @@ fn workflow_run_commands(source: &str) -> Result<BTreeMap<String, Vec<String>>, 
             continue;
         };
 
-        let mut job_commands = Vec::new();
+        let mut job_steps = JobSteps::default();
         for step in steps {
             let Some(step) = step.as_mapping() else {
                 continue;
             };
-            let Some(run) = mapping_get(step, "run").and_then(Value::as_str) else {
-                continue;
-            };
-            job_commands.extend(
-                run.lines()
-                    .map(str::trim)
-                    .filter(|command| !command.is_empty())
-                    .map(str::to_string),
-            );
+            if let Some(action) = mapping_get(step, "uses").and_then(Value::as_str) {
+                job_steps.actions.push(action.trim().to_string());
+            }
+            if let Some(run) = mapping_get(step, "run").and_then(Value::as_str) {
+                job_steps.run_commands.extend(
+                    run.lines()
+                        .map(str::trim)
+                        .filter(|command| !command.is_empty())
+                        .map(str::to_string),
+                );
+            }
         }
-        commands.insert(job_id.to_string(), job_commands);
+        jobs_by_id.insert(job_id.to_string(), job_steps);
     }
-    Ok(commands)
+    Ok(jobs_by_id)
 }
 
 fn mapping_get<'a>(mapping: &'a Mapping, key: &str) -> Option<&'a Value> {
@@ -237,6 +267,27 @@ mod tests {
         let mut reordered = generated.clone();
         reordered.swap(2, 3);
         assert_eq!(generated_rust_profile(&reordered), None);
+    }
+
+    #[test]
+    fn exact_action_sequences_reject_mutable_and_extra_actions() {
+        let node = NODE_ACTIONS
+            .into_iter()
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        assert!(node.iter().map(String::as_str).eq(NODE_ACTIONS));
+
+        let mutable = [CHECKOUT_ACTION, "actions/setup-node@main"]
+            .into_iter()
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        assert!(!mutable.iter().map(String::as_str).eq(NODE_ACTIONS));
+
+        let extra = [CHECKOUT_ACTION, NODE_SETUP_ACTION, "owner/extra@0123456789abcdef0123456789abcdef01234567"]
+            .into_iter()
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        assert!(!extra.iter().map(String::as_str).eq(NODE_ACTIONS));
     }
 
     #[test]
