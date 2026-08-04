@@ -64,7 +64,7 @@ spec:
             - name: GHA_EXECUTOR_ROUTER_SOURCE_URL
               value: https://github.com/ORESoftware/k8s-cluster.git
             - name: GHA_EXECUTOR_ROUTER_SOURCE_SHA
-              value: 6146668400441de15a8d8e9f513786096db9a730
+              value: d1e97bfe45054b3b6329398c2c0787cb0d250622
             - name: GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED
               value: "false"
             - name: GHA_EXECUTOR_ROUTER_SECRET_ROOT
