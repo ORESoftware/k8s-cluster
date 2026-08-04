@@ -6,7 +6,7 @@ use tower_http::normalize_path::NormalizePathLayer;
 use crate::config::Config;
 use crate::crypto::Sealer;
 use crate::state::AppState;
-use crate::{admin, api, cdc, db, events, jobs, scheduler, shared_auth_startup};
+use crate::{admin, api, cdc, checkout, db, events, jobs, scheduler, shared_auth_startup};
 
 /// Initialize the billing platform resources, background jobs, and HTTP API.
 pub(crate) async fn run() -> anyhow::Result<()> {
@@ -55,7 +55,9 @@ pub(crate) async fn run() -> anyhow::Result<()> {
         tokio::spawn(async move { events::run_sync_command_loop(state).await });
     }
 
-    let app = api::build_router(state)?.layer(dd_telemetry::http_trace_layer());
+    let app = api::build_router(state.clone())?
+        .merge(checkout::router(state)?)
+        .layer(dd_telemetry::http_trace_layer());
     // Make `/admin/` and `/admin` equivalent without changing JSON route
     // semantics.
     let app = NormalizePathLayer::trim_trailing_slash().layer(app);
