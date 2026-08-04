@@ -6,7 +6,8 @@
   "description": "Canonical remote Postgres schema definitions and generated language adapters.",
   "scripts": {
     "generate": "node src/generate.mjs",
-    "check": "node src/generate.mjs --check",
+    "check": "node src/generate.mjs --check && npm run check:rust-server",
+    "check:rust-server": "node src/check-rust-server-contract.mjs",
     "test": "node --test \"src/**/*.test.mjs\"",
     "print:sql": "node src/generate.mjs --print-sql",
     "parse:sql": "node src/diff.mjs --parse-only",
@@ -15,6 +16,7 @@
   },
   "exports": {
     "./schema": "./schema/schema.sql",
+    "./rust-server-contract": "./rust-server-contract.json",
     "./typescript": "./generated/typescript/index.ts",
     "./drizzle": "./generated/typescript/drizzle.ts",
     "./typeorm": "./generated/typescript/typeorm.ts",

@@ -1,0 +1,70 @@
+{
+  "$schema": "./rust-server-contract.schema.json",
+  "version": 1,
+  "policyIssue": "fleet-sqlx-to-seaorm",
+  "schemaAuthority": {
+    "repository": "ORESoftware/k8s-libs-and-shared-defs",
+    "path": "pg-defs/schema/schema.sql",
+    "generatedAdaptersAreMigrationSources": false,
+    "serviceBootMigrations": false,
+    "humanReviewRequired": true
+  },
+  "migration": {
+    "tool": "dpm",
+    "repository": "declarative-migrations/declarative-postgres-migrate.rs",
+    "minimumVersion": "0.3.2",
+    "installerCommit": "f7180770fc0c7a3dbf9b83dcdc2ac6255da31ffc",
+    "script": "pg-defs/scripts/dpm.sh",
+    "defaultCommand": "diff",
+    "allowedCommands": [
+      "diff",
+      "verify",
+      "review",
+      "apply",
+      "bootstrap"
+    ],
+    "applyRequiresHumanReview": true,
+    "destructiveConsents": [
+      "--allow-destructive-sql",
+      "--allow-destructive-ops"
+    ]
+  },
+  "rust": {
+    "applicationOrm": "SeaORM",
+    "directSqlxDependency": "forbidden",
+    "rawTokioPostgresDependency": "forbidden",
+    "connectionApi": "sea_orm::Database::connect",
+    "statementApi": "sea_orm::Statement",
+    "generatedCrate": {
+      "package": "dd-pg-defs-sea-orm",
+      "manifest": "pg-defs/generated/rust/sea-orm/Cargo.toml",
+      "source": "pg-defs/generated/rust/sea-orm/src/lib.rs"
+    },
+    "sanctionedStatementCases": [
+      "advisory-locks",
+      "data-modifying-ctes",
+      "excluded-expression-upserts",
+      "for-update-skip-locked",
+      "postgres-casts-and-operators",
+      "server-clock-writes"
+    ],
+    "listenerEscape": "sea_orm::sqlx::postgres::PgListener"
+  },
+  "consumer": {
+    "distribution": "git-submodule",
+    "repository": "ORESoftware/k8s-libs-and-shared-defs",
+    "mount": "vendor/k8s-libs-and-shared-defs",
+    "cargoPath": "vendor/k8s-libs-and-shared-defs/pg-defs/generated/rust/sea-orm",
+    "schemaPath": "vendor/k8s-libs-and-shared-defs/pg-defs/schema/schema.sql",
+    "pinMustBeImmutable": true
+  },
+  "verification": [
+    "baseline-build-before-migration",
+    "cargo-check-all-targets",
+    "cargo-test-all-targets",
+    "cargo-clippy-warnings-denied",
+    "direct-sqlx-grep-clean",
+    "no-boot-time-migration-path",
+    "dpm-verify-converges"
+  ]
+}

@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ORESoftware/k8s-libs-and-shared-defs/pg-defs/rust-server-contract.schema.json",
+  "title": "Rust server SeaORM and declarative migration contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "version",
+    "policyIssue",
+    "schemaAuthority",
+    "migration",
+    "rust",
+    "consumer",
+    "verification"
+  ],
+  "properties": {
+    "$schema": { "const": "./rust-server-contract.schema.json" },
+    "version": { "const": 1 },
+    "policyIssue": { "const": "fleet-sqlx-to-seaorm" },
+    "schemaAuthority": { "$ref": "#/$defs/schemaAuthority" },
+    "migration": { "$ref": "#/$defs/migration" },
+    "rust": { "$ref": "#/$defs/rust" },
+    "consumer": { "$ref": "#/$defs/consumer" },
+    "verification": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/slug" }
+    }
+  },
+  "$defs": {
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "sha40": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "schemaAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "path",
+        "generatedAdaptersAreMigrationSources",
+        "serviceBootMigrations",
+        "humanReviewRequired"
+      ],
+      "properties": {
+        "repository": { "const": "ORESoftware/k8s-libs-and-shared-defs" },
+        "path": { "const": "pg-defs/schema/schema.sql" },
+        "generatedAdaptersAreMigrationSources": { "const": false },
+        "serviceBootMigrations": { "const": false },
+        "humanReviewRequired": { "const": true }
+      }
+    },
+    "migration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tool",
+        "repository",
+        "minimumVersion",
+        "installerCommit",
+        "script",
+        "defaultCommand",
+        "allowedCommands",
+        "applyRequiresHumanReview",
+        "destructiveConsents"
+      ],
+      "properties": {
+        "tool": { "const": "dpm" },
+        "repository": { "const": "declarative-migrations/declarative-postgres-migrate.rs" },
+        "minimumVersion": { "const": "0.3.2" },
+        "installerCommit": { "$ref": "#/$defs/sha40" },
+        "script": { "const": "pg-defs/scripts/dpm.sh" },
+        "defaultCommand": { "const": "diff" },
+        "allowedCommands": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": { "enum": ["diff", "verify", "review", "apply", "bootstrap"] }
+        },
+        "applyRequiresHumanReview": { "const": true },
+        "destructiveConsents": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "enum": ["--allow-destructive-sql", "--allow-destructive-ops"] }
+        }
+      }
+    },
+    "generatedCrate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package", "manifest", "source"],
+      "properties": {
+        "package": { "const": "dd-pg-defs-sea-orm" },
+        "manifest": { "const": "pg-defs/generated/rust/sea-orm/Cargo.toml" },
+        "source": { "const": "pg-defs/generated/rust/sea-orm/src/lib.rs" }
+      }
+    },
+    "rust": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "applicationOrm",
+        "directSqlxDependency",
+        "rawTokioPostgresDependency",
+        "connectionApi",
+        "statementApi",
+        "generatedCrate",
+        "sanctionedStatementCases",
+        "listenerEscape"
+      ],
+      "properties": {
+        "applicationOrm": { "const": "SeaORM" },
+        "directSqlxDependency": { "const": "forbidden" },
+        "rawTokioPostgresDependency": { "const": "forbidden" },
+        "connectionApi": { "const": "sea_orm::Database::connect" },
+        "statementApi": { "const": "sea_orm::Statement" },
+        "generatedCrate": { "$ref": "#/$defs/generatedCrate" },
+        "sanctionedStatementCases": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "advisory-locks",
+              "data-modifying-ctes",
+              "excluded-expression-upserts",
+              "for-update-skip-locked",
+              "postgres-casts-and-operators",
+              "server-clock-writes"
+            ]
+          }
+        },
+        "listenerEscape": { "const": "sea_orm::sqlx::postgres::PgListener" }
+      }
+    },
+    "consumer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "distribution",
+        "repository",
+        "mount",
+        "cargoPath",
+        "schemaPath",
+        "pinMustBeImmutable"
+      ],
+      "properties": {
+        "distribution": { "const": "git-submodule" },
+        "repository": { "const": "ORESoftware/k8s-libs-and-shared-defs" },
+        "mount": { "$ref": "#/$defs/relativePath" },
+        "cargoPath": { "$ref": "#/$defs/relativePath" },
+        "schemaPath": { "$ref": "#/$defs/relativePath" },
+        "pinMustBeImmutable": { "const": true }
+      }
+    }
+  }
+}

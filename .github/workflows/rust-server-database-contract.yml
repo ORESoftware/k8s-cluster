@@ -1,0 +1,67 @@
+name: rust-server-database-contract
+
+on:
+  pull_request:
+    paths:
+      - "pg-defs/rust-server-contract.json"
+      - "pg-defs/rust-server-contract.schema.json"
+      - "pg-defs/schema/**"
+      - "pg-defs/generated/rust/sea-orm/**"
+      - "pg-defs/scripts/dpm.sh"
+      - "pg-defs/src/rust-server-contract.mjs"
+      - "pg-defs/src/rust-server-contract.test.mjs"
+      - "pg-defs/src/check-rust-server-contract.mjs"
+      - ".github/workflows/rust-server-database-contract.yml"
+  push:
+    branches: [main]
+    paths:
+      - "pg-defs/rust-server-contract.json"
+      - "pg-defs/rust-server-contract.schema.json"
+      - "pg-defs/schema/**"
+      - "pg-defs/generated/rust/sea-orm/**"
+      - "pg-defs/scripts/dpm.sh"
+      - "pg-defs/src/rust-server-contract.mjs"
+      - "pg-defs/src/rust-server-contract.test.mjs"
+      - "pg-defs/src/check-rust-server-contract.mjs"
+      - ".github/workflows/rust-server-database-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-server-database-contract-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/rust-server-database-contract.yml
+      - name: Validate shared schema, generated SeaORM adapter, and DPM policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 test-results
+          node pg-defs/src/check-rust-server-contract.mjs \
+            --report test-results/rust-server-database-contract.json
+          node --test pg-defs/src/rust-server-contract.test.mjs
+          node pg-defs/src/generate.mjs --check
+      - name: Upload non-secret contract validation
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rust-server-database-contract-${{ github.run_id }}
+          path: test-results/rust-server-database-contract.json
+          if-no-files-found: error
+          retention-days: 14
