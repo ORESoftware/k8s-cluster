@@ -43,8 +43,6 @@ spec:
               value: gha_executor_router=info
             - name: GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED
               value: "false"
-            - name: GHA_EXECUTOR_ROUTER_SECRET_ROOT
-              value: /var/run/secrets/gha-executor-router
             - name: GHA_EXECUTOR_ROUTER_AUTH_PATH
               value: /var/run/secrets/gha-executor-router/inbound-auth
             - name: GHA_EXECUTOR_ROUTER_EXECUTORS_JSON
