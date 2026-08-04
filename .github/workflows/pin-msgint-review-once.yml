@@ -1,0 +1,83 @@
+name: Pin current Messaging Intel review once
+
+on:
+  pull_request:
+    branches:
+      - dev
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - .github/workflows/pin-msgint-review-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pin-current-msgint-review-once
+  cancel-in-progress: false
+
+jobs:
+  pin:
+    if: ${{ github.head_ref == 'agent/msgint-gha-clone-hardened-clean-20260804' && github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out the clean feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/msgint-gha-clone-hardened-clean-20260804
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Align the real-server integration with the reviewed connector head
+        env:
+          OLD_MSGINT_REVISION: 7d905806b2000479bdacb9b206f33b26a707ba5e
+          NEW_MSGINT_REVISION: 952623b07fd83caa3a83ee27bdea293f6bd4372f
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import os
+          from pathlib import Path
+
+          path = Path('remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs')
+          source = path.read_text(encoding='utf-8')
+          old = os.environ['OLD_MSGINT_REVISION']
+          new = os.environ['NEW_MSGINT_REVISION']
+          if source.count(old) != 1:
+              raise SystemExit('expected exactly one stale Messaging Intel integration pin')
+          if new in source:
+              raise SystemExit('new Messaging Intel integration pin already exists beside the stale pin')
+          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+
+          workflow = Path('.github/workflows/gha-clone-server.yml').read_text(encoding='utf-8')
+          if old in workflow or workflow.count(new) != 1:
+              raise SystemExit('manual smoke is not pinned exactly once to the reviewed connector head')
+          PY
+          cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all
+          git diff --check
+          test "$(git diff --name-only)" = 'remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs'
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate the complete continuity crate
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Commit only the validated immutable revision update
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs
+          git diff --cached --check
+          git commit -m 'test(gha-clone): exercise current Messaging Intel review head'
+          git push origin HEAD:agent/msgint-gha-clone-hardened-clean-20260804
