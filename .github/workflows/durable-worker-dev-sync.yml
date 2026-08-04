@@ -1,0 +1,122 @@
+name: durable-worker-dev-sync
+
+on:
+  push:
+    branches:
+      - agent/durable-worker-runtime
+    paths:
+      - '.github/workflows/durable-worker-dev-sync.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: durable-worker-dev-sync
+  cancel-in-progress: false
+
+jobs:
+  reconcile-test-and-push:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout feature branch with full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/durable-worker-runtime
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Install Rust 1.90 with lint components
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Merge current dev with semantic observability reconciliation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git fetch origin dev
+
+          if git merge-base --is-ancestor origin/dev HEAD; then
+            echo 'feature branch already contains current dev'
+          else
+            set +e
+            git merge --no-ff origin/dev -m 'Merge current dev into durable worker runtime'
+            merge_rc=$?
+            set -e
+
+            if [[ "$merge_rc" -ne 0 ]]; then
+              mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+              printf 'merge conflicts:\n%s\n' "${conflicts[*]}"
+              expected_config='remote/argocd/observability/k8s-resource-exporter.configmap.yaml'
+              expected_deploy='remote/argocd/observability/k8s-resource-exporter.deployment.yaml'
+              for conflict in "${conflicts[@]}"; do
+                if [[ "$conflict" != "$expected_config" && "$conflict" != "$expected_deploy" ]]; then
+                  echo "unexpected conflict requiring human semantic review: $conflict" >&2
+                  git merge --abort
+                  exit 1
+                fi
+              done
+              git checkout --theirs -- "$expected_config" "$expected_deploy"
+            fi
+
+            python3 - <<'PY'
+          from pathlib import Path
+
+          paths = [
+              Path('remote/argocd/observability/k8s-resource-exporter.configmap.yaml'),
+              Path('remote/argocd/observability/k8s-resource-exporter.deployment.yaml'),
+          ]
+          for path in paths:
+              text = path.read_text(encoding='utf-8')
+              if 'dd-durable-worker-server' not in text:
+                  needle = 'dd-dart-server,'
+                  if text.count(needle) != 1:
+                      raise SystemExit(f'{path}: expected exactly one {needle!r}, found {text.count(needle)}')
+                  text = text.replace(needle, 'dd-dart-server,dd-durable-worker-server,', 1)
+              required = (
+                  'dd-durable-worker-server',
+                  'arc-runners-streempilot',
+                  'gha-capacity-broker-streempilot',
+              )
+              missing = [value for value in required if value not in text]
+              if missing:
+                  raise SystemExit(f'{path}: semantic merge dropped required registrations: {missing}')
+              path.write_text(text, encoding='utf-8')
+          PY
+
+            git add \
+              remote/argocd/observability/k8s-resource-exporter.configmap.yaml \
+              remote/argocd/observability/k8s-resource-exporter.deployment.yaml
+            if git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+              git commit --no-edit
+            elif ! git diff --cached --quiet; then
+              git commit -m 'fix(observability): preserve worker and runner registrations'
+            fi
+          fi
+
+      - name: Validate worker runtime after reconciliation
+        shell: bash
+        env:
+          MANIFEST: remote/deployments/durable-worker-server-rs/Cargo.toml
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path "$MANIFEST" --all -- --check
+          cargo clippy --locked --manifest-path "$MANIFEST" --all-targets --all-features -- -D warnings
+          cargo test --locked --manifest-path "$MANIFEST" --all-targets --all-features -- --nocapture
+          cargo run --locked --quiet --manifest-path "$MANIFEST" -- --export-openapi > /tmp/openapi-1.json
+          cargo run --locked --quiet --manifest-path "$MANIFEST" -- --export-openapi > /tmp/openapi-2.json
+          cmp /tmp/openapi-1.json /tmp/openapi-2.json
+          node --test remote/tests/general/durable-worker-server-config.test.mjs
+          git diff --check
+
+      - name: Push reconciled history
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin HEAD:agent/durable-worker-runtime
