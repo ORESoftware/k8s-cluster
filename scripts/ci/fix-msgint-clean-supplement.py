@@ -43,3 +43,13 @@ for old, new, label in replacements:
     source = source.replace(old, new, 1)
 
 path.write_text(source, encoding="utf-8")
+
+process_test = Path(
+    "remote/deployments/gha-clone-server-rs/tests/"
+    "gha_clone_server_messaging_intel_process.test.ts"
+)
+if process_test.exists():
+    print("unexpected process test exists immediately after clean materialization")
+    print(process_test.read_text(encoding="utf-8"))
+    raise RuntimeError("unexpected process test provenance must be resolved before compilation")
+print("unexpected process test is absent immediately after clean materialization")
