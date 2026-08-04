@@ -8,7 +8,7 @@ const fixtureCommand =
 
 export default defineConfig({
   testDir: "./tests",
-  testMatch: "api-docs.spec.ts",
+  testMatch: "api-docs*.spec.ts",
   timeout: 30_000,
   expect: { timeout: 8_000 },
   fullyParallel: false,
