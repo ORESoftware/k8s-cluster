@@ -14,4 +14,8 @@ Every accepted build response must contain a bounded path-safe identifier. Empty
 
 Planner limits, polling interval, execution timeout, and retained-run capacity are strictly positive configuration values. Zero is configuration failure rather than an instruction to disable a safety bound.
 
+## Activation evidence
+
+Independent execution remains disabled and the GitOps deployment remains at zero replicas until exact-head formatting, warnings-denied Clippy, all-target tests, deployment contracts, and immutable image evidence are green together.
+
 This boundary complements the AWS/Hetzner executor router: provider selection happens before submission, and status remains pinned to the accepted provider and build identity.
