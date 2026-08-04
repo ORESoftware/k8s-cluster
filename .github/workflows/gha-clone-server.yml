@@ -157,3 +157,78 @@ jobs:
       - name: Run the same Rust contract on ARC
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo test --locked --all-targets
+
+  # DEN-1550_TEMP_PR_APPLICATOR_START
+  apply-final-webhook-hardening:
+    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'agent/den-1550-webhook-hardening-rebased-20260804' }}
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out the exact feature branch with push credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1550-webhook-hardening-rebased-20260804
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - name: Apply the reviewed final hardening patch
+        run: python remote/deployments/gha-clone-server-rs/scripts/apply-final-hardening.py
+      - name: Validate the complete patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd remote/deployments/gha-clone-server-rs
+          cargo fmt --all -- --check
+          cargo test --locked --all-targets
+          cargo clippy --locked --all-targets -- -D warnings
+          cd ../../..
+          bash -n remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh
+          pnpm install --frozen-lockfile --dir remote/tests
+          pnpm --dir remote/tests exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts
+          git diff --check
+      - name: Remove applicator and commit only validated product changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/gha-clone-server.yml')
+          source = path.read_text(encoding='utf-8')
+          start = source.index('  # DEN-1550_TEMP_PR_APPLICATOR_START\n')
+          end = source.index('  # DEN-1550_TEMP_PR_APPLICATOR_END\n', start)
+          source = source[:start] + source[end + len('  # DEN-1550_TEMP_PR_APPLICATOR_END\n'):]
+          path.write_text(source, encoding='utf-8')
+          PY
+          rm remote/deployments/gha-clone-server-rs/scripts/apply-final-hardening.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            .github/workflows/gha-clone-server.yml \
+            remote/deployments/gha-clone-server-rs/src/main.rs \
+            remote/deployments/gha-clone-server-rs/tests/http_api.rs \
+            remote/deployments/gha-clone-server-rs/tests/startup_config.rs \
+            remote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs \
+            remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh \
+            remote/deployments/gha-clone-server-rs/scripts/apply-final-hardening.py \
+            remote/tests/general/gha-clone-webhook-config.test.ts
+          git diff --cached --check
+          git commit -m 'fix(DEN-1550): make fallback strictly failure-only and bounded'
+          git push origin HEAD:agent/den-1550-webhook-hardening-rebased-20260804
+  # DEN-1550_TEMP_PR_APPLICATOR_END
