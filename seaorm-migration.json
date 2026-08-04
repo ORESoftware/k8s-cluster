@@ -1,0 +1,40 @@
+{
+  "$schema": "./seaorm-migration.schema.json",
+  "version": 1,
+  "issue": "rust-server-seaorm-rollout",
+  "status": "migration-in-progress",
+  "schemaAuthority": {
+    "repository": "ORESoftware/k8s-libs-and-shared-defs",
+    "commit": "3c84cab532b27d328378f09fba5841f02644ae3b",
+    "schemaPath": "pg-defs/schema/schema.sql",
+    "seaOrmAdapterPath": "pg-defs/rust/sea-orm"
+  },
+  "declarativeMigrations": {
+    "repository": "declarative-migrations/declarative-migrations",
+    "version": "1.4.2",
+    "linuxX8664Sha256": "42dd9d638a57edbde6c931d776a4ba295bcb2614e498203968c321d84ad90bdb",
+    "serviceStartupMigrations": false
+  },
+  "applicationPersistence": {
+    "targetOrm": "SeaORM",
+    "directSqlxTarget": 0,
+    "directTokioPostgresTarget": 0,
+    "generatedEntitiesOnly": true,
+    "owner": "mip-solver-node.rs"
+  },
+  "uiPolicy": {
+    "maudHtmx": "default-server-first-pages",
+    "leptos": "analytics-and-derived-state-over-shared-repositories",
+    "dioxus": "activity-and-cross-target-components-over-shared-repositories",
+    "rendererSpecificPersistence": false
+  },
+  "requiredEvidence": [
+    "direct-sqlx-inventory",
+    "cargo-metadata",
+    "shared-schema-commit",
+    "dpm-version",
+    "postgres-17-schema-apply",
+    "restart-persistence-test",
+    "no-startup-migrations"
+  ]
+}
