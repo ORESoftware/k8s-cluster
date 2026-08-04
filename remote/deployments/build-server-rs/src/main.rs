@@ -17,6 +17,7 @@ mod events;
 mod exec;
 mod fiducia;
 mod gh_secrets;
+mod gha_workflow;
 mod http;
 mod jobs;
 mod lambda_exec;
@@ -116,8 +117,10 @@ async fn main() {
 
     // The production route table lives with the handlers it composes
     // (`http::build_router`), so the e2e suite drives the exact same router
-    // in-process via `tower::ServiceExt::oneshot`.
-    let app = build_router(state);
+    // in-process via `tower::ServiceExt::oneshot`. The GHA indie worker mounts
+    // a second authenticated route set that compiles bounded workflow YAML to
+    // the same fixed-profile queue instead of accepting caller-supplied shell.
+    let app = build_router(state.clone()).merge(gha_workflow::router(state));
 
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
