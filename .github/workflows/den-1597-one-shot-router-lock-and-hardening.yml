@@ -31,18 +31,19 @@ jobs:
           toolchain: 1.90.0
           components: rustfmt, clippy
 
-      - name: Apply redirect, mounted-secret, and validated-request hardening
+      - name: Apply idempotent fail-closed routing hardening
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
           binary = Path('remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs')
           text = binary.read_text()
+
           text = text.replace('    collections::BTreeMap,\n', '', 1)
           text = text.replace('use tracing::{info, warn};', 'use tracing::info;', 1)
+
           if '.redirect(reqwest::redirect::Policy::none())' not in text:
               needle = '            .timeout(config.upstream_timeout)\n'
               if text.count(needle) != 1:
@@ -52,38 +53,35 @@ jobs:
                   needle + '            .redirect(reqwest::redirect::Policy::none())\n',
                   1,
               )
-          inbound_pattern = re.compile(
-              r"    if value\.len\(\) < MIN_SECRET_BYTES\n"
-              r"        \|\| value\.len\(\) > MAX_SECRET_BYTES\n"
-              r"        \|\| value\.as_bytes\(\)\.contains\(&0\)\n"
-              r"    \{"
-          )
-          if not re.search(r"value\.contains\('\\n'\)", text):
-              text, count = inbound_pattern.subn(
-                  "    if value.len() < MIN_SECRET_BYTES\n"
-                  "        || value.len() > MAX_SECRET_BYTES\n"
-                  "        || value.as_bytes().contains(&0)\n"
-                  "        || value.contains('\\n')\n"
-                  "        || value.contains('\\r')\n"
-                  "    {",
-                  text,
-                  count=1,
-              )
-              if count != 1:
-                  raise SystemExit('inbound secret contract insertion point not found')
 
-          validation_pattern = re.compile(
-              r"    if let Err\(error\) = validate_build_request\(&request\) \{\n"
-              r"        state\.metrics\.rejected_total\.fetch_add\(1, Ordering::Relaxed\);\n"
-              r"        return \(\n"
-              r"            StatusCode::UNPROCESSABLE_ENTITY,\n"
-              r"            Json\(json!\(\{ \"error\": error \}\)\),\n"
-              r"        \)\n"
-              r"            \.into_response\(\);\n"
-              r"    \}\n"
-          )
+          if "value.contains('\\n')" not in text:
+              old = '''    if value.len() < MIN_SECRET_BYTES
+                  || value.len() > MAX_SECRET_BYTES
+                  || value.as_bytes().contains(&0)
+              {
+          '''.replace('              ', '')
+              new = '''    if value.len() < MIN_SECRET_BYTES
+                  || value.len() > MAX_SECRET_BYTES
+                  || value.as_bytes().contains(&0)
+                  || value.contains('\\n')
+                  || value.contains('\\r')
+              {
+          '''.replace('              ', '')
+              if text.count(old) != 1:
+                  raise SystemExit('inbound mounted-secret validation block is not unique')
+              text = text.replace(old, new, 1)
+
           if 'validated fixed-profile executor request' not in text:
-              replacement = '''    let validated = match validate_build_request(&request) {
+              old = '''    if let Err(error) = validate_build_request(&request) {
+                  state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
+                  return (
+                      StatusCode::UNPROCESSABLE_ENTITY,
+                      Json(json!({ "error": error })),
+                  )
+                      .into_response();
+              }
+          '''.replace('              ', '')
+              new = '''    let validated = match validate_build_request(&request) {
                   Ok(validated) => validated,
                   Err(error) => {
                       state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
@@ -103,56 +101,53 @@ jobs:
                   profile = %validated.profile,
                   "validated fixed-profile executor request"
               );
-          '''
-              replacement = replacement.replace('              ', '')
-              text, count = validation_pattern.subn(replacement, text, count=1)
-              if count != 1:
-                  raise SystemExit('validate_build_request replacement point not found')
+          '''.replace('              ', '')
+              if text.count(old) != 1:
+                  raise SystemExit('fixed-profile validation block is not unique')
+              text = text.replace(old, new, 1)
+
           binary.write_text(text)
 
           contracts = Path('remote/deployments/gha-clone-server-rs/src/executor_router.rs')
           text = contracts.read_text()
-          executor_pattern = re.compile(
-              r"        if auth\.len\(\) > MAX_SECRET_BYTES \|\| auth\.as_bytes\(\)\.contains\(&0\) \{"
+          text = text.replace(
+              'fn URL_policy_allows_cluster_loopback_and_https_origins_only()',
+              'fn url_policy_allows_cluster_loopback_and_https_origins_only()',
+              1,
           )
-          if not re.search(r"auth\.contains\('\\n'\)", text):
-              text, count = executor_pattern.subn(
-                  "        if auth.len() > MAX_SECRET_BYTES\n"
-                  "            || auth.as_bytes().contains(&0)\n"
-                  "            || auth.contains('\\n')\n"
-                  "            || auth.contains('\\r')\n"
-                  "        {",
-                  text,
-                  count=1,
-              )
-              if count != 1:
-                  raise SystemExit('executor secret contract insertion point not found')
-          if 'format!("{}\\n{}", "a".repeat(16), "b".repeat(16))' not in text:
-              marker = '''        assert_eq!(executors.len(), 1);
-              assert_eq!(executors[0].auth, "a".repeat(MIN_SECRET_BYTES));
 
-              let nested = root.join("nested");
-          '''.replace('              ', '')
-              replacement = '''        assert_eq!(executors.len(), 1);
-              assert_eq!(executors[0].auth, "a".repeat(MIN_SECRET_BYTES));
+          if "auth.contains('\\n')" not in text:
+              old = '        if auth.len() > MAX_SECRET_BYTES || auth.as_bytes().contains(&0) {\n'
+              new = '''        if auth.len() > MAX_SECRET_BYTES
+                      || auth.as_bytes().contains(&0)
+                      || auth.contains('\\n')
+                      || auth.contains('\\r')
+                  {
+          '''.replace('          ', '')
+              if text.count(old) != 1:
+                  raise SystemExit('executor mounted-secret validation block is not unique')
+              text = text.replace(old, new, 1)
 
-              fs::write(
-                  &secret,
-                  format!("{}\\n{}", "a".repeat(16), "b".repeat(16)),
-              )
-              .unwrap();
-              assert!(materialize_executors(&specs, &root).is_err());
-              fs::write(&secret, "a".repeat(MIN_SECRET_BYTES)).unwrap();
+          regression_marker = 'format!("{}\\n{}", "a".repeat(16), "b".repeat(16))'
+          if regression_marker not in text:
+              needle = '        let nested = root.join("nested");\n'
+              if text.count(needle) != 1:
+                  raise SystemExit('mounted-secret regression insertion point is not unique')
+              regression = '''        fs::write(
+                      &secret,
+                      format!("{}\\n{}", "a".repeat(16), "b".repeat(16)),
+                  )
+                  .unwrap();
+                  assert!(materialize_executors(&specs, &root).is_err());
+                  fs::write(&secret, "a".repeat(MIN_SECRET_BYTES)).unwrap();
 
-              let nested = root.join("nested");
-          '''.replace('              ', '')
-              if text.count(marker) != 1:
-                  raise SystemExit('mounted-secret regression insertion point not found')
-              text = text.replace(marker, replacement, 1)
+          '''.replace('          ', '')
+              text = text.replace(needle, regression + needle, 1)
+
           contracts.write_text(text)
           PY
 
-      - name: Refresh only the existing lock graph, then run every target
+      - name: Refresh the lock once, then validate every target locked
         working-directory: remote/deployments/gha-clone-server-rs
         shell: bash
         run: |
@@ -163,14 +158,11 @@ jobs:
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked --all-targets -- --nocapture
 
-      - name: Commit validated source and lock, then remove all one-shot workflows
+      - name: Commit validated source and lock, then remove this workflow
         shell: bash
         run: |
           set -euo pipefail
-          git rm -f \
-            .github/workflows/den-1597-one-shot-router-lock-and-hardening.yml \
-            .github/workflows/den-1597-one-shot-router-clippy.yml \
-            .github/workflows/den-1597-one-shot-security-hardening.yml
+          git rm .github/workflows/den-1597-one-shot-router-lock-and-hardening.yml
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
