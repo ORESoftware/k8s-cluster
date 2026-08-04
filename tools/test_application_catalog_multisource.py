@@ -32,9 +32,7 @@ def multisource_application() -> dict[str, Any]:
                     },
                     {
                         "path": "remote/deployments/service/k8s",
-                        "repoURL": (
-                            "ssh://git@github.com/ORESoftware/k8s-cluster.git"
-                        ),
+                        "repoURL": "ssh://git@github.com/ORESoftware/k8s-cluster.git",
                         "targetRevision": "main",
                     },
                     {
