@@ -1,0 +1,82 @@
+name: Verify DEN-1550 workflow-run-only boundary
+
+on:
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - .github/workflows/den-1550-final-verify.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1550-final-verify
+  cancel-in-progress: false
+
+jobs:
+  verify-and-clean:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1550-workflow-run-only-20260804
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Install the reviewed Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Verify the focused regressions and complete locked target set
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd remote/deployments/gha-clone-server-rs
+          cargo fmt --all -- --check
+          cargo test --locked --test webhook_e2e non_workflow_run_events_never_fetch_or_dispatch -- --nocapture
+          cargo test --locked --test http_api webhook_guards_reject_bad_inputs_before_any_github_fetch -- --nocapture
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets
+          cd ../../..
+          git diff --check
+
+          git fetch origin dev --no-tags
+          python3 <<'PY'
+          import subprocess
+
+          expected = {
+              '.github/workflows/den-1550-final-verify.yml',
+              'remote/deployments/gha-clone-server-rs/src/main.rs',
+              'remote/deployments/gha-clone-server-rs/tests/http_api.rs',
+              'remote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs',
+          }
+          changed = set(
+              subprocess.check_output(
+                  ['git', 'diff', '--name-only', 'origin/dev...HEAD'],
+                  text=True,
+              ).splitlines()
+          )
+          if changed != expected:
+              raise SystemExit(
+                  f'expected reviewed PR paths {sorted(expected)}, found {sorted(changed)}'
+              )
+          PY
+
+      - name: Remove the one-shot verifier from the durable PR diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/den-1550-final-verify.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/den-1550-final-verify.yml
+          git diff --cached --check
+          git commit -m 'chore(DEN-1550): remove one-shot verifier'
+          git push origin HEAD:agent/den-1550-workflow-run-only-20260804
