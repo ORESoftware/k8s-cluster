@@ -72,7 +72,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ORESoftware/ai-agent-bridge.rs
-          ref: 7f1ad57126231c0a27da19799a27aa71f4ffaf5d
+          ref: df587a8977402e2092748e8d62417c8bf124049e
           path: .e2e/bridge
           fetch-depth: 1
           persist-credentials: false
@@ -82,7 +82,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ORESoftware/ai-agent-coordinator.rs
-          ref: a6ef9622c76047c90383bed5b589296ce9e7fd34
+          ref: 7453280125ca1bfbc34375bea90647a661d2027d
           path: .e2e/coordinator
           fetch-depth: 1
           persist-credentials: false
@@ -147,8 +147,8 @@ jobs:
 
       - name: Record and verify tested revisions
         env:
-          BRIDGE_REF: 7f1ad57126231c0a27da19799a27aa71f4ffaf5d
-          COORDINATOR_REF: a6ef9622c76047c90383bed5b589296ce9e7fd34
+          BRIDGE_REF: df587a8977402e2092748e8d62417c8bf124049e
+          COORDINATOR_REF: 7453280125ca1bfbc34375bea90647a661d2027d
         run: |
           set -euo pipefail
           bridge_commit="$(git -C .e2e/bridge rev-parse HEAD)"
