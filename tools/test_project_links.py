@@ -72,11 +72,12 @@ class ProjectLinksTests(unittest.TestCase):
         self.assertTrue(any("duplicate key" in error for error in errors), errors)
 
     def test_public_boundary_rejects_tokens_ids_and_uuids(self):
+        token_fixture = "ghp_" + "a" * 30
         raw = json.dumps(
             {
                 "slack": "C0BLYPGGFH6",
                 "linear": "83b03121-db08-4e34-a69f-99fd1c873ced",
-                "token": "ghp_abcdefghijklmnopqrstuvwxyz123456",
+                "token": token_fixture,
             }
         )
         violations = find_public_boundary_violations(raw)
