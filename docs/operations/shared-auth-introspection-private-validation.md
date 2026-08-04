@@ -6,7 +6,8 @@ Shared Auth organization currently fails every exact-head job before runner
 allocation: no command starts and no job log is produced. This temporary
 workflow provides executable evidence inside a private repository whose hosted
 Rust, PostgreSQL, security, regression, and Nix lanes are known to allocate and
-pass.
+pass. It is a one-release continuity boundary, not a permanent substitute for
+restoring native Shared Auth runner allocation.
 
 ## Confidentiality boundary
 
