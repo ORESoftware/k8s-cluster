@@ -5,8 +5,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = realpathSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."));
-const contractPath = path.join(repositoryRoot, "seaorm-migration.json");
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
+const DPM = Object.freeze({
+  repository: "declarative-migrations/declarative-postgres-migrate.rs",
+  version: "0.3.2",
+  linuxX8664Asset: "dpm-v0.3.2-x86_64-unknown-linux-gnu.tar.gz",
+  linuxX8664Sha256: "4258755a946f6f3a49e33538889523e4736180624a186bddc90180994612d3aa",
+  binary: "dpm",
+});
 const EXCLUDED_DIRECTORIES = new Set([
   ".git",
   ".idea",
@@ -124,8 +130,10 @@ export function validateContract(contract) {
   if (contract.schemaAuthority?.seaOrmAdapterPath !== "pg-defs/rust/sea-orm") {
     errors.push("SeaORM adapter path must remain pg-defs/rust/sea-orm");
   }
-  if (contract.declarativeMigrations?.repository !== "declarative-migrations/declarative-migrations") {
-    errors.push("declarative-migrations repository is incorrect");
+  for (const [key, expected] of Object.entries(DPM)) {
+    if (contract.declarativeMigrations?.[key] !== expected) {
+      errors.push(`declarativeMigrations.${key} must equal ${expected}`);
+    }
   }
   if (contract.declarativeMigrations?.serviceStartupMigrations !== false) {
     errors.push("service startup migrations must remain disabled");
@@ -183,10 +191,7 @@ export function auditRepository(root = repositoryRoot) {
     version: 1,
     status: contract.status,
     schemaAuthority: structuredClone(contract.schemaAuthority),
-    declarativeMigrations: {
-      repository: contract.declarativeMigrations.repository,
-      version: contract.declarativeMigrations.version,
-    },
+    declarativeMigrations: structuredClone(contract.declarativeMigrations),
     scannedFileCount: scannedFiles.length,
     counts: {
       directSqlx: findings.directSqlx.length,
