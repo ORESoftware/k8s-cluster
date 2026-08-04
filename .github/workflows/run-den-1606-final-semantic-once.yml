@@ -97,7 +97,7 @@ jobs:
           inner_exec = "exec(compile(script, str(workflow), 'exec'), {'__name__': '__main__'})\n"
           if script.count(inner_exec) != 1:
               raise SystemExit('semantic materializer has no unique inner execution boundary')
-          capacity_guard_repair = r'''capacity_old = r'''async fn reserve_runs(state: &AppState, records: &[RunRecord]) -> bool {
+          capacity_guard_repair = r"""capacity_old = r'''async fn reserve_runs(state: &AppState, records: &[RunRecord]) -> bool {
               reserve_run_records(
                   &mut state.runs.write().await,
                   records,
@@ -114,7 +114,7 @@ jobs:
               raise SystemExit('could not locate generated active-run reservation helper')
           script = script.replace(capacity_old, capacity_new, 1)
 
-          '''
+          """
           script = script.replace(inner_exec, capacity_guard_repair + inner_exec, 1)
 
           exec(compile(script, str(workflow), 'exec'), {'__name__': '__main__'})
