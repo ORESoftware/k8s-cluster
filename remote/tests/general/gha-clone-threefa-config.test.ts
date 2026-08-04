@@ -12,7 +12,7 @@ const config = read(
 const buildPatch = read(
   'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml',
 );
-const workflow = read('.github/workflows/gha-clone-server.yml');
+const workflow = read('.github/workflows/gha-clone-threefa.yml');
 const planner = read('remote/deployments/gha-clone-server-rs/src/lib.rs');
 const fixture = read(
   'remote/deployments/gha-clone-server-rs/tests/fixtures/threefa-interfaces-contracts.yml',
@@ -50,7 +50,7 @@ test('3FA repository, workflow, and profile admission are exact and additive', (
   assert.match(validation, /strip_prefix\('='\)/);
 });
 
-test('bounded workflow is immutable, credential free, and topologically exact', () => {
+test('bounded repository workflow is immutable, credential free, and topologically exact', () => {
   assert.match(fixture, /^on:\n  workflow_dispatch:$/m);
   assert.match(
     fixture,
@@ -105,15 +105,32 @@ test('real-process proof pins one immutable source and refuses mutations', () =>
   assert.match(processTest, /UNPROCESSABLE_ENTITY/);
 });
 
-test('normal CI and documentation preserve architecture and secret boundaries', () => {
+test('permanent CI and private smoke preserve App and secret boundaries', () => {
   assert.match(workflow, /threefa-interfaces-contracts\.yml/);
   assert.match(workflow, /gha-clone-threefa-config\.test\.ts/);
-  assert.match(workflow, /threefa_interfaces/);
-  assert.match(workflow, /gha-clone-msgint-config\.test\.ts/);
-  assert.match(workflow, /executor_router_http/);
+  assert.match(workflow, /cargo test --locked --test threefa_interfaces/);
+  assert.match(workflow, /run_private_profile_smoke/);
+  assert.match(workflow, new RegExp(`THREEFA_REVISION: ${revision}`));
+  assert.match(
+    workflow,
+    /actions\/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349/,
+  );
+  assert.match(workflow, /owner: 3FA-app/);
+  assert.match(workflow, /repositories: 3fa-interfaces/);
+  assert.match(workflow, /permission-contents: read/);
+  assert.match(workflow, /persist-credentials: false/);
+  assert.match(workflow, /github\.event_name == 'workflow_dispatch'/);
+  assert.match(workflow, /node-hardened-test-image/);
+  assert.match(workflow, /rust-generated-verify-image/);
+  assert.doesNotMatch(workflow, /REMOTE_DEV_GH_PAT|GH_PAT|github\.token/);
+});
+
+test('documentation preserves architecture and native-only boundaries', () => {
   assert.match(continuityDoc, /TLA\+/);
   assert.match(continuityDoc, /official ARC/);
   assert.match(continuityDoc, /classic PAT/i);
+  assert.match(continuityDoc, /exactly two fixed-profile submissions/);
+  assert.match(continuityDoc, /short-lived GitHub App installation token/);
   assert.doesNotMatch(
     [workflow, config, buildPatch, fixture, processTest, continuityDoc].join('\n'),
     /ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY/,
