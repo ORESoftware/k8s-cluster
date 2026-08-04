@@ -3,7 +3,7 @@
 The canonical join key across ChatGPT Projects, GitHub organization Projects v2,
 Linear projects, and Slack channels is `portfolio_key`.
 
-## Naming and identity contract
+## Naming contract
 
 - `portfolio_key`: lowercase GitHub organization login, preserving punctuation.
 - ChatGPT project name: `<portfolio_key>`.
@@ -15,13 +15,14 @@ Linear projects, and Slack channels is `portfolio_key`.
 
 The machine-readable source of truth is
 [`ops/registries/portfolio-project-links.csv`](../ops/registries/portfolio-project-links.csv).
-It contains all 41 verified mappings, source-native IDs, and direct provider
-URLs. `dancing-dragons-project` is Project `#4`; every other organization
-Project is `#1`.
+Each row stores native names, IDs, Project numbers, and direct URLs for all
+connected systems. The registry contains all 41 verified mappings.
+`dancing-dragons-project` is Project `#4`; every other organization Project is
+`#1`.
 
 Every cross-system issue, event, agent run, Slack command, Project item, and
 synchronization record should carry `portfolio_key=<key>` plus its source-native
-IDs. Matching uses `portfolio_key` first and immutable IDs second; casing
+IDs. Matching must use `portfolio_key` first and immutable IDs second; casing
 differences must never create duplicate projects or channels.
 
 GitHub organization casing is preserved in `github_org` and
@@ -35,10 +36,35 @@ registry and repeated in GitHub, Linear, and Slack metadata. An optional
 agent-bridge/coordinator webhook can perform native ChatGPT-project writes when
 that internal capability is available.
 
+## Enforcement
+
+- [`scripts/ops/portfolio_project_links.py`](../scripts/ops/portfolio_project_links.py)
+  owns the shared contract, managed metadata renderers, and Central-time schedule
+  guard used by validation, tests, and reconciliation.
+- [`scripts/ops/validate_portfolio_project_links.py`](../scripts/ops/validate_portfolio_project_links.py)
+  enforces the exact 41-key inventory, canonical naming and casing, the Project
+  #1/#4 numbering contract, accepted Linear aliases, native UUID/channel IDs and
+  URLs, uniqueness, sorted rows, the fixed Slack workspace, and rejection of
+  credential-like values.
+- [`.github/workflows/validate-portfolio-project-links.yml`](../.github/workflows/validate-portfolio-project-links.yml)
+  runs validation and offline reconciliation tests on relevant pushes and pull
+  requests, and runs the active provider reconciler daily.
+- [`scripts/ops/sync_github_project_metadata.py`](../scripts/ops/sync_github_project_metadata.py)
+  remains the focused GitHub-only repair and audit command used for the initial
+  portfolio rollout.
+- [`scripts/ops/sync_portfolio_project_links.py`](../scripts/ops/sync_portfolio_project_links.py)
+  performs the ongoing GitHub, Linear, Slack, and optional ChatGPT-bridge
+  reconciliation.
+- [`.github/workflows/sync-linear-next-steps-to-org-projects.yml`](../.github/workflows/sync-linear-next-steps-to-org-projects.yml)
+  is the separate reviewed policy layer for mirroring selected Linear work items
+  into organization Projects v2 boards.
+- Linear projects and Slack channels carry the marker
+  `portfolio-link-registry:v1:<portfolio_key>` with reciprocal links.
+
 ## Daily reconciliation
 
-`.github/workflows/validate-portfolio-project-links.yml` performs one active
-reconciliation every day at **03:00 America/Chicago**.
+The portfolio-link workflow performs one active reconciliation every day at
+**03:00 America/Chicago**.
 
 GitHub Actions cron is UTC and cannot express a daylight-saving-aware named
 timezone. The workflow therefore registers both `08:00` and `09:00` UTC. The
@@ -50,8 +76,8 @@ ordinary queue delay cannot skip the run.
 The reconciler is idempotent and fail-closed:
 
 - **GitHub:** resolve the exact organization Project number, verify its direct
-  URL, enforce the canonical title and open state, and maintain a compact
-  managed cross-link marker in the Project short description.
+  URL, enforce the canonical title and open state, and maintain the established
+  Project short description and readme cross-links.
 - **Linear:** fetch the immutable project ID, verify the canonical name and URL,
   and append or replace a bounded managed link block while preserving all
   human-authored description text.
@@ -66,17 +92,10 @@ The reconciler is idempotent and fail-closed:
 Each run emits retained JSON and Markdown evidence. Changed or failed active
 runs post a portfolio summary to `#oresoftware`.
 
-[`scripts/ops/sync_github_project_metadata.py`](../scripts/ops/sync_github_project_metadata.py)
-remains the focused GitHub-only repair/audit command used for the initial
-portfolio rollout. The daily reconciler emits the same GitHub short description
-and Project readme format, then extends reconciliation to Linear, Slack, and the
-optional ChatGPT bridge.
-
-This job synchronizes project identity, direct links, and managed routing
+The daily job synchronizes project identity, direct links, and managed routing
 metadata. It deliberately does not duplicate arbitrary message history or
-create a second issue system. Work-item mirroring between Linear and GitHub
-Projects should consume the same `portfolio_key` registry as a separate,
-reviewable policy layer.
+create a second issue system. Work-item mirroring remains a separate policy
+layer but consumes the same canonical `portfolio_key` contract.
 
 Native Linear-to-Slack channel binding remains controlled by Linear's Slack
 integration surface. The daily reconciler validates the same immutable IDs and
@@ -122,3 +141,8 @@ python scripts/ops/sync_portfolio_project_links.py --apply
 
 Manual GitHub Actions dispatch defaults to validation-only. Set the `apply`
 input explicitly to perform provider writes.
+
+When adding another portfolio, update the expected key inventory, add or select
+the Linear project and Slack channel, append one sorted registry row, and run
+both validation and metadata reconciliation. Never infer a match solely from
+display text when a native ID is available.
