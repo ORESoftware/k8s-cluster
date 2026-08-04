@@ -1,0 +1,53 @@
+name: rust-server-consumers
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/rust-server-consumers.yml"
+      - "pg-defs/rust-server-consumers.json"
+      - "pg-defs/rust-server-consumers.schema.json"
+      - "scripts/check-rust-server-consumers.mjs"
+      - "scripts/check-rust-server-consumers.test.mjs"
+  push:
+    branches: [main]
+    paths:
+      - "pg-defs/rust-server-consumers.json"
+      - "pg-defs/rust-server-consumers.schema.json"
+      - "scripts/check-rust-server-consumers.mjs"
+      - "scripts/check-rust-server-consumers.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-server-consumers-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@1e60f620b9541d7c2434ff48847e58a8b12002b1 # v4.0.4
+        with:
+          node-version: "22"
+      - name: Validate inventory contract and mutation suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 test-results
+          node --test scripts/check-rust-server-consumers.test.mjs
+          node scripts/check-rust-server-consumers.mjs \
+            --report test-results/rust-server-consumers.json
+      - name: Upload non-secret consumer evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rust-server-consumers-${{ github.run_id }}
+          path: test-results/rust-server-consumers.json
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ORESoftware/k8s-libs-and-shared-defs/pg-defs/rust-server-consumers.schema.json",
+  "title": "Rust server SeaORM consumer inventory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "version",
+    "authority",
+    "declarativeMigrations",
+    "applicationStandard",
+    "uiPolicy",
+    "consumers",
+    "completionGate"
+  ],
+  "properties": {
+    "$schema": { "const": "./rust-server-consumers.schema.json" },
+    "version": { "const": 1 },
+    "authority": { "$ref": "#/$defs/authority" },
+    "declarativeMigrations": { "$ref": "#/$defs/dpm" },
+    "applicationStandard": { "$ref": "#/$defs/applicationStandard" },
+    "uiPolicy": { "$ref": "#/$defs/uiPolicy" },
+    "consumers": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": false,
+      "items": { "$ref": "#/$defs/consumer" }
+    },
+    "completionGate": { "$ref": "#/$defs/completionGate" }
+  },
+  "$defs": {
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "sha40": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "safePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "commit", "schemaPath", "seaOrmAdapterPath"],
+      "properties": {
+        "repository": { "const": "ORESoftware/k8s-libs-and-shared-defs" },
+        "commit": { "$ref": "#/$defs/sha40" },
+        "schemaPath": { "const": "pg-defs/schema/schema.sql" },
+        "seaOrmAdapterPath": { "const": "pg-defs/rust/sea-orm" }
+      }
+    },
+    "dpm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "version", "linuxX8664Sha256", "serviceStartupDdl"],
+      "properties": {
+        "repository": { "const": "declarative-migrations/declarative-migrations" },
+        "version": { "const": "1.4.2" },
+        "linuxX8664Sha256": { "$ref": "#/$defs/sha256" },
+        "serviceStartupDdl": { "const": false }
+      }
+    },
+    "applicationStandard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ordinaryPersistence",
+        "postgresEscapeHatch",
+        "directSqlxTarget",
+        "directTokioPostgresTarget",
+        "restartTestsRequired",
+        "concurrencyTestsRequired"
+      ],
+      "properties": {
+        "ordinaryPersistence": { "const": "SeaORM generated entities and repositories" },
+        "postgresEscapeHatch": { "const": "parameterized sea_orm::Statement inside reviewed repository functions" },
+        "directSqlxTarget": { "const": 0 },
+        "directTokioPostgresTarget": { "const": 0 },
+        "restartTestsRequired": { "const": true },
+        "concurrencyTestsRequired": { "const": true }
+      }
+    },
+    "uiPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maudHtmx",
+        "leptos",
+        "dioxus",
+        "rendererSpecificPersistence",
+        "sharedRepositoryBoundaryRequired"
+      ],
+      "properties": {
+        "maudHtmx": { "const": "default server-first CRUD and operations pages" },
+        "leptos": { "const": "analytics, filters, drill-downs, and coordinated derived state" },
+        "dioxus": { "const": "activity, live collaboration, and cross-target component surfaces" },
+        "rendererSpecificPersistence": { "const": false },
+        "sharedRepositoryBoundaryRequired": { "const": true }
+      }
+    },
+    "consumer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "repository",
+        "servicePath",
+        "pullRequest",
+        "migrationStatus",
+        "schemaCommit",
+        "lockfileRequired",
+        "requiredEvidence"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/slug" },
+        "repository": { "$ref": "#/$defs/repository" },
+        "servicePath": { "$ref": "#/$defs/safePath" },
+        "pullRequest": {
+          "oneOf": [
+            { "type": "integer", "minimum": 1 },
+            { "type": "null" }
+          ]
+        },
+        "migrationStatus": {
+          "enum": ["inventory", "conversion", "verification", "seaorm-only"]
+        },
+        "schemaCommit": { "$ref": "#/$defs/sha40" },
+        "lockfileRequired": { "const": true },
+        "requiredEvidence": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/slug" }
+        }
+      }
+    },
+    "completionGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowedStatuses", "seaormOnlyRequires"],
+      "properties": {
+        "allowedStatuses": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["inventory", "conversion", "verification", "seaorm-only"]
+          }
+        },
+        "seaormOnlyRequires": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "zero-direct-sqlx",
+              "zero-direct-tokio-postgres",
+              "no-service-startup-ddl",
+              "immutable-shared-schema-pin",
+              "generated-lockfile",
+              "restart-tests",
+              "concurrency-tests",
+              "dpm-postgres-17-convergence"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "$schema": "./rust-server-consumers.schema.json",
+  "version": 1,
+  "authority": {
+    "repository": "ORESoftware/k8s-libs-and-shared-defs",
+    "commit": "3c84cab532b27d328378f09fba5841f02644ae3b",
+    "schemaPath": "pg-defs/schema/schema.sql",
+    "seaOrmAdapterPath": "pg-defs/rust/sea-orm"
+  },
+  "declarativeMigrations": {
+    "repository": "declarative-migrations/declarative-migrations",
+    "version": "1.4.2",
+    "linuxX8664Sha256": "42dd9d638a57edbde6c931d776a4ba295bcb2614e498203968c321d84ad90bdb",
+    "serviceStartupDdl": false
+  },
+  "applicationStandard": {
+    "ordinaryPersistence": "SeaORM generated entities and repositories",
+    "postgresEscapeHatch": "parameterized sea_orm::Statement inside reviewed repository functions",
+    "directSqlxTarget": 0,
+    "directTokioPostgresTarget": 0,
+    "restartTestsRequired": true,
+    "concurrencyTestsRequired": true
+  },
+  "uiPolicy": {
+    "maudHtmx": "default server-first CRUD and operations pages",
+    "leptos": "analytics, filters, drill-downs, and coordinated derived state",
+    "dioxus": "activity, live collaboration, and cross-target component surfaces",
+    "rendererSpecificPersistence": false,
+    "sharedRepositoryBoundaryRequired": true
+  },
+  "consumers": [
+    {
+      "id": "contract-service",
+      "repository": "ORESoftware/k8s-cluster",
+      "servicePath": "remote/deployments/contract-service-rs",
+      "pullRequest": 812,
+      "migrationStatus": "verification",
+      "schemaCommit": "3c84cab532b27d328378f09fba5841f02644ae3b",
+      "lockfileRequired": true,
+      "requiredEvidence": [
+        "policy-mutation-tests",
+        "cargo-clippy-test-check",
+        "transaction-lifetime-advisory-fencing",
+        "generated-lockfile"
+      ]
+    },
+    {
+      "id": "ai-agent-bridge",
+      "repository": "ORESoftware/ai-agent-bridge.rs",
+      "servicePath": ".",
+      "pullRequest": 78,
+      "migrationStatus": "verification",
+      "schemaCommit": "3c84cab532b27d328378f09fba5841f02644ae3b",
+      "lockfileRequired": true,
+      "requiredEvidence": [
+        "postgres-17",
+        "dpm-convergence",
+        "restart-persistence",
+        "cargo-clippy-test-check",
+        "generated-lockfile"
+      ]
+    },
+    {
+      "id": "mip-solver-node",
+      "repository": "ORESoftware/mip-solver-node.rs",
+      "servicePath": ".",
+      "pullRequest": null,
+      "migrationStatus": "inventory",
+      "schemaCommit": "3c84cab532b27d328378f09fba5841f02644ae3b",
+      "lockfileRequired": true,
+      "requiredEvidence": [
+        "direct-driver-inventory",
+        "postgres-17",
+        "dpm-convergence",
+        "restart-persistence",
+        "duplicate-claim",
+        "retry-ordering",
+        "generated-lockfile"
+      ]
+    }
+  ],
+  "completionGate": {
+    "allowedStatuses": [
+      "inventory",
+      "conversion",
+      "verification",
+      "seaorm-only"
+    ],
+    "seaormOnlyRequires": [
+      "zero-direct-sqlx",
+      "zero-direct-tokio-postgres",
+      "no-service-startup-ddl",
+      "immutable-shared-schema-pin",
+      "generated-lockfile",
+      "restart-tests",
+      "concurrency-tests",
+      "dpm-postgres-17-convergence"
+    ]
+  }
+}
