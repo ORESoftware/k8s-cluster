@@ -27,6 +27,6 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/ORESoftware/k8s-cluster.git",
-    "directory": "remote/api-sdks/typescript/durable-worker"
+    "directory": "remote/worker-sdks/typescript/durable-worker"
   }
 }
