@@ -67,6 +67,19 @@ jobs:
           cargo fmt --all -- --check
           cargo clippy --locked --all-targets -- -D warnings
 
+      - name: Assert the complete integration-target inventory
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          actual="$(find tests -maxdepth 1 -type f -name '*.rs' -printf '%f\n' | LC_ALL=C sort)"
+          expected="$(printf '%s\n' http_api.rs streempilot_http.rs webhook_e2e.rs | LC_ALL=C sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'integration target inventory changed; name every target explicitly\nexpected:\n%s\nactual:\n%s\n' "$expected" "$actual" >&2
+            exit 1
+          fi
+          cargo test --locked --tests --no-run
+          cargo test --locked --benches --no-run
+
       - name: Run library, binary, and example tests
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo test --locked --lib --bins --examples -- --nocapture
@@ -86,10 +99,6 @@ jobs:
       - name: Run documentation tests
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo test --locked --doc -- --nocapture
-
-      - name: Prove the complete target matrix
-        working-directory: remote/deployments/gha-clone-server-rs
-        run: cargo test --locked --all-targets -- --nocapture
 
       - name: Commit product-only diff
         run: |
