@@ -1,0 +1,144 @@
+name: Finalize Slack browser harness on current main once
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/finalize-slack-browser-current-main-once.yml'
+  push:
+    branches:
+      - agent/slack-browser-e2e-current-main-v2-20260804
+    paths:
+      - .github/workflows/finalize-slack-browser-current-main-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-slack-browser-current-main-once
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact current-main successor branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/slack-browser-e2e-current-main-v2-20260804
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Three-way apply the exact reviewed harness commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='6673884077e3f3d375c1edbdb47df46db9f35157'
+          source='265f0808398c500d4f4bd1a40446a6024a46b8c5'
+          test "$(git rev-parse HEAD)" = "$base"
+          git fetch --no-tags origin "$source"
+
+          expected=$'remote/tests/fixtures/slack-command-coordinator.yaml\nremote/tests/fixtures/slack-command-mock.mjs\nremote/tests/fixtures/slack-command-registry.json\nremote/tests/general/ai-agent-bridge-k8s-contract.test.mjs\nremote/tests/ui/slack-agent-command.playwright.test.mjs\nscripts/ci/run-slack-command-e2e.sh'
+          actual="$(git diff --name-only "${source}^" "$source" | sort)"
+          test "$actual" = "$expected" || {
+            echo 'reviewed source path set drifted:' >&2
+            printf '%s\n' "$actual" >&2
+            exit 1
+          }
+
+          patch="${RUNNER_TEMP}/slack-browser-reviewed.patch"
+          git diff --binary "${source}^" "$source" -- \
+            remote/tests/fixtures/slack-command-coordinator.yaml \
+            remote/tests/fixtures/slack-command-mock.mjs \
+            remote/tests/fixtures/slack-command-registry.json \
+            remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs \
+            remote/tests/ui/slack-agent-command.playwright.test.mjs \
+            scripts/ci/run-slack-command-e2e.sh \
+            >"$patch"
+
+          set +e
+          git apply --3way --index "$patch" >"${RUNNER_TEMP}/apply.stdout" 2>"${RUNNER_TEMP}/apply.stderr"
+          status=$?
+          set -e
+          if test "$status" -ne 0; then
+            echo 'reviewed harness did not compose cleanly with current main' >&2
+            cat "${RUNNER_TEMP}/apply.stdout" >&2
+            cat "${RUNNER_TEMP}/apply.stderr" >&2
+            git diff --cc --no-ext-diff >&2 || true
+            exit 1
+          fi
+          test -z "$(git diff --name-only --diff-filter=U)"
+
+      - name: Align the direct Claude assertion with production semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/tests/ui/slack-agent-command.playwright.test.mjs')
+          source = path.read_text(encoding='utf-8')
+          task_old = "text: 'Investigate DEN-1231 with tests',\n      trigger: 'trigger-claude-direct',"
+          task_new = "text: 'Implement DEN-1231 with tests',\n      trigger: 'trigger-claude-direct',"
+          if source.count(task_old) != 1:
+              raise SystemExit('direct Claude task boundary drifted')
+          source = source.replace(task_old, task_new, 1)
+
+          action_old = "expectedIssue: 'DEN-1231',\n      expectedAction: 'investigate',\n    });\n\n    const duplicateResponse"
+          action_new = "expectedIssue: 'DEN-1231',\n      expectedAction: 'implement',\n    });\n\n    const duplicateResponse"
+          if source.count(action_old) != 1:
+              raise SystemExit('direct Claude action assertion boundary drifted')
+          path.write_text(source.replace(action_old, action_new, 1), encoding='utf-8')
+          PY
+
+      - name: Validate the combined current-main product
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          node --check remote/tests/fixtures/slack-command-mock.mjs
+          node --check remote/tests/ui/slack-agent-command.playwright.test.mjs
+          node --check remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs
+          bash -n scripts/ci/run-slack-command-e2e.sh
+          node --test remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs
+
+          workflow='.github/workflows/slack-agent-command-browser-e2e.yml'
+          grep -Fq 'ref: 0ba7d2d4eb8c44583503d4567af2de1f73bc5598' "$workflow"
+          grep -Fq 'ref: 29e827244a517a54c3c861a9654b355b584140df' "$workflow"
+          test "$(grep -Fc 'ref: 0ba7d2d4eb8c44583503d4567af2de1f73bc5598' "$workflow")" -eq 1
+          test "$(grep -Fc 'ref: 29e827244a517a54c3c861a9654b355b584140df' "$workflow")" -eq 1
+          docker run --rm \
+            -v "$PWD:/repo" \
+            -w /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            "$workflow"
+
+          grep -Fq "text: 'Implement DEN-1231 with tests'" \
+            remote/tests/ui/slack-agent-command.playwright.test.mjs
+          grep -Fq "expectedAction: 'implement'" \
+            remote/tests/ui/slack-agent-command.playwright.test.mjs
+
+      - name: Commit and push the product-only current-main successor
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='6673884077e3f3d375c1edbdb47df46db9f35157'
+          git rm .github/workflows/finalize-slack-browser-current-main-once.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'test(slack): restack the identity-bound browser harness'
+
+          expected=$'remote/tests/fixtures/slack-command-coordinator.yaml\nremote/tests/fixtures/slack-command-mock.mjs\nremote/tests/fixtures/slack-command-registry.json\nremote/tests/general/ai-agent-bridge-k8s-contract.test.mjs\nremote/tests/ui/slack-agent-command.playwright.test.mjs\nscripts/ci/run-slack-command-e2e.sh'
+          actual="$(git diff --name-only "$base"...HEAD | sort)"
+          test "$actual" = "$expected" || {
+            echo 'unexpected final product paths:' >&2
+            printf '%s\n' "$actual" >&2
+            exit 1
+          }
+          git push origin HEAD:agent/slack-browser-e2e-current-main-v2-20260804
