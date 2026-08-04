@@ -6,14 +6,12 @@ on:
       - 'remote/deployments/gha-clone-server-rs/**'
       - 'remote/deployments/build-server-rs/**'
       - 'remote/argocd/dd-next-runtime/dd-gha-clone-server*'
-      - 'remote/argocd/dd-next-runtime/dd-gha-executor-router*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
       - 'remote/tests/general/gha-clone-webhook-config.test.ts'
       - 'docs/gha-continuity-architecture.md'
       - 'docs/gha-independent-executor-routing.md'
-      - 'docs/gha-executor-router-gitops.md'
       - '.github/actionlint.yaml'
       - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/gha-clone-server.yml'
@@ -24,14 +22,12 @@ on:
       - 'remote/deployments/gha-clone-server-rs/**'
       - 'remote/deployments/build-server-rs/**'
       - 'remote/argocd/dd-next-runtime/dd-gha-clone-server*'
-      - 'remote/argocd/dd-next-runtime/dd-gha-executor-router*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
       - 'remote/tests/general/gha-clone-webhook-config.test.ts'
       - 'docs/gha-continuity-architecture.md'
       - 'docs/gha-independent-executor-routing.md'
-      - 'docs/gha-executor-router-gitops.md'
       - '.github/actionlint.yaml'
       - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/gha-clone-server.yml'
@@ -72,9 +68,6 @@ jobs:
       - name: Run unit, process, webhook, and meta integration tests
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo test --locked --all-targets
-      - name: Prove real-process AWS and Hetzner routing boundaries
-        working-directory: remote/deployments/gha-clone-server-rs
-        run: cargo test --locked --test executor_router_http
 
   build-server-profile:
     runs-on: ubuntu-24.04
@@ -91,9 +84,12 @@ jobs:
         with:
           toolchain: '1.90.0'
           components: rustfmt
-      - name: Check the modified idempotency source formatting
+      - name: Check the modified idempotency leaf modules formatting
         working-directory: remote/deployments/build-server-rs
-        run: rustfmt --edition 2021 --check src/jobs.rs
+        run: >-
+          rustfmt --edition 2021 --check
+          src/jobs.rs
+          src/nats_submit.rs
       - name: Compile the complete build server against the exact private library gitlink
         working-directory: remote/deployments/build-server-rs
         run: cargo check --locked --all-targets
@@ -103,6 +99,9 @@ jobs:
       - name: Test build request idempotency and retry semantics
         working-directory: remote/deployments/build-server-rs
         run: cargo test --locked idempotency_tests -- --nocapture
+      - name: Test strict NATS conflict and redelivery classification
+        working-directory: remote/deployments/build-server-rs
+        run: cargo test --locked nats_submit::tests -- --nocapture
 
   contracts:
     runs-on: ubuntu-24.04
@@ -129,7 +128,7 @@ jobs:
           cache-dependency-path: remote/tests/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: remote/tests
-      - name: Validate deployment, routing, execution, and webhook boundaries
+      - name: Validate deployment, execution, and webhook boundaries
         working-directory: remote/tests
         run: |
           pnpm exec tsx --test \
@@ -144,10 +143,8 @@ jobs:
             'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|BEGIN (RSA |EC )?PRIVATE KEY' \
             remote/deployments/gha-clone-server-rs \
             remote/argocd/dd-next-runtime/dd-gha-clone-server* \
-            remote/argocd/dd-next-runtime/dd-gha-executor-router* \
             docs/gha-continuity-architecture.md \
-            docs/gha-independent-executor-routing.md \
-            docs/gha-executor-router-gitops.md; then
+            docs/gha-independent-executor-routing.md; then
             echo 'credential-like material found in GHA continuity files' >&2
             exit 1
           fi
