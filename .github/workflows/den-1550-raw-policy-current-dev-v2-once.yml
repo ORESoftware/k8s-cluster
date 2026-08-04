@@ -1,0 +1,281 @@
+name: Finalize DEN-1550 raw policy byte hardening once
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/den-1550-raw-policy-current-dev-v2-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1550-raw-policy-current-dev-v2
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-1550-raw-policy-current-dev-v2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - name: Checkout the exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1550-raw-policy-current-dev-v2
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Preserve and validate the original policy bytes
+        run: |
+          set -euo pipefail
+          base='3917b9d453adf589f3c998566e13a3b4ac52851f'
+          carrier='.github/workflows/den-1550-raw-policy-current-dev-v2-once.yml'
+          actual="$(git diff --name-only "$base"...HEAD)"
+          if [[ "$actual" != "$carrier" ]]; then
+            printf 'unexpected pre-transform paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label} drifted: expected one match, found {count}')
+              return text.replace(old, new, 1)
+
+          config_path = Path('remote/deployments/build-server-rs/src/config.rs')
+          config = config_path.read_text(encoding='utf-8')
+          config = replace_once(
+              config,
+              '''pub(crate) fn env_value(key: &str, fallback: &str) -> String {
+          ''',
+              '''/// Read a structured environment value without normalizing it first.
+          ///
+          /// Size-bounded parsers must inspect the original UTF-8 bytes before
+          /// trimming whitespace or applying any other normalization.
+          pub(crate) fn raw_env(key: &str) -> Option<String> {
+              env::var(key).ok()
+          }
+
+          pub(crate) fn env_value(key: &str, fallback: &str) -> String {
+          ''',
+              'raw environment helper insertion',
+          )
+          config = replace_once(
+              config,
+              '''        first_env(&["BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON"]).as_deref(),
+          ''',
+              '''        raw_env("BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON").as_deref(),
+          ''',
+              'raw profile policy environment read',
+          )
+          config_path.write_text(config, encoding='utf-8')
+
+          policy_path = Path('remote/deployments/build-server-rs/src/config/profile_policy.rs')
+          policy = policy_path.read_text(encoding='utf-8')
+          policy = replace_once(
+              policy,
+              '''    let Some(raw) = exact_rules_json
+                  .map(str::trim)
+                  .filter(|raw| !raw.is_empty())
+              else {
+                  return Ok(compiled);
+              };
+              if raw.len() > MAX_POLICY_BYTES {
+                  return Err(format!(
+                      "BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON exceeds {MAX_POLICY_BYTES} bytes"
+                  ));
+              }
+
+              let rules: Vec<ExactRepositoryRule> =
+          ''',
+              '''    let Some(raw_untrimmed) = exact_rules_json else {
+                  return Ok(compiled);
+              };
+              if raw_untrimmed.len() > MAX_POLICY_BYTES {
+                  return Err(format!(
+                      "BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON exceeds {MAX_POLICY_BYTES} bytes"
+                  ));
+              }
+              let raw = raw_untrimmed.trim();
+              if raw.is_empty() {
+                  return Ok(compiled);
+              }
+
+              let rules: Vec<ExactRepositoryRule> =
+          ''',
+              'raw byte limit before normalization',
+          )
+          policy = replace_once(
+              policy,
+              '''        let decoded = profiles
+                      .split(PROFILE_SEPARATOR)
+                      .filter(|value| !value.is_empty())
+                      .collect::<BTreeSet<_>>();
+                  if decoded.is_empty() {
+                      return Err(format!(
+                          "compiled exact profile repository rule for {exact_identity:?} has no profiles"
+                      ));
+                  }
+                  if exact_identity == identity {
+                      if exact_profiles.replace(decoded).is_some() {
+                          return Err(format!(
+                              "multiple compiled exact profile repository rules match {identity:?}"
+                          ));
+                      }
+                  }
+          ''',
+              '''        let mut decoded = BTreeSet::new();
+                  for value in profiles.split(PROFILE_SEPARATOR) {
+                      validate_profile_name(value)?;
+                      if !decoded.insert(value) {
+                          return Err(format!(
+                              "compiled exact profile repository rule for {exact_identity:?} repeats profile {value:?}"
+                          ));
+                      }
+                  }
+                  if exact_identity == identity && exact_profiles.replace(decoded).is_some() {
+                      return Err(format!(
+                          "multiple compiled exact profile repository rules match {identity:?}"
+                      ));
+                  }
+          ''',
+              'compiled profile payload validation',
+          )
+
+          byte_tests = r'''    #[test]
+              fn raw_policy_accepts_the_exact_byte_limit_and_rejects_one_more_byte() {
+                  let base = r#"[{"repository":"https://github.com/ORESoftware/k8s-cluster.git","profiles":["rust-verify"]}]"#;
+                  assert!(base.len() < MAX_POLICY_BYTES);
+
+                  let exact = format!("{base}{}", " ".repeat(MAX_POLICY_BYTES - base.len()));
+                  assert_eq!(exact.len(), MAX_POLICY_BYTES);
+                  assert!(compile_rules(Vec::new(), Some(&exact), &globally_allowed()).is_ok());
+
+                  let oversized = format!("{exact} ");
+                  assert_eq!(oversized.len(), MAX_POLICY_BYTES + 1);
+                  assert!(compile_rules(Vec::new(), Some(&oversized), &globally_allowed()).is_err());
+              }
+
+              #[test]
+              fn raw_policy_limit_counts_utf8_bytes_before_unicode_whitespace_trimming() {
+                  let base = r#"[{"repository":"https://github.com/ORESoftware/k8s-cluster.git","profiles":["rust-verify"]}]"#;
+                  let unicode_whitespace = "\u{2003}";
+                  let padding = " ".repeat(MAX_POLICY_BYTES - base.len() - 1);
+                  let raw = format!("{base}{padding}{unicode_whitespace}");
+
+                  assert_eq!(raw.chars().count(), MAX_POLICY_BYTES);
+                  assert!(raw.len() > MAX_POLICY_BYTES);
+                  assert!(compile_rules(Vec::new(), Some(&raw), &globally_allowed()).is_err());
+              }
+
+          '''
+          anchor = '''    #[test]
+              fn compiled_exact_rules_are_deterministic_and_lowercase_identity() {
+          '''
+          if 'raw_policy_accepts_the_exact_byte_limit_and_rejects_one_more_byte' in policy:
+              raise SystemExit('raw byte-bound tests already exist unexpectedly')
+          policy = replace_once(policy, anchor, byte_tests + anchor, 'raw byte test insertion')
+          policy = replace_once(
+              policy,
+              '''            vec!["exact-id:oresoftware/k8s-cluster#".to_string()],
+          ''',
+              '''            vec!["exact-id:oresoftware/k8s-cluster#".to_string()],
+                      vec!["exact-id:oresoftware/k8s-cluster#rust-verify||node-verify".to_string()],
+                      vec!["exact-id:oresoftware/k8s-cluster#rust-verify|rust-verify".to_string()],
+                      vec!["exact-id:oresoftware/k8s-cluster#rust verify".to_string()],
+          ''',
+              'malformed compiled profile cases',
+          )
+          policy_path.write_text(policy, encoding='utf-8')
+
+          static_path = Path('remote/tests/general/build-server-profile-repository-policy.test.mjs')
+          static = static_path.read_text(encoding='utf-8')
+          static = replace_once(
+              static,
+              '''  assert.match(config, /BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON/);
+              assert.match(config, /profile_policy::compile_rules/);
+          ''',
+              '''  assert.match(config, /BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON/);
+              assert.match(config, /raw_env\\("BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON"\\)/);
+              assert.doesNotMatch(
+                config,
+                /first_env\\(&\\["BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON"\\]\\)/,
+              );
+              assert.match(config, /profile_policy::compile_rules/);
+          ''',
+              'static raw environment contract',
+          )
+          static = replace_once(
+              static,
+              '''  assert.match(policy, /MAX_POLICY_BYTES/);
+              assert.match(policy, /MAX_EXACT_REPOSITORIES/);
+          ''',
+              '''  assert.match(policy, /MAX_POLICY_BYTES/);
+              assert.match(policy, /raw_untrimmed\\.len\\(\\) > MAX_POLICY_BYTES/);
+              assert.match(policy, /raw_policy_accepts_the_exact_byte_limit_and_rejects_one_more_byte/);
+              assert.match(
+                policy,
+                /raw_policy_limit_counts_utf8_bytes_before_unicode_whitespace_trimming/,
+              );
+              assert.match(policy, /MAX_EXACT_REPOSITORIES/);
+          ''',
+              'static raw byte-limit contract',
+          )
+          static_path.write_text(static, encoding='utf-8')
+          PY
+
+          git diff --check
+          grep -Fq 'raw_env("BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON")' remote/deployments/build-server-rs/src/config.rs
+          grep -Fq 'if raw_untrimmed.len() > MAX_POLICY_BYTES' remote/deployments/build-server-rs/src/config/profile_policy.rs
+          grep -Fq 'raw_policy_limit_counts_utf8_bytes_before_unicode_whitespace_trimming' remote/deployments/build-server-rs/src/config/profile_policy.rs
+
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate the complete build-server surface
+        run: |
+          set -euo pipefail
+          cd remote/deployments/build-server-rs
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo check --locked --all-targets
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+          cd ../../..
+          node --test remote/tests/general/build-server-profile-repository-policy.test.mjs
+          git diff --check
+
+      - name: Commit and push the three-file hardening
+        run: |
+          set -euo pipefail
+          base='3917b9d453adf589f3c998566e13a3b4ac52851f'
+          rm .github/workflows/den-1550-raw-policy-current-dev-v2-once.yml
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'security(DEN-1550): preserve and bound raw profile policy bytes'
+          expected=$'remote/deployments/build-server-rs/src/config.rs\nremote/deployments/build-server-rs/src/config/profile_policy.rs\nremote/tests/general/build-server-profile-repository-policy.test.mjs'
+          actual="$(git diff --name-only "$base"...HEAD | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'unexpected final product paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          git push origin HEAD:agent/den-1550-raw-policy-current-dev-v2
