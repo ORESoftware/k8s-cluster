@@ -4,8 +4,6 @@ on:
   pull_request:
     paths:
       - .github/chat-relay-trigger/**
-      - .github/workflows/ephemeral-google-chat-relay-get.yml
-      - tools/google-chat-space-export/**
   workflow_dispatch:
 
 permissions:
@@ -82,8 +80,6 @@ jobs:
               reject_duplicates "$count"
             fi
             if [ "$count" -eq 1 ]; then
-              # Give a racing duplicate a bounded window to become visible before
-              # consuming the one-time private key.
               sleep 10
               query_matches
               count="$(awk 'NF { count += 1 } END { print count + 0 }' "$matches")"
