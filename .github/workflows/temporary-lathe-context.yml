@@ -1,71 +1,249 @@
-name: Temporary lathe support context
+name: Temporary lathe support writer
 
 on:
-  pull_request:
-    paths:
-      - ".github/workflows/temporary-lathe-context.yml"
   push:
     branches: [agent/lathe-model-support]
     paths:
       - ".github/workflows/temporary-lathe-context.yml"
-  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  inspect:
+  apply:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          persist-credentials: false
-      - name: Capture exact integration anchors
+          ref: agent/lathe-model-support
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Apply named lathe runtime integration and tests
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
-          output = []
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one anchor, found {count}')
+              return text.replace(old, new, 1)
 
-          def show(path: str, start: int, end: int) -> None:
-              lines = Path(path).read_text(encoding='utf-8').splitlines()
-              output.append(f'\n===== {path}:{start}-{end} =====')
-              for line_no in range(max(1, start), min(len(lines), end) + 1):
-                  output.append(f'{line_no:06d}: {lines[line_no - 1]}')
-
-          def matches(path: str, needles: list[str], context: int = 12) -> None:
-              lines = Path(path).read_text(encoding='utf-8').splitlines()
-              for needle in needles:
-                  indexes = [index for index, line in enumerate(lines) if needle in line]
-                  output.append(f'\n===== {path} {needle!r}: {len(indexes)} match(es) =====')
-                  for index in indexes[:20]:
-                      show(path, index + 1 - context, index + 1 + context)
-
-          lib = Path('src/lib.rs').read_text(encoding='utf-8').splitlines()
-          for function in ('default_machines', 'turning_catalog_response', 'lathe_catalog_response', 'choose_machine'):
-              start = next(i for i, line in enumerate(lib) if line.startswith(f'fn {function}('))
+          def replace_in_function(text: str, name: str, old: str, new: str) -> str:
+              marker = f'fn {name}('
+              start = text.find(marker)
+              if start < 0:
+                  raise SystemExit(f'missing function {name}')
+              brace = text.find('{', start)
               depth = 0
-              opened = False
               end = None
-              for i in range(start, len(lib)):
-                  depth += lib[i].count('{') - lib[i].count('}')
-                  opened = opened or '{' in lib[i]
-                  if opened and depth == 0:
-                      end = i
-                      break
-              output.append(f'{function} lines={start + 1}-{end + 1}')
-              show('src/lib.rs', start + 1, end + 1)
+              for index in range(brace, len(text)):
+                  if text[index] == '{':
+                      depth += 1
+                  elif text[index] == '}':
+                      depth -= 1
+                      if depth == 0:
+                          end = index + 1
+                          break
+              if end is None:
+                  raise SystemExit(f'unclosed function {name}')
+              body = text[start:end]
+              body = replace_once(body, old, new, f'{name} anchor')
+              return text[:start] + body + text[end:]
 
-          matches('src/lib.rs', ['mod printer_model_catalog;', 'fn machine_class(', 'fn printer_model_fleet_machines('], 30)
-          matches('src/tests.rs', ['fn post_2024_flagship_models_resolve', 'fn fdm_printer_catalog_advertises', 'fn turning_catalog', 'fn lathe_catalog', 'fn machine_selection'], 45)
-          matches('src/e2e_tests.rs', ['fn authorized_request', 'fn get_json', 'fdm-printer/catalog', 'machine_catalog'], 60)
-          Path('context.txt').write_text('\n'.join(output), encoding='utf-8')
+          lib_path = Path('src/lib.rs')
+          lib = lib_path.read_text(encoding='utf-8')
+          lib = replace_once(
+              lib,
+              'mod printer_model_catalog;\n',
+              'mod lathe_model_catalog;\nmod printer_model_catalog;\n',
+              'lathe module declaration',
+          )
+          printer_lookup = '''    if let Some(model) = printer_model_catalog::fdm_printer_model_for_token(&token) {
+              return machine_class(model.machine_kind);
+          }
+          '''
+          printer_lookup = printer_lookup.replace('      ', '')
+          lathe_lookup = printer_lookup + '''    if let Some(model) = lathe_model_catalog::lathe_model_for_token(&token) {
+              return machine_class(model.machine_kind);
+          }
+          '''.replace('      ', '')
+          lib = replace_once(lib, printer_lookup, lathe_lookup, 'machine class model lookup')
+          lib = replace_once(
+              lib,
+              '    machines.extend(printer_model_fleet_machines());\n    machines\n}',
+              '    machines.extend(printer_model_fleet_machines());\n    machines.extend(lathe_model_fleet_machines());\n    machines\n}',
+              'default fleet extension',
+          )
+          helper = '''fn lathe_model_fleet_machines() -> Vec<MachineProfile> {
+              lathe_model_catalog::LATHE_MODEL_SPECS
+                  .iter()
+                  .map(|spec| MachineProfile {
+                      id: format!("{}-1", spec.model),
+                      kind: spec.machine_kind.to_string(),
+                      controller: Some(spec.controller.to_string()),
+                      materials: Some(spec.materials.iter().map(|value| (*value).to_string()).collect()),
+                      work_envelope_mm: Some(spec.work_envelope_mm.to_vec()),
+                      axes: Some(2),
+                      operations: Some(spec.operations.iter().map(|value| (*value).to_string()).collect()),
+                      profile_evidence: None,
+                  })
+                  .collect()
+          }
+
+          '''
+          helper = '\n'.join(line[10:] if line.startswith('          ') else line for line in helper.splitlines()) + '\n'
+          lib = replace_once(
+              lib,
+              'fn printer_model_fleet_machines() -> Vec<MachineProfile> {',
+              helper + 'fn printer_model_fleet_machines() -> Vec<MachineProfile> {',
+              'named lathe fleet helper',
+          )
+          preferred_pattern = re.compile(
+              r'''let preferred_fleet_id\s*=\s*\n\s*printer_model_catalog::fdm_printer_model_for_token\(preferred_machine\)\s*\n\s*\.map\(\|model\| format!\("\{\}-1", model\.model\)\);'''
+          )
+          replacement = '''let preferred_fleet_id =
+              printer_model_catalog::fdm_printer_model_for_token(preferred_machine)
+                  .map(|model| format!("{}-1", model.model))
+                  .or_else(|| {
+                      lathe_model_catalog::lathe_model_for_token(preferred_machine)
+                          .map(|model| format!("{}-1", model.model))
+                  });'''
+          lib, count = preferred_pattern.subn(replacement, lib, count=1)
+          if count != 1:
+              raise SystemExit(f'preferred fleet alias anchor: expected one, found {count}')
+          lib = replace_in_function(
+              lib,
+              'turning_catalog_response',
+              '        "turningMachines": turning_machines,',
+              '        "turningMachines": turning_machines,\n        "supportedLatheModelCount": lathe_model_catalog::LATHE_MODEL_SPECS.len(),\n        "supportedLatheModels": lathe_model_catalog::lathe_models_json(),',
+          )
+          lib = replace_in_function(
+              lib,
+              'lathe_catalog_response',
+              '        "latheMachines": lathe_machines,',
+              '        "latheMachines": lathe_machines,\n        "supportedLatheModelCount": lathe_model_catalog::LATHE_MODEL_SPECS.len(),\n        "supportedLatheModels": lathe_model_catalog::lathe_models_json(),',
+          )
+          lib_path.write_text(lib, encoding='utf-8')
+
+          tests_path = Path('src/tests.rs')
+          tests = tests_path.read_text(encoding='utf-8')
+          marker = 'fn named_lathe_aliases_resolve_to_lathe_class()'
+          if marker not in tests:
+              tests += r'''
+
+          #[test]
+          fn named_lathe_aliases_resolve_to_lathe_class() {
+              for alias in [
+                  "haas-st-20",
+                  "st-20",
+                  "st20",
+                  "15l",
+                  "15l-slant-pro",
+                  "tormach-slant-pro",
+              ] {
+                  assert!(matches!(machine_class(alias), MachineClass::Lathe), "{alias}");
+              }
+          }
+
+          #[test]
+          fn named_lathe_models_join_the_default_fleet() {
+              let machines = default_machines();
+              let haas = machines
+                  .iter()
+                  .find(|machine| machine.id == "haas-st-20-1")
+                  .expect("Haas ST-20 fleet profile");
+              assert_eq!(haas.kind, "lathe");
+              assert_eq!(haas.controller.as_deref(), Some("haas-gcode"));
+              assert_eq!(haas.work_envelope_mm.as_deref(), Some(&[330.0, 572.0][..]));
+              assert_eq!(haas.axes, Some(2));
+
+              let tormach = machines
+                  .iter()
+                  .find(|machine| machine.id == "tormach-15l-slant-pro-1")
+                  .expect("Tormach 15L fleet profile");
+              assert_eq!(tormach.kind, "lathe");
+              assert_eq!(tormach.controller.as_deref(), Some("linuxcnc"));
+              assert_eq!(tormach.work_envelope_mm.as_deref(), Some(&[254.0, 305.0][..]));
+              assert_eq!(tormach.axes, Some(2));
+          }
+
+          #[test]
+          fn named_lathe_models_are_selectable_by_alias() {
+              let fleet = default_machines();
+              for (alias, expected_id) in [
+                  ("st20", "haas-st-20-1"),
+                  ("haas-st-20-series", "haas-st-20-1"),
+                  ("15l", "tormach-15l-slant-pro-1"),
+                  ("slant-pro", "tormach-15l-slant-pro-1"),
+              ] {
+                  let token = normalize_token(alias);
+                  let spec = lathe_model_catalog::lathe_model_for_token(&token)
+                      .expect("named lathe alias");
+                  let fleet_id = format!("{}-1", spec.model);
+                  assert_eq!(fleet_id, expected_id);
+                  assert!(fleet.iter().any(|machine| machine.id == fleet_id));
+              }
+          }
+
+          #[test]
+          fn turning_and_lathe_catalogs_advertise_named_models() {
+              let turning = turning_catalog_response().0;
+              assert_eq!(turning["supportedLatheModelCount"], 2);
+              let turning_models = turning["supportedLatheModels"]
+                  .as_array()
+                  .expect("turning named-model catalog");
+              assert!(turning_models.iter().any(|model| {
+                  model["model"] == "haas-st-20" && model["controller"] == "haas-gcode"
+              }));
+              assert!(turning_models.iter().any(|model| {
+                  model["model"] == "tormach-15l-slant-pro"
+                      && model["controlName"] == "PathPilot"
+              }));
+
+              let lathe = lathe_catalog_response().0;
+              assert_eq!(lathe["supportedLatheModelCount"], 2);
+              let fleet = lathe["latheMachines"]
+                  .as_array()
+                  .expect("lathe fleet catalog");
+              assert!(fleet.iter().any(|machine| machine["id"] == "haas-st-20-1"));
+              assert!(fleet
+                  .iter()
+                  .any(|machine| machine["id"] == "tormach-15l-slant-pro-1"));
+          }
+          '''
+          tests_path.write_text(tests, encoding='utf-8')
+
+          readme_path = Path('readme.md')
+          readme = readme_path.read_text(encoding='utf-8')
+          guide = '''## Named CNC lathe profiles
+
+          The turning catalog includes named planning profiles for the Haas ST-20 and
+          Tormach 15L Slant-PRO, including common selection aliases, controller families,
+          conservative envelopes, and release caveats. See
+          [`docs/lathe-models.md`](docs/lathe-models.md). Named selection does not authorize
+          a physical cut; the normal machine-release evidence remains mandatory.
+
+          '''
+          guide = '\n'.join(line[10:] if line.startswith('          ') else line for line in guide.splitlines()) + '\n'
+          if 'docs/lathe-models.md' not in readme:
+              readme = replace_once(readme, '## Authentication\n', guide + '## Authentication\n', 'README lathe guide')
+          readme_path.write_text(readme, encoding='utf-8')
           PY
-      - name: Upload context
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: lathe-support-context
-          path: context.txt
-          if-no-files-found: error
-          retention-days: 1
+          cargo fmt --all
+          python3 -m py_compile scripts/test_lathe_model_contract.py
+          python3 scripts/test_lathe_model_contract.py
+          git diff --check
+      - name: Commit product changes
+        run: |
+          git config user.name "ORESoftware CI"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/lib.rs src/tests.rs readme.md
+          if git diff --cached --quiet; then
+            echo "No product changes to commit"
+            exit 0
+          fi
+          git commit -m "Add Haas ST-20 and Tormach 15L profiles"
+          git push origin HEAD:agent/lathe-model-support
