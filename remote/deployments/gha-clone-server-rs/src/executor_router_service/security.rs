@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Response> {
+pub(super) fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Box<Response>> {
     let primary = headers.get_all("x-build-server-auth");
     let alternate = headers.get_all("x-server-auth");
     let mut values = primary.iter().chain(alternate.iter());
@@ -21,13 +21,15 @@ pub(super) fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), 
     }
 }
 
-fn unauthorized(state: &AppState) -> Result<(), Response> {
+fn unauthorized(state: &AppState) -> Result<(), Box<Response>> {
     state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
-    Err((
-        StatusCode::UNAUTHORIZED,
-        Json(json!({ "error": "unauthorized" })),
-    )
-        .into_response())
+    Err(Box::new(
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "unauthorized" })),
+        )
+            .into_response(),
+    ))
 }
 
 pub(super) fn read_secret(path: &Path, root: &Path, label: &str) -> Result<String, String> {

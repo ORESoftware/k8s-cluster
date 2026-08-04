@@ -11,7 +11,7 @@ pub(super) async fn get_build(
         .status_requests_total
         .fetch_add(1, Ordering::Relaxed);
     if let Err(response) = security::require_auth(&headers, &state) {
-        return response;
+        return *response;
     }
     let (executor_id, upstream_id) = match parse_namespaced_build_id(&route_id) {
         Ok(parts) => parts,

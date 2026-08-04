@@ -7,7 +7,7 @@ pub(super) async fn submit_build(
 ) -> Response {
     state.metrics.requests_total.fetch_add(1, Ordering::Relaxed);
     if let Err(response) = security::require_auth(&headers, &state) {
-        return response;
+        return *response;
     }
     if !state.config.execution_enabled {
         state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
