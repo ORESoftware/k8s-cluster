@@ -36,7 +36,41 @@ pub(crate) fn ensure_allowed_prefix(
     }
 }
 
-pub(crate) fn validate_no_whitespace(name: &str, value: &str, max_len: usize) -> Result<(), String> {
+pub(crate) fn ensure_allowed_prefix_or_exact(
+    name: &str,
+    value: &str,
+    rules: &[String],
+    env_name: &str,
+) -> Result<(), String> {
+    // Profile execution is a stronger boundary than repository cloning. Keep
+    // organization-wide entries as ordinary prefixes, but permit a repository
+    // to be granted independently with an `=<canonical URL>` exact-match rule.
+    // A plain repository URL must never be described as exact while still
+    // being evaluated with starts_with().
+    if rules.is_empty() {
+        return Err(format!(
+            "{name} is rejected because {env_name} is empty; configure an explicit allowlist"
+        ));
+    }
+    let allowed = rules.iter().any(|rule| {
+        if let Some(exact) = rule.strip_prefix('=') {
+            !exact.is_empty() && value == exact
+        } else {
+            !rule.is_empty() && value.starts_with(rule)
+        }
+    });
+    if allowed {
+        Ok(())
+    } else {
+        Err(format!("{name} is not allowed by {env_name}"))
+    }
+}
+
+pub(crate) fn validate_no_whitespace(
+    name: &str,
+    value: &str,
+    max_len: usize,
+) -> Result<(), String> {
     if value.trim().is_empty() {
         return Err(format!("{name} must not be empty"));
     }
@@ -78,7 +112,11 @@ pub(crate) fn has_explicit_image_version(image: &str) -> bool {
     image.contains('@') || last_path.contains(':')
 }
 
-pub(crate) fn validate_image(config: &Config, image: &str, push: bool) -> Result<Option<EcrImage>, String> {
+pub(crate) fn validate_image(
+    config: &Config,
+    image: &str,
+    push: bool,
+) -> Result<Option<EcrImage>, String> {
     validate_no_whitespace("image", image, 512)?;
     // A leading dash would be parsed by nerdctl as a flag in the `-t <image>`
     // and `push <image>` positions; reject it before it reaches argv.
@@ -147,7 +185,9 @@ pub(crate) fn validate_relative_path(name: &str, value: &str) -> Result<PathBuf,
     Ok(clean)
 }
 
-pub(crate) fn validate_build_args(build_args: &Option<BTreeMap<String, String>>) -> Result<(), String> {
+pub(crate) fn validate_build_args(
+    build_args: &Option<BTreeMap<String, String>>,
+) -> Result<(), String> {
     let Some(build_args) = build_args else {
         return Ok(());
     };
@@ -231,7 +271,10 @@ pub(crate) fn validate_rollout_resource(value: &str) -> Result<String, String> {
     Ok(resource)
 }
 
-pub(crate) fn validate_deploy(config: &Config, deploy: &Option<DeployRequest>) -> Result<(), String> {
+pub(crate) fn validate_deploy(
+    config: &Config,
+    deploy: &Option<DeployRequest>,
+) -> Result<(), String> {
     let Some(deploy) = deploy else {
         return Ok(());
     };
@@ -254,7 +297,10 @@ pub(crate) fn validate_deploy(config: &Config, deploy: &Option<DeployRequest>) -
     Ok(())
 }
 
-pub(crate) fn validate_build_request(config: &Config, request: &BuildRequest) -> Result<(), String> {
+pub(crate) fn validate_build_request(
+    config: &Config,
+    request: &BuildRequest,
+) -> Result<(), String> {
     if let Some(schema_version) = clean_optional(request.schema_version.as_deref()) {
         if schema_version != "build-server.v1" {
             return Err("schemaVersion must be build-server.v1".to_string());
@@ -276,7 +322,7 @@ pub(crate) fn validate_build_request(config: &Config, request: &BuildRequest) ->
         "BUILD_SERVER_ALLOWED_REPO_PREFIXES",
     )?;
     if job_kind == "run-profile" {
-        ensure_allowed_prefix(
+        ensure_allowed_prefix_or_exact(
             "profile repoUrl",
             &request.repo_url,
             &config.allowed_profile_repo_prefixes,
@@ -372,10 +418,7 @@ mod tests {
         assert!(validate_relative_path("contextDir", "c:d").is_err());
 
         // Rollout resource must be a clean TYPE/NAME positional, never a flag.
-        assert_eq!(
-            validate_rollout_resource("api").unwrap(),
-            "deployment/api"
-        );
+        assert_eq!(validate_rollout_resource("api").unwrap(), "deployment/api");
         assert_eq!(
             validate_rollout_resource("deployment.apps/api").unwrap(),
             "deployment.apps/api"
@@ -397,6 +440,48 @@ mod tests {
         )]));
         assert!(validate_build_args(&safe).is_ok());
         assert!(validate_build_args(&unsafe_args).is_err());
+    }
+
+    #[test]
+    fn profile_repository_rules_distinguish_exact_urls_from_prefixes() {
+        let rules = vec![
+            "https://github.com/ORESoftware/".to_string(),
+            "=https://github.com/messaging-intel/msgint-connectors.git".to_string(),
+        ];
+        assert!(ensure_allowed_prefix_or_exact(
+            "profile repoUrl",
+            "https://github.com/ORESoftware/k8s-cluster.git",
+            &rules,
+            "BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES",
+        )
+        .is_ok());
+        assert!(ensure_allowed_prefix_or_exact(
+            "profile repoUrl",
+            "https://github.com/messaging-intel/msgint-connectors.git",
+            &rules,
+            "BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES",
+        )
+        .is_ok());
+        for rejected in [
+            "https://github.com/messaging-intel/msgint-connectors.git-evil",
+            "https://github.com/messaging-intel/msgint-connectors-extra.git",
+            "git@github.com:messaging-intel/msgint-connectors.git",
+        ] {
+            assert!(ensure_allowed_prefix_or_exact(
+                "profile repoUrl",
+                rejected,
+                &rules,
+                "BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES",
+            )
+            .is_err());
+        }
+        assert!(ensure_allowed_prefix_or_exact(
+            "profile repoUrl",
+            "https://github.com/messaging-intel/msgint-connectors.git",
+            &["=".to_string()],
+            "BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES",
+        )
+        .is_err());
     }
 
     #[test]

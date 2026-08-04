@@ -1,0 +1,70 @@
+name: Repair Messaging Intel applicator once
+
+on:
+  push:
+    branches:
+      - agent/msgint-gha-clone-operator-verify-20260804
+    paths:
+      - .github/workflows/repair-msgint-applicator-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-msgint-applicator-once
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/msgint-gha-clone-operator-verify-20260804
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Preserve Rust escapes and permit the validated bot finalizer
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          applicator = Path('scripts/ci/apply-msgint-gha-clone-hardening.py')
+          text = applicator.read_text(encoding='utf-8')
+          replacements = {
+              "    '''        if contains_secret_expression(mapping_get(step, \"env\"))":
+                  "    r'''        if contains_secret_expression(mapping_get(step, \"env\"))",
+              "    '''        if let Some(environment) = mapping_get(step, \"env\") {":
+                  "    r'''        if let Some(environment) = mapping_get(step, \"env\") {",
+          }
+          for old, new in replacements.items():
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one applicator escape block, found {count}: {old!r}')
+              text = text.replace(old, new, 1)
+          applicator.write_text(text, encoding='utf-8')
+
+          finalizer = Path('.github/workflows/finalize-msgint-gha-clone-hardening.yml')
+          workflow = finalizer.read_text(encoding='utf-8')
+          guard = "    if: github.actor != 'github-actions[bot]'\n"
+          if workflow.count(guard) != 1:
+              raise SystemExit('expected the one-shot bot exclusion exactly once')
+          finalizer.write_text(workflow.replace(guard, '', 1), encoding='utf-8')
+          PY
+          rm -f .github/workflows/finalize-pr-636.yml
+          rm -f .github/workflows/repair-msgint-applicator-once.yml
+
+      - name: Commit the repaired applicator
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix: preserve Rust escapes in Messaging Intel applicator'
+          git push origin HEAD:agent/msgint-gha-clone-operator-verify-20260804

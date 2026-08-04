@@ -121,6 +121,7 @@ pub fn capabilities(limits: &PlannerLimits) -> CapabilityResponse {
         independent_profiles: vec![
             "rust-verify".to_string(),
             "node-verify".to_string(),
+            "node-hardened-verify".to_string(),
             "python-verify".to_string(),
             "flutter-verify".to_string(),
             "flutter-android-debug".to_string(),
@@ -462,6 +463,13 @@ fn classify_profile(text: &str) -> Option<String> {
     {
         return Some("python-verify".into());
     }
+    if text.contains("npm ci --ignore-scripts")
+        && text.contains("npm run check")
+        && text.contains("npm run test:operator-config")
+        && text.contains("npm audit --audit-level=high")
+    {
+        return Some("node-hardened-verify".into());
+    }
     if text.contains("npm ")
         || text.contains("pnpm ")
         || text.contains("yarn ")
@@ -763,6 +771,82 @@ jobs:
         assert_eq!(
             plan.jobs[2].independent_profile.as_deref(),
             Some("python-verify")
+        );
+    }
+
+    #[test]
+    fn maps_messaging_intel_operator_workflow_to_hardened_and_full_profiles() {
+        let mut input = request(
+            r#"
+name: Messaging Intel GHA clone operator verification
+on:
+  workflow_dispatch:
+jobs:
+  operator_config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.17.0'
+          cache: npm
+      - run: |
+          npm ci --ignore-scripts
+          npm run check
+          npm run test:operator-config
+          npm audit --audit-level=high
+  repository_tests:
+    needs: operator_config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - run: npm ci && npm test
+"#,
+        );
+        input.repository = "messaging-intel/msgint-connectors".into();
+        input.workflow_path = ".github/workflows/gha-clone-operator-config.yml".into();
+        let plan = build_plan(&input, &PlannerLimits::default()).expect("valid plan");
+
+        assert!(plan.independent_executable);
+        assert_eq!(
+            plan.topological_order,
+            vec!["operator_config", "repository_tests"]
+        );
+        assert_eq!(
+            plan.jobs[0].independent_profile.as_deref(),
+            Some("node-hardened-verify")
+        );
+        assert_eq!(
+            plan.jobs[1].independent_profile.as_deref(),
+            Some("node-verify")
+        );
+    }
+
+    #[test]
+    fn hardened_node_profile_requires_complete_reviewed_evidence() {
+        let plan = build_plan(
+            &request(
+                r#"
+jobs:
+  operator_config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@abc
+      - run: |
+          npm ci --ignore-scripts
+          npm run check
+          npm run test:operator-config
+"#,
+            ),
+            &PlannerLimits::default(),
+        )
+        .expect("valid plan");
+        assert_eq!(
+            plan.jobs[0].independent_profile.as_deref(),
+            Some("node-verify")
         );
     }
 
