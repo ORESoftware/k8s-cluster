@@ -7,6 +7,16 @@ on:
     paths:
       - scripts/finalize-gha-indie-clone-reconcile.py.gz.b64
       - .github/workflows/finalize-gha-indie-clone-reconcile.yml
+  pull_request:
+    branches:
+      - dev
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - scripts/finalize-gha-indie-clone-reconcile.py.gz.b64
+      - .github/workflows/finalize-gha-indie-clone-reconcile.yml
 
 permissions:
   contents: write
@@ -17,7 +27,9 @@ concurrency:
 
 jobs:
   reconcile-and-harden:
-    if: github.actor != 'github-actions[bot]'
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name == 'push' || github.head_ref == 'agent/gha-indie-clone-reconcile-20260803')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
