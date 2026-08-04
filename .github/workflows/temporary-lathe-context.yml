@@ -1,6 +1,9 @@
 name: Temporary lathe support writer
 
 on:
+  pull_request:
+    paths:
+      - ".github/workflows/temporary-lathe-context.yml"
   push:
     branches: [agent/lathe-model-support]
     paths:
