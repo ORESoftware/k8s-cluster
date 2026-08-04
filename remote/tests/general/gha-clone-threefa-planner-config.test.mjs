@@ -32,6 +32,10 @@ test('crate routes through one hardened wrapper around the existing parser', () 
   assert.match(planner, /#\[path = "lib\.rs"\][\s\S]*mod legacy;/);
   assert.match(planner, /legacy::build_plan/);
   assert.match(planner, /legacy::capabilities/);
+  assert.match(planner, /const THREEFA_REPOSITORY: &str = "3FA-app\/3fa-interfaces"/);
+  assert.match(planner, /const THREEFA_WORKFLOW_PATH: &str = "\.github\/workflows\/gha-clone-contracts\.yml"/);
+  assert.match(planner, /if !is_threefa_bounded_workflow\(request\)/);
+  assert.match(planner, /StreemPilot\/streempilot-interfaces/);
   assert.match(legacyPlanner, /fn classify_profile/);
   assert.doesNotMatch(legacyPlanner, /rust-generated-verify/);
 });
