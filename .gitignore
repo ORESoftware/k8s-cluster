@@ -38,6 +38,10 @@ obj/
 # every Dart project's bin/ explicitly so the .NET rule above doesn't hide it.
 !remote/deployments/dart-server/bin/
 !remote/deployments/dart-server/bin/**
+# Rust multi-binary crates also use src/bin/ for source. Keep the reviewed
+# executor-router entrypoint visible to Git and repository contract tests.
+!remote/deployments/gha-clone-server-rs/src/bin/
+!remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs
 
 # ──────────────────────────────────────────────
 # Dart / Flutter
