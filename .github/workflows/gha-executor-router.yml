@@ -1,0 +1,133 @@
+name: gha executor router
+
+on:
+  pull_request:
+    paths:
+      - remote/deployments/gha-executor-router-rs/**
+      - remote/argocd/dd-next-runtime/dd-gha-executor-router*.yaml
+      - remote/argocd/dd-next-runtime/kustomization.yaml
+      - remote/tests/general/gha-executor-router*.test.ts
+      - docs/operations/gha-executor-router-aws-hetzner.md
+      - .github/workflows/gha-executor-router.yml
+  push:
+    branches: [dev]
+    paths:
+      - remote/deployments/gha-executor-router-rs/**
+      - remote/argocd/dd-next-runtime/dd-gha-executor-router*.yaml
+      - remote/argocd/dd-next-runtime/kustomization.yaml
+      - remote/tests/general/gha-executor-router*.test.ts
+      - docs/operations/gha-executor-router-aws-hetzner.md
+      - .github/workflows/gha-executor-router.yml
+  workflow_dispatch:
+    inputs:
+      run_arc_smoke:
+        description: Repeat the Rust contract on the registered sonus-ci ARC scale set
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gha-executor-router-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+  MANIFEST: remote/deployments/gha-executor-router-rs/Cargo.toml
+  LOCKFILE: remote/deployments/gha-executor-router-rs/Cargo.lock
+
+jobs:
+  contract:
+    name: Failover, pinning, deduplication, and policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install stable Rust with formatting and linting
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+          rustc --version --verbose
+          cargo --version --verbose
+
+      - name: Generate the initial deterministic lockfile when absent
+        run: |
+          set -euo pipefail
+          if [[ ! -f "$LOCKFILE" ]]; then
+            cargo generate-lockfile --manifest-path "$MANIFEST"
+          fi
+          test -s "$LOCKFILE"
+
+      - name: Check formatting
+        run: cargo fmt --all --check --manifest-path "$MANIFEST"
+
+      - name: Run executor-routing tests
+        run: cargo test --manifest-path "$MANIFEST" --all-targets --all-features
+
+      - name: Deny Rust warnings
+        run: cargo clippy --manifest-path "$MANIFEST" --all-targets --all-features -- -D warnings
+
+      - name: Prove caller-controlled execution fields are absent
+        run: |
+          set -euo pipefail
+          ! grep -R --line-number --extended-regexp \
+            'caller.*(command|image|endpoint)|Command::new|/var/run/docker.sock|hostPath:' \
+            remote/deployments/gha-executor-router-rs/src
+          grep -F '#[serde(rename_all = "camelCase", deny_unknown_fields)]' \
+            remote/deployments/gha-executor-router-rs/src/lib.rs
+          grep -F 'fallback was not attempted' \
+            remote/deployments/gha-executor-router-rs/src/lib.rs
+          grep -F 'the job was not resubmitted' \
+            remote/deployments/gha-executor-router-rs/src/lib.rs
+
+      - name: Upload generated lockfile for the initial review commit
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gha-executor-router-lock-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.LOCKFILE }}
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: false
+
+  arc-parity:
+    name: Optional sonus-ci ARC parity
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_arc_smoke }}
+    runs-on: [self-hosted, linux, sonus-ci]
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Verify ephemeral runner and run the same Rust contract
+        run: |
+          set -euo pipefail
+          test "$RUNNER_OS" = Linux
+          test -n "$RUNNER_NAME"
+          test ! -e /var/run/docker.sock
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+          if [[ ! -f "$LOCKFILE" ]]; then
+            cargo generate-lockfile --manifest-path "$MANIFEST"
+          fi
+          cargo fmt --all --check --manifest-path "$MANIFEST"
+          cargo test --manifest-path "$MANIFEST" --all-targets --all-features
+          cargo clippy --manifest-path "$MANIFEST" --all-targets --all-features -- -D warnings
