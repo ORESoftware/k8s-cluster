@@ -53,24 +53,24 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path('remote/deployments/durable-worker-server-rs/src/engine/mod.rs')
           text = path.read_text(encoding='utf-8')
-          old = '''            if run.value.status.is_terminal()
-              || !run
-                  .value
-                  .deadline_ms
-                  .is_some_and(|deadline_ms| now >= deadline_ms)
-            {'''
-          new = '''            if run.value.status.is_terminal()
-              || run
-                  .value
-                  .deadline_ms
-                  .is_none_or(|deadline_ms| now < deadline_ms)
-            {'''
-          if text.count(old) != 1:
-              raise SystemExit(f'expected one deadline predicate, found {text.count(old)}')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          pattern = re.compile(
+              r'\|\|\s*!run\s*'
+              r'\.value\s*'
+              r'\.deadline_ms\s*'
+              r'\.is_some_and\(\|deadline_ms\|\s*now\s*>=\s*deadline_ms\)'
+          )
+          replacement = '''|| run
+                    .value
+                    .deadline_ms
+                    .is_none_or(|deadline_ms| now < deadline_ms)'''
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'expected one deadline predicate, found {count}')
+          path.write_text(text, encoding='utf-8')
           PY
 
       - name: Format, lint, and run all Rust tests
