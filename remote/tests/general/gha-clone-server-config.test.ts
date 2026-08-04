@@ -63,29 +63,43 @@ test('GHA continuity service is installed fail-closed with no cluster identity',
   assert.match(deployment, /name:\s*dd-gha-clone-server-secrets/);
 });
 
-test('source-bootstrap pods cannot be activated before immutable images exist', () => {
+test('continuity pods remain inert behind immutable digest sentinels', () => {
   const cloneDeployment = read(deploymentPath);
   const routerDeployment = read(routerDeploymentPath);
-  for (const [name, deployment, executionGate] of [
-    [
-      'clone server',
-      cloneDeployment,
-      /name:\s*GHA_CLONE_EXECUTION_ENABLED\s+value:\s*"false"/,
-    ],
-    [
-      'executor router',
-      routerDeployment,
-      /name:\s*GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED\s+value:\s*"false"/,
-    ],
-  ] as const) {
-    assert.match(deployment, /\breplicas:\s*0\b/, `${name} must stay scaled to zero`);
-    assert.match(deployment, executionGate, `${name} execution must stay disabled`);
-    assert.match(deployment, /image:\s*docker\.io\/library\/rust:1\.90-bookworm/);
-    assert.match(deployment, /git[\s\S]*?clone[\s\S]*?cargo run --release/);
+
+  assert.match(cloneDeployment, /\breplicas:\s*0\b/);
+  assert.match(
+    cloneDeployment,
+    /name:\s*GHA_CLONE_EXECUTION_ENABLED\s+value:\s*"false"/,
+  );
+  assert.match(
+    cloneDeployment,
+    /image:\s*ghcr\.io\/oresoftware\/gha-clone-server@sha256:0{64}/,
+  );
+  assert.match(
+    cloneDeployment,
+    /command:\s*\["\/usr\/local\/bin\/gha-clone-server"\]/,
+  );
+
+  assert.match(routerDeployment, /\breplicas:\s*0\b/);
+  assert.match(
+    routerDeployment,
+    /name:\s*GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED\s+value:\s*"false"/,
+  );
+  assert.match(
+    routerDeployment,
+    /image:\s*ghcr\.io\/oresoftware\/gha-executor-router@sha256:0{64}/,
+  );
+  assert.match(
+    routerDeployment,
+    /command:\s*\["\/usr\/local\/bin\/gha-executor-router"\]/,
+  );
+
+  for (const deployment of [cloneDeployment, routerDeployment]) {
+    assert.match(deployment, /readOnlyRootFilesystem:\s*true/);
     assert.doesNotMatch(
       deployment,
-      /image:\s*\S+@sha256:[0-9a-f]{64}/,
-      `${name} bootstrap manifest must be replaced atomically by an immutable-image activation change`,
+      /docker\.io\/library\/rust|git[\s\S]{0,80}clone|cargo run/,
     );
   }
 });
@@ -149,26 +163,37 @@ test('executor router is rendered inert and has no cluster or host-runtime ident
     deployment,
     /name:\s*GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED\s+value:\s*"false"/,
   );
-  assert.match(deployment, /cargo run --release --bin gha-executor-router/);
   assert.match(
     deployment,
-    /name:\s*GHA_EXECUTOR_ROUTER_SECRET_ROOT\s+value:\s*\/var\/run\/secrets\/gha-executor-router/,
+    /image:\s*ghcr\.io\/oresoftware\/gha-executor-router@sha256:0{64}/,
   );
+  assert.match(
+    deployment,
+    /command:\s*\["\/usr\/local\/bin\/gha-executor-router"\]/,
+  );
+  assert.doesNotMatch(deployment, /cargo run|git[\s\S]{0,80}clone/);
+  assert.doesNotMatch(deployment, /name:\s*GHA_EXECUTOR_ROUTER_SECRET_ROOT/);
   assert.match(
     deployment,
     /name:\s*GHA_EXECUTOR_ROUTER_AUTH_PATH\s+value:\s*\/var\/run\/secrets\/gha-executor-router\/inbound-auth/,
   );
-  assert.match(deployment, /secretName:\s*dd-gha-executor-router-secrets/);
+  assert.match(
+    deployment,
+    /projected:\s+defaultMode:\s*0400[\s\S]*?name:\s*dd-gha-executor-router-secrets[\s\S]*?key:\s*inbound_auth[\s\S]*?path:\s*inbound-auth/,
+  );
   assert.match(deployment, /defaultMode:\s*0400/);
   assert.match(deployment, /key:\s*inbound_auth\s+path:\s*inbound-auth/);
   assert.match(
     deployment,
-    /key:\s*aws_build_server_auth\s+path:\s*aws-build-server-auth/,
+    /name:\s*dd-agent-secrets[\s\S]*?key:\s*SERVER_AUTH_SECRET[\s\S]*?path:\s*aws-build-server-auth/,
   );
   assert.match(deployment, /capabilities:\s+drop:\s*\["ALL"\]/);
+  assert.match(deployment, /readOnlyRootFilesystem:\s*true/);
   assert.doesNotMatch(deployment, /hostPath:/);
-  assert.doesNotMatch(deployment, /docker\.sock|containerd\.sock|buildkitd\.sock/);
-  assert.doesNotMatch(deployment, /valueFrom:\s*\n\s*secretKeyRef:[\s\S]{0,240}GHA_EXECUTOR_ROUTER/);
+  assert.doesNotMatch(
+    deployment,
+    /docker\.sock|containerd\.sock|buildkitd\.sock/,
+  );
 });
 
 test('executor inventory enables AWS only and keeps Hetzner endpoint state absent', () => {
@@ -185,13 +210,19 @@ test('executor inventory enables AWS only and keeps Hetzner endpoint state absen
   assert.doesNotMatch(hetzner, /"url"|"authPath"/);
 });
 
-test('executor credentials are separate mounted-file properties and omit dormant Hetzner auth', () => {
+test('executor credentials reuse the reviewed AWS authority and omit dormant Hetzner auth', () => {
   const secret = read(routerSecretPath);
+  const deployment = read(routerDeploymentPath);
   assert.match(secret, /dd\/remote-dev\/gha-executor-router-secrets/);
   assert.match(secret, /property:\s*inbound_auth/);
-  assert.match(secret, /property:\s*aws_build_server_auth/);
+  assert.doesNotMatch(secret, /property:\s*aws_build_server_auth/);
   assert.doesNotMatch(secret, /property:\s*hetzner_build_server_auth/);
-  assert.match(secret, /Do not add or mount hetzner_build_server_auth/);
+  assert.match(secret, /Do not duplicate it in this backing secret/);
+  assert.match(
+    deployment,
+    /name:\s*dd-agent-secrets[\s\S]*?key:\s*SERVER_AUTH_SECRET[\s\S]*?path:\s*aws-build-server-auth/,
+  );
+  assert.doesNotMatch(deployment, /hetzner-build-server-auth/);
   assert.doesNotMatch(
     secret,
     /ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|BEGIN (?:RSA |EC )?PRIVATE KEY/,
@@ -215,18 +246,20 @@ test('clone server dispatch is forced through the authenticated router', () => {
   assert.doesNotMatch(network, /port:\s*8100/);
 });
 
-test('router network boundary permits clone ingress, DNS, AWS dispatch, and reviewed HTTPS only', () => {
+test('router network boundary permits clone ingress, DNS, and AWS-only dispatch', () => {
   const policy = read(routerNetworkPath);
   assert.match(policy, /app:\s*dd-gha-clone-server/);
   assert.match(policy, /port:\s*8126/);
   assert.match(policy, /port:\s*53/);
   assert.match(policy, /app:\s*dd-build-server/);
   assert.match(policy, /port:\s*8100/);
-  assert.match(policy, /port:\s*443/);
-  assert.match(policy, /10\.0\.0\.0\/8/);
-  assert.match(policy, /100\.64\.0\.0\/10/);
-  assert.match(policy, /169\.254\.0\.0\/16/);
-  assert.match(policy, /192\.168\.0\.0\/16/);
+  assert.match(policy, /No public egress exists while Hetzner is disabled/);
+  assert.doesNotMatch(policy, /port:\s*443/);
+  assert.doesNotMatch(policy, /ipBlock:|cidr:/);
+  assert.doesNotMatch(
+    policy,
+    /0\.0\.0\.0\/0|10\.0\.0\.0\/8|100\.64\.0\.0\/10|169\.254\.0\.0\/16|192\.168\.0\.0\/16/,
+  );
 });
 
 test('config allowlists exact trusted repositories and the bounded meta workflow', () => {
