@@ -14,6 +14,7 @@ on:
 permissions:
   contents: read
   id-token: write
+  issues: write
 
 concurrency:
   group: ops-publish-requested-mcp-servers-once
@@ -25,6 +26,17 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
+      - name: Initialize sanitized publication status
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' validation > "$RUNNER_TEMP/requested-mcp-stage"
+          : > "$RUNNER_TEMP/requested-mcp-verified"
+          gh issue comment 800 --repo ORESoftware/k8s-cluster --body \
+            "Requested MCP publisher started for trusted revision \`${GITHUB_SHA}\`. Status reports from this workflow are stage-only and contain no credentials or raw provider responses."
+
       - name: Check out the trusted main revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -32,6 +44,7 @@ jobs:
           fetch-depth: 1
 
       - name: Validate the exact trusted publisher
+        shell: bash
         run: |
           set -euo pipefail
           python3 -m py_compile scripts/ops/publish_requested_mcp_servers.py scripts/ops/requested_mcp_publisher/*.py
@@ -39,6 +52,7 @@ jobs:
           python3 scripts/ops/publish_requested_mcp_servers.py --check > /tmp/requested-mcp-check.json
           test "$(jq '.repositories | length' /tmp/requested-mcp-check.json)" -eq 5
           test "$(cat .github/requested-mcp-publisher.activate)" = "publish-five-mcp-repositories-v1"
+          printf '%s\n' aws-oidc > "$RUNNER_TEMP/requested-mcp-stage"
 
       - name: Configure AWS OIDC credentials
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
@@ -55,6 +69,7 @@ jobs:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
         run: |
           set -euo pipefail
+          printf '%s\n' ssm-publication > "$RUNNER_TEMP/requested-mcp-stage"
           test -n "${INSTANCE_ID:-}"
           trusted_sha="$(git rev-parse HEAD)"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
@@ -152,9 +167,46 @@ jobs:
             sleep 3
           done
 
+          invocation="$RUNNER_TEMP/requested-mcp-invocation.json"
           aws ssm get-command-invocation \
             --command-id "$command_id" \
             --instance-id "$INSTANCE_ID" \
-            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
-            --output json
+            --query '{Status:Status,Stdout:StandardOutputContent}' \
+            --output json > "$invocation"
+
+          jq -r '.Stdout // ""' "$invocation" \
+            | grep -E '^MCP_REPOSITORY_VERIFIED [A-Za-z0-9._-]+/[A-Za-z0-9._-]+ visibility=(public|private) main=[0-9a-f]{40}$' \
+            > "$RUNNER_TEMP/requested-mcp-verified" || true
+          test "$(wc -l < "$RUNNER_TEMP/requested-mcp-verified")" -eq 5
+          test "$(jq -r '.Status' "$invocation")" = Success
           test "$status" = Success
+          printf '%s\n' verified > "$RUNNER_TEMP/requested-mcp-stage"
+          cat "$RUNNER_TEMP/requested-mcp-verified"
+
+      - name: Report sanitized publication result
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          stage="$(cat "$RUNNER_TEMP/requested-mcp-stage" 2>/dev/null || printf unknown)"
+          body="$RUNNER_TEMP/requested-mcp-issue-comment.md"
+          {
+            echo "### Requested MCP publisher result"
+            echo
+            echo "- Trusted revision: \`${GITHUB_SHA}\`"
+            echo "- Job status: \`${JOB_STATUS}\`"
+            echo "- Last sanitized stage: \`${stage}\`"
+            if [[ "$JOB_STATUS" = success && "$stage" = verified ]]; then
+              echo
+              echo '```text'
+              cat "$RUNNER_TEMP/requested-mcp-verified"
+              echo '```'
+            else
+              echo
+              echo "No credentials, raw provider response bodies, Kubernetes secret values, or unsanitized SSM output are included."
+            fi
+          } > "$body"
+          gh issue comment 800 --repo ORESoftware/k8s-cluster --body-file "$body"
