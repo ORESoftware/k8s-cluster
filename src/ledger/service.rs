@@ -15,6 +15,9 @@ use crate::db::{decode_enum, require_row, stmt};
 use crate::entity::accounts;
 use crate::error::{AppError, AppResult};
 use crate::events::EventBus;
+use crate::financial_audit::{
+    AuditedLedgerPost, FinancialOperationContext, load_ledger_post, record_ledger_post,
+};
 use crate::money::Currency;
 use crate::shard::{Region, ShardKey};
 
@@ -99,7 +102,8 @@ impl LedgerService {
         model_to_account(model)
     }
 
-    /// Post a draft transaction. Atomic, idempotent, and zero-sum-checked.
+    /// Post a draft transaction. Atomic, idempotent, zero-sum-checked, and
+    /// transactionally attributed to the authenticated financial actor.
     ///
     /// * The DB's deferred constraint trigger enforces the zero-sum invariant
     ///   per currency at COMMIT time.
@@ -107,11 +111,15 @@ impl LedgerService {
     ///   returns the existing transaction id only when its canonical business
     ///   intent matches. Reusing the key for different or unverifiable legacy
     ///   intent fails closed.
+    /// * The accepted-operation audit row is inserted on the same SeaORM
+    ///   transaction as the header and postings. Attribution failure rolls the
+    ///   entire financial mutation back.
     pub async fn post_transaction(
         &self,
         draft: &DraftTransaction,
         region: Region,
-    ) -> AppResult<Uuid> {
+        operation_context: &FinancialOperationContext,
+    ) -> AppResult<AuditedLedgerPost> {
         let customer_lock_targets = customer_lock_targets_from_draft(draft);
         let mut customer_lock_guard = self
             .customer_locks
@@ -123,7 +131,12 @@ impl LedgerService {
             .await?;
 
         let result = self
-            .post_transaction_locked(draft, region, &mut customer_lock_guard)
+            .post_transaction_locked(
+                draft,
+                region,
+                &mut customer_lock_guard,
+                operation_context,
+            )
             .await;
         if let Err(e) = customer_lock_guard.release().await {
             tracing::warn!(error = %e, "failed to release customer ledger-write lock");
@@ -135,11 +148,12 @@ impl LedgerService {
         // the lock would hold a cross-pod live-mutex resource across a network
         // op (and risk TTL expiry mid-hold). The event is best-effort and not
         // part of correctness, so it belongs outside the critical section.
-        let (tx_id, is_new) = result?;
-        if is_new {
-            self.publish_posting_event(draft, tx_id, region).await;
+        let posted = result?;
+        if !posted.replayed {
+            self.publish_posting_event(draft, posted.transaction_id, region)
+                .await;
         }
-        Ok(tx_id)
+        Ok(posted)
     }
 
     /// Build the redacted per-currency debit totals and publish the committed
@@ -170,14 +184,15 @@ impl LedgerService {
             .await;
     }
 
-    /// Returns `(transaction_id, is_new)`. `is_new` is false for idempotent
-    /// replays (so the caller does not re-publish an event).
+    /// Returns the committed transaction plus its original durable audit
+    /// identity. Idempotent replays never append a second accepted event.
     async fn post_transaction_locked(
         &self,
         draft: &DraftTransaction,
         region: Region,
         customer_lock_guard: &mut CustomerLockGuard,
-    ) -> AppResult<(Uuid, bool)> {
+        operation_context: &FinancialOperationContext,
+    ) -> AppResult<AuditedLedgerPost> {
         if draft.postings.len() < 2 {
             return Err(AppError::LedgerInvariant(
                 "transaction must contain at least 2 postings".into(),
@@ -253,9 +268,14 @@ impl LedgerService {
                 &existing_fingerprint,
                 &incoming_fingerprint,
             )?;
+            let audit = load_ledger_post(&tx, draft.tenant_id, existing).await?;
             customer_lock_guard.fence(&tx, draft.tenant_id).await?;
             tx.commit().await?;
-            return Ok((existing, false));
+            return Ok(AuditedLedgerPost {
+                transaction_id: existing,
+                audit,
+                replayed: true,
+            });
         }
 
         let proposed_tx_id = Uuid::new_v4();
@@ -300,9 +320,14 @@ impl LedgerService {
                 &existing_fingerprint,
                 &incoming_fingerprint,
             )?;
+            let audit = load_ledger_post(&tx, draft.tenant_id, existing).await?;
             customer_lock_guard.fence(&tx, draft.tenant_id).await?;
             tx.commit().await?;
-            return Ok((existing, false));
+            return Ok(AuditedLedgerPost {
+                transaction_id: existing,
+                audit,
+                replayed: true,
+            });
         };
 
         for p in &draft.postings {
@@ -356,13 +381,26 @@ impl LedgerService {
             .map_err(map_pg_constraint_err)?;
         }
 
+        let audit = record_ledger_post(
+            &tx,
+            draft.tenant_id,
+            tx_id,
+            operation_context,
+            &draft.idempotency_key,
+        )
+        .await?;
+
         customer_lock_guard.fence(&tx, draft.tenant_id).await?;
         tx.commit().await?;
 
         // Genuinely-new commit (the two idempotent short-circuits above
         // returned early). The caller publishes the event AFTER releasing the
         // customer lock — see `post_transaction`.
-        Ok((tx_id, true))
+        Ok(AuditedLedgerPost {
+            transaction_id: tx_id,
+            audit,
+            replayed: false,
+        })
     }
 
     pub async fn account_balance(
