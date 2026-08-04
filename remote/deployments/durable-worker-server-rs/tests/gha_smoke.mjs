@@ -136,4 +136,56 @@ assert.equal(snapshot.run.status, 'succeeded');
 assert.equal(snapshot.run.counts.succeeded, 2);
 assert.equal(snapshot.steps.length, 2);
 
-console.log(JSON.stringify({ ok: true, runId: submitted.runId, status: snapshot.run.status }));
+
+const deadlineSubmitted = await request('/api/v1/tasks', {
+  method: 'POST',
+  body: JSON.stringify({
+    idempotencyKey: 'gha-deadline-run-v2',
+    name: 'deadline fencing smoke',
+    deadlineMs: Date.now() + 2500,
+    taskType: 'agent:deadline-smoke',
+    queue: 'agents',
+    input: { purpose: 'verify hard run deadline' },
+    requiredCapabilities: ['llm'],
+    retry: { maxAttempts: 1, initialBackoffMs: 100, maxBackoffMs: 100, multiplier: 1 },
+    timeoutMs: 60000,
+    leaseMs: 5000,
+  }),
+});
+const deadlineAssignment = await poll();
+const deadlineLease = {
+  workerId: 'gha-node-worker',
+  leaseToken: deadlineAssignment.leaseToken,
+  leaseGeneration: deadlineAssignment.leaseGeneration,
+};
+await request(`/api/v1/steps/${deadlineAssignment.stepId}/start`, {
+  method: 'POST',
+  body: JSON.stringify(deadlineLease),
+});
+
+let deadlineSnapshot;
+for (let attempt = 0; attempt < 40; attempt += 1) {
+  deadlineSnapshot = await request(`/api/v1/runs/${deadlineSubmitted.runId}`);
+  if (deadlineSnapshot.run.status === 'failed') break;
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+}
+assert.equal(deadlineSnapshot.run.status, 'failed');
+assert.equal(deadlineSnapshot.run.counts.cancelled, 1);
+assert.equal(deadlineSnapshot.steps[0].status, 'cancelled');
+
+const staleCompletion = await fetch(`${baseUrl}/api/v1/steps/${deadlineAssignment.stepId}/complete`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', 'x-worker-auth': secret },
+  body: JSON.stringify({ ...deadlineLease, result: { shouldNotCommit: true } }),
+});
+assert.equal(staleCompletion.status, 409);
+const metrics = await request('/metrics', { headers: {} });
+assert.match(metrics, /dd_durable_run_deadlines_exceeded_total [1-9][0-9]*/);
+
+console.log(JSON.stringify({
+  ok: true,
+  runId: submitted.runId,
+  status: snapshot.run.status,
+  deadlineRunId: deadlineSubmitted.runId,
+  deadlineStatus: deadlineSnapshot.run.status,
+}));

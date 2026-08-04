@@ -232,6 +232,7 @@ mod tests {
     #[test]
     fn orders_a_valid_graph() {
         let request = SubmitRunRequest {
+            deadline_ms: None,
             idempotency_key: None,
             name: None,
             metadata: JsonObject::new(),
@@ -243,6 +244,7 @@ mod tests {
     #[test]
     fn rejects_cycles() {
         let request = SubmitRunRequest {
+            deadline_ms: None,
             idempotency_key: None,
             name: None,
             metadata: JsonObject::new(),
@@ -254,6 +256,7 @@ mod tests {
     #[test]
     fn rejects_duplicate_dependencies() {
         let request = SubmitRunRequest {
+            deadline_ms: None,
             idempotency_key: None,
             name: None,
             metadata: JsonObject::new(),

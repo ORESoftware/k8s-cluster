@@ -167,6 +167,9 @@ pub struct SubmitRunRequest {
     #[serde(default)]
     #[schema(value_type = Object)]
     pub metadata: JsonObject,
+    /// Absolute Unix epoch deadline in milliseconds.
+    #[serde(default)]
+    pub deadline_ms: Option<u64>,
     pub steps: Vec<StepDefinition>,
 }
 
@@ -184,6 +187,9 @@ pub struct SubmitTaskRequest {
     #[serde(default)]
     #[schema(value_type = Object)]
     pub metadata: JsonObject,
+    /// Absolute Unix epoch deadline in milliseconds.
+    #[serde(default)]
+    pub deadline_ms: Option<u64>,
     #[serde(default)]
     pub priority: i32,
     #[serde(default)]
@@ -206,6 +212,7 @@ impl SubmitTaskRequest {
             idempotency_key: self.idempotency_key,
             name: self.name,
             metadata: self.metadata,
+            deadline_ms: self.deadline_ms,
             steps: vec![StepDefinition {
                 key: "task".to_string(),
                 task_type: self.task_type,
@@ -270,6 +277,8 @@ pub struct RunRecord {
     pub metadata: JsonObject,
     pub step_ids: BTreeMap<String, String>,
     pub counts: RunCounts,
+    #[serde(default)]
+    pub deadline_ms: Option<u64>,
     pub created_at_ms: u64,
     pub updated_at_ms: u64,
     pub completed_at_ms: Option<u64>,

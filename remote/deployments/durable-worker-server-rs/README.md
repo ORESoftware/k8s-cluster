@@ -160,3 +160,11 @@ cargo run -- --export-public-openapi
 - Cron/calendar scheduling, child runs, compensation/continue-on-error policies,
   versioned workflow definitions, UI, and multi-region replication policy are
   roadmap items rather than hidden claims.
+
+## Run deadlines
+
+Set `deadlineMs` on a task or DAG submission to an absolute Unix epoch
+timestamp in milliseconds. At expiry, active and queued steps are cancelled,
+their leases are fenced, and the run is durably failed. A late worker
+completion cannot resurrect it. Exact idempotent retries return the original
+terminal run.

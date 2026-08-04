@@ -45,6 +45,7 @@ async fn resumes_submission_after_idempotency_record_was_committed_first() {
     );
     let idempotency_key = "interrupted-before-run";
     let request = SubmitRunRequest {
+        deadline_ms: None,
         idempotency_key: Some(idempotency_key.to_string()),
         name: Some("resume materialization".to_string()),
         metadata: JsonObject::new(),

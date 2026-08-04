@@ -114,3 +114,10 @@ this state machine. It must preserve:
 
 Do not switch a production queue until adapter failure and redelivery tests show
 that duplicate delivery cannot duplicate external side effects.
+
+## Deadline operations
+
+Alert on increases in `dd_durable_run_deadlines_exceeded_total` and correlate
+`run.deadline_exceeded` with queue latency, worker capacity, and downstream
+dependency traces. A deadline failure is terminal; retry as a new run with a
+new idempotency key and an explicit later deadline.

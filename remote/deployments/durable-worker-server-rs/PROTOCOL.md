@@ -256,3 +256,16 @@ action after the secret, NATS durability, image/source revision, network policy,
 and adapter behavior are verified. The first scale-up should remain isolated
 from production submitters and workers until end-to-end lease fencing and
 recovery drills pass.
+
+### Absolute run deadline
+
+A task or DAG submission may set `deadlineMs` to an absolute Unix epoch time in
+milliseconds. A new submission must use a value later than the server time.
+The deadline is part of the idempotency binding; an exact replay still returns
+the original run after expiry.
+
+Once reached, the scheduler cancels every non-terminal step, releases worker
+and keyed-concurrency lanes, records the run as irreversibly failed, emits
+`run.deadline_exceeded`, and increments
+`dd_durable_run_deadlines_exceeded_total`. New leases and lease-scoped
+mutations are rejected at or after the deadline, including late completions.

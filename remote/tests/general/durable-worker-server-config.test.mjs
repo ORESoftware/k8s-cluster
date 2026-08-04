@@ -16,6 +16,8 @@ const workflowPath = '.github/workflows/durable-worker-server-rs.yml';
 const dockerfilePath = 'remote/deployments/durable-worker-server-rs/Dockerfile';
 const protocolPath = 'remote/deployments/durable-worker-server-rs/PROTOCOL.md';
 const operationsPath = 'remote/deployments/durable-worker-server-rs/OPERATIONS.md';
+const enginePath = 'remote/deployments/durable-worker-server-rs/src/engine/mod.rs';
+const smokePath = 'remote/deployments/durable-worker-server-rs/tests/gha_smoke.mjs';
 
 const deployment = read(deploymentPath);
 const service = read(servicePath);
@@ -26,6 +28,8 @@ const workflow = read(workflowPath);
 const dockerfile = read(dockerfilePath);
 const protocol = read(protocolPath);
 const operations = read(operationsPath);
+const engine = read(enginePath);
+const smoke = read(smokePath);
 
 test('durable worker deployment is portable, hardened, and inert by default', () => {
   assert.match(deployment, /\breplicas:\s*0\b/);
@@ -105,4 +109,13 @@ test('the production image, protocol, and rollout runbook are reproducible and e
   assert.match(operations, /digest/i);
   assert.match(operations, /scale the Deployment to zero/i);
   assert.match(operations, /fencing token/i);
+});
+
+test('run deadlines are durable, observable, and fenced end to end', () => {
+  assert.match(protocol, /deadlineMs/);
+  assert.match(protocol, /run\.deadline_exceeded/);
+  assert.match(engine, /dd_durable_run_deadlines_exceeded_total/);
+  assert.match(engine, /ensure_run_open_for_mutation/);
+  assert.match(smoke, /deadlineSubmitted/);
+  assert.match(smoke, /staleCompletion\.status, 409/);
 });

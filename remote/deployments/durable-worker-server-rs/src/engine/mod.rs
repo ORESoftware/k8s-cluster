@@ -75,6 +75,7 @@ impl Clock for ManualClock {
 #[derive(Default)]
 pub struct EngineMetrics {
     pub runs_submitted_total: AtomicU64,
+    pub run_deadlines_exceeded_total: AtomicU64,
     pub idempotent_replays_total: AtomicU64,
     pub worker_registrations_total: AtomicU64,
     pub leases_granted_total: AtomicU64,
@@ -96,6 +97,10 @@ impl EngineMetrics {
             (
                 "dd_durable_runs_submitted_total",
                 &self.runs_submitted_total,
+            ),
+            (
+                "dd_durable_run_deadlines_exceeded_total",
+                &self.run_deadlines_exceeded_total,
             ),
             (
                 "dd_durable_idempotent_replays_total",
@@ -230,6 +235,39 @@ impl Engine {
         validate_run_request(&request)?;
         let now = self.now_ms();
         let request_hash = stable_hash(&request)?;
+
+        if request
+            .deadline_ms
+            .is_some_and(|deadline_ms| deadline_ms <= now)
+        {
+            let Some(idempotency_key) = request.idempotency_key.as_deref() else {
+                return Err(EngineError::InvalidRequest(
+                    "deadlineMs must be greater than the current server time".to_string(),
+                ));
+            };
+            let record_key = idempotency_key_key(idempotency_key);
+            let Some(existing) = self.load::<IdempotencyRecord>(&record_key).await? else {
+                return Err(EngineError::InvalidRequest(
+                    "deadlineMs must be greater than the current server time".to_string(),
+                ));
+            };
+            if existing.value.request_hash != request_hash {
+                return Err(EngineError::IdempotencyMismatch);
+            }
+            if self
+                .load::<RunRecord>(&run_key(&existing.value.run_id))
+                .await?
+                .is_some()
+            {
+                self.expire_run_if_due(&existing.value.run_id, now).await?;
+                self.metrics
+                    .idempotent_replays_total
+                    .fetch_add(1, Ordering::Relaxed);
+                return self
+                    .idempotent_submit_response(&existing.value.run_id)
+                    .await;
+            }
+        }
 
         let (run_id, idempotent_replay) =
             if let Some(idempotency_key) = request.idempotency_key.as_deref() {
@@ -366,6 +404,7 @@ impl Engine {
             metadata: request.metadata,
             step_ids,
             counts: counts_for_steps(&materialized),
+            deadline_ms: request.deadline_ms,
             created_at_ms: now,
             updated_at_ms: now,
             completed_at_ms: None,
@@ -403,13 +442,24 @@ impl Engine {
             object(json!({
                 "name": run.name,
                 "stepCount": run.counts.total,
+                "deadlineMs": run.deadline_ms,
                 "idempotent": idempotent_replay,
             })),
         ))
         .await;
+        self.expire_run_if_due(&run_id, now).await?;
+        let status = self
+            .load::<RunRecord>(&run_key(&run_id))
+            .await?
+            .ok_or_else(|| EngineError::NotFound {
+                resource: "run",
+                id: run_id.clone(),
+            })?
+            .value
+            .status;
         Ok(SubmitRunResponse {
             run_id,
-            status: RunStatus::Pending,
+            status,
             idempotent_replay,
         })
     }
@@ -597,6 +647,8 @@ impl Engine {
         let now = self.now_ms();
         for _ in 0..MAX_CAS_RETRIES {
             let mut current = self.load_step_versioned(step_id).await?;
+            self.ensure_run_open_for_mutation(&current.value.run_id, now)
+                .await?;
             if current.value.status == StepStatus::Running
                 && current_lease_matches(&current.value, &command)
             {
@@ -648,6 +700,8 @@ impl Engine {
         let now = self.now_ms();
         for _ in 0..MAX_CAS_RETRIES {
             let mut current = self.load_step_versioned(step_id).await?;
+            self.ensure_run_open_for_mutation(&current.value.run_id, now)
+                .await?;
             validate_active_lease(&current.value, &command, now)?;
             let lease = current
                 .value
@@ -737,6 +791,8 @@ impl Engine {
         let now = self.now_ms();
         for _ in 0..MAX_CAS_RETRIES {
             let mut current = self.load_step_versioned(step_id).await?;
+            self.ensure_run_open_for_mutation(&current.value.run_id, now)
+                .await?;
             validate_active_lease(&current.value, &command, now)?;
             let sequence = current.value.output_sequence.saturating_add(1);
             let event_id = stable_event_id(
@@ -836,6 +892,8 @@ impl Engine {
             {
                 return Ok(step_mutation(&current.value));
             }
+            self.ensure_run_open_for_mutation(&current.value.run_id, now)
+                .await?;
             validate_expected_lease(&current.value, &expected, now)?;
             let lease = current
                 .value
@@ -925,6 +983,7 @@ impl Engine {
         }
 
         let now = self.now_ms();
+        self.ensure_run_open_for_mutation(run_id, now).await?;
         self.store
             .put(
                 &signal_key(run_id, signal_name),
@@ -1033,8 +1092,127 @@ impl Engine {
         result
     }
 
+    async fn ensure_run_open_for_mutation(
+        &self,
+        run_id: &str,
+        now: u64,
+    ) -> Result<(), EngineError> {
+        let run = self
+            .load::<RunRecord>(&run_key(run_id))
+            .await?
+            .ok_or_else(|| EngineError::NotFound {
+                resource: "run",
+                id: run_id.to_string(),
+            })?
+            .value;
+        if run.status.is_terminal() {
+            return Err(EngineError::Conflict(format!("run {run_id} is terminal")));
+        }
+        if run
+            .deadline_ms
+            .is_some_and(|deadline_ms| now >= deadline_ms)
+        {
+            self.expire_run_if_due(run_id, now).await?;
+            return Err(EngineError::Conflict(format!(
+                "run {run_id} deadline exceeded"
+            )));
+        }
+        Ok(())
+    }
+
+    async fn expire_overdue_runs(&self, now: u64) -> Result<(), EngineError> {
+        for key in self.store.keys().await? {
+            if !key.starts_with("run.") {
+                continue;
+            }
+            let Some(run) = self.load::<RunRecord>(&key).await? else {
+                continue;
+            };
+            if run.value.status.is_terminal()
+                || run
+                    .value
+                    .deadline_ms
+                    .is_none_or(|deadline_ms| now < deadline_ms)
+            {
+                continue;
+            }
+            self.expire_run_if_due(&run.value.id, now).await?;
+        }
+        Ok(())
+    }
+
+    async fn expire_run_if_due(&self, run_id: &str, now: u64) -> Result<bool, EngineError> {
+        let initial = self
+            .load::<RunRecord>(&run_key(run_id))
+            .await?
+            .ok_or_else(|| EngineError::NotFound {
+                resource: "run",
+                id: run_id.to_string(),
+            })?
+            .value;
+        let Some(deadline_ms) = initial.deadline_ms else {
+            return Ok(false);
+        };
+        if initial.status.is_terminal() || now < deadline_ms {
+            return Ok(false);
+        }
+
+        self.cancel_nonterminal_steps(run_id, None, "run_deadline_exceeded")
+            .await?;
+
+        for _ in 0..MAX_CAS_RETRIES {
+            let mut current = self
+                .load::<RunRecord>(&run_key(run_id))
+                .await?
+                .ok_or_else(|| EngineError::NotFound {
+                    resource: "run",
+                    id: run_id.to_string(),
+                })?;
+            if current.value.status.is_terminal() {
+                return Ok(false);
+            }
+            if current.value.deadline_ms != Some(deadline_ms) || now < deadline_ms {
+                return Ok(false);
+            }
+            let snapshot = self.get_run_snapshot(run_id).await?;
+            current.value.counts = counts_for_steps(&snapshot.steps);
+            current.value.status = RunStatus::Failed;
+            current.value.updated_at_ms = now;
+            current.value.completed_at_ms = Some(now);
+            match self
+                .update_value(&run_key(run_id), current.revision, &current.value)
+                .await
+            {
+                Ok(_) => {
+                    self.metrics
+                        .run_deadlines_exceeded_total
+                        .fetch_add(1, Ordering::Relaxed);
+                    self.publish_best_effort(self.event(
+                        "run.deadline_exceeded",
+                        run_id,
+                        None,
+                        None,
+                        &format!("deadline-{deadline_ms}"),
+                        object(json!({
+                            "deadlineMs": deadline_ms,
+                            "expiredAtMs": now,
+                        })),
+                    ))
+                    .await;
+                    return Ok(true);
+                }
+                Err(EngineError::Store(StoreError::Conflict)) => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Err(EngineError::Conflict(
+            "run deadline transition exceeded CAS retry budget".to_string(),
+        ))
+    }
+
     async fn tick_inner(&self) -> Result<(), EngineError> {
         let now = self.now_ms();
+        self.expire_overdue_runs(now).await?;
         let steps = self.scan_steps().await?;
         let mut runs_to_advance = BTreeSet::new();
 
@@ -1130,11 +1308,16 @@ impl Engine {
                     id: current.value.run_id.clone(),
                 })?
                 .value;
-            if run.status.is_terminal() || run.status == RunStatus::Paused {
+            let now = self.now_ms();
+            if run.status.is_terminal()
+                || run.status == RunStatus::Paused
+                || run
+                    .deadline_ms
+                    .is_some_and(|deadline_ms| now >= deadline_ms)
+            {
+                self.expire_run_if_due(&run.id, now).await?;
                 return Ok(None);
             }
-
-            let now = self.now_ms();
             let token = Uuid::new_v4().to_string();
             let expires_at_ms = now.saturating_add(current.value.lease_ms);
             if !self
@@ -1270,6 +1453,10 @@ impl Engine {
             {
                 return Ok(step_mutation(&current.value));
             }
+            if let FailureMetric::Worker = metric {
+                self.ensure_run_open_for_mutation(&current.value.run_id, now)
+                    .await?;
+            }
             match metric {
                 FailureMetric::Worker => {
                     validate_expected_lease(&current.value, &expected, now)?;
@@ -1380,6 +1567,14 @@ impl Engine {
             })?
             .value;
         if run.status.is_terminal() {
+            return Ok(());
+        }
+        let now = self.now_ms();
+        if run
+            .deadline_ms
+            .is_some_and(|deadline_ms| now >= deadline_ms)
+        {
+            self.expire_run_if_due(run_id, now).await?;
             return Ok(());
         }
 
@@ -1546,6 +1741,8 @@ impl Engine {
             if current.value.status.is_terminal() {
                 return Err(EngineError::Conflict(format!("run {run_id} is terminal")));
             }
+            self.ensure_run_open_for_mutation(run_id, self.now_ms())
+                .await?;
             if paused && current.value.status == RunStatus::Paused {
                 return Ok(run_mutation(&current.value));
             }
@@ -1939,6 +2136,9 @@ fn initial_step_status(definition: &crate::model::StepDefinition, now: u64) -> S
 }
 
 fn desired_run_status(previous: RunStatus, counts: &RunCounts) -> RunStatus {
+    if previous.is_terminal() {
+        return previous;
+    }
     if counts.failed > 0 {
         RunStatus::Failed
     } else if counts.total > 0 && counts.succeeded == counts.total {

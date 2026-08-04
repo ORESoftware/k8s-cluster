@@ -65,6 +65,7 @@ async fn executes_a_dag_in_dependency_order() {
         .unwrap();
     let submitted = engine
         .submit_run(SubmitRunRequest {
+            deadline_ms: None,
             idempotency_key: Some("dag-order-1".to_string()),
             name: Some("research and summarize".to_string()),
             metadata: JsonObject::new(),
@@ -147,6 +148,7 @@ async fn lease_expiration_retries_then_fences_the_stale_worker() {
         .unwrap();
     let submitted = engine
         .submit_run(SubmitRunRequest {
+            deadline_ms: None,
             idempotency_key: None,
             name: None,
             metadata: JsonObject::new(),
@@ -225,6 +227,7 @@ async fn keyed_concurrency_is_enforced_across_runs() {
     second_step.concurrency = first_step.concurrency.clone();
     engine
         .submit_run(SubmitRunRequest {
+            deadline_ms: None,
             idempotency_key: None,
             name: None,
             metadata: JsonObject::new(),
@@ -234,6 +237,7 @@ async fn keyed_concurrency_is_enforced_across_runs() {
         .unwrap();
     engine
         .submit_run(SubmitRunRequest {
+            deadline_ms: None,
             idempotency_key: None,
             name: None,
             metadata: JsonObject::new(),
@@ -278,6 +282,7 @@ async fn keyed_concurrency_is_enforced_across_runs() {
 async fn idempotency_replays_the_original_run_and_rejects_payload_drift() {
     let (engine, _, _) = engine(4_000_000);
     let request = SubmitRunRequest {
+        deadline_ms: None,
         idempotency_key: Some("same-request".to_string()),
         name: None,
         metadata: JsonObject::new(),
@@ -312,6 +317,7 @@ async fn heartbeat_extends_worker_and_keyed_concurrency_lanes() {
         });
         engine
             .submit_run(SubmitRunRequest {
+                deadline_ms: None,
                 idempotency_key: None,
                 name: None,
                 metadata: JsonObject::new(),
@@ -384,6 +390,7 @@ async fn hard_timeout_wins_even_when_heartbeats_keep_the_lease_alive() {
     definition.lease_ms = 5_000;
     let submitted = engine
         .submit_run(SubmitRunRequest {
+            deadline_ms: None,
             idempotency_key: None,
             name: None,
             metadata: JsonObject::new(),
@@ -441,6 +448,7 @@ async fn terminal_failure_cancels_descendants_and_independent_siblings() {
     root.priority = 100;
     let submitted = engine
         .submit_run(SubmitRunRequest {
+            deadline_ms: None,
             idempotency_key: None,
             name: None,
             metadata: JsonObject::new(),
@@ -508,6 +516,7 @@ async fn terminal_commands_and_output_chunks_are_idempotent() {
         .unwrap();
     engine
         .submit_run(SubmitRunRequest {
+            deadline_ms: None,
             idempotency_key: None,
             name: None,
             metadata: JsonObject::new(),
@@ -600,6 +609,7 @@ async fn repeated_failure_acknowledgement_returns_the_committed_retry_state() {
         .unwrap();
     engine
         .submit_run(SubmitRunRequest {
+            deadline_ms: None,
             idempotency_key: None,
             name: None,
             metadata: JsonObject::new(),
@@ -631,4 +641,150 @@ async fn repeated_failure_acknowledgement_returns_the_committed_retry_state() {
         .unwrap();
     assert_eq!(first.status.as_deref(), Some("waiting_retry"));
     assert_eq!(replay.status.as_deref(), Some("waiting_retry"));
+}
+
+#[tokio::test]
+async fn rejects_expired_deadline_without_poisoning_idempotency() {
+    let (engine, _, _) = engine(8_000_000);
+    let error = engine
+        .submit_run(SubmitRunRequest {
+            deadline_ms: Some(8_000_000),
+            idempotency_key: Some("deadline-not-poisoned".to_string()),
+            name: Some("expired".to_string()),
+            metadata: JsonObject::new(),
+            steps: vec![step("expired", &[])],
+        })
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        EngineError::InvalidRequest(message) if message.contains("deadlineMs")
+    ));
+
+    let accepted = engine
+        .submit_run(SubmitRunRequest {
+            deadline_ms: Some(8_001_000),
+            idempotency_key: Some("deadline-not-poisoned".to_string()),
+            name: Some("valid retry".to_string()),
+            metadata: JsonObject::new(),
+            steps: vec![step("expired", &[])],
+        })
+        .await
+        .unwrap();
+    assert_eq!(accepted.status, RunStatus::Pending);
+}
+
+#[tokio::test]
+async fn deadline_is_part_of_the_idempotency_binding() {
+    let (engine, _, _) = engine(9_000_000);
+    let request = SubmitRunRequest {
+        deadline_ms: Some(9_100_000),
+        idempotency_key: Some("deadline-idempotency".to_string()),
+        name: Some("deadline binding".to_string()),
+        metadata: JsonObject::new(),
+        steps: vec![step("bound", &[])],
+    };
+    engine.submit_run(request.clone()).await.unwrap();
+    let mut changed = request;
+    changed.deadline_ms = Some(9_200_000);
+    let error = engine.submit_run(changed).await.unwrap_err();
+    assert!(matches!(error, EngineError::IdempotencyMismatch));
+}
+
+#[tokio::test]
+async fn idempotent_retry_after_deadline_returns_the_failed_run() {
+    let (engine, clock, _) = engine(9_500_000);
+    let request = SubmitRunRequest {
+        deadline_ms: Some(9_500_100),
+        idempotency_key: Some("deadline-replay".to_string()),
+        name: Some("deadline replay".to_string()),
+        metadata: JsonObject::new(),
+        steps: vec![step("queued", &[])],
+    };
+    let submitted = engine.submit_run(request.clone()).await.unwrap();
+    clock.advance(101);
+    let replay = engine.submit_run(request).await.unwrap();
+    assert_eq!(replay.run_id, submitted.run_id);
+    assert!(replay.idempotent_replay);
+    assert_eq!(replay.status, RunStatus::Failed);
+    let snapshot = engine.get_run_snapshot(&submitted.run_id).await.unwrap();
+    assert_eq!(snapshot.run.status, RunStatus::Failed);
+    assert_eq!(snapshot.steps[0].status, StepStatus::Cancelled);
+}
+
+#[tokio::test]
+async fn run_deadline_fences_active_work_and_remains_terminal() {
+    let (engine, clock, events) = engine(10_000_000);
+    engine
+        .register_worker(worker("deadline-worker", 1))
+        .await
+        .unwrap();
+    let submitted = engine
+        .submit_run(SubmitRunRequest {
+            deadline_ms: Some(10_000_500),
+            idempotency_key: Some("deadline-fencing".to_string()),
+            name: Some("deadline fencing".to_string()),
+            metadata: JsonObject::new(),
+            steps: vec![step("active", &[]), step("queued", &[])],
+        })
+        .await
+        .unwrap();
+
+    let assignment = engine
+        .poll_once("deadline-worker")
+        .await
+        .unwrap()
+        .assignment
+        .unwrap();
+    engine
+        .start_step(
+            &assignment.step_id,
+            LeaseCommand {
+                worker_id: "deadline-worker".to_string(),
+                lease_token: assignment.lease_token.clone(),
+                lease_generation: assignment.lease_generation,
+            },
+        )
+        .await
+        .unwrap();
+
+    clock.advance(501);
+    engine.tick().await.unwrap();
+    let expired = engine.get_run_snapshot(&submitted.run_id).await.unwrap();
+    assert_eq!(expired.run.status, RunStatus::Failed);
+    assert_eq!(expired.run.deadline_ms, Some(10_000_500));
+    assert_eq!(expired.run.counts.cancelled, 2);
+    assert!(expired
+        .steps
+        .iter()
+        .all(|step| step.status == StepStatus::Cancelled));
+
+    let stale = engine
+        .complete_step(
+            &assignment.step_id,
+            CompleteStepRequest {
+                worker_id: "deadline-worker".to_string(),
+                lease_token: assignment.lease_token,
+                lease_generation: assignment.lease_generation,
+                result: JsonObject::new(),
+            },
+        )
+        .await;
+    assert!(matches!(stale, Err(EngineError::Conflict(_))));
+
+    engine.tick().await.unwrap();
+    let still_failed = engine.get_run_snapshot(&submitted.run_id).await.unwrap();
+    assert_eq!(still_failed.run.status, RunStatus::Failed);
+    assert!(engine
+        .metrics()
+        .render_prometheus()
+        .contains("dd_durable_run_deadlines_exceeded_total 1"));
+    let event_types = events
+        .snapshot()
+        .await
+        .into_iter()
+        .map(|event| event.event_type)
+        .collect::<Vec<_>>();
+    assert!(event_types.contains(&"run.deadline_exceeded".to_string()));
+    assert!(event_types.contains(&"step.cancelled".to_string()));
 }
