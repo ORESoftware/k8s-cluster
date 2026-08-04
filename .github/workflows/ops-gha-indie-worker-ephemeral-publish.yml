@@ -142,11 +142,11 @@ jobs:
           challenge_body="$work/challenge.md"
           {
             printf '<!-- gha-indie-worker-credential-challenge:%s -->\n' "$nonce"
-            printf 'One-time RSA-OAEP-SHA256 challenge for `%s/%s` and `%s/%s`. The private key exists only in this runner and is destroyed on exit. Reply with the matching encrypted ciphertext marker.\n\n' \
+            printf "One-time RSA-OAEP-SHA256 challenge for \`%s/%s\` and \`%s/%s\`. The private key exists only in this runner and is destroyed on exit. Reply with the matching encrypted ciphertext marker.\n\n" \
               "$TARGET_ORG" "$CLONE_REPOSITORY" "$TARGET_ORG" "$WORKER_REPOSITORY"
-            printf '```pem\n'
+            printf '%s\n' "\`\`\`pem"
             cat "$public_key"
-            printf '```\n'
+            printf '%s\n' "\`\`\`"
           } > "$challenge_body"
           challenge_json="$(
             jq -n --rawfile body "$challenge_body" '{body:$body}' \
@@ -229,7 +229,9 @@ jobs:
           import hashlib
           import json
           import os
+          import sys
           import urllib.error
+          import urllib.parse
           import urllib.request
 
           API_ROOT = "https://api.github.com"
@@ -458,7 +460,7 @@ jobs:
                   f"- Source path: `{spec['prefix']}`\n"
                   f"- Imported role: {spec['role']}\n"
                   "- Import date: 2026-08-04\n"
-                  "- History policy: this root commit preserves every source file byte and executable mode; "
+                  "- History policy: this import commit preserves every source file byte and executable mode; "
                   "this provenance file is the only added file.\n\n"
                   "This code is an independent continuity lane, not a claim to reproduce GitHub's "
                   "proprietary Actions control plane. Native workflow semantics remain GitHub-hosted "
@@ -490,20 +492,6 @@ jobs:
                   {"tree": target_tree_entries},
                   expected=(201,),
               )
-              target_commit, _ = api(
-                  owner_token,
-                  "POST",
-                  f"{repo_path}/git/commits",
-                  {
-                      "message": f"Import {spec['role']} from {source_repository}@{source_sha}",
-                      "tree": target_tree["sha"],
-                      "parents": [],
-                      "author": identity,
-                      "committer": identity,
-                  },
-                  expected=(201,),
-              )
-              expected_commit = target_commit["sha"]
 
               current_ref, ref_status = api(
                   owner_token,
@@ -512,16 +500,68 @@ jobs:
                   expected=(200,),
                   allow=(404, 409),
               )
-              if ref_status in (404, 409):
-                  api(
+              if ref_status == 200:
+                  current_main = current_ref.get("object", {}).get("sha")
+                  if not isinstance(current_main, str) or len(current_main) != 40:
+                      raise RuntimeError(f"invalid existing main for {target_org}/{repo_name}")
+                  current_commit, _ = api(
                       owner_token,
-                      "POST",
-                      f"{repo_path}/git/refs",
-                      {"ref": "refs/heads/main", "sha": expected_commit},
+                      "GET",
+                      f"{repo_path}/git/commits/{current_main}",
+                  )
+                  if current_commit.get("tree", {}).get("sha") != target_tree["sha"]:
+                      raise RuntimeError(f"existing main tree differs for {target_org}/{repo_name}")
+                  expected_commit = current_main
+              else:
+                  # GitHub's refs API cannot create the first branch in a truly
+                  # empty repository. Seed one bounded file through the Contents
+                  # API, then replace that tree with the reviewed import in a
+                  # non-force, fast-forward commit.
+                  bootstrap_content = (
+                      f"temporary bootstrap for {target_org}/{repo_name}; "
+                      "removed by the immediately following import commit\n"
+                  ).encode()
+                  bootstrap, _ = api(
+                      owner_token,
+                      "PUT",
+                      f"{repo_path}/contents/.gha-indie-bootstrap",
+                      {
+                          "message": "chore: bootstrap main for reviewed source import",
+                          "content": base64.b64encode(bootstrap_content).decode(),
+                          "committer": {
+                              "name": "ORESoftware",
+                              "email": "11139560+ORESoftware@users.noreply.github.com",
+                          },
+                          "author": {
+                              "name": "ORESoftware",
+                              "email": "11139560+ORESoftware@users.noreply.github.com",
+                          },
+                      },
                       expected=(201,),
                   )
-              elif current_ref.get("object", {}).get("sha") != expected_commit:
-                  raise RuntimeError(f"existing main differs for {target_org}/{repo_name}")
+                  bootstrap_commit = bootstrap.get("commit", {}).get("sha")
+                  if not isinstance(bootstrap_commit, str) or len(bootstrap_commit) != 40:
+                      raise RuntimeError(f"bootstrap commit missing for {target_org}/{repo_name}")
+                  target_commit, _ = api(
+                      owner_token,
+                      "POST",
+                      f"{repo_path}/git/commits",
+                      {
+                          "message": f"Import {spec['role']} from {source_repository}@{source_sha}",
+                          "tree": target_tree["sha"],
+                          "parents": [bootstrap_commit],
+                          "author": identity,
+                          "committer": identity,
+                      },
+                      expected=(201,),
+                  )
+                  expected_commit = target_commit["sha"]
+                  api(
+                      owner_token,
+                      "PATCH",
+                      f"{repo_path}/git/refs/heads/main",
+                      {"sha": expected_commit, "force": False},
+                  )
 
               api(
                   owner_token,
@@ -640,6 +680,8 @@ jobs:
             echo
             echo '| Repository | Main commit | Imported files | Created | Topics | Main protection |'
             echo '|---|---|---:|---:|---|---|'
+            # The jq program and Markdown backticks must remain literal.
+            # shellcheck disable=SC2016
             jq -r '.repositories[] | "| [`\(.repository)`](\(.html_url)) | `\(.commit)` | \(.source_file_count) | \(if .created then "yes" else "already exact" end) | \(.topics) | \(.branch_protection) |"' \
               "$PUBLICATION_REPORT"
             echo
