@@ -8,7 +8,7 @@ path: remote/deployments/gha-clone-server-rs
 standalone target: gha-indie-worker/gha-clone-server.rs
 ```
 
-The standalone repository is a reviewed extraction, not an independently edited fork. A publication must copy the complete source directory at one immutable 40-hex commit, preserve file modes and `Cargo.lock`, record the source commit in the publication PR or commit message, and compare the target tree against the extracted source before updating `main`.
+The standalone repository is a reviewed extraction, not an independently edited fork. A publication must copy the complete source directory at one full immutable 40-hex commit, preserve file modes and `Cargo.lock`, record the source commit in the publication PR or commit message, and compare the target tree against the extracted source before updating `main`.
 
 The extraction includes its own `.github/workflows/ci.yml` and `.github/workflows/gha-clone-server-meta.yml`. Those workflows are intentionally stored inside the source directory so they become root-level GitHub Actions workflows in the standalone repository while remaining inert inside the monorepo.
 
