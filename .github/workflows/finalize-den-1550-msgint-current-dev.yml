@@ -6,10 +6,12 @@ on:
       - agent/den-1550-msgint-current-dev
     paths:
       - '.github/workflows/finalize-den-1550-msgint-current-dev.yml'
+      - 'scripts/ci/reconcile-msgint-adversarial-tests.py'
   pull_request:
     branches: [dev]
     paths:
       - '.github/workflows/finalize-den-1550-msgint-current-dev.yml'
+      - 'scripts/ci/reconcile-msgint-adversarial-tests.py'
   workflow_dispatch:
 
 permissions:
@@ -119,7 +121,7 @@ jobs:
           path.write_text(source.replace(before, after, 1), encoding='utf-8')
           PY
 
-      - name: Reconcile current-dev adversarial expectations with the hardened planner
+      - name: Reconcile current-dev adversarial and workflow expectations
         shell: bash
         run: |
           set -euo pipefail
