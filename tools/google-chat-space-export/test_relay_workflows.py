@@ -22,6 +22,21 @@ def main() -> None:
     get_workflow = GET_WORKFLOW.read_text(encoding="utf-8")
     post_workflow = POST_WORKFLOW.read_text(encoding="utf-8")
 
+    require(
+        get_workflow,
+        "- .github/chat-relay-trigger/**",
+        "explicit audit-trigger path",
+    )
+    forbid(
+        get_workflow,
+        "- .github/workflows/ephemeral-google-chat-relay-get.yml",
+        "live relay self-trigger on workflow edits",
+    )
+    forbid(
+        get_workflow,
+        "- tools/google-chat-space-export/**",
+        "live relay trigger on documentation or test edits",
+    )
     forbid(get_workflow, "tail -n1", "last-writer-wins ciphertext selection")
     require(
         get_workflow,
