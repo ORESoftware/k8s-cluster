@@ -76,6 +76,17 @@ jobs:
           ]
           script = '\n'.join(script_lines) + '\n'
 
+          # The embedded transformer writes Rust source text. Preserve the two
+          # backslashes required by Rust's escaped backslash character literal
+          # instead of allowing Python's non-raw triple string to collapse them.
+          for marker in (
+              "old_path = '''fn valid_workflow_path(value: &str) -> bool {",
+              "new_path = '''fn valid_workflow_path(value: &str) -> bool {",
+          ):
+              if script.count(marker) != 1:
+                  raise SystemExit(f'reviewed materializer no longer has expected raw-string marker: {marker}')
+              script = script.replace(marker, marker.replace("= '''", "= r'''"), 1)
+
           replacements = [
               (
                   """if lib.count(old_path) != 1:
