@@ -1,0 +1,48 @@
+name: Daedalus self-hosted runner smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daedalus-self-hosted-smoke
+  cancel-in-progress: false
+
+jobs:
+  runner-smoke:
+    runs-on: daedalus-ci
+    timeout-minutes: 10
+    steps:
+      - name: Verify non-privileged ephemeral runner boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(id -u)" != 0
+          test ! -e /var/run/docker.sock
+          test ! -e /run/containerd/containerd.sock
+          test ! -e /var/run/secrets/kubernetes.io/serviceaccount/token
+          test -n "${DD_CI_CLOUD:-}"
+          case "$DD_CI_CLOUD" in
+            aws|hetzner) ;;
+            *) echo "unexpected provider: ${DD_CI_CLOUD:-unset}" >&2; exit 1 ;;
+          esac
+      - name: Exercise bounded workspace lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="${RUNNER_TEMP}/daedalus-continuity-smoke"
+          mkdir -p "$dir"
+          printf '%s\n' "$GITHUB_SHA" > "$dir/revision"
+          test -s "$dir/revision"
+          rm -f "$dir/revision"
+          rmdir "$dir"
+      - name: Report non-sensitive runner evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'provider=%s\n' "$DD_CI_CLOUD"
+          printf 'runner=%s\n' "$RUNNER_NAME"
+          printf 'arch=%s\n' "$RUNNER_ARCH"
+          printf 'os=%s\n' "$RUNNER_OS"

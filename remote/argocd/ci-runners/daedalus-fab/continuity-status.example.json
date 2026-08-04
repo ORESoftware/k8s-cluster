@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "gha-continuity-status.v1",
+  "arcProviders": {
+    "aws": {
+      "configured": false,
+      "registered": false,
+      "smokePassed": false,
+      "runnerScaleSetName": "daedalus-ci",
+      "runnerGroup": "daedalus-aws"
+    },
+    "hetzner": {
+      "configured": false,
+      "registered": false,
+      "smokePassed": false,
+      "runnerScaleSetName": "daedalus-ci",
+      "runnerGroup": "daedalus-hetzner"
+    }
+  },
+  "bridge": {
+    "ok": false,
+    "executionReady": false,
+    "webhookExecutionReady": false
+  },
+  "buildServer": {
+    "ok": false
+  }
+}

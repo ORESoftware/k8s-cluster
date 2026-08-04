@@ -1,0 +1,187 @@
+# DEN-1550: Daedalus Fab GitHub Actions continuity on AWS.
+# Prerequisites may reconcile automatically. Controller and runner capacity stay
+# manual until CRD ownership, the organization GitHub App, runner group, image,
+# and manual smoke have all been reviewed.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-daedalus-ci-runner-prereqs
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+    dd.dev/linear-issue: DEN-1550
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/argocd/ci-runners/daedalus-fab/base
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: arc-runners-daedalus
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-daedalus-ci-arc-controller
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    dd.dev/activation-state: controller-crd-and-credential-gated
+    dd.dev/cloud-provider: aws
+    dd.dev/linear-issue: DEN-1550
+spec:
+  project: default
+  source:
+    repoURL: ghcr.io/actions/actions-runner-controller-charts
+    chart: gha-runner-scale-set-controller
+    targetRevision: 0.14.2
+    helm:
+      releaseName: daedalus-ci-arc
+      skipTests: true
+      values: |
+        replicaCount: 1
+        flags:
+          watchSingleNamespace: arc-runners-daedalus
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: "1"
+            memory: 512Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: arc-systems-daedalus
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-daedalus-ci-runner-set
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+    dd.dev/activation-state: runner-group-digest-and-smoke-gated
+    dd.dev/cloud-provider: aws
+    dd.dev/linear-issue: DEN-1550
+spec:
+  project: default
+  source:
+    repoURL: ghcr.io/actions/actions-runner-controller-charts
+    chart: gha-runner-scale-set
+    targetRevision: 0.14.2
+    helm:
+      releaseName: daedalus-ci-aws
+      skipTests: true
+      values: |
+        githubConfigUrl: https://github.com/daedalus-fab
+        githubConfigSecret: daedalus-fab-arc-github
+        runnerGroup: "daedalus-aws"
+        runnerScaleSetName: daedalus-ci
+        minRunners: 0
+        maxRunners: 4
+        controllerServiceAccount:
+          namespace: arc-systems-daedalus
+          name: daedalus-ci-arc-gha-rs-controller
+        containerMode:
+          type: ""
+        listenerTemplate:
+          spec:
+            containers:
+              - name: listener
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 128Mi
+                  limits:
+                    cpu: 500m
+                    memory: 512Mi
+                securityContext:
+                  runAsNonRoot: true
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: ["ALL"]
+                  seccompProfile:
+                    type: RuntimeDefault
+        template:
+          metadata:
+            labels:
+              dd.dev/ci-runner: daedalus-ci
+              dd.dev/cloud-provider: aws
+          spec:
+            automountServiceAccountToken: false
+            restartPolicy: Never
+            terminationGracePeriodSeconds: 30
+            securityContext:
+              fsGroup: 1001
+              runAsNonRoot: true
+              runAsUser: 1001
+              runAsGroup: 1001
+              seccompProfile:
+                type: RuntimeDefault
+            containers:
+              - name: runner
+                image: ghcr.io/actions/actions-runner:2.334.0
+                imagePullPolicy: IfNotPresent
+                command: ["/home/runner/run.sh"]
+                env:
+                  - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+                    value: "false"
+                  - name: DD_CI_CLOUD
+                    value: aws
+                resources:
+                  requests:
+                    cpu: "1"
+                    memory: 2Gi
+                    ephemeral-storage: 8Gi
+                  limits:
+                    cpu: "4"
+                    memory: 8Gi
+                    ephemeral-storage: 24Gi
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 1001
+                  runAsGroup: 1001
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: ["ALL"]
+                  seccompProfile:
+                    type: RuntimeDefault
+                volumeMounts:
+                  - name: work
+                    mountPath: /home/runner/_work
+                  - name: tmp
+                    mountPath: /tmp
+            volumes:
+              - name: work
+                emptyDir:
+                  sizeLimit: 20Gi
+              - name: tmp
+                emptyDir:
+                  sizeLimit: 4Gi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: arc-runners-daedalus
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
