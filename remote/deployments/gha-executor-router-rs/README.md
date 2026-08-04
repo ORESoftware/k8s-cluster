@@ -115,10 +115,11 @@ The Rust suite starts real local Axum build-server doubles and proves:
 10. mutable revisions, non-profile jobs, and unknown arbitrary execution fields
     are rejected.
 
-The GitHub Actions workflow runs formatting, tests, Clippy with warnings denied,
-and static no-arbitrary-command checks on a hosted Ubuntu runner. A manual
-opt-in repeats the same contract on `[self-hosted, linux, sonus-ci]` after the
-AWS/Hetzner ARC scale set is registered.
+The GitHub Actions workflow requires the reviewed `Cargo.lock`, uses `--locked`
+for metadata, tests, and Clippy, and runs formatting plus static
+no-arbitrary-command checks on a hosted Ubuntu runner. A manual opt-in repeats
+the same Rust contract on `[self-hosted, linux, sonus-ci]` after the AWS/Hetzner
+ARC scale set is registered.
 
 ## GitOps state
 
@@ -127,6 +128,12 @@ The deployment is intentionally installed with `replicas: 0` and
 separate values—operator auth, AWS build-server auth, and Hetzner build-server
 auth—and mounts them as files. No service-account token, host path, Docker or
 containerd socket, cloud credential, or inline secret is mounted.
+
+The workload is registered in both central `dd-k8s-resource-exporter` watch
+lists even while scaled to zero. This keeps desired replicas, availability,
+restarts, readiness, CPU, and memory visible as soon as an operator activates
+the Deployment; observability coverage is therefore part of the same GitOps
+review rather than a later production patch.
 
 Activation requires:
 
