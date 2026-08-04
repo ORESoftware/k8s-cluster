@@ -293,7 +293,9 @@ async fn sequential_and_concurrent_identical_requests_submit_once() {
     for _ in 0..8 {
         let base_url = router.base_url.clone();
         let request = request.clone();
-        handles.push(tokio::spawn(async move { submit(&base_url, &request).await }));
+        handles.push(tokio::spawn(
+            async move { submit(&base_url, &request).await },
+        ));
     }
     let mut route_id = None;
     for handle in handles {
@@ -316,11 +318,17 @@ async fn request_id_is_bound_to_immutable_request_content() {
     let router = spawn_router(&aws, &hetzner, 32).await;
 
     let first = build_request("assignment-conflict", REVISION_A);
-    assert_eq!(submit(&router.base_url, &first).await.0, StatusCode::ACCEPTED);
+    assert_eq!(
+        submit(&router.base_url, &first).await.0,
+        StatusCode::ACCEPTED
+    );
     let changed = build_request("assignment-conflict", REVISION_B);
     let (status, body, text) = submit(&router.base_url, &changed).await;
     assert_eq!(status, StatusCode::CONFLICT);
-    assert!(body["error"].as_str().unwrap().contains("different immutable"));
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("different immutable"));
     assert!(!text.contains(REVISION_A));
     assert!(!text.contains(REVISION_B));
     assert_eq!(aws.state.post_count.load(Ordering::Relaxed), 1);
@@ -366,13 +374,40 @@ async fn fixed_rejection_is_retained_without_cross_provider_retry() {
 }
 
 #[tokio::test]
+async fn no_ready_executor_retains_no_assignment_and_later_retry_is_safe() {
+    let aws = spawn_mock("aws").await;
+    let hetzner = spawn_mock("hetzner").await;
+    aws.state.set_ready(StatusCode::SERVICE_UNAVAILABLE);
+    hetzner.state.set_ready(StatusCode::SERVICE_UNAVAILABLE);
+    let router = spawn_router(&aws, &hetzner, 32).await;
+    let request = build_request("assignment-no-ready", REVISION_A);
+
+    let first = submit(&router.base_url, &request).await;
+    assert_eq!(first.0, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(first.1["retryable"], true);
+    assert_eq!(first.1["submissionAttempted"], false);
+    assert_eq!(aws.state.post_count.load(Ordering::Relaxed), 0);
+    assert_eq!(hetzner.state.post_count.load(Ordering::Relaxed), 0);
+
+    aws.state.set_ready(StatusCode::OK);
+    let second = submit(&router.base_url, &request).await;
+    assert_eq!(second.0, StatusCode::ACCEPTED);
+    assert_eq!(second.1["executorId"], "aws-primary");
+    assert_eq!(aws.state.post_count.load(Ordering::Relaxed), 1);
+    assert_eq!(hetzner.state.post_count.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
 async fn assignment_capacity_fails_closed_before_untracked_submission() {
     let aws = spawn_mock("aws").await;
     let hetzner = spawn_mock("hetzner").await;
     let router = spawn_router(&aws, &hetzner, 1).await;
 
     let first = build_request("assignment-capacity-1", REVISION_A);
-    assert_eq!(submit(&router.base_url, &first).await.0, StatusCode::ACCEPTED);
+    assert_eq!(
+        submit(&router.base_url, &first).await.0,
+        StatusCode::ACCEPTED
+    );
     let second = build_request("assignment-capacity-2", REVISION_A);
     let (status, body, _) = submit(&router.base_url, &second).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
