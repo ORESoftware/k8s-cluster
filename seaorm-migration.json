@@ -10,9 +10,11 @@
     "seaOrmAdapterPath": "pg-defs/rust/sea-orm"
   },
   "declarativeMigrations": {
-    "repository": "declarative-migrations/declarative-migrations",
-    "version": "1.4.2",
-    "linuxX8664Sha256": "42dd9d638a57edbde6c931d776a4ba295bcb2614e498203968c321d84ad90bdb",
+    "repository": "declarative-migrations/declarative-postgres-migrate.rs",
+    "version": "0.3.2",
+    "linuxX8664Asset": "dpm-v0.3.2-x86_64-unknown-linux-gnu.tar.gz",
+    "linuxX8664Sha256": "4258755a946f6f3a49e33538889523e4736180624a186bddc90180994612d3aa",
+    "binary": "dpm",
     "serviceStartupMigrations": false
   },
   "applicationPersistence": {
