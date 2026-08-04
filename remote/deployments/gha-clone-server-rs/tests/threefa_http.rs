@@ -284,8 +284,14 @@ async fn real_server_dispatches_node_then_generated_rust_with_exact_authority() 
     assert!(node_request.ends_with(":node_contracts"));
     assert!(rust_request.ends_with(":generated_rust"));
     assert_eq!(
-        node_request.rsplit_once(':').expect("node request prefix").0,
-        rust_request.rsplit_once(':').expect("Rust request prefix").0
+        node_request
+            .rsplit_once(':')
+            .expect("node request prefix")
+            .0,
+        rust_request
+            .rsplit_once(':')
+            .expect("Rust request prefix")
+            .0
     );
     assert_ne!(node_request, rust_request);
 
