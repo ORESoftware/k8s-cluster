@@ -1,0 +1,225 @@
+{
+  "schema_version": 1,
+  "gate_issue": "DEN-1391",
+  "purpose": "Durable index of passing automated evidence that is narrower than exact-candidate production certification.",
+  "status_policy": {
+    "allowed": [
+      "automated",
+      "live_evidence_pending"
+    ],
+    "forbidden": [
+      "passed"
+    ],
+    "note": "This overlay cannot certify a matrix row. The canonical release gate remains closed until exact-release, live-environment evidence and independent review update the main matrix."
+  },
+  "evidence": [
+    {
+      "id": "AUTH-001",
+      "status": "automated",
+      "repository": "fiducia-cloud/fiducia-e2e",
+      "pull_request": 17,
+      "commit": "22abde8ac740935e325be777e7b54e2cc7285917",
+      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30838774885",
+      "workflow": ".github/workflows/production-security-system.yml",
+      "source_tests": [
+        "tests/system/security-boundaries.test.mjs",
+        "tests/system/kv-isolation.test.mjs"
+      ],
+      "environment": "Three real durable fiducia-node Raft processes behind the real fiducia-load-balance process, with immutable node/LB/routing/interface/test-config revisions.",
+      "assertions": [
+        "Two organizations using the same raw KV key receive only their own value through edge to load balancer to node.",
+        "Two organizations can independently hold the same raw lock key without sharing ownership authority.",
+        "Same raw anchor keys and prefix-list responses remain tenant scoped and omit the other tenant's values and internal scope prefix."
+      ],
+      "limitations": [
+        "Local process composition, not the exact production image digests or external ingress.",
+        "Does not yet cover project/environment scopes, customer API-key issuance, live network policy, globally complete cross-shard listing, or independent reviewer acceptance."
+      ],
+      "executed_at": "2026-08-03T18:00:00Z"
+    },
+    {
+      "id": "AUTH-002",
+      "status": "automated",
+      "repository": "fiducia-cloud/fiducia-e2e",
+      "pull_request": 17,
+      "commit": "22abde8ac740935e325be777e7b54e2cc7285917",
+      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30838774885",
+      "workflow": ".github/workflows/production-security-system.yml",
+      "source_tests": [
+        "tests/system/security-boundaries.test.mjs"
+      ],
+      "environment": "Three real durable fiducia-node Raft processes behind the real fiducia-load-balance process.",
+      "assertions": [
+        "Direct-node requests with missing, wrong, edge-only, bearer-only, or duplicated internal credentials are denied.",
+        "Denied direct-node writes do not appear when reconciled through the authoritative load-balanced read path."
+      ],
+      "limitations": [
+        "Does not prove Kubernetes NetworkPolicy, public ingress reachability, peer-port policy, or exact production secrets/certificates.",
+        "No packet capture or independent live-environment review is attached yet."
+      ],
+      "executed_at": "2026-08-03T18:00:00Z"
+    },
+    {
+      "id": "AUTH-003",
+      "status": "automated",
+      "repository": "fiducia-cloud/fiducia-e2e",
+      "pull_request": 22,
+      "commit": "bf62ecb39fe243079a1a7cccd62647cb84421c25",
+      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30875280958",
+      "workflow": ".github/workflows/auth-authority-system.yml",
+      "source_tests": [
+        "tests/system/auth-authority.test.mjs"
+      ],
+      "environment": "The exact fiducia-auth PR 41 candidate at 75cac04f15f6fb29287acafa46c305a8976f1437 was formatted, linted, tested, built, and started as a real process against an ephemeral ES256 Supabase JWKS and organization-system-of-record stub.",
+      "assertions": [
+        "Only the configured Supabase issuer/project, audience, authenticated token role, AAL, and trusted app_metadata were accepted.",
+        "Wrong issuer/project, wrong audience, service-role tokens, and user-writable metadata privilege injection were rejected.",
+        "Duplicate, repeated-identical, reordered, and comma-coalesced Authorization values failed closed."
+      ],
+      "limitations": [
+        "The Supabase/JWKS/system-of-record environment was synthetic and local, not the separately deployed production customer and administrator identity projects.",
+        "External ingress/header normalization, production cookies/CORS/CSP, certificates, network policy, exact release images/configuration, and independent review remain pending."
+      ],
+      "executed_at": "2026-08-04T03:42:00Z"
+    },
+    {
+      "id": "AUTH-005",
+      "status": "automated",
+      "repository": "fiducia-cloud/fiducia-auth.rs",
+      "pull_request": 37,
+      "commit": "16bb7dd1ce9f3f49479d557619ca3f4c24c5bf92",
+      "workflow_run": "https://github.com/fiducia-cloud/fiducia-auth.rs/actions/runs/30836138182",
+      "workflow": ".github/workflows/ci.yml",
+      "source_tests": [
+        "tests/production_gate_revocation_boundaries.rs"
+      ],
+      "environment": "Locked fiducia-auth Rust CI exercising the public verifier/cache/revocation-record contract without external services or secret material.",
+      "assertions": [
+        "Exact-token revocations are bounded by issuer, audience, tenant, JTI, and expiry.",
+        "Subject quarantine remains tenant and subject scoped across replacement tokens.",
+        "Equal JTI values in different tenants do not share revocation cache authority.",
+        "A cold verifier with an unavailable authority fails closed and cannot return Allowed.",
+        "Revocation storage keys are opaque, fixed size, tenant separated, and target-kind separated."
+      ],
+      "limitations": [
+        "Source-level verifier proof only; it does not measure multi-process cache propagation through every supported ingress.",
+        "Restart, partition, authoritative rotation, the proposed 60-second bound, exact-release deployment, and independent review remain pending."
+      ],
+      "executed_at": "2026-08-03T17:24:00Z"
+    },
+    {
+      "id": "AUTH-006",
+      "status": "automated",
+      "repository": "fiducia-cloud/fiducia-e2e",
+      "pull_request": 22,
+      "commit": "bf62ecb39fe243079a1a7cccd62647cb84421c25",
+      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30875280958",
+      "workflow": ".github/workflows/auth-authority-system.yml",
+      "source_tests": [
+        "tests/system/auth-authority.test.mjs"
+      ],
+      "environment": "The exact fiducia-auth PR 41 candidate at 75cac04f15f6fb29287acafa46c305a8976f1437 ran as a real process with a strong synthetic internal introspection credential and no production customer secrets.",
+      "assertions": [
+        "Missing, wrong, duplicated, correct-first, correct-last, repeated-identical, and comma-coalesced x-server-auth values failed closed.",
+        "One exact internal server credential could call introspection but could not authorize an invalid customer API key.",
+        "The public token exchange remained customer API-key-possession-based and did not treat the internal server secret as customer authority."
+      ],
+      "limitations": [
+        "The proof does not establish live ingress reachability, Kubernetes NetworkPolicy, TLS/mTLS, every deployed verifier, or the 60-second credential-revocation objective.",
+        "Exact release images/configuration and independent reviewer acceptance remain pending."
+      ],
+      "executed_at": "2026-08-04T03:42:00Z"
+    },
+    {
+      "id": "AUTH-007",
+      "status": "automated",
+      "repository": "fiducia-cloud/fiducia-e2e",
+      "pull_request": 17,
+      "commit": "22abde8ac740935e325be777e7b54e2cc7285917",
+      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30838774885",
+      "workflow": ".github/workflows/production-security-system.yml",
+      "source_tests": [
+        "tests/system/security-boundaries.test.mjs"
+      ],
+      "environment": "Real fiducia-load-balance and three real fiducia-node processes using the pinned trusted-hop contract.",
+      "assertions": [
+        "The load balancer rejects node-plane credentials, wrong or duplicated edge credentials, missing organization identity, and duplicated organization identity.",
+        "The load balancer strips a client-supplied node credential and injects its canonical trusted-hop credential."
+      ],
+      "limitations": [
+        "Does not yet exercise an external CDN/edge product, malicious DNS, unregistered redirect targets, or production egress policy.",
+        "The exact production release and live packet/evidence bundle remain pending."
+      ],
+      "executed_at": "2026-08-03T18:00:00Z"
+    },
+    {
+      "id": "KV-001",
+      "status": "automated",
+      "repository": "fiducia-cloud/fiducia-e2e",
+      "pull_request": 17,
+      "commit": "22abde8ac740935e325be777e7b54e2cc7285917",
+      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30838774885",
+      "workflow": ".github/workflows/production-security-system.yml",
+      "source_tests": [
+        "tests/system/plaintext-policy.test.mjs"
+      ],
+      "environment": "Three real durable fiducia-node Raft processes at node candidate 06bbda3efd18d1e791bf933047f6baf28984959e behind the real fiducia-load-balance process; the workflow also ran the focused node policy unit test before route-level tests.",
+      "assertions": [
+        "An ordinary kv:write identity receives HTTP 403 for plaintext:true and the canary remains absent from authoritative reads.",
+        "Wildcard data-plane authority is not admin plaintext authority and cannot persist the canary.",
+        "Explicit admin:write can opt out only for a non-secret key and readback reports plaintext protection metadata.",
+        "The reserved secret keyspace rejects plaintext:true even with explicit admin authority.",
+        "The stable denial response does not echo the submitted canary value."
+      ],
+      "limitations": [
+        "The node source is a draft pull-request candidate, not the exact immutable production image and GitOps configuration.",
+        "External ingress, NetworkPolicy, Raft/PVC/snapshot/backup inspection, complete telemetry and support-artifact canary scans, restore evidence, and independent review remain pending."
+      ],
+      "executed_at": "2026-08-03T18:00:00Z"
+    },
+    {
+      "id": "KV-002",
+      "status": "automated",
+      "repository": "fiducia-cloud/fiducia-e2e",
+      "pull_request": 17,
+      "commit": "22abde8ac740935e325be777e7b54e2cc7285917",
+      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30838774885",
+      "workflow": ".github/workflows/production-security-system.yml",
+      "source_tests": [
+        "tests/system/kv-isolation.test.mjs"
+      ],
+      "environment": "Real load-balancer and three-node Raft composition with two organizations and caller-controlled raw keys/prefixes.",
+      "assertions": [
+        "Tenant-scoped prefix-list responses contain no other-tenant values or internal organization prefix.",
+        "A caller key shaped like another tenant's internal namespace remains within the caller's namespace and is undiscoverable by the other tenant."
+      ],
+      "limitations": [
+        "Partial KV-002 proof: percent/double encoding, Unicode normalization, empty/root prefix, path ACLs, ESO namespace/service-account identity, and exact production ingress remain pending.",
+        "The current list route is not proven globally complete across shards; DEN-1517 owns that separate contract and implementation."
+      ],
+      "executed_at": "2026-08-03T18:00:00Z"
+    },
+    {
+      "id": "KV-004",
+      "status": "automated",
+      "repository": "fiducia-cloud/fiducia-e2e",
+      "pull_request": 17,
+      "commit": "22abde8ac740935e325be777e7b54e2cc7285917",
+      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30838774885",
+      "workflow": ".github/workflows/production-security-system.yml",
+      "source_tests": [
+        "tests/system/kv-isolation.test.mjs"
+      ],
+      "environment": "Real process composition exercising the secret client inventory and explicit reveal paths for two organizations.",
+      "assertions": [
+        "Secret inventory exposes safe metadata/name but not the canary secret value or internal organization prefix.",
+        "Explicit secret reveal returns the value only to the owning organization and remains absent for another organization."
+      ],
+      "limitations": [
+        "Partial redaction proof only; it does not scan production logs, metrics, traces, audit sinks, browser artifacts, exports, support bundles, Raft storage, snapshots, or backups.",
+        "ESO/TLS paths, exact release images/configuration, retention window scans, and independent review remain pending."
+      ],
+      "executed_at": "2026-08-03T18:00:00Z"
+    }
+  ]
+}
