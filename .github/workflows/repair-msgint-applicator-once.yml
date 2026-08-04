@@ -26,7 +26,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Preserve Rust escapes and permit the validated bot finalizer
+      - name: Preserve embedded source and permit the validated bot finalizer
         shell: bash
         run: |
           set -euo pipefail
@@ -42,23 +42,41 @@ jobs:
                   "    r'''        if let Some(environment) = mapping_get(step, \"env\") {",
           }
           for old, new in replacements.items():
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'expected one applicator escape block, found {count}: {old!r}')
-              text = text.replace(old, new, 1)
+              old_count = text.count(old)
+              new_count = text.count(new)
+              if old_count == 1 and new_count == 0:
+                  text = text.replace(old, new, 1)
+              elif old_count == 0 and new_count == 1:
+                  pass
+              else:
+                  raise SystemExit(
+                      f'unexpected applicator raw-string state: old={old_count} new={new_count}'
+                  )
           applicator.write_text(text, encoding='utf-8')
 
           finalizer = Path('.github/workflows/finalize-msgint-gha-clone-hardening.yml')
           workflow = finalizer.read_text(encoding='utf-8')
+          template = "          hermetic_job = '''  node-profile-hermetic-smoke:"
+          raw_template = "          hermetic_job = r'''  node-profile-hermetic-smoke:"
+          if workflow.count(template) == 1 and raw_template not in workflow:
+              workflow = workflow.replace(template, raw_template, 1)
+          elif template not in workflow and workflow.count(raw_template) == 1:
+              pass
+          else:
+              raise SystemExit('unexpected hermetic-job template state')
+
           guard = "    if: github.actor != 'github-actions[bot]'\n"
-          if workflow.count(guard) != 1:
-              raise SystemExit('expected the one-shot bot exclusion exactly once')
-          finalizer.write_text(workflow.replace(guard, '', 1), encoding='utf-8')
+          if workflow.count(guard) == 1:
+              workflow = workflow.replace(guard, '', 1)
+          elif guard in workflow:
+              raise SystemExit('duplicate bot exclusion guards found')
+          finalizer.write_text(workflow, encoding='utf-8')
           PY
           rm -f .github/workflows/finalize-pr-636.yml
+          rm -f .github/workflows/run-pr-636-finalizer.yml
           rm -f .github/workflows/repair-msgint-applicator-once.yml
 
-      - name: Commit the repaired applicator
+      - name: Commit the repaired finalizer inputs
         shell: bash
         run: |
           set -euo pipefail
@@ -66,5 +84,5 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git diff --cached --check
-          git commit -m 'fix: preserve Rust escapes in Messaging Intel applicator'
+          git commit -m 'fix: preserve embedded Messaging Intel finalizer source'
           git push origin HEAD:agent/msgint-gha-clone-operator-verify-20260804
