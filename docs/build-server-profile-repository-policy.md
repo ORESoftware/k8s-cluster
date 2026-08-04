@@ -52,7 +52,7 @@ ssh://git@github.com/ORESoftware/k8s-cluster.git
 
 This prevents an SSH, case, optional `.git`, or trailing-slash alias from escaping the exact rule and falling back to the broader organization prefix. Query strings, fragments, nested paths, unsupported transports, whitespace, and control characters are rejected rather than normalized.
 
-A genuinely different repository in an organization remains governed by the reviewed prefix fallback until it receives its own exact rule. Exact identity binding is not a glob or sibling-repository denylist.
+A genuinely different repository in an organization remains governed by the reviewed prefix fallback until it receives its own exact rule. Exact identity binding is not a glob or sibling-repository denylist. Branch or revision selection is validated separately and is never included in the repository-to-profile identity, so a mutable ref cannot widen the fixed-profile policy.
 
 ## Initial binding
 
