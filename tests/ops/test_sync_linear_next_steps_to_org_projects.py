@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -28,6 +29,25 @@ class SyncContractTests(unittest.TestCase):
             Path(directory, "00.json").write_text(json.dumps(entries))
             with self.assertRaises(sync.ApiError):
                 sync.load_manifest(Path(directory))
+
+    def test_direct_token_mode_skips_app_token_minting(self) -> None:
+        entry = {
+            "organization": "example-org",
+            "project_title": "example-org-project",
+            "project_url": "https://github.com/orgs/example-org/projects/1",
+            "issues": [],
+        }
+        project = {
+            "closed": False,
+            "title": entry["project_title"],
+            "url": entry["project_url"],
+            "all_items": [],
+        }
+        with mock.patch.object(sync, "mint_org_token", side_effect=AssertionError("must not mint")), \
+             mock.patch.object(sync, "load_project", return_value=project) as load_project:
+            result = sync.sync_one("direct-token", entry, dry_run=True, direct_token=True)
+        self.assertEqual(result["outcome"], "empty")
+        load_project.assert_called_once_with("direct-token", "example-org", 1)
 
     def test_status_aliases_and_idempotency_keys(self) -> None:
         field = {"options": [{"id": "a", "name": "Todo"}, {"id": "b", "name": "In Progress"}]}
