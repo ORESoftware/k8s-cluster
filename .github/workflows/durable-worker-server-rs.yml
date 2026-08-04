@@ -1,0 +1,189 @@
+name: durable-worker-server-rs
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/durable-worker-server-rs.yml'
+      - 'remote/deployments/durable-worker-server-rs/**'
+      - 'remote/argocd/dd-next-runtime/dd-durable-worker-server.*.yaml'
+      - 'remote/argocd/dd-next-runtime/kustomization.yaml'
+      - 'remote/tests/general/durable-worker-server-config.test.mjs'
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - '.github/workflows/durable-worker-server-rs.yml'
+      - 'remote/deployments/durable-worker-server-rs/**'
+      - 'remote/argocd/dd-next-runtime/dd-durable-worker-server.*.yaml'
+      - 'remote/argocd/dd-next-runtime/kustomization.yaml'
+      - 'remote/tests/general/durable-worker-server-config.test.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: durable-worker-server-rs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-contract-and-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      MANIFEST: remote/deployments/durable-worker-server-rs/Cargo.toml
+      DURABLE_WORKER_URL: http://127.0.0.1:8152
+      NATS_URL: nats://127.0.0.1:4222
+      PORT: '8152'
+      DURABLE_WORKER_NATS_REPLICAS: '1'
+      DURABLE_WORKER_SHADOW_MODE: 'true'
+      RUST_BACKTRACE: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust 1.90 with lint components
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Generate an isolated ephemeral auth secret
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import secrets
+          print(f'DURABLE_WORKER_AUTH_SECRET={secrets.token_hex(32)}')
+          PY
+
+      - name: Rust format
+        run: cargo fmt --manifest-path "$MANIFEST" --all -- --check
+
+      - name: Rust clippy
+        run: cargo clippy --locked --manifest-path "$MANIFEST" --all-targets --all-features -- -D warnings
+
+      - name: Rust unit and state-machine tests
+        run: cargo test --locked --manifest-path "$MANIFEST" --all-targets --all-features -- --nocapture
+
+      - name: Deterministic executable OpenAPI export
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run --locked --quiet --manifest-path "$MANIFEST" -- --export-openapi > /tmp/durable-openapi-1.json
+          cargo run --locked --quiet --manifest-path "$MANIFEST" -- --export-openapi > /tmp/durable-openapi-2.json
+          cmp /tmp/durable-openapi-1.json /tmp/durable-openapi-2.json
+          cargo run --locked --quiet --manifest-path "$MANIFEST" -- --export-public-openapi > /tmp/durable-openapi-public.json
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          const internal = JSON.parse(await readFile('/tmp/durable-openapi-1.json', 'utf8'));
+          const publicDoc = JSON.parse(await readFile('/tmp/durable-openapi-public.json', 'utf8'));
+          if (!internal.openapi.startsWith('3.1.')) throw new Error('internal OpenAPI is not 3.1');
+          if (!internal.paths['/api/v1/runs']) throw new Error('internal run route missing');
+          if (publicDoc.paths['/api/v1/runs']) throw new Error('private route leaked publicly');
+          if (publicDoc['x-dd-contract-scope'] !== 'public') throw new Error('public scope missing');
+          NODE
+
+      - name: Repository contract test
+        run: node --test remote/tests/general/durable-worker-server-config.test.mjs
+
+      - name: Install pinned kustomize
+        uses: imranismail/setup-kustomize@2ba527d4d055ab63514ba50a99456fc35684947f # v2
+        with:
+          kustomize-version: '5.6.0'
+
+      - name: Render dd-next-runtime manifests
+        run: kustomize build remote/argocd/dd-next-runtime > /tmp/dd-next-runtime-rendered.yaml
+
+      - name: Start isolated JetStream
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --name dd-durable-worker-nats \
+            --publish 4222:4222 --publish 8222:8222 \
+            docker.io/library/nats:2.14.3-alpine -js -m 8222
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8222/healthz > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs dd-durable-worker-nats
+          exit 1
+
+      - name: End-to-end worker protocol smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run --locked --manifest-path "$MANIFEST" > /tmp/dd-durable-worker-server.log 2>&1 &
+          server_pid=$!
+          cleanup() {
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent http://127.0.0.1:8152/readyz > /dev/null; then
+              break
+            fi
+            if ! kill -0 "$server_pid" 2>/dev/null; then
+              cat /tmp/dd-durable-worker-server.log
+              exit 1
+            fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:8152/readyz > /dev/null
+          node remote/deployments/durable-worker-server-rs/tests/gha_smoke.mjs
+          cat /tmp/dd-durable-worker-server.log
+
+      - name: Build production container image
+        run: docker build --file remote/deployments/durable-worker-server-rs/Dockerfile remote/deployments/durable-worker-server-rs
+
+      - name: Cleanup test containers
+        if: always()
+        run: docker rm --force dd-durable-worker-nats >/dev/null 2>&1 || true
+
+  publish-image:
+    if: github.event_name == 'push'
+    needs:
+      - rust-contract-and-e2e
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        with:
+          images: ghcr.io/oresoftware/dd-durable-worker-server
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=sha-
+
+      - name: Build and publish immutable worker image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: ./remote/deployments/durable-worker-server-rs
+          file: ./remote/deployments/durable-worker-server-rs/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=dd-durable-worker-server
+          cache-to: type=gha,mode=max,scope=dd-durable-worker-server
+          provenance: mode=max
+          sbom: true
