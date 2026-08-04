@@ -89,27 +89,29 @@ jobs:
               raise SystemExit('expected one stale combined secret-reason assertion')
           tests = tests.replace(old_reason, new_reasons, 1)
 
-          old_secret_loop = '''    for id in ["compact_secret", "github_token", "oidc"] {
-              assert!(job(&plan, id)
-                  .independent_reasons
-                  .iter()
-                  .any(|reason| reason.contains("secret-bearing env/with")));
-          }
-          '''
-          new_secret_checks = '''    assert!(job(&plan, "compact_secret")
-              .independent_reasons
-              .iter()
-              .any(|reason| reason.contains("secret-bearing setup inputs")));
-          for id in ["github_token", "oidc"] {
-              assert!(job(&plan, id)
-                  .independent_reasons
-                  .iter()
-                  .any(|reason| reason.contains("secret-bearing step environments")));
-          }
-          '''
-          if tests.count(old_secret_loop) != 1:
-              raise SystemExit('expected one stale secret-context assertion loop')
-          tests = tests.replace(old_secret_loop, new_secret_checks, 1)
+          start_anchor = '    for id in ["compact_secret", "github_token", "oidc"] {\n'
+          end_anchor = '    assert!(!plan.independent_executable);\n'
+          if tests.count(start_anchor) != 1:
+              raise SystemExit(
+                  f'expected one stale secret-context loop start, found {tests.count(start_anchor)}'
+              )
+          start = tests.find(start_anchor)
+          end = tests.find(end_anchor, start)
+          if end < 0:
+              raise SystemExit('secret-context loop end anchor was not found')
+          new_secret_checks = (
+              '    assert!(job(&plan, "compact_secret")\n'
+              '        .independent_reasons\n'
+              '        .iter()\n'
+              '        .any(|reason| reason.contains("secret-bearing setup inputs")));\n'
+              '    for id in ["github_token", "oidc"] {\n'
+              '        assert!(job(&plan, id)\n'
+              '            .independent_reasons\n'
+              '            .iter()\n'
+              '            .any(|reason| reason.contains("secret-bearing step environments")));\n'
+              '    }\n'
+          )
+          tests = tests[:start] + new_secret_checks + tests[end:]
 
           exact_sha = '0123456789abcdef0123456789abcdef01234567'
           for action in ['ACTIONS/CHECKOUT', 'Actions/Setup-Node']:
