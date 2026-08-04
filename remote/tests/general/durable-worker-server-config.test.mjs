@@ -18,6 +18,7 @@ const protocolPath = 'remote/deployments/durable-worker-server-rs/PROTOCOL.md';
 const operationsPath = 'remote/deployments/durable-worker-server-rs/OPERATIONS.md';
 const enginePath = 'remote/deployments/durable-worker-server-rs/src/engine/mod.rs';
 const smokePath = 'remote/deployments/durable-worker-server-rs/tests/gha_smoke.mjs';
+const restartSmokePath = 'remote/deployments/durable-worker-server-rs/tests/restart_recovery.mjs';
 
 const deployment = read(deploymentPath);
 const service = read(servicePath);
@@ -30,6 +31,7 @@ const protocol = read(protocolPath);
 const operations = read(operationsPath);
 const engine = read(enginePath);
 const smoke = read(smokePath);
+const restartSmoke = read(restartSmokePath);
 
 test('durable worker deployment is portable, hardened, and inert by default', () => {
   assert.match(deployment, /\breplicas:\s*0\b/);
@@ -118,4 +120,27 @@ test('run deadlines are durable, observable, and fenced end to end', () => {
   assert.match(engine, /ensure_run_open_for_mutation/);
   assert.match(smoke, /deadlineSubmitted/);
   assert.match(smoke, /staleCompletion\.status, 409/);
+});
+
+test('CI destroys and restores both JetStream and the control plane before accepting recovery', () => {
+  assert.match(workflow, /docker volume create dd-durable-worker-nats-data/);
+  assert.match(workflow, /dd-durable-worker-nats-data:\/data/);
+  assert.match(workflow, /-js -sd \/data -m 8222/);
+  assert.match(workflow, /docker kill dd-durable-worker-nats/);
+  assert.match(workflow, /restart_recovery\.mjs[\s\\]+prepare/);
+  assert.match(workflow, /restart_recovery\.mjs[\s\\]+verify/);
+  assert.match(workflow, /docker volume rm --force dd-durable-worker-nats-data/);
+  assert.match(operations, /Restart recovery drill/);
+  assert.match(operations, /terminates both the Rust control plane and the NATS process/);
+});
+
+test('restart recovery proves persisted idempotency, output receipts, and stale-lease fencing', () => {
+  assert.match(restartSmoke, /idempotentReplay, true/);
+  assert.match(restartSmoke, /assert\.deepEqual\(outputReplay, state\.outputMutation\)/);
+  assert.match(restartSmoke, /changedOutput\.response\.status, 400/);
+  assert.match(restartSmoke, /recovered\.leaseGeneration > state\.assignment\.leaseGeneration/);
+  assert.match(restartSmoke, /recovered\.fencingToken > state\.assignment\.fencingToken/);
+  assert.match(restartSmoke, /staleCompletion\.response\.status, 409/);
+  assert.match(restartSmoke, /finalSnapshot\.run\.status, 'succeeded'/);
+  assert.match(restartSmoke, /dd_durable_lease_expirations_total/);
 });
