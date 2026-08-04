@@ -21,8 +21,17 @@ function require(condition, message, errors) {
   if (!condition) errors.push(message);
 }
 
+function escapeRegularExpression(value) {
+  // Escape only syntax characters that are special outside a character class.
+  // Escaping `-` as `\-` is an invalid identity escape in Unicode-mode regular
+  // expressions and caused every policy test involving `sea-orm` to throw a
+  // SyntaxError before a SeaOrmPolicyError could be produced.
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
 function dependency(manifest, name) {
-  const pattern = new RegExp(`^\\s*${name.replaceAll("-", "\\-")}\\s*=`, "mu");
+  const escapedName = escapeRegularExpression(name);
+  const pattern = new RegExp(`^\\s*${escapedName}\\s*=`, "mu");
   return pattern.test(manifest);
 }
 
