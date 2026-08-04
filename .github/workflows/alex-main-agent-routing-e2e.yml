@@ -1,0 +1,35 @@
+name: alex-main-agent routing e2e
+
+on:
+  pull_request:
+    paths:
+      - .github/alex-main-agent.json
+      - .github/workflows/alex-main-agent-routing-e2e.yml
+      - tests/e2e/test_alex_main_agent_manifest.py
+  push:
+    branches: [main]
+    paths:
+      - .github/alex-main-agent.json
+      - .github/workflows/alex-main-agent-routing-e2e.yml
+      - tests/e2e/test_alex_main_agent_manifest.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Validate manifest JSON
+        run: python3 -m json.tool .github/alex-main-agent.json >/dev/null
+      - name: Run routing E2E contract
+        run: python3 -m unittest discover -s tests/e2e -p 'test_alex_main_agent_manifest.py' -v
