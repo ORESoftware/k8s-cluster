@@ -67,9 +67,11 @@ class OwnerDeviceOrgDotgithubFleetTests(unittest.TestCase):
             'export GH_TOKEN="$access_token"',
             'export GITHUB_REPOSITORY_ADMIN_TOKEN="$access_token"',
             "clear_sensitive_state",
-            "Revoke the authorized OAuth app",
+            "The one-run token was not persisted and is unrecoverable after runner exit",
+            "do not revoke that entire app unless you intend to reauthenticate other `gh` CLI sessions",
         ):
             self.assertIn(phrase, publish)
+        self.assertNotIn("Revoke the authorized OAuth app", publish)
         self.assertNotIn('>> "$GITHUB_ENV"', publish)
         self.assertNotIn('>> "${GITHUB_ENV}"', publish)
         self.assertNotIn("upload-artifact", publish)
