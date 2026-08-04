@@ -58,7 +58,7 @@ jobs:
 
       - name: Verify checked-in source formatting
         working-directory: remote/deployments/build-server-rs
-        run: rustfmt --edition 2021 --check src/main.rs src/gha_workflow.rs
+        run: rustfmt --edition 2021 --config skip_children=true --check src/main.rs src/gha_workflow.rs
 
       - name: Compile locked dependencies with warnings denied
         working-directory: remote/deployments/build-server-rs
