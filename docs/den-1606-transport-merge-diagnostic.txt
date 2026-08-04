@@ -1,0 +1,144 @@
+DEN-1606 transport/capacity semantic merge conflict
+
+base=0b468863c13efc8f99a0d59c36b8e44171aac089
+reviewed=6d050a5c516c0dcc1c13646fe8742dfed477346c
+
+[unmerged paths]
+remote/deployments/gha-clone-server-rs/src/main.rs
+
+[cherry-pick stdout]
+Auto-merging remote/deployments/gha-clone-server-rs/src/main.rs
+CONFLICT (content): Merge conflict in remote/deployments/gha-clone-server-rs/src/main.rs
+Auto-merging remote/deployments/gha-clone-server-rs/tests/http_api.rs
+Auto-merging remote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs
+
+[cherry-pick stderr]
+error: could not apply 6d050a5c... fix(DEN-1606): bind clone build-server transport and identity
+hint: after resolving the conflicts, mark the corrected paths
+hint: with 'git add <paths>' or 'git rm <paths>'
+hint: Disable this message with "git config set advice.mergeConflict false"
+
+[combined conflict diff]
+diff --cc remote/deployments/gha-clone-server-rs/src/main.rs
+index 55268a14,7892b0cc..00000000
+--- a/remote/deployments/gha-clone-server-rs/src/main.rs
++++ b/remote/deployments/gha-clone-server-rs/src/main.rs
+@@@ -106,8 -103,8 +108,13 @@@ impl Config 
+                      gha_clone_server::MAX_STEPS_PER_JOB_DEFAULT,
+                  )?,
+              },
+++<<<<<<< HEAD
+ +            build_poll_seconds: env_u64("GHA_CLONE_BUILD_POLL_SECONDS", 2)?,
+ +            build_timeout_seconds: env_u64("GHA_CLONE_BUILD_TIMEOUT_SECONDS", 3600)?,
+++=======
++             build_poll_seconds: env_nonzero_u64("GHA_CLONE_BUILD_POLL_SECONDS", 2)?,
++             build_timeout_seconds: env_nonzero_u64("GHA_CLONE_BUILD_TIMEOUT_SECONDS", 3600)?,
+++>>>>>>> 6d050a5c (fix(DEN-1606): bind clone build-server transport and identity)
+              max_runs: env_nonzero_usize("GHA_CLONE_MAX_RUNS", 256)?,
+              webhook_failure_conclusions: csv_lower_set_or_default(
+                  "GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS",
+@@@ -1489,4 -1539,101 +1572,104 @@@ mod tests 
+          assert!(normalize_github_api_base_url("https://user:pass@example.com").is_err());
+          assert!(normalize_github_api_base_url("https://example.com?token=x").is_err());
+      }
+++<<<<<<< HEAD
+++=======
++ 
++     #[test]
++     fn terminal_run_pruning_never_discards_active_runs() {
++         let now = now_ms();
++         let mut runs = BTreeMap::new();
++         for (index, status) in [RunStatus::Running, RunStatus::Succeeded, RunStatus::Failed]
++             .into_iter()
++             .enumerate()
++         {
++             let id = Uuid::new_v4();
++             runs.insert(
++                 id,
++                 RunRecord {
++                     id,
++                     plan_id: format!("plan-{index}"),
++                     repository: "owner/repo".into(),
++                     revision: "a".repeat(40),
++                     workflow_path: ".github/workflows/ci.yml".into(),
++                     status,
++                     current_job: None,
++                     submissions: vec![],
++                     error: None,
++                     created_at_ms: now + index as u128,
++                     updated_at_ms: now + index as u128,
++                 },
++             );
++         }
++         prune_runs(&mut runs, 2);
++         assert_eq!(runs.len(), 2);
++         assert!(runs
++             .values()
++             .any(|run| matches!(run.status, RunStatus::Running)));
++     }
++ 
++     #[test]
++     fn build_server_origin_is_credential_free_and_transport_safe() {
++         assert_eq!(
++             normalize_build_server_url("https://build.example.com/").unwrap(),
++             "https://build.example.com"
++         );
++         assert!(normalize_build_server_url("http://127.0.0.1:8123").is_ok());
++         assert!(normalize_build_server_url("http://localhost:8123").is_ok());
++         assert!(
++             normalize_build_server_url("http://dd-build-server.remote.svc.cluster.local:8123")
++                 .is_ok()
++         );
++         assert!(normalize_build_server_url("http://dd-build-server.remote.svc:8123").is_ok());
++         assert!(normalize_build_server_url("http://10.0.0.10:8123").is_err());
++         assert!(normalize_build_server_url("http://build.example.com").is_err());
++         assert!(normalize_build_server_url("http://service.svc.evil.example").is_err());
++         assert!(normalize_build_server_url("https://user:pass@build.example.com").is_err());
++         assert!(normalize_build_server_url("https://build.example.com/api").is_err());
++         assert!(normalize_build_server_url("https://build.example.com?token=x").is_err());
++     }
++ 
++     #[test]
++     fn build_job_response_identity_is_validated_and_bound() {
++         let valid = BuildJobResponse {
++             id: "build:0123-abc_def.test".into(),
++             status: "queued".into(),
++             error: None,
++         };
++         assert!(validate_build_job_response_id(&valid, None).is_ok());
++         assert!(validate_build_job_response_id(&valid, Some(&valid.id)).is_ok());
++         assert!(validate_build_job_response_id(&valid, Some("different")).is_err());
++ 
++         let invalid = BuildJobResponse {
++             id: "../build?token=x".into(),
++             status: "queued".into(),
++             error: None,
++         };
++         assert!(validate_build_job_response_id(&invalid, None).is_err());
++     }
++ 
++     #[tokio::test]
++     async fn configured_http_client_does_not_follow_redirects() {
++         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
++         let address = listener.local_addr().unwrap();
++         let app = Router::new()
++             .route(
++                 "/start",
++                 get(|| async { axum::response::Redirect::temporary("/final") }),
++             )
++             .route("/final", get(|| async { StatusCode::OK }));
++         let server = tokio::spawn(async move {
++             axum::serve(listener, app).await.unwrap();
++         });
++ 
++         let response = build_http_client()
++             .unwrap()
++             .get(format!("http://{address}/start"))
++             .send()
++             .await
++             .unwrap();
++         assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
++         server.abort();
++     }
+++>>>>>>> 6d050a5c (fix(DEN-1606): bind clone build-server transport and identity)
+  }
