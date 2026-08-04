@@ -8,14 +8,15 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "ops-bootstrap-org-dotgithub-direct.yml"
-RUNNER = ROOT / "scripts" / "ops" / "run_protected_org_dotgithub_publisher.sh"
-
-# Trusted-main activation generation: 2026-08-04-v1.
+DIRECT_RUNNER = ROOT / "scripts" / "ops" / "run_direct_org_dotgithub_publisher.sh"
+PROTECTED_RUNNER = ROOT / "scripts" / "ops" / "run_protected_org_dotgithub_publisher.sh"
 
 
 class DirectOrgDotgithubPublisherTests(unittest.TestCase):
-    def test_runner_is_valid_bash(self) -> None:
-        subprocess.run(["bash", "-n", str(RUNNER)], check=True)
+    def test_runners_are_valid_bash(self) -> None:
+        for runner in (DIRECT_RUNNER, PROTECTED_RUNNER):
+            with self.subTest(runner=runner.name):
+                subprocess.run(["bash", "-n", str(runner)], check=True)
 
     def test_pull_request_validation_is_secretless_and_exact_head_bound(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")
@@ -25,6 +26,7 @@ class DirectOrgDotgithubPublisherTests(unittest.TestCase):
             "github.event.pull_request.head.sha",
             'test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"',
             "persist-credentials: false",
+            "run_direct_org_dotgithub_publisher.sh",
             "test_bootstrap_org_dotgithub*.py",
         ):
             with self.subTest(phrase=phrase):
@@ -41,13 +43,43 @@ class DirectOrgDotgithubPublisherTests(unittest.TestCase):
             'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"',
             "id-token: write",
             "aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c",
-            "run_protected_org_dotgithub_publisher.sh",
+            "run_direct_org_dotgithub_publisher.sh",
             '"$GITHUB_SHA"',
             '"$GITHUB_WORKSPACE"',
             "org-dotgithub-governance-report-complete",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, text)
+
+    def test_direct_runner_normalizes_bootstrap_and_delegates_fail_closed(self) -> None:
+        text = DIRECT_RUNNER.read_text(encoding="utf-8")
+        for phrase in (
+            "stage=direct-bootstrap",
+            "invalid-trusted-sha",
+            "source-root-not-absolute",
+            "source-root-missing",
+            "tr -d '[:space:]'",
+            "invalid-aws-region",
+            "export AWS_REGION",
+            "run_protected_org_dotgithub_publisher.sh",
+            "bash -n \"$protected_runner\"",
+            "stage=direct-delegate",
+            "status=failed rc=%s",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, text)
+        for forbidden in (
+            "GH_TOKEN",
+            "GITHUB_TOKEN",
+            "GH_PAT",
+            "oauth_token",
+            "Authorization",
+            "secretsmanager",
+            "kubectl",
+            "gh auth",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, text)
 
     def test_workflow_does_not_transport_an_organization_admin_token(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")
@@ -83,8 +115,8 @@ class DirectOrgDotgithubPublisherTests(unittest.TestCase):
                 self.assertIn(phrase, text)
         self.assertNotIn("gh issue close 615", text)
 
-    def test_workflow_adds_no_destructive_recovery_commands(self) -> None:
-        text = WORKFLOW.read_text(encoding="utf-8")
+    def test_direct_workflow_and_wrapper_add_no_destructive_recovery_commands(self) -> None:
+        text = WORKFLOW.read_text(encoding="utf-8") + "\n" + DIRECT_RUNNER.read_text(encoding="utf-8")
         for phrase in (
             "git checkout --",
             "git reset",
