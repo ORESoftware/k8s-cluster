@@ -1,0 +1,228 @@
+name: alex-main-agent Slack command GitOps
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.github/workflows/slack-command-gitops.yml'
+      - 'docs/alex-main-agent-slack-command-gitops.md'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml'
+      - 'remote/argocd/dd-next-runtime/kustomization.yaml'
+      - 'remote/tests/general/slack-command-gitops.test.mjs'
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/slack-command-gitops.yml'
+      - 'docs/alex-main-agent-slack-command-gitops.md'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml'
+      - 'remote/argocd/dd-next-runtime/kustomization.yaml'
+      - 'remote/tests/general/slack-command-gitops.test.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: slack-command-gitops-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: signed ingress, routing, and rendered overlay
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout k8s-cluster without submodules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Reject mutable workflow dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path(".github/workflows/slack-command-gitops.yml")
+          failures = []
+          for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
+              match = re.match(r'^\s*uses:\s*([^\s#]+)', line)
+              if match:
+                  reference = match.group(1)
+                  if not reference.startswith('./') and not re.fullmatch(r'[^@]+@[0-9a-fA-F]{40}', reference):
+                      failures.append(f'{path}:{number}: mutable action reference: {reference}')
+              if re.search(r'^\s*runs-on:\s*ubuntu-latest\s*$', line):
+                  failures.append(f'{path}:{number}: mutable runner label: ubuntu-latest')
+          if failures:
+              raise SystemExit('\n'.join(failures))
+          PY
+
+      - name: Setup Node.js 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Checkout the immutable Slack command source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/ai-agent-bridge.rs
+          ref: 0ba7d2d4eb8c44583503d4567af2de1f73bc5598
+          path: .tmp/ai-agent-bridge
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+          submodules: recursive
+
+      - name: Verify the exact reviewed source revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='0ba7d2d4eb8c44583503d4567af2de1f73bc5598'
+          actual="$(git -C .tmp/ai-agent-bridge rev-parse HEAD)"
+          test "$actual" = "$expected"
+          grep -q 'name = "fiducia-slack-command"' .tmp/ai-agent-bridge/Cargo.toml
+          grep -q 'path = "src/bin/fiducia-slack-command.rs"' .tmp/ai-agent-bridge/Cargo.toml
+
+      - name: Validate GitOps, signed ingress, and thirteen-channel routing contracts
+        env:
+          SLACK_COMMAND_SOURCE_ROOT: ${{ github.workspace }}/.tmp/ai-agent-bridge
+          SLACK_COMMAND_GITOPS_AUDIT_PATH: ${{ runner.temp }}/slack-command-gitops-audit.json
+        run: node --test remote/tests/general/slack-command-gitops.test.mjs
+
+      - name: Render and inspect the applied dd-next-runtime overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v kubectl
+          kubectl version --client
+          rendered="${RUNNER_TEMP}/dd-next-runtime.rendered.yaml"
+          kubectl kustomize remote/argocd/dd-next-runtime > "$rendered"
+
+          RENDERED_PATH="$rendered" python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+
+          path = Path(os.environ['RENDERED_PATH'])
+          documents = [document.strip() for document in path.read_text(encoding='utf-8').split('\n---\n') if document.strip()]
+
+          def identity(document):
+              kind_match = re.search(r'^kind:\s*(\S+)\s*$', document, re.MULTILINE)
+              metadata_match = re.search(r'^metadata:\n(?P<body>(?:  .*(?:\n|$))*)', document, re.MULTILINE)
+              if not kind_match or not metadata_match:
+                  return None
+              name_match = re.search(r'^  name:\s*(\S+)\s*$', metadata_match.group('body'), re.MULTILINE)
+              if not name_match:
+                  return None
+              return (kind_match.group(1), name_match.group(1))
+
+          relevant_names = {
+              'dd-slack-command',
+              'dd-slack-command-secrets',
+              'dd-slack-command-state',
+          }
+          relevant = sorted(
+              item for document in documents
+              if (item := identity(document)) and item[1] in relevant_names
+          )
+          expected = sorted([
+              ('ExternalSecret', 'dd-slack-command-secrets'),
+              ('PersistentVolumeClaim', 'dd-slack-command-state'),
+              ('Deployment', 'dd-slack-command'),
+              ('Service', 'dd-slack-command'),
+              ('NetworkPolicy', 'dd-slack-command'),
+              ('PodDisruptionBudget', 'dd-slack-command'),
+              ('Ingress', 'dd-slack-command'),
+          ])
+          if relevant != expected:
+              raise SystemExit(f'rendered Slack resource inventory mismatch: {relevant!r}')
+
+          deployment = next(
+              document for document in documents
+              if identity(document) == ('Deployment', 'dd-slack-command')
+          )
+          if not re.search(r'- name: SLACK_COMMAND_DRY_RUN\n\s+value: ["\']?true["\']?', deployment):
+              raise SystemExit('rendered deployment is not pinned to dry-run mode')
+          if '0ba7d2d4eb8c44583503d4567af2de1f73bc5598' not in deployment:
+              raise SystemExit('rendered deployment lost its immutable source revision')
+
+          ingress = next(
+              document for document in documents
+              if identity(document) == ('Ingress', 'dd-slack-command')
+          )
+          paths = re.findall(r'^\s*path:\s*(\S+)\s*$', ingress, re.MULTILINE)
+          expected_paths = [
+              '/slack/commands/ores-claude',
+              '/slack/commands/ores-chatgpt',
+              '/slack/interactions',
+          ]
+          if paths != expected_paths:
+              raise SystemExit(f'rendered ingress paths mismatch: {paths!r}')
+          if len(re.findall(r'^\s+pathType:\s*Exact\s*$', ingress, re.MULTILINE)) != 3:
+              raise SystemExit('rendered ingress must contain three exact paths')
+          PY
+
+      - name: Compile-check the pinned command binary
+        working-directory: .tmp/ai-agent-bridge
+        env:
+          CARGO_TERM_COLOR: always
+        run: cargo check --locked --bin fiducia-slack-command
+
+      - name: Reject credential material in the reviewed files and evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            .github/workflows/slack-command-gitops.yml
+            docs/alex-main-agent-slack-command-gitops.md
+            remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml
+            remote/argocd/dd-next-runtime/kustomization.yaml
+            remote/tests/general/slack-command-gitops.test.mjs
+            "${RUNNER_TEMP}/slack-command-gitops-audit.json"
+            "${RUNNER_TEMP}/dd-next-runtime.rendered.yaml"
+          )
+          for file in "${files[@]}"; do
+            test -f "$file" || continue
+            if grep -E '(xox[baprs]-[A-Za-z0-9-]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,})' "$file"; then
+              echo "credential-shaped material found in ${file}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Publish non-secret activation summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## alex-main-agent Slack command GitOps'
+            echo
+            echo '- source revision: `0ba7d2d4eb8c44583503d4567af2de1f73bc5598`'
+            echo '- installed app identity: enforced'
+            echo '- focused source contracts: 13'
+            echo '- rendered resource inventory: exact'
+            echo '- public surface: three exact Slack-signed POST routes'
+            echo '- routing registry: thirteen reviewed channel bindings'
+            echo '- dispatch mode: `SLACK_COMMAND_DRY_RUN=true`'
+            echo '- state: dedicated RWO PVC'
+            echo '- secrets: External Secrets references only'
+            echo
+            echo 'Live activation remains blocked on remote app-manifest reconciliation, app reinstall, ExternalSecret readiness, and a signed dry-run canary.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload focused evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: slack-command-gitops-evidence
+          path: |
+            ${{ runner.temp }}/slack-command-gitops-audit.json
+            ${{ runner.temp }}/dd-next-runtime.rendered.yaml
+          retention-days: 3
+          if-no-files-found: warn
