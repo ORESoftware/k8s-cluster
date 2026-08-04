@@ -6,6 +6,8 @@ on:
       - agent/contract-service-seaorm-20260804
     paths:
       - ".github/workflows/contract-service-seaorm-sync-finish.yml"
+      - "remote/deployments/contract-service-rs/**"
+      - "remote/libs"
   workflow_dispatch:
 
 permissions:
