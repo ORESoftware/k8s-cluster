@@ -22,4 +22,8 @@ The all-target Rust suite covers valid repeated mapping keys across separate ste
 
 Formatting, warnings-denied Clippy, library and binary unit tests, HTTP/process integration tests, router assignment tests, meta self-tests, and planner adversarial tests must all pass before this boundary changes.
 
+## Current-dev proof
+
+The product tree was merged with and validated against exact `dev` commit `208bdcbe00f17a2a4a17548b28fe7a563a66445e`. The validation merge was accepted only after the final tree differed from that base in this runbook and `remote/deployments/gha-clone-server-rs/src/lib.rs`, with no temporary workflow remaining.
+
 These checks are defense in depth. They do not expand the independent lane into a general GitHub Actions interpreter and do not weaken the fixed-profile compiler's fail-closed boundary.
