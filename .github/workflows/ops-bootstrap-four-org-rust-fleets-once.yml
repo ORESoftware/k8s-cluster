@@ -1,5 +1,5 @@
 name: Bootstrap four organization Rust fleets once
-run-name: Publish 32 Rust bootstrap repositories @ ${{ github.sha }}
+run-name: Publish 32 Rust bootstrap repositories revision 2 @ ${{ github.sha }}
 
 on:
   push:
@@ -27,6 +27,15 @@ jobs:
           ref: main
           fetch-depth: 0
           persist-credentials: true
+
+      - name: Mark publication run started
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh issue comment 845 --repo ORESoftware/k8s-cluster --body \
+            "Trusted-main publication revision 2 started for commit \`${GITHUB_SHA}\`."
 
       - name: Configure trusted main-branch AWS OIDC credentials
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
@@ -59,7 +68,7 @@ jobs:
           rustc --version
           cargo --version
 
-      - name: Restore reviewed publisher
+      - name: Restore and repair reviewed publisher
         shell: bash
         run: |
           set -euo pipefail
@@ -67,7 +76,11 @@ jobs:
             | base64 --decode \
             | xz --decompress --stdout \
             >"$RUNNER_TEMP/bootstrap_four_org_fleets.py"
+          python3 scripts/ops/repair_four_org_generator.py \
+            "$RUNNER_TEMP/bootstrap_four_org_fleets.py"
           python3 -m py_compile "$RUNNER_TEMP/bootstrap_four_org_fleets.py"
+          printf 'reviewed publisher sha256: '
+          sha256sum "$RUNNER_TEMP/bootstrap_four_org_fleets.py" | awk '{print $1}'
 
       - name: Generate, test, create, push, and verify repositories
         id: publish
@@ -121,7 +134,7 @@ jobs:
           {
             echo 'The one-shot repository publisher failed closed.'
             echo
-            echo 'No existing non-bootstrap repository was overwritten. The workflow and generator remain on `main` for a reviewed repair.'
+            echo 'No existing non-bootstrap repository was overwritten. The workflow, compressed publisher, and reviewed repair remain on `main` for diagnosis.'
             echo
             echo '<details><summary>Log excerpt</summary>'
             echo
@@ -145,7 +158,8 @@ jobs:
             ops/evidence/four-org-rust-publication-2026-08-04.md
           git rm \
             .github/workflows/ops-bootstrap-four-org-rust-fleets-once.yml \
-            scripts/ops/bootstrap_four_org_fleets.py.xz.b64.part*
+            scripts/ops/bootstrap_four_org_fleets.py.xz.b64.part* \
+            scripts/ops/repair_four_org_generator.py
           git add \
             ops/evidence/four-org-rust-publication-2026-08-04.json \
             ops/evidence/four-org-rust-publication-2026-08-04.md
@@ -165,7 +179,7 @@ jobs:
             echo
             cat "$RUNNER_TEMP/four-org-rust-publication.md"
             echo
-            echo 'Sanitized evidence is committed under `ops/evidence/`; the temporary workflow and publisher were removed from `main`.'
+            echo 'Sanitized evidence is committed under `ops/evidence/`; the temporary workflow, publisher, and repair script were removed from `main`.'
           } >"$RUNNER_TEMP/success-comment.md"
           gh issue comment 845 --repo ORESoftware/k8s-cluster --body-file "$RUNNER_TEMP/success-comment.md"
           gh issue close 845 --repo ORESoftware/k8s-cluster --reason completed
