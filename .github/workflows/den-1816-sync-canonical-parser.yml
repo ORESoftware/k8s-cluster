@@ -1,9 +1,8 @@
 name: Sync canonical flags2env parser
 
 on:
-  push:
-    branches:
-      - agent/den-1816-trusted-flags-policy
+  pull_request:
+    branches: [dev]
     paths:
       - .github/workflows/den-1816-sync-canonical-parser.yml
 
@@ -12,14 +11,16 @@ permissions:
 
 jobs:
   sync:
-    if: github.actor != 'github-actions[bot]'
+    if: >-
+      github.head_ref == 'agent/den-1816-trusted-flags-policy' &&
+      github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - name: Check out consumer branch
         uses: actions/checkout@v4
         with:
-          ref: agent/den-1816-trusted-flags-policy
+          ref: ${{ github.head_ref }}
           path: consumer
           fetch-depth: 0
           persist-credentials: true
@@ -66,7 +67,7 @@ jobs:
           cargo fmt --all
           git diff --check
 
-      - name: Validate focused flags and flaky timing boundary
+      - name: Validate focused flags and timing boundary
         working-directory: consumer
         shell: bash
         run: |
@@ -84,7 +85,7 @@ jobs:
       - name: Commit synchronized parser and formatting
         working-directory: consumer
         env:
-          HEAD_BRANCH: agent/den-1816-trusted-flags-policy
+          HEAD_BRANCH: ${{ github.head_ref }}
         shell: bash
         run: |
           set -euo pipefail
