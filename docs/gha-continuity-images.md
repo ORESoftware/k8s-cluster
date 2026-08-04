@@ -18,7 +18,7 @@ The shared Dockerfile exposes separate `clone-server` and `executor-router` targ
 5. Local BuildKit exports with an SPDX SBOM and max-mode SLSA provenance; the validator requires an attested subject digest.
 6. Image scans that fail on fixable HIGH or CRITICAL findings. The scanner action is pinned to the immutable safe Trivy 0.35.0 commit using Trivy 0.69.3.
 
-The pull-request job has read-only repository permissions and does not receive package-write permission.
+The pull-request job has read-only repository permissions and does not receive package-write permission. Repository-wide observability coverage also requires `dd-gha-executor-router` in both the exporter source default and the deployed `WATCH_APPS` override, so the runtime cannot be activated without workload-level metrics.
 
 ## Publication
 
