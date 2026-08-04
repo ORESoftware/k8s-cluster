@@ -1,0 +1,94 @@
+name: Format and reprove final DEN-1550 profile policy once
+
+on:
+  push:
+    branches:
+      - agent/build-server-exact-profile-policy-final-20260804
+    paths:
+      - .github/workflows/den-1550-format-final-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1550-format-final-once
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/build-server-exact-profile-policy-final-20260804
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Verify the bounded pre-format scope
+        run: |
+          set -euo pipefail
+          base='b827d1fde69bdfc5acfeb9d8a785f184c3ce5505'
+          expected=$'.github/workflows/den-1550-format-final-once.yml\n.github/workflows/gha-clone-server.yml\ndocs/build-server-profile-repository-policy.md\nremote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml\nremote/deployments/build-server-rs/src/config.rs\nremote/deployments/build-server-rs/src/config/profile_policy.rs\nremote/deployments/build-server-rs/src/validation.rs\nremote/tests/general/build-server-profile-repository-policy.test.mjs'
+          actual="$(git diff --name-only "$base"...HEAD | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'unexpected pre-format paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          grep -Fq 'if raw_untrimmed.len() > MAX_POLICY_BYTES' \
+            remote/deployments/build-server-rs/src/config/profile_policy.rs
+          grep -Fq 'raw_policy_accepts_the_exact_byte_limit_and_rejects_one_more_byte' \
+            remote/deployments/build-server-rs/src/config/profile_policy.rs
+          grep -Fq 'raw_policy_limit_counts_utf8_bytes_before_unicode_whitespace_trimming' \
+            remote/deployments/build-server-rs/src/config/profile_policy.rs
+
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Format and validate the complete build-server surface
+        working-directory: remote/deployments/build-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo check --locked --all-targets
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Validate the permanent GitOps policy contract
+        run: |
+          set -euo pipefail
+          node --test remote/tests/general/build-server-profile-repository-policy.test.mjs
+          git diff --check
+
+      - name: Publish the self-cleaned seven-file product
+        run: |
+          set -euo pipefail
+          base='b827d1fde69bdfc5acfeb9d8a785f184c3ce5505'
+          rm .github/workflows/den-1550-format-final-once.yml
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          workflow_non_deletions="$(git diff --cached --name-only --diff-filter=ACMRTUXB -- .github/workflows | grep -v '^.github/workflows/gha-clone-server.yml$' || true)"
+          if [[ -n "$workflow_non_deletions" ]]; then
+            printf 'temporary workflow must be deletion-only:\n%s\n' "$workflow_non_deletions" >&2
+            exit 1
+          fi
+          git commit -m 'style(DEN-1550): format exact profile policy'
+          expected=$'.github/workflows/gha-clone-server.yml\ndocs/build-server-profile-repository-policy.md\nremote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml\nremote/deployments/build-server-rs/src/config.rs\nremote/deployments/build-server-rs/src/config/profile_policy.rs\nremote/deployments/build-server-rs/src/validation.rs\nremote/tests/general/build-server-profile-repository-policy.test.mjs'
+          actual="$(git diff --name-only "$base"...HEAD | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'unexpected final product paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          git push origin HEAD:agent/build-server-exact-profile-policy-final-20260804
