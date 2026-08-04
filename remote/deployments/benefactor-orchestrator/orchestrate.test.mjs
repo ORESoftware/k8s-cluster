@@ -165,10 +165,11 @@ test('provider result merge rejects unsafe candidates, dedupes domains, and pres
   );
 });
 
-test('dry-run reports are deterministic, sorted, and exclude raw email identifiers', () => {
+test('dry-run reports are deterministic, sorted, and exclude raw contact or strategy identifiers', () => {
   const providers = providerStatuses({ serperKey: 'configured', braveKey: '' });
   const records = [
     {
+      businessName: 'Beta Roofing',
       email: 'sales@beta.example-business.com',
       domain: 'beta.example-business.com',
       sourceUrl: 'https://beta.example-business.com/',
@@ -181,6 +182,7 @@ test('dry-run reports are deterministic, sorted, and exclude raw email identifie
       phones: ['+14155551212'],
     },
     {
+      businessName: 'Alpha Roofing',
       email: 'hello@alpha.example-business.com',
       domain: 'alpha.example-business.com',
       sourceUrl: 'https://alpha.example-business.com/',
@@ -197,7 +199,15 @@ test('dry-run reports are deterministic, sorted, and exclude raw email identifie
   const second = buildDryRunReport({ category: 'roofing', providers: [...providers].reverse(), records: [...records].reverse(), counters: { visited: 2 } });
   assert.equal(canonicalJson(first), canonicalJson(second));
   assert.equal(first.reportDigest, second.reportDigest);
-  assert.doesNotMatch(canonicalJson(first), /sales@|hello@/);
+  const rendered = canonicalJson(first);
+  assert.doesNotMatch(rendered, /sales@|hello@|\+14155551212|Alpha Roofing|Beta Roofing|alpha query|beta query|alpha\.example-business|beta\.example-business|roofing/);
+  assert.doesNotMatch(rendered, /businessName"|domain"|emailDomain"|phones"|query"|sourceUrl"|category"/);
+  assert.match(first.categorySha256, /^[0-9a-f]{64}$/);
+  assert.match(first.records[0].businessNameSha256, /^[0-9a-f]{64}$/);
+  assert.match(first.records[0].domainSha256, /^[0-9a-f]{64}$/);
+  assert.match(first.records[0].emailDomainSha256, /^[0-9a-f]{64}$/);
+  assert.match(first.records[0].querySha256, /^[0-9a-f]{64}$/);
+  assert.match(first.records[0].sourceUrlSha256, /^[0-9a-f]{64}$/);
   assert.match(first.reportDigest, /^sha256:[0-9a-f]{64}$/);
 });
 
