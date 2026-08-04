@@ -5,12 +5,14 @@ on:
     paths:
       - 'remote/argocd/ci-runners/streempilot/**'
       - 'remote/argocd/ci-runners/validate-streempilot-arc-scaffold.py'
+      - '.github/actionlint.yaml'
       - '.github/workflows/streempilot-arc-scaffold.yml'
   push:
     branches: [main, dev]
     paths:
       - 'remote/argocd/ci-runners/streempilot/**'
       - 'remote/argocd/ci-runners/validate-streempilot-arc-scaffold.py'
+      - '.github/actionlint.yaml'
       - '.github/workflows/streempilot-arc-scaffold.yml'
   workflow_dispatch:
 
@@ -33,6 +35,8 @@ jobs:
         run: python3 -m py_compile remote/argocd/ci-runners/validate-streempilot-arc-scaffold.py
       - name: Validate ARC, capacity, and failover boundaries
         run: python3 remote/argocd/ci-runners/validate-streempilot-arc-scaffold.py
+      - name: Validate the custom runner label registration
+        run: grep -qx '    - streempilot-ci' .github/actionlint.yaml
       - name: Validate the manual smoke workflow syntax
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
