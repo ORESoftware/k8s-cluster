@@ -42,6 +42,16 @@ create table if not exists ai_agent_coordinator.jobs (
   constraint jobs_attempts_chk check (attempts >= 0),
   constraint jobs_max_attempts_chk check (max_attempts between 1 and 100),
   constraint jobs_budget_usd_chk check (budget_usd is null or budget_usd > 0),
+  constraint jobs_slack_agent_run_idempotency_chk check (
+    task_type <> 'slack_agent_run'
+    or (
+      idempotency_key is not null
+      and idempotency_key ~ '^ores-[0-9a-f]{24}$'
+      and jsonb_typeof(payload) = 'object'
+      and payload ->> 'schema_version' = '1'
+      and payload ->> 'run_id' = idempotency_key
+    )
+  ),
   constraint jobs_running_lease_chk check (
     status <> 'running'
     or (claimed_by is not null and lease_expires_at is not null)
@@ -149,8 +159,7 @@ create table if not exists ai_agent_coordinator.email_attention_deliveries (
     check (char_length(idempotency_key) between 1 and 256),
   constraint email_attention_deliveries_status_chk
     check (status in ('pending', 'delivered')),
-  constraint email_attention_deliveries_attempts_chk
-    check (attempts >= 0),
+  constraint email_attention_deliveries_attempts_chk check (attempts >= 0),
   constraint email_attention_deliveries_last_error_chk
     check (last_error is null or char_length(last_error) <= 512)
 );

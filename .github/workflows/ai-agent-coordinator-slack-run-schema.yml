@@ -1,0 +1,109 @@
+name: ai-agent-coordinator Slack run schema contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ai-agent-coordinator-slack-run-schema.yml'
+      - 'pg-defs/schema/databases/ai_agent_coordinator/schema.sql'
+      - 'pg-defs/schema/databases/ai_agent_coordinator/slack-run-idempotency.test.sql'
+      - 'pg-defs/schema/databases/ai_agent_coordinator/slack-run-idempotency.md'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ai-agent-coordinator-slack-run-schema.yml'
+      - 'pg-defs/schema/databases/ai_agent_coordinator/schema.sql'
+      - 'pg-defs/schema/databases/ai_agent_coordinator/slack-run-idempotency.test.sql'
+      - 'pg-defs/schema/databases/ai_agent_coordinator/slack-run-idempotency.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-agent-coordinator-slack-run-schema-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postgres-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/slack_run_contract
+      PGPASSWORD: postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Create isolated contract database
+        run: createdb -h localhost -U postgres slack_run_contract
+
+      - name: Apply the declarative coordinator schema
+        run: >-
+          psql "$DATABASE_URL"
+          -v ON_ERROR_STOP=1
+          -q
+          -f pg-defs/schema/databases/ai_agent_coordinator/schema.sql
+
+      - name: Exercise accepted, rejected, and duplicate Slack run cases
+        run: >-
+          psql "$DATABASE_URL"
+          -v ON_ERROR_STOP=1
+          -q
+          -f pg-defs/schema/databases/ai_agent_coordinator/slack-run-idempotency.test.sql
+
+      - name: Verify the exact database constraint
+        shell: bash
+        run: |
+          set -euo pipefail
+          definition="$(
+            psql "$DATABASE_URL" -Atc \
+              "select pg_get_constraintdef(oid) from pg_constraint where conname = 'jobs_slack_agent_run_idempotency_chk'"
+          )"
+          test -n "$definition"
+          grep -q "task_type <> 'slack_agent_run'" <<<"$definition"
+          grep -q "idempotency_key IS NOT NULL" <<<"$definition"
+          grep -q "schema_version" <<<"$definition"
+          grep -q "run_id" <<<"$definition"
+          grep -q "ores-" <<<"$definition"
+
+      - name: Prove no invalid Slack rows survived
+        shell: bash
+        run: |
+          set -euo pipefail
+          invalid="$(
+            psql "$DATABASE_URL" -Atc \
+              "select count(*) from ai_agent_coordinator.jobs where task_type = 'slack_agent_run' and not (idempotency_key is not null and idempotency_key ~ '^ores-[0-9a-f]{24}$' and jsonb_typeof(payload) = 'object' and payload ->> 'schema_version' = '1' and payload ->> 'run_id' = idempotency_key)"
+          )"
+          test "$invalid" = '0'
+
+      - name: Publish migration evidence
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Slack run database idempotency contract'
+            echo
+            echo '- PostgreSQL: `17`'
+            echo '- schema: `ai_agent_coordinator`'
+            echo '- task type: `slack_agent_run`'
+            echo '- required key: exact `payload.run_id`'
+            echo '- run ID form: `ores-<24 lowercase hex>`'
+            echo '- schema version: `1`'
+            echo '- duplicate protection: existing unique `idempotency_key` constraint'
+          } >> "$GITHUB_STEP_SUMMARY"
