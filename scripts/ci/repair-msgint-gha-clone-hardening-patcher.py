@@ -1,5 +1,7 @@
 from pathlib import Path
 
+# Touch point for the exact-branch one-shot finalizer. The workflow deletes
+# this helper after the reviewed patch and all validation gates succeed.
 path = Path("scripts/ci/apply-msgint-gha-clone-hardening.py")
 source = path.read_text(encoding="utf-8")
 
