@@ -48,13 +48,14 @@ wait_for_json_endpoint() {
   local output=''
   for _ in $(seq 1 60); do
     if output="$(curl --silent --show-error --fail --max-time 2 "$url" 2>/dev/null)"; then
-      printf '%s' "$output" | grep -Fq "$expected_fragment"
-      printf '%s\n' "$output"
-      return 0
+      if printf '%s' "$output" | grep -Fq "$expected_fragment"; then
+        printf '%s\n' "$output"
+        return 0
+      fi
     fi
     sleep 1
   done
-  echo "endpoint never became ready: ${url}" >&2
+  echo "endpoint never satisfied contract: ${url} expected ${expected_fragment}" >&2
   return 1
 }
 
@@ -105,7 +106,7 @@ printf '%s' 'router-smoke-aws-auth-value-00000001' >"${secret_dir}/aws_auth"
 chmod 0755 "$secret_dir"
 chmod 0444 "${secret_dir}/inbound_auth" "${secret_dir}/aws_auth"
 
-router_routes='[{"id":"aws-primary","provider":"aws","enabled":true,"url":"http://127.0.0.1:19999","authPath":"/var/run/secrets/gha-executor-router/aws_auth","profiles":["rust-verify"]},{"id":"hetzner-secondary","provider":"hetzner","enabled":false}]'
+router_routes='[{"id":"aws-primary","provider":"aws","enabled":true,"url":"http://127.0.0.1:19999","authPath":"/var/run/secrets/gha-executor-router/aws_auth"},{"id":"hetzner-secondary","provider":"hetzner","enabled":false}]'
 
 docker run --detach --rm \
   --name "$router_name" \
@@ -117,13 +118,13 @@ docker run --detach --rm \
   --volume "${secret_dir}:/var/run/secrets/gha-executor-router:ro" \
   --env HOST=0.0.0.0 \
   --env PORT=8126 \
-  --env RUST_LOG=gha_clone_server=info \
+  --env RUST_LOG=gha_executor_router=info \
   --env GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED=false \
   --env GHA_EXECUTOR_ROUTER_AUTH_PATH=/var/run/secrets/gha-executor-router/inbound_auth \
   --env "GHA_EXECUTOR_ROUTER_EXECUTORS_JSON=${router_routes}" \
   "$router_image" >/dev/null
 
 wait_for_json_endpoint "http://127.0.0.1:${router_port}/healthz" '"ok":true' >/dev/null
-wait_for_json_endpoint "http://127.0.0.1:${router_port}/readyz" '"ready":true' >/dev/null
+wait_for_json_endpoint "http://127.0.0.1:${router_port}/readyz" '"executionReady":true' >/dev/null
 
 printf '{"ok":true,"cloneImage":"%s","routerImage":"%s"}\n' "$clone_image" "$router_image"
