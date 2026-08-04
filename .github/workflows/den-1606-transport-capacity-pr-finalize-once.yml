@@ -1,0 +1,88 @@
+name: Finalize DEN-1606 transport-capacity merge from PR once
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/den-1606-transport-capacity-pr-finalize-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1606-transport-capacity-pr-finalize-once
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-1606-transport-capacity-semantic-merge-20260804'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1606-transport-capacity-semantic-merge-20260804
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Execute reviewed semantic reconstruction
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/den-1606-transport-capacity-semantic-merge-once.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          step = lines.index('      - name: Reconstruct transport then preserve atomic admission')
+          run_line = lines.index('        run: |', step + 1)
+          next_step = next(
+              index for index in range(run_line + 1, len(lines))
+              if lines[index].startswith('      - uses: dtolnay/rust-toolchain@')
+          )
+          block = lines[run_line + 1:next_step]
+          prefix = '          '
+          if any(line.strip() and not line.startswith(prefix) for line in block):
+              raise SystemExit('reviewed semantic reconstruction indentation drifted')
+          script = '\n'.join(
+              line[len(prefix):] if line.startswith(prefix) else '' for line in block
+          ) + '\n'
+          Path('/tmp/den-1606-semantic-merge.sh').write_text(script, encoding='utf-8')
+          PY
+          bash /tmp/den-1606-semantic-merge.sh
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate every clone-server target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Commit the product-only semantic merge
+        run: |
+          set -euo pipefail
+          base='a14072064f25d7b49807656d4231f93d335a6d55'
+          rm \
+            .github/workflows/den-1606-transport-capacity-semantic-merge-once.yml \
+            .github/workflows/den-1606-transport-capacity-pr-finalize-once.yml
+          git add -A
+          git commit --amend --no-edit
+          expected=$'docs/gha-clone-build-server-boundary.md\nremote/deployments/gha-clone-server-rs/src/main.rs\nremote/deployments/gha-clone-server-rs/tests/http_api.rs\nremote/deployments/gha-clone-server-rs/tests/streempilot_http.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_retention.rs'
+          actual="$(git diff --name-only "$base"...HEAD | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'unexpected final product paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          git diff --check "$base"...HEAD
+          git push --force-with-lease origin HEAD:agent/den-1606-transport-capacity-semantic-merge-20260804
