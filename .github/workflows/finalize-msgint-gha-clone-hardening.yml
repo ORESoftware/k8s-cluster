@@ -1,0 +1,116 @@
+name: Finalize Messaging Intel GHA clone hardening
+
+on:
+  push:
+    branches:
+      - agent/msgint-gha-clone-operator-verify-20260804
+    paths:
+      - scripts/ci/apply-msgint-gha-clone-hardening.py
+      - .github/workflows/finalize-msgint-gha-clone-hardening.yml
+  pull_request:
+    branches:
+      - dev
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - scripts/ci/apply-msgint-gha-clone-hardening.py
+      - .github/workflows/finalize-msgint-gha-clone-hardening.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-msgint-gha-clone-hardening-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/msgint-gha-clone-operator-verify-20260804
+          fetch-depth: 0
+
+      - name: Validate and apply the deterministic patch
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ci/apply-msgint-gha-clone-hardening.py
+          python3 scripts/ci/apply-msgint-gha-clone-hardening.py
+
+      - name: Format every changed Rust source
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 \
+            remote/deployments/build-server-rs/src/profiles.rs \
+            remote/deployments/build-server-rs/src/validation.rs
+          cargo fmt --all --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml
+
+      - name: Run GHA clone Clippy and every Rust target
+        run: |
+          set -euo pipefail
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets
+        working-directory: remote/deployments/gha-clone-server-rs
+
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Compile and test the fixed build-server profiles
+        run: |
+          set -euo pipefail
+          cargo check --locked --all-targets
+          cargo test --locked profiles::tests -- --nocapture
+        working-directory: remote/deployments/build-server-rs
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/gha-clone-server.yml remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Run deployment and workflow contracts
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm exec tsx --test general/gha-clone-server-config.test.ts
+        working-directory: remote/tests
+
+      - name: Remove one-shot patch machinery
+        if: github.event_name == 'push'
+        run: |
+          git rm scripts/ci/apply-msgint-gha-clone-hardening.py
+          git rm .github/workflows/finalize-msgint-gha-clone-hardening.yml
+
+      - name: Commit the validated source changes
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "No validated source changes were produced" >&2
+            exit 1
+          fi
+          git commit -m "test: harden Messaging Intel GHA clone execution"
+          git push origin HEAD:agent/msgint-gha-clone-operator-verify-20260804
