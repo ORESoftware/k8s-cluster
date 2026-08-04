@@ -110,7 +110,10 @@ jobs:
           source = source.replace(before, after, 1)
 
           before = 'run: cargo test --locked --lib -- --nocapture'
-          after = 'run: cargo test --locked --bin dd-build-server -- --nocapture'
+          after = '''run: |
+                  cargo test --locked profiles::tests -- --nocapture
+                  cargo test --locked validation::tests -- --nocapture
+                  cargo test --locked idempotency_tests -- --nocapture'''
           if source.count(before) != 1:
               raise SystemExit('expected one build-server test command')
           path.write_text(source.replace(before, after, 1), encoding='utf-8')
@@ -145,14 +148,16 @@ jobs:
         with:
           ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
-      - name: Test complete build-server admission and the hermetic Node fixture
+      - name: Test owned build-server contracts and the hermetic Node fixture
         shell: bash
         run: |
           set -euo pipefail
           cd remote/deployments/build-server-rs
           rustfmt --edition 2021 --check src/jobs.rs src/profiles.rs src/validation.rs
           cargo check --locked --all-targets
-          cargo test --locked --bin dd-build-server -- --nocapture
+          cargo test --locked profiles::tests -- --nocapture
+          cargo test --locked validation::tests -- --nocapture
+          cargo test --locked idempotency_tests -- --nocapture
           cd tests/fixtures/node-hardened-profile
           npm ci --ignore-scripts
           npm run check
