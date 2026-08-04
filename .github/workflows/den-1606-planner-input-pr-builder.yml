@@ -50,6 +50,27 @@ jobs:
               line[len(prefix):] if line.startswith(prefix) else line
               for line in block[opener + 1 : terminator]
           ) + '\n'
+
+          # Current dev may format the pre-existing NUL guard differently.
+          # Preserve the semantic boundary and insert validation immediately
+          # after that complete guard rather than matching its whole text.
+          brittle_start = script.index("nul_marker = '''")
+          brittle_end = script.index('text = text[:build_start] + build + text[build_end:]', brittle_start)
+          replacement = '''nul_start = build.find('    if request.workflow_yaml.as_bytes().contains(&0) {')
+          if nul_start == -1:
+              raise SystemExit('could not locate workflow NUL validation start')
+          nul_end = build.find('    }\\n', nul_start)
+          if nul_end == -1:
+              raise SystemExit('could not locate workflow NUL validation end')
+          insert_at = nul_end + len('    }\\n')
+          raw_validation = '''    if let Err(error) = validate_workflow_document(&request.workflow_yaml) {
+              errors.push(error);
+          }
+          '''.replace('          ', '')
+          build = build[:insert_at] + raw_validation + build[insert_at:]
+          '''.replace('          ', '')
+          script = script[:brittle_start] + replacement + script[brittle_end:]
+
           target = Path('/tmp/den-1606-planner-input.py')
           compile(script, str(workflow), 'exec')
           target.write_text(script, encoding='utf-8')
