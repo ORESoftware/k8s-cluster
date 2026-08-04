@@ -1,98 +1,83 @@
-name: durable-worker-typescript-sdk-repair
+name: durable-worker-typescript-sdk-compatibility
 
 on:
   pull_request:
-    branches:
-      - dev
     paths:
       - '.github/workflows/durable-worker-typescript-sdk-repair.yml'
+      - 'remote/api-sdks/typescript/durable-worker/**'
+      - 'remote/tests/general/durable-worker-typescript-sdk.test.mjs'
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - '.github/workflows/durable-worker-typescript-sdk-repair.yml'
+      - 'remote/api-sdks/typescript/durable-worker/**'
+      - 'remote/tests/general/durable-worker-typescript-sdk.test.mjs'
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: durable-worker-typescript-sdk-repair
-  cancel-in-progress: false
+  group: durable-worker-typescript-sdk-compatibility-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  patch-test-and-publish:
-    if: github.actor != 'github-actions[bot]'
+  node-runtime-matrix:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version:
+          - '22.18.0'
+          - '22'
+          - '24'
     steps:
-      - name: Checkout SDK branch
+      - name: Checkout without persistent credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: agent/durable-worker-typescript-sdk
-          fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
           show-progress: false
 
-      - name: Setup Node
+      - name: Setup Node ${{ matrix.node-version }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22.23.1'
+          node-version: ${{ matrix.node-version }}
 
-      - name: Apply scoped SDK lifecycle corrections
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          source = Path('remote/api-sdks/typescript/durable-worker/index.mjs')
-          text = source.read_text(encoding='utf-8')
-          start = text.index('export function sleep(ms, signal) {')
-          end = text.index('\n}\n\nasync function parseResponse', start) + 2
-          segment = text[start:end]
-          needle = '    timer.unref?.();\n'
-          if segment.count(needle) != 1:
-              raise SystemExit(f'expected one unref in sleep(), found {segment.count(needle)}')
-          segment = segment.replace(needle, '', 1)
-          source.write_text(text[:start] + segment + text[end:], encoding='utf-8')
-
-          tests = Path('remote/api-sdks/typescript/durable-worker/test/client.test.mjs')
-          text = tests.read_text(encoding='utf-8')
-          start = text.index("test('aborts the handler and suppresses completion")
-          segment = text[start:]
-          needle = '          resolve();\n'
-          if segment.count(needle) != 1:
-              raise SystemExit(f'expected one unreachable resolve in fenced test, found {segment.count(needle)}')
-          segment = segment.replace(needle, '', 1)
-          tests.write_text(text[:start] + segment, encoding='utf-8')
-          PY
-
-      - name: Verify SDK runtime, ratchets, and package payload
+      - name: Verify syntax, runtime contracts, and repository ratchets
         shell: bash
         run: |
           set -euo pipefail
           npm --prefix remote/api-sdks/typescript/durable-worker run check
           npm --prefix remote/api-sdks/typescript/durable-worker test
           node --test remote/tests/general/durable-worker-typescript-sdk.test.mjs
-          (
-            cd remote/api-sdks/typescript/durable-worker
-            npm pack --dry-run --json
-          ) > /tmp/sdk-pack.json
+
+      - name: Stress abort and lease-fencing lifecycle
+        working-directory: remote/api-sdks/typescript/durable-worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 12); do
+            node --test \
+              --test-name-pattern='aborts the handler and suppresses completion' \
+              test/client.test.mjs >/dev/null
+          done
+
+      - name: Verify intentional dependency-free package payload
+        working-directory: remote/api-sdks/typescript/durable-worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm pack --dry-run --json > "${RUNNER_TEMP}/durable-worker-sdk-pack.json"
           node --input-type=module <<'NODE'
           import { readFile } from 'node:fs/promises';
-          const report = JSON.parse(await readFile('/tmp/sdk-pack.json', 'utf8'));
+          const report = JSON.parse(await readFile(process.env.RUNNER_TEMP + '/durable-worker-sdk-pack.json', 'utf8'));
           const files = new Set(report[0].files.map((entry) => entry.path));
           for (const expected of ['README.md', 'index.d.ts', 'index.mjs', 'package.json']) {
             if (!files.has(expected)) throw new Error(`package payload is missing ${expected}`);
           }
           if (files.has('test/client.test.mjs')) throw new Error('package payload leaked tests');
+          if (report[0].entryCount !== files.size) throw new Error('package report contains duplicate entries');
           NODE
-          git diff --check
-
-      - name: Commit verified corrections
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add \
-            remote/api-sdks/typescript/durable-worker/index.mjs \
-            remote/api-sdks/typescript/durable-worker/test/client.test.mjs
-          git commit -m 'fix(workers): harden TypeScript SDK lifecycle tests'
-          git push origin HEAD:agent/durable-worker-typescript-sdk
