@@ -279,15 +279,14 @@ default = "0.0.0.0:8080"
         write_contract(&explicit);
         write_contract(&packaged);
 
-        let resolved = resolve_config_path_from(
-            Some(explicit.clone()),
-            Some(executable.clone()),
-            None,
-        )
-        .expect("explicit contract");
+        let resolved =
+            resolve_config_path_from(Some(explicit.clone()), Some(executable.clone()), None)
+                .expect("explicit contract");
         assert_eq!(
             resolved,
-            explicit.canonicalize().expect("canonical explicit contract")
+            explicit
+                .canonicalize()
+                .expect("canonical explicit contract")
         );
 
         let relative_error = resolve_config_path_from(
