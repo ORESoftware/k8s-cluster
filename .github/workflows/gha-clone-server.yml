@@ -65,6 +65,27 @@ jobs:
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo test --locked --all-targets
 
+  build-server-profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+      - name: Check build-server formatting
+        working-directory: remote/deployments/build-server-rs
+        run: cargo fmt --all -- --check
+      - name: Compile the fixed-profile boundary with warnings denied
+        working-directory: remote/deployments/build-server-rs
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Test the fixed-profile registry and meta fallback
+        working-directory: remote/deployments/build-server-rs
+        run: cargo test --locked profiles::tests -- --nocapture
+
   contracts:
     runs-on: ubuntu-latest
     timeout-minutes: 15
