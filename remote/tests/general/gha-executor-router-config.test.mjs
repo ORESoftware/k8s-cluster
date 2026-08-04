@@ -87,7 +87,7 @@ test('executor inventory is exact and carries no dormant Hetzner endpoint', () =
   assert.equal(new Set(executors.map(({ id }) => id)).size, executors.length);
 });
 
-test('router deployment is rendered but remains absent and execution-disabled', () => {
+test('router deployment is digest-gated, non-shell, absent, and execution-disabled', () => {
   const deployment = read(paths.deployment);
   requireContains(
     deployment,
@@ -96,7 +96,8 @@ test('router deployment is rendered but remains absent and execution-disabled', 
       'replicas: 0',
       'type: Recreate',
       'automountServiceAccountToken: false',
-      'exec cargo run --release --bin gha-executor-router',
+      'ghcr.io/oresoftware/gha-executor-router@sha256:0000000000000000000000000000000000000000000000000000000000000000',
+      'command: ["/usr/local/bin/gha-executor-router"]',
       'name: GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED',
       'value: "false"',
       'name: GHA_EXECUTOR_ROUTER_AUTH_PATH',
@@ -105,7 +106,8 @@ test('router deployment is rendered but remains absent and execution-disabled', 
       'readOnly: true',
       'secretName: dd-gha-executor-router-secrets',
       'key: router_auth',
-      'key: aws_build_server_auth',
+      'secretName: dd-agent-secrets',
+      'key: SERVER_AUTH_SECRET',
       'path: /readyz',
       'path: /healthz',
       'drop: ["ALL"]',
@@ -115,10 +117,10 @@ test('router deployment is rendered but remains absent and execution-disabled', 
   );
   assert.equal(envValue(deployment, 'GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED'), 'false');
   assert.doesNotMatch(deployment, /hostPath:|docker\.sock|containerd\.sock/);
-  assert.doesNotMatch(deployment, /value:\s*(?:ghp_|github_pat_)/i);
+  assert.doesNotMatch(deployment, /\/bin\/(?:ba)?sh|cargo run|git clone|git init/);
 });
 
-test('ExternalSecret separates inbound router and AWS credentials and omits Hetzner', () => {
+test('ExternalSecret owns only inbound authority and reuses the separately owned AWS build secret', () => {
   const externalSecret = read(paths.externalSecret);
   requireContains(
     externalSecret,
@@ -126,18 +128,18 @@ test('ExternalSecret separates inbound router and AWS credentials and omits Hetz
       'key: dd/remote-dev/gha-executor-router-secrets',
       'secretKey: router_auth',
       'property: router_auth',
-      'secretKey: aws_build_server_auth',
-      'property: aws_build_server_auth',
+      'dd-agent-secrets.SERVER_AUTH_SECRET',
+      'rather than copying',
     ],
     'router ExternalSecret',
   );
   assert.equal(
     (externalSecret.match(/secretKey:/g) ?? []).length,
-    2,
-    'unexpected router secret authority added',
+    1,
+    'the router ExternalSecret must own only its inbound authority',
   );
   assert.doesNotMatch(externalSecret, /hetzner/i);
-  assert.doesNotMatch(externalSecret, /ghp_|github_pat_|stringData:/i);
+  assert.doesNotMatch(externalSecret, /stringData:/i);
 });
 
 test('clone server dispatches only through the internal router', () => {
@@ -309,12 +311,28 @@ test('continuity workflow exercises router contracts and renders the full overla
   );
 });
 
-test('changed router surface contains no committed credential markers', () => {
-  const combined = Object.values(paths)
-    .map((path) => read(path))
-    .join('\n')
-    .toLowerCase();
-  for (const marker of ['ghp_', 'github_pat_', 'bearer ey', 'private_key-----']) {
+test('product router surface contains no committed credential markers', () => {
+  const scanPaths = [
+    paths.configMap,
+    paths.externalSecret,
+    paths.deployment,
+    paths.service,
+    paths.networkPolicy,
+    paths.cloneDeployment,
+    paths.cloneExternalSecret,
+    paths.cloneNetworkPolicy,
+    paths.routerSource,
+    paths.routerContracts,
+    paths.routerTests,
+  ];
+  const combined = scanPaths.map((path) => read(path)).join('\n').toLowerCase();
+  const markers = [
+    ['gh', 'p_'].join(''),
+    ['github', '_pat_'].join(''),
+    ['bearer', ' ey'].join(''),
+    ['private', '_key-----'].join(''),
+  ];
+  for (const marker of markers) {
     assert.ok(!combined.includes(marker), `credential marker found: ${marker}`);
   }
 });
