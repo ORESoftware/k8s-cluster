@@ -101,14 +101,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Validate orchestration workflow syntax
+      - name: Validate continuity workflow syntax
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
-          args: .github/workflows/gha-clone-server.yml
-      - name: Validate bounded meta workflow syntax
-        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
-        with:
-          args: .github/workflows/gha-clone-server-meta.yml
+          args: .github/workflows/gha-clone-server.yml .github/workflows/gha-clone-server-meta.yml
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 10.33.0
