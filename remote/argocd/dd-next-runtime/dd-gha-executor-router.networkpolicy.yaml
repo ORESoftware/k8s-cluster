@@ -33,19 +33,7 @@ spec:
       ports:
         - protocol: TCP
           port: 8100
-    # Source bootstrap and a future reviewed Hetzner HTTPS executor. Metadata,
-    # loopback, carrier-grade NAT, and RFC1918 ranges remain blocked. A private
-    # cross-cloud route requires an explicit CIDR-scoped policy change.
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8
-              - 100.64.0.0/10
-              - 127.0.0.0/8
-              - 169.254.0.0/16
-              - 172.16.0.0/12
-              - 192.168.0.0/16
-      ports:
-        - protocol: TCP
-          port: 443
+    # No public egress exists while Hetzner is disabled. Its activation must add
+    # one exact reviewed TLS or private-network destination together with the
+    # endpoint certificate, distinct credential, artifact policy, observability,
+    # provider-loss test evidence, and rollback procedure.
