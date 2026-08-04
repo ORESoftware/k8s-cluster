@@ -22,7 +22,6 @@ const completionDocument = resolve(
   root,
   'docs/operations/meta-agent-repository-publication-completion.md',
 );
-const assetsDirectory = resolve(root, 'scripts/critical-org-fleet/assets');
 const publicationOrchestrator = resolve(
   root,
   'scripts/ops/publish_meta_agent_control_plane_from_actions.sh',
@@ -76,28 +75,32 @@ test('completion record pins the exact target and initial reviewed history', asy
   }
 });
 
-test('immutable recovery evidence remains present after privileged workflow retirement', async () => {
+test('active recovery tooling pins immutable source history without restoring sealed assets', async () => {
   assert.equal(existsSync(publicationOrchestrator), true);
   assert.equal(existsSync(snapshotVerifier), true);
   assert.equal(existsSync(ephemeralRunbook), true);
 
-  const assets = (await readdir(assetsDirectory))
-    .filter((name) => /^meta\.part[^/]+$/.test(name))
-    .sort();
-  assert.equal(assets.length, 9);
+  const orchestrator = await read(publicationOrchestrator);
+  const verifier = await read(snapshotVerifier);
+  const document = normalizedText(await read(completionDocument));
 
-  const document = await read(completionDocument);
-  assert.match(
-    document,
-    /1ddaa03743b864348162149b7d2d2e2dce7eab585cf092ea14547c647fcec031/,
+  for (const contract of [
+    '55ee15c190b7cfa4e075f6984c7cb551acd4b9d3',
+    '1ddaa03743b864348162149b7d2d2e2dce7eab585cf092ea14547c647fcec031',
+    'e2fe6eaa622db02a54f83e27a822f64ad4b54971c883f97bbda4ac0a4db5d278',
+    'meta-agents-demo/meta-agent-control-plane.rs',
+  ]) {
+    assert.equal(orchestrator.includes(contract), true, `orchestrator lost ${contract}`);
+    assert.equal(verifier.includes(contract), true, `verifier lost ${contract}`);
+    assert.equal(document.includes(contract), true, `completion record lost ${contract}`);
+  }
+
+  assert.equal(
+    document.includes('intentionally not restored to the active working tree'),
+    true,
   );
-  assert.match(
-    document,
-    /e2fe6eaa622db02a54f83e27a822f64ad4b54971c883f97bbda4ac0a4db5d278/,
-  );
-  assert.match(
-    document,
-    /scripts\/ops\/publish_meta_agent_control_plane_from_actions\.sh/,
-  );
-  assert.match(document, /scripts\/ops\/verify_meta_agent_source_snapshot\.py/);
+  assert.equal(verifier.includes('git/commits/{SOURCE_SHA}'), true);
+  assert.equal(verifier.includes('git/trees/{tree_sha}?recursive=1'), true);
+  assert.equal(verifier.includes('meta\\.part[^/]+'), true);
+  assert.equal(verifier.includes('verify-bundle-heads'), true);
 });
