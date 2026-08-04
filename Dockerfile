@@ -88,6 +88,7 @@ ENV LMX_BIND_HOST=0.0.0.0 \
     LMX_TCP_PORT=6970 \
     LMX_HTTP_PORT=6971 \
     LMX_CONFIG=/etc/dd-rust-network-mutex/lmx.toml \
+    LMX_CLI_FLAGS_CONFIG=/etc/dd-rust-network-mutex/.cli-flags.toml \
     LMX_LOG_FORMAT=text \
     RUST_LOG=info,lmx=info
 
