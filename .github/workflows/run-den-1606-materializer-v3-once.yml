@@ -1,3 +1,4 @@
+# Re-triggered after the inert GitOps merge; the successful product commit deletes this file.
 # Thin wrapper over the reviewed v2 carrier. It removes the last two
 # formatting-sensitive response-parse guards, then self-deletes with all carriers.
 name: Run DEN-1606 direct hardening materializer v3 once
