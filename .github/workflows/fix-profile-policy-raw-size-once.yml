@@ -1,9 +1,9 @@
 name: Fix raw profile policy size bound once
 
 on:
-  push:
-    branches:
-      - agent/build-server-exact-profile-policy-20260804
+  pull_request:
+    branches: [dev]
+    types: [synchronize]
     paths:
       - .github/workflows/fix-profile-policy-raw-size-once.yml
 
@@ -12,7 +12,10 @@ permissions:
 
 jobs:
   fix:
-    if: github.actor != 'github-actions[bot]'
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/build-server-exact-profile-policy-20260804'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
