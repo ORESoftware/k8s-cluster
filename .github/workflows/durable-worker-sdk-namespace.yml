@@ -116,12 +116,26 @@ jobs:
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -A -- \
-            .github/workflows/durable-worker-typescript-sdk.yml \
-            .github/workflows/durable-worker-typescript-sdk-repair.yml \
-            .github/workflows/durable-worker-sdk-namespace.yml \
-            remote/api-sdks/typescript/durable-worker \
-            remote/worker-sdks \
-            remote/tests/general/durable-worker-typescript-sdk.test.mjs
+          git add -A
+          mapfile -t staged < <(git diff --cached --name-only)
+          if [[ "${#staged[@]}" -eq 0 ]]; then
+            echo 'namespace migration produced no staged changes' >&2
+            exit 1
+          fi
+          for path in "${staged[@]}"; do
+            case "$path" in
+              .github/workflows/durable-worker-typescript-sdk.yml|\
+              .github/workflows/durable-worker-typescript-sdk-repair.yml|\
+              remote/tests/general/durable-worker-typescript-sdk.test.mjs|\
+              remote/api-sdks/typescript/durable-worker/*|\
+              remote/worker-sdks/*)
+                ;;
+              *)
+                echo "unexpected staged path: $path" >&2
+                exit 1
+                ;;
+            esac
+          done
+          printf 'verified staged migration paths:\n%s\n' "${staged[*]}"
           git commit -m 'refactor(workers): separate hand-authored worker SDKs from generated APIs'
           git push origin HEAD:agent/durable-worker-typescript-sdk
