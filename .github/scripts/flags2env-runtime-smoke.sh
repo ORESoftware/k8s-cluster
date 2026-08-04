@@ -46,6 +46,26 @@ fi
 set +e
 (
   cd "$hostile_cwd"
+  THREEFA_FLAGS_CONFIG=reviewed.toml \
+    "$binary" --bind-addr=127.0.0.1:18080
+) >"$stdout_log" 2>"$stderr_log"
+relative_status=$?
+set -e
+
+if [[ $relative_status -ne 2 ]]; then
+  echo "relative explicit contract returned unexpected status: $relative_status" >&2
+  cat "$stderr_log" >&2
+  exit 1
+fi
+grep -F -- "THREEFA_FLAGS_CONFIG must be an absolute path" "$stderr_log"
+if grep -F -- "reviewed.toml" "$stdout_log" "$stderr_log"; then
+  echo "relative explicit contract path leaked into process output" >&2
+  exit 1
+fi
+
+set +e
+(
+  cd "$hostile_cwd"
   THREEFA_FLAGS_CONFIG="$hostile_cwd/missing.toml" \
     "$binary" --bind-addr=127.0.0.1:18080
 ) >"$stdout_log" 2>"$stderr_log"
@@ -57,6 +77,10 @@ if [[ $missing_status -ne 2 ]]; then
   cat "$stderr_log" >&2
   exit 1
 fi
-grep -F -- "THREEFA_FLAGS_CONFIG does not name a readable file" "$stderr_log"
+grep -F -- "THREEFA_FLAGS_CONFIG does not name a readable regular file" "$stderr_log"
+if grep -F -- "$hostile_cwd/missing.toml" "$stdout_log" "$stderr_log"; then
+  echo "explicit contract path leaked into process output" >&2
+  exit 1
+fi
 
 echo "threefa-sync-server trusted flags2env runtime smoke passed"
