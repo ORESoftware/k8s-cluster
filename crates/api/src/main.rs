@@ -1,32 +1,48 @@
 //! t2v-api — the JSON API server for the t2v-v2t platform.
 //!
-//! Endpoints (all JSON unless noted):
-//!   GET  /                       service banner
-//!   GET  /healthz                liveness
-//!   GET  /readyz                 readiness (DB ping)
-//!   GET  /metrics                Prometheus text
-//!   POST /v1/stt                 audio body -> transcription      (custom FFT VAD trim)
-//!   POST /v1/tts                 {text,voice,format} -> audio bytes
-//!   POST /v1/translate           {text,target_lang,...} -> translation
-//!   POST /v1/speech-to-speech    audio body -> translated audio   (STT->translate->TTS)
-//!   POST /v1/analyze             audio body -> FFT spectral analysis + DTMF
-//!   GET  /v1/history/...         recent rows for each table
-//!   POST /vapi/webhook           Vapi server webhook (x-vapi-secret)
-//!   POST /vapi/call              start a Vapi call (operator, VAPI_API_KEY)
-//!   GET  /vapi/call/:id          fetch a Vapi call (operator)
-//!
-//! The router and modules live in `lib.rs` so integration tests can drive them
-//! without a socket. Persistence is SeaORM (not sqlx); the Postgres schema is
-//! owned by the shared pg-defs contract under the `t2v` namespace.
+//! The runtime router and OpenAPI documents are assembled from the same
+//! `utoipa_axum::routes!` declarations in the library. `--export-openapi`
+//! exits before telemetry, database, provider clients, or sockets are touched.
 
+use std::io::Write;
 use std::net::SocketAddr;
-use t2v_api::{app, db, state::AppState};
+use t2v_api::{app, db, openapi, openapi_documents, state::AppState};
 
 fn port() -> u16 {
     std::env::var("PORT")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(8130)
+}
+
+fn export_scope() -> Result<Option<String>, String> {
+    let mut scope = None;
+    for argument in std::env::args().skip(1) {
+        if let Some(value) = argument.strip_prefix("--export-openapi=") {
+            if scope.replace(value.to_string()).is_some() {
+                return Err("--export-openapi may be supplied only once".to_string());
+            }
+        } else {
+            return Err(format!("unknown command-line argument: {argument}"));
+        }
+    }
+    Ok(scope)
+}
+
+fn export_openapi(scope: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let documents = openapi_documents().map_err(std::io::Error::other)?;
+    let document = match scope {
+        "public" => &documents.public,
+        "internal" => &documents.internal,
+        other => {
+            return Err(
+                format!("unknown OpenAPI scope '{other}'; expected public or internal").into(),
+            )
+        }
+    };
+    let json = openapi::canonical_json(document)?;
+    std::io::stdout().write_all(json.as_bytes())?;
+    Ok(())
 }
 
 async fn shutdown_signal() {
@@ -55,6 +71,11 @@ async fn shutdown_signal() {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(scope) = export_scope().map_err(std::io::Error::other)? {
+        export_openapi(&scope)?;
+        return Ok(());
+    }
+
     // Keep the provider alive through graceful shutdown so queued traces,
     // metrics, and structured warnings are flushed before the pod exits.
     let _telemetry = fiducia_telemetry::init("dd-t2v-api");

@@ -29,6 +29,9 @@ fiducia-telemetry = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
 base64 = { workspace = true }
+utoipa = { workspace = true }
+utoipa-axum = { workspace = true }
+utoipa-scalar = { workspace = true }
 
 [dev-dependencies]
 # `ServiceExt::oneshot` drives the router in tests without binding a socket.
