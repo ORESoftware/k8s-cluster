@@ -9,7 +9,7 @@ import pathlib
 import subprocess
 import tempfile
 
-CURRENT_DEV_SHA = "2a64bd2fc1e2730f45ceec685742e390ca3a98c7"
+CURRENT_DEV_SHA = "208bdcbe00f17a2a4a17548b28fe7a563a66445e"
 REVIEWED_MSGINT_SHA = "bf4fca2e22937caf18a07dc1bd7c4494fff4b95c"
 EXPECTED_MERGE_BASE = "4e701d8c9208956fe0890df1107168e032f335c3"
 
