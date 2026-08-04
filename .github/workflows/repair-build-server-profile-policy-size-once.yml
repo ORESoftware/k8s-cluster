@@ -1,0 +1,124 @@
+# One-shot repair for the raw-byte policy limit found by the full PR suite.
+# The successful run deletes this carrier before committing.
+name: Repair build-server exact-profile policy raw-byte limit once
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [synchronize]
+    paths:
+      - .github/workflows/repair-build-server-profile-policy-size-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-build-server-profile-policy-size
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/build-server-exact-profile-policy-20260804'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/build-server-exact-profile-policy-20260804
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Enforce the raw environment byte ceiling before trimming
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/deployments/build-server-rs/src/config/profile_policy.rs')
+          source = path.read_text(encoding='utf-8')
+          old = '''    let Some(raw) = exact_rules_json
+              .map(str::trim)
+              .filter(|raw| !raw.is_empty())
+          else {
+              return Ok(compiled);
+          };
+          if raw.len() > MAX_POLICY_BYTES {
+              return Err(format!(
+                  "BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON exceeds {MAX_POLICY_BYTES} bytes"
+              ));
+          }
+
+          let rules: Vec<ExactRepositoryRule> =
+          '''
+          new = '''    let Some(raw) = exact_rules_json else {
+              return Ok(compiled);
+          };
+          if raw.len() > MAX_POLICY_BYTES {
+              return Err(format!(
+                  "BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON exceeds {MAX_POLICY_BYTES} bytes"
+              ));
+          }
+          let raw = raw.trim();
+          if raw.is_empty() {
+              return Ok(compiled);
+          }
+
+          let rules: Vec<ExactRepositoryRule> =
+          '''
+          if source.count(old) != 1:
+              raise SystemExit('exact-profile raw-size parser boundary drifted')
+          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          Path('.github/workflows/repair-build-server-profile-policy-size-once.yml').unlink()
+          PY
+          git diff --check
+
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate the complete build-server policy surface
+        working-directory: remote/deployments/build-server-rs
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 src/config/profile_policy.rs
+          rustfmt --edition 2021 --check \
+            src/config.rs \
+            src/config/profile_policy.rs \
+            src/jobs.rs \
+            src/nats_submit.rs \
+            src/profiles.rs \
+            src/validation.rs
+          cargo check --locked --all-targets
+          cargo test --locked config::profile_policy::tests -- --nocapture
+          cargo test --locked validation::tests -- --nocapture
+          cargo test --locked profiles::tests -- --nocapture
+          cargo test --locked idempotency_tests -- --nocapture
+          cargo test --locked nats_submit::tests -- --nocapture
+
+      - name: Commit the self-cleaned product repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test ! -e .github/workflows/repair-build-server-profile-policy-size-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          allowed='^(\.github/workflows/repair-build-server-profile-policy-size-once\.yml|remote/deployments/build-server-rs/src/config/profile_policy\.rs)$'
+          unexpected="$(git diff --cached --name-only | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected staged paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          git commit -m 'fix: enforce exact-profile policy size before trimming'
+          git push origin HEAD:agent/build-server-exact-profile-policy-20260804
