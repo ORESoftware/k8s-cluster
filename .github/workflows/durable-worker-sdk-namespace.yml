@@ -17,8 +17,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: durable-worker-sdk-namespace-migration
-  cancel-in-progress: false
+  group: durable-worker-sdk-namespace-migration-${{ github.event_name }}-${{ github.sha }}
+  cancel-in-progress: true
 
 jobs:
   relocate-test-and-publish:
