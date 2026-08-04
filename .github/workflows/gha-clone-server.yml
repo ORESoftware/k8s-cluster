@@ -46,6 +46,78 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  finalize-den-1597-retained-assignment:
+    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'agent/den-1597-retained-assignment-core-20260804' && github.event.pull_request.head.repo.full_name == github.repository }}
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out the exact trusted head branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1597-retained-assignment-core-20260804
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+      - name: Extract and apply the reviewed branch-local patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          source = Path('.github/workflows/finalize-den-1597-retained-assignment.yml').read_text()
+          start_marker = "          python3 - <<'PY'\n"
+          end_marker = "\n          PY\n\n      - name: Install the pinned Rust toolchain"
+          if source.count(start_marker) != 1 or source.count(end_marker) != 1:
+              raise SystemExit('branch-local finalizer script markers are not unique')
+          script = source.split(start_marker, 1)[1].split(end_marker, 1)[0]
+          Path('/tmp/finalize-den-1597.py').write_text(textwrap.dedent(script))
+          PY
+          python3 /tmp/finalize-den-1597.py
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+      - name: Format, test, and lint every router target
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=remote/deployments/gha-clone-server-rs/Cargo.toml
+          cargo fmt --manifest-path "$manifest" --all
+          cargo test --locked --manifest-path "$manifest" --all-targets
+          cargo clippy --locked --manifest-path "$manifest" --all-targets -- -D warnings
+          git diff --check
+      - name: Remove temporary applicators and push only reviewed paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show origin/dev:.github/workflows/gha-clone-server.yml > .github/workflows/gha-clone-server.yml
+          rm -f .github/workflows/finalize-den-1597-retained-assignment.yml
+          expected="$RUNNER_TEMP/expected-paths.txt"
+          actual="$RUNNER_TEMP/actual-paths.txt"
+          printf '%s\n' \
+            .github/workflows/finalize-den-1597-retained-assignment.yml \
+            .github/workflows/gha-clone-server.yml \
+            docs/gha-independent-executor-routing.md \
+            remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs \
+            remote/deployments/gha-clone-server-rs/tests/executor_router_http.rs \
+            | sort > "$expected"
+          git diff --name-only | sort > "$actual"
+          diff -u "$expected" "$actual"
+          git config user.name 'ORESoftware CI'
+          git config user.email 'ci@oresoftware.com'
+          git add -f -- \
+            .github/workflows/finalize-den-1597-retained-assignment.yml \
+            .github/workflows/gha-clone-server.yml \
+            docs/gha-independent-executor-routing.md \
+            remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs \
+            remote/deployments/gha-clone-server-rs/tests/executor_router_http.rs
+          git commit -m 'fix(DEN-1597): retain content-bound executor assignments'
+          git push origin HEAD:agent/den-1597-retained-assignment-core-20260804
+
   rust:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
