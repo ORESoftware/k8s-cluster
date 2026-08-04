@@ -34,7 +34,7 @@ env:
   CARGO_INCREMENTAL: '0'
   NODE_OPTIONS: '--unhandled-rejections=strict'
   RUST_BACKTRACE: '1'
-  BRIDGE_REF: 7f1ad57126231c0a27da19799a27aa71f4ffaf5d
+  BRIDGE_REF: df587a8977402e2092748e8d62417c8bf124049e
 
 jobs:
   rejection-boundary:
