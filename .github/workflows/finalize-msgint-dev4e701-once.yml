@@ -168,14 +168,14 @@ jobs:
             .github/workflows/gha-clone-server-meta.yml \
             remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml
 
-      - name: Commit the validated permanent tree
+      - name: Commit the validated non-workflow tree
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          test -n "$(git diff -- .github/workflows/gha-clone-server.yml)"
           git add \
-            .github/workflows/gha-clone-server.yml \
             docs/gha-profile-repository-admission.md \
             remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml \
             remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml \
@@ -189,6 +189,7 @@ jobs:
             remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs \
             remote/deployments/gha-clone-server-rs/tests/planner_adversarial.rs \
             remote/tests/general/gha-clone-server-config.test.ts
+          test -z "$(git diff --cached --name-only | grep '^\.github/workflows/' || true)"
           git diff --cached --check
           git commit -m 'test(gha-clone): harden Messaging Intel on current dev'
           git push origin "HEAD:$FEATURE_BRANCH"
