@@ -7,7 +7,9 @@ const root = join(import.meta.dirname, '../../..');
 const read = (path) => readFileSync(join(root, path), 'utf8');
 
 const config = read('remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml');
-const planner = read('remote/deployments/gha-clone-server-rs/src/lib.rs');
+const manifest = read('remote/deployments/gha-clone-server-rs/Cargo.toml');
+const planner = read('remote/deployments/gha-clone-server-rs/src/bounded_lib.rs');
+const legacyPlanner = read('remote/deployments/gha-clone-server-rs/src/lib.rs');
 const fixture = read(
   'remote/deployments/gha-clone-server-rs/fixtures/threefa-interfaces-contracts.yml',
 );
@@ -25,11 +27,20 @@ test('GitOps grants only the exact 3FA repository and workflow path', () => {
   assert.doesNotMatch(config, /3FA-app\/3fa-backend/);
 });
 
+test('crate routes through one hardened wrapper around the existing parser', () => {
+  assert.match(manifest, /\[lib\][\s\S]*path = "src\/bounded_lib\.rs"/);
+  assert.match(planner, /#\[path = "lib\.rs"\][\s\S]*mod legacy;/);
+  assert.match(planner, /legacy::build_plan/);
+  assert.match(planner, /legacy::capabilities/);
+  assert.match(legacyPlanner, /fn classify_profile/);
+  assert.doesNotMatch(legacyPlanner, /rust-generated-verify/);
+});
+
 test('planner advertises and compiles only reviewed hardened profiles', () => {
   for (const marker of [
-    '"rust-generated-verify".to_string()',
-    '"node-hardened-verify".to_string()',
-    '"node-hardened-test".to_string()',
+    'rust-generated-verify',
+    'node-hardened-verify',
+    'node-hardened-test',
     'fn generated_rust_intent',
     'fn generated_rust_profile',
     'fn hardened_node_intent',
