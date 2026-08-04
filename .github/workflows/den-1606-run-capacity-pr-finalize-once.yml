@@ -69,6 +69,14 @@ jobs:
               for line in script_lines
           ) + '\n'
           exec(compile(script, str(carrier), 'exec'), {'__name__': '__main__'})
+
+          main_path = Path('remote/deployments/gha-clone-server-rs/src/main.rs')
+          main = main_path.read_text(encoding='utf-8')
+          old = 'reserve_run_records(&mut *runs, records, state.config.max_runs)'
+          new = 'reserve_run_records(&mut runs, records, state.config.max_runs)'
+          if main.count(old) != 1:
+              raise SystemExit('generated reservation auto-deref boundary drifted')
+          main_path.write_text(main.replace(old, new, 1), encoding='utf-8')
           PY
 
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
