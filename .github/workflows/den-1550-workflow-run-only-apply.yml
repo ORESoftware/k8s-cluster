@@ -176,6 +176,47 @@ jobs:
               ])
               tests = tests.replace(anchor, replacement, 1)
           test_path.write_text(tests, encoding='utf-8')
+
+          http_path = Path('remote/deployments/gha-clone-server-rs/tests/http_api.rs')
+          http = http_path.read_text(encoding='utf-8')
+          old_short = '''    let (status, value) = response_json(response).await;
+              assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+              assert_eq!(value["error"], "webhook revision is not a full commit SHA");
+          '''.replace('      ', '')
+          new_short = '''    let (status, value) = response_json(response).await;
+              assert_eq!(status, StatusCode::ACCEPTED);
+              assert_eq!(value["accepted"], false);
+              assert_eq!(
+                  value["reason"],
+                  "only workflow_run events may trigger the failure fallback"
+              );
+          '''.replace('      ', '')
+          if old_short in http:
+              http = http.replace(old_short, new_short, 1)
+          elif new_short not in http:
+              raise SystemExit('http_api.rs did not contain the reviewed short-revision assertion')
+
+          old_rules = '''    let (status, value) = response_json(response).await;
+              assert_eq!(status, StatusCode::ACCEPTED);
+              assert_eq!(value["accepted"], false);
+              assert!(value["reason"]
+                  .as_str()
+                  .unwrap()
+                  .contains("no workflow mirror rules"));
+          '''.replace('      ', '')
+          new_rules = '''    let (status, value) = response_json(response).await;
+              assert_eq!(status, StatusCode::ACCEPTED);
+              assert_eq!(value["accepted"], false);
+              assert_eq!(
+                  value["reason"],
+                  "only workflow_run events may trigger the failure fallback"
+              );
+          '''.replace('      ', '')
+          if old_rules in http:
+              http = http.replace(old_rules, new_rules, 1)
+          elif http.count(new_rules) < 2:
+              raise SystemExit('http_api.rs did not contain the reviewed no-rules assertion')
+          http_path.write_text(http, encoding='utf-8')
           PY
 
       - name: Validate the focused change and full Rust target set
@@ -185,6 +226,7 @@ jobs:
           cd remote/deployments/gha-clone-server-rs
           cargo fmt --all -- --check
           cargo test --locked --test webhook_e2e non_workflow_run_events_never_fetch_or_dispatch -- --nocapture
+          cargo test --locked --test http_api webhook_guards_reject_bad_inputs_before_any_github_fetch -- --nocapture
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked --all-targets
           cd ../../..
@@ -200,6 +242,7 @@ jobs:
           git add \
             .github/workflows/den-1550-workflow-run-only-apply.yml \
             remote/deployments/gha-clone-server-rs/src/main.rs \
+            remote/deployments/gha-clone-server-rs/tests/http_api.rs \
             remote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs
           git diff --cached --check
           git commit -m 'fix(DEN-1550): restrict webhook fallback to workflow_run'
