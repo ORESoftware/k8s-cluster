@@ -102,6 +102,40 @@ fn hardened_node_sequence_is_exact_and_non_extensible() {
 }
 
 #[test]
+fn setup_action_sequence_is_exact_pinned_and_non_extensible() {
+    let mutable_node = WORKFLOW.replacen(
+        "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+        "actions/setup-node@main",
+        1,
+    );
+    let mutable_rust = WORKFLOW.replacen(
+        "dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30",
+        "dtolnay/rust-toolchain@stable",
+        1,
+    );
+    let extra_action = WORKFLOW.replacen(
+        "      - run: |\n          npm ci --ignore-scripts",
+        "      - uses: owner/extra-action@0123456789abcdef0123456789abcdef01234567\n      - run: |\n          npm ci --ignore-scripts",
+        1,
+    );
+
+    for (job_id, workflow) in [
+        ("node_contracts", mutable_node),
+        ("generated_rust", mutable_rust),
+        ("node_contracts", extra_action),
+    ] {
+        let plan = compile(&workflow);
+        assert!(!plan.independent_executable);
+        let planned_job = job(&plan, job_id);
+        assert!(!planned_job.independent_supported);
+        assert_eq!(planned_job.independent_profile, None);
+        assert!(planned_job.independent_reasons.iter().any(|reason| {
+            reason.contains("exact reviewed pinned action sequence")
+        }));
+    }
+}
+
+#[test]
 fn mutable_revision_can_be_classified_but_not_executed() {
     let branch_plan = build_plan(
         &PlanRequest {
@@ -141,6 +175,13 @@ fn fixture_is_static_secret_free_and_uses_only_pinned_setup_actions() {
             !WORKFLOW.contains(forbidden),
             "fixture contains {forbidden:?}"
         );
+    }
+    for action in [
+        "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+        "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+        "dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30",
+    ] {
+        assert!(WORKFLOW.contains(action), "fixture is missing {action}");
     }
     assert!(WORKFLOW.contains("npm ci --ignore-scripts"));
     assert!(WORKFLOW.contains("generated/rust/Cargo.toml"));
