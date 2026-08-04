@@ -1,0 +1,11 @@
+target/
+.git/
+.gitignore
+.env
+.env.*
+*.key
+*.pem
+*.log
+README.md
+tests/
+scripts/
