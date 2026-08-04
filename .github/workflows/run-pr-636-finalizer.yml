@@ -35,23 +35,21 @@ jobs:
 
           path = Path('scripts/ci/finalize-msgint-gha-clone.py')
           text = path.read_text(encoding='utf-8')
-          old = r'''    f'''  assert.match(profiles, /export npm_config_ignore_scripts=true/);
+          start_marker = "    f'''  assert.match(profiles, /export npm_config_ignore_scripts=true/);"
+          end_marker = '    "fixed profile supply-chain contract",\n)'
+          start = text.find(start_marker)
+          end = text.find(end_marker, start)
+          if start < 0 or end < 0:
+              raise SystemExit('could not locate the staged TypeScript image assertion literal')
+          replacement = """    '''  assert.match(profiles, /export npm_config_ignore_scripts=true/);
             assert.match(profiles, /npm ci --ignore-scripts --no-audit --no-fund/);
             assert.match(
               profiles,
-              /const NODE_IMAGE: &str = "{NODE_IMAGE.replace('/', '\\/').replace('.', '\\.')}";/,
+              /const NODE_IMAGE: &str = \"docker\\.io\\/library\\/node:22\\.23\\.1-bookworm@sha256:5647be709086c696ff32edaaf1c70cd26d1da6ab2b39c32f3c7b4c4a31957e37\";/,
             );
-          ''','''
-          new = r'''    '''  assert.match(profiles, /export npm_config_ignore_scripts=true/);
-            assert.match(profiles, /npm ci --ignore-scripts --no-audit --no-fund/);
-            assert.match(
-              profiles,
-              /const NODE_IMAGE: &str = "docker\.io\/library\/node:22\.23\.1-bookworm@sha256:5647be709086c696ff32edaaf1c70cd26d1da6ab2b39c32f3c7b4c4a31957e37";/,
-            );
-          ''','''
-          if text.count(old) != 1:
-              raise SystemExit(f'expected one staged literal repair, found {text.count(old)}')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          ''',
+"""
+          path.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
           PY
 
       - name: Apply both deterministic hardening phases
