@@ -81,7 +81,10 @@ if grep -Eq '\$\{\{[[:space:]]*secrets\.' "$workflow"; then
   printf 'capacity-broker publication workflow must not depend on repository secrets\n' >&2
   exit 1
 fi
-if grep -Eq '(^|[[:space:]])(ghp_|github_pat_)' "$workflow" "$dockerfile" "$smoke"; then
+classic_pat_prefix='gh''p_'
+fine_grained_pat_prefix='github''_pat_'
+if grep -Eq "(^|[[:space:]])(${classic_pat_prefix}|${fine_grained_pat_prefix})" \
+  "$workflow" "$dockerfile" "$smoke"; then
   printf 'credential marker found in capacity-broker image files\n' >&2
   exit 1
 fi
