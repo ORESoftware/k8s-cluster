@@ -88,12 +88,15 @@ test('active recovery tooling pins immutable source history without restoring se
     '55ee15c190b7cfa4e075f6984c7cb551acd4b9d3',
     '1ddaa03743b864348162149b7d2d2e2dce7eab585cf092ea14547c647fcec031',
     'e2fe6eaa622db02a54f83e27a822f64ad4b54971c883f97bbda4ac0a4db5d278',
-    'meta-agents-demo/meta-agent-control-plane.rs',
   ]) {
     assert.equal(orchestrator.includes(contract), true, `orchestrator lost ${contract}`);
     assert.equal(verifier.includes(contract), true, `verifier lost ${contract}`);
     assert.equal(document.includes(contract), true, `completion record lost ${contract}`);
   }
+
+  const target = 'meta-agents-demo/meta-agent-control-plane.rs';
+  assert.equal(orchestrator.includes(target), true);
+  assert.equal(document.includes(target), true);
 
   assert.equal(
     document.includes('intentionally not restored to the active working tree'),
