@@ -1,0 +1,103 @@
+name: contract-service-seaorm-autofix
+
+on:
+  push:
+    branches:
+      - agent/contract-service-seaorm-20260804
+    paths:
+      - ".github/workflows/contract-service-seaorm-autofix.yml"
+      - "remote/deployments/contract-service-rs/**"
+      - "remote/libs"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: contract-service-seaorm-autofix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fix-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      EXPECTED_SHARED_COMMIT: 3c84cab532b27d328378f09fba5841f02644ae3b
+      SERVICE_DIR: remote/deployments/contract-service-rs
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+          submodules: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: "1.97.0"
+          components: rustfmt, clippy
+      - name: Materialize exact public shared authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          git init -q remote/libs
+          git -C remote/libs remote add origin \
+            https://github.com/ORESoftware/k8s-libs-and-shared-defs.git
+          GIT_TERMINAL_PROMPT=0 git -C remote/libs fetch \
+            --no-tags --depth=1 origin "$EXPECTED_SHARED_COMMIT"
+          git -C remote/libs checkout -q --detach FETCH_HEAD
+          test "$(git -C remote/libs rev-parse HEAD)" = "$EXPECTED_SHARED_COMMIT"
+      - name: Apply compiler suggestions inside the service only
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$SERVICE_DIR"
+          cargo generate-lockfile
+          cargo fix --locked --all-targets --allow-dirty --allow-staged
+          cargo fmt --all
+      - name: Reject changes outside reviewed service outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git status --short --untracked-files=all | awk '{print $2}')
+          for path in "${changed[@]}"; do
+            case "$path" in
+              remote/deployments/contract-service-rs/Cargo.lock|remote/deployments/contract-service-rs/src/*.rs|remote/deployments/contract-service-rs/src/**/*.rs)
+                ;;
+              *)
+                echo "::error title=Autofix escaped reviewed scope::${path} is outside service Rust sources and Cargo.lock"
+                exit 1
+                ;;
+            esac
+          done
+      - name: Execute policy and exact Rust validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test "$SERVICE_DIR/scripts/seaorm-policy.test.mjs"
+          EXPECTED_SHARED_COMMIT="$EXPECTED_SHARED_COMMIT" \
+            node "$SERVICE_DIR/scripts/check-seaorm-policy.mjs"
+          cd "$SERVICE_DIR"
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets
+          cargo check --locked --all-targets
+          ! grep -RInE \
+            '(^|[^A-Za-z0-9_])sqlx::(query|query_as|query_scalar|migrate!)|\bPgPool(Options)?\b|^sqlx[[:space:]]*=' \
+            Cargo.toml src
+      - name: Commit verified compiler suggestions and lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet && [[ -z "$(git ls-files --others --exclude-standard "$SERVICE_DIR")" ]]; then
+            echo "No verified compiler changes were necessary."
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            "$SERVICE_DIR/Cargo.lock" \
+            "$SERVICE_DIR/src"
+          git diff --cached --check
+          git commit -m "fix(contract-service): apply verified SeaORM compiler suggestions [skip ci]"
+          git push origin HEAD:agent/contract-service-seaorm-20260804
