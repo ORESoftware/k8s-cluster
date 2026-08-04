@@ -82,9 +82,12 @@ jobs:
         with:
           toolchain: '1.90.0'
           components: rustfmt
-      - name: Check the modified idempotency source formatting
+      - name: Check the modified idempotency leaf modules formatting
         working-directory: remote/deployments/build-server-rs
-        run: rustfmt --edition 2021 --check src/jobs.rs
+        run: >-
+          rustfmt --edition 2021 --check
+          src/jobs.rs
+          src/nats_submit.rs
       - name: Compile the complete build server against the exact private library gitlink
         working-directory: remote/deployments/build-server-rs
         run: cargo check --locked --all-targets
@@ -94,6 +97,9 @@ jobs:
       - name: Test build request idempotency and retry semantics
         working-directory: remote/deployments/build-server-rs
         run: cargo test --locked idempotency_tests -- --nocapture
+      - name: Test strict NATS conflict and redelivery classification
+        working-directory: remote/deployments/build-server-rs
+        run: cargo test --locked nats_submit::tests -- --nocapture
 
   contracts:
     runs-on: ubuntu-24.04
