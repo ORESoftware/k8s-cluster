@@ -4,6 +4,10 @@ Tracked by Linear `DEN-1906` and GitHub issue `ORESoftware/k8s-cluster#861`.
 
 This Argo CD workload receives signed GitHub App webhooks and applies the canonical
 GitHub Project #1 and Linear lifecycle policy from `ORESoftware/project-registry`.
+The source implementation merged in `ORESoftware/project-registry#14` at
+`d31d817cee22cc5cd6d4473a239012f38d16fbe2`; the deployment pins that immutable
+image rather than a moving tag.
+
 It is deliberately single-replica because the initial delivery de-duplication store is
 process-local. Do not scale horizontally until the service uses a durable shared store.
 
@@ -34,12 +38,11 @@ the ExternalSecrets are Ready, and `/healthz` returns 200.
 
 ## Canary and promotion
 
-1. Merge and publish the source image from `ORESoftware/project-registry#14`.
-2. Confirm the pinned image tag exists in GHCR.
-3. Sync this Argo CD Application and verify one Ready pod only.
-4. Open a test issue in a non-critical organization repository and verify its Linear
+1. Confirm the pinned `d31d817cee22cc5cd6d4473a239012f38d16fbe2` image exists in GHCR.
+2. Sync this Argo CD Application and verify one Ready pod only.
+3. Open a test issue in a non-critical organization repository and verify its Linear
    issue, Project item, and Backlog status.
-5. Open a PR containing a `DEN-123` reference and `Closes #123`; verify In Progress.
-6. Merge a canary PR to `integration`; verify the distinct integration state.
-7. Merge the release PR to `main` or `master`; verify Done in GitHub and Linear.
-8. Review GitHub webhook delivery logs before enabling the App fleet-wide.
+4. Open a PR containing a `DEN-123` reference and `Closes #123`; verify In Progress.
+5. Merge a canary PR to `integration`; verify the distinct integration state.
+6. Merge the release PR to `main` or `master`; verify Done in GitHub and Linear.
+7. Review GitHub webhook delivery logs before enabling the App fleet-wide.
