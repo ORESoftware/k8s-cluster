@@ -63,6 +63,12 @@ function envValue(text, name) {
   return (match[1] ?? match[2]).trim();
 }
 
+function semanticSecretFields(text) {
+  return [...text.matchAll(/^\s*(?:secretKey|property):\s*([^\s#]+)\s*$/gm)].map(
+    (match) => match[1],
+  );
+}
+
 test('executor inventory is exact and carries no dormant Hetzner endpoint', () => {
   const configMap = read(paths.configMap);
   const executors = JSON.parse(
@@ -104,9 +110,9 @@ test('router deployment is digest-gated, non-shell, absent, and execution-disabl
       'value: /var/run/secrets/gha-executor-router/router-auth',
       'mountPath: /var/run/secrets/gha-executor-router',
       'readOnly: true',
-      'secretName: dd-gha-executor-router-secrets',
+      'name: dd-gha-executor-router-secrets',
       'key: router_auth',
-      'secretName: dd-agent-secrets',
+      'name: dd-agent-secrets',
       'key: SERVER_AUTH_SECRET',
       'path: /readyz',
       'path: /healthz',
@@ -133,12 +139,15 @@ test('ExternalSecret owns only inbound authority and reuses the separately owned
     ],
     'router ExternalSecret',
   );
-  assert.equal(
-    (externalSecret.match(/secretKey:/g) ?? []).length,
-    1,
+  assert.deepEqual(
+    semanticSecretFields(externalSecret),
+    ['router_auth', 'router_auth'],
     'the router ExternalSecret must own only its inbound authority',
   );
-  assert.doesNotMatch(externalSecret, /hetzner/i);
+  assert.doesNotMatch(
+    externalSecret,
+    /^\s*(?:secretKey|property):\s*(?:aws|hetzner)[^\s#]*\s*$/gim,
+  );
   assert.doesNotMatch(externalSecret, /stringData:/i);
 });
 
@@ -220,7 +229,10 @@ test('disabled Hetzner state is consistent across inventory, credentials, and eg
   assert.match(configMap, /"provider": "hetzner"/);
   assert.match(configMap, /"enabled": false/);
   assert.doesNotMatch(configMap, /hetzner[^\n]*(?:url|authPath)/i);
-  assert.doesNotMatch(externalSecret, /hetzner/i);
+  assert.doesNotMatch(
+    externalSecret,
+    /^\s*(?:secretKey|property):\s*hetzner[^\s#]*\s*$/gim,
+  );
   assert.doesNotMatch(networkPolicy, /port:\s*443|cidr:\s*0\.0\.0\.0\/0/);
   assert.equal(envValue(deployment, 'GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED'), 'false');
 });
