@@ -89,7 +89,8 @@ jobs:
             "consumerPullRequest": 2,
             "sharedAuthority": "ORESoftware/k8s-libs-and-shared-defs",
             "sharedCommit": "3c84cab532b27d328378f09fba5841f02644ae3b",
-            "migrationTool": "declarative-migrations/declarative-migrations@1.4.2",
+            "migrationTool": "declarative-migrations/declarative-postgres-migrate.rs@0.3.2",
+            "migrationBinary": "dpm",
             "reason": "Private cross-repository schema and DPM checks run from k8s-cluster through its existing read-only GitHub App boundary; this consumer PR receives no PAT or copied private key."
           }
           JSON
