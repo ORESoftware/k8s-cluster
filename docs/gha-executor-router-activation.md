@@ -9,6 +9,8 @@ official Actions Runner Controller (ARC) scale sets on AWS and Hetzner.
 
 Activation requires digest-pinned images, SBOM and provenance evidence, and a
 separately reviewed change before either Deployment may leave `replicas: 0`.
+Provider selection is pre-submit only; any post-attempt takeover requires one
+Fiducia-fenced durable assignment.
 
 ## Merge-safe state
 
