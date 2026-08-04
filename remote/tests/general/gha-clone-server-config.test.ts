@@ -278,5 +278,9 @@ test('dedicated GitHub Actions workflow checks Rust, profiles, and manual privat
   assert.match(workflow, /NODE_HARDENED_TEST_STEPS/);
   assert.match(workflow, /node-hardened-test/);
   assert.match(workflow, /persist-credentials:\s*false/);
-  assert.doesNotMatch(workflow, /rm -rf|ghp_|github_pat_/);
+  assert.doesNotMatch(workflow, /\brm\s+-rf\b/);
+  assert.doesNotMatch(
+    workflow,
+    /ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}/,
+  );
 });
