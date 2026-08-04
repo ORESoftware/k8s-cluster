@@ -1,0 +1,41 @@
+name: Temporary report Agent Pontifex publisher run
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/tmp-report-agent-publisher-run.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+jobs:
+  report:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TRACKING_ISSUE: '840'
+      PUBLISHER_SHA: 5b9950d75c56993b46e8ae7b49d5832b47257f8e
+    steps:
+      - name: Record reporter start
+        run: |
+          gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" --body \
+            "Publisher reporter started: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+      - name: Report publisher run
+        run: |
+          set -euo pipefail
+          sleep 5
+          runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/tmp-publish-agent-pontifex-fiducia-servers.yml/runs?event=push&per_page=20")"
+          selected="$(jq -c --arg sha "$PUBLISHER_SHA" '.workflow_runs[] | select(.head_sha == $sha) | {id,html_url,status,conclusion,event,head_sha,created_at,updated_at} ' <<<"$runs" | head -n1)"
+          if test -z "$selected"; then
+            gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" --body \
+              "No publisher workflow run was registered for commit \`$PUBLISHER_SHA\`. The workflow file is likely invalid or the push event was suppressed."
+            exit 1
+          fi
+          gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" --body \
+            "Publisher run snapshot:\n\n\`\`\`json\n${selected}\n\`\`\`"
