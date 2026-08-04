@@ -19,7 +19,7 @@ jobs:
         with:
           ref: ${{ github.head_ref }}
           persist-credentials: false
-      - name: Print bounded retry and test context
+      - name: Print bounded retry implementation context
         shell: bash
         run: |
           set -euo pipefail
@@ -29,23 +29,28 @@ jobs:
           path = Path('src/broker_raft.rs')
           lines = path.read_text(encoding='utf-8').splitlines()
           patterns = [
-              'proxy acquire retry budget exhausted',
-              'BROKER_RPC_TIMEOUT',
-              'follower_proxy_backs_off_on_redirect_ping_pong_instead_of_hot_looping',
-              'AcquireResult::NotLeader',
+              'async fn run_ephemeral',
+              'fn run_ephemeral',
+              'proxy_retry_budget',
+              'proxy_request_retries_total',
+              'RaftRpcResponse::ProxyResponse',
+              'BrokerRaftError::NotLeader',
+              'follower_proxy_rpc_timeout_is_bounded_by_retry_budget',
           ]
-          printed = set()
+          ranges = []
           for pattern in patterns:
               matches = [i for i, line in enumerate(lines) if pattern in line]
               print(f'=== {pattern!r}: {len(matches)} match(es) ===')
               for index in matches:
-                  start = max(0, index - 90)
-                  end = min(len(lines), index + 120)
-                  key = (start, end)
-                  if key in printed:
-                      continue
-                  printed.add(key)
-                  print(f'--- lines {start + 1}-{end} ---')
-                  for number in range(start, end):
-                      print(f'{number + 1:06d}: {lines[number]}')
+                  ranges.append((max(0, index - 80), min(len(lines), index + 130)))
+          merged = []
+          for start, end in sorted(ranges):
+              if merged and start <= merged[-1][1]:
+                  merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+              else:
+                  merged.append((start, end))
+          for start, end in merged:
+              print(f'--- lines {start + 1}-{end} ---')
+              for number in range(start, end):
+                  print(f'{number + 1:06d}: {lines[number]}')
           PY
