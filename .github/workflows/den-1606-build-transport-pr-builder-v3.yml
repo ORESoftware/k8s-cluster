@@ -1,0 +1,112 @@
+name: Diagnose and build DEN-1606 transport product v3
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/den-1606-build-transport-pr-builder-v3.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1606-build-transport-pr-builder-v3
+  cancel-in-progress: false
+
+jobs:
+  build-product-commit:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-1606-build-transport-builder-20260804'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out temporary builder branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1606-build-transport-builder-20260804
+          fetch-depth: 1
+          persist-credentials: true
+          show-progress: false
+
+      - name: Reuse the reviewed v2 transform on the clean product branch
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from textwrap import dedent
+
+          workflow = Path('.github/workflows/den-1606-build-transport-pr-builder-v2.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          step = lines.index(
+              '      - name: Extract reviewed transform and use structural response boundaries'
+          )
+          next_step = lines.index('      - name: Install pinned Rust toolchain', step + 1)
+          run_index = lines.index('        run: |', step + 1, next_step)
+          shell = dedent('\n'.join(lines[run_index + 1 : next_step])) + '\n'
+          if not shell.startswith('set -euo pipefail\n'):
+              raise SystemExit('reviewed v2 transform shell boundary drifted')
+          target = Path('/tmp/den-1606-transport-v2.sh')
+          target.write_text(shell, encoding='utf-8')
+          target.chmod(0o700)
+          PY
+          /tmp/den-1606-transport-v2.sh
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Check formatting and deny warnings
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Run library, binary, and example tests
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --lib --bins --examples -- --nocapture
+
+      - name: Run HTTP API integration tests
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --test http_api -- --nocapture
+
+      - name: Run workflow_run webhook integration tests
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --test webhook_e2e -- --nocapture
+
+      - name: Run Streempilot integration tests
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --test streempilot_http -- --nocapture
+
+      - name: Run documentation tests
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --doc -- --nocapture
+
+      - name: Prove the complete target matrix
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --all-targets -- --nocapture
+
+      - name: Commit product-only diff
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            remote/deployments/gha-clone-server-rs/src/main.rs \
+            remote/deployments/gha-clone-server-rs/tests/http_api.rs \
+            remote/deployments/gha-clone-server-rs/tests/streempilot_http.rs \
+            remote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs \
+            docs/gha-clone-build-server-boundary.md
+          unexpected="$(git diff --cached --name-only | grep -Ev '^(remote/deployments/gha-clone-server-rs/(src/main\.rs|tests/(http_api|streempilot_http|webhook_e2e)\.rs)|docs/gha-clone-build-server-boundary\.md)$' || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected product paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          git commit -m 'fix(DEN-1606): bind clone build-server transport and identity'
+          git push origin HEAD:agent/den-1606-build-transport-hardening-20260804
