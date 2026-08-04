@@ -25,12 +25,23 @@ test('GitOps grants only the exact 3FA repository and workflow path', () => {
   assert.doesNotMatch(config, /3FA-app\/3fa-backend/);
 });
 
-test('planner advertises and compiles only the reviewed generated Rust sequence', () => {
-  assert.match(planner, /"rust-generated-verify"\.to_string\(\)/);
-  assert.match(planner, /fn generated_rust_intent/);
-  assert.match(planner, /fn generated_rust_profile/);
-  assert.match(planner, /generated Rust jobs must use one exact reviewed command sequence/);
+test('planner advertises and compiles only reviewed hardened profiles', () => {
+  for (const marker of [
+    '"rust-generated-verify".to_string()',
+    '"node-hardened-verify".to_string()',
+    '"node-hardened-test".to_string()',
+    'fn generated_rust_intent',
+    'fn generated_rust_profile',
+    'fn hardened_node_intent',
+    'fn hardened_node_profile',
+    'generated Rust jobs must use one exact reviewed command sequence',
+    'hardened Node jobs must use one exact reviewed command sequence',
+  ]) {
+    assert.ok(planner.includes(marker), `planner is missing ${marker}`);
+  }
   for (const command of [
+    'npm ci --ignore-scripts',
+    'npm test',
     'cargo generate-lockfile --manifest-path generated/rust/Cargo.toml',
     'cargo fmt --manifest-path generated/rust/Cargo.toml -- --check',
     'cargo clippy --locked --manifest-path generated/rust/Cargo.toml --all-targets -- -D warnings',
@@ -62,12 +73,12 @@ test('fixture preserves Node before generated Rust and contains no authority-bea
   }
 });
 
-test('planner tests cover exact mapping and adversarial mutations', () => {
+test('planner tests cover exact mappings, command mutations, and revision immutability', () => {
   assert.match(plannerTest, /node-hardened-test/);
   assert.match(plannerTest, /rust-generated-verify/);
   assert.match(plannerTest, /reordered/);
   assert.match(plannerTest, /cargo publish/);
-  assert.match(plannerTest, /dtolnay\/rust-toolchain@stable/);
+  assert.match(plannerTest, /npm audit --audit-level=high/);
   assert.match(plannerTest, /revision: "main"/);
   assert.match(plannerTest, /exact 40-hex commit SHA/);
 });
@@ -76,6 +87,7 @@ test('documentation and permanent workflow preserve the plan-only boundary', () 
   assert.match(documentation, /does not enable the continuity service/);
   assert.match(documentation, /deployment remains at zero replicas/);
   assert.match(documentation, /later PR must prove real-process dispatch/);
+  assert.match(documentation, /action-reference immutability is tracked separately/);
   assert.match(workflow, /remote\/deployments\/gha-clone-server-rs\/\*\*/);
   assert.match(workflow, /remote\/argocd\/dd-next-runtime\/dd-gha-clone-server\.configmap\.yaml/);
   assert.match(workflow, /remote\/tests\/general\/gha-clone-\*\.test\.(?:ts|mjs)/);
