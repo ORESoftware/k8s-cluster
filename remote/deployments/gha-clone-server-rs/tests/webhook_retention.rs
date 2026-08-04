@@ -115,7 +115,7 @@ async fn spawn_server(
             "GHA_CLONE_MAX_WEBHOOK_DELIVERIES",
             max_deliveries.to_string(),
         )
-        .env("GHA_CLONE_BUILD_POLL_SECONDS", "0")
+        .env("GHA_CLONE_BUILD_POLL_SECONDS", "1")
         .env("GHA_CLONE_BUILD_TIMEOUT_SECONDS", "5")
         .env("GHA_CLONE_MAX_RUNS", "32")
         .stdout(Stdio::null())
