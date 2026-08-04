@@ -149,7 +149,7 @@ jobs:
             printf '%s\n' "\`\`\`"
           } > "$challenge_body"
           challenge_json="$(
-            jq -n --rawfile body "$challenge_body" '{body:$body}' \
+            jq -n --rawfile body "$challenge_body" "{body:\$body}" \
               | gh api --method POST "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" --input -
           )"
           challenge_id="$(jq -er '.id | select(type == "number" and . > 0)' <<<"$challenge_json")"
