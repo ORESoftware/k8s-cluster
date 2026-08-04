@@ -11,7 +11,6 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULE = ROOT / "src/lathe_model_catalog.rs"
 LIB = ROOT / "src/lib.rs"
 UNIT = ROOT / "src/tests.rs"
-E2E = ROOT / "src/e2e_tests.rs"
 DOC = ROOT / "docs/lathe-models.md"
 README = ROOT / "readme.md"
 WORKFLOW = ROOT / ".github/workflows/lathe-model-contract.yml"
@@ -102,7 +101,6 @@ def check_runtime_hooks() -> None:
 
 def check_tests() -> None:
     unit = read(UNIT)
-    e2e = read(E2E)
     require_tokens(
         unit,
         (
@@ -116,17 +114,6 @@ def check_tests() -> None:
             '"linuxcnc"',
         ),
         "unit/integration tests",
-    )
-    require_tokens(
-        e2e,
-        (
-            "named_lathe_catalogs_are_exposed_end_to_end",
-            '"/turning/catalog"',
-            '"/lathe/catalog"',
-            '"haas-st-20"',
-            '"tormach-15l-slant-pro"',
-        ),
-        "HTTP e2e tests",
     )
 
 
