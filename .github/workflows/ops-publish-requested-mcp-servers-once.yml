@@ -6,6 +6,7 @@ on:
     paths:
       - scripts/ops/publish_requested_mcp_servers.py
       - scripts/ops/requested_mcp_publisher/**
+      - scripts/ops/run_requested_mcp_publisher_remote.sh
       - scripts/ops/tests/test_publish_requested_mcp_servers.py
       - .github/workflows/ops-publish-requested-mcp-servers-once.yml
       - .github/requested-mcp-publisher.activate
@@ -34,8 +35,10 @@ jobs:
           set -euo pipefail
           printf '%s\n' validation > "$RUNNER_TEMP/requested-mcp-stage"
           : > "$RUNNER_TEMP/requested-mcp-verified"
+          : > "$RUNNER_TEMP/requested-mcp-error"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           gh issue comment 800 --repo ORESoftware/k8s-cluster --body \
-            "Requested MCP publisher started for trusted revision \`${GITHUB_SHA}\`. Status reports from this workflow are stage-only and contain no credentials or raw provider responses."
+            "Requested MCP publisher started for trusted revision \`${GITHUB_SHA}\`. Run: ${run_url}. Status reports are bounded and contain no credentials or raw provider responses."
 
       - name: Check out the trusted main revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -52,6 +55,7 @@ jobs:
           python3 scripts/ops/publish_requested_mcp_servers.py --check > /tmp/requested-mcp-check.json
           test "$(jq '.repositories | length' /tmp/requested-mcp-check.json)" -eq 5
           test "$(cat .github/requested-mcp-publisher.activate)" = "publish-five-mcp-repositories-v1"
+          bash -n scripts/ops/run_requested_mcp_publisher_remote.sh
           printf '%s\n' aws-oidc > "$RUNNER_TEMP/requested-mcp-stage"
 
       - name: Configure AWS OIDC credentials
@@ -69,78 +73,17 @@ jobs:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
         run: |
           set -euo pipefail
-          printf '%s\n' ssm-publication > "$RUNNER_TEMP/requested-mcp-stage"
+          printf '%s\n' ssm-prerequisites > "$RUNNER_TEMP/requested-mcp-stage"
           test -n "${INSTANCE_ID:-}"
           trusted_sha="$(git rev-parse HEAD)"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
 
-          remote_script="$RUNNER_TEMP/publish-requested-mcp-repositories.sh"
-          cat > "$remote_script" <<'REMOTE_EOF'
-          #!/usr/bin/env bash
-          set -Eeuo pipefail
-          umask 077
-
-          trusted_sha="${1:?trusted SHA required}"
-          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
-          work="$(mktemp -d /tmp/requested-mcp-publisher.XXXXXX)"
-          cleanup() {
-            unset GH_TOKEN encoded_pat
-            rm -rf "$work" /tmp/requested-mcp-publication.json
-          }
-          trap cleanup EXIT
-
-          command -v kubectl >/dev/null
-          command -v git >/dev/null
-          command -v python3 >/dev/null
-          test -r /etc/kubernetes/admin.conf
-
-          encoded_pat="$(
-            KUBECONFIG=/etc/kubernetes/admin.conf \
-              kubectl -n default get secret dd-agent-secrets \
-              -o jsonpath='{.data.GH_PAT}'
-          )"
-          test -n "$encoded_pat"
-          GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode)"
-          unset encoded_pat
-          test -n "$GH_TOKEN"
-          [[ "$GH_TOKEN" != *$'\n'* && "$GH_TOKEN" != *$'\r'* ]]
-          export GH_TOKEN
-
-          git init "$work/k8s-cluster"
-          git -C "$work/k8s-cluster" remote add origin https://github.com/ORESoftware/k8s-cluster.git
-          git -C "$work/k8s-cluster" fetch --depth=1 origin "$trusted_sha"
-          git -C "$work/k8s-cluster" checkout --detach FETCH_HEAD
-          test "$(git -C "$work/k8s-cluster" rev-parse HEAD)" = "$trusted_sha"
-
-          cd "$work/k8s-cluster"
-          python3 -m py_compile scripts/ops/publish_requested_mcp_servers.py scripts/ops/requested_mcp_publisher/*.py
-          python3 -m unittest -v scripts/ops/tests/test_publish_requested_mcp_servers.py
-          python3 scripts/ops/publish_requested_mcp_servers.py \
-            --execute \
-            --report /tmp/requested-mcp-publication.json
-
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          report = json.loads(Path('/tmp/requested-mcp-publication.json').read_text())
-          rows = report.get('repositories')
-          if not isinstance(rows, list) or len(rows) != 5:
-              raise SystemExit('publication report must contain exactly five repositories')
-          for row in rows:
-              print(
-                  'MCP_REPOSITORY_VERIFIED '
-                  f"{row['full_name']} visibility={row['visibility']} "
-                  f"main={row['current_main_sha']}"
-              )
-          PY
-          REMOTE_EOF
-          chmod 700 "$remote_script"
-
-          encoded_script="$(base64 --wrap=0 "$remote_script")"
-          remote_command="printf '%s' '$encoded_script' | base64 --decode > /tmp/publish-requested-mcp-repositories.sh; chmod 700 /tmp/publish-requested-mcp-repositories.sh; bash /tmp/publish-requested-mcp-repositories.sh '$trusted_sha' > /tmp/publish-requested-mcp-repositories.log 2>&1; status=\$?; tail -c 20000 /tmp/publish-requested-mcp-repositories.log 2>/dev/null || true; rm -f /tmp/publish-requested-mcp-repositories.sh /tmp/publish-requested-mcp-repositories.log; exit \$status"
+          encoded_script="$(base64 --wrap=0 scripts/ops/run_requested_mcp_publisher_remote.sh)"
+          remote_command="printf '%s' '$encoded_script' | base64 --decode > /tmp/run-requested-mcp-publisher.sh; chmod 700 /tmp/run-requested-mcp-publisher.sh; bash /tmp/run-requested-mcp-publisher.sh '$trusted_sha' > /tmp/run-requested-mcp-publisher.log 2>&1; status=\$?; tail -c 20000 /tmp/run-requested-mcp-publisher.log 2>/dev/null || true; rm -f /tmp/run-requested-mcp-publisher.sh /tmp/run-requested-mcp-publisher.log; exit \$status"
           parameters="$RUNNER_TEMP/ssm-requested-mcp-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
 
+          printf '%s\n' ssm-dispatch > "$RUNNER_TEMP/requested-mcp-stage"
           command_id="$(
             aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
@@ -152,6 +95,7 @@ jobs:
           )"
           echo "ssm_command_id=$command_id"
 
+          printf '%s\n' ssm-wait > "$RUNNER_TEMP/requested-mcp-stage"
           status=Pending
           for _ in $(seq 1 480); do
             status="$(
@@ -166,6 +110,7 @@ jobs:
             esac
             sleep 3
           done
+          printf 'ssm-remote-%s\n' "$status" > "$RUNNER_TEMP/requested-mcp-stage"
 
           invocation="$RUNNER_TEMP/requested-mcp-invocation.json"
           aws ssm get-command-invocation \
@@ -177,9 +122,14 @@ jobs:
           jq -r '.Stdout // ""' "$invocation" \
             | grep -E '^MCP_REPOSITORY_VERIFIED [A-Za-z0-9._-]+/[A-Za-z0-9._-]+ visibility=(public|private) main=[0-9a-f]{40}$' \
             > "$RUNNER_TEMP/requested-mcp-verified" || true
-          test "$(wc -l < "$RUNNER_TEMP/requested-mcp-verified")" -eq 5
+          jq -r '.Stdout // ""' "$invocation" \
+            | grep -E '^MCP_PUBLISHER_ERROR stage=[a-z0-9-]+ code=[0-9]+$' \
+            | tail -n 1 > "$RUNNER_TEMP/requested-mcp-error" || true
+
           test "$(jq -r '.Status' "$invocation")" = Success
           test "$status" = Success
+          test "$(wc -l < "$RUNNER_TEMP/requested-mcp-verified")" -eq 5
+          test ! -s "$RUNNER_TEMP/requested-mcp-error"
           printf '%s\n' verified > "$RUNNER_TEMP/requested-mcp-stage"
           cat "$RUNNER_TEMP/requested-mcp-verified"
 
@@ -192,13 +142,18 @@ jobs:
         run: |
           set -euo pipefail
           stage="$(cat "$RUNNER_TEMP/requested-mcp-stage" 2>/dev/null || printf unknown)"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           body="$RUNNER_TEMP/requested-mcp-issue-comment.md"
           {
             echo "### Requested MCP publisher result"
             echo
             echo "- Trusted revision: \`${GITHUB_SHA}\`"
+            echo "- Run: ${run_url}"
             echo "- Job status: \`${JOB_STATUS}\`"
             echo "- Last sanitized stage: \`${stage}\`"
+            if [[ -s "$RUNNER_TEMP/requested-mcp-error" ]]; then
+              echo "- Classified remote error: \`$(cat "$RUNNER_TEMP/requested-mcp-error")\`"
+            fi
             if [[ "$JOB_STATUS" = success && "$stage" = verified ]]; then
               echo
               echo '```text'
