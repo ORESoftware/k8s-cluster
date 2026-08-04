@@ -125,7 +125,6 @@ export function sleep(ms, signal) {
       signal?.removeEventListener('abort', onAbort);
       resolve();
     }, ms);
-    timer.unref?.();
 
     function onAbort() {
       clearTimeout(timer);

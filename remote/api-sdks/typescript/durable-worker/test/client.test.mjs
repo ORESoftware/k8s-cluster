@@ -348,7 +348,6 @@ test('aborts the handler and suppresses completion when the lease heartbeat is f
               { once: true },
             );
           });
-          resolve();
         },
       },
       onError(error) {
