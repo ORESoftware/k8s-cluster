@@ -1,0 +1,167 @@
+name: Finalize DEN-1550 raw policy byte hardening exactly once
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/den-1550-raw-policy-current-dev-v2-finalize.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1550-raw-policy-current-dev-v2-finalize
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-1550-raw-policy-current-dev-v2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - name: Checkout the exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1550-raw-policy-current-dev-v2
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Materialize the reviewed hardening with corrected static assertions
+        run: |
+          set -euo pipefail
+          base='3917b9d453adf589f3c998566e13a3b4ac52851f'
+          carrier='.github/workflows/den-1550-raw-policy-current-dev-v2-finalize.yml'
+          actual="$(git diff --name-only "$base"...HEAD)"
+          if [[ "$actual" != "$carrier" ]]; then
+            printf 'unexpected pre-transform paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+
+          git show \
+            54a42741be23335d841e5312771abd73e48ad587:.github/workflows/den-1550-raw-policy-current-dev-v2-once.yml \
+            > /tmp/reviewed-policy-carrier.yml
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path('/tmp/reviewed-policy-carrier.yml').read_text(encoding='utf-8').splitlines()
+          step = source.index('      - name: Preserve and validate the original policy bytes')
+          run_line = source.index('        run: |', step + 1)
+          next_step = next(
+              index for index in range(run_line + 1, len(source))
+              if source[index].startswith('      - name: Check out the exact private remote/libs gitlink')
+          )
+          prefix = '          '
+          block = source[run_line + 1:next_step]
+          if any(line.strip() and not line.startswith(prefix) for line in block):
+              raise SystemExit('reviewed carrier indentation drifted')
+          script = '\n'.join(
+              line[len(prefix):] if line.startswith(prefix) else ''
+              for line in block
+          ).lstrip('\n') + '\n'
+
+          old_carrier = "carrier='.github/workflows/den-1550-raw-policy-current-dev-v2-once.yml'"
+          new_carrier = "carrier='.github/workflows/den-1550-raw-policy-current-dev-v2-finalize.yml'"
+          if script.count(old_carrier) != 1:
+              raise SystemExit('reviewed carrier scope guard drifted')
+          script = script.replace(old_carrier, new_carrier, 1)
+
+          start_marker = "static_path = Path('remote/tests/general/build-server-profile-repository-policy.test.mjs')"
+          end_marker = "static_path.write_text(static, encoding='utf-8')"
+          start = script.find(start_marker)
+          end_start = script.find(end_marker, start)
+          if start < 0 or end_start < 0:
+              raise SystemExit('reviewed static-contract transformation drifted')
+          end = end_start + len(end_marker)
+
+          replacement = r'''static_path = Path('remote/tests/general/build-server-profile-repository-policy.test.mjs')
+          static = static_path.read_text(encoding='utf-8')
+
+          config_marker = '  assert.match(config, /BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON/);\n'
+          config_addition = config_marker + (
+              '  assert.match(config, /raw_env\\("BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON"\\)/);\n'
+              '  assert.doesNotMatch(\n'
+              '    config,\n'
+              '    /first_env\\(&\\["BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON"\\]\\)/,\n'
+              '  );\n'
+          )
+          static = replace_once(
+              static,
+              config_marker,
+              config_addition,
+              'static raw environment contract',
+          )
+
+          policy_marker = '  assert.match(policy, /MAX_POLICY_BYTES/);\n'
+          policy_addition = policy_marker + (
+              '  assert.match(policy, /raw_untrimmed\\.len\\(\\) > MAX_POLICY_BYTES/);\n'
+              '  assert.match(\n'
+              '    policy,\n'
+              '    /raw_policy_accepts_the_exact_byte_limit_and_rejects_one_more_byte/,\n'
+              '  );\n'
+              '  assert.match(\n'
+              '    policy,\n'
+              '    /raw_policy_limit_counts_utf8_bytes_before_unicode_whitespace_trimming/,\n'
+              '  );\n'
+          )
+          static = replace_once(
+              static,
+              policy_marker,
+              policy_addition,
+              'static raw byte-limit contract',
+          )
+          static_path.write_text(static, encoding='utf-8')'''
+
+          script = script[:start] + replacement + script[end:]
+          Path('/tmp/apply-den-1550.sh').write_text(script, encoding='utf-8')
+          PY
+
+          bash /tmp/apply-den-1550.sh
+          git diff --check
+
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate the complete build-server surface
+        run: |
+          set -euo pipefail
+          cd remote/deployments/build-server-rs
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo check --locked --all-targets
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+          cd ../../..
+          node --test remote/tests/general/build-server-profile-repository-policy.test.mjs
+          git diff --check
+
+      - name: Commit and push the three-file hardening
+        run: |
+          set -euo pipefail
+          base='3917b9d453adf589f3c998566e13a3b4ac52851f'
+          rm .github/workflows/den-1550-raw-policy-current-dev-v2-finalize.yml
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'security(DEN-1550): preserve and bound raw profile policy bytes'
+          expected=$'remote/deployments/build-server-rs/src/config.rs\nremote/deployments/build-server-rs/src/config/profile_policy.rs\nremote/tests/general/build-server-profile-repository-policy.test.mjs'
+          actual="$(git diff --name-only "$base"...HEAD | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'unexpected final product paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          git push origin HEAD:agent/den-1550-raw-policy-current-dev-v2
