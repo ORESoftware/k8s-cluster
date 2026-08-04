@@ -14,8 +14,7 @@ use uuid::Uuid;
 const ROUTER_BINARY: &str = env!("CARGO_BIN_EXE_gha-executor-router");
 const VALID_ROUTER_AUTH: &str = "router-auth-secret-with-at-least-32-bytes";
 const VALID_EXECUTOR_AUTH: &str = "executor-auth-secret-with-at-least-32-bytes";
-const MULTILINE_ROUTER_AUTH: &str =
-    "router-auth-secret-first-half\nrouter-auth-secret-second-half";
+const MULTILINE_ROUTER_AUTH: &str = "router-auth-secret-first-half\nrouter-auth-secret-second-half";
 const MULTILINE_EXECUTOR_AUTH: &str =
     "executor-auth-secret-first-half\r\nexecutor-auth-secret-second-half";
 
