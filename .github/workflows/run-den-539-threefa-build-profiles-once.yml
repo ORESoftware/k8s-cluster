@@ -1,0 +1,95 @@
+# Pull-request carrier for the reviewed DEN-539 product builder. Both temporary
+# workflows delete themselves before the product commit.
+name: Run DEN-539 exact 3FA build profiles once
+
+on:
+  pull_request:
+    branches:
+      - dev
+    types:
+      - synchronize
+    paths:
+      - .github/workflows/run-den-539-threefa-build-profiles-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-539-threefa-build-profiles-current-dev
+  cancel-in-progress: false
+
+jobs:
+  build-product:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-539-threefa-build-profiles-current-dev'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-539-threefa-build-profiles-current-dev
+          fetch-depth: 1
+          persist-credentials: true
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v4.4.0
+        with:
+          node-version: '22.17.0'
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Execute the reviewed transform
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/apply-den-539-threefa-build-profiles-once.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          start = lines.index('      - name: Apply exact profiles and repository admission')
+          end = lines.index('      - name: Validate fixed profiles and exact admission', start + 1)
+          run_index = lines.index('        run: |', start, end)
+          block = lines[run_index + 1:end]
+          heredoc_start = next(i for i, line in enumerate(block) if line.strip() == "python3 - <<'PY'")
+          heredoc_end = max(i for i, line in enumerate(block) if i > heredoc_start and line.strip() == 'PY')
+          prefix = '          '
+          script = '\n'.join(
+              line[len(prefix):] if line.startswith(prefix) else line
+              for line in block[heredoc_start + 1:heredoc_end]
+          ) + '\n'
+          exec(compile(script, str(workflow), 'exec'), {'__name__': '__main__'})
+          Path('.github/workflows/run-den-539-threefa-build-profiles-once.yml').unlink()
+          PY
+
+      - name: Validate fixed profiles and exact admission
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 --check \
+            remote/deployments/build-server-rs/src/profiles.rs \
+            remote/deployments/build-server-rs/src/validation.rs
+          python3 -m py_compile remote/tests/general/threefa-build-profile-contract.test.py
+          python3 remote/tests/general/threefa-build-profile-contract.test.py
+
+      - name: Commit the product-only changes
+        run: |
+          set -euo pipefail
+          git diff --check
+          test ! -e .github/workflows/apply-den-539-threefa-build-profiles-once.yml
+          test ! -e .github/workflows/run-den-539-threefa-build-profiles-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          workflow_non_deletions="$(git diff --cached --name-only --diff-filter=ACMRTUXB -- .github/workflows | grep -v '^\.github/workflows/gha-threefa-build-profiles\.yml$' || true)"
+          test -z "$workflow_non_deletions"
+          allowed='^(\.github/workflows/(apply-den-539-threefa-build-profiles-once|run-den-539-threefa-build-profiles-once|gha-threefa-build-profiles)\.yml|docs/gha-threefa-build-profile-boundary\.md|remote/argocd/dd-next-runtime/dd-build-server-gha-continuity\.patch\.yaml|remote/deployments/build-server-rs/src/(profiles|validation)\.rs|remote/tests/general/threefa-build-profile-contract\.test\.py)$'
+          unexpected="$(git diff --cached --name-only | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected staged paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          git commit -m 'feat(DEN-539): add exact 3FA build profiles'
+          git push origin HEAD:agent/den-539-threefa-build-profiles-current-dev
