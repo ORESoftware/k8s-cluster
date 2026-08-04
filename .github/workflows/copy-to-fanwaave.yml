@@ -3,12 +3,12 @@ run-name: Copy ORESoftware/push-notification-server.rs to fanwaave
 
 on:
   issue_comment:
-    types: [created]
+    types:
+      - created
 
 permissions:
   contents: read
   issues: write
-  pull-requests: write
 
 concurrency:
   group: copy-push-notification-server-to-fanwaave
@@ -16,278 +16,44 @@ concurrency:
 
 jobs:
   copy:
-    if: >-
-      github.repository == 'ORESoftware/push-notification-server.rs' &&
-      github.event.issue.number == 33 &&
-      github.event.comment.user.login == 'ORESoftware' &&
-      github.event.comment.author_association == 'OWNER' &&
-      github.event.comment.body == '/copy-to-fanwaave'
+    if: "${{ github.repository == 'ORESoftware/push-notification-server.rs' && github.event.issue.number == 33 && github.event.comment.user.login == 'ORESoftware' && github.event.comment.body == '/copy-to-fanwaave' }}"
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
+      COMMENT_TOKEN: ${{ github.token }}
       SOURCE_REPOSITORY: ORESoftware/push-notification-server.rs
-      SOURCE_REPOSITORY_ID: '1314172992'
+      SOURCE_REPOSITORY_ID: "1314172992"
       DESTINATION_ORGANIZATION: fanwaave
       DESTINATION_NAME: push-notification-server.rs
       DESTINATION_REPOSITORY: fanwaave/push-notification-server.rs
       EXPECTED_LOGIN: ORESoftware
-      TRACKING_ISSUE: '33'
-      GH_CONFIG_DIR: ${{ runner.temp }}/fanwaave-copy-owner-auth
+      TRACKING_ISSUE: "33"
 
     steps:
-      - name: Bind the exact source repository state
-        id: source
+      - name: Check out the exact default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: main
+
+      - name: Validate the publisher shell
+        shell: bash
+        run: bash -n scripts/ops/copy_to_fanwaave.sh
+
+      - name: Create and copy the Fanwaave repository
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -Eeuo pipefail
-          source_json="$(gh api "repos/${SOURCE_REPOSITORY}")"
-          test "$(jq -er '.id | tostring' <<<"$source_json")" = "$SOURCE_REPOSITORY_ID"
-          test "$(jq -er .visibility <<<"$source_json")" = public
-          test "$(jq -er .default_branch <<<"$source_json")" = main
-          source_main="$(gh api "repos/${SOURCE_REPOSITORY}/git/ref/heads/main" --jq .object.sha)"
-          [[ "$source_main" =~ ^[0-9a-f]{40}$ ]]
-          echo "main_sha=$source_main" >> "$GITHUB_OUTPUT"
-
-      - name: Authorize the owner, create the repository, and copy Git history
-        shell: bash
-        env:
-          COMMENT_TOKEN: ${{ github.token }}
-          SOURCE_MAIN: ${{ steps.source.outputs.main_sha }}
-        run: |
-          set -Eeuo pipefail
-          umask 077
-          rm -rf "$GH_CONFIG_DIR"
-          mkdir -p "$GH_CONFIG_DIR"
-          auth_log="$RUNNER_TEMP/fanwaave-copy-owner-auth.log"
-          : > "$auth_log"
-          auth_pid=''
-          auth_comment_id=''
-
-          cleanup() {
-            if [[ -n "${auth_pid:-}" ]] && kill -0 "$auth_pid" 2>/dev/null; then
-              kill "$auth_pid" 2>/dev/null || true
-              wait "$auth_pid" 2>/dev/null || true
-            fi
-            if [[ -n "${auth_comment_id:-}" ]]; then
-              GH_TOKEN="$COMMENT_TOKEN" gh api --method DELETE \
-                "repos/${GITHUB_REPOSITORY}/issues/comments/${auth_comment_id}" \
-                >/dev/null 2>&1 || true
-            fi
-            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN token
-            rm -f "$auth_log"
-            rm -rf "$GH_CONFIG_DIR"
-          }
-          trap cleanup EXIT
-
-          (
-            env -u GH_TOKEN -u GITHUB_TOKEN \
-              GH_PROMPT_DISABLED=1 NO_COLOR=1 BROWSER=/bin/false \
-              gh auth login --hostname github.com --git-protocol https --web \
-                --scopes repo,read:org --insecure-storage
-          ) > "$auth_log" 2>&1 &
-          auth_pid=$!
-
-          code=''
-          for _ in $(seq 1 45); do
-            code="$(tr -d '\r' < "$auth_log" | grep -Eo '[A-Z0-9]{4}-[A-Z0-9]{4}' | head -n1 || true)"
-            test -z "$code" || break
-            kill -0 "$auth_pid" 2>/dev/null || break
-            sleep 1
-          done
-          if [[ -z "$code" ]]; then
-            wait "$auth_pid" 2>/dev/null || true
-            auth_pid=''
-            sed -E 's/[A-Z0-9]{4}-[A-Z0-9]{4}/[REDACTED-CODE]/g' "$auth_log" >&2 || true
-            exit 1
-          fi
-
-          authorization_body="**Fanwaave repository-copy authorization:** open https://github.com/login/device and enter **\`$code\`**. This run creates only \`${DESTINATION_REPOSITORY}\`, copies source branches and tags without deleting source refs, creates a migration commit on a feature branch, and opens a pull request. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          auth_comment_id="$(GH_TOKEN="$COMMENT_TOKEN" gh api --method POST \
-            "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_ISSUE}/comments" \
-            -f body="$authorization_body" --jq .id)"
-          [[ "$auth_comment_id" =~ ^[0-9]+$ ]]
-          unset authorization_body
-          echo "::notice title=GitHub device authorization::Open https://github.com/login/device and enter $code"
-
-          set +e
-          wait "$auth_pid"
-          auth_rc=$?
-          set -e
-          auth_pid=''
-          if [[ "$auth_rc" -ne 0 ]]; then
-            sed -E 's/[A-Z0-9]{4}-[A-Z0-9]{4}/[REDACTED-CODE]/g' "$auth_log" >&2 || true
-            exit "$auth_rc"
-          fi
-          rm -f "$auth_log"
-
-          if GH_TOKEN="$COMMENT_TOKEN" gh api --method DELETE \
-            "repos/${GITHUB_REPOSITORY}/issues/comments/${auth_comment_id}" >/dev/null; then
-            auth_comment_id=''
-          fi
-
-          test "$(env -u GH_TOKEN -u GITHUB_TOKEN gh api user --jq .login)" = "$EXPECTED_LOGIN"
-          membership="$(env -u GH_TOKEN -u GITHUB_TOKEN gh api \
-            "user/memberships/orgs/${DESTINATION_ORGANIZATION}")"
-          test "$(jq -er .state <<<"$membership")" = active
-          test "$(jq -er .role <<<"$membership")" = admin
-
-          token="$(env -u GH_TOKEN -u GITHUB_TOKEN gh auth token)"
-          test -n "$token"
-          [[ "$token" != *$'\n'* && "$token" != *$'\r'* && "$token" != *$'\t'* && "$token" != *' '* ]]
-          echo "::add-mask::$token"
-          export GH_TOKEN="$token"
-          export GITHUB_TOKEN="$token"
-
-          destination_json="$RUNNER_TEMP/fanwaave-destination.json"
-          destination_error="$RUNNER_TEMP/fanwaave-destination.error"
-          if gh api "repos/${DESTINATION_REPOSITORY}" > "$destination_json" 2> "$destination_error"; then
-            test "$(jq -er .full_name < "$destination_json")" = "$DESTINATION_REPOSITORY"
-            test "$(jq -er .visibility < "$destination_json")" = public
-          else
-            grep -q 'HTTP 404' "$destination_error"
-            gh api --method POST "orgs/${DESTINATION_ORGANIZATION}/repos" \
-              -f name="$DESTINATION_NAME" \
-              -f description='Provider-neutral Rust push notification delivery service for FCM, APNs, Expo, and Web Push' \
-              -f visibility=public \
-              -F private=false \
-              -F has_issues=true \
-              -F has_projects=false \
-              -F has_wiki=false \
-              -F auto_init=false \
-              -F allow_squash_merge=true \
-              -F allow_merge_commit=true \
-              -F allow_rebase_merge=false \
-              -F delete_branch_on_merge=true \
-              > "$destination_json"
-            test "$(jq -er .full_name < "$destination_json")" = "$DESTINATION_REPOSITORY"
-          fi
-          rm -f "$destination_error"
-          destination_id="$(jq -er '.id | tostring' < "$destination_json")"
-          [[ "$destination_id" =~ ^[0-9]+$ ]]
-
-          existing_main=''
-          if existing_main="$(gh api "repos/${DESTINATION_REPOSITORY}/git/ref/heads/main" --jq .object.sha 2>/dev/null)"; then
-            test "$existing_main" = "$SOURCE_MAIN"
-          fi
-
-          askpass="$RUNNER_TEMP/fanwaave-copy-askpass.sh"
-          cat > "$askpass" <<'ASKPASS'
-          #!/usr/bin/env sh
-          case "${1:-}" in
-            *Username*) printf '%s\n' 'x-access-token' ;;
-            *Password*) printf '%s\n' "${GITHUB_TOKEN:?token required}" ;;
-            *) exit 1 ;;
-          esac
-          ASKPASS
-          chmod 700 "$askpass"
-          export GIT_ASKPASS="$askpass"
-          export GIT_ASKPASS_REQUIRE=force
-          export GIT_TERMINAL_PROMPT=0
-          export GIT_CONFIG_COUNT=1
-          export GIT_CONFIG_KEY_0=credential.helper
-          export GIT_CONFIG_VALUE_0=''
-
-          mirror="$RUNNER_TEMP/push-notification-server.git"
-          git clone --mirror "https://github.com/${SOURCE_REPOSITORY}.git" "$mirror"
-          test "$(git -C "$mirror" rev-parse refs/heads/main)" = "$SOURCE_MAIN"
-          git -C "$mirror" remote add fanwaave "https://github.com/${DESTINATION_REPOSITORY}.git"
-          git -C "$mirror" push --porcelain fanwaave 'refs/heads/*:refs/heads/*'
-          git -C "$mirror" push --porcelain fanwaave 'refs/tags/*:refs/tags/*'
-
-          gh api --method PATCH "repos/${DESTINATION_REPOSITORY}" \
-            -f default_branch=main \
-            -F allow_squash_merge=true \
-            -F allow_merge_commit=true \
-            -F allow_rebase_merge=false \
-            -F delete_branch_on_merge=true \
-            >/dev/null
-          test "$(gh api "repos/${DESTINATION_REPOSITORY}/git/ref/heads/main" --jq .object.sha)" = "$SOURCE_MAIN"
-
-          migration_branch='agent/establish-fanwaave-home'
-          if ! gh api "repos/${DESTINATION_REPOSITORY}/git/ref/heads/${migration_branch}" \
-            >/dev/null 2>&1; then
-            gh api --method POST "repos/${DESTINATION_REPOSITORY}/git/refs" \
-              -f ref="refs/heads/${migration_branch}" \
-              -f sha="$SOURCE_MAIN" >/dev/null
-          fi
-
-          migration_file="$RUNNER_TEMP/fanwaave-repository-copy.md"
-          cat > "$migration_file" <<EOF
-          # Fanwaave repository home
-
-          This repository was copied from \`${SOURCE_REPOSITORY}\` after Fanwaave was selected as the canonical product organization.
-
-          - Source repository ID: \`${SOURCE_REPOSITORY_ID}\`
-          - Source \`main\` at copy: \`${SOURCE_MAIN}\`
-          - Destination repository ID: \`${destination_id}\`
-          - Destination: \`${DESTINATION_REPOSITORY}\`
-
-          Source branches and tags were copied without deleting or rewriting the source repository. Future product work should target the Fanwaave repository.
-          EOF
-          encoded_content="$(base64 -w0 < "$migration_file")"
-          content_sha=''
-          if content_sha="$(gh api --method GET \
-            "repos/${DESTINATION_REPOSITORY}/contents/docs/fanwaave-repository-copy.md" \
-            -f ref="$migration_branch" --jq .sha 2>/dev/null)"; then
-            gh api --method PUT \
-              "repos/${DESTINATION_REPOSITORY}/contents/docs/fanwaave-repository-copy.md" \
-              -f message='Establish the Fanwaave repository home' \
-              -f content="$encoded_content" \
-              -f branch="$migration_branch" \
-              -f sha="$content_sha" >/dev/null
-          else
-            gh api --method PUT \
-              "repos/${DESTINATION_REPOSITORY}/contents/docs/fanwaave-repository-copy.md" \
-              -f message='Establish the Fanwaave repository home' \
-              -f content="$encoded_content" \
-              -f branch="$migration_branch" >/dev/null
-          fi
-
-          pr_url="$(gh api --method GET "repos/${DESTINATION_REPOSITORY}/pulls" \
-            -f state=open -f head="${DESTINATION_ORGANIZATION}:${migration_branch}" \
-            --jq '.[0].html_url // empty')"
-          if [[ -z "$pr_url" ]]; then
-            pr_body="$RUNNER_TEMP/fanwaave-pr-body.md"
-            cat > "$pr_body" <<EOF
-          ## What changed
-
-          - copied the complete source branch and tag history from \`${SOURCE_REPOSITORY}\`
-          - retained \`main\` at source commit \`${SOURCE_MAIN}\`
-          - added migration provenance for the Fanwaave repository
-
-          ## Why
-
-          Fanwaave is the canonical product organization for the Rust push notification server. The source repository remains intact while this pull request establishes the destination as an independently reviewable GitHub repository.
-
-          ## Validation
-
-          - destination repository ID: \`${destination_id}\`
-          - destination \`main\` equals the bound source \`main\`
-          - repository creation and pushes used an ephemeral owner-authorized OAuth token; no PAT was stored
-          EOF
-            pr_url="$(gh api --method POST "repos/${DESTINATION_REPOSITORY}/pulls" \
-              -f title='Establish the Fanwaave repository home' \
-              -f head="$migration_branch" \
-              -f base=main \
-              -F maintainer_can_modify=true \
-              -f body="$(cat "$pr_body")" \
-              --jq .html_url)"
-          fi
-
-          completion_body="Copied \`${SOURCE_REPOSITORY}\` to [\`${DESTINATION_REPOSITORY}\`](https://github.com/${DESTINATION_REPOSITORY}) without deleting the source. Destination repository ID: \`${destination_id}\`. Migration PR: ${pr_url}. Source main copied: \`${SOURCE_MAIN}\`."
-          GH_TOKEN="$COMMENT_TOKEN" gh api --method POST \
-            "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_ISSUE}/comments" \
-            -f body="$completion_body" >/dev/null
+          GH_CONFIG_DIR: ${{ runner.temp }}/fanwaave-copy-owner-auth
+        run: bash scripts/ops/copy_to_fanwaave.sh
 
       - name: Record a failed copy attempt
-        if: ${{ failure() }}
+        if: "${{ failure() }}"
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api --method POST \
-            "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_ISSUE}/comments" \
-            -f body="Fanwaave repository copy failed closed. No source refs were deleted or force-pushed. Inspect https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." \
-            >/dev/null || true
+        run: >-
+          gh api --method POST
+          "repos/${SOURCE_REPOSITORY}/issues/${TRACKING_ISSUE}/comments"
+          -f body="Fanwaave repository copy failed closed. No source refs were deleted or force-pushed. Inspect https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}."
+          >/dev/null || true
