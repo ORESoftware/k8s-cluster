@@ -29,10 +29,10 @@ pub async fn list_page(State(state): State<AppState>) -> AppResult<Markup> {
         div class="split" style="margin-top: 16px;" {
             section class="card" {
                 h3 { "New tenant" }
-                // No `hx-on:*` handlers — those would require
-                // `'unsafe-eval'` in our CSP. The form stays populated
-                // after a successful submit so the operator can spot-
-                // check the new row and clear/edit manually if needed.
+                p class="muted tight" {
+                    "Every tenant must be created with its first Shared Auth owner. "
+                    "Use the canonical Shared Auth subject, not an email address."
+                }
                 form
                     class="stacked"
                     hx-post="/admin/tenants"
@@ -61,6 +61,18 @@ pub async fn list_page(State(state): State<AppState>) -> AppResult<Markup> {
                             placeholder="Dancing Dragons"
                             maxlength="120"
                             autocomplete="off";
+                    }
+                    label class="field" {
+                        "Initial Shared Auth owner subject"
+                        input
+                            type="text"
+                            name="owner_shared_user_id"
+                            required=""
+                            placeholder="shared-auth-user-id"
+                            minlength="1"
+                            maxlength="200"
+                            autocomplete="off"
+                            spellcheck="false";
                     }
                     div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;" {
                         label class="field" {
@@ -141,11 +153,9 @@ pub async fn create(
     headers: HeaderMap,
     Form(input): Form<CreateTenantForm>,
 ) -> AppResult<Response> {
-    // Validate before we hit the service layer so the user gets a
-    // specific message and we don't write a noisy audit log entry for
-    // obvious junk.
     let slug = input.slug.trim().to_lowercase();
     let display_name = input.display_name.trim().to_string();
+    let owner_shared_user_id = input.owner_shared_user_id.trim().to_string();
     let country_code = input.country_code.trim().to_uppercase();
     let us_state = input.us_state.and_then(non_empty).map(|s| s.to_uppercase());
     let base_currency = input
@@ -153,14 +163,17 @@ pub async fn create(
         .and_then(non_empty)
         .map(|s| s.to_uppercase());
 
-    validation::slug(&slug).map_err(|m| AppError::BadRequest(m.into()))?;
-    validation::display_name(&display_name).map_err(|m| AppError::BadRequest(m.into()))?;
-    validation::country_code(&country_code).map_err(|m| AppError::BadRequest(m.into()))?;
-    if let Some(s) = us_state.as_deref() {
-        validation::us_state(s).map_err(|m| AppError::BadRequest(m.into()))?;
+    validation::slug(&slug).map_err(|message| AppError::BadRequest(message.into()))?;
+    validation::display_name(&display_name)
+        .map_err(|message| AppError::BadRequest(message.into()))?;
+    validation::country_code(&country_code)
+        .map_err(|message| AppError::BadRequest(message.into()))?;
+    if let Some(state_code) = us_state.as_deref() {
+        validation::us_state(state_code).map_err(|message| AppError::BadRequest(message.into()))?;
     }
-    if let Some(c) = base_currency.as_deref() {
-        validation::currency_code(c).map_err(|m| AppError::BadRequest(m.into()))?;
+    if let Some(currency) = base_currency.as_deref() {
+        validation::currency_code(currency)
+            .map_err(|message| AppError::BadRequest(message.into()))?;
     }
 
     let create = CreateTenant {
@@ -171,20 +184,22 @@ pub async fn create(
         base_currency,
         kms_key_id: None,
     };
-    let tenant = state.tenants.create(create).await?;
+    let tenant = state
+        .tenants
+        .create_owned(create, &owner_shared_user_id)
+        .await?;
 
     tracing::info!(
         admin.action = "tenant.create",
         admin.tenant_id = %tenant.id,
         admin.tenant_slug = %tenant.slug,
-        "admin: tenant created"
+        auth.owner_subject = %owner_shared_user_id,
+        "admin: tenant and initial Shared Auth owner created atomically"
     );
 
-    // HTMX submit → return the new row to be prepended into <tbody>.
     if is_htmx(&headers) {
         return Ok(tenant_row(&tenant).into_response());
     }
-    // Non-HTMX fallback: re-render the list page.
     list_page(State(state))
         .await
         .map(IntoResponse::into_response)
@@ -193,18 +208,16 @@ pub async fn create(
 pub async fn detail_page(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Query(q): Query<DetailQuery>,
+    Query(query): Query<DetailQuery>,
     headers: HeaderMap,
 ) -> AppResult<Response> {
     let tenant = state.tenants.by_id(id).await?;
-    let active = q
+    let active = query
         .tab
         .as_deref()
         .and_then(Tab::from_slug)
         .unwrap_or(Tab::Connections);
 
-    // Inner content rendered server-side on first paint; HTMX swaps it for
-    // subsequent tab clicks.
     let inner = render_tab(&state, &tenant, active).await;
 
     let body = html! {
@@ -227,8 +240,6 @@ pub async fn detail_page(
     };
 
     if is_htmx(&headers) {
-        // Direct tab clicks land here via hx-get on /admin/tenants/{id}?tab=...
-        // — return only the inner panel so HTMX swaps `#tab-panel` cleanly.
         return Ok(render_tab(&state, &tenant, active).await.into_response());
     }
     Ok(layout::page(&tenant.display_name, NavSection::Tenants, body).into_response())
@@ -243,20 +254,20 @@ async fn render_tab(state: &AppState, tenant: &Tenant, tab: Tab) -> Markup {
     }
 }
 
-fn tenant_row(t: &Tenant) -> Markup {
+fn tenant_row(tenant: &Tenant) -> Markup {
     html! {
         tr {
-            td { code { (t.slug) } }
-            td { (t.display_name) }
+            td { code { (tenant.slug) } }
+            td { (tenant.display_name) }
             td {
-                (t.country_code)
-                @if let Some(s) = &t.us_state { (format!("/{s}")) }
+                (tenant.country_code)
+                @if let Some(state_code) = &tenant.us_state { (format!("/{state_code}")) }
             }
-            td { (t.base_currency) }
-            td { (status_badge(&t.status)) }
-            td { (rel(t.created_at)) }
+            td { (tenant.base_currency) }
+            td { (status_badge(&tenant.status)) }
+            td { (rel(tenant.created_at)) }
             td class="num" {
-                a class="btn btn-ghost" href=(format!("/admin/tenants/{}", t.id)) { "open ›" }
+                a class="btn btn-ghost" href=(format!("/admin/tenants/{}", tenant.id)) { "open ›" }
             }
         }
     }
@@ -271,12 +282,12 @@ fn status_badge(status: &str) -> Markup {
     html! { span class=(class) { (status) } }
 }
 
-fn non_empty(s: String) -> Option<String> {
-    let t = s.trim();
-    if t.is_empty() {
+fn non_empty(value: String) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty() {
         None
     } else {
-        Some(t.to_string())
+        Some(value.to_string())
     }
 }
 
@@ -284,6 +295,7 @@ fn non_empty(s: String) -> Option<String> {
 pub struct CreateTenantForm {
     pub slug: String,
     pub display_name: String,
+    pub owner_shared_user_id: String,
     pub country_code: String,
     pub us_state: Option<String>,
     pub base_currency: Option<String>,
@@ -295,8 +307,8 @@ pub struct DetailQuery {
 }
 
 impl Tab {
-    fn from_slug(s: &str) -> Option<Self> {
-        match s {
+    fn from_slug(value: &str) -> Option<Self> {
+        match value {
             "connections" => Some(Self::Connections),
             "jobs" => Some(Self::Jobs),
             "locks" => Some(Self::Locks),

@@ -46,6 +46,12 @@ pub struct Config {
 
     pub oauth_redirect_base: String,
     pub oauth_return_to_allowed_prefixes: Vec<String>,
+
+    /// Redirect-based provider OAuth callbacks cannot carry the initiating
+    /// Shared Auth bearer. Until callbacks use two-phase, session-bound
+    /// finalization, this surface is disabled outside explicit local testing.
+    pub redirect_oauth_enabled: bool,
+
     pub require_webhook_signatures: bool,
     pub webhook_signature_tolerance_seconds: i64,
 
@@ -109,17 +115,16 @@ pub struct Config {
     /// as long as it is off.
     pub tenant_routes_require_user_jwt: bool,
 
-    /// Require a *fresh AAL2* session and an explicit financial scope for every
-    /// human-initiated **mutation** of a tenant's ledger state (`POST`/`PUT`/
-    /// `PATCH`/`DELETE` on `/v1/tenants/{tenant_id}/...`). Reads, unscoped
-    /// provisioning calls, and provider webhooks are unaffected.
+    /// Require a *fresh AAL2* session for every human-initiated mutation
+    /// of a tenant's ledger state. The tenant-local `billing:write` scope is
+    /// enforced regardless of this flag; disabling step-up never turns a reader
+    /// into a writer. Reads, unscoped provisioning calls, and provider webhooks
+    /// are unaffected.
     ///
-    /// Defaults to `false` — a *migration window*, like
-    /// [`Self::tenant_routes_require_user_jwt`]: existing user tokens may not
-    /// carry `aal2`/`financial_scopes` yet, so flipping it on before the issuer
-    /// stamps them would lock out legitimate callers. The server logs a WARN
-    /// every boot while it is off. Turn it on once Shared Auth issues stepped-up,
-    /// scoped tokens.
+    /// Defaults to `false` only as a time-boxed assurance migration window for
+    /// callers whose Shared Auth sessions cannot yet step up. The server logs a
+    /// WARN every boot while it is off. Production enables it after the issuer's
+    /// durable MFA/passkey ceremony contract is deployed.
     pub step_up_required_for_mutations: bool,
 
     /// Refuse outbound HTTP to private / loopback / link-local IPs.
@@ -182,6 +187,7 @@ impl fmt::Debug for Config {
             .field("port", &self.port)
             .field("database_url", &"<redacted>")
             .field("oauth_redirect_base", &self.oauth_redirect_base)
+            .field("redirect_oauth_enabled", &self.redirect_oauth_enabled)
             .field(
                 "require_webhook_signatures",
                 &self.require_webhook_signatures,
@@ -338,6 +344,16 @@ impl Config {
             );
         }
 
+        let redirect_oauth_enabled = env_bool("BILLING_REDIRECT_OAUTH_ENABLED", false);
+        if redirect_oauth_enabled && !allow_insecure_dev {
+            anyhow::bail!(
+                "refusing to boot: BILLING_REDIRECT_OAUTH_ENABLED=true is not production-safe \\
+                 until redirect callbacks use live, session-bound Shared Auth finalization. \\
+                 Keep it false in production; local provider testing must also set \\
+                 BILLING_ALLOW_INSECURE_DEV=1."
+            );
+        }
+
         Ok(Self {
             host: env::var("BILLING_HOST").unwrap_or_else(|_| "0.0.0.0".into()),
             port: env::var("BILLING_PORT")
@@ -398,6 +414,7 @@ impl Config {
             oauth_return_to_allowed_prefixes: parse_csv_env(
                 "BILLING_OAUTH_RETURN_TO_ALLOWED_PREFIXES",
             ),
+            redirect_oauth_enabled,
             // Fail-closed: verify webhook signatures unless an operator
             // explicitly opts out. An unsigned/unverified webhook can forge
             // money-movement events, so the default must reject them.
@@ -524,6 +541,7 @@ impl Config {
             mercury_webhook_secret: None,
             oauth_redirect_base: "http://localhost".into(),
             oauth_return_to_allowed_prefixes: Vec::new(),
+            redirect_oauth_enabled: false,
             require_webhook_signatures: false,
             webhook_signature_tolerance_seconds: 300,
             admin_ui_enabled: false,

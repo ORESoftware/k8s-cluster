@@ -9,6 +9,7 @@ use crate::events::EventBus;
 use crate::fiducia::FiduciaCoordinator;
 use crate::ledger::LedgerService;
 use crate::locks::LockService;
+use crate::memberships::MembershipService;
 use crate::providers::connection::ConnectionService;
 use crate::providers::plaid::PlaidWebhookVerifier;
 use crate::solana::verify::Verifier;
@@ -22,6 +23,8 @@ pub struct AppState {
     pub cfg: Arc<Config>,
     pub pool: DatabaseConnection,
     pub tenants: TenantService,
+    /// Quaestor-owned authorization grants for Shared Auth principals.
+    pub memberships: MembershipService,
     pub users: UserService,
     pub ledger: LedgerService,
     pub customers: CustomerService,
@@ -52,6 +55,7 @@ impl AppState {
         events: Arc<EventBus>,
     ) -> anyhow::Result<Self> {
         let tenants = TenantService::new(pool.clone());
+        let memberships = MembershipService::new(pool.clone());
         let users = UserService::new(pool.clone());
         let fiducia = FiduciaCoordinator::from_config(&cfg)?;
         let customer_locks = CustomerLockBroker::from_config(&cfg, fiducia.clone());
@@ -75,6 +79,7 @@ impl AppState {
             cfg,
             pool,
             tenants,
+            memberships,
             users,
             ledger,
             customers,

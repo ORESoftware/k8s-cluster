@@ -29,28 +29,35 @@ pub async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<HealthBo
         .await
         .is_err()
     {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(HealthBody {
-                status: "db_unavailable",
-                service: "billing-server-rs",
-                version: env!("CARGO_PKG_VERSION"),
-            }),
-        );
+        return unavailable("db_unavailable");
     }
-    // Readiness is deliberately NOT gated on Fiducia. Fiducia's node/brain
-    // plane runs in a different cluster, so coupling readiness to it would let
-    // a cross-cluster partition pull the only billing pod out of the Service
-    // endpoints — taking down webhook ingestion, reads and the admin UI, none
-    // of which need coordination. Lock-dependent routes already fail closed on
-    // their own (see `customer_locks`/`locks`), which is the correct blast
-    // radius: the request that needs a lease fails, not the whole process.
-    // Coordination health stays observable via the `dd_billing_server_fiducia_ready`
-    // gauge in /metrics and must be alerted on there, not via the probe.
+    // A pod running new authentication middleware against an old database must
+    // never receive protected traffic. This catches a skipped/reordered dpm
+    // rollout before the first customer request turns into a 503.
+    if !state.memberships.schema_ready().await {
+        return unavailable("authorization_schema_unavailable");
+    }
+    // Readiness is deliberately NOT gated on Shared Auth or Fiducia network
+    // health. Either dependency can be partitioned independently; removing the
+    // only billing pod from Service endpoints would also stop webhook ingestion
+    // and public verification routes that do not need those dependencies.
+    // Dependency failures remain fail-closed on the affected request and are
+    // surfaced through structured logs/metrics instead.
     (
         StatusCode::OK,
         Json(HealthBody {
             status: "ready",
+            service: "billing-server-rs",
+            version: env!("CARGO_PKG_VERSION"),
+        }),
+    )
+}
+
+fn unavailable(status: &'static str) -> (StatusCode, Json<HealthBody>) {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(HealthBody {
+            status,
             service: "billing-server-rs",
             version: env!("CARGO_PKG_VERSION"),
         }),
@@ -62,6 +69,7 @@ pub async fn metrics(State(state): State<AppState>) -> Response {
         Ok(_) => 1,
         Err(_) => 0,
     };
+    let authz_schema_ready = u8::from(state.memberships.schema_ready().await);
     let (published, dropped_oversize, failed) = state.events.counters();
     let nats_enabled = u8::from(state.events.is_enabled());
     let fiducia_ready = u8::from(fiducia_ready(&state).await);
@@ -73,6 +81,9 @@ pub async fn metrics(State(state): State<AppState>) -> Response {
             "# HELP dd_billing_server_ready Database readiness state.\n",
             "# TYPE dd_billing_server_ready gauge\n",
             "dd_billing_server_ready {}\n",
+            "# HELP dd_billing_server_authz_schema_ready Tenant membership schema readiness.\n",
+            "# TYPE dd_billing_server_authz_schema_ready gauge\n",
+            "dd_billing_server_authz_schema_ready {}\n",
             "# HELP dd_billing_server_fiducia_ready Fiducia coordination readiness state.\n",
             "# TYPE dd_billing_server_fiducia_ready gauge\n",
             "dd_billing_server_fiducia_ready {}\n",
@@ -91,6 +102,7 @@ pub async fn metrics(State(state): State<AppState>) -> Response {
         ),
         env!("CARGO_PKG_VERSION"),
         db_ready,
+        authz_schema_ready,
         fiducia_ready,
         nats_enabled,
         published,
