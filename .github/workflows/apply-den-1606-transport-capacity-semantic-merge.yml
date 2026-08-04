@@ -1,0 +1,150 @@
+name: Apply DEN-1606 transport and capacity semantic merge
+
+on:
+  push:
+    branches:
+      - agent/den-1606-transport-capacity-semantic-merge
+    paths:
+      - '.github/workflows/apply-den-1606-transport-capacity-semantic-merge.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-1606-transport-capacity-semantic-merge
+  cancel-in-progress: false
+
+jobs:
+  reconcile-validate-clean:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - name: Checkout exact writable current-dev branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1606-transport-capacity-semantic-merge
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Setup Rust 1.90.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Apply the reviewed transport commit without choosing conflict sides
+        id: apply
+        shell: bash
+        run: |
+          set -euo pipefail
+          reviewed='6d050a5c516c0dcc1c13646fe8742dfed477346c'
+          git fetch --no-tags origin "$reviewed"
+          set +e
+          git cherry-pick --no-commit "$reviewed" >"${RUNNER_TEMP}/cherry-pick.stdout" 2>"${RUNNER_TEMP}/cherry-pick.stderr"
+          status=$?
+          set -e
+          if test "$status" -ne 0; then
+            {
+              echo 'DEN-1606 transport/capacity semantic merge conflict'
+              echo
+              echo "base=$(git rev-parse HEAD)"
+              echo "reviewed=$reviewed"
+              echo
+              echo '[unmerged paths]'
+              git diff --name-only --diff-filter=U
+              echo
+              echo '[cherry-pick stdout]'
+              cat "${RUNNER_TEMP}/cherry-pick.stdout"
+              echo
+              echo '[cherry-pick stderr]'
+              cat "${RUNNER_TEMP}/cherry-pick.stderr"
+              echo
+              echo '[combined conflict diff]'
+              git diff --cc --no-ext-diff
+            } >"${RUNNER_TEMP}/den-1606-transport-merge-diagnostic.txt"
+            git cherry-pick --abort || git reset --hard HEAD
+            mkdir -p docs
+            cp "${RUNNER_TEMP}/den-1606-transport-merge-diagnostic.txt" \
+              docs/den-1606-transport-merge-diagnostic.txt
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add docs/den-1606-transport-merge-diagnostic.txt
+            if ! git diff --cached --quiet; then
+              git commit -m 'chore(DEN-1606): capture transport-capacity conflicts'
+              git push origin HEAD:agent/den-1606-transport-capacity-semantic-merge
+            fi
+            exit "$status"
+          fi
+
+      - name: Prove both capacity and transport meanings are present
+        shell: bash
+        run: |
+          set -euo pipefail
+          main='remote/deployments/gha-clone-server-rs/src/main.rs'
+          reservation='remote/deployments/gha-clone-server-rs/src/run_reservation.rs'
+          for marker in \
+            'reserve_run_records' \
+            'forget_webhook_delivery' \
+            'StatusCode::TOO_MANY_REQUESTS' \
+            'build_server_url_from_env' \
+            'Policy::none()' \
+            'validate_build_job_response_id' \
+            'build status returned a mismatched job ID'
+          do
+            grep -Fq "$marker" "$main"
+          done
+          grep -Fq 'active_runs.saturating_add(requested) > max_runs' "$reservation"
+          grep -Fq 'GHA_CLONE_BUILD_SERVER_URL must use HTTPS' "$main"
+          grep -Fq 'GHA_CLONE_BUILD_POLL_SECONDS", 2' "$main"
+          grep -Fq 'GHA_CLONE_BUILD_TIMEOUT_SECONDS", 3600' "$main"
+          grep -Fq 'GHA_CLONE_MAX_RUNS", 256' "$main"
+          test -f docs/gha-clone-run-capacity-boundary.md
+          test -f docs/gha-clone-build-server-boundary.md
+
+      - name: Validate every clone-server target and real-process regression
+        working-directory: remote/deployments/gha-clone-server-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Verify bounded semantic product scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git diff --name-only --diff-filter=U)"
+          if git grep -nE '^(<<<<<<< |=======|>>>>>>> )' -- \
+            docs/gha-clone-build-server-boundary.md \
+            remote/deployments/gha-clone-server-rs; then
+            echo 'git conflict marker detected' >&2
+            exit 1
+          fi
+          expected=$'docs/gha-clone-build-server-boundary.md\nremote/deployments/gha-clone-server-rs/src/main.rs\nremote/deployments/gha-clone-server-rs/tests/http_api.rs\nremote/deployments/gha-clone-server-rs/tests/streempilot_http.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_retention.rs'
+          actual="$(git diff --name-only HEAD | sort)"
+          test "$actual" = "$expected" || {
+            echo 'unexpected semantic merge paths:' >&2
+            printf '%s\n' "$actual" >&2
+            exit 1
+          }
+
+      - name: Remove one-shot workflow and commit product-only merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            .github/workflows/apply-den-1606-transport-capacity-semantic-merge.yml \
+            docs/den-1606-transport-merge-diagnostic.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          test -z "$(git diff --cached --name-only | grep -E 'apply-den-1606|transport-merge-diagnostic' || true)"
+          git commit -m 'fix(DEN-1606): merge clone transport with atomic capacity'
+          git push origin HEAD:agent/den-1606-transport-capacity-semantic-merge
