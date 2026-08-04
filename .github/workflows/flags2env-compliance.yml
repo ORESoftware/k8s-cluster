@@ -26,10 +26,10 @@ permissions:
 
 jobs:
   compliance:
-    uses: ORESoftware/flags-2-env/.github/workflows/reusable-consumer-compliance.yml@39e1b554520c736db406ce074f05acaee6111d75
+    uses: ORESoftware/flags-2-env/.github/workflows/reusable-consumer-compliance.yml@b596f2d1c99bd726b262a923916e3015bc80bc37
     with:
-      tooling_ref: 39e1b554520c736db406ce074f05acaee6111d75
-      parser_ref: 39e1b554520c736db406ce074f05acaee6111d75
+      tooling_ref: b596f2d1c99bd726b262a923916e3015bc80bc37
+      parser_ref: b596f2d1c99bd726b262a923916e3015bc80bc37
       kind: server
       command_name: dd-rust-network-mutex
       contract_path: .cli-flags.toml
