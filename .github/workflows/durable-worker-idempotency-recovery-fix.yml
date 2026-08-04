@@ -1,9 +1,9 @@
 name: durable-worker-idempotency-recovery-fix
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/durable-worker-runtime
+      - dev
     paths:
       - '.github/workflows/durable-worker-idempotency-recovery-fix.yml'
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: durable-worker-idempotency-recovery-fix-${{ github.ref }}
+  group: durable-worker-idempotency-recovery-fix-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
