@@ -72,7 +72,18 @@ jobs:
         run: |
           set -euo pipefail
           actual="$(find tests -maxdepth 1 -type f -name '*.rs' -printf '%f\n' | LC_ALL=C sort)"
-          expected="$(printf '%s\n' http_api.rs streempilot_http.rs webhook_e2e.rs | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            executor_router_assignment.rs \
+            executor_router_http.rs \
+            http_api.rs \
+            meta_self_test.rs \
+            planner_adversarial.rs \
+            startup_config.rs \
+            streempilot_http.rs \
+            streempilot_mirror.rs \
+            webhook_e2e.rs \
+            webhook_retention.rs \
+            | LC_ALL=C sort)"
           if [[ "$actual" != "$expected" ]]; then
             printf 'integration target inventory changed; name every target explicitly\nexpected:\n%s\nactual:\n%s\n' "$expected" "$actual" >&2
             exit 1
@@ -84,17 +95,45 @@ jobs:
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo test --locked --lib --bins --examples -- --nocapture
 
+      - name: Run executor-router assignment tests
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --test executor_router_assignment -- --nocapture
+
+      - name: Run executor-router HTTP tests
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --test executor_router_http -- --nocapture
+
       - name: Run HTTP API integration tests
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo test --locked --test http_api -- --nocapture
+
+      - name: Run meta self-tests
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --test meta_self_test -- --nocapture
+
+      - name: Run adversarial planner tests
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --test planner_adversarial -- --nocapture
+
+      - name: Run startup configuration tests
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --test startup_config -- --nocapture
+
+      - name: Run Streempilot HTTP integration tests
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --test streempilot_http -- --nocapture
+
+      - name: Run Streempilot mirror tests
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --test streempilot_mirror -- --nocapture
 
       - name: Run workflow_run webhook integration tests
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo test --locked --test webhook_e2e -- --nocapture
 
-      - name: Run Streempilot integration tests
+      - name: Run webhook retention tests
         working-directory: remote/deployments/gha-clone-server-rs
-        run: cargo test --locked --test streempilot_http -- --nocapture
+        run: cargo test --locked --test webhook_retention -- --nocapture
 
       - name: Run documentation tests
         working-directory: remote/deployments/gha-clone-server-rs
