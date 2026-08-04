@@ -78,19 +78,25 @@ fn generated_rust_sequence_is_exact_ordered_and_non_extensible() {
 }
 
 #[test]
-fn mutable_action_and_mutable_revision_fail_closed() {
-    let mutable_action = WORKFLOW.replacen(
-        "dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30",
-        "dtolnay/rust-toolchain@stable",
+fn hardened_node_sequence_is_exact_and_non_extensible() {
+    let extra = WORKFLOW.replacen(
+        "          npm test\n",
+        "          npm test\n          npm audit --audit-level=high\n",
         1,
     );
-    let action_plan = compile(&mutable_action);
-    assert!(!action_plan.independent_executable);
-    assert!(job(&action_plan, "generated_rust")
+    let plan = compile(&extra);
+    assert!(!plan.independent_executable);
+    let node = job(&plan, "node_contracts");
+    assert!(!node.independent_supported);
+    assert_eq!(node.independent_profile, None);
+    assert!(node
         .independent_reasons
         .iter()
-        .any(|reason| reason.contains("exact 40-hex commit SHA")));
+        .any(|reason| reason.contains("exact reviewed command sequence")));
+}
 
+#[test]
+fn mutable_revision_can_be_classified_but_not_executed() {
     let branch_plan = build_plan(
         &PlanRequest {
             repository: REPOSITORY.to_string(),
