@@ -1,0 +1,62 @@
+# Executes the reviewed v2 transform, formats its Rust output, validates both
+# fixed profiles, and removes every temporary workflow before publishing.
+name: Run DEN-539 exact 3FA profiles v3 once
+on:
+  pull_request:
+    branches: [dev]
+    types: [synchronize]
+    paths: [.github/workflows/run-den-539-threefa-exact-profiles-v3-once.yml]
+permissions: {contents: write}
+concurrency:
+  group: den-539-threefa-exact-profiles
+  cancel-in-progress: false
+jobs:
+  build-product:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-539-threefa-exact-profiles-current-dev-v2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: agent/den-539-threefa-exact-profiles-current-dev-v2
+          fetch-depth: 1
+          persist-credentials: true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with: {node-version: '22.17.0'}
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with: {toolchain: '1.90.0', components: 'rustfmt, clippy'}
+      - name: Execute reviewed v2 transform
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          workflow=Path('.github/workflows/run-den-539-threefa-exact-profiles-v2-once.yml')
+          lines=workflow.read_text().splitlines()
+          start=lines.index('      - name: Apply structure-aware fixed profiles and exact binding')
+          end=lines.index('      - name: Execute both exact fixed profiles', start+1)
+          run_index=lines.index('        run: |', start, end)
+          block=lines[run_index+1:end]
+          hs=next(i for i,l in enumerate(block) if l.strip()=="python3 - <<'PY'")
+          he=max(i for i,l in enumerate(block) if i>hs and l.strip()=='PY')
+          prefix='          '
+          script='\n'.join(l[len(prefix):] if l.startswith(prefix) else l for l in block[hs+1:he])+'\n'
+          exec(compile(script,str(workflow),'exec'),{'__name__':'__main__'})
+          Path('.github/workflows/run-den-539-threefa-exact-profiles-v3-once.yml').unlink()
+          PY
+          rustfmt --edition 2021 remote/deployments/build-server-rs/src/profiles.rs
+          rustfmt --edition 2021 --check remote/deployments/build-server-rs/src/profiles.rs
+          python3 remote/tests/general/threefa-build-profile-contract.test.py
+      - name: Publish product-only branch
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          workflow_non_deletions="$(git diff --cached --name-only --diff-filter=ACMRTUXB -- .github/workflows | grep -v '^\.github/workflows/gha-threefa-build-profiles.yml$' || true)"
+          test -z "$workflow_non_deletions"
+          git commit -m 'feat(DEN-539): bind 3FA to exact fixed profiles'
+          git push origin HEAD:agent/den-539-threefa-exact-profiles-current-dev-v2
