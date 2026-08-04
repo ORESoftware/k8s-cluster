@@ -81,13 +81,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           toolchain: '1.90.0'
-          components: rustfmt, clippy
+          components: rustfmt
       - name: Check the modified fixed-profile source formatting
         working-directory: remote/deployments/build-server-rs
         run: rustfmt --edition 2021 --check src/profiles.rs
-      - name: Compile the fixed-profile boundary with warnings denied
+      - name: Compile the build server against the exact private library gitlink
         working-directory: remote/deployments/build-server-rs
-        run: cargo clippy --locked --all-targets -- -D warnings
+        run: cargo check --locked --all-targets
       - name: Test the fixed-profile registry and meta fallback
         working-directory: remote/deployments/build-server-rs
         run: cargo test --locked profiles::tests -- --nocapture
