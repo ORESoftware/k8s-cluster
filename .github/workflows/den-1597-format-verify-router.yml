@@ -1,29 +1,26 @@
 name: DEN-1597 format and verify request-bound router
 
 on:
-  push:
-    branches:
-      - agent/den-1597-request-bound-assignment-20260804
-    paths:
-      - .github/workflows/den-1597-format-verify-router.yml
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
 
 concurrency:
-  group: den-1597-format-verify-router
+  group: den-1597-format-verify-router-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
 jobs:
   format-verify-publish:
-    if: github.repository == 'ORESoftware/k8s-cluster' && github.ref == 'refs/heads/agent/den-1597-request-bound-assignment-20260804'
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/den-1597-request-bound-assignment-20260804'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - name: Check out exact branch head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: agent/den-1597-request-bound-assignment-20260804
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: true
           show-progress: false
