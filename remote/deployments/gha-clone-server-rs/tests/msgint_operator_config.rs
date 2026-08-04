@@ -225,10 +225,7 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
         "node-hardened-verify"
     );
     assert_eq!(final_run["submissions"][0]["status"], "succeeded");
-    assert_eq!(
-        final_run["submissions"][1]["profile"],
-        "node-hardened-test"
-    );
+    assert_eq!(final_run["submissions"][1]["profile"], "node-hardened-test");
     assert_eq!(final_run["submissions"][1]["status"], "succeeded");
 
     let submissions = mock_state.submissions.lock().await;
@@ -261,6 +258,11 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
         "          npm audit --audit-level=high\n          npm publish\n",
         1,
     );
+    let reordered_commands = workflow_yaml.replacen(
+        "          npm ci --ignore-scripts\n          npm run check\n",
+        "          npm run check\n          npm ci --ignore-scripts\n",
+        1,
+    );
     let mutable_action = workflow_yaml.replacen(
         "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
         "actions/checkout@main",
@@ -271,6 +273,11 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
         "          persist-credentials: false\n        env:\n          MSGINT_META_ACCESS_TOKEN: ${{ secrets['PROD_TOKEN'] }}\n",
         1,
     );
+    let plain_environment = workflow_yaml.replacen(
+        "  operator_config:\n    runs-on: ubuntu-latest\n",
+        "  operator_config:\n    runs-on: ubuntu-latest\n    env:\n      NODE_ENV: test\n",
+        1,
+    );
 
     for (label, rejected_yaml, expected_reason) in [
         (
@@ -279,11 +286,25 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
             "exact reviewed command sequence",
         ),
         (
+            "reordered hardened commands",
+            reordered_commands,
+            "exact reviewed command sequence",
+        ),
+        (
             "mutable setup action",
             mutable_action,
             "exact 40-hex commit SHA",
         ),
-        ("bracket secret expression", bracket_secret, "secret-bearing"),
+        (
+            "bracket secret expression",
+            bracket_secret,
+            "secret-bearing",
+        ),
+        (
+            "plain job environment",
+            plain_environment,
+            "fixed profiles do not forward",
+        ),
     ] {
         let response = client
             .post(format!("{server_url}/v1/runs"))
@@ -306,7 +327,10 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
             .json()
             .await
             .unwrap_or_else(|error| panic!("read rejected {label} response: {error}"));
-        assert_eq!(rejected["error"], "workflow is not independently executable");
+        assert_eq!(
+            rejected["error"],
+            "workflow is not independently executable"
+        );
         assert!(
             rejected.to_string().contains(expected_reason),
             "{label} response did not explain {expected_reason}: {rejected}"

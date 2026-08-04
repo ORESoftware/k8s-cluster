@@ -135,8 +135,29 @@ A job that signals hardened Node intent cannot fall back to generic
 mutable setup-action refs, caller-selected environments, setup-input
 expressions, and secret expressions are rejected before any build submission.
 The real-process integration test first proves the two valid submissions reach
-`succeeded`, then sends adjacent malicious variants and verifies the recording
-build server remains at exactly two submissions.
+`succeeded`, then sends five adjacent variants through the authenticated HTTP
+API:
+
+1. an extra `npm publish` command after the reviewed operator sequence;
+2. the same reviewed command strings in a different order;
+3. a mutable `actions/checkout@main` setup action;
+4. a bracket-form `${{ secrets['PROD_TOKEN'] }}` step environment; and
+5. a plain non-secret `NODE_ENV=test` job environment.
+
+Every variant must return HTTP 422 with the specific fail-closed reason. The
+recording build server must remain at exactly the two valid submissions, proving
+that rejection happens before dispatch. A separate fixture-contract test keeps
+every mutation anchor unique and verifies that fixture evolution cannot silently
+turn an adversarial mutation into a no-op.
+
+This hermetic proof needs neither the private Messaging Intel repository nor a
+Kubernetes context. The optional hosted smoke and the deployed-cluster canary
+are deliberately separate access layers:
+
+- the hosted smoke requires a short-lived, contents-read GitHub App installation
+  limited to the exact private repository;
+- the deployed canary requires a reviewed kubeconfig/context plus the runtime
+  server/build-server secrets provisioned through External Secrets.
 
 The optional hosted smoke is manual-only. It mints a short-lived GitHub App token
 restricted to `messaging-intel/msgint-connectors`, checks out the exact reviewed

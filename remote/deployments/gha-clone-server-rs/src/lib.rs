@@ -400,7 +400,9 @@ fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPla
                 "{path}: secret-bearing setup inputs are unsupported"
             ));
         } else if contains_expression(mapping_get(step, "with")) {
-            reasons.push(format!("{path}: expressions in setup inputs are unsupported"));
+            reasons.push(format!(
+                "{path}: expressions in setup inputs are unsupported"
+            ));
         }
         if let Some(run) = mapping_get(step, "run").and_then(Value::as_str) {
             combined.push_str(run);
@@ -954,7 +956,10 @@ npm audit --audit-level=high"#,
             );
             let plan = build_plan(&request(&yaml), &PlannerLimits::default())
                 .expect("structurally valid plan");
-            assert!(!plan.independent_executable, "unexpected executable plan: {run}");
+            assert!(
+                !plan.independent_executable,
+                "unexpected executable plan: {run}"
+            );
             assert!(plan.jobs[0].independent_profile.is_none());
             assert!(plan.jobs[0]
                 .independent_reasons
