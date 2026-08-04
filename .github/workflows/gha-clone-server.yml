@@ -39,6 +39,11 @@ on:
         type: boolean
         required: true
         default: false
+      run_msgint_profile_smoke:
+        description: Run the private Messaging Intel fixed-profile smoke with the repository GitHub App
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: read
@@ -49,7 +54,7 @@ concurrency:
 
 jobs:
   rust:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -70,7 +75,7 @@ jobs:
         run: cargo test --locked --all-targets
 
   build-server-profile:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -95,26 +100,43 @@ jobs:
         run: cargo test --locked profiles::tests -- --nocapture
 
   msgint-profile-smoke:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_msgint_profile_smoke }}
     needs: [rust, build-server-profile]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      MSGINT_REPOSITORY: https://github.com/messaging-intel/msgint-connectors.git
       MSGINT_REVISION: 7d905806b2000479bdacb9b206f33b26a707ba5e
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout continuity source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Prepare exact fixed profiles and immutable repository checkout
+
+      - name: Mint a short-lived token for the exact private repository
+        id: msgint-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          private-key: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+          owner: messaging-intel
+          repositories: msgint-connectors
+
+      - name: Checkout the immutable Messaging Intel revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: messaging-intel/msgint-connectors
+          ref: ${{ env.MSGINT_REVISION }}
+          token: ${{ steps.msgint-token.outputs.token }}
+          path: .tmp/msgint-connectors
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Prepare exact fixed profiles
         id: prepare-msgint
         run: |
           set -euo pipefail
           printf '%s' "$MSGINT_REVISION" | grep -Eq '^[a-f0-9]{40}$'
-          repo_dir="$RUNNER_TEMP/msgint-connectors"
-          rm -rf "$repo_dir"
-          GIT_TERMINAL_PROMPT=0 git clone --filter=blob:none --no-checkout "$MSGINT_REPOSITORY" "$repo_dir"
-          GIT_TERMINAL_PROMPT=0 git -C "$repo_dir" fetch --depth=1 origin "$MSGINT_REVISION"
-          git -C "$repo_dir" checkout --detach "$MSGINT_REVISION"
+          repo_dir="$GITHUB_WORKSPACE/.tmp/msgint-connectors"
           test "$(git -C "$repo_dir" rev-parse HEAD)" = "$MSGINT_REVISION"
           python3 <<'PY'
           import os
@@ -141,8 +163,9 @@ jobs:
 
           with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
               output.write(f"image={image_match.group(1)}\n")
-              output.write(f"repo_dir={output_dir / 'msgint-connectors'}\n")
+              output.write(f"repo_dir={Path(os.environ['GITHUB_WORKSPACE']) / '.tmp/msgint-connectors'}\n")
           PY
+
       - name: Execute both fixed profiles in the reviewed Node image
         env:
           PROFILE_IMAGE: ${{ steps.prepare-msgint.outputs.image }}
@@ -179,7 +202,7 @@ jobs:
           done
 
   contracts:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
