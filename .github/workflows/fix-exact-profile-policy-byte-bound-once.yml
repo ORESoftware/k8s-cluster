@@ -1,0 +1,80 @@
+# One-shot test correction for the exact repository/profile policy. The product
+# commit removes this workflow after executing the full policy suite.
+name: Fix exact profile-policy byte-bound test once
+
+on:
+  pull_request:
+    branches:
+      - dev
+    types:
+      - synchronize
+    paths:
+      - .github/workflows/fix-exact-profile-policy-byte-bound-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: exact-profile-policy-byte-bound-fix
+  cancel-in-progress: false
+
+jobs:
+  fix-and-verify:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/build-server-exact-profile-policy-current-dev'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/build-server-exact-profile-policy-current-dev
+          fetch-depth: 1
+          persist-credentials: true
+
+      - uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt
+
+      - name: Cross the actual post-trim byte ceiling deterministically
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/deployments/build-server-rs/src/config/profile_policy.rs')
+          source = path.read_text(encoding='utf-8')
+          old = '        let oversized = " ".repeat(MAX_POLICY_BYTES + 1);\n'
+          new = '        let oversized = "x".repeat(MAX_POLICY_BYTES + 1);\n'
+          if source.count(old) != 1:
+              if source.count(new) == 1:
+                  raise SystemExit(0)
+              raise SystemExit('oversized policy fixture anchor was not unique')
+          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PY
+
+          cd remote/deployments/build-server-rs
+          rustfmt --edition 2021 --check src/config.rs src/config/profile_policy.rs src/validation.rs
+          cargo test --locked config::profile_policy::tests -- --nocapture
+          cargo test --locked validation::tests -- --nocapture
+          cargo test --locked profiles::tests -- --nocapture
+
+      - name: Publish the product-only exact head
+        run: |
+          set -euo pipefail
+          rm .github/workflows/fix-exact-profile-policy-byte-bound-once.yml
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            remote/deployments/build-server-rs/src/config/profile_policy.rs \
+            .github/workflows/fix-exact-profile-policy-byte-bound-once.yml
+          git diff --cached --check
+          git commit -m 'test: cross the exact policy byte ceiling'
+          git push origin HEAD:agent/build-server-exact-profile-policy-current-dev
