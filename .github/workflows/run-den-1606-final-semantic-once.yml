@@ -1,5 +1,6 @@
 # Final one-shot wrapper over the semantic materializer. It repairs the one
-# silent current-dev field replacement, validates the product, and self-deletes.
+# silent current-dev field replacement and the active-run guard binding,
+# validates the product, and self-deletes.
 name: Run DEN-1606 final semantic hardening once
 
 on:
@@ -31,7 +32,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: true
 
-      - name: Execute the semantic materializer with explicit URL field replacement
+      - name: Execute the semantic materializer with explicit source repairs
         shell: bash
         run: |
           set -euo pipefail
@@ -92,6 +93,30 @@ jobs:
 
           '''
           script = script.replace(marker, explicit_url_replacement + marker, 1)
+
+          inner_exec = "exec(compile(script, str(workflow), 'exec'), {'__name__': '__main__'})\n"
+          if script.count(inner_exec) != 1:
+              raise SystemExit('semantic materializer has no unique inner execution boundary')
+          capacity_guard_repair = r'''capacity_old = r'''async fn reserve_runs(state: &AppState, records: &[RunRecord]) -> bool {
+              reserve_run_records(
+                  &mut state.runs.write().await,
+                  records,
+                  state.config.max_runs,
+              )
+          }
+          '''
+          capacity_new = r'''async fn reserve_runs(state: &AppState, records: &[RunRecord]) -> bool {
+              let mut runs = state.runs.write().await;
+              reserve_run_records(&mut runs, records, state.config.max_runs)
+          }
+          '''
+          if script.count(capacity_old) != 1:
+              raise SystemExit('could not locate generated active-run reservation helper')
+          script = script.replace(capacity_old, capacity_new, 1)
+
+          '''
+          script = script.replace(inner_exec, capacity_guard_repair + inner_exec, 1)
+
           exec(compile(script, str(workflow), 'exec'), {'__name__': '__main__'})
           Path('.github/workflows/run-den-1606-final-semantic-once.yml').unlink(missing_ok=True)
           PY
