@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-gha-executor-router
+  namespace: default
+  labels:
+    app: dd-gha-executor-router
+data:
+  # Exact, ordered authorities. The Hetzner URL is deliberately non-routable
+  # until an operator replaces it with the reviewed TLS endpoint and records
+  # provider-loss smoke evidence. Execution remains disabled in the Deployment.
+  GHA_EXECUTOR_ROUTER_EXECUTORS_JSON: >-
+    [{"id":"aws","provider":"aws","baseUrl":"http://dd-build-server.default.svc.cluster.local:8100","authSecretFile":"/var/run/secrets/gha-executor-router/aws-auth"},{"id":"hetzner","provider":"hetzner","baseUrl":"https://replace-before-activation.invalid","authSecretFile":"/var/run/secrets/gha-executor-router/hetzner-auth"}]
+  GHA_EXECUTOR_ROUTER_MAX_EXECUTORS: "2"
+  GHA_EXECUTOR_ROUTER_MAX_ROUTES: "4096"
+  GHA_EXECUTOR_ROUTER_MAX_RESPONSE_BYTES: "65536"
+  GHA_EXECUTOR_ROUTER_REQUEST_TIMEOUT_SECONDS: "60"
+  GHA_EXECUTOR_ROUTER_SOURCE_URL: https://github.com/ORESoftware/k8s-cluster.git
+  GHA_EXECUTOR_ROUTER_SOURCE_REF: dev
