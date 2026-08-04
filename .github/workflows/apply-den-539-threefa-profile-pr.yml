@@ -5,6 +5,7 @@ on:
     paths:
       - 'scripts/ops/apply_den539_threefa_profile.py'
       - 'scripts/ops/fix_den539_planner_adversarial.py'
+      - 'scripts/ops/fix_den539_threefa_process_status.py'
       - '.github/workflows/apply-den-539-threefa-profile-pr.yml'
 
 permissions:
@@ -39,11 +40,12 @@ jobs:
           node-version: '22'
           cache: pnpm
           cache-dependency-path: remote/tests/pnpm-lock.yaml
-      - name: Apply exact mappings and current planner assertions
+      - name: Apply exact mappings and current contract assertions
         run: |
           set -euo pipefail
           python3 scripts/ops/apply_den539_threefa_profile.py
           python3 scripts/ops/fix_den539_planner_adversarial.py
+          python3 scripts/ops/fix_den539_threefa_process_status.py
       - name: Format and execute all changed contracts
         run: |
           set -euo pipefail
@@ -68,6 +70,7 @@ jobs:
               '.github/workflows/apply-den-539-threefa-profile-pr.yml',
               'scripts/ops/apply_den539_threefa_profile.py',
               'scripts/ops/fix_den539_planner_adversarial.py',
+              'scripts/ops/fix_den539_threefa_process_status.py',
           ):
               Path(name).unlink(missing_ok=True)
           PY
