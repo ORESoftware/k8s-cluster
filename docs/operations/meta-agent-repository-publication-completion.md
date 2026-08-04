@@ -30,20 +30,28 @@ reviewed threat model and pull request.
 
 ## Retained recovery evidence
 
-The following remain as immutable audit and disaster-recovery inputs:
+The active tree retains only the bounded verification/orchestration material:
 
-- source commit `55ee15c190b7cfa4e075f6984c7cb551acd4b9d3`;
+- `scripts/ops/publish_meta_agent_control_plane_from_actions.sh`;
+- `scripts/ops/verify_meta_agent_source_snapshot.py`;
+- `docs/operations/meta-agent-ephemeral-credential-publication.md`.
+
+Those files pin and retrieve immutable audit inputs from source commit
+`55ee15c190b7cfa4e075f6984c7cb551acd4b9d3`:
+
 - bundle SHA-256
   `1ddaa03743b864348162149b7d2d2e2dce7eab585cf092ea14547c647fcec031`;
 - publisher SHA-256
   `e2fe6eaa622db02a54f83e27a822f64ad4b54971c883f97bbda4ac0a4db5d278`;
-- `scripts/critical-org-fleet/assets/meta.part*`;
-- `scripts/ops/publish_meta_agent_control_plane_from_actions.sh`, which
-  reconstructs and verifies the pinned publisher from the immutable source;
-- `scripts/ops/verify_meta_agent_source_snapshot.py`;
-- `docs/operations/meta-agent-ephemeral-credential-publication.md`;
-- credential-free source-snapshot verification and the publication evidence in
-  Linear issues DEN-1057, DEN-1058, and DEN-319.
+- the sealed `scripts/critical-org-fleet/assets/meta.part*` blobs and exact
+  publisher blob stored in that immutable Git history.
+
+The sealed assets and publisher are intentionally not restored to the active
+working tree merely to preserve recovery evidence. The credential-free verifier
+loads their exact commit/tree/blob identities through read-only GitHub APIs,
+checks both base64 layers, bundle/publisher digests, symbolic `HEAD`, and the two
+reviewed branch refs. Linear issues DEN-1057, DEN-1058, and DEN-319 retain the
+publication and lifecycle evidence.
 
 These artifacts are not routine sources of truth after the target repository
 exists. Future recovery must first prove the repository is absent or
@@ -56,7 +64,7 @@ pushes to replace a live repository.
 
 - Product changes use pull requests in
   `meta-agents-demo/meta-agent-control-plane.rs`.
-- Public metadata, default branch, and initial refs are checked by the focused
+- Public metadata, default branch, and initial commits are checked by the focused
   retirement contract workflow.
 - Publication-carrier uniqueness remains enforced in `ORESoftware/k8s-cluster`.
 - Repository bootstrap is excluded from steady-state Kubernetes reconciliation
