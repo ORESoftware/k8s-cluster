@@ -245,6 +245,21 @@ async fn run_to_success(client: &Client, server: &ServerProcess) -> Value {
     run
 }
 
+async fn assert_rejected_without_dispatch(
+    client: &Client,
+    server: &ServerProcess,
+    mock: &MockBuildServer,
+    repository: &str,
+    revision: &str,
+    workflow: &str,
+    expected_status: StatusCode,
+) {
+    let response = post_run(client, server, repository, revision, workflow).await;
+    let (status, _) = response_json(response).await;
+    assert_eq!(status, expected_status);
+    assert!(mock.state.submissions.lock().await.is_empty());
+}
+
 #[tokio::test]
 async fn real_server_dispatches_node_then_generated_rust_with_exact_authority() {
     let mock = MockBuildServer::start().await;
@@ -324,32 +339,72 @@ async fn real_run_endpoint_rejects_mutable_unreviewed_and_extended_inputs_before
     let server = spawn_server(&mock).await;
     let client = Client::new();
 
-    let response = post_run(&client, &server, REPOSITORY, "main", WORKFLOW).await;
-    let (status, body) = response_json(response).await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(body["error"], "workflow is not independently executable");
-
-    let response = post_run(
+    assert_rejected_without_dispatch(
         &client,
         &server,
+        &mock,
+        REPOSITORY,
+        "main",
+        WORKFLOW,
+        StatusCode::UNPROCESSABLE_ENTITY,
+    )
+    .await;
+    assert_rejected_without_dispatch(
+        &client,
+        &server,
+        &mock,
         "3FA-app/unreviewed-repository",
         REVISION,
         WORKFLOW,
+        StatusCode::FORBIDDEN,
     )
     .await;
-    let (status, body) = response_json(response).await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body["repository"], "3FA-app/unreviewed-repository");
 
     let extended = WORKFLOW.replacen(
         "          npm test\n",
         "          npm test\n          npm audit --audit-level=high\n",
         1,
     );
-    let response = post_run(&client, &server, REPOSITORY, REVISION, &extended).await;
-    let (status, body) = response_json(response).await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(body["error"], "workflow is not independently executable");
+    assert_rejected_without_dispatch(
+        &client,
+        &server,
+        &mock,
+        REPOSITORY,
+        REVISION,
+        &extended,
+        StatusCode::UNPROCESSABLE_ENTITY,
+    )
+    .await;
 
-    assert!(mock.state.submissions.lock().await.is_empty());
+    let mutable_action = WORKFLOW.replacen(
+        "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+        "actions/setup-node@main",
+        1,
+    );
+    assert_rejected_without_dispatch(
+        &client,
+        &server,
+        &mock,
+        REPOSITORY,
+        REVISION,
+        &mutable_action,
+        StatusCode::UNPROCESSABLE_ENTITY,
+    )
+    .await;
+
+    let extra_action = WORKFLOW.replacen(
+        "      - run: |\n          npm ci --ignore-scripts",
+        "      - uses: owner/extra-action@0123456789abcdef0123456789abcdef01234567\n      - run: |\n          npm ci --ignore-scripts",
+        1,
+    );
+    assert_rejected_without_dispatch(
+        &client,
+        &server,
+        &mock,
+        REPOSITORY,
+        REVISION,
+        &extra_action,
+        StatusCode::UNPROCESSABLE_ENTITY,
+    )
+    .await;
 }

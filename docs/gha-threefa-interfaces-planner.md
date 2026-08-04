@@ -36,9 +36,23 @@ cargo clippy --locked --manifest-path generated/rust/Cargo.toml --all-targets --
 cargo test --locked --manifest-path generated/rust/Cargo.toml --all-targets
 ```
 
-The fixture pins checkout, Node setup, and Rust toolchain actions because the independent fixed profiles own the actual toolchain and command execution. Exact run-command sequences and immutable repository revisions are enforced for the registered 3FA tuple. General setup-action reference immutability is tracked separately so unrelated existing fixtures are not silently reclassified.
+## Exact setup-action authority
 
-Secret expressions, service or job containers, environment approvals, strategy matrices, custom shells, working directories, publication, and caller-selected commands fail closed.
+For the registered 3FA tuple, setup actions are also an exact ordered allowlist:
+
+```text
+node_contracts:
+  actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+  actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+
+generated_rust:
+  actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+  dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+```
+
+A mutable ref such as `@main` or `@stable`, a reordered sequence, a missing action, or any extra marketplace action makes the affected job independently unsupported. It cannot fall back to a generic Node or Rust profile. This enforcement is scoped to the exact 3FA repository/workflow tuple so unrelated existing fixtures retain their reviewed behavior.
+
+Secret expressions, service or job containers, environment approvals, strategy matrices, custom shells, working directories, publication, and caller-selected commands also fail closed.
 
 ## Real-process execution evidence
 
@@ -60,7 +74,7 @@ Every submission contains:
 - no caller command or image; and
 - deterministic `gha-clone:{planId}:{jobId}` request identity.
 
-Repeating the exact run reuses each job's request identity while keeping the Node and Rust job identities distinct. Mutable revisions, unreviewed sibling repositories, and command-extended workflow variants are rejected before the mock build server receives any submission.
+Repeating the exact run reuses each job's request identity while keeping the Node and Rust job identities distinct. Mutable revisions, unreviewed sibling repositories, command-extended workflows, mutable action refs, and extra actions are rejected before the mock build server receives any submission.
 
 This is execution-contract evidence against a mock build server; it is not a live private-source run. The GitOps deployment remains at zero replicas with API and webhook execution disabled.
 
@@ -74,7 +88,7 @@ The reviewed path must retain:
 
 - Rust formatting and warnings-denied Clippy;
 - all existing workflow parser, StreemPilot, transport, and auth regressions;
-- 3FA planner and adversarial tests;
+- 3FA planner and adversarial command/action tests;
 - the real-process 3FA dispatch, retry, and zero-submission rejection tests;
 - complete build-server profile/admission/idempotency/NATS tests;
 - actionlint and complete continuity Kustomize render;
