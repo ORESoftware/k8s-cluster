@@ -1,3 +1,4 @@
+# Self-removing exact-head validation carrier.
 name: Finalize exact repository profile policy once
 
 on:
