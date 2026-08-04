@@ -11,6 +11,7 @@ use crate::config::AppConfig;
 use crate::db::DbStore;
 use crate::factors::FactorService;
 use crate::metrics::Metrics;
+use crate::recovery::RecoveryService;
 use crate::supabase::ProjectRegistry;
 use crate::token::TokenMinter;
 
@@ -27,9 +28,12 @@ pub struct AppState {
     /// DB-less development mode; individual methods remain disabled unless
     /// their encryption or WebAuthn configuration is present.
     pub factors: Option<FactorService>,
+    /// Optional government-ID/face and Voxletra-assisted recovery service.
+    /// Absent configuration keeps every recovery mutation fail-closed.
+    pub recovery: Option<RecoveryService>,
     /// Optional, non-authoritative Redis/Valkey acceleration.
     pub cache: Option<Cache>,
-    /// Outbound client for JWKS fetches (kept warm; connection-pooled).
+    /// Outbound client for JWKS and provider calls (kept warm; connection-pooled).
     pub http: reqwest::Client,
     /// Prometheus counters.
     pub metrics: Metrics,
@@ -66,6 +70,10 @@ impl AppState {
             }
         };
 
+        let recovery = RecoveryService::from_env(config.db.as_ref(), http.clone())
+            .await
+            .context("initializing account recovery")?;
+
         let cache = match &config.redis {
             Some(redis_config) => match Cache::connect(redis_config).await {
                 Ok(cache) => Some(cache),
@@ -83,6 +91,7 @@ impl AppState {
             minter: Arc::new(minter),
             db,
             factors,
+            recovery,
             cache,
             http,
             metrics: Metrics::new(),
