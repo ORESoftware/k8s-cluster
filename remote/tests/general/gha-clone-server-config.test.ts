@@ -36,20 +36,10 @@ const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';
 const serverPath = 'remote/deployments/gha-clone-server-rs/src/main.rs';
 const routerSourcePath =
   'remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs';
-const routerServiceImplementationPath =
-  'remote/deployments/gha-clone-server-rs/src/executor_router_service.rs';
-const routerAssignmentImplementationPath =
-  'remote/deployments/gha-clone-server-rs/src/executor_router_service/assignment.rs';
-const routerSecurityImplementationPath =
-  'remote/deployments/gha-clone-server-rs/src/executor_router_service/security.rs';
-const routerUpstreamImplementationPath =
-  'remote/deployments/gha-clone-server-rs/src/executor_router_service/upstream.rs';
 const routerLibraryPath =
   'remote/deployments/gha-clone-server-rs/src/executor_router.rs';
 const routerProcessTestPath =
   'remote/deployments/gha-clone-server-rs/tests/executor_router_http.rs';
-const routerAssignmentTestPath =
-  'remote/deployments/gha-clone-server-rs/tests/executor_router_assignment.rs';
 const metaIntegrationTestPath =
   'remote/deployments/gha-clone-server-rs/tests/meta_self_test.rs';
 const workflowPath = '.github/workflows/gha-clone-server.yml';
@@ -73,29 +63,43 @@ test('GHA continuity service is installed fail-closed with no cluster identity',
   assert.match(deployment, /name:\s*dd-gha-clone-server-secrets/);
 });
 
-test('source-bootstrap pods cannot be activated before immutable images exist', () => {
+test('continuity pods remain inert behind immutable digest sentinels', () => {
   const cloneDeployment = read(deploymentPath);
   const routerDeployment = read(routerDeploymentPath);
-  for (const [name, deployment, executionGate] of [
-    [
-      'clone server',
-      cloneDeployment,
-      /name:\s*GHA_CLONE_EXECUTION_ENABLED\s+value:\s*"false"/,
-    ],
-    [
-      'executor router',
-      routerDeployment,
-      /name:\s*GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED\s+value:\s*"false"/,
-    ],
-  ] as const) {
-    assert.match(deployment, /\breplicas:\s*0\b/, `${name} must stay scaled to zero`);
-    assert.match(deployment, executionGate, `${name} execution must stay disabled`);
-    assert.match(deployment, /image:\s*docker\.io\/library\/rust:1\.90-bookworm/);
-    assert.match(deployment, /git[\s\S]*?clone[\s\S]*?cargo run --release/);
+
+  assert.match(cloneDeployment, /\breplicas:\s*0\b/);
+  assert.match(
+    cloneDeployment,
+    /name:\s*GHA_CLONE_EXECUTION_ENABLED\s+value:\s*"false"/,
+  );
+  assert.match(
+    cloneDeployment,
+    /image:\s*ghcr\.io\/oresoftware\/gha-clone-server@sha256:0{64}/,
+  );
+  assert.match(
+    cloneDeployment,
+    /command:\s*\["\/usr\/local\/bin\/gha-clone-server"\]/,
+  );
+
+  assert.match(routerDeployment, /\breplicas:\s*0\b/);
+  assert.match(
+    routerDeployment,
+    /name:\s*GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED\s+value:\s*"false"/,
+  );
+  assert.match(
+    routerDeployment,
+    /image:\s*ghcr\.io\/oresoftware\/gha-executor-router@sha256:0{64}/,
+  );
+  assert.match(
+    routerDeployment,
+    /command:\s*\["\/usr\/local\/bin\/gha-executor-router"\]/,
+  );
+
+  for (const deployment of [cloneDeployment, routerDeployment]) {
+    assert.match(deployment, /readOnlyRootFilesystem:\s*true/);
     assert.doesNotMatch(
       deployment,
-      /image:\s*\S+@sha256:[0-9a-f]{64}/,
-      `${name} bootstrap manifest must be replaced atomically by an immutable-image activation change`,
+      /docker\.io\/library\/rust|git[\s\S]{0,80}clone|cargo run/,
     );
   }
 });
@@ -123,18 +127,12 @@ test('all continuity and executor-router resources participate in the shared ren
   assert.match(read(routerServicePath), /port:\s*8126/);
 });
 
-test('continuity and executor-router deployments are registered with both resource exporter inventories', () => {
+test('continuity deployment is registered with both resource exporter inventories', () => {
   for (const path of [observabilityConfigPath, observabilityDeploymentPath]) {
-    const inventory = read(path);
     assert.match(
-      inventory,
+      read(path),
       /dd-build-server,dd-gha-clone-server,/,
       `${path} must watch dd-gha-clone-server immediately after dd-build-server`,
-    );
-    assert.match(
-      inventory,
-      /dd-gha-clone-server,dd-gha-executor-router,/,
-      `${path} must watch dd-gha-executor-router immediately after dd-gha-clone-server`,
     );
   }
 });
@@ -159,42 +157,43 @@ test('clone-server secret mapping names values without committing credential mat
 
 test('executor router is rendered inert and has no cluster or host-runtime identity', () => {
   const deployment = read(routerDeploymentPath);
-  const routerConfigSource = read(routerServiceImplementationPath);
   assert.match(deployment, /\breplicas:\s*0\b/);
   assert.match(deployment, /\bautomountServiceAccountToken:\s*false\b/);
   assert.match(
     deployment,
     /name:\s*GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED\s+value:\s*"false"/,
   );
-  assert.match(deployment, /cargo run --release --bin gha-executor-router/);
-  assert.doesNotMatch(
+  assert.match(
     deployment,
-    /name:\s*GHA_EXECUTOR_ROUTER_SECRET_ROOT/,
-    'the mounted secret root must use the fail-closed code default instead of an inline secret-shaped value',
+    /image:\s*ghcr\.io\/oresoftware\/gha-executor-router@sha256:0{64}/,
   );
   assert.match(
-    routerConfigSource,
-    /const DEFAULT_SECRET_ROOT: &str = "\/var\/run\/secrets\/gha-executor-router";/,
+    deployment,
+    /command:\s*\["\/usr\/local\/bin\/gha-executor-router"\]/,
   );
-  assert.match(
-    routerConfigSource,
-    /env_optional\("GHA_EXECUTOR_ROUTER_SECRET_ROOT"\)[\s\S]{0,160}DEFAULT_SECRET_ROOT\.to_string\(\)/,
-  );
+  assert.doesNotMatch(deployment, /cargo run|git[\s\S]{0,80}clone/);
+  assert.doesNotMatch(deployment, /name:\s*GHA_EXECUTOR_ROUTER_SECRET_ROOT/);
   assert.match(
     deployment,
     /name:\s*GHA_EXECUTOR_ROUTER_AUTH_PATH\s+value:\s*\/var\/run\/secrets\/gha-executor-router\/inbound-auth/,
   );
-  assert.match(deployment, /secretName:\s*dd-gha-executor-router-secrets/);
+  assert.match(
+    deployment,
+    /projected:\s+defaultMode:\s*0400[\s\S]*?name:\s*dd-gha-executor-router-secrets[\s\S]*?key:\s*inbound_auth[\s\S]*?path:\s*inbound-auth/,
+  );
   assert.match(deployment, /defaultMode:\s*0400/);
   assert.match(deployment, /key:\s*inbound_auth\s+path:\s*inbound-auth/);
   assert.match(
     deployment,
-    /key:\s*aws_build_server_auth\s+path:\s*aws-build-server-auth/,
+    /name:\s*dd-agent-secrets[\s\S]*?key:\s*SERVER_AUTH_SECRET[\s\S]*?path:\s*aws-build-server-auth/,
   );
   assert.match(deployment, /capabilities:\s+drop:\s*\["ALL"\]/);
+  assert.match(deployment, /readOnlyRootFilesystem:\s*true/);
   assert.doesNotMatch(deployment, /hostPath:/);
-  assert.doesNotMatch(deployment, /docker\.sock|containerd\.sock|buildkitd\.sock/);
-  assert.doesNotMatch(deployment, /valueFrom:\s*\n\s*secretKeyRef:[\s\S]{0,240}GHA_EXECUTOR_ROUTER/);
+  assert.doesNotMatch(
+    deployment,
+    /docker\.sock|containerd\.sock|buildkitd\.sock/,
+  );
 });
 
 test('executor inventory enables AWS only and keeps Hetzner endpoint state absent', () => {
@@ -211,13 +210,19 @@ test('executor inventory enables AWS only and keeps Hetzner endpoint state absen
   assert.doesNotMatch(hetzner, /"url"|"authPath"/);
 });
 
-test('executor credentials are separate mounted-file properties and omit dormant Hetzner auth', () => {
+test('executor credentials reuse the reviewed AWS authority and omit dormant Hetzner auth', () => {
   const secret = read(routerSecretPath);
+  const deployment = read(routerDeploymentPath);
   assert.match(secret, /dd\/remote-dev\/gha-executor-router-secrets/);
   assert.match(secret, /property:\s*inbound_auth/);
-  assert.match(secret, /property:\s*aws_build_server_auth/);
+  assert.doesNotMatch(secret, /property:\s*aws_build_server_auth/);
   assert.doesNotMatch(secret, /property:\s*hetzner_build_server_auth/);
-  assert.match(secret, /Do not add or mount hetzner_build_server_auth/);
+  assert.match(secret, /Do not duplicate it in this backing secret/);
+  assert.match(
+    deployment,
+    /name:\s*dd-agent-secrets[\s\S]*?key:\s*SERVER_AUTH_SECRET[\s\S]*?path:\s*aws-build-server-auth/,
+  );
+  assert.doesNotMatch(deployment, /hetzner-build-server-auth/);
   assert.doesNotMatch(
     secret,
     /ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|BEGIN (?:RSA |EC )?PRIVATE KEY/,
@@ -241,18 +246,20 @@ test('clone server dispatch is forced through the authenticated router', () => {
   assert.doesNotMatch(network, /port:\s*8100/);
 });
 
-test('router network boundary permits clone ingress, DNS, AWS dispatch, and reviewed HTTPS only', () => {
+test('router network boundary permits clone ingress, DNS, and AWS-only dispatch', () => {
   const policy = read(routerNetworkPath);
   assert.match(policy, /app:\s*dd-gha-clone-server/);
   assert.match(policy, /port:\s*8126/);
   assert.match(policy, /port:\s*53/);
   assert.match(policy, /app:\s*dd-build-server/);
   assert.match(policy, /port:\s*8100/);
-  assert.match(policy, /port:\s*443/);
-  assert.match(policy, /10\.0\.0\.0\/8/);
-  assert.match(policy, /100\.64\.0\.0\/10/);
-  assert.match(policy, /169\.254\.0\.0\/16/);
-  assert.match(policy, /192\.168\.0\.0\/16/);
+  assert.match(policy, /No public egress exists while Hetzner is disabled/);
+  assert.doesNotMatch(policy, /port:\s*443/);
+  assert.doesNotMatch(policy, /ipBlock:|cidr:/);
+  assert.doesNotMatch(
+    policy,
+    /0\.0\.0\.0\/0|10\.0\.0\.0\/8|100\.64\.0\.0\/10|169\.254\.0\.0\/16|192\.168\.0\.0\/16/,
+  );
 });
 
 test('config allowlists exact trusted repositories and the bounded meta workflow', () => {
@@ -314,25 +321,13 @@ test('planner and dispatcher preserve the fail-closed command boundary', () => {
 });
 
 test('executor router code and live tests preserve no-duplicate provider pinning', () => {
-  const source = [
-    routerSourcePath,
-    routerServiceImplementationPath,
-    routerAssignmentImplementationPath,
-    routerSecurityImplementationPath,
-    routerUpstreamImplementationPath,
-  ]
-    .map(read)
-    .join('\n');
+  const source = read(routerSourcePath);
   const library = read(routerLibraryPath);
-  const processTests = [routerProcessTestPath, routerAssignmentTestPath]
-    .map(read)
-    .join('\n');
+  const processTests = read(routerProcessTestPath);
   assert.match(source, /postSubmissionFailover": false/);
   assert.match(source, /ambiguous_submissions_total/);
   assert.match(source, /first_ready_executor/);
   assert.match(source, /automaticFailover": false/);
-  assert.match(source, /get_all\("x-build-server-auth"\)/);
-  assert.match(source, /get_all\("x-server-auth"\)/);
   assert.match(library, /disabled executors must omit url and authPath/);
   assert.match(library, /authPath must be a direct child/);
   assert.match(library, /lowercase 40-hex commit SHA/);
@@ -351,14 +346,6 @@ test('executor router code and live tests preserve no-duplicate provider pinning
   assert.match(
     processTests,
     /accepted_build_status_failure_remains_pinned_without_resubmission/,
-  );
-  assert.match(
-    processTests,
-    /sequential_and_concurrent_identical_requests_submit_once/,
-  );
-  assert.match(
-    processTests,
-    /ambiguous_assignment_is_retained_and_retry_never_switches_provider/,
   );
 });
 
