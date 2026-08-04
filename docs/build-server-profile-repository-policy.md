@@ -36,7 +36,7 @@ Each rule must satisfy all of these conditions:
 - at most 256 exact repositories and 32 profiles per repository;
 - total JSON size at most 64 KiB.
 
-Invalid policy is a startup error. It is never logged and ignored, because that would silently reopen the broader prefix path.
+Invalid policy is a startup error. It is never logged and ignored, because that would silently reopen the broader prefix path. Query and fragment separators are rejected as repository-identity confusion rather than normalized away, so an exact rule can never be widened by URL decoration.
 
 ## Initial binding
 
