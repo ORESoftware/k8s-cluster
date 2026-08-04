@@ -25,9 +25,11 @@ jobs:
       - name: Attempt the forward merge and print exact conflicts
         run: |
           set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git fetch --no-tags origin agent/den-1550-msgint-stable-final
           set +e
-          git merge --no-commit --no-ff origin/agent/den-1550-msgint-stable-final
+          git merge --no-commit --no-ff FETCH_HEAD
           status=$?
           set -e
           conflicts="$(git diff --name-only --diff-filter=U | sort)"
@@ -37,8 +39,10 @@ jobs:
             while IFS= read -r path; do
               [ -n "$path" ] || continue
               printf '\n===== conflict: %s =====\n' "$path"
-              grep -n -B3 -A12 '<<<<<<<\|=======\|>>>>>>>' "$path" || true
+              git diff --cc -- "$path" || true
             done <<<"$conflicts"
           fi
           git merge --abort 2>/dev/null || true
-          test "$status" -ne 0
+          if [ "$status" -eq 0 ]; then
+            echo 'merge completed cleanly; no semantic conflict resolution is needed'
+          fi
