@@ -1,0 +1,89 @@
+name: bootstrap gha executor router observability registration
+
+on:
+  push:
+    branches:
+      - agent/den-1597-gha-executor-router
+    paths:
+      - .github/workflows/gha-executor-router-observability-bootstrap.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gha-executor-router-observability-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  register-and-remove-self:
+    if: ${{ github.repository == 'ORESoftware/k8s-cluster' && github.actor == 'ORESoftware' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1597-gha-executor-router
+          fetch-depth: 1
+          persist-credentials: true
+          show-progress: false
+
+      - name: Register the inert router in both exporter watch lists
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              Path('remote/argocd/observability/k8s-resource-exporter.configmap.yaml'): (
+                  'dd-browser-test-server,dd-build-server,dd-gha-clone-server,',
+                  'dd-browser-test-server,dd-build-server,dd-gha-clone-server,dd-gha-executor-router,',
+              ),
+              Path('remote/argocd/observability/k8s-resource-exporter.deployment.yaml'): (
+                  'dd-browser-test-server,dd-build-server,dd-gha-clone-server,dd-cluster-mcp-rs,',
+                  'dd-browser-test-server,dd-build-server,dd-gha-clone-server,dd-gha-executor-router,dd-cluster-mcp-rs,',
+              ),
+          }
+          for path, (old, new) in replacements.items():
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one watch-list insertion point, found {count}')
+              path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+
+      - name: Validate central observability coverage
+        run: |
+          set -euo pipefail
+          node remote/tools/check-observability-coverage.mjs
+          grep -F 'dd-gha-executor-router' \
+            remote/argocd/observability/k8s-resource-exporter.configmap.yaml
+          grep -F 'dd-gha-executor-router' \
+            remote/argocd/observability/k8s-resource-exporter.deployment.yaml
+
+      - name: Remove the one-shot workflow and enforce bounded changes
+        run: |
+          set -euo pipefail
+          rm .github/workflows/gha-executor-router-observability-bootstrap.yml
+          unexpected="$({ git status --porcelain=v1 || true; } \
+            | awk '{print $2}' \
+            | grep -Ev '^(remote/argocd/observability/k8s-resource-exporter.configmap.yaml|remote/argocd/observability/k8s-resource-exporter.deployment.yaml|.github/workflows/gha-executor-router-observability-bootstrap.yml)$' \
+            || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected bootstrap changes:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          test ! -e .github/workflows/gha-executor-router-observability-bootstrap.yml
+
+      - name: Commit registration and remove this workflow
+        run: |
+          set -euo pipefail
+          git add \
+            remote/argocd/observability/k8s-resource-exporter.configmap.yaml \
+            remote/argocd/observability/k8s-resource-exporter.deployment.yaml \
+            .github/workflows/gha-executor-router-observability-bootstrap.yml
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'obs(DEN-1597): watch the executor router workload'
+          git push origin HEAD:agent/den-1597-gha-executor-router
