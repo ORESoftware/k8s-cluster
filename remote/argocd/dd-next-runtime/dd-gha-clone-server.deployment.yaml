@@ -6,9 +6,11 @@ metadata:
   labels:
     app: dd-gha-clone-server
 spec:
-  # Fail-closed activation boundary. Source bootstrap is permitted only while
-  # replicas remain zero. Replace it with a digest-pinned image, provision and
-  # verify the ExternalSecrets, then scale to one with execution still false.
+  # Fail-closed activation boundary. Source bootstrap is pinned to an exact
+  # commit, but remains permitted only while replicas are zero because the Rust
+  # toolchain image and source-build path are not an activation-grade artifact.
+  # Replace them with a prebuilt digest-pinned image, provision and verify the
+  # ExternalSecrets, then scale to one with execution still false.
   replicas: 0
   strategy:
     type: Recreate
@@ -38,10 +40,33 @@ spec:
               set -euo pipefail
               export CARGO_HOME=/tmp/cargo
               export CARGO_TARGET_DIR=/tmp/gha-clone-target
+
+              source_revision="${GHA_CLONE_SOURCE_REVISION}"
+              case "$source_revision" in
+                ''|*[!0-9a-f]*)
+                  echo "GHA_CLONE_SOURCE_REVISION must be exactly 40 lowercase hexadecimal characters" >&2
+                  exit 64
+                  ;;
+              esac
+              if [ "${#source_revision}" -ne 40 ]; then
+                echo "GHA_CLONE_SOURCE_REVISION must be exactly 40 lowercase hexadecimal characters" >&2
+                exit 64
+              fi
+
               source_root="$(mktemp -d /tmp/gha-clone-source.XXXXXX)"
-              git -c protocol.ext.allow=never -c protocol.file.allow=never \
-                clone --depth 1 --no-tags --branch "${GHA_CLONE_SOURCE_REF}" -- \
-                "${GHA_CLONE_SOURCE_URL}" "$source_root"
+              git init --quiet "$source_root"
+              git -C "$source_root" remote add origin "${GHA_CLONE_SOURCE_URL}"
+              git -C "$source_root" \
+                -c protocol.ext.allow=never \
+                -c protocol.file.allow=never \
+                fetch --quiet --depth=1 --no-tags origin "$source_revision"
+              git -C "$source_root" checkout --quiet --detach FETCH_HEAD
+              resolved_revision="$(git -C "$source_root" rev-parse HEAD)"
+              if [ "$resolved_revision" != "$source_revision" ]; then
+                echo "bootstrap checkout resolved to an unexpected revision" >&2
+                exit 65
+              fi
+
               cd "$source_root/remote/deployments/gha-clone-server-rs"
               exec cargo run --release
           env:
@@ -53,8 +78,8 @@ spec:
               value: gha_clone_server=info
             - name: GHA_CLONE_SOURCE_URL
               value: https://github.com/ORESoftware/k8s-cluster.git
-            - name: GHA_CLONE_SOURCE_REF
-              value: main
+            - name: GHA_CLONE_SOURCE_REVISION
+              value: 412f03155ba108890735414d6fbf5a1a72d9c554
             - name: GHA_CLONE_GITHUB_API_BASE_URL
               value: https://api.github.com
             - name: GHA_CLONE_EXECUTION_ENABLED
