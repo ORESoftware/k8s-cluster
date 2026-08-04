@@ -1,0 +1,210 @@
+name: Temporary encrypted Agent Pontifex and Fiducia publisher v4
+run-name: Publish canonical agent repositories through an ephemeral handoff
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: publish-agent-pontifex-fiducia-agent-servers-v4
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.event.issue.number == 840 &&
+      github.event.comment.user.login == 'ORESoftware' &&
+      github.event.comment.body == '/start-agent-publisher-handoff-v4'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out trusted main publisher
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind execution to trusted source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f scripts/ops/tmp-publish-agent-pontifex-fiducia.sh
+          bash -n scripts/ops/tmp-publish-agent-pontifex-fiducia.sh
+          trusted_sha="$(git rev-parse HEAD)"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "TRUSTED_SHA=$trusted_sha" >> "$GITHUB_ENV"
+
+      - name: Establish encrypted one-time credential handoff
+        id: handoff
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRACKING_ISSUE: '840'
+          PRIVATE_KEY: ${{ runner.temp }}/agent-publisher-private.pem
+          PUBLIC_KEY: ${{ runner.temp }}/agent-publisher-public.pem
+          CIPHERTEXT: ${{ runner.temp }}/agent-publisher-ciphertext.bin
+          TOKEN_FILE: ${{ runner.temp }}/agent-publisher-token
+          PROFILE_DIR: ${{ runner.temp }}/agent-publisher-gh-profile
+        run: |
+          set -Eeuo pipefail
+          success=0
+          cleanup() {
+            rm -f "$PRIVATE_KEY" "$PUBLIC_KEY" "$CIPHERTEXT" "$TOKEN_FILE"
+            if test "$success" != 1; then
+              rm -rf "$PROFILE_DIR"
+            fi
+          }
+          trap cleanup EXIT
+
+          rm -rf "$PROFILE_DIR"
+          install -d -m 700 "$PROFILE_DIR"
+          nonce="$(openssl rand -hex 24)"
+          [[ "$nonce" =~ ^[0-9a-f]{48}$ ]]
+
+          openssl genpkey \
+            -algorithm RSA \
+            -pkeyopt rsa_keygen_bits:3072 \
+            -out "$PRIVATE_KEY" 2>/dev/null
+          chmod 600 "$PRIVATE_KEY"
+          openssl pkey -in "$PRIVATE_KEY" -pubout -out "$PUBLIC_KEY" 2>/dev/null
+          public_key_b64="$(base64 --wrap=0 "$PUBLIC_KEY")"
+
+          gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" --body \
+            "Ephemeral publisher handoff ready. The private key exists only in the active runner.\n\nNonce: \`${nonce}\`\n\nPublic key (base64-encoded PEM):\n\n\`\`\`text\n${public_key_b64}\n\`\`\`\n\nAccepted response format: \`/agent-publisher-ciphertext-v4 ${nonce} <base64-ciphertext>\`" >/dev/null
+
+          response=''
+          for _ in $(seq 1 420); do
+            comments="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_ISSUE}/comments?per_page=100")"
+            response="$(jq -r --arg nonce "$nonce" '
+              [
+                .[]
+                | select(.user.login == "ORESoftware")
+                | .body
+                | select(startswith("/agent-publisher-ciphertext-v4 " + $nonce + " "))
+              ]
+              | last // empty
+            ' <<<"$comments")"
+            test -z "$response" || break
+            sleep 2
+          done
+          test -n "$response"
+
+          prefix="/agent-publisher-ciphertext-v4 ${nonce} "
+          encoded_ciphertext="${response#"$prefix"}"
+          test "$encoded_ciphertext" != "$response"
+          [[ "$encoded_ciphertext" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#encoded_ciphertext}" -le 8192
+          printf '%s' "$encoded_ciphertext" | base64 --decode > "$CIPHERTEXT"
+
+          openssl pkeyutl -decrypt \
+            -inkey "$PRIVATE_KEY" \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256 \
+            -in "$CIPHERTEXT" \
+            -out "$TOKEN_FILE" 2>/dev/null
+          chmod 600 "$TOKEN_FILE"
+
+          owner_token="$(cat "$TOKEN_FILE")"
+          test -n "$owner_token"
+          test "${#owner_token}" -le 1024
+          case "$owner_token" in
+            ghp_*|github_pat_*) ;;
+            *) echo 'decrypted value is not a supported GitHub owner token' >&2; exit 65 ;;
+          esac
+          case "$owner_token" in
+            *$'\n'*|*$'\r'*|*$'\t'*|*' '*)
+              echo 'decrypted token contains invalid whitespace' >&2
+              exit 65
+              ;;
+          esac
+          printf '::add-mask::%s\n' "$owner_token"
+
+          OWNER_TOKEN="$owner_token" python3 - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          token = os.environ["OWNER_TOKEN"]
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {token}",
+              "User-Agent": "ephemeral-agent-repository-publisher",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+
+          def get(path: str) -> dict:
+              request = urllib.request.Request(
+                  "https://api.github.com" + path,
+                  headers=headers,
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      value = json.load(response)
+              except (urllib.error.HTTPError, urllib.error.URLError) as error:
+                  raise SystemExit("GitHub owner credential validation failed") from error
+              if not isinstance(value, dict):
+                  raise SystemExit("GitHub owner credential returned an invalid response")
+              return value
+
+          identity = get("/user")
+          if identity.get("login") != "ORESoftware":
+              raise SystemExit("GitHub owner credential has the wrong identity")
+          for organization in ("agent-pontifex", "fiducia-cloud"):
+              membership = get(f"/user/memberships/orgs/{organization}")
+              if (membership.get("role"), membership.get("state")) != (
+                  "admin",
+                  "active",
+              ):
+                  raise SystemExit(
+                      f"GitHub owner credential lacks active admin membership in {organization}"
+                  )
+          print("owner credential validation status=passed organizations=2")
+          PY
+
+          printf 'github.com:\n    oauth_token: %s\n    user: ORESoftware\n    git_protocol: https\n' \
+            "$owner_token" > "$PROFILE_DIR/hosts.yml"
+          chmod 600 "$PROFILE_DIR/hosts.yml"
+          unset owner_token OWNER_TOKEN
+          rm -f "$PRIVATE_KEY" "$PUBLIC_KEY" "$CIPHERTEXT" "$TOKEN_FILE"
+
+          success=1
+          echo "profile_dir=$PROFILE_DIR" >> "$GITHUB_OUTPUT"
+          echo "nonce=$nonce" >> "$GITHUB_OUTPUT"
+
+      - name: Create repositories and publish exact histories
+        shell: bash
+        env:
+          GH_CONFIG_DIR: ${{ steps.handoff.outputs.profile_dir }}
+        run: |
+          set -Eeuo pipefail
+          unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS
+          trap 'rm -rf "$GH_CONFIG_DIR"' EXIT
+          bash scripts/ops/tmp-publish-agent-pontifex-fiducia.sh
+
+      - name: Record successful publication
+        if: ${{ success() }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRACKING_ISSUE: '840'
+        run: |
+          gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" --body \
+            "Canonical Agent Pontifex and Fiducia repositories were created and published successfully from trusted main \`${TRUSTED_SHA}\` using an ephemeral encrypted handoff. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+      - name: Record failed publication
+        if: ${{ failure() }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRACKING_ISSUE: '840'
+        run: |
+          gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" --body \
+            "Encrypted repository publication failed before final verification. The ephemeral private key and decrypted token were removed. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
