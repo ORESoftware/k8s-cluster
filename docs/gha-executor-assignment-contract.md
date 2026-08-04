@@ -34,6 +34,22 @@ No assignment is inserted when no executor is ready, so a later retry may safely
 
 The in-process assignment map is deliberately bounded and not evicted. When full, the router rejects new requests before submission rather than forgetting an assignment and risking duplicate work.
 
+## Verification boundary
+
+Repository contracts read the split router implementation directly rather than relying on policy prose in the binary shim. They cover the service, assignment, authentication, and upstream modules plus both real-process suites.
+
+The required checks include:
+
+- Rust formatting and strict Clippy across every target;
+- sequential and concurrent single-submission behavior;
+- immutable-input conflict rejection;
+- no-ready retry before submission;
+- fixed-rejection and ambiguous-outcome provider pinning;
+- duplicate inbound-auth rejection; and
+- the static continuity contract that binds those behaviors to the split source paths.
+
+A passing transformer or an earlier branch head is not release evidence. Merge evidence must name the exact product commit after all temporary write workflows and source-text anchors are absent.
+
 ## Activation limit
 
 This contract is safe only with one router replica. Production scaling, restart-transparent retry, or cross-provider takeover requires one shared restart-durable Fiducia-fenced assignment plus durable build status and artifact identity. Until that work is reviewed, GitOps must keep execution disabled and replicas at zero or one during controlled smoke.
