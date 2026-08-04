@@ -111,11 +111,11 @@ def result(org: str, selected: int) -> dict[str, Any]:
     return {"organization": org, "selected": selected, "created": 0, "reused": 0, "status": 0, "duplicates": 0, "outcome": "ok", "errors": []}
 
 
-def sync_one(app_jwt: str, entry: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+def sync_one(credential: str, entry: dict[str, Any], dry_run: bool, direct_token: bool = False) -> dict[str, Any]:
     org, issues = entry["organization"], entry["issues"]
     out = result(org, len(issues))
     try:
-        token = mint_org_token(app_jwt, org)
+        token = credential if direct_token else mint_org_token(credential, org)
         project = load_project(token, org, 1)
         if project.get("closed") or project.get("title") != entry["project_title"] or project.get("url") != entry["project_url"]:
             raise ApiError(f"{org} project number 1 title/URL/open-state contract failed")
@@ -193,8 +193,12 @@ def main() -> int:
         if args.validate_only:
             print("validated 40 organizations and 85 selected issues")
             return 0
-        app_jwt = make_app_jwt(os.environ.get("K8S_SUBMODULE_APP_ID", ""), os.environ.get("K8S_SUBMODULE_APP_PRIVATE_KEY", ""))
-        results = [sync_one(app_jwt, entry, args.dry_run) for entry in entries]
+        direct_token = os.environ.get("PROJECT_SYNC_GITHUB_TOKEN", "").strip()
+        if direct_token:
+            results = [sync_one(direct_token, entry, args.dry_run, direct_token=True) for entry in entries]
+        else:
+            app_jwt = make_app_jwt(os.environ.get("K8S_SUBMODULE_APP_ID", ""), os.environ.get("K8S_SUBMODULE_APP_PRIVATE_KEY", ""))
+            results = [sync_one(app_jwt, entry, args.dry_run) for entry in entries]
         text = report(results, args.dry_run)
         if args.report_path:
             args.report_path.parent.mkdir(parents=True, exist_ok=True)
