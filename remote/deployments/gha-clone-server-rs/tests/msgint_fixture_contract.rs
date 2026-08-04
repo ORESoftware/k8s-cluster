@@ -1,10 +1,9 @@
 use std::{fs, path::PathBuf};
 
 fn fixture() -> String {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/msgint-operator-config.yml");
-    fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("read {}: {error}", path.display()))
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/msgint-operator-config.yml");
+    fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()))
 }
 
 #[test]
@@ -26,7 +25,11 @@ fn messaging_intel_negative_mutation_anchors_are_unique_and_effective() {
             "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
             2,
         ),
-        ("credential persistence control", "          persist-credentials: false\n", 2),
+        (
+            "credential persistence control",
+            "          persist-credentials: false\n",
+            2,
+        ),
         (
             "operator job runner",
             "  operator_config:\n    runs-on: ubuntu-latest\n",
