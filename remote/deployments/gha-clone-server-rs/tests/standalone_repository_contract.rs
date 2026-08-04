@@ -16,12 +16,10 @@ fn standalone_workflows_are_repository_local_and_immutable() {
     let self_test = read("tests/meta_self_test.rs");
 
     for workflow in [&ci, &meta] {
-        assert!(workflow.contains(
-            "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-        ));
-        assert!(workflow.contains(
-            "dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30"
-        ));
+        assert!(workflow.contains("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"));
+        assert!(
+            workflow.contains("dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30")
+        );
         assert!(workflow.contains("toolchain: '1.90.0'"));
         assert!(!workflow.contains("ubuntu-latest"));
     }
@@ -73,8 +71,8 @@ fn nested_workflows_parse_as_yaml_and_expose_expected_jobs() {
             "gha-clone-self-test",
         ),
     ] {
-        let value: serde_yaml::Value =
-            serde_yaml::from_str(&read(path)).unwrap_or_else(|error| panic!("parse {path}: {error}"));
+        let value: serde_yaml::Value = serde_yaml::from_str(&read(path))
+            .unwrap_or_else(|error| panic!("parse {path}: {error}"));
         let jobs = value
             .get("jobs")
             .and_then(serde_yaml::Value::as_mapping)
