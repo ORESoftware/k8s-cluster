@@ -17,10 +17,8 @@ const GENERATED_RUST_PROFILE: &str = "rust-generated-verify";
 const NODE_HARDENED_VERIFY_PROFILE: &str = "node-hardened-verify";
 const NODE_HARDENED_TEST_PROFILE: &str = "node-hardened-test";
 
-const CHECKOUT_ACTION: &str =
-    "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
-const NODE_SETUP_ACTION: &str =
-    "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020";
+const CHECKOUT_ACTION: &str = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
+const NODE_SETUP_ACTION: &str = "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020";
 const RUST_TOOLCHAIN_ACTION: &str =
     "dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30";
 const NODE_ACTIONS: [&str; 2] = [CHECKOUT_ACTION, NODE_SETUP_ACTION];
@@ -109,7 +107,11 @@ fn is_threefa_bounded_workflow(request: &PlanRequest) -> bool {
 }
 
 fn enforce_exact_actions(job: &mut JobPlan, actual: &[String], expected: &[&str]) {
-    if !actual.iter().map(String::as_str).eq(expected.iter().copied()) {
+    if !actual
+        .iter()
+        .map(String::as_str)
+        .eq(expected.iter().copied())
+    {
         job.independent_supported = false;
         job.independent_profile = None;
         job.independent_reasons.push(
@@ -283,10 +285,14 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(!mutable.iter().map(String::as_str).eq(NODE_ACTIONS));
 
-        let extra = [CHECKOUT_ACTION, NODE_SETUP_ACTION, "owner/extra@0123456789abcdef0123456789abcdef01234567"]
-            .into_iter()
-            .map(str::to_string)
-            .collect::<Vec<_>>();
+        let extra = [
+            CHECKOUT_ACTION,
+            NODE_SETUP_ACTION,
+            "owner/extra@0123456789abcdef0123456789abcdef01234567",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
         assert!(!extra.iter().map(String::as_str).eq(NODE_ACTIONS));
     }
 
