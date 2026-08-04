@@ -1,0 +1,63 @@
+# INERT TEMPLATE: copy into a trusted first-party StreemPilot repository only
+# after the scale set is registered. Keep workflow_dispatch-only for the first
+# proof; never expose self-hosted runners to untrusted fork pull requests.
+name: StreemPilot CI self-hosted smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: streempilot-ci-self-hosted-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: streempilot-ci
+    timeout-minutes: 5
+    steps:
+      - name: Verify expected non-privileged Linux lane
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${RUNNER_OS}" = Linux
+          test "$(id -u)" != 0
+          test -n "${RUNNER_NAME:-}"
+          test -x /usr/bin/git
+          test -x /usr/bin/curl
+          test -x /usr/bin/python3
+          test ! -e /var/run/docker.sock
+          test ! -e /run/containerd/containerd.sock
+          test ! -e /var/run/secrets/kubernetes.io/serviceaccount/token
+          test -w "${RUNNER_TEMP}"
+          test -w "${GITHUB_WORKSPACE}"
+
+      - name: Exercise bounded workspace lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe="${RUNNER_TEMP}/streempilot-ci-smoke-${GITHUB_RUN_ID}"
+          mkdir -p "${probe}"
+          printf '%s\n' "ephemeral-runner-smoke" > "${probe}/result.txt"
+          test "$(cat "${probe}/result.txt")" = "ephemeral-runner-smoke"
+          python3 - "${probe}" <<'PY'
+          from pathlib import Path
+          import sys
+
+          probe = Path(sys.argv[1])
+          (probe / "result.txt").unlink()
+          probe.rmdir()
+          PY
+
+      - name: Report non-sensitive runner evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'runner=%s\n' "${RUNNER_NAME}"
+          printf 'runner_os=%s\n' "${RUNNER_OS}"
+          printf 'runner_arch=%s\n' "${RUNNER_ARCH}"
+          git --version
+          curl --version | head -n 1
+          python3 --version
