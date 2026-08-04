@@ -1,88 +1,15 @@
-name: Repair Messaging Intel applicator once
+name: Deprecated Messaging Intel applicator repair
 
 on:
-  push:
-    branches:
-      - agent/msgint-gha-clone-operator-verify-20260804
-    paths:
-      - .github/workflows/repair-msgint-applicator-once.yml
+  workflow_dispatch:
 
 permissions:
-  contents: write
-
-concurrency:
-  group: repair-msgint-applicator-once
-  cancel-in-progress: false
+  contents: read
 
 jobs:
-  repair:
+  disabled:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
     steps:
-      - name: Check out the exact feature branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: agent/msgint-gha-clone-operator-verify-20260804
-          fetch-depth: 0
-          persist-credentials: true
-
-      - name: Preserve embedded source and permit the validated bot finalizer
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 <<'PY'
-          from pathlib import Path
-
-          applicator = Path('scripts/ci/apply-msgint-gha-clone-hardening.py')
-          text = applicator.read_text(encoding='utf-8')
-          replacements = {
-              "    '''        if contains_secret_expression(mapping_get(step, \"env\"))":
-                  "    r'''        if contains_secret_expression(mapping_get(step, \"env\"))",
-              "    '''        if let Some(environment) = mapping_get(step, \"env\") {":
-                  "    r'''        if let Some(environment) = mapping_get(step, \"env\") {",
-          }
-          for old, new in replacements.items():
-              old_count = text.count(old)
-              new_count = text.count(new)
-              if old_count == 1 and new_count == 0:
-                  text = text.replace(old, new, 1)
-              elif old_count == 0 and new_count == 1:
-                  pass
-              else:
-                  raise SystemExit(
-                      f'unexpected applicator raw-string state: old={old_count} new={new_count}'
-                  )
-          applicator.write_text(text, encoding='utf-8')
-
-          finalizer = Path('.github/workflows/finalize-msgint-gha-clone-hardening.yml')
-          workflow = finalizer.read_text(encoding='utf-8')
-          template = "          hermetic_job = '''  node-profile-hermetic-smoke:"
-          raw_template = "          hermetic_job = r'''  node-profile-hermetic-smoke:"
-          if workflow.count(template) == 1 and raw_template not in workflow:
-              workflow = workflow.replace(template, raw_template, 1)
-          elif template not in workflow and workflow.count(raw_template) == 1:
-              pass
-          else:
-              raise SystemExit('unexpected hermetic-job template state')
-
-          guard = "    if: github.actor != 'github-actions[bot]'\n"
-          if workflow.count(guard) == 1:
-              workflow = workflow.replace(guard, '', 1)
-          elif guard in workflow:
-              raise SystemExit('duplicate bot exclusion guards found')
-          finalizer.write_text(workflow, encoding='utf-8')
-          PY
-          rm -f .github/workflows/finalize-pr-636.yml
-          rm -f .github/workflows/run-pr-636-finalizer.yml
-          rm -f .github/workflows/repair-msgint-applicator-once.yml
-
-      - name: Commit the repaired finalizer inputs
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git diff --cached --check
-          git commit -m 'fix: preserve embedded Messaging Intel finalizer source'
-          git push origin HEAD:agent/msgint-gha-clone-operator-verify-20260804
+      - run: |
+          echo 'This temporary branch-writing repair workflow is intentionally disabled.'
+          exit 1
