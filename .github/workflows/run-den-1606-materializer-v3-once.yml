@@ -1,6 +1,5 @@
-# Re-triggered after the inert GitOps merge; the successful product commit deletes this file.
-# Thin wrapper over the reviewed v2 carrier. It removes the last two
-# formatting-sensitive response-parse guards, then self-deletes with all carriers.
+# Thin wrapper over the reviewed primary carrier. It preserves Rust escape
+# literals for both path validators, validates the product, and self-deletes.
 name: Run DEN-1606 direct hardening materializer v3 once
 
 on:
@@ -32,15 +31,15 @@ jobs:
           fetch-depth: 1
           persist-credentials: true
 
-      - name: Execute v2 with structural build-response bindings
+      - name: Execute the reviewed transform with raw Rust escape literals
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
 
-          carrier = Path('.github/workflows/run-den-1606-materializer-v2-once.yml')
+          carrier = Path('.github/workflows/run-den-1606-materializer-pr-once.yml')
           lines = carrier.read_text(encoding='utf-8').splitlines()
-          step = lines.index('      - name: Apply the reviewed transformation against current dev')
+          step = lines.index('      - name: Execute the reviewed explicit transformer')
           next_step = next(
               index for index in range(step + 1, len(lines))
               if lines[index].startswith('      - uses: dtolnay/rust-toolchain@')
@@ -50,56 +49,40 @@ jobs:
               if lines[index] == '        run: |'
           )
           block = lines[run_index + 1 : next_step]
-          opener = next(i for i, line in enumerate(block) if line.strip() == "python3 - <<'PY'")
-          terminator = max(i for i, line in enumerate(block) if i > opener and line.strip() == 'PY')
+          opener = next(
+              index for index, line in enumerate(block)
+              if line.strip() == "python3 - <<'PY'"
+          )
+          terminator = max(
+              index for index, line in enumerate(block)
+              if index > opener and line.strip() == 'PY'
+          )
           prefix = '          '
           script = '\n'.join(
               line[len(prefix):] if line.startswith(prefix) else line
               for line in block[opener + 1 : terminator]
           ) + '\n'
 
-          list_end = "\n]\nfor old, new in replacements:\n"
-          if script.count(list_end) != 1:
-              raise SystemExit('v2 replacement-list boundary drifted')
-          extra = r'''
-    (
-        """if main.count(build_parse) != 1:
-    raise SystemExit('unexpected build submission parse')
-main = main.replace(build_parse, build_parse_new, 1)
-""",
-        """execute_start = main.find('async fn execute_plan(')
-build_parse_start = main.find('        let build: BuildJobResponse = serde_json::from_str(&body)', execute_start)
-build_update = main.find('        update_run(state, run_id, |run| {', build_parse_start)
-if execute_start == -1 or build_parse_start == -1 or build_update == -1:
-    raise SystemExit('could not locate build submission parse boundary')
-build_validation = '''        if !valid_build_job_id(&build.id) {
-            return Err("build server returned an invalid job ID".into());
-        }
-'''
-main = main[:build_update] + build_validation + main[build_update:]
-""",
-    ),
-    (
-        """if main.count(status_parse) != 1:
-    raise SystemExit('unexpected build status parse')
-main = main.replace(status_parse, status_parse_new, 1)
-""",
-        """wait_start = main.find('async fn wait_for_build(')
-status_parse_start = main.find('        let build: BuildJobResponse = serde_json::from_str(&body)', wait_start)
-status_match = main.find('        match build.status.as_str() {', status_parse_start)
-if wait_start == -1 or status_parse_start == -1 or status_match == -1:
-    raise SystemExit('could not locate build status parse boundary')
-status_validation = '''        if build.id != build_job_id || !valid_build_job_id(&build.id) {
-            return Err("build status returned a mismatched or invalid job ID".into());
-        }
-'''
-main = main[:status_match] + status_validation + main[status_match:]
-""",
-    ),
-'''
-          script = script.replace(list_end, extra + list_end, 1)
+          marker_anchor = (
+              "    \"new_path = '''fn valid_workflow_path(value: &str) -> bool {\",\n"
+              "):\n"
+          )
+          marker_replacement = (
+              "    \"new_path = '''fn valid_workflow_path(value: &str) -> bool {\",\n"
+              "    \"configured_path_old = '''fn valid_configured_workflow_path(value: &str) -> bool {\",\n"
+              "    \"configured_path_new = '''fn valid_configured_workflow_path(value: &str) -> bool {\",\n"
+              "):\n"
+          )
+          if script.count(marker_anchor) != 1:
+              raise SystemExit('primary raw-string marker tuple drifted')
+          script = script.replace(marker_anchor, marker_replacement, 1)
+
           exec(compile(script, str(carrier), 'exec'), {'__name__': '__main__'})
-          Path('.github/workflows/run-den-1606-materializer-v3-once.yml').unlink(missing_ok=True)
+          for path in (
+              '.github/workflows/run-den-1606-materializer-v2-once.yml',
+              '.github/workflows/run-den-1606-materializer-v3-once.yml',
+          ):
+              Path(path).unlink(missing_ok=True)
           PY
 
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
@@ -130,6 +113,14 @@ main = main[:status_match] + status_validation + main[status_match:]
         run: |
           set -euo pipefail
           git diff --check
+          for carrier in \
+            .github/workflows/materialize-den-1606-direct-hardening-once.yml \
+            .github/workflows/run-den-1606-materializer-once.yml \
+            .github/workflows/run-den-1606-materializer-pr-once.yml \
+            .github/workflows/run-den-1606-materializer-v2-once.yml \
+            .github/workflows/run-den-1606-materializer-v3-once.yml; do
+            test ! -e "$carrier"
+          done
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
