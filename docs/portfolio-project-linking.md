@@ -20,9 +20,11 @@ ChatGPT project IDs are not exposed by the available connector, so ChatGPT linka
 
 ## Enforcement
 
-- [`scripts/ops/validate_portfolio_project_links.py`](../scripts/ops/validate_portfolio_project_links.py) validates required fields, canonical naming, UUIDs, Slack IDs, direct URLs, uniqueness, ordering, and the 41-project baseline.
+- [`scripts/ops/validate_portfolio_project_links.py`](../scripts/ops/validate_portfolio_project_links.py) enforces the exact 41-key inventory, required fields, canonical casing and aliases, Project numbering, UUIDs, the Slack workspace, direct URL consistency, uniqueness, ordering, and credential exclusion.
 - [`.github/workflows/validate-portfolio-project-links.yml`](../.github/workflows/validate-portfolio-project-links.yml) runs the validator on relevant pushes and pull requests.
 - [`scripts/ops/sync_github_project_metadata.py`](../scripts/ops/sync_github_project_metadata.py) reconciles every GitHub Project readme and short description from the registry.
-- Linear projects and Slack channels carry the marker `portfolio-link-registry:v1:<portfolio_key>` with reciprocal links.
+- Linear projects and Slack channels carry the marker `portfolio-link-registry:v1:<portfolio_key>` with reciprocal links. This marker is the idempotency key: update the existing reference for a portfolio instead of creating another comment or message.
 
-When adding another portfolio, add or select the Linear project and Slack channel first, then append one sorted registry row and run both validation and metadata synchronization. Never infer a match solely from display text when a native ID is available.
+All GitHub organization Projects use Project #1 except the established `dancing-dragons` Project #4.
+
+When adding another portfolio, add or select the Linear project and Slack channel first, then append one sorted registry row, extend the validator inventory, create or update the reciprocal references, and run both validation and metadata synchronization. Never infer a match solely from display text when a native ID is available.
