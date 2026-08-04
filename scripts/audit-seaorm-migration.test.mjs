@@ -29,18 +29,21 @@ function invalid(value, pattern) {
   );
 }
 
-test("committed migration contract names the immutable shared authorities", () => {
+test("committed migration contract names immutable schema and dpm authorities", () => {
   const validated = validateContract(contract);
   assert.equal(validated.status, "migration-in-progress");
   assert.equal(
     validated.schemaAuthority.commit,
     "3c84cab532b27d328378f09fba5841f02644ae3b",
   );
-  assert.equal(
-    validated.declarativeMigrations.repository,
-    "declarative-migrations/declarative-migrations",
-  );
-  assert.equal(validated.declarativeMigrations.serviceStartupMigrations, false);
+  assert.deepEqual(validated.declarativeMigrations, {
+    repository: "declarative-migrations/declarative-postgres-migrate.rs",
+    version: "0.3.2",
+    linuxX8664Asset: "dpm-v0.3.2-x86_64-unknown-linux-gnu.tar.gz",
+    linuxX8664Sha256: "4258755a946f6f3a49e33538889523e4736180624a186bddc90180994612d3aa",
+    binary: "dpm",
+    serviceStartupMigrations: false,
+  });
   assert.equal(validated.applicationPersistence.targetOrm, "SeaORM");
 });
 
@@ -58,10 +61,18 @@ test("schema authority cannot drift to a service-owned copy or mutable ref", () 
   invalid(pathMutation, /schema authority path/);
 });
 
-test("declarative migrations remains external to service startup", () => {
-  const repository = clone(contract);
-  repository.declarativeMigrations.repository = "some-other/tool";
-  invalid(repository, /declarative-migrations repository is incorrect/);
+test("dpm identity remains exact and external to service startup", () => {
+  for (const [key, value] of [
+    ["repository", "declarative-migrations/declarative-migrations"],
+    ["version", "1.4.2"],
+    ["linuxX8664Asset", "declarative-postgres-migrate-linux-x86_64.tar.gz"],
+    ["linuxX8664Sha256", "f".repeat(64)],
+    ["binary", "declarative-postgres-migrate"],
+  ]) {
+    const mutation = clone(contract);
+    mutation.declarativeMigrations[key] = value;
+    invalid(mutation, new RegExp(`declarativeMigrations\\.${key} must equal`));
+  }
 
   const startup = clone(contract);
   startup.declarativeMigrations.serviceStartupMigrations = true;
