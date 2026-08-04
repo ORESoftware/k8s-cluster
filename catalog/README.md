@@ -43,6 +43,24 @@ The channel check enforces:
 - no immutable Slack channel ID or Linear UUID may enter this public
   repository — those identifiers stay on DEN-1267.
 
+## Fleet-wide project links
+
+`catalog/project-links.json` is the canonical public routing contract for all
+41 linked workspaces. Each entry uses one lowercase key to join the exact
+GitHub organization Project, Linear project, ChatGPT project, and eponymous
+Slack channel. Its versioned JSON Schema is
+`catalog/project-links.schema.json`.
+
+The validator enforces the verified Project numbering contract: every
+organization Project is `#1` except `dancing-dragons-project`, which is `#4`.
+It also rejects duplicate or ambiguous names, non-eponymous Slack channels,
+immutable provider IDs, and credential-shaped strings.
+
+`.github/workflows/daily-project-link-sync.yml` reconciles the managed provider
+metadata every day at 03:00 `America/Chicago`, with daylight-saving-aware UTC
+cron selection. See `docs/project-link-sync.md` for provider behavior, required
+protected credentials, and the optional ChatGPT bridge webhook.
+
 ## Data boundary
 
 This repository is public. It may contain:
@@ -89,6 +107,16 @@ nix develop -c python tools/application_catalog.py generate \
   catalog/applications.json
 nix develop -c python tools/application_catalog.py check \
   catalog/applications.json
+```
+
+Validate and render the project-link catalog:
+
+```console
+nix develop -c python tools/project_links.py validate \
+  catalog/project-links.json
+nix develop -c python tools/project_links.py report \
+  catalog/project-links.json \
+  --output artifacts/project-links.md
 ```
 
 Collect the current public-safe inventory:
