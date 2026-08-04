@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "organization": "apostille-me",
+  "expected_login": "ORESoftware",
+  "visibility": "public",
+  "default_branch": "main",
+  "feature_branch": "agent/bootstrap-apostille-me",
+  "bundle_sha256": "d9df6bba633c27b56c6f9e7eb2fd007b70c652b2dde8d3c332637c3ea7ffbedd",
+  "topics": ["apostille", "visa-consulting", "rust"],
+  "repositories": [
+    {
+      "name": "apme-interfaces",
+      "description": "Shared apostille-me domain, REST, and event contracts",
+      "title": "Bootstrap shared apostille-me interfaces",
+      "main_sha": "f218d5871411231852c5f68703f38f50d1c6a87a",
+      "feature_sha": "c5d05a0e5732bc8d12ecf67f62e63d8aec9c091a",
+      "tag": "v0.1.0-bootstrap",
+      "tag_ref_sha": "95e1c5f2a60796e7308e2fb3ea0a058715ff1a90",
+      "tag_target_sha": "c5d05a0e5732bc8d12ecf67f62e63d8aec9c091a"
+    },
+    {
+      "name": "apme-api",
+      "description": "Rust REST and WebSocket API for apostille-me case management",
+      "title": "Bootstrap Rust API and WebSocket service",
+      "main_sha": "f218d5871411231852c5f68703f38f50d1c6a87a",
+      "feature_sha": "6270a8b9e190a6a33bd7009ec1be766abf6e4c06"
+    },
+    {
+      "name": "apme-web-mash",
+      "description": "Maud, Axum, SeaORM, Supabase, HTMX, and WebSocket case portal",
+      "title": "Bootstrap MASH case operations portal",
+      "main_sha": "f218d5871411231852c5f68703f38f50d1c6a87a",
+      "feature_sha": "8754af85fae132f01df9a495e11167abc1e9e5b4"
+    },
+    {
+      "name": "apme-web-leptos",
+      "description": "Leptos SSR and Axum case portal for apostille-me",
+      "title": "Bootstrap Leptos SSR case portal",
+      "main_sha": "f218d5871411231852c5f68703f38f50d1c6a87a",
+      "feature_sha": "4e8148f7b76f204a3a02789dd36ef2cf8edf683b"
+    },
+    {
+      "name": "apme-web-dioxus",
+      "description": "Dioxus SSR and Axum case portal for apostille-me",
+      "title": "Bootstrap Dioxus SSR case portal",
+      "main_sha": "f218d5871411231852c5f68703f38f50d1c6a87a",
+      "feature_sha": "dc65efb6ad394dada2e75b905e5578a87377b52b"
+    },
+    {
+      "name": "apme-cli",
+      "description": "flags-2-env operator CLI for apostille-me",
+      "title": "Bootstrap flags-2-env operator CLI",
+      "main_sha": "f218d5871411231852c5f68703f38f50d1c6a87a",
+      "feature_sha": "4dd4a5f9c5628ec16dadacc7958e552ee91974b5"
+    },
+    {
+      "name": "apme-sync",
+      "description": "opto-sync reconciliation gateway for apostille-me",
+      "title": "Bootstrap opto-sync reconciliation gateway",
+      "main_sha": "f218d5871411231852c5f68703f38f50d1c6a87a",
+      "feature_sha": "236ad0400f4fe7fadda5953667de5852f7fee496"
+    },
+    {
+      "name": "apme-infra",
+      "description": "Deployment, security, and operations infrastructure for apostille-me",
+      "title": "Bootstrap apostille-me infrastructure and runbooks",
+      "main_sha": "f218d5871411231852c5f68703f38f50d1c6a87a",
+      "feature_sha": "300cc65651fafec63d064ed7e7d9372a571c79f7"
+    }
+  ]
+}
