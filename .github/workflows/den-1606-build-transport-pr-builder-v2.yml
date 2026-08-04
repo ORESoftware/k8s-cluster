@@ -91,6 +91,17 @@ jobs:
           git fetch --no-tags origin agent/den-1606-build-transport-hardening-20260804
           git checkout -B agent/den-1606-build-transport-hardening-20260804 FETCH_HEAD
           python3 /tmp/den-1606-build-transport.py
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/deployments/gha-clone-server-rs/tests/http_api.rs')
+          text = path.read_text(encoding='utf-8')
+          old = '    env.insert("GHA_CLONE_BUILD_POLL_SECONDS", "0".to_string());\n'
+          new = '    env.insert("GHA_CLONE_BUILD_POLL_SECONDS", "1".to_string());\n'
+          if text.count(old) != 1:
+              raise SystemExit('integration fixture polling boundary drifted')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
 
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
@@ -115,8 +126,9 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add \
             remote/deployments/gha-clone-server-rs/src/main.rs \
+            remote/deployments/gha-clone-server-rs/tests/http_api.rs \
             docs/gha-clone-build-server-boundary.md
-          unexpected="$(git diff --cached --name-only | grep -Ev '^(remote/deployments/gha-clone-server-rs/src/main\.rs|docs/gha-clone-build-server-boundary\.md)$' || true)"
+          unexpected="$(git diff --cached --name-only | grep -Ev '^(remote/deployments/gha-clone-server-rs/(src/main\.rs|tests/http_api\.rs)|docs/gha-clone-build-server-boundary\.md)$' || true)"
           if [[ -n "$unexpected" ]]; then
             printf 'unexpected product paths:\n%s\n' "$unexpected" >&2
             exit 1
