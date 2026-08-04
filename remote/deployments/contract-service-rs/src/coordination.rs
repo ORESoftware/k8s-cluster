@@ -19,8 +19,8 @@ use std::time::Duration;
 
 use reqwest::{Client, Url};
 use sea_orm::{
-    ConnectOptions, Database, DatabaseConnection, DatabaseTransaction, DbBackend,
-    FromQueryResult, Statement, TransactionTrait,
+    ConnectOptions, Database, DatabaseConnection, DatabaseTransaction, DbBackend, FromQueryResult,
+    Statement, TransactionTrait,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -32,8 +32,7 @@ const MAX_COORDINATION_RESPONSE_BYTES: u64 = 1024 * 1024;
 const POSTGRES_TIMEOUT: Duration = Duration::from_secs(5);
 const READINESS_TIMEOUT: Duration = Duration::from_secs(2);
 const READINESS_SQL: &str = "select 1 as value";
-const ADVISORY_LOCK_SQL: &str =
-    "select pg_try_advisory_xact_lock($1) as acquired";
+const ADVISORY_LOCK_SQL: &str = "select pg_try_advisory_xact_lock($1) as acquired";
 
 #[derive(Clone)]
 pub(crate) struct CoordinationState {
@@ -256,9 +255,8 @@ impl CoordinationState {
         let key = format!("solana/broadcast/{digest_hex}");
         let owner = format!("{}:{}", inner.owner, &digest_hex[..16]);
 
-        let database = inner.database().await.map_err(|error| {
+        let database = inner.database().await.inspect_err(|_error| {
             self.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            error
         })?;
         let transaction = database.begin().await.map_err(|error| {
             self.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
