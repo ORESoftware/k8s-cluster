@@ -19,7 +19,7 @@ function yamlScalar(value) {
   return trimmed;
 }
 
-export function publicEnvKeysForNamedStep(workflow, stepName) {
+export function publicEnvForNamedStep(workflow, stepName) {
   const lines = workflow.split(/\r?\n/);
   const matches = [];
 
@@ -63,17 +63,28 @@ export function publicEnvKeysForNamedStep(workflow, stepName) {
   }
 
   const [{ index: envStart, indent: envIndent }] = envBlocks;
-  const keys = new Set();
+  const entries = new Map();
   for (let index = envStart + 1; index < stepEnd; index += 1) {
     const line = lines[index];
     if (!line.trim() || line.trimStart().startsWith("#")) continue;
     const currentIndent = indentation(line);
     if (currentIndent <= envIndent) break;
     if (currentIndent !== envIndent + 2) continue;
-    const match = line.match(/^\s*(PUBLIC_[A-Z0-9_]+)\s*:/);
-    if (match) keys.add(match[1]);
+    const match = line.match(/^\s*(PUBLIC_[A-Z0-9_]+)\s*:\s*(.*?)\s*$/);
+    if (!match) continue;
+    const [, key, value] = match;
+    if (entries.has(key)) {
+      throw new Error(
+        `step ${JSON.stringify(stepName)} declares duplicate environment key ${key}`,
+      );
+    }
+    entries.set(key, yamlScalar(value));
   }
-  return keys;
+  return entries;
+}
+
+export function publicEnvKeysForNamedStep(workflow, stepName) {
+  return new Set(publicEnvForNamedStep(workflow, stepName).keys());
 }
 
 export function publicKeysFromDotenv(dotenv) {
