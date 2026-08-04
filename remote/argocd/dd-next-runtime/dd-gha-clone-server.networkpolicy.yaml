@@ -32,10 +32,10 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              app: dd-build-server
+              app: dd-gha-executor-router
       ports:
         - protocol: TCP
-          port: 8100
+          port: 8126
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
