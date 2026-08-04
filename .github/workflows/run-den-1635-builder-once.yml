@@ -1,0 +1,93 @@
+# Push-trigger carrier for the reviewed DEN-1635 builder. Both workflow files
+# delete themselves before the product commit.
+name: Run DEN-1635 atomic admission builder once
+
+on:
+  push:
+    branches:
+      - agent/den-1635-atomic-run-admission
+    paths:
+      - .github/workflows/run-den-1635-builder-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1635-atomic-run-admission
+  cancel-in-progress: false
+
+jobs:
+  build-product:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1635-atomic-run-admission
+          fetch-depth: 1
+          persist-credentials: true
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Execute the reviewed builder transform
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/apply-den-1635-atomic-run-admission-once.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          step_name = '      - name: Apply the reviewed atomic-admission transform'
+          next_step = '      - name: Validate every clone-server target and continuity contract'
+          start = lines.index(step_name)
+          end = lines.index(next_step, start + 1)
+          run_index = lines.index('        run: |', start, end)
+          block = lines[run_index + 1:end]
+          heredoc_start = next(i for i, line in enumerate(block) if line.strip() == "python3 - <<'PY'")
+          heredoc_end = max(i for i, line in enumerate(block) if i > heredoc_start and line.strip() == 'PY')
+          prefix = '          '
+          script = '\n'.join(
+              line[len(prefix):] if line.startswith(prefix) else line
+              for line in block[heredoc_start + 1:heredoc_end]
+          ) + '\n'
+          exec(compile(script, str(workflow), 'exec'), {'__name__': '__main__'})
+          Path('.github/workflows/run-den-1635-builder-once.yml').unlink()
+          PY
+
+      - name: Validate every clone-server target and continuity contract
+        run: |
+          set -euo pipefail
+          cd remote/deployments/gha-clone-server-rs
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+          cd ../../..
+          corepack enable
+          cd remote/tests
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts
+
+      - name: Commit only the validated product diff
+        run: |
+          set -euo pipefail
+          git diff --check
+          test ! -e .github/workflows/apply-den-1635-atomic-run-admission-once.yml
+          test ! -e .github/workflows/run-den-1635-builder-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          allowed='^(\.github/workflows/(apply-den-1635-atomic-run-admission-once|run-den-1635-builder-once)\.yml|docs/gha-clone-run-admission-boundary\.md|remote/deployments/gha-clone-server-rs/(src/main\.rs|tests/webhook_retention\.rs))$'
+          unexpected="$(git diff --cached --name-only | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected staged paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          git commit -m 'fix(DEN-1635): reserve clone runs atomically'
+          git push origin HEAD:agent/den-1635-atomic-run-admission
