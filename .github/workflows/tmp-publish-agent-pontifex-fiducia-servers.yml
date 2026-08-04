@@ -1,0 +1,421 @@
+name: Temporary publish Agent Pontifex and Fiducia agent servers
+run-name: Publish canonical agent servers and SDK @ ${{ github.sha }}
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/tmp-publish-agent-pontifex-fiducia-servers.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-agent-pontifex-fiducia-agent-servers
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'ORESoftware/k8s-cluster' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Configure trusted main-ref AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: agent-pontifex-fiducia-repository-publisher
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Create repositories and publish exact histories
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: |
+          set -Eeuo pipefail
+          test -n "${INSTANCE_ID:-}"
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+          remote_script="$RUNNER_TEMP/publish-agent-pontifex-fiducia.sh"
+          cat >"$remote_script" <<'REMOTE_EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          umask 077
+
+          work="$(mktemp -d /tmp/agent-pontifex-fiducia-publisher.XXXXXX)"
+          cleanup() {
+            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+            unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
+            unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+            rm -rf "$work"
+          }
+          trap cleanup EXIT
+
+          for inherited in GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS; do
+            if test -n "${!inherited:-}"; then
+              printf 'publisher status=failed reason=inherited-%s\n' "$inherited" >&2
+              exit 64
+            fi
+          done
+
+          gh_hosts="${GH_CONFIG_DIR:-$HOME/.config/gh}/hosts.yml"
+          test -r "$gh_hosts"
+          GH_TOKEN="$(
+            GH_HOSTS="$gh_hosts" python3 - <<'PY'
+          import ast
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          path = Path(os.environ["GH_HOSTS"])
+          current_host = None
+          for raw in path.read_text(encoding="utf-8").splitlines():
+              stripped = raw.strip()
+              if not stripped or stripped.startswith("#"):
+                  continue
+              indent = len(raw) - len(raw.lstrip())
+              if indent == 0 and stripped.endswith(":"):
+                  current_host = stripped[:-1]
+                  continue
+              if current_host != "github.com":
+                  continue
+              match = re.match(r"^\s+oauth_token:\s*(.*?)\s*$", raw)
+              if match is None:
+                  continue
+              value = match.group(1)
+              if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+                  value = ast.literal_eval(value)
+              if not isinstance(value, str) or not value or any(ch.isspace() for ch in value):
+                  raise SystemExit(65)
+              sys.stdout.write(value)
+              raise SystemExit(0)
+          raise SystemExit(65)
+          PY
+          )"
+          test -n "$GH_TOKEN"
+          export GH_TOKEN
+          export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
+
+          askpass="$work/git-askpass.sh"
+          cat >"$askpass" <<'ASKPASS_EOF'
+          #!/usr/bin/env sh
+          case "${1:-}" in
+            *Username*) printf '%s\n' x-access-token ;;
+            *Password*) printf '%s\n' "${GH_TOKEN:?}" ;;
+            *) exit 1 ;;
+          esac
+          ASKPASS_EOF
+          chmod 700 "$askpass"
+          export GIT_ASKPASS="$askpass"
+          export GIT_ASKPASS_REQUIRE=force
+          export GIT_TERMINAL_PROMPT=0
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=credential.helper
+          export GIT_CONFIG_VALUE_0=
+
+          identity="$(gh api user)"
+          test "$(jq -er .login <<<"$identity")" = ORESoftware
+          for organization in agent-pontifex fiducia-cloud; do
+            membership="$(gh api "user/memberships/orgs/${organization}")"
+            test "$(jq -er .role <<<"$membership")" = admin
+            test "$(jq -er .state <<<"$membership")" = active
+            printf 'membership organization=%s role=admin state=active\n' "$organization"
+          done
+
+          ensure_repo() {
+            local organization="$1"
+            local name="$2"
+            local visibility="$3"
+            local description="$4"
+            local private_value=false
+            test "$visibility" = public || private_value=true
+
+            local existing=''
+            if existing="$(gh api "repos/${organization}/${name}" 2>/dev/null)"; then
+              test "$(jq -er .owner.login <<<"$existing")" = "$organization"
+              if test "$(jq -er .visibility <<<"$existing")" != "$visibility"; then
+                printf 'publisher status=failed repo=%s/%s reason=visibility-mismatch\n' \
+                  "$organization" "$name" >&2
+                exit 70
+              fi
+              printf 'repository repo=%s/%s action=existing visibility=%s\n' \
+                "$organization" "$name" "$visibility"
+            else
+              jq -nc \
+                --arg name "$name" \
+                --arg description "$description" \
+                --arg visibility "$visibility" \
+                --argjson private "$private_value" \
+                '{name:$name,description:$description,visibility:$visibility,private:$private,has_issues:true,has_projects:true,has_wiki:false,auto_init:false}' \
+                | gh api --method POST "orgs/${organization}/repos" --input - >/dev/null
+              printf 'repository repo=%s/%s action=created visibility=%s\n' \
+                "$organization" "$name" "$visibility"
+            fi
+
+            jq -nc \
+              --arg description "$description" \
+              '{description:$description,has_issues:true,has_projects:true,has_wiki:false,delete_branch_on_merge:true,allow_squash_merge:true,allow_merge_commit:true,allow_rebase_merge:true}' \
+              | gh api --method PATCH "repos/${organization}/${name}" --input - >/dev/null
+            gh api --method PUT "repos/${organization}/${name}/vulnerability-alerts" >/dev/null 2>&1 || true
+          }
+
+          set_topics() {
+            local repository="$1"
+            shift
+            printf '%s\n' "$@" | jq -Rsc 'split("\n")[:-1] | {names:.}' \
+              | gh api --method PUT "repos/${repository}/topics" --input - >/dev/null
+          }
+
+          ensure_repo agent-pontifex ai-agent-bridge.rs public \
+            'Open-source Agent Pontifex topic-routed multi-agent bridge server in Rust.'
+          ensure_repo agent-pontifex ai-agent-coordinator.rs public \
+            'Open-source Agent Pontifex leased-job coordinator and model gateway in Rust.'
+          ensure_repo agent-pontifex agent-sdk.rs public \
+            'Shared Agent Pontifex Rust protocol contracts and typed bridge/coordinator SDK.'
+          ensure_repo fiducia-cloud fiducia-ai-agent-coordinator.rs private \
+            'Fiducia-specific supervised AI-agent coordinator and control plane in Rust.'
+
+          set_topics agent-pontifex/ai-agent-bridge.rs rust ai-agents multi-agent websocket agent-pontifex bridge-server
+          set_topics agent-pontifex/ai-agent-coordinator.rs rust ai-agents multi-agent agent-pontifex coordinator job-queue
+          set_topics agent-pontifex/agent-sdk.rs rust sdk protocol ai-agents agent-pontifex
+          set_topics fiducia-cloud/fiducia-ai-agent-coordinator.rs rust ai-agents fiducia coordinator fencing leases
+
+          mirror_repo() {
+            local source="$1"
+            local target="$2"
+            local directory="$work/mirror-$(tr '/.' '--' <<<"$target")"
+
+            git clone --bare "https://github.com/${source}.git" "$directory" >/dev/null
+            git -C "$directory" fetch --prune origin \
+              '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*' >/dev/null
+
+            local source_main
+            source_main="$(git -C "$directory" rev-parse refs/heads/main)"
+            local target_main=''
+            target_main="$(gh api "repos/${target}/git/ref/heads/main" --jq .object.sha 2>/dev/null || true)"
+            if test -n "$target_main" && test "$target_main" != "$source_main"; then
+              if ! git -C "$directory" merge-base --is-ancestor "$target_main" "$source_main" 2>/dev/null; then
+                printf 'publisher status=failed repo=%s reason=divergent-main target=%s source=%s\n' \
+                  "$target" "$target_main" "$source_main" >&2
+                exit 71
+              fi
+            fi
+
+            git -C "$directory" push --prune "https://github.com/${target}.git" \
+              'refs/heads/*:refs/heads/*' 'refs/tags/*:refs/tags/*' >/dev/null
+            gh api --method PATCH "repos/${target}" -f default_branch=main >/dev/null
+
+            local published_main
+            published_main="$(gh api "repos/${target}/git/ref/heads/main" --jq .object.sha)"
+            test "$published_main" = "$source_main"
+            printf 'published repo=%s source=%s main=%s\n' "$target" "$source" "$published_main"
+          }
+
+          mirror_repo ORESoftware/ai-agent-bridge.rs agent-pontifex/ai-agent-bridge.rs
+          mirror_repo ORESoftware/ai-agent-coordinator.rs agent-pontifex/ai-agent-coordinator.rs
+          mirror_repo fiducia-cloud/fiducia-ai-agent-control-plane fiducia-cloud/fiducia-ai-agent-coordinator.rs
+
+          publish_sdk() {
+            local source_repo=ORESoftware/ai-agent-bridge.rs
+            local source_branch=agent/shared-protocol-sdk-foundation
+            local target_repo=agent-pontifex/agent-sdk.rs
+            local source_dir="$work/sdk-source"
+            local target_dir="$work/sdk-target"
+
+            git clone "https://github.com/${source_repo}.git" "$source_dir" >/dev/null
+            git -C "$source_dir" fetch origin "$source_branch" >/dev/null
+            local source_commit
+            source_commit="$(git -C "$source_dir" rev-parse "origin/${source_branch}")"
+            local split_commit
+            split_commit="$(git -C "$source_dir" subtree split --prefix=sdk "origin/${source_branch}")"
+
+            local target_main=''
+            target_main="$(gh api "repos/${target_repo}/git/ref/heads/main" --jq .object.sha 2>/dev/null || true)"
+            if test -z "$target_main"; then
+              git -C "$source_dir" push "https://github.com/${target_repo}.git" \
+                "${split_commit}:refs/heads/main" >/dev/null
+            fi
+            git -C "$source_dir" push "https://github.com/${target_repo}.git" \
+              "${split_commit}:refs/heads/upstream-sdk-extraction" >/dev/null 2>&1 || true
+
+            git clone "https://github.com/${target_repo}.git" "$target_dir" >/dev/null
+            git -C "$target_dir" checkout main >/dev/null
+
+            if test -f "$target_dir/.agent-pontifex-source.json"; then
+              test "$(jq -er .source_commit "$target_dir/.agent-pontifex-source.json")" = "$source_commit"
+              test "$(jq -er .split_commit "$target_dir/.agent-pontifex-source.json")" = "$split_commit"
+            else
+              local current_main
+              current_main="$(git -C "$target_dir" rev-parse HEAD)"
+              test "$current_main" = "$split_commit"
+
+              cat >"$target_dir/Cargo.toml" <<'EOF'
+          [workspace]
+          resolver = "2"
+          members = [
+              "agent-pontifex-protocol",
+              "agent-pontifex-sdk",
+          ]
+          EOF
+
+              sed -i \
+                's#https://github.com/ORESoftware/ai-agent-bridge.rs#https://github.com/agent-pontifex/agent-sdk.rs#g' \
+                "$target_dir/agent-pontifex-protocol/Cargo.toml" \
+                "$target_dir/agent-pontifex-sdk/Cargo.toml"
+
+              git -C "$source_dir" show "origin/${source_branch}:LICENSE" >"$target_dir/LICENSE"
+              cat >"$target_dir/README.md" <<'EOF'
+          # Agent Pontifex SDK
+
+          Shared, vendor-neutral Rust contracts and clients for Agent Pontifex-compatible
+          bridge and coordinator servers.
+
+          ## Crates
+
+          - `agent-pontifex-protocol`: versioned bridge, presence, messaging, context,
+            repository-path lease, coordinator-job, discovery, and capability types.
+          - `agent-pontifex-sdk`: credential-safe typed HTTP clients for bridge and
+            coordinator implementations.
+
+          Product implementations may advertise namespaced extensions. Fiducia-specific
+          authority, tenancy, review, storage, and fencing semantics remain downstream in
+          `fiducia-cloud`; they do not become dependencies of this public SDK.
+
+          ```sh
+          cargo test --workspace
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo doc --workspace --no-deps
+          ```
+          EOF
+
+              cat >"$target_dir/SECURITY.md" <<'EOF'
+          # Security policy
+
+          Please report vulnerabilities through GitHub private vulnerability reporting
+          for this repository. Do not include credentials, customer data, or active
+          exploit material in public issues.
+          EOF
+
+              mkdir -p "$target_dir/.github/workflows"
+              cat >"$target_dir/.github/workflows/ci.yml" <<'EOF'
+          name: CI
+
+          on:
+            pull_request:
+            push:
+              branches: [main]
+            workflow_dispatch:
+
+          permissions:
+            contents: read
+
+          concurrency:
+            group: agent-pontifex-sdk-${{ github.workflow }}-${{ github.ref }}
+            cancel-in-progress: true
+
+          jobs:
+            test:
+              runs-on: ubuntu-latest
+              timeout-minutes: 20
+              steps:
+                - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+                  with:
+                    persist-credentials: false
+                - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+                  with:
+                    toolchain: '1.95.0'
+                    components: rustfmt, clippy
+                - run: cargo fmt --all -- --check
+                - run: cargo clippy --workspace --all-targets -- -D warnings
+                - run: cargo test --workspace
+                - run: cargo doc --workspace --no-deps
+          EOF
+
+              jq -n \
+                --arg source_repository "$source_repo" \
+                --arg source_branch "$source_branch" \
+                --arg source_commit "$source_commit" \
+                --arg split_commit "$split_commit" \
+                '{source_repository:$source_repository,source_branch:$source_branch,source_commit:$source_commit,split_commit:$split_commit}' \
+                >"$target_dir/.agent-pontifex-source.json"
+
+              git -C "$target_dir" config user.name 'Agent Pontifex bootstrap'
+              git -C "$target_dir" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+              git -C "$target_dir" add \
+                .agent-pontifex-source.json .github Cargo.toml LICENSE README.md SECURITY.md \
+                agent-pontifex-protocol/Cargo.toml agent-pontifex-sdk/Cargo.toml
+              git -C "$target_dir" commit -m 'chore: establish standalone Agent Pontifex SDK workspace' >/dev/null
+              git -C "$target_dir" push origin main >/dev/null
+            fi
+
+            gh api --method PATCH "repos/${target_repo}" -f default_branch=main >/dev/null
+            local published_main
+            published_main="$(gh api "repos/${target_repo}/git/ref/heads/main" --jq .object.sha)"
+            gh api "repos/${target_repo}/contents/Cargo.toml?ref=main" >/dev/null
+            gh api "repos/${target_repo}/contents/agent-pontifex-sdk/src/lib.rs?ref=main" >/dev/null
+            printf 'published repo=%s source=%s branch=%s source_commit=%s split=%s main=%s\n' \
+              "$target_repo" "$source_repo" "$source_branch" "$source_commit" "$split_commit" "$published_main"
+          }
+
+          publish_sdk
+
+          for repository in \
+            agent-pontifex/ai-agent-bridge.rs \
+            agent-pontifex/ai-agent-coordinator.rs \
+            agent-pontifex/agent-sdk.rs \
+            fiducia-cloud/fiducia-ai-agent-coordinator.rs
+          do
+            repo="$(gh api "repos/${repository}")"
+            archived="$(jq -er .archived <<<"$repo")"
+            disabled="$(jq -er .disabled <<<"$repo")"
+            test "$archived" = false
+            test "$disabled" = false
+            test "$(jq -er .default_branch <<<"$repo")" = main
+            printf 'verified repo=%s visibility=%s default=main\n' \
+              "$repository" "$(jq -er .visibility <<<"$repo")"
+          done
+
+          printf 'publisher status=success repositories=4\n'
+          REMOTE_EOF
+          chmod 700 "$remote_script"
+
+          encoded="$(base64 --wrap=0 "$remote_script")"
+          remote_command="remote_log=/tmp/publish-agent-pontifex-fiducia.log; printf '%s' '$encoded' | base64 --decode > /tmp/publish-agent-pontifex-fiducia.sh && chown ec2-user:ec2-user /tmp/publish-agent-pontifex-fiducia.sh && chmod 700 /tmp/publish-agent-pontifex-fiducia.sh; status=0; sudo -u ec2-user -H bash -lc 'unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS; exec bash /tmp/publish-agent-pontifex-fiducia.sh' >\"\$remote_log\" 2>&1 || status=\$?; tail -c 30000 \"\$remote_log\"; rm -f /tmp/publish-agent-pontifex-fiducia.sh \"\$remote_log\"; exit \$status"
+          parameters="$RUNNER_TEMP/agent-publisher-parameters.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' >"$parameters"
+
+          command_id="$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment 'Publish Agent Pontifex and Fiducia agent servers' \
+            --parameters "file://$parameters" \
+            --query 'Command.CommandId' \
+            --output text)"
+          printf 'ssm_command_id=%s\n' "$command_id"
+
+          status=Pending
+          for _ in $(seq 1 720); do
+            status="$(aws ssm get-command-invocation \
+              --command-id "$command_id" \
+              --instance-id "$INSTANCE_ID" \
+              --query Status \
+              --output text 2>/dev/null || true)"
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut|Cancelling) break ;;
+            esac
+            sleep 3
+          done
+
+          invocation="$(aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json)"
+          jq -r '.Stdout, .Stderr' <<<"$invocation"
+          test "$status" = Success
