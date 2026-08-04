@@ -121,7 +121,17 @@ jobs:
             remote/deployments/gha-clone-server-rs/tests/den_1606_planner_inputs.rs
           )
           git restore --source=HEAD --worktree -- "${format_only[@]}"
-          git diff --quiet -- "${format_only[@]}"
+
+          # The private checkout is a dependency, not a DEN-977 product change.
+          # Reset it without fetching to the exact gitlink already reviewed and
+          # checked out above, then require a clean superproject entry.
+          expected_libs="$(git rev-parse HEAD:remote/libs)"
+          test -n "$expected_libs"
+          test -d remote/libs
+          git -C remote/libs reset --hard "$expected_libs"
+          git -C remote/libs clean -ffd
+          test "$(git -C remote/libs rev-parse HEAD)" = "$expected_libs"
+          git diff --quiet -- "${format_only[@]}" remote/libs
 
           cat >"${RUNNER_TEMP}/allowed-paths" <<'EOF'
           .github/workflows/gha-clone-server.yml
