@@ -48,149 +48,133 @@ jobs:
 
           main_path = Path('remote/deployments/gha-clone-server-rs/src/main.rs')
           source = main_path.read_text(encoding='utf-8')
-          old = '''    if let Err(response) = require_allowed_repository(&repository, &state) {
-              return response;
-          }
-          let Some(revision) = webhook_revision(event, &payload) else {
-          '''
-          new = '''    if let Err(response) = require_allowed_repository(&repository, &state) {
-              return response;
-          }
-          if event != "workflow_run" {
-              return (
-                  StatusCode::ACCEPTED,
-                  Json(json!({
-                      "accepted": false,
-                      "event": event,
-                      "delivery": delivery,
-                      "repository": repository,
-                      "reason": "only workflow_run events may trigger the failure fallback"
-                  })),
-              )
-                  .into_response();
-          }
-          let Some(revision) = webhook_revision(event, &payload) else {
-          '''
-          if old in source:
-              source = source.replace(old, new, 1)
-          elif new not in source:
-              raise SystemExit('main.rs did not contain the reviewed webhook boundary')
+          boundary = (
+              "    if let Err(response) = require_allowed_repository(&repository, &state) {\n"
+              "        return response;\n"
+              "    }\n"
+          )
+          guard = boundary + (
+              '    if event != "workflow_run" {\n'
+              "        return (\n"
+              "            StatusCode::ACCEPTED,\n"
+              "            Json(json!({\n"
+              '                "accepted": false,\n'
+              '                "event": event,\n'
+              '                "delivery": delivery,\n'
+              '                "repository": repository,\n'
+              '                "reason": "only workflow_run events may trigger the failure fallback"\n'
+              "            })),\n"
+              "        )\n"
+              "            .into_response();\n"
+              "    }\n"
+          )
+          if guard not in source:
+              if boundary not in source:
+                  raise SystemExit('main.rs did not contain the reviewed repository guard')
+              source = source.replace(boundary, guard, 1)
           main_path.write_text(source, encoding='utf-8')
 
           test_path = Path('remote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs')
           tests = test_path.read_text(encoding='utf-8')
-          old_helper = '''async fn post_workflow_run(
-              client: &Client,
-              server: &ServerProcess,
-              delivery: &str,
-              payload: &Value,
-          ) -> reqwest::Response {
-              let body = serde_json::to_vec(payload).expect("serialize webhook payload");
-              let signature = webhook_signature(&body);
-              client
-                  .post(format!("{}/webhooks/github", server.base_url))
-                  .header("content-type", "application/json")
-                  .header("x-github-event", "workflow_run")
-                  .header("x-github-delivery", delivery)
-                  .header("x-hub-signature-256", signature)
-                  .body(body)
-                  .send()
-                  .await
-                  .expect("workflow_run request")
-          }
-          '''
-          new_helper = '''async fn post_github_event(
-              client: &Client,
-              server: &ServerProcess,
-              event: &str,
-              delivery: &str,
-              payload: &Value,
-          ) -> reqwest::Response {
-              let body = serde_json::to_vec(payload).expect("serialize webhook payload");
-              let signature = webhook_signature(&body);
-              client
-                  .post(format!("{}/webhooks/github", server.base_url))
-                  .header("content-type", "application/json")
-                  .header("x-github-event", event)
-                  .header("x-github-delivery", delivery)
-                  .header("x-hub-signature-256", signature)
-                  .body(body)
-                  .send()
-                  .await
-                  .expect("GitHub webhook request")
-          }
+          if 'async fn post_github_event(' not in tests:
+              start = tests.index('async fn post_workflow_run(')
+              end_marker = '        .expect("workflow_run request")\n}\n'
+              end = tests.index(end_marker, start) + len(end_marker)
+              helper = "\n".join([
+                  "async fn post_github_event(",
+                  "    client: &Client,",
+                  "    server: &ServerProcess,",
+                  "    event: &str,",
+                  "    delivery: &str,",
+                  "    payload: &Value,",
+                  ") -> reqwest::Response {",
+                  '    let body = serde_json::to_vec(payload).expect("serialize webhook payload");',
+                  "    let signature = webhook_signature(&body);",
+                  "    client",
+                  '        .post(format!("{}/webhooks/github", server.base_url))',
+                  '        .header("content-type", "application/json")',
+                  '        .header("x-github-event", event)',
+                  '        .header("x-github-delivery", delivery)',
+                  '        .header("x-hub-signature-256", signature)',
+                  "        .body(body)",
+                  "        .send()",
+                  "        .await",
+                  '        .expect("GitHub webhook request")',
+                  "}",
+                  "",
+                  "async fn post_workflow_run(",
+                  "    client: &Client,",
+                  "    server: &ServerProcess,",
+                  "    delivery: &str,",
+                  "    payload: &Value,",
+                  ") -> reqwest::Response {",
+                  '    post_github_event(client, server, "workflow_run", delivery, payload).await',
+                  "}",
+                  "",
+              ])
+              tests = tests[:start] + helper + tests[end:]
 
-          async fn post_workflow_run(
-              client: &Client,
-              server: &ServerProcess,
-              delivery: &str,
-              payload: &Value,
-          ) -> reqwest::Response {
-              post_github_event(client, server, "workflow_run", delivery, payload).await
-          }
-          '''
-          if old_helper in tests:
-              tests = tests.replace(old_helper, new_helper, 1)
-          elif new_helper not in tests:
-              raise SystemExit('webhook_e2e.rs did not contain the reviewed request helper')
-
-          anchor = '''#[tokio::test]
-          async fn failed_workflow_fetches_exact_sha_dispatches_once_and_deduplicates() {
-          '''
-          new_test = '''#[tokio::test]
-          async fn non_workflow_run_events_never_fetch_or_dispatch() {
-              let github = MockGithub::start(rust_workflow(), 0).await;
-              let build = MockBuildServer::start().await;
-              let server = spawn_server(execution_env(&github, &build)).await;
-              let client = Client::new();
-
-              let cases = [
-                  (
-                      "push",
-                      "01111111-1111-4111-8111-111111111111",
-                      json!({
-                          "repository": { "full_name": REPOSITORY },
-                          "after": REVISION
-                      }),
-                  ),
-                  (
-                      "pull_request",
-                      "02222222-2222-4222-8222-222222222222",
-                      json!({
-                          "repository": { "full_name": REPOSITORY },
-                          "pull_request": { "head": { "sha": REVISION } }
-                      }),
-                  ),
-              ];
-
-              for (event, delivery, payload) in cases {
-                  let response = post_github_event(&client, &server, event, delivery, &payload).await;
-                  let (status, body) = response_json(response).await;
-                  assert_eq!(status, StatusCode::ACCEPTED);
-                  assert_eq!(body["accepted"], false);
-                  assert_eq!(body["event"], event);
-                  assert_eq!(body["delivery"], delivery);
-                  assert_eq!(
-                      body["reason"],
-                      "only workflow_run events may trigger the failure fallback"
-                  );
-              }
-
-              assert!(github.state.requests.lock().await.is_empty());
-              assert!(build.state.submissions.lock().await.is_empty());
-              assert_eq!(
-                  health(&client, &server).await["webhookDeliveriesRetained"],
-                  0
-              );
-          }
-
-          #[tokio::test]
-          async fn failed_workflow_fetches_exact_sha_dispatches_once_and_deduplicates() {
-          '''
-          if 'async fn non_workflow_run_events_never_fetch_or_dispatch()' not in tests:
+          test_name = 'async fn non_workflow_run_events_never_fetch_or_dispatch()'
+          if test_name not in tests:
+              anchor = (
+                  "#[tokio::test]\n"
+                  "async fn failed_workflow_fetches_exact_sha_dispatches_once_and_deduplicates() {\n"
+              )
               if anchor not in tests:
                   raise SystemExit('webhook_e2e.rs did not contain the reviewed test anchor')
-              tests = tests.replace(anchor, new_test, 1)
+              replacement = "\n".join([
+                  "#[tokio::test]",
+                  "async fn non_workflow_run_events_never_fetch_or_dispatch() {",
+                  "    let github = MockGithub::start(rust_workflow(), 0).await;",
+                  "    let build = MockBuildServer::start().await;",
+                  "    let server = spawn_server(execution_env(&github, &build)).await;",
+                  "    let client = Client::new();",
+                  "",
+                  "    let cases = [",
+                  "        (",
+                  '            "push",',
+                  '            "01111111-1111-4111-8111-111111111111",',
+                  "            json!({",
+                  '                "repository": { "full_name": REPOSITORY },',
+                  '                "after": REVISION',
+                  "            }),",
+                  "        ),",
+                  "        (",
+                  '            "pull_request",',
+                  '            "02222222-2222-4222-8222-222222222222",',
+                  "            json!({",
+                  '                "repository": { "full_name": REPOSITORY },',
+                  '                "pull_request": { "head": { "sha": REVISION } }',
+                  "            }),",
+                  "        ),",
+                  "    ];",
+                  "",
+                  "    for (event, delivery, payload) in cases {",
+                  "        let response = post_github_event(&client, &server, event, delivery, &payload).await;",
+                  "        let (status, body) = response_json(response).await;",
+                  "        assert_eq!(status, StatusCode::ACCEPTED);",
+                  '        assert_eq!(body["accepted"], false);',
+                  '        assert_eq!(body["event"], event);',
+                  '        assert_eq!(body["delivery"], delivery);',
+                  "        assert_eq!(",
+                  '            body["reason"],',
+                  '            "only workflow_run events may trigger the failure fallback"',
+                  "        );",
+                  "    }",
+                  "",
+                  "    assert!(github.state.requests.lock().await.is_empty());",
+                  "    assert!(build.state.submissions.lock().await.is_empty());",
+                  "    assert_eq!(",
+                  '        health(&client, &server).await["webhookDeliveriesRetained"],',
+                  "        0",
+                  "    );",
+                  "}",
+                  "",
+                  "#[tokio::test]",
+                  "async fn failed_workflow_fetches_exact_sha_dispatches_once_and_deduplicates() {",
+                  "",
+              ])
+              tests = tests.replace(anchor, replacement, 1)
           test_path.write_text(tests, encoding='utf-8')
           PY
 
