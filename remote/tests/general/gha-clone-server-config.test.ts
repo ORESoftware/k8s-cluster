@@ -143,6 +143,7 @@ test('clone-server secret mapping names values without committing credential mat
 
 test('executor router is rendered inert and has no cluster or host-runtime identity', () => {
   const deployment = read(routerDeploymentPath);
+  const routerSource = read(routerSourcePath);
   assert.match(deployment, /\breplicas:\s*0\b/);
   assert.match(deployment, /\bautomountServiceAccountToken:\s*false\b/);
   assert.match(
@@ -150,9 +151,18 @@ test('executor router is rendered inert and has no cluster or host-runtime ident
     /name:\s*GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED\s+value:\s*"false"/,
   );
   assert.match(deployment, /cargo run --release --bin gha-executor-router/);
-  assert.match(
+  assert.doesNotMatch(
     deployment,
-    /name:\s*GHA_EXECUTOR_ROUTER_SECRET_ROOT\s+value:\s*\/var\/run\/secrets\/gha-executor-router/,
+    /name:\s*GHA_EXECUTOR_ROUTER_SECRET_ROOT/,
+    'the mounted secret root must use the fail-closed code default instead of an inline secret-shaped value',
+  );
+  assert.match(
+    routerSource,
+    /const DEFAULT_SECRET_ROOT: &str = "\/var\/run\/secrets\/gha-executor-router";/,
+  );
+  assert.match(
+    routerSource,
+    /env_optional\("GHA_EXECUTOR_ROUTER_SECRET_ROOT"\)[\s\S]{0,160}DEFAULT_SECRET_ROOT\.to_string\(\)/,
   );
   assert.match(
     deployment,
