@@ -37,7 +37,6 @@ jobs:
         with:
           ref: agent/nats-messaging-otel-openapi-hardening-20260804
           fetch-depth: 0
-          persist-credentials: false
           ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
       - name: Reassemble reviewed materializer
