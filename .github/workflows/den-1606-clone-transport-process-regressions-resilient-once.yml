@@ -1,0 +1,130 @@
+name: Race-safe DEN-1606 clone transport process proof once
+
+on:
+  push:
+    branches:
+      - agent/den-1606-clone-transport-process-regressions-20260804
+    paths:
+      - .github/workflows/den-1606-clone-transport-process-regressions-resilient-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1606-clone-transport-process-regressions-resilient-once
+  cancel-in-progress: false
+
+jobs:
+  prove:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Fast-forward safely and apply the reviewed test transformation
+        run: |
+          set -euo pipefail
+          branch='agent/den-1606-clone-transport-process-regressions-20260804'
+          source_workflow='.github/workflows/den-1606-clone-transport-process-regressions-once.yml'
+          resilient_workflow='.github/workflows/den-1606-clone-transport-process-regressions-resilient-once.yml'
+          trigger='${{ github.sha }}'
+
+          git show "$trigger:$source_workflow" > /tmp/den-1606-source-workflow.yml
+          git fetch origin "$branch"
+          tip="$(git rev-parse FETCH_HEAD)"
+          if ! git merge-base --is-ancestor "$trigger" "$tip"; then
+            echo 'branch no longer descends from the workflow trigger commit' >&2
+            exit 1
+          fi
+          intervening="$(git diff --name-only "$trigger"..."$tip" | sort)"
+          if [[ -n "$intervening" ]]; then
+            unexpected="$(printf '%s\n' "$intervening" | grep -Ev '^(\.github/workflows/den-1606-clone-transport-process-regressions(-resilient)?-once\.yml)$' || true)"
+            if [[ -n "$unexpected" ]]; then
+              printf 'unexpected concurrent paths after trigger:\n%s\n' "$unexpected" >&2
+              exit 1
+            fi
+          fi
+          git checkout -B "$branch" "$tip"
+
+          base='b827d1fde69bdfc5acfeb9d8a785f184c3ce5505'
+          unexpected="$(git diff --name-only "$base"...HEAD | grep -Ev '^(\.github/workflows/den-1606-clone-transport-process-regressions(-resilient)?-once\.yml)$' || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected pre-transform product paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path('/tmp/den-1606-source-workflow.yml').read_text(encoding='utf-8').splitlines()
+          step = source.index('      - name: Add adversarial live-process regressions')
+          run_line = source.index('        run: |', step + 1)
+          next_step = next(
+              index for index in range(run_line + 1, len(source))
+              if source[index].startswith('      - uses: dtolnay/rust-toolchain@')
+          )
+          prefix = '          '
+          block = [
+              line[len(prefix):] if line.startswith(prefix) else line
+              for line in source[run_line + 1:next_step]
+          ]
+          workflow_line = next(
+              index for index, line in enumerate(block)
+              if line.startswith("workflow='.github/workflows/den-1606-clone-transport-process-regressions-once.yml'")
+          )
+          guard_end = next(
+              index for index in range(workflow_line + 1, len(block))
+              if block[index] == 'fi'
+          )
+          block[workflow_line:guard_end + 1] = [
+              "# Scope was verified against the latest fast-forward branch tip above."
+          ]
+          script = '\n'.join(block).lstrip('\n') + '\n'
+          if not script.startswith('set -euo pipefail\n'):
+              raise SystemExit('reviewed test transformation shell boundary drifted')
+          Path('/tmp/den-1606-apply.sh').write_text(script, encoding='utf-8')
+          PY
+          bash /tmp/den-1606-apply.sh
+          git diff --check
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate every clone-server target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Publish the self-cleaned two-file test ratchet
+        run: |
+          set -euo pipefail
+          base='b827d1fde69bdfc5acfeb9d8a785f184c3ce5505'
+          rm -f \
+            .github/workflows/den-1606-clone-transport-process-regressions-once.yml \
+            .github/workflows/den-1606-clone-transport-process-regressions-resilient-once.yml
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m 'test(DEN-1606): prove clone transport failures through live process'
+          fi
+          expected=$'remote/deployments/gha-clone-server-rs/src/main.rs\nremote/deployments/gha-clone-server-rs/tests/http_api.rs'
+          actual="$(git diff --name-only "$base"...HEAD | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'unexpected final product paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          git push origin HEAD:agent/den-1606-clone-transport-process-regressions-20260804
