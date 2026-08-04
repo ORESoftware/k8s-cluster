@@ -1,0 +1,217 @@
+name: Apply DEN-1550 workflow-run-only boundary
+
+on:
+  push:
+    branches:
+      - agent/den-1550-workflow-run-only-20260804
+    paths:
+      - .github/workflows/den-1550-workflow-run-only-apply.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1550-workflow-run-only-apply
+  cancel-in-progress: false
+
+jobs:
+  apply-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1550-workflow-run-only-20260804
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Install the reviewed Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Apply the focused event-boundary repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          main_path = Path('remote/deployments/gha-clone-server-rs/src/main.rs')
+          source = main_path.read_text(encoding='utf-8')
+          old = '''    if let Err(response) = require_allowed_repository(&repository, &state) {
+              return response;
+          }
+          let Some(revision) = webhook_revision(event, &payload) else {
+          '''
+          new = '''    if let Err(response) = require_allowed_repository(&repository, &state) {
+              return response;
+          }
+          if event != "workflow_run" {
+              return (
+                  StatusCode::ACCEPTED,
+                  Json(json!({
+                      "accepted": false,
+                      "event": event,
+                      "delivery": delivery,
+                      "repository": repository,
+                      "reason": "only workflow_run events may trigger the failure fallback"
+                  })),
+              )
+                  .into_response();
+          }
+          let Some(revision) = webhook_revision(event, &payload) else {
+          '''
+          if old in source:
+              source = source.replace(old, new, 1)
+          elif new not in source:
+              raise SystemExit('main.rs did not contain the reviewed webhook boundary')
+          main_path.write_text(source, encoding='utf-8')
+
+          test_path = Path('remote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs')
+          tests = test_path.read_text(encoding='utf-8')
+          old_helper = '''async fn post_workflow_run(
+              client: &Client,
+              server: &ServerProcess,
+              delivery: &str,
+              payload: &Value,
+          ) -> reqwest::Response {
+              let body = serde_json::to_vec(payload).expect("serialize webhook payload");
+              let signature = webhook_signature(&body);
+              client
+                  .post(format!("{}/webhooks/github", server.base_url))
+                  .header("content-type", "application/json")
+                  .header("x-github-event", "workflow_run")
+                  .header("x-github-delivery", delivery)
+                  .header("x-hub-signature-256", signature)
+                  .body(body)
+                  .send()
+                  .await
+                  .expect("workflow_run request")
+          }
+          '''
+          new_helper = '''async fn post_github_event(
+              client: &Client,
+              server: &ServerProcess,
+              event: &str,
+              delivery: &str,
+              payload: &Value,
+          ) -> reqwest::Response {
+              let body = serde_json::to_vec(payload).expect("serialize webhook payload");
+              let signature = webhook_signature(&body);
+              client
+                  .post(format!("{}/webhooks/github", server.base_url))
+                  .header("content-type", "application/json")
+                  .header("x-github-event", event)
+                  .header("x-github-delivery", delivery)
+                  .header("x-hub-signature-256", signature)
+                  .body(body)
+                  .send()
+                  .await
+                  .expect("GitHub webhook request")
+          }
+
+          async fn post_workflow_run(
+              client: &Client,
+              server: &ServerProcess,
+              delivery: &str,
+              payload: &Value,
+          ) -> reqwest::Response {
+              post_github_event(client, server, "workflow_run", delivery, payload).await
+          }
+          '''
+          if old_helper in tests:
+              tests = tests.replace(old_helper, new_helper, 1)
+          elif new_helper not in tests:
+              raise SystemExit('webhook_e2e.rs did not contain the reviewed request helper')
+
+          anchor = '''#[tokio::test]
+          async fn failed_workflow_fetches_exact_sha_dispatches_once_and_deduplicates() {
+          '''
+          new_test = '''#[tokio::test]
+          async fn non_workflow_run_events_never_fetch_or_dispatch() {
+              let github = MockGithub::start(rust_workflow(), 0).await;
+              let build = MockBuildServer::start().await;
+              let server = spawn_server(execution_env(&github, &build)).await;
+              let client = Client::new();
+
+              let cases = [
+                  (
+                      "push",
+                      "01111111-1111-4111-8111-111111111111",
+                      json!({
+                          "repository": { "full_name": REPOSITORY },
+                          "after": REVISION
+                      }),
+                  ),
+                  (
+                      "pull_request",
+                      "02222222-2222-4222-8222-222222222222",
+                      json!({
+                          "repository": { "full_name": REPOSITORY },
+                          "pull_request": { "head": { "sha": REVISION } }
+                      }),
+                  ),
+              ];
+
+              for (event, delivery, payload) in cases {
+                  let response = post_github_event(&client, &server, event, delivery, &payload).await;
+                  let (status, body) = response_json(response).await;
+                  assert_eq!(status, StatusCode::ACCEPTED);
+                  assert_eq!(body["accepted"], false);
+                  assert_eq!(body["event"], event);
+                  assert_eq!(body["delivery"], delivery);
+                  assert_eq!(
+                      body["reason"],
+                      "only workflow_run events may trigger the failure fallback"
+                  );
+              }
+
+              assert!(github.state.requests.lock().await.is_empty());
+              assert!(build.state.submissions.lock().await.is_empty());
+              assert_eq!(
+                  health(&client, &server).await["webhookDeliveriesRetained"],
+                  0
+              );
+          }
+
+          #[tokio::test]
+          async fn failed_workflow_fetches_exact_sha_dispatches_once_and_deduplicates() {
+          '''
+          if 'async fn non_workflow_run_events_never_fetch_or_dispatch()' not in tests:
+              if anchor not in tests:
+                  raise SystemExit('webhook_e2e.rs did not contain the reviewed test anchor')
+              tests = tests.replace(anchor, new_test, 1)
+          test_path.write_text(tests, encoding='utf-8')
+          PY
+
+      - name: Validate the focused change and full Rust target set
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd remote/deployments/gha-clone-server-rs
+          cargo fmt --all -- --check
+          cargo test --locked --test webhook_e2e non_workflow_run_events_never_fetch_or_dispatch -- --nocapture
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets
+          cd ../../..
+          git diff --check
+
+      - name: Commit only the validated product and test changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/den-1550-workflow-run-only-apply.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            .github/workflows/den-1550-workflow-run-only-apply.yml \
+            remote/deployments/gha-clone-server-rs/src/main.rs \
+            remote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs
+          git diff --cached --check
+          git commit -m 'fix(DEN-1550): restrict webhook fallback to workflow_run'
+          git push origin HEAD:agent/den-1550-workflow-run-only-20260804
