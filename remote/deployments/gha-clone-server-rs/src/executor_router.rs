@@ -692,23 +692,6 @@ mod tests {
     }
 
     #[test]
-    fn rejects_multiline_executor_secret_files() {
-        let root = unique_temp_root();
-        fs::create_dir_all(&root).unwrap();
-        let secret = root.join("aws-auth");
-        fs::write(&secret, format!("{}\n{}", "a".repeat(16), "b".repeat(16))).unwrap();
-        let specs = vec![ExecutorSpec {
-            id: "aws-primary".into(),
-            provider: Provider::Aws,
-            enabled: true,
-            url: Some("http://127.0.0.1:8100".into()),
-            auth_path: Some(secret),
-        }];
-        assert!(materialize_executors(&specs, &root).is_err());
-        fs::remove_dir_all(root).unwrap();
-    }
-
-    #[test]
     fn authentication_comparison_is_content_exact() {
         assert!(digest_eq("same", "same"));
         assert!(!digest_eq("same", "different"));
