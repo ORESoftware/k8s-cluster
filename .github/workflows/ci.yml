@@ -143,8 +143,14 @@ jobs:
           test "$missing_status" -eq 2
           grep -q 'THREEFA_FLAGS_CONFIG must be an absolute path' <<<"$relative"
           grep -q 'THREEFA_FLAGS_CONFIG does not name a readable regular file' <<<"$missing"
-          ! grep -q 'reviewed.toml' <<<"$relative"
-          ! grep -q '/tmp/missing.toml' <<<"$missing"
+          if grep -q 'reviewed.toml' <<<"$relative"; then
+            echo 'relative explicit policy path leaked into diagnostics'
+            exit 1
+          fi
+          if grep -q '/tmp/missing.toml' <<<"$missing"; then
+            echo 'missing explicit policy path leaked into diagnostics'
+            exit 1
+          fi
       - name: Accept declared operational flags before typed config
         run: |
           set +e
