@@ -1,0 +1,235 @@
+name: 3FA interfaces CI continuity
+
+on:
+  pull_request:
+    paths:
+      - 'remote/deployments/gha-clone-server-rs/src/**'
+      - 'remote/deployments/gha-clone-server-rs/tests/fixtures/threefa-interfaces-contracts.yml'
+      - 'remote/deployments/gha-clone-server-rs/tests/threefa_interfaces.rs'
+      - 'remote/deployments/build-server-rs/src/profiles.rs'
+      - 'remote/deployments/build-server-rs/src/validation.rs'
+      - 'remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml'
+      - 'remote/tests/general/gha-clone-threefa-config.test.ts'
+      - 'docs/gha-profile-repository-admission.md'
+      - 'docs/gha-threefa-interfaces-continuity.md'
+      - '.github/workflows/gha-clone-threefa.yml'
+  push:
+    branches: [dev]
+    paths:
+      - 'remote/deployments/gha-clone-server-rs/src/**'
+      - 'remote/deployments/gha-clone-server-rs/tests/fixtures/threefa-interfaces-contracts.yml'
+      - 'remote/deployments/gha-clone-server-rs/tests/threefa_interfaces.rs'
+      - 'remote/deployments/build-server-rs/src/profiles.rs'
+      - 'remote/deployments/build-server-rs/src/validation.rs'
+      - 'remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml'
+      - 'remote/tests/general/gha-clone-threefa-config.test.ts'
+      - 'docs/gha-profile-repository-admission.md'
+      - 'docs/gha-threefa-interfaces-continuity.md'
+      - '.github/workflows/gha-clone-threefa.yml'
+  workflow_dispatch:
+    inputs:
+      run_private_profile_smoke:
+        description: Run the exact private 3FA repository profiles with a short-lived GitHub App token
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gha-clone-threefa-${{ github.event_name }}-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: true
+
+env:
+  THREEFA_REVISION: baea54bad288a36e36f6f484c1b5f2313bddfba8
+
+jobs:
+  clone-server-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+      - name: Format the continuity crate
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo fmt --all -- --check
+      - name: Deny Clippy warnings
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Run the real-process 3FA dispatch contract
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --test threefa_interfaces -- --nocapture
+      - name: Run planner unit contracts
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --lib -- --nocapture
+
+  build-server-profile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+      - name: Check the fixed profile and admission modules
+        working-directory: remote/deployments/build-server-rs
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 --check src/profiles.rs src/validation.rs
+          cargo check --locked --all-targets
+          cargo test --locked profiles::tests -- --nocapture
+          cargo test --locked validation::tests -- --nocapture
+
+  policy-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate this workflow and the bounded repository fixture
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: >-
+            .github/workflows/gha-clone-threefa.yml
+            remote/deployments/gha-clone-server-rs/tests/fixtures/threefa-interfaces-contracts.yml
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+      - name: Enforce exact 3FA admission and secret-free boundaries
+        working-directory: remote/tests
+        run: pnpm exec tsx --test general/gha-clone-threefa-config.test.ts
+      - name: Reject committed credentials in the 3FA continuity surface
+        run: |
+          set -euo pipefail
+          if grep -RIE \
+            'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' \
+            remote/deployments/gha-clone-server-rs/tests/fixtures/threefa-interfaces-contracts.yml \
+            remote/deployments/gha-clone-server-rs/tests/threefa_interfaces.rs \
+            remote/tests/general/gha-clone-threefa-config.test.ts \
+            docs/gha-threefa-interfaces-continuity.md; then
+            echo 'credential-like material found in the 3FA continuity surface' >&2
+            exit 1
+          fi
+
+  private-profile-smoke:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_private_profile_smoke }}
+    needs: [clone-server-contract, build-server-profile, policy-contract]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out continuity source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Mint a short-lived token for the exact private repository
+        id: threefa-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349
+        with:
+          app-id: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          private-key: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+          owner: 3FA-app
+          repositories: 3fa-interfaces
+          permission-contents: read
+      - name: Check out the immutable 3FA revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: 3FA-app/3fa-interfaces
+          ref: ${{ env.THREEFA_REVISION }}
+          token: ${{ steps.threefa-token.outputs.token }}
+          path: .tmp/3fa-interfaces
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Extract the exact reviewed profile scripts and images
+        id: prepare
+        run: |
+          set -euo pipefail
+          printf '%s' "$THREEFA_REVISION" | grep -Eq '^[a-f0-9]{40}$'
+          repo_dir="$GITHUB_WORKSPACE/.tmp/3fa-interfaces"
+          test "$(git -C "$repo_dir" rev-parse HEAD)" = "$THREEFA_REVISION"
+          python3 <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          source = Path('remote/deployments/build-server-rs/src/profiles.rs').read_text(encoding='utf-8')
+          output_dir = Path(os.environ['RUNNER_TEMP'])
+          pairs = (
+              ('node-hardened-test', 'NODE_IMAGE', 'NODE_HARDENED_TEST_STEPS'),
+              ('rust-generated-verify', 'RUST_IMAGE', 'RUST_GENERATED_VERIFY_STEPS'),
+          )
+          outputs = {}
+          for profile, image_constant, steps_constant in pairs:
+              image_match = re.search(rf'const {image_constant}: &str = "([^"]+)";', source)
+              script_match = re.search(
+                  rf'const {steps_constant}:.*?script: r#"(.*?)"#,\n\}}\];',
+                  source,
+                  flags=re.DOTALL,
+              )
+              if image_match is None or script_match is None:
+                  raise SystemExit(f'{profile} profile source was not found')
+              script_path = output_dir / f'{profile}.sh'
+              script_path.write_text(script_match.group(1) + '\n', encoding='utf-8')
+              script_path.chmod(0o500)
+              outputs[f'{profile}-image'] = image_match.group(1)
+          with Path(os.environ['GITHUB_OUTPUT']).open('a', encoding='utf-8') as output:
+              output.write(f"repo-dir={Path(os.environ['GITHUB_WORKSPACE']) / '.tmp/3fa-interfaces'}\n")
+              for key, value in outputs.items():
+                  output.write(f'{key}={value}\n')
+          PY
+      - name: Execute Node contracts in the fixed image
+        env:
+          PROFILE_IMAGE: ${{ steps.prepare.outputs.node-hardened-test-image }}
+          REPO_DIR: ${{ steps.prepare.outputs.repo-dir }}
+        run: |
+          set -euo pipefail
+          docker pull "$PROFILE_IMAGE"
+          resolved="$(docker image inspect --format='{{index .RepoDigests 0}}' "$PROFILE_IMAGE")"
+          case "$resolved" in *@sha256:*) ;; *) exit 1 ;; esac
+          docker run --rm --pull=never \
+            --cap-drop=ALL --security-opt=no-new-privileges \
+            --pids-limit=512 --memory=4g --cpus=2 \
+            --tmpfs /tmp:rw,nosuid,nodev,noexec,size=1g \
+            --network=bridge -e CI=true -e HOME=/tmp/home \
+            -v "$REPO_DIR:/workspace:rw" \
+            -v "$RUNNER_TEMP/node-hardened-test.sh:/profile.sh:ro" \
+            -w /workspace "$resolved" bash /profile.sh
+      - name: Execute generated Rust contracts in the fixed image
+        env:
+          PROFILE_IMAGE: ${{ steps.prepare.outputs.rust-generated-verify-image }}
+          REPO_DIR: ${{ steps.prepare.outputs.repo-dir }}
+        run: |
+          set -euo pipefail
+          docker pull "$PROFILE_IMAGE"
+          resolved="$(docker image inspect --format='{{index .RepoDigests 0}}' "$PROFILE_IMAGE")"
+          case "$resolved" in *@sha256:*) ;; *) exit 1 ;; esac
+          docker run --rm --pull=never \
+            --cap-drop=ALL --security-opt=no-new-privileges \
+            --pids-limit=512 --memory=4g --cpus=2 \
+            --tmpfs /tmp:rw,nosuid,nodev,noexec,size=1g \
+            --network=bridge -e CI=true -e HOME=/tmp/home \
+            -v "$REPO_DIR:/workspace:rw" \
+            -v "$RUNNER_TEMP/rust-generated-verify.sh:/profile.sh:ro" \
+            -w /workspace "$resolved" bash /profile.sh
