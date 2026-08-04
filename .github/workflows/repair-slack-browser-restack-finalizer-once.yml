@@ -1,0 +1,73 @@
+name: Repair Slack browser restack finalizer once
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-slack-browser-restack-finalizer-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-slack-browser-restack-finalizer-once
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact successor branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/slack-browser-e2e-current-main-v2-20260804
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Repair the base and bot-trigger boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/finalize-slack-browser-current-main-once.yml')
+          source = path.read_text(encoding='utf-8')
+          replacements = [
+              (
+                  "if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'github-actions[bot]'",
+                  "if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository",
+                  'same-repository finalizer condition',
+              ),
+              (
+                  '          test "$(git rev-parse HEAD)" = "$base"',
+                  '          test "$(git merge-base HEAD "$base")" = "$base"',
+                  'current-main ancestry assertion',
+              ),
+          ]
+          for old, new, label in replacements:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label} drifted: expected one match, got {count}')
+              source = source.replace(old, new, 1)
+          path.write_text(source, encoding='utf-8')
+          PY
+
+          grep -Fq 'git merge-base HEAD "$base"' \
+            .github/workflows/finalize-slack-browser-current-main-once.yml
+
+      - name: Commit the repair and remove this workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/repair-slack-browser-restack-finalizer-once.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/finalize-slack-browser-current-main-once.yml
+          git diff --cached --check
+          git commit -m 'ci(slack): fix the current-main restack ancestry gate'
+          git push origin HEAD:agent/slack-browser-e2e-current-main-v2-20260804
