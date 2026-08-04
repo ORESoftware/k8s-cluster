@@ -48,13 +48,11 @@ jobs:
             remote/argocd/dd-next-runtime/dd-gha-clone-server.externalsecret.yaml \
             remote/argocd/dd-next-runtime/dd-gha-clone-server.networkpolicy.yaml \
             remote/argocd/dd-next-runtime/dd-gha-executor-router.configmap.yaml \
-            remote/argocd/dd-next-runtime/dd-gha-executor-router.deployment.yaml \
             remote/argocd/dd-next-runtime/dd-gha-executor-router.externalsecret.yaml \
             remote/argocd/dd-next-runtime/dd-gha-executor-router.networkpolicy.yaml \
             remote/argocd/dd-next-runtime/dd-gha-executor-router.service.yaml \
             remote/argocd/dd-next-runtime/kustomization.yaml \
             remote/tests/general/gha-clone-server-config.test.ts \
-            remote/tests/general/gha-executor-router-config.test.mjs \
             remote/tests/general/gha-executor-router-activation.test.mjs
 
           python3 - <<'PY'
@@ -65,9 +63,8 @@ jobs:
           new = os.environ['CORE_COMMIT']
           paths = [
               Path('docs/gha-continuity-architecture.md'),
+              Path('docs/gha-executor-router-activation.md'),
               Path('remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml'),
-              Path('remote/argocd/dd-next-runtime/dd-gha-executor-router.deployment.yaml'),
-              Path('remote/tests/general/gha-executor-router-config.test.mjs'),
           ]
           replacements = 0
           for path in paths:
@@ -75,8 +72,8 @@ jobs:
               count = text.count(old)
               replacements += count
               path.write_text(text.replace(old, new))
-          if replacements < 4:
-              raise SystemExit(f'expected at least four exact source-pin replacements, got {replacements}')
+          if replacements < 1:
+              raise SystemExit('expected at least one exact superseded source-pin replacement')
           for path in paths:
               if old in path.read_text():
                   raise SystemExit(f'superseded source pin remains in {path}')
@@ -148,8 +145,10 @@ jobs:
           router_secret=remote/argocd/dd-next-runtime/dd-gha-executor-router.externalsecret.yaml
           router_policy=remote/argocd/dd-next-runtime/dd-gha-executor-router.networkpolicy.yaml
 
-          grep -F "value: ${CORE_COMMIT}" "$router_deployment"
           grep -F "value: ${CORE_COMMIT}" "$clone_deployment"
+          grep -F 'ghcr.io/oresoftware/gha-executor-router@sha256:0000000000000000000000000000000000000000000000000000000000000000' "$router_deployment"
+          grep -F 'command: ["/usr/local/bin/gha-executor-router"]' "$router_deployment"
+          grep -F 'readOnlyRootFilesystem: true' "$router_deployment"
           grep -F 'replicas: 0' "$router_deployment"
           grep -F 'replicas: 0' "$clone_deployment"
           grep -F 'GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED' "$router_deployment"
@@ -159,9 +158,15 @@ jobs:
           grep -F '"enabled": true' "$router_config"
           grep -F '"provider": "hetzner"' "$router_config"
           grep -F '"enabled": false' "$router_config"
+          if grep -E '/bin/(ba)?sh|cargo run|git clone|git init' "$router_deployment"; then
+            echo 'source-build or shell execution remains in the inert router deployment' >&2
+            exit 1
+          fi
 
           test "$(grep -c 'secretKey:' "$router_secret")" -eq 1
           grep -F 'secretKey: router_auth' "$router_secret"
+          grep -F 'secretName: dd-agent-secrets' "$router_deployment"
+          grep -F 'key: SERVER_AUTH_SECRET' "$router_deployment"
           if grep -Ei 'secretKey:[[:space:]]*(aws_build_server_auth|hetzner)|property:[[:space:]]*(aws_build_server_auth|hetzner)' "$router_secret"; then
             echo 'duplicate or dormant executor authority was staged' >&2
             exit 1
