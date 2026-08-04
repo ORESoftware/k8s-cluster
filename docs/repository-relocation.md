@@ -14,7 +14,8 @@ history.
 
 ## Transfer sequence
 
-1. Merge the relocation-preparation pull request.
+1. Merge the relocation-preparation pull request after validating its final
+   head, including any automated `Cargo.lock` normalization commit.
 2. Confirm `fanwaave/push-notification-server.rs` is still unused.
 3. Transfer `ORESoftware/push-notification-server.rs` to the `fanwaave`
    organization through GitHub repository settings or the repository-transfer
