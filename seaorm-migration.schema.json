@@ -37,13 +37,17 @@
       "required": [
         "repository",
         "version",
+        "linuxX8664Asset",
         "linuxX8664Sha256",
+        "binary",
         "serviceStartupMigrations"
       ],
       "properties": {
-        "repository": { "const": "declarative-migrations/declarative-migrations" },
-        "version": { "const": "1.4.2" },
-        "linuxX8664Sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "repository": { "const": "declarative-migrations/declarative-postgres-migrate.rs" },
+        "version": { "const": "0.3.2" },
+        "linuxX8664Asset": { "const": "dpm-v0.3.2-x86_64-unknown-linux-gnu.tar.gz" },
+        "linuxX8664Sha256": { "const": "4258755a946f6f3a49e33538889523e4736180624a186bddc90180994612d3aa" },
+        "binary": { "const": "dpm" },
         "serviceStartupMigrations": { "const": false }
       }
     },
