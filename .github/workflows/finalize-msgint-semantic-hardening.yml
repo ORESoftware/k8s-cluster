@@ -1,5 +1,7 @@
 name: Finalize Messaging Intel semantic compiler hardening
 
+# This branch-only finalizer commits product files only. Its workflow and
+# deterministic transformer are removed after the validated source commit lands.
 on:
   push:
     branches:
