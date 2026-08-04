@@ -9,7 +9,7 @@ tokens; it must not use a long-lived cross-organization PAT.
 This document is the configuration and recovery runbook for the
 `backend pins + private deployment contracts` job. The job is expected to fail
 closed before private source tests when the App ID, private key, installation,
-repository selection, or pinned checkout is unavailable.
+repository selection, pinned checkout, or returned token scope is unavailable.
 
 ## Permission boundary
 
@@ -58,9 +58,20 @@ arguments, artifacts, diagnostic reports, shell history, screenshots, or support
 attachments. Do not print, partially mask, hash, count, or base64-encode the PEM
 as evidence.
 
-The workflow generates a signed App JWT in memory, mints repository-restricted
-installation tokens, writes each token to a mode-`0600` temporary file, and
-revokes it after the corresponding owner batch. Tokens also expire automatically.
+The workflow generates a signed App JWT in memory, requests a token for the exact
+owner-local repository list, and validates GitHub's response before creating the
+token output file. Validation requires:
+
+- a bounded printable single-line token and a non-empty expiration;
+- `contents:read`, with only GitHub's implicit `metadata:read` also permitted;
+- a returned repository list that exactly equals the requested owner/repository
+  set, independent of response order;
+- no duplicate requested or returned repository names.
+
+Missing repository proof, substituted repositories, duplicate repositories, or
+any broader permission fail closed. The token is written to a mode-`0600`
+temporary file only after those checks pass and is revoked after the corresponding
+owner batch. Tokens also expire automatically.
 
 ## Trusted pull-request boundary
 
@@ -85,26 +96,29 @@ After App installations and repository secrets are configured:
 1. Confirm the App permissions are still exactly Metadata read and Contents read.
 2. Confirm every owner installation selects only the repositories in the
    authoritative allowlist.
-3. Confirm the two repository Actions secret names exist without reading or
+3. Confirm the token-mint regression test passes its permission-drift,
+   repository-substitution, missing-scope, and duplicate-name cases.
+4. Confirm the two repository Actions secret names exist without reading or
    exporting their values.
-4. Re-run the failed `backend pins + private deployment contracts` job on the
+5. Re-run the failed `backend pins + private deployment contracts` job on the
    current authoritative pull request and commit.
-5. Download `backend-submodule-access-report` and confirm every allowlisted row is
+6. Download `backend-submodule-access-report` and confirm every allowlisted row is
    `success`.
-6. Confirm every checkout commit equals its superproject gitlink.
-7. Confirm the report has no token, key, credential-bearing URL, subject, email,
+7. Confirm every checkout commit equals its superproject gitlink.
+8. Confirm the report has no token, key, credential-bearing URL, subject, email,
    or private payload.
-8. Confirm the private deployment architecture and source contract tests actually
+9. Confirm the private deployment architecture and source contract tests actually
    ran after checkout; a skipped test is not a green configuration result.
-9. Attach only the App name/ID, installation owners, repository scope, workflow
-   run, commit, sanitized report digest, and generic outcome to DEN-1537.
+10. Attach only the App name/ID, installation owners, repository scope, workflow
+    run, commit, sanitized report digest, and generic outcome to DEN-1537.
 
 Do not rely on historic PR numbers or a green run for an older head. The evidence
 must name the current authoritative commit.
 
 The scripts fail closed when credentials are missing, an installation cannot be
 resolved, a repository is absent from the allowlist, a token request is broader
-than the selected repository set, or a checkout differs from its pinned commit.
+than the selected repository set, GitHub returns broader permissions or a
+different repository set, or a checkout differs from its pinned commit.
 
 ## Current recovery procedure (DEN-1537)
 
@@ -120,8 +134,8 @@ When the job reports that `K8S_SUBMODULE_APP_ID` or
    path. Never paste their values into DEN-1537 or a pull-request comment.
 6. Re-run only the failed job first; then require the complete `repo checks`
    workflow on the same commit.
-7. Inspect the sanitized report and private-source test steps before resolving
-   DEN-1537.
+7. Inspect the exact-scope token test, sanitized report, and private-source test
+   steps before resolving DEN-1537.
 
 A personal access token supplied in chat, a developer shell, or an ad-hoc secret
 is not an acceptable recovery mechanism.
