@@ -170,7 +170,8 @@ test('no manifest carries a credential as an inline env value', async () => {
   //
   // Config knobs legitimately share these words (COOKIE_SECURE, *_TTL_SECONDS,
   // *_COOKIE_NAME), so a value is only accepted when it is plainly not a
-  // secret: empty, boolean, numeric, or an explicitly-named identifier.
+  // secret: empty, boolean, numeric, an explicitly-named identifier, or an
+  // absolute mounted-file path held in a *_PATH variable.
   const CREDENTIAL_NAME =
     /(PASSWORD|_PASS$|_PASS_|^PASS$|SECRET|TOKEN|COOKIE|APIKEY|API_KEY|CREDENTIAL|PRIVATE_KEY)/;
   const NOT_A_SECRET = /^(|true|false|\d+(\.\d+)?)$/i;
@@ -194,6 +195,9 @@ test('no manifest carries a credential as an inline env value', async () => {
       if (!valueMatch) return; // valueFrom/secretKeyRef — the correct shape.
 
       const value = valueMatch[1].trim().replace(/^['"]|['"]$/g, '');
+      // A *_PATH knob identifies a mounted secret file. Its absolute path is
+      // configuration metadata, not credential material.
+      if (envName.endsWith('_PATH') && value.startsWith('/')) return;
       if (NOT_A_SECRET.test(value)) return;
 
       offenders.push(`${file}:${index + 1} ${envName} = ${JSON.stringify(value)}`);
