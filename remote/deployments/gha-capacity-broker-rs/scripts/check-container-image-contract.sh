@@ -35,6 +35,7 @@ for required in \
   'contents: read' \
   'packages: write' \
   'issues: write # Append validated immutable release metadata to issue 702.' \
+  'issues: write # Report trusted broker publication failures to issue 702.' \
   'ghcr.io/oresoftware/gha-capacity-broker' \
   'TARGET: capacity-broker' \
   'OCI_RELEASE_LEDGER_ISSUE: "702"' \
@@ -44,7 +45,13 @@ for required in \
   '--provenance=mode=max,version=v1' \
   'aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1' \
   "github.event_name == 'push'" \
-  "github.event_name == 'workflow_dispatch'"
+  "github.event_name == 'workflow_dispatch'" \
+  'needs: [validate, publish]' \
+  'PUBLISH_RESULT: ${{ needs.publish.result }}' \
+  'WORKFLOW_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}' \
+  'gha-continuity-oci-publication-receipt:' \
+  'release_record_present' \
+  'trusted capacity-broker publication completed without an authoritative ledger record'
 do
   require_literal "$workflow" "$required"
 done
@@ -68,9 +75,11 @@ require_literal "$validator" '"gha-capacity-broker"'
 require_literal "$renderer" "expected_image='ghcr.io/oresoftware/gha-capacity-broker'"
 require_literal "$documentation" '`gha-capacity-broker`'
 require_literal "$documentation" 'ghcr.io/oresoftware/gha-capacity-broker'
+require_literal "$documentation" 'publication is incomplete'
+require_literal "$documentation" 'must not infer a digest'
 
-if [[ "$(grep -Ec '^[[:space:]]+issues:[[:space:]]+write' "$workflow")" -ne 1 ]]; then
-  printf 'capacity-broker issue-write permission must occur exactly once\n' >&2
+if [[ "$(grep -Ec '^[[:space:]]+issues:[[:space:]]+write' "$workflow")" -ne 2 ]]; then
+  printf 'capacity-broker issue-write permission must occur exactly twice: release ledger plus failure receipt\n' >&2
   exit 1
 fi
 if grep -Fq 'pull_request_target:' "$workflow"; then
