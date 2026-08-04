@@ -29,6 +29,11 @@ replacements = (
         "  assert.match(validation, /repo-extra\\.git/);",
         "generic sibling-lookalike rejection",
     ),
+    (
+        "  assert.match(readme, /This hermetic proof needs neither the private Messaging Intel repository nor a Kubernetes context/);",
+        "  assert.match(readme, /This hermetic proof needs neither the private Messaging Intel repository nor a\\s+Kubernetes context/);",
+        "hermetic access-boundary documentation",
+    ),
 )
 
 for old, new, label in replacements:
