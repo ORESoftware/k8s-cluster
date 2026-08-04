@@ -6,6 +6,12 @@ on:
       - agent/den-1550-msgint-current-dev-final
     paths:
       - .github/workflows/finalize-den-1550-last-two.yml
+  pull_request:
+    branches:
+      - dev
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/finalize-den-1550-last-two.yml
 
 permissions:
   contents: write
