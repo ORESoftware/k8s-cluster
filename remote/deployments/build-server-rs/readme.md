@@ -100,6 +100,11 @@ the server:
 
 | Profile | Cluster capability | Artifact |
 |---|---|---|
+| `rust-verify` | Rust formatting, Clippy, and all-target tests | none |
+| `node-verify` | Lockfile-strict Node repository tests | none |
+| `node-hardened-verify` | npm lifecycle-script suppression, operator checks, and high-severity audit | none |
+| `node-hardened-test` | npm lifecycle-script suppression and complete repository tests | none |
+| `python-verify` | Python compilation and pytest | none |
 | `flutter-verify` | Flutter analyze and unit tests | none |
 | `flutter-android-debug` | Flutter Android debug build | APK |
 | `flutter-web-release` | Flutter web release build | `build/web` |
@@ -128,9 +133,18 @@ profile jobs remain limited to trusted, allowlisted GitHub repositories. Artifac
 from fixed paths only and retrieved through the authenticated artifact endpoint.
 
 `BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES` is a second, narrower allowlist applied only to
-executable profile jobs. The cluster permits the `ORESoftware` and `sonus-auris` organizations;
-adding another organization requires an explicit manifest review. The broader clone allowlist used
-by image jobs does not implicitly grant profile execution.
+executable profile jobs. Ordinary entries are prefixes, while entries beginning with `=` are exact
+canonical URL matches. The cluster permits the `ORESoftware` and `sonus-auris` organizations and
+only this exact Messaging Intel URL:
+
+```text
+=https://github.com/messaging-intel/msgint-connectors.git
+```
+
+A suffix-appended URL, sibling repository, or unreviewed SSH alias does not match that exact rule.
+Adding another organization or repository requires an explicit manifest review. The broader clone
+allowlist used by image jobs does not implicitly grant profile execution. See
+[`docs/gha-profile-repository-admission.md`](../../../docs/gha-profile-repository-admission.md).
 
 ## Mobile, desktop, and GitOps boundary
 
