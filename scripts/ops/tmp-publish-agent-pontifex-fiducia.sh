@@ -22,7 +22,7 @@ cleanup() {
 trap on_error ERR
 trap cleanup EXIT
 
-for tool in gh git jq python3; do
+for tool in git python3; do
   command -v "$tool" >/dev/null
   printf 'preflight tool=%s status=present\n' "$tool"
 done
@@ -81,6 +81,61 @@ export GH_TOKEN
 export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
 printf 'publisher stage=%s status=ready\n' "$stage"
 
+api_helper="$work/github-api.py"
+cat >"$api_helper" <<'PY'
+#!/usr/bin/env python3
+import os
+import sys
+import urllib.error
+import urllib.request
+
+method, path = sys.argv[1:3]
+body = sys.stdin.buffer.read()
+headers = {
+    "Accept": "application/vnd.github+json",
+    "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+    "User-Agent": "agent-pontifex-fiducia-publisher",
+    "X-GitHub-Api-Version": "2022-11-28",
+}
+if body:
+    headers["Content-Type"] = "application/json"
+request = urllib.request.Request(
+    "https://api.github.com" + path,
+    data=body or None,
+    headers=headers,
+    method=method,
+)
+try:
+    with urllib.request.urlopen(request, timeout=60) as response:
+        payload = response.read()
+except urllib.error.HTTPError as error:
+    error.read(8192)
+    print(f"GitHub API {method} {path} failed with HTTP {error.code}", file=sys.stderr)
+    raise SystemExit(44 if error.code == 404 else 1) from error
+if payload:
+    sys.stdout.buffer.write(payload)
+PY
+chmod 700 "$api_helper"
+
+api_call() {
+  python3 "$api_helper" "$1" "$2"
+}
+
+json_get() {
+  local path="$1"
+  python3 -c '
+import json
+import sys
+value = json.load(sys.stdin)
+for part in sys.argv[1].split("."):
+    value = value[part]
+if isinstance(value, bool):
+    print(str(value).lower())
+else:
+    print(value)
+' "$path"
+}
+
 askpass="$work/git-askpass.sh"
 cat >"$askpass" <<'ASKPASS_EOF'
 #!/usr/bin/env sh
@@ -99,12 +154,12 @@ export GIT_CONFIG_KEY_0=credential.helper
 export GIT_CONFIG_VALUE_0=
 
 stage=identity-and-membership
-identity="$(gh api user)"
-test "$(jq -er .login <<<"$identity")" = ORESoftware
+identity="$(api_call GET /user)"
+test "$(printf '%s' "$identity" | json_get login)" = ORESoftware
 for organization in agent-pontifex fiducia-cloud; do
-  membership="$(gh api "user/memberships/orgs/${organization}")"
-  test "$(jq -er .role <<<"$membership")" = admin
-  test "$(jq -er .state <<<"$membership")" = active
+  membership="$(api_call GET "/user/memberships/orgs/${organization}")"
+  test "$(printf '%s' "$membership" | json_get role)" = admin
+  test "$(printf '%s' "$membership" | json_get state)" = active
   printf 'membership organization=%s role=admin state=active\n' "$organization"
 done
 
@@ -117,9 +172,9 @@ ensure_repo() {
   test "$visibility" = public || private_value=true
 
   local existing=''
-  if existing="$(gh api "repos/${organization}/${name}" 2>/dev/null)"; then
-    test "$(jq -er .owner.login <<<"$existing")" = "$organization"
-    if test "$(jq -er .visibility <<<"$existing")" != "$visibility"; then
+  if existing="$(api_call GET "/repos/${organization}/${name}" 2>/dev/null)"; then
+    test "$(printf '%s' "$existing" | json_get owner.login)" = "$organization"
+    if test "$(printf '%s' "$existing" | json_get visibility)" != "$visibility"; then
       printf 'repository repo=%s/%s status=failed reason=visibility-mismatch\n' \
         "$organization" "$name" >&2
       return 70
@@ -127,29 +182,48 @@ ensure_repo() {
     printf 'repository repo=%s/%s action=existing visibility=%s\n' \
       "$organization" "$name" "$visibility"
   else
-    jq -nc \
-      --arg name "$name" \
-      --arg description "$description" \
-      --arg visibility "$visibility" \
-      --argjson private "$private_value" \
-      '{name:$name,description:$description,visibility:$visibility,private:$private,has_issues:true,has_projects:true,has_wiki:false,auto_init:false}' \
-      | gh api --method POST "orgs/${organization}/repos" --input - >/dev/null
+    body="$(python3 -c '
+import json
+import sys
+print(json.dumps({
+    "name": sys.argv[1],
+    "description": sys.argv[2],
+    "visibility": sys.argv[3],
+    "private": sys.argv[4] == "true",
+    "has_issues": True,
+    "has_projects": True,
+    "has_wiki": False,
+    "auto_init": False,
+}))
+' "$name" "$description" "$visibility" "$private_value")"
+    printf '%s' "$body" | api_call POST "/orgs/${organization}/repos" >/dev/null
     printf 'repository repo=%s/%s action=created visibility=%s\n' \
       "$organization" "$name" "$visibility"
   fi
 
-  jq -nc \
-    --arg description "$description" \
-    '{description:$description,has_issues:true,has_projects:true,has_wiki:false,delete_branch_on_merge:true,allow_squash_merge:true,allow_merge_commit:true,allow_rebase_merge:true}' \
-    | gh api --method PATCH "repos/${organization}/${name}" --input - >/dev/null
-  gh api --method PUT "repos/${organization}/${name}/vulnerability-alerts" >/dev/null 2>&1 || true
+  body="$(python3 -c '
+import json
+import sys
+print(json.dumps({
+    "description": sys.argv[1],
+    "has_issues": True,
+    "has_projects": True,
+    "has_wiki": False,
+    "delete_branch_on_merge": True,
+    "allow_squash_merge": True,
+    "allow_merge_commit": True,
+    "allow_rebase_merge": True,
+}))
+' "$description")"
+  printf '%s' "$body" | api_call PATCH "/repos/${organization}/${name}" >/dev/null
+  api_call PUT "/repos/${organization}/${name}/vulnerability-alerts" >/dev/null 2>&1 || true
 }
 
 set_topics() {
   local repository="$1"
   shift
-  printf '%s\n' "$@" | jq -Rsc 'split("\n")[:-1] | {names:.}' \
-    | gh api --method PUT "repos/${repository}/topics" --input - >/dev/null
+  body="$(python3 -c 'import json,sys; print(json.dumps({"names": sys.argv[1:]}))' "$@")"
+  printf '%s' "$body" | api_call PUT "/repos/${repository}/topics" >/dev/null
 }
 
 stage=create-repositories
@@ -167,6 +241,20 @@ set_topics agent-pontifex/ai-agent-coordinator.rs rust ai-agents multi-agent age
 set_topics agent-pontifex/agent-sdk.rs rust sdk protocol ai-agents agent-pontifex
 set_topics fiducia-cloud/fiducia-ai-agent-coordinator.rs rust ai-agents fiducia coordinator fencing leases
 
+repo_main_sha() {
+  local repository="$1"
+  local response=''
+  if response="$(api_call GET "/repos/${repository}/git/ref/heads/main" 2>/dev/null)"; then
+    printf '%s' "$response" | json_get object.sha
+  fi
+}
+
+set_default_main() {
+  local repository="$1"
+  printf '%s' '{"default_branch":"main"}' \
+    | api_call PATCH "/repos/${repository}" >/dev/null
+}
+
 mirror_repo() {
   local source="$1"
   local target="$2"
@@ -179,7 +267,7 @@ mirror_repo() {
   local source_main
   source_main="$(git -C "$directory" rev-parse refs/heads/main)"
   local target_main=''
-  target_main="$(gh api "repos/${target}/git/ref/heads/main" --jq .object.sha 2>/dev/null || true)"
+  target_main="$(repo_main_sha "$target")"
   if test -n "$target_main" && test "$target_main" != "$source_main"; then
     git -C "$directory" fetch target main:refs/remotes/target/main >/dev/null
     if ! git -C "$directory" merge-base --is-ancestor refs/remotes/target/main refs/heads/main; then
@@ -189,13 +277,14 @@ mirror_repo() {
     fi
   fi
 
-  git -C "$directory" push target \
-    'refs/heads/*:refs/heads/*' \
-    'refs/tags/*:refs/tags/*' >/dev/null
-  gh api --method PATCH "repos/${target}" -f default_branch=main >/dev/null
+  git -C "$directory" push target 'refs/heads/*:refs/heads/*' >/dev/null
+  if git -C "$directory" show-ref --tags --quiet; then
+    git -C "$directory" push target 'refs/tags/*:refs/tags/*' >/dev/null
+  fi
+  set_default_main "$target"
 
   local published_main
-  published_main="$(gh api "repos/${target}/git/ref/heads/main" --jq .object.sha)"
+  published_main="$(repo_main_sha "$target")"
   test "$published_main" = "$source_main"
   printf 'mirror source=%s target=%s status=published main=%s\n' \
     "$source" "$target" "$published_main"
@@ -228,7 +317,7 @@ publish_sdk() {
   [[ "$split_commit" =~ ^[0-9a-f]{40}$ ]]
 
   local target_main=''
-  target_main="$(gh api "repos/${target_repo}/git/ref/heads/main" --jq .object.sha 2>/dev/null || true)"
+  target_main="$(repo_main_sha "$target_repo")"
   if test -z "$target_main"; then
     git -C "$source_dir" push "https://github.com/${target_repo}.git" \
       "${split_commit}:refs/heads/main" >/dev/null
@@ -240,8 +329,8 @@ publish_sdk() {
   git -C "$target_dir" checkout main >/dev/null
 
   if test -f "$target_dir/.agent-pontifex-source.json"; then
-    test "$(jq -er .source_commit "$target_dir/.agent-pontifex-source.json")" = "$source_commit"
-    test "$(jq -er .split_commit "$target_dir/.agent-pontifex-source.json")" = "$split_commit"
+    test "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_commit"])' "$target_dir/.agent-pontifex-source.json")" = "$source_commit"
+    test "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["split_commit"])' "$target_dir/.agent-pontifex-source.json")" = "$split_commit"
   else
     test "$(git -C "$target_dir" rev-parse HEAD)" = "$split_commit"
 
@@ -320,13 +409,18 @@ jobs:
       - run: cargo doc --workspace --no-deps
 EOF
 
-    jq -n \
-      --arg source_repository "$source_repo" \
-      --arg source_branch "$source_branch" \
-      --arg source_commit "$source_commit" \
-      --arg split_commit "$split_commit" \
-      '{source_repository:$source_repository,source_branch:$source_branch,source_commit:$source_commit,split_commit:$split_commit}' \
-      >"$target_dir/.agent-pontifex-source.json"
+    python3 -c '
+import json
+import sys
+with open(sys.argv[1], "w", encoding="utf-8") as output:
+    json.dump({
+        "source_repository": sys.argv[2],
+        "source_branch": sys.argv[3],
+        "source_commit": sys.argv[4],
+        "split_commit": sys.argv[5],
+    }, output, indent=2)
+    output.write("\n")
+' "$target_dir/.agent-pontifex-source.json" "$source_repo" "$source_branch" "$source_commit" "$split_commit"
 
     git -C "$target_dir" config user.name 'Agent Pontifex bootstrap'
     git -C "$target_dir" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -337,13 +431,12 @@ EOF
     git -C "$target_dir" push origin main >/dev/null
   fi
 
-  gh api --method PATCH "repos/${target_repo}" -f default_branch=main >/dev/null
-  gh api "repos/${target_repo}/contents/Cargo.toml?ref=main" >/dev/null
-  gh api "repos/${target_repo}/contents/agent-pontifex-protocol/src/lib.rs?ref=main" >/dev/null
-  gh api "repos/${target_repo}/contents/agent-pontifex-sdk/src/lib.rs?ref=main" >/dev/null
+  set_default_main "$target_repo"
+  api_call GET "/repos/${target_repo}/contents/Cargo.toml?ref=main" >/dev/null
+  api_call GET "/repos/${target_repo}/contents/agent-pontifex-protocol/src/lib.rs?ref=main" >/dev/null
+  api_call GET "/repos/${target_repo}/contents/agent-pontifex-sdk/src/lib.rs?ref=main" >/dev/null
   printf 'sdk target=%s status=published source_commit=%s split_commit=%s main=%s\n' \
-    "$target_repo" "$source_commit" "$split_commit" \
-    "$(gh api "repos/${target_repo}/git/ref/heads/main" --jq .object.sha)"
+    "$target_repo" "$source_commit" "$split_commit" "$(repo_main_sha "$target_repo")"
 }
 
 stage=publish-sdk
@@ -356,12 +449,12 @@ for repository in \
   agent-pontifex/agent-sdk.rs \
   fiducia-cloud/fiducia-ai-agent-coordinator.rs
 do
-  repo="$(gh api "repos/${repository}")"
-  test "$(jq -er .archived <<<"$repo")" = false
-  test "$(jq -er .disabled <<<"$repo")" = false
-  test "$(jq -er .default_branch <<<"$repo")" = main
+  repo="$(api_call GET "/repos/${repository}")"
+  test "$(printf '%s' "$repo" | json_get archived)" = false
+  test "$(printf '%s' "$repo" | json_get disabled)" = false
+  test "$(printf '%s' "$repo" | json_get default_branch)" = main
   printf 'verified repo=%s visibility=%s default=main\n' \
-    "$repository" "$(jq -er .visibility <<<"$repo")"
+    "$repository" "$(printf '%s' "$repo" | json_get visibility)"
 done
 
 printf 'publisher status=success repositories=4\n'
