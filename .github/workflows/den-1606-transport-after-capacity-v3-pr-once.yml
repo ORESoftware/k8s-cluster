@@ -5,7 +5,6 @@ on:
     branches: [dev]
     types: [opened, synchronize, reopened]
     paths:
-      - .github/workflows/den-1606-transport-after-capacity-v3-once.yml
       - .github/workflows/den-1606-transport-after-capacity-v3-pr-once.yml
 
 permissions:
@@ -31,52 +30,48 @@ jobs:
           persist-credentials: true
           show-progress: false
 
-      - name: Execute the reviewed semantic reconstruction
+      - name: Verify exact scope and composed safety invariants
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
+          base='a14072064f25d7b49807656d4231f93d335a6d55'
+          main='remote/deployments/gha-clone-server-rs/src/main.rs'
+          http_tests='remote/deployments/gha-clone-server-rs/tests/http_api.rs'
+          expected=$'.github/workflows/den-1606-transport-after-capacity-v3-pr-once.yml\ndocs/gha-clone-build-server-boundary.md\nremote/deployments/gha-clone-server-rs/src/main.rs\nremote/deployments/gha-clone-server-rs/tests/http_api.rs\nremote/deployments/gha-clone-server-rs/tests/streempilot_http.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_retention.rs'
+          actual="$(git diff --name-only "$base"...HEAD | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'unexpected exact-head paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          test ! -e .github/workflows/den-1606-transport-after-capacity-v3-once.yml
+          git diff --check "$base"...HEAD
 
-          workflow = Path('.github/workflows/den-1606-transport-after-capacity-v3-once.yml')
-          lines = workflow.read_text(encoding='utf-8').splitlines()
-          step = lines.index(
-              '      - name: Reconstruct reviewed transport commits with semantic conflict resolution'
-          )
-          run_line = lines.index('        run: |', step + 1)
-          next_step = next(
-              index for index in range(run_line + 1, len(lines))
-              if lines[index].startswith('      - uses: dtolnay/rust-toolchain@')
-          )
-          prefix = '          '
-          normalized = [
-              line[len(prefix):] if line.startswith(prefix) else line
-              for line in lines[run_line + 1:next_step]
-          ]
-          script = '\n'.join(normalized).lstrip('\n') + '\n'
-          old = "expected='.github/workflows/den-1606-transport-after-capacity-v3-once.yml'"
-          new = "expected=$'.github/workflows/den-1606-transport-after-capacity-v3-once.yml\\n.github/workflows/den-1606-transport-after-capacity-v3-pr-once.yml'"
-          if script.count(old) != 1:
-              raise SystemExit('semantic reconstruction precondition drifted')
-          script = script.replace(old, new, 1)
-          if not script.startswith('set -euo pipefail\n'):
-              raise SystemExit('semantic reconstruction shell boundary drifted')
-          Path('/tmp/den-1606-transport-after-capacity.sh').write_text(
-              script,
-              encoding='utf-8',
-          )
-          PY
-          bash /tmp/den-1606-transport-after-capacity.sh
+          grep -Fq 'reserve_run_records' "$main"
+          grep -Fq 'forget_webhook_delivery' "$main"
+          grep -Fq 'StatusCode::TOO_MANY_REQUESTS' "$main"
+          grep -Fq 'env_nonzero_usize("GHA_CLONE_MAX_RUNS"' "$main"
+          grep -Fq 'env_nonzero_u64("GHA_CLONE_BUILD_POLL_SECONDS"' "$main"
+          grep -Fq 'env_nonzero_u64("GHA_CLONE_BUILD_TIMEOUT_SECONDS"' "$main"
+          grep -Fq 'redirect(reqwest::redirect::Policy::none())' "$main"
+          grep -Fq '!matches!(value, "" | "." | "..")' "$main"
+          grep -Fq 'fn valid_dns_label' "$main"
+          grep -Fq 'validate_build_job_response_id(&build, Some(build_job_id))' "$main"
+          grep -Fq 'DotSegmentSubmissionId' "$http_tests"
+          grep -Fq 'MismatchedStatusId' "$http_tests"
+          grep -Fq 'zero_runtime_bounds_fail_configuration_before_bind' "$http_tests"
+          if grep -Fq 'fn terminal_run_pruning_never_discards_active_runs' "$main"; then
+            echo 'obsolete prune_runs regression was reintroduced' >&2
+            exit 1
+          fi
 
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           toolchain: '1.90.0'
           components: rustfmt, clippy
 
-      - name: Validate every clone-server target
+      - name: Validate every clone-server target without rewriting source
         working-directory: remote/deployments/gha-clone-server-rs
         run: |
           set -euo pipefail
-          cargo fmt --all
           cargo fmt --all -- --check
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked --all-targets -- --nocapture
@@ -86,17 +81,16 @@ jobs:
           set -euo pipefail
           base='a14072064f25d7b49807656d4231f93d335a6d55'
           rm .github/workflows/den-1606-transport-after-capacity-v3-pr-once.yml
-          test ! -e .github/workflows/den-1606-transport-after-capacity-v3-once.yml
           git diff --check
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
           workflow_non_deletions="$(git diff --cached --name-only --diff-filter=ACMRTUXB -- .github/workflows || true)"
           if [[ -n "$workflow_non_deletions" ]]; then
-            printf 'temporary workflows must be deletion-only:\n%s\n' "$workflow_non_deletions" >&2
+            printf 'temporary workflow must be deletion-only:\n%s\n' "$workflow_non_deletions" >&2
             exit 1
           fi
-          git commit -m 'fix(DEN-1606): bind clone transport after atomic capacity'
+          git commit -m 'ci(DEN-1606): remove exact-head validation carrier'
           expected=$'docs/gha-clone-build-server-boundary.md\nremote/deployments/gha-clone-server-rs/src/main.rs\nremote/deployments/gha-clone-server-rs/tests/http_api.rs\nremote/deployments/gha-clone-server-rs/tests/streempilot_http.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_retention.rs'
           actual="$(git diff --name-only "$base"...HEAD | sort)"
           if [[ "$actual" != "$expected" ]]; then
