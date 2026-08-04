@@ -1,0 +1,180 @@
+name: Finalize Messaging Intel on dev 4e701 once
+
+on:
+  pull_request:
+    branches:
+      - dev
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - '.github/workflows/finalize-msgint-dev4e701-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-msgint-dev4e701-once
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: ${{ github.head_ref == 'agent/msgint-gha-clone-hardened-dev4e701-20260804' && github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      FEATURE_BRANCH: agent/msgint-gha-clone-hardened-dev4e701-20260804
+      SOURCE_REVISION: 8655086577b0d8e485e78b7104b0b7e5067a5a58
+    steps:
+      - name: Check out the exact current-dev branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/msgint-gha-clone-hardened-dev4e701-20260804
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Replay the reviewed permanent transplant and contract union
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$SOURCE_REVISION"
+          test "$(git rev-parse FETCH_HEAD)" = "$SOURCE_REVISION"
+
+          files=(
+            .github/workflows/gha-clone-server.yml
+            docs/gha-profile-repository-admission.md
+            remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml
+            remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml
+            remote/deployments/build-server-rs/readme.md
+            remote/deployments/build-server-rs/src/profiles.rs
+            remote/deployments/build-server-rs/src/validation.rs
+            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/package-lock.json
+            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/package.json
+            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/src/operator-config.mjs
+            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/test/operator-config.test.mjs
+            remote/deployments/gha-clone-server-rs/README.md
+            remote/deployments/gha-clone-server-rs/src/lib.rs
+            remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml
+            remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs
+            remote/deployments/gha-clone-server-rs/tests/planner_adversarial.rs
+          )
+          for path in "${files[@]}"; do
+            mkdir -p -- "$(dirname -- "$path")"
+            git show "$SOURCE_REVISION:$path" >"$path"
+          done
+
+          git show "$SOURCE_REVISION:.github/workflows/finalize-msgint-current-dev-once.yml" \
+            >"$RUNNER_TEMP/reviewed-finalizer.yml"
+          python3 <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path(__import__('os').environ['RUNNER_TEMP']) / 'reviewed-finalizer.yml'
+          source = workflow.read_text(encoding='utf-8')
+          marker = "          python3 <<'PY'\n"
+          if source.count(marker) != 1:
+              raise SystemExit('reviewed contract transformer marker was not unique')
+          block = source.split(marker, 1)[1].split('\n          PY', 1)[0]
+          script = Path(__import__('os').environ['RUNNER_TEMP']) / 'contract-union.py'
+          script.write_text(textwrap.dedent(block), encoding='utf-8')
+          PY
+          python3 -m py_compile "$RUNNER_TEMP/contract-union.py"
+          python3 "$RUNNER_TEMP/contract-union.py"
+
+          git diff --check
+          test "$(grep -c '952623b07fd83caa3a83ee27bdea293f6bd4372f' \
+            .github/workflows/gha-clone-server.yml)" = 1
+          test "$(grep -c '952623b07fd83caa3a83ee27bdea293f6bd4372f' \
+            remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs)" = 1
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate the complete clone-server crate
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+          cargo test --locked --test executor_router_http -- --nocapture
+
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Validate build-server idempotency, NATS, profiles, and admission
+        working-directory: remote/deployments/build-server-rs
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 --check \
+            src/jobs.rs \
+            src/main.rs \
+            src/nats_submit.rs \
+            src/profiles.rs \
+            src/validation.rs
+          cargo check --locked --all-targets
+          cargo test --locked --bin dd-build-server -- --nocapture
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Execute the credential-free hardened Node fixture
+        working-directory: remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm run check
+          npm run test:operator-config
+          npm audit --audit-level=high
+          npm test
+
+      - name: Validate permanent workflow and deployment contracts
+        run: |
+          set -euo pipefail
+          pnpm install --dir remote/tests --frozen-lockfile
+          pnpm --dir remote/tests exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/repo:ro" \
+            -w /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            .github/workflows/gha-clone-server.yml \
+            .github/workflows/gha-clone-server-meta.yml \
+            remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml
+
+      - name: Commit the validated permanent tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            .github/workflows/gha-clone-server.yml \
+            docs/gha-profile-repository-admission.md \
+            remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml \
+            remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml \
+            remote/deployments/build-server-rs/readme.md \
+            remote/deployments/build-server-rs/src/profiles.rs \
+            remote/deployments/build-server-rs/src/validation.rs \
+            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile \
+            remote/deployments/gha-clone-server-rs/README.md \
+            remote/deployments/gha-clone-server-rs/src/lib.rs \
+            remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml \
+            remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs \
+            remote/deployments/gha-clone-server-rs/tests/planner_adversarial.rs \
+            remote/tests/general/gha-clone-server-config.test.ts
+          git diff --cached --check
+          git commit -m 'test(gha-clone): harden Messaging Intel on current dev'
+          git push origin "HEAD:$FEATURE_BRANCH"
