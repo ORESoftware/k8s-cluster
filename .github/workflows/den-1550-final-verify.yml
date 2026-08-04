@@ -53,6 +53,7 @@ jobs:
 
           expected = {
               '.github/workflows/den-1550-final-verify.yml',
+              'remote/deployments/gha-clone-server-rs/docs/failure-fallback-event-boundary.md',
               'remote/deployments/gha-clone-server-rs/src/main.rs',
               'remote/deployments/gha-clone-server-rs/tests/http_api.rs',
               'remote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs',
