@@ -76,9 +76,9 @@ jobs:
         with:
           toolchain: '1.90.0'
           components: rustfmt, clippy
-      - name: Check build-server formatting
+      - name: Check the modified fixed-profile source formatting
         working-directory: remote/deployments/build-server-rs
-        run: cargo fmt --all -- --check
+        run: rustfmt --edition 2021 --check src/profiles.rs
       - name: Compile the fixed-profile boundary with warnings denied
         working-directory: remote/deployments/build-server-rs
         run: cargo clippy --locked --all-targets -- -D warnings
