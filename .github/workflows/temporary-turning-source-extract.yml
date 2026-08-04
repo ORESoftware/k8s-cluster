@@ -17,24 +17,32 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
-      - name: Extract bounded turning context
+      - name: Extract bounded turning and named-model context
         shell: python
         run: |
           from pathlib import Path
+          import shutil
 
-          source = Path("src/lib.rs").read_text(encoding="utf-8").splitlines()
+          out = Path("turning-context")
+          out.mkdir()
+          source_path = Path("src/lib.rs")
+          source = source_path.read_text(encoding="utf-8").splitlines()
+          (out / "lib-head.txt").write_text(
+              "\n".join(f"{i + 1:06d}: {line}" for i, line in enumerate(source[:350])),
+              encoding="utf-8",
+          )
           needles = (
               "fn default_machines",
               "struct MachineProfile",
-              "enum Machine",
               "fn machine_class",
               "turning_machine",
               "turningMachines",
               "mill-turn",
               "swiss",
               "lathe",
-              "controller_dialect",
               "firmware_dialect",
+              "printer_model_fleet_machines",
+              "supportedPrinterModels",
           )
           matches = []
           for index, line in enumerate(source):
@@ -53,11 +61,33 @@ jobs:
           for start, end in ranges:
               output.append(f"\n===== src/lib.rs lines {start + 1}-{end} =====\n")
               output.extend(f"{line_no + 1:06d}: {source[line_no]}" for line_no in range(start, end))
-          Path("turning-context.txt").write_text("\n".join(output), encoding="utf-8")
+          (out / "turning-lib-context.txt").write_text("\n".join(output), encoding="utf-8")
+
+          for relative in ("src/printer_model_catalog.rs", "src/tests.rs", "src/e2e_tests.rs", "docs/printer-models.md", "Cargo.toml"):
+              path = Path(relative)
+              if path.is_file():
+                  target = out / relative.replace("/", "__")
+                  if path.stat().st_size <= 600_000:
+                      shutil.copyfile(path, target)
+                  else:
+                      lines = path.read_text(encoding="utf-8").splitlines()
+                      selected = []
+                      tokens = ("printer_model", "turning_catalog", "lathe", "swiss", "mill_turn", "default_fleet")
+                      for index, line in enumerate(lines):
+                          if any(token in line.lower() for token in tokens):
+                              start = max(0, index - 25)
+                              end = min(len(lines), index + 70)
+                              selected.extend(f"{n + 1:06d}: {lines[n]}" for n in range(start, end))
+                              selected.append("\n---\n")
+                      target.write_text("\n".join(selected), encoding="utf-8")
+          (out / "source-files.txt").write_text(
+              "\n".join(str(path) for path in sorted(Path("src").glob("*.rs"))),
+              encoding="utf-8",
+          )
       - name: Upload bounded source context
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: turning-source-context
-          path: turning-context.txt
+          path: turning-context/
           if-no-files-found: error
           retention-days: 1
