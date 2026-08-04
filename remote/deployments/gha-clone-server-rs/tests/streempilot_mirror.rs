@@ -3,10 +3,8 @@ use std::collections::BTreeSet;
 use gha_clone_server::{build_plan, PlanRequest, PlannerLimits, WorkflowPlan};
 
 const REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
-const CHECKOUT_ACTION: &str =
-    "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
-const SETUP_NODE_ACTION: &str =
-    "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020";
+const CHECKOUT_ACTION: &str = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
+const SETUP_NODE_ACTION: &str = "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020";
 const RUST_TOOLCHAIN_ACTION: &str =
     "dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30";
 const API_WORKFLOW: &str = include_str!("../fixtures/streempilot-api-ci-mirror.yml");
