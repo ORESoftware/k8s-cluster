@@ -168,6 +168,21 @@ jobs:
           """,
                   'webhook dispatch replacement',
               ),
+              (
+                  """if main.count(configured_path_old) != 1:
+              raise SystemExit('unexpected configured workflow path validator')
+          main = main.replace(configured_path_old, configured_path_new, 1)
+          """,
+                  """configured_path_start = main.find('fn valid_configured_workflow_path(value: &str) -> bool {')
+          if configured_path_start == -1:
+              raise SystemExit('could not locate configured workflow path validator')
+          configured_path_end = main.find('\\n}\\n', configured_path_start)
+          if configured_path_end == -1:
+              raise SystemExit('could not locate configured workflow path validator end')
+          main = main[:configured_path_start] + configured_path_new + main[configured_path_end + 3:]
+          """,
+                  'configured workflow-path validator replacement',
+              ),
           ]
           for brittle, robust, label in replacements:
               if script.count(brittle) != 1:
