@@ -34,7 +34,9 @@ class ProjectLinksTests(unittest.TestCase):
 
     def test_dancing_dragons_is_project_four(self):
         entry = next(
-            item for item in self.catalog["projects"] if item["key"] == "dancing-dragons"
+            item
+            for item in self.catalog["projects"]
+            if item["key"] == "dancing-dragons"
         )
         self.assertEqual(entry["github"]["project_number"], 4)
 
