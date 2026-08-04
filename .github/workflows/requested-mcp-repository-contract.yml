@@ -5,6 +5,7 @@ on:
     paths:
       - scripts/ops/publish_requested_mcp_servers.py
       - scripts/ops/requested_mcp_publisher/**
+      - scripts/ops/run_protected_requested_mcp_publisher.sh
       - scripts/ops/run_requested_mcp_publisher_remote.sh
       - scripts/ops/tests/test_publish_requested_mcp_servers.py
       - .github/workflows/requested-mcp-repository-contract.yml
@@ -14,6 +15,7 @@ on:
     paths:
       - scripts/ops/publish_requested_mcp_servers.py
       - scripts/ops/requested_mcp_publisher/**
+      - scripts/ops/run_protected_requested_mcp_publisher.sh
       - scripts/ops/run_requested_mcp_publisher_remote.sh
       - scripts/ops/tests/test_publish_requested_mcp_servers.py
       - .github/workflows/requested-mcp-repository-contract.yml
@@ -43,9 +45,12 @@ jobs:
           python3 -m unittest -v scripts/ops/tests/test_publish_requested_mcp_servers.py
           python3 scripts/ops/publish_requested_mcp_servers.py --check > /tmp/requested-mcp-check.json
           test "$(jq '.repositories | length' /tmp/requested-mcp-check.json)" -eq 5
+          bash -n scripts/ops/run_protected_requested_mcp_publisher.sh
           bash -n scripts/ops/run_requested_mcp_publisher_remote.sh
+          grep -qF 'MCP_PUBLISHER_ERROR stage=' scripts/ops/run_protected_requested_mcp_publisher.sh
           grep -qF 'MCP_PUBLISHER_ERROR stage=' scripts/ops/run_requested_mcp_publisher_remote.sh
           grep -qF 'MCP_REPOSITORY_VERIFIED ' scripts/ops/run_requested_mcp_publisher_remote.sh
+          grep -qF '/tmp/publish-requested-mcp-repositories.sh' scripts/ops/run_protected_requested_mcp_publisher.sh
 
       - name: Reject credential literals and destructive Git operations
         run: |
@@ -53,10 +58,12 @@ jobs:
           ! grep -R -E 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}' \
             scripts/ops/publish_requested_mcp_servers.py \
             scripts/ops/requested_mcp_publisher \
+            scripts/ops/run_protected_requested_mcp_publisher.sh \
             scripts/ops/run_requested_mcp_publisher_remote.sh \
             scripts/ops/tests/test_publish_requested_mcp_servers.py \
             .github/workflows/requested-mcp-repository-contract.yml \
             .github/workflows/ops-publish-requested-mcp-servers-once.yml
           ! grep -R -E 'git push[^\n]*(--force|-f([[:space:]]|$))' \
             scripts/ops/requested_mcp_publisher \
+            scripts/ops/run_protected_requested_mcp_publisher.sh \
             scripts/ops/run_requested_mcp_publisher_remote.sh
