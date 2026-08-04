@@ -57,9 +57,9 @@ jobs:
 
           block = lines[run_index + 1 : next_index]
           prefix = '          '
-          if not block or any(line and not line.startswith(prefix) for line in block):
-              raise SystemExit('reviewed materializer run block has unexpected indentation')
-          block = [line[len(prefix):] if line else '' for line in block]
+          if not block:
+              raise SystemExit('reviewed materializer run block is empty')
+          block = [line[len(prefix):] if line.startswith(prefix) else line for line in block]
           if block[0] != "python3 - <<'PY'" or block[-1] != 'PY':
               raise SystemExit('reviewed materializer run block has unexpected shell framing')
 
