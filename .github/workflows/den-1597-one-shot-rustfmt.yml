@@ -42,7 +42,9 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
             remote/deployments/gha-clone-server-rs/src/executor_router.rs \
-            remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs \
             remote/deployments/gha-clone-server-rs/tests/executor_router_http.rs
+          # src/bin is ignored repository-wide, but this exact binary is already
+          # tracked on the reviewed branch and must receive rustfmt output.
+          git add -f remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs
           git commit -m 'style(DEN-1597): apply pinned rustfmt'
           git push origin HEAD:agent/den-1597-aws-hetzner-executor-router
