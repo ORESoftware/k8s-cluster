@@ -225,10 +225,7 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
         "node-hardened-verify"
     );
     assert_eq!(final_run["submissions"][0]["status"], "succeeded");
-    assert_eq!(
-        final_run["submissions"][1]["profile"],
-        "node-hardened-test"
-    );
+    assert_eq!(final_run["submissions"][1]["profile"], "node-hardened-test");
     assert_eq!(final_run["submissions"][1]["status"], "succeeded");
 
     let submissions = mock_state.submissions.lock().await;
@@ -283,7 +280,11 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
             mutable_action,
             "exact 40-hex commit SHA",
         ),
-        ("bracket secret expression", bracket_secret, "secret-bearing"),
+        (
+            "bracket secret expression",
+            bracket_secret,
+            "secret-bearing",
+        ),
     ] {
         let response = client
             .post(format!("{server_url}/v1/runs"))
@@ -306,7 +307,10 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
             .json()
             .await
             .unwrap_or_else(|error| panic!("read rejected {label} response: {error}"));
-        assert_eq!(rejected["error"], "workflow is not independently executable");
+        assert_eq!(
+            rejected["error"],
+            "workflow is not independently executable"
+        );
         assert!(
             rejected.to_string().contains(expected_reason),
             "{label} response did not explain {expected_reason}: {rejected}"
