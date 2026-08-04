@@ -593,6 +593,7 @@ enum MockMode {
     RejectSubmission,
     InvalidSubmissionJson,
     InvalidSubmissionId,
+    RedirectSubmission,
     UnknownSubmissionStatus,
     OversizedSubmissionBody,
     FailBuild,
@@ -609,6 +610,7 @@ struct MockBuildState {
     submissions: Arc<Mutex<Vec<Value>>>,
     auth_headers: Arc<Mutex<Vec<Option<String>>>>,
     next_id: Arc<AtomicUsize>,
+    status_requests: Arc<AtomicUsize>,
 }
 
 struct MockBuildServer {
@@ -630,6 +632,7 @@ impl MockBuildServer {
             submissions: Arc::new(Mutex::new(Vec::new())),
             auth_headers: Arc::new(Mutex::new(Vec::new())),
             next_id: Arc::new(AtomicUsize::new(0)),
+            status_requests: Arc::new(AtomicUsize::new(0)),
         };
         let app = Router::new()
             .route("/builds", post(mock_submit))
@@ -673,6 +676,9 @@ async fn mock_submit(
             Json(json!({ "id": "..", "status": "queued", "error": null })),
         )
             .into_response(),
+        MockMode::RedirectSubmission => {
+            axum::response::Redirect::temporary("/redirected").into_response()
+        }
         MockMode::UnknownSubmissionStatus => (
             StatusCode::ACCEPTED,
             Json(json!({ "id": "build-unknown", "status": "mystery", "error": null })),
@@ -699,6 +705,7 @@ async fn mock_submit(
 }
 
 async fn mock_status(State(state): State<MockBuildState>, Path(id): Path<String>) -> Response {
+    state.status_requests.fetch_add(1, Ordering::SeqCst);
     match state.mode {
         MockMode::FailBuild => (
             StatusCode::OK,
@@ -753,6 +760,57 @@ fn execution_env(mock: &MockBuildServer, timeout_seconds: u64) -> BTreeMap<&'sta
         timeout_seconds.to_string(),
     );
     env
+}
+
+#[test]
+fn zero_runtime_bounds_fail_configuration_before_bind() {
+    for name in [
+        "GHA_CLONE_MAX_WORKFLOW_BYTES",
+        "GHA_CLONE_MAX_JOBS",
+        "GHA_CLONE_MAX_STEPS_PER_JOB",
+        "GHA_CLONE_BUILD_POLL_SECONDS",
+        "GHA_CLONE_BUILD_TIMEOUT_SECONDS",
+        "GHA_CLONE_MAX_RUNS",
+        "GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS",
+        "GHA_CLONE_MAX_WEBHOOK_DELIVERIES",
+    ] {
+        let mut command = Command::new(SERVER_BINARY);
+        for &variable in SERVER_ENV_VARS {
+            command.env_remove(variable);
+        }
+        let mut child = command
+            .env(name, "0")
+            .env("RUST_LOG", "error")
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("run invalid clone-server configuration");
+
+        let mut exit_status = None;
+        for _ in 0..200 {
+            exit_status = child.try_wait().expect("read invalid-config process");
+            if exit_status.is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let Some(exit_status) = exit_status else {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("{name}=0 started a server instead of failing configuration");
+        };
+
+        let mut stderr = String::new();
+        if let Some(mut pipe) = child.stderr.take() {
+            std::io::Read::read_to_string(&mut pipe, &mut stderr)
+                .expect("read invalid-config stderr");
+        }
+        assert_eq!(exit_status.code(), Some(2), "{name}: {stderr}");
+        assert!(
+            stderr.contains(name) && stderr.contains("greater than zero"),
+            "{name}: {stderr}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -819,6 +877,11 @@ async fn asynchronous_execution_failures_are_persisted_and_observable() {
         ),
         (MockMode::InvalidSubmissionId, 2, "invalid job ID"),
         (
+            MockMode::RedirectSubmission,
+            2,
+            "build server rejected rust with HTTP 307",
+        ),
+        (
             MockMode::UnknownSubmissionStatus,
             2,
             "invalid accepted status",
@@ -859,6 +922,27 @@ async fn asynchronous_execution_failures_are_persisted_and_observable() {
             run["error"].as_str().unwrap().contains(expected),
             "mode {mode:?} expected {expected:?}: {run}"
         );
+        let should_poll = matches!(
+            mode,
+            MockMode::FailBuild
+                | MockMode::UnknownStatus
+                | MockMode::InvalidStatusJson
+                | MockMode::MismatchedStatusId
+                | MockMode::OversizedStatusBody
+                | MockMode::KeepRunning
+        );
+        let status_requests = mock.state.status_requests.load(Ordering::SeqCst);
+        if should_poll {
+            assert!(
+                status_requests >= 1,
+                "mode {mode:?} never polled build status"
+            );
+        } else {
+            assert_eq!(
+                status_requests, 0,
+                "mode {mode:?} polled an untrusted build identity"
+            );
+        }
     }
 }
 
