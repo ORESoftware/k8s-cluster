@@ -82,7 +82,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ORESoftware/ai-agent-coordinator.rs
-          ref: 7453280125ca1bfbc34375bea90647a661d2027d
+          ref: 29e827244a517a54c3c861a9654b355b584140df
           path: .e2e/coordinator
           fetch-depth: 1
           persist-credentials: false
@@ -148,7 +148,7 @@ jobs:
       - name: Record and verify tested revisions
         env:
           BRIDGE_REF: 0ba7d2d4eb8c44583503d4567af2de1f73bc5598
-          COORDINATOR_REF: 7453280125ca1bfbc34375bea90647a661d2027d
+          COORDINATOR_REF: 29e827244a517a54c3c861a9654b355b584140df
         run: |
           set -euo pipefail
           bridge_commit="$(git -C .e2e/bridge rev-parse HEAD)"
