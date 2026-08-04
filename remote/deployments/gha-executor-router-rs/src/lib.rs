@@ -86,10 +86,7 @@ pub struct Config {
 impl Config {
     pub fn from_env() -> Result<Self, String> {
         let execution_enabled = env_bool("GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED", false)?;
-        let max_executors = env_usize(
-            "GHA_EXECUTOR_ROUTER_MAX_EXECUTORS",
-            DEFAULT_MAX_EXECUTORS,
-        )?;
+        let max_executors = env_usize("GHA_EXECUTOR_ROUTER_MAX_EXECUTORS", DEFAULT_MAX_EXECUTORS)?;
         if max_executors == 0 || max_executors > HARD_MAX_EXECUTORS {
             return Err(format!(
                 "GHA_EXECUTOR_ROUTER_MAX_EXECUTORS must be between 1 and {HARD_MAX_EXECUTORS}"
@@ -141,8 +138,7 @@ impl Config {
         let request_timeout_seconds = env_u64("GHA_EXECUTOR_ROUTER_REQUEST_TIMEOUT_SECONDS", 60)?;
         if !(1..=300).contains(&request_timeout_seconds) {
             return Err(
-                "GHA_EXECUTOR_ROUTER_REQUEST_TIMEOUT_SECONDS must be between 1 and 300"
-                    .to_string(),
+                "GHA_EXECUTOR_ROUTER_REQUEST_TIMEOUT_SECONDS must be between 1 and 300".to_string(),
             );
         }
 
@@ -164,9 +160,7 @@ impl Config {
     fn validate(&self) -> Result<(), String> {
         if self.execution_enabled {
             if self.inbound_auth_secret.is_none() {
-                return Err(
-                    "execution requires GHA_EXECUTOR_ROUTER_AUTH_SECRET_FILE".to_string(),
-                );
+                return Err("execution requires GHA_EXECUTOR_ROUTER_AUTH_SECRET_FILE".to_string());
             }
             if self.executors.is_empty() {
                 return Err("execution requires at least one complete executor".to_string());
@@ -414,7 +408,11 @@ fn validate_github_repo_url(raw: &str) -> Result<(), RouterError> {
     }
     let segments = url
         .path_segments()
-        .map(|segments| segments.filter(|segment| !segment.is_empty()).collect::<Vec<_>>())
+        .map(|segments| {
+            segments
+                .filter(|segment| !segment.is_empty())
+                .collect::<Vec<_>>()
+        })
         .unwrap_or_default();
     if segments.len() != 2
         || !segments[1].ends_with(".git")
@@ -753,7 +751,10 @@ impl Engine {
 
     pub async fn poll(&self, external_id: &str) -> Result<BuildJob, RouterError> {
         if !safe_token(external_id, 256, b"-_:~") {
-            return Err(RouterError::not_found("route_not_found", "build route not found"));
+            return Err(RouterError::not_found(
+                "route_not_found",
+                "build route not found",
+            ));
         }
         let route = self
             .routes
@@ -903,10 +904,7 @@ impl Engine {
     }
 }
 
-async fn read_bounded(
-    mut response: reqwest::Response,
-    limit: usize,
-) -> Result<Vec<u8>, String> {
+async fn read_bounded(mut response: reqwest::Response, limit: usize) -> Result<Vec<u8>, String> {
     let mut body = Vec::new();
     while let Some(chunk) = response
         .chunk()
@@ -967,7 +965,10 @@ impl RouterError {
 
 fn request_is_authorized(headers: &HeaderMap, expected: Option<&str>) -> Result<(), RouterError> {
     let expected = expected.ok_or_else(|| {
-        RouterError::unavailable("auth_not_configured", "router operator auth is not configured")
+        RouterError::unavailable(
+            "auth_not_configured",
+            "router operator auth is not configured",
+        )
     })?;
     let presented = headers
         .get("x-server-auth")
@@ -977,7 +978,11 @@ fn request_is_authorized(headers: &HeaderMap, expected: Option<&str>) -> Result<
         .unwrap_or("");
     let expected_digest = Sha256::digest(expected.as_bytes());
     let presented_digest = Sha256::digest(presented.as_bytes());
-    if bool::from(expected_digest.as_slice().ct_eq(presented_digest.as_slice())) {
+    if bool::from(
+        expected_digest
+            .as_slice()
+            .ct_eq(presented_digest.as_slice()),
+    ) {
         Ok(())
     } else {
         Err(RouterError::new(
@@ -1091,10 +1096,9 @@ async fn submit_build(
     headers: HeaderMap,
     Json(request): Json<BuildRequest>,
 ) -> Response {
-    if let Err(error) = request_is_authorized(
-        &headers,
-        engine.config.inbound_auth_secret.as_deref(),
-    ) {
+    if let Err(error) =
+        request_is_authorized(&headers, engine.config.inbound_auth_secret.as_deref())
+    {
         return error.into_response();
     }
     match engine.submit(request).await {
@@ -1108,10 +1112,9 @@ async fn get_build(
     headers: HeaderMap,
     AxumPath(id): AxumPath<String>,
 ) -> Response {
-    if let Err(error) = request_is_authorized(
-        &headers,
-        engine.config.inbound_auth_secret.as_deref(),
-    ) {
+    if let Err(error) =
+        request_is_authorized(&headers, engine.config.inbound_auth_secret.as_deref())
+    {
         return error.into_response();
     }
     match engine.poll(&id).await {
@@ -1379,11 +1382,7 @@ mod tests {
         ))
         .await;
         let engine = Engine::new(config(vec![
-            executor(
-                "aws",
-                Provider::Aws,
-                "http://127.0.0.1:9".to_string(),
-            ),
+            executor("aws", Provider::Aws, "http://127.0.0.1:9".to_string()),
             executor("hetzner", Provider::Hetzner, hetzner_url),
         ]))
         .unwrap();
@@ -1428,12 +1427,14 @@ mod tests {
         let engine = Engine::new(config(vec![executor("aws", Provider::Aws, aws_url)])).unwrap();
         let first_engine = engine.clone();
         let second_engine = engine.clone();
-        let first = tokio::spawn(async move {
-            first_engine.submit(request("same-request")).await.unwrap()
-        });
-        let second = tokio::spawn(async move {
-            second_engine.submit(request("same-request")).await.unwrap()
-        });
+        let first =
+            tokio::spawn(
+                async move { first_engine.submit(request("same-request")).await.unwrap() },
+            );
+        let second =
+            tokio::spawn(
+                async move { second_engine.submit(request("same-request")).await.unwrap() },
+            );
 
         let first = first.await.unwrap();
         let second = second.await.unwrap();
@@ -1516,8 +1517,16 @@ mod tests {
     #[test]
     fn executor_configuration_rejects_duplicate_authorities() {
         let duplicate_provider = vec![
-            executor("aws-a", Provider::Aws, "https://aws-a.example.com".to_string()),
-            executor("aws-b", Provider::Aws, "https://aws-b.example.com".to_string()),
+            executor(
+                "aws-a",
+                Provider::Aws,
+                "https://aws-a.example.com".to_string(),
+            ),
+            executor(
+                "aws-b",
+                Provider::Aws,
+                "https://aws-b.example.com".to_string(),
+            ),
         ];
         assert!(validate_executor_set(&duplicate_provider).is_err());
 
