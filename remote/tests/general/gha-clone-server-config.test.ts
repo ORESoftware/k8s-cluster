@@ -24,7 +24,10 @@ const observabilityDeploymentPath =
 const profilesPath = 'remote/deployments/build-server-rs/src/profiles.rs';
 const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';
 const serverPath = 'remote/deployments/gha-clone-server-rs/src/main.rs';
+const metaIntegrationTestPath =
+  'remote/deployments/gha-clone-server-rs/tests/meta_self_test.rs';
 const workflowPath = '.github/workflows/gha-clone-server.yml';
+const metaWorkflowPath = '.github/workflows/gha-clone-server-meta.yml';
 
 test('GHA continuity service is installed fail-closed with no cluster identity', () => {
   const deployment = read(deploymentPath);
@@ -98,11 +101,19 @@ test('network boundary permits only DNS, GitHub HTTPS, and build-server dispatch
   assert.match(policy, /192\.168\.0\.0\/16/);
 });
 
-test('config allowlists exact trusted repositories and static workflow paths', () => {
+test('config allowlists exact trusted repositories and the bounded meta workflow', () => {
   const config = read(configMapPath);
   assert.match(config, /ORESoftware\/k8s-cluster/);
   assert.match(config, /sonus-auris\/sonus-auris-interfaces/);
   assert.match(config, /\.github\/workflows\/ci\.yml/);
+  assert.match(
+    config,
+    /"ORESoftware\/k8s-cluster": \["\.github\/workflows\/gha-clone-server-meta\.yml"\]/,
+  );
+  assert.doesNotMatch(
+    config,
+    /"ORESoftware\/k8s-cluster": \["\.github\/workflows\/gha-clone-server\.yml"\]/,
+  );
   assert.doesNotMatch(config, /https?:\/\/[^/\s]+\/\*|owner\/\*/);
 });
 
@@ -111,9 +122,17 @@ test('build server exposes fixed Rust, Node, and Python continuity profiles', ()
   for (const profile of ['rust-verify', 'node-verify', 'python-verify']) {
     assert.match(profiles, new RegExp(`name: "${profile}"`));
   }
-  assert.match(profiles, /cargo clippy --all-targets --all-features -- -D warnings/);
+  assert.match(
+    profiles,
+    /cargo clippy --locked --all-targets --all-features -- -D warnings/,
+  );
+  assert.match(
+    profiles,
+    /remote\/deployments\/gha-clone-server-rs\/Cargo\.toml/,
+  );
   assert.match(profiles, /pnpm install --frozen-lockfile/);
   assert.match(profiles, /python -m pytest/);
+  assert.doesNotMatch(profiles, /find .*Cargo\.toml|for crate in/);
 
   const imageAssignments = [
     ...profiles.matchAll(/const\s+[A-Z_]+_IMAGE:\s*&str\s*=\s*"([^"]+)";/g),
@@ -140,12 +159,38 @@ test('planner and dispatcher preserve the fail-closed command boundary', () => {
   assert.doesNotMatch(server, /command:\s*&|script:\s*&|runner_image/);
 });
 
+test('meta integration test starts the real server and submits its own workflow', () => {
+  const integration = read(metaIntegrationTestPath);
+  assert.match(integration, /CARGO_BIN_EXE_gha-clone-server/);
+  assert.match(integration, /\/v1\/runs/);
+  assert.match(integration, /MockBuildState/);
+  assert.match(integration, /gha-clone-server-meta\.yml/);
+  assert.match(integration, /"profile"\], "rust-verify"/);
+  assert.match(integration, /GHA_CLONE_EXECUTION_ENABLED", "true"/);
+  assert.match(integration, /env_remove\("GHA_CLONE_GITHUB_TOKEN"\)/);
+});
+
+test('bounded meta workflow remains independently compilable', () => {
+  const workflow = read(metaWorkflowPath);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /gha-clone-self-test:/);
+  assert.match(
+    workflow,
+    /cargo test --manifest-path remote\/deployments\/gha-clone-server-rs\/Cargo\.toml --locked --all-targets/,
+  );
+  assert.match(workflow, /persist-credentials:\s*false/);
+  assert.doesNotMatch(workflow, /working-directory:|timeout-minutes:|permissions:/);
+  assert.doesNotMatch(workflow, /\$\{\{\s*secrets\./);
+  assert.doesNotMatch(workflow, /services:|container:|strategy:|needs:/);
+});
+
 test('dedicated GitHub Actions workflow checks Rust and deployment contracts', () => {
   const workflow = read(workflowPath);
   assert.match(workflow, /cargo fmt --all -- --check/);
   assert.match(workflow, /cargo clippy --locked --all-targets -- -D warnings/);
   assert.match(workflow, /cargo test --locked --all-targets/);
   assert.match(workflow, /gha-clone-server-config\.test\.ts/);
+  assert.match(workflow, /gha-clone-server-meta\.yml/);
   assert.match(workflow, /actionlint@sha256:/);
   assert.match(workflow, /persist-credentials:\s*false/);
 });
