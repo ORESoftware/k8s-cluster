@@ -491,25 +491,43 @@ async fn webhook_guards_reject_bad_inputs_before_any_github_fetch() {
     let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::ACCEPTED);
     assert_eq!(value["accepted"], false);
+    assert_eq!(
+        value["reason"],
+        "only workflow_run events may trigger the failure fallback"
+    );
 
     let short_revision = serde_json::to_vec(&json!({
         "repository": { "full_name": REPOSITORY },
-        "after": "abc123"
+        "workflow_run": { "head_sha": "abc123" }
     }))
     .unwrap();
     let signature = webhook_signature(&short_revision);
-    let response = post_webhook(&client, &server, "push", &short_revision, Some(&signature)).await;
+    let response = post_webhook(
+        &client,
+        &server,
+        "workflow_run",
+        &short_revision,
+        Some(&signature),
+    )
+    .await;
     let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(value["error"], "webhook revision is not a full commit SHA");
 
     let no_rules = serde_json::to_vec(&json!({
         "repository": { "full_name": REPOSITORY },
-        "after": REVISION
+        "workflow_run": { "head_sha": REVISION }
     }))
     .unwrap();
     let signature = webhook_signature(&no_rules);
-    let response = post_webhook(&client, &server, "push", &no_rules, Some(&signature)).await;
+    let response = post_webhook(
+        &client,
+        &server,
+        "workflow_run",
+        &no_rules,
+        Some(&signature),
+    )
+    .await;
     let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::ACCEPTED);
     assert_eq!(value["accepted"], false);
