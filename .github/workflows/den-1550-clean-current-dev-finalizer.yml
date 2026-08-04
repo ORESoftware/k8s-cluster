@@ -1,0 +1,230 @@
+# One-shot validator for the clean current-dev Messaging Intel branch.
+# It removes itself after all product tests pass.
+name: DEN-1550 validate clean Messaging Intel continuity
+
+on:
+  push:
+    branches:
+      - agent/den-1550-msgint-clean-current-dev-20260804
+    paths:
+      - .github/workflows/den-1550-clean-current-dev-finalizer.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1550-clean-current-dev-finalizer
+  cancel-in-progress: false
+
+jobs:
+  validate-and-finalize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1550-msgint-clean-current-dev-20260804
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v4.4.0
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: '22.23.1'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Reconcile generic planner regression expectations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          immutable = '0123456789abcdef0123456789abcdef01234567'
+
+          adversarial = Path(
+              'remote/deployments/gha-clone-server-rs/tests/planner_adversarial.rs'
+          )
+          source = adversarial.read_text(encoding='utf-8')
+          known_action = re.compile(
+              r'(?i)(actions/(?:checkout|setup-node|setup-python|setup-java)'
+              r'|dtolnay/rust-toolchain|pnpm/action-setup|subosito/flutter-action)@abc'
+          )
+          source, action_count = known_action.subn(
+              lambda match: f'{match.group(1)}@{immutable}', source
+          )
+          if action_count < 2:
+              raise SystemExit(
+                  f'expected at least two stale known-action fixtures, found {action_count}'
+              )
+
+          old_inventory = '        "secret-bearing env/with values are unsupported",\n'
+          new_inventory = (
+              '        "secret-bearing step environments are unsupported",\n'
+              '        "secret-bearing setup inputs are unsupported",\n'
+          )
+          if source.count(old_inventory) != 1:
+              raise SystemExit(
+                  f'expected one old unsupported-secret inventory item, found '
+                  f'{source.count(old_inventory)}'
+              )
+          source = source.replace(old_inventory, new_inventory, 1)
+
+          old_assertion = 'reason.contains("secret-bearing env/with")'
+          new_assertion = 'reason.contains("secret-bearing")'
+          if source.count(old_assertion) != 1:
+              raise SystemExit(
+                  f'expected one old secret assertion, found {source.count(old_assertion)}'
+              )
+          adversarial.write_text(
+              source.replace(old_assertion, new_assertion, 1), encoding='utf-8'
+          )
+
+          contract = Path('remote/tests/general/gha-clone-server-config.test.ts')
+          source = contract.read_text(encoding='utf-8')
+          declaration = (
+              "const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';\n"
+          )
+          expanded = (
+              declaration
+              + "const genericPlannerPath =\n"
+              + "  'remote/deployments/gha-clone-server-rs/src/planner.rs';\n"
+          )
+          if source.count(declaration) != 1:
+              raise SystemExit(
+                  f'expected one planner declaration, found {source.count(declaration)}'
+              )
+          source = source.replace(declaration, expanded, 1)
+
+          old_read = (
+              "test('planner and dispatcher preserve the fail-closed command boundary', () => {\n"
+              "  const planner = read(plannerPath);\n"
+          )
+          new_read = (
+              "test('planner and dispatcher preserve the fail-closed command boundary', () => {\n"
+              "  const planner = [read(plannerPath), read(genericPlannerPath)].join('\\n');\n"
+          )
+          if source.count(old_read) != 1:
+              raise SystemExit(
+                  f'expected one generic planner read, found {source.count(old_read)}'
+              )
+          source = source.replace(old_read, new_read, 1)
+
+          old_secret = (
+              '  assert.match(planner, /secret-bearing env\\/with values are unsupported/);\n'
+          )
+          new_secret = (
+              '  assert.match(planner, /secret-bearing setup inputs are unsupported/);\n'
+              '  assert.match(planner, /secret-bearing step environments are unsupported/);\n'
+          )
+          if source.count(old_secret) != 1:
+              raise SystemExit(
+                  f'expected one old static secret assertion, found {source.count(old_secret)}'
+              )
+          contract.write_text(
+              source.replace(old_secret, new_secret, 1), encoding='utf-8'
+          )
+
+          admission = Path('docs/gha-profile-repository-admission.md')
+          source = admission.read_text(encoding='utf-8')
+          old = (
+              'The GHA continuity server independently allowlists the exact '
+              '`messaging-intel/msgint-connectors` repository and '
+              '`.github/workflows/gha-clone-operator-config.yml` workflow path, '
+              'requires an immutable 40-hex revision for execution, and sends only '
+              'the canonical HTTPS repository URL plus a fixed profile name to the '
+              'build server.'
+          )
+          new = (
+              'The GHA continuity server reserves the exact '
+              '`messaging-intel/msgint-connectors` repository and '
+              '`.github/workflows/gha-clone-operator-config.yml` workflow path, '
+              'requires reviewed revision '
+              '`a9cc977d78347ec0efdbe8e6766967f80d425882`, validates the exact '
+              'workflow name, trigger, ordered DAG, action SHAs, action inputs, and '
+              'command arrays before privileged profile assignment, and sends only '
+              'the canonical HTTPS repository URL plus a fixed profile name to the '
+              'build server. A reserved identity mismatch is terminal and cannot '
+              'fall back to `node-verify`.'
+          )
+          if source.count(old) != 1:
+              raise SystemExit(
+                  f'expected one old admission paragraph, found {source.count(old)}'
+              )
+          admission.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PY
+
+      - name: Format and test the real continuity compiler and server
+        working-directory: remote/deployments/gha-clone-server-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Check out the exact private shared-library gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Test fixed-profile admission, idempotency, and delivery
+        working-directory: remote/deployments/build-server-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked --all-targets
+          cargo test --locked profiles::tests -- --nocapture
+          cargo test --locked validation::tests -- --nocapture
+          cargo test --locked idempotency_tests -- --nocapture
+          cargo test --locked nats_submit::tests -- --nocapture
+
+      - name: Prove lifecycle scripts remain disabled
+        working-directory: remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f LIFECYCLE_RAN
+          npm ci --ignore-scripts
+          npm run check
+          npm run test:operator-config
+          npm audit --audit-level=high
+          npm test
+          test ! -e LIFECYCLE_RAN
+
+      - name: Run permanent TypeScript continuity contracts
+        working-directory: remote/tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts \
+            general/gha-clone-msgint-config.test.ts
+
+      - name: Commit only verified permanent product files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/den-1550-clean-current-dev-finalizer.yml
+          git add \
+            docs/gha-profile-repository-admission.md \
+            remote/deployments/gha-clone-server-rs/tests/planner_adversarial.rs \
+            remote/tests/general/gha-clone-server-config.test.ts
+          git diff --cached --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'test(DEN-1550): finalize exact Messaging Intel continuity contracts'
+          git push origin HEAD:agent/den-1550-msgint-clean-current-dev-20260804

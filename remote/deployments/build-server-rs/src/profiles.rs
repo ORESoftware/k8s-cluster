@@ -76,6 +76,34 @@ else
 fi"#,
 }];
 
+const NODE_HARDENED_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
+    name: "Hardened Node operator configuration verification",
+    image: NODE_IMAGE,
+    subdirectory: ".",
+    script: r#"set -euo pipefail
+if [ ! -f package-lock.json ] && [ ! -f npm-shrinkwrap.json ]; then
+  echo "node-hardened-verify requires package-lock.json or npm-shrinkwrap.json" >&2
+  exit 2
+fi
+npm ci --ignore-scripts
+npm run check
+npm run test:operator-config
+npm audit --audit-level=high"#,
+}];
+
+const NODE_HARDENED_TEST_STEPS: &[ProfileStep] = &[ProfileStep {
+    name: "Lifecycle-script-free Node repository tests",
+    image: NODE_IMAGE,
+    subdirectory: ".",
+    script: r#"set -euo pipefail
+if [ ! -f package-lock.json ] && [ ! -f npm-shrinkwrap.json ]; then
+  echo "node-hardened-test requires package-lock.json or npm-shrinkwrap.json" >&2
+  exit 2
+fi
+npm ci --ignore-scripts
+npm test"#,
+}];
+
 const PYTHON_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
     name: "Python compile and pytest verification",
     image: PYTHON_IMAGE,
@@ -174,6 +202,21 @@ pub const SPECS: &[ProfileSpec] = &[
         platform: "linux",
         description: "Lockfile-strict Node dependency installation and repository tests",
         steps: NODE_VERIFY_STEPS,
+        artifact_paths: &[],
+    },
+    ProfileSpec {
+        name: "node-hardened-verify",
+        platform: "linux",
+        description:
+            "Lifecycle-script-free Node operator checks, focused tests, and high-severity audit",
+        steps: NODE_HARDENED_VERIFY_STEPS,
+        artifact_paths: &[],
+    },
+    ProfileSpec {
+        name: "node-hardened-test",
+        platform: "linux",
+        description: "Lifecycle-script-free lockfile install and complete Node repository tests",
+        steps: NODE_HARDENED_TEST_STEPS,
         artifact_paths: &[],
     },
     ProfileSpec {
@@ -290,9 +333,56 @@ mod tests {
 
     #[test]
     fn continuity_profiles_are_installed() {
-        for name in ["rust-verify", "node-verify", "python-verify"] {
+        for name in [
+            "rust-verify",
+            "node-verify",
+            "node-hardened-verify",
+            "node-hardened-test",
+            "python-verify",
+        ] {
             assert!(find(name).is_some(), "{name} should be installed");
         }
+    }
+
+    #[test]
+    fn hardened_node_profile_is_ordered_and_supply_chain_bounded() {
+        let profile = find("node-hardened-verify").expect("hardened Node profile");
+        let script = profile.steps[0].script;
+        assert_eq!(profile.steps[0].subdirectory, ".");
+        let install = script
+            .find("npm ci --ignore-scripts")
+            .expect("install step");
+        let check = script.find("npm run check").expect("check step");
+        let focused = script
+            .find("npm run test:operator-config")
+            .expect("focused test step");
+        let audit = script
+            .find("npm audit --audit-level=high")
+            .expect("audit step");
+        assert!(install < check && check < focused && focused < audit);
+        assert!(script.contains("package-lock.json"));
+        assert!(!script.contains("npm install"));
+        assert!(!script.contains("|| true"));
+        assert!(!script.contains("--force"));
+        assert!(!script.contains("curl"));
+        assert!(!script.contains("wget"));
+    }
+
+    #[test]
+    fn hardened_node_test_profile_disables_lifecycle_scripts() {
+        let profile = find("node-hardened-test").expect("hardened Node test profile");
+        let script = profile.steps[0].script;
+        let install = script
+            .find("npm ci --ignore-scripts")
+            .expect("install step");
+        let test = script.find("npm test").expect("test step");
+        assert!(install < test);
+        assert!(script.contains("package-lock.json"));
+        assert!(!script.contains("npm install"));
+        assert!(!script.contains("|| true"));
+        assert!(!script.contains("--force"));
+        assert!(!script.contains("curl"));
+        assert!(!script.contains("wget"));
     }
 
     #[test]
