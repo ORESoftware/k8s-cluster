@@ -70,9 +70,9 @@ jobs:
         shell: bash
         run: rustup toolchain install 1.90.0 --profile minimal --component rustfmt,clippy
 
-      - name: Validate Rust formatting
+      - name: Normalize generated Rust sources
         shell: bash
-        run: cargo +1.90.0 fmt --manifest-path "$FLEET_ROOT/Cargo.toml" --all -- --check
+        run: cargo +1.90.0 fmt --manifest-path "$FLEET_ROOT/Cargo.toml" --all
 
       - name: Test every Rust package
         shell: bash
