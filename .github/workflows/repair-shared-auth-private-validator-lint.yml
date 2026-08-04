@@ -71,12 +71,8 @@ jobs:
                   r'''            echo "- \`cargo test --all-targets --locked\`"''',
               ),
           ]
-
-          # The three old echo patterns above deliberately omit any newline but
-          # must not include a trailing space. Normalize their accidental raw-
-          # string suffix before matching the actual workflow lines.
           workflow_replacements[4:] = [
-              (old[:-1] if old.endswith(' ') else old, new)
+              (old.removesuffix(' '), new)
               for old, new in workflow_replacements[4:]
           ]
 
@@ -88,8 +84,12 @@ jobs:
           workflow.write_text(text)
 
           old_contract = '''require_literal "! grep -Fq 'introspection stays open for backward'"'''
-          new_contract = '''require_literal "if grep -Fq 'introspection stays open for backward'"
-          require_literal 'stale fail-open introspection documentation remained after correction.' '''
+          new_contract = "\n".join(
+              [
+                  '''require_literal "if grep -Fq 'introspection stays open for backward'"''',
+                  "require_literal 'stale fail-open introspection documentation remained after correction.'",
+              ]
+          )
           contract_text = contract.read_text()
           if contract_text.count(old_contract) != 1:
               raise SystemExit('expected exactly one stale contract assertion')
