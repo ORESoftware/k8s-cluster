@@ -27,7 +27,7 @@ jobs:
           persist-credentials: true
           show-progress: false
 
-      - name: Reconstruct reviewed transport commits with three-way ancestry
+      - name: Reconstruct reviewed transport commits with semantic conflict resolution
         run: |
           set -euo pipefail
           base='a14072064f25d7b49807656d4231f93d335a6d55'
@@ -46,22 +46,103 @@ jobs:
             remote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs
             remote/deployments/gha-clone-server-rs/tests/webhook_retention.rs
           )
+          main='remote/deployments/gha-clone-server-rs/src/main.rs'
 
           git show --format= --binary \
             6d050a5c516c0dcc1c13646fe8742dfed477346c -- "${paths[@]}" \
             > /tmp/transport.patch
           if ! git apply --3way /tmp/transport.patch; then
-            echo 'initial transport commit did not merge cleanly' >&2
-            git status --short >&2
-            git diff --cc >&2 || true
-            exit 1
+            unmerged="$(git diff --name-only --diff-filter=U | sort)"
+            if [[ "$unmerged" != "$main" ]]; then
+              printf 'unexpected transport conflicts:\n%s\n' "$unmerged" >&2
+              git diff --cc >&2 || true
+              exit 1
+            fi
+
+            python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/deployments/gha-clone-server-rs/src/main.rs')
+          lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
+          output = []
+          index = 0
+          resolved = 0
+
+          while index < len(lines):
+              if not lines[index].startswith('<<<<<<< '):
+                  output.append(lines[index])
+                  index += 1
+                  continue
+
+              separator = next(
+                  (cursor for cursor in range(index + 1, len(lines)) if lines[cursor].startswith('=======')),
+                  None,
+              )
+              end = next(
+                  (
+                      cursor
+                      for cursor in range((separator or index) + 1, len(lines))
+                      if lines[cursor].startswith('>>>>>>> ')
+                  ),
+                  None,
+              )
+              if separator is None or end is None:
+                  raise SystemExit('malformed Git conflict markers')
+
+              ours = lines[index + 1:separator]
+              theirs = lines[separator + 1:end]
+              joined = ''.join(ours + theirs)
+
+              if 'build_poll_seconds' in joined and 'build_timeout_seconds' in joined:
+                  theirs_text = ''.join(theirs)
+                  if 'env_nonzero_u64' not in theirs_text or 'env_u64(' in theirs_text:
+                      raise SystemExit('positive poll/timeout conflict shape drifted')
+                  replacement = theirs
+              elif 'terminal_run_pruning_never_discards_active_runs' in joined:
+                  theirs_text = ''.join(theirs)
+                  obsolete_start = theirs_text.find('    #[test]\n    fn terminal_run_pruning_never_discards_active_runs()')
+                  transport_start = theirs_text.find(
+                      '    #[test]\n    fn build_server_origin_is_credential_free_and_transport_safe()',
+                      obsolete_start + 1,
+                  )
+                  if obsolete_start < 0 or transport_start < 0:
+                      raise SystemExit('obsolete pruning-test conflict shape drifted')
+                  cleaned = theirs_text[:obsolete_start] + theirs_text[transport_start:]
+                  if 'terminal_run_pruning_never_discards_active_runs' in cleaned:
+                      raise SystemExit('obsolete pruning test survived semantic resolution')
+                  replacement = cleaned.splitlines(keepends=True)
+              else:
+                  raise SystemExit(f'unreviewed conflict hunk:\n{joined[:1600]}')
+
+              output.extend(replacement)
+              resolved += 1
+              index = end + 1
+
+          merged = ''.join(output)
+          if resolved != 2:
+              raise SystemExit(f'expected exactly two reviewed conflicts, resolved {resolved}')
+          if any(marker in merged for marker in ('<<<<<<< ', '=======', '>>>>>>> ')):
+              raise SystemExit('conflict marker remains after semantic resolution')
+          if 'reserve_run_records' not in merged or 'forget_webhook_delivery' not in merged:
+              raise SystemExit('atomic-capacity invariants disappeared during merge')
+          if 'normalize_build_server_url' not in merged or 'validate_build_job_response_id' not in merged:
+              raise SystemExit('transport/identity invariants disappeared during merge')
+          path.write_text(merged, encoding='utf-8')
+          PY
+
+            git add "$main"
+            remaining="$(git diff --name-only --diff-filter=U)"
+            if [[ -n "$remaining" ]]; then
+              printf 'unresolved paths remain:\n%s\n' "$remaining" >&2
+              exit 1
+            fi
           fi
 
           git show --format= --binary \
             4f5d033cff24325e3c5b7e0f09eee65c36d0f4e6 -- "${paths[@]}" \
             > /tmp/path-hardening.patch
           if ! git apply --3way /tmp/path-hardening.patch; then
-            echo 'path-identity hardening did not merge cleanly' >&2
+            echo 'path-identity hardening did not merge cleanly after reviewed resolution' >&2
             git status --short >&2
             git diff --cc >&2 || true
             exit 1
@@ -69,6 +150,16 @@ jobs:
 
           rm "$workflow"
           git diff --check
+          test -z "$(git diff --name-only --diff-filter=U)"
+          grep -q 'reserve_run_records' "$main"
+          grep -q 'forget_webhook_delivery' "$main"
+          grep -q 'env_nonzero_u64("GHA_CLONE_BUILD_POLL_SECONDS"' "$main"
+          grep -q 'env_nonzero_u64("GHA_CLONE_BUILD_TIMEOUT_SECONDS"' "$main"
+          grep -q '!matches!(value, "" | "." | "..")' "$main"
+          if grep -q 'fn terminal_run_pruning_never_discards_active_runs' "$main"; then
+            echo 'obsolete prune_runs regression was reintroduced' >&2
+            exit 1
+          fi
 
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
