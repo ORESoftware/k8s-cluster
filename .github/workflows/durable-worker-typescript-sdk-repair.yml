@@ -70,7 +70,10 @@ jobs:
           npm --prefix remote/api-sdks/typescript/durable-worker run check
           npm --prefix remote/api-sdks/typescript/durable-worker test
           node --test remote/tests/general/durable-worker-typescript-sdk.test.mjs
-          npm --prefix remote/api-sdks/typescript/durable-worker pack --dry-run --json > /tmp/sdk-pack.json
+          (
+            cd remote/api-sdks/typescript/durable-worker
+            npm pack --dry-run --json
+          ) > /tmp/sdk-pack.json
           node --input-type=module <<'NODE'
           import { readFile } from 'node:fs/promises';
           const report = JSON.parse(await readFile('/tmp/sdk-pack.json', 'utf8'));
