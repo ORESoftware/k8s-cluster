@@ -4,7 +4,7 @@ use std::sync::Once;
 
 use axum::{
     extract::State,
-    http::{HeaderMap, StatusCode},
+    http::{header::AUTHORIZATION, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -41,7 +41,26 @@ fn authorize_caller(state: &AppState, headers: &HeaderMap) -> Result<(), AuthErr
         });
         return Err(AuthError::Unauthorized);
     };
-    authorize_service_credential(Some(expected), bearer(headers))
+    authorize_service_credential(Some(expected), introspection_bearer(headers))
+}
+
+/// Parse the service credential from exactly one unambiguous Authorization
+/// field. End-user bearer parsing remains backward compatible, but the
+/// service-to-service introspection boundary rejects duplicate fields and
+/// comma-coalesced values rather than depending on proxy/header ordering.
+fn introspection_bearer(headers: &HeaderMap) -> Option<&str> {
+    let mut values = headers.get_all(AUTHORIZATION).iter();
+    let value = values.next()?.to_str().ok()?;
+    if values.next().is_some() {
+        return None;
+    }
+
+    let token = value.strip_prefix("Bearer ")?;
+    if token.contains(',') {
+        return None;
+    }
+    let token = token.trim();
+    (!token.is_empty()).then_some(token)
 }
 
 fn authorize_service_credential(
@@ -195,9 +214,20 @@ fn insert_header(map: &mut HeaderMap, name: &'static str, value: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::authorize_service_credential;
+    use axum::http::{header::AUTHORIZATION, HeaderMap, HeaderValue};
+
+    use super::{authorize_service_credential, introspection_bearer};
 
     const SECRET: &str = "0123456789abcdef0123456789abcdef";
+    const BEARER_SECRET: &str = "Bearer 0123456789abcdef0123456789abcdef";
+
+    fn authorization_headers(values: &[&str]) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        for value in values {
+            headers.append(AUTHORIZATION, HeaderValue::from_str(value).unwrap());
+        }
+        headers
+    }
 
     #[test]
     fn introspection_fails_closed_without_a_configured_service_secret() {
@@ -218,5 +248,33 @@ mod tests {
     #[test]
     fn introspection_accepts_only_the_independent_service_credential() {
         assert!(authorize_service_credential(Some(SECRET), Some(SECRET)).is_ok());
+    }
+
+    #[test]
+    fn introspection_bearer_accepts_exactly_one_authorization_field() {
+        let headers = authorization_headers(&[BEARER_SECRET]);
+        assert_eq!(introspection_bearer(&headers), Some(SECRET));
+    }
+
+    #[test]
+    fn introspection_bearer_rejects_duplicate_authorization_fields() {
+        let headers = authorization_headers(&[BEARER_SECRET, BEARER_SECRET]);
+        assert_eq!(introspection_bearer(&headers), None);
+    }
+
+    #[test]
+    fn introspection_bearer_rejects_comma_coalesced_or_malformed_values() {
+        let coalesced = authorization_headers(&[
+            "Bearer 0123456789abcdef0123456789abcdef, Bearer 0123456789abcdef0123456789abcdef",
+        ]);
+        assert_eq!(introspection_bearer(&coalesced), None);
+
+        let wrong_scheme = authorization_headers(&[
+            "Basic 0123456789abcdef0123456789abcdef",
+        ]);
+        assert_eq!(introspection_bearer(&wrong_scheme), None);
+
+        let empty = authorization_headers(&["Bearer    "]);
+        assert_eq!(introspection_bearer(&empty), None);
     }
 }
