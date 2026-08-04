@@ -7,6 +7,14 @@ on:
     paths:
       - .github/workflows/den-1597-finalize-clean-router-gitops.yml
       - .github/patches/den-1597-finalize-clean-router-gitops.trigger
+  pull_request:
+    branches:
+      - agent/den-1597-router-core-current-dev-20260804
+    paths:
+      - .github/workflows/den-1597-finalize-clean-router-gitops.yml
+      - .github/patches/den-1597-finalize-clean-router-gitops.trigger
+      - docs/gha-executor-router-gitops.md
+      - remote/tests/general/gha-clone-server-config.test.ts
 
 permissions:
   contents: write
@@ -17,6 +25,7 @@ concurrency:
 
 jobs:
   finalize-test-and-remove:
+    if: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
