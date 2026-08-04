@@ -1,0 +1,90 @@
+name: seaorm-migration-inventory-comment
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/seaorm-migration-inventory-comment.yml"
+      - "seaorm-migration.json"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "src/**"
+      - "scripts/audit-seaorm-migration.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: seaorm-migration-inventory-comment-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@1e60f620b9541d7c2434ff48847e58a8b12002b1 # v4.0.4
+        with:
+          node-version: "22"
+      - name: Generate bounded direct-driver inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 test-results
+          node --test scripts/audit-seaorm-migration.test.mjs
+          node scripts/audit-seaorm-migration.mjs \
+            --report test-results/seaorm-migration-inventory.json \
+            > test-results/seaorm-migration-inventory.stdout.json
+      - name: Publish inventory on the pull request
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- mip-solver-seaorm-inventory -->';
+            const report = JSON.parse(fs.readFileSync('test-results/seaorm-migration-inventory.json', 'utf8'));
+            const format = finding => `- \`${finding.path}:${finding.line}\` — ${finding.kind}`;
+            const sections = [
+              ['Direct SQLx', report.findings.directSqlx],
+              ['Direct tokio-postgres', report.findings.directTokioPostgres],
+              ['Service startup migrations', report.findings.startupMigrations],
+            ];
+            const details = sections.map(([title, findings]) => {
+              const lines = findings.slice(0, 200).map(format);
+              const omitted = Math.max(0, findings.length - lines.length);
+              if (omitted) lines.push(`- … ${omitted} additional finding(s) omitted from the comment`);
+              return `### ${title} (${findings.length})\n${lines.length ? lines.join('\n') : '- none'}`;
+            }).join('\n\n');
+            const body = `${marker}\n## SQLx-to-SeaORM migration inventory\n\n` +
+              `- head: \`${context.payload.pull_request.head.sha}\`\n` +
+              `- shared schema: \`${report.schemaAuthority.commit}\`\n` +
+              `- scanned files: \`${report.scannedFileCount}\`\n` +
+              `- migration status: \`${report.status}\`\n` +
+              `- migration complete: \`${report.migrationComplete}\`\n\n${details}\n\n` +
+              `This is an inventory, not a completion claim. The PR may enter \`seaorm-only\` only after direct-driver counts are zero and restart/concurrency/DPM evidence exists.`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find(comment => comment.user?.type === 'Bot' && comment.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
