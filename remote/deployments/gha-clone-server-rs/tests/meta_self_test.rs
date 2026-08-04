@@ -58,10 +58,7 @@ async fn submit_build(
 
 async fn get_build(Path(id): Path<String>) -> impl IntoResponse {
     if id != "meta-build-1" {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "not found" })),
-        );
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": "not found" })));
     }
     (
         StatusCode::OK,
@@ -95,11 +92,7 @@ fn reserve_port() -> u16 {
     listener.local_addr().expect("local address").port()
 }
 
-async fn wait_until_ready(
-    client: &reqwest::Client,
-    base_url: &str,
-    child: &mut ChildGuard,
-) {
+async fn wait_until_ready(client: &reqwest::Client, base_url: &str, child: &mut ChildGuard) {
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         if let Some(status) = child.try_wait().expect("inspect server process") {
@@ -139,9 +132,7 @@ async fn running_server_submits_its_own_workflow_to_the_fixed_build_profile() {
     let server_url = format!("http://127.0.0.1:{server_port}");
     let binary = option_env!("CARGO_BIN_EXE_gha-clone-server")
         .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("CARGO_BIN_EXE_gha-clone-server").map(PathBuf::from)
-        })
+        .or_else(|| std::env::var_os("CARGO_BIN_EXE_gha-clone-server").map(PathBuf::from))
         .expect("Cargo must expose the gha-clone-server binary to integration tests");
     let child = Command::new(binary)
         .env("HOST", "127.0.0.1")
@@ -238,9 +229,9 @@ async fn running_server_submits_its_own_workflow_to_the_fixed_build_profile() {
     );
     assert_eq!(submission["gitRef"], REVISION);
     assert_eq!(submission["profile"], "rust-verify");
-    assert!(submission["requestId"]
-        .as_str()
-        .is_some_and(|value| value.starts_with("gha-clone:") && value.ends_with(":gha-clone-self-test")));
+    assert!(submission["requestId"].as_str().is_some_and(
+        |value| value.starts_with("gha-clone:") && value.ends_with(":gha-clone-self-test")
+    ));
 
     mock_task.abort();
 }
