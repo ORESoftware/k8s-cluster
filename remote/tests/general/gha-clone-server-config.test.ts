@@ -85,20 +85,26 @@ test('secret mapping names values without committing credential material', () =>
   ]) {
     assert.match(secret, new RegExp(`property: ${property}`));
   }
+  assert.match(secret, /secretKey:\s*executor_router_auth/);
+  assert.match(secret, /dd\/remote-dev\/gha-executor-router-secrets/);
+  assert.match(secret, /property:\s*router_auth/);
   assert.doesNotMatch(
     secret,
     /ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|BEGIN (?:RSA |EC )?PRIVATE KEY/,
   );
 });
 
-test('network boundary permits only DNS, GitHub HTTPS, and build-server dispatch', () => {
+test('network boundary permits only DNS, GitHub HTTPS, and executor-router dispatch', () => {
   const policy = read(networkPath);
-  assert.match(policy, /port:\s*53/);
-  assert.match(policy, /app:\s*dd-build-server/);
-  assert.match(policy, /port:\s*8100/);
-  assert.match(policy, /port:\s*443/);
-  assert.match(policy, /10\.0\.0\.0\/8/);
-  assert.match(policy, /192\.168\.0\.0\/16/);
+  const egress = policy.split('  egress:\n')[1] ?? '';
+  assert.match(egress, /port:\s*53/);
+  assert.match(egress, /app:\s*dd-gha-executor-router/);
+  assert.match(egress, /port:\s*8126/);
+  assert.match(egress, /port:\s*443/);
+  assert.match(egress, /10\.0\.0\.0\/8/);
+  assert.match(egress, /192\.168\.0\.0\/16/);
+  assert.doesNotMatch(egress, /app:\s*dd-build-server/);
+  assert.doesNotMatch(egress, /port:\s*8100/);
 });
 
 test('config allowlists exact trusted repositories and the bounded meta workflow', () => {
@@ -190,6 +196,8 @@ test('dedicated GitHub Actions workflow checks Rust and deployment contracts', (
   assert.match(workflow, /cargo clippy --locked --all-targets -- -D warnings/);
   assert.match(workflow, /cargo test --locked --all-targets/);
   assert.match(workflow, /gha-clone-server-config\.test\.ts/);
+  assert.match(workflow, /gha-executor-router-config\.test\.mjs/);
+  assert.match(workflow, /kubectl kustomize remote\/argocd\/dd-next-runtime/);
   assert.match(workflow, /gha-clone-server-meta\.yml/);
   assert.match(workflow, /actionlint@sha256:/);
   assert.match(workflow, /persist-credentials:\s*false/);
