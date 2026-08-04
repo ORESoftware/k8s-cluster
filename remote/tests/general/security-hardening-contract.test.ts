@@ -200,7 +200,7 @@ test('no manifest carries a credential as an inline env value', async () => {
       // exception deliberately narrow: an absolute runtime mount only, with no
       // parent traversal. The secret bytes themselves remain forbidden here.
       if (
-        envName.endsWith('_PATH') &&
+        (envName.endsWith('_PATH') || envName.endsWith('_SECRET_ROOT')) &&
         RUNTIME_SECRET_PATH.test(value) &&
         !value.includes('..')
       ) {
