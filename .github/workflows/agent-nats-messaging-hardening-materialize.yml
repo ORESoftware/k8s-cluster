@@ -1,6 +1,11 @@
 name: Materialize NATS messaging hardening
 
 on:
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/agent-nats-messaging-hardening-materialize.yml'
   push:
     branches:
       - agent/nats-messaging-otel-openapi-hardening-20260804
