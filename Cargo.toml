@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 description = "Provider-neutral Rust push notification delivery service for FCM, APNs, Expo, and Web Push"
-repository = "https://github.com/ORESoftware/push-notification-server.rs"
+repository = "https://github.com/fanwaave/push-notification-server.rs"
 publish = false
 
 [dependencies]
