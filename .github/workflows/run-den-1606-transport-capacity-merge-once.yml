@@ -1,7 +1,5 @@
-# Push-trigger carrier for the reviewed semantic merge. The final product commit
+# Push/PR carrier for the reviewed semantic merge. The final product commit
 # deletes this carrier, the source workflow, and the bounded conflict diagnostic.
-# Retriggered by the authenticated repository owner after the bot-authored carrier
-# commit was correctly skipped by the actor guard.
 name: Run DEN-1606 transport-capacity semantic merge once
 
 on:
@@ -10,6 +8,12 @@ on:
       - agent/den-1606-transport-capacity-semantic-merge
     paths:
       - .github/workflows/run-den-1606-transport-capacity-merge-once.yml
+  pull_request:
+    branches: [dev]
+    types: [synchronize]
+    paths:
+      - .github/workflows/run-den-1606-transport-capacity-merge-once.yml
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -20,7 +24,11 @@ concurrency:
 
 jobs:
   reconcile:
-    if: github.actor != 'github-actions[bot]'
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name != 'pull_request' ||
+        (github.event.pull_request.head.repo.full_name == github.repository &&
+         github.event.pull_request.head.ref == 'agent/den-1606-transport-capacity-semantic-merge'))
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     steps:
