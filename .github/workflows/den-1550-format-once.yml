@@ -38,16 +38,8 @@ jobs:
 
           path = Path('remote/deployments/gha-clone-server-rs/src/main.rs')
           source = path.read_text(encoding='utf-8')
-          old = '''            .recv()
-              .await;
-          }
-          #[cfg(not(unix))]
-          '''
-          new = '''            .recv()
-              .await;
-          };
-          #[cfg(not(unix))]
-          '''
+          old = "            .recv()\n            .await;\n    }\n    #[cfg(not(unix))]"
+          new = "            .recv()\n            .await;\n    };\n    #[cfg(not(unix))]"
           count = source.count(old)
           if count != 1:
               raise SystemExit(f'expected one shutdown syntax target, found {count}')
