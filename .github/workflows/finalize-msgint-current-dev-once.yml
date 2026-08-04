@@ -68,13 +68,58 @@ jobs:
           import os
           from pathlib import Path
 
-          path = Path('remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs')
-          source = path.read_text(encoding='utf-8')
+          integration = Path('remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs')
+          source = integration.read_text(encoding='utf-8')
           old = os.environ['OLD_MSGINT_REVISION']
           new = os.environ['NEW_MSGINT_REVISION']
           if source.count(old) != 1 or new in source:
               raise SystemExit('unexpected Messaging Intel integration revision state')
-          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          integration.write_text(source.replace(old, new, 1), encoding='utf-8')
+
+          planner = Path('remote/deployments/gha-clone-server-rs/tests/planner_adversarial.rs')
+          tests = planner.read_text(encoding='utf-8')
+
+          old_reason = '        "secret-bearing env/with values are unsupported",\n'
+          new_reasons = (
+              '        "secret-bearing step environments are unsupported",\n'
+              '        "secret-bearing setup inputs are unsupported",\n'
+              '        "must use an exact 40-hex commit SHA",\n'
+          )
+          if tests.count(old_reason) != 1:
+              raise SystemExit('expected one stale combined secret-reason assertion')
+          tests = tests.replace(old_reason, new_reasons, 1)
+
+          old_secret_loop = '''    for id in ["compact_secret", "github_token", "oidc"] {
+              assert!(job(&plan, id)
+                  .independent_reasons
+                  .iter()
+                  .any(|reason| reason.contains("secret-bearing env/with")));
+          }
+          '''
+          new_secret_checks = '''    assert!(job(&plan, "compact_secret")
+              .independent_reasons
+              .iter()
+              .any(|reason| reason.contains("secret-bearing setup inputs")));
+          for id in ["github_token", "oidc"] {
+              assert!(job(&plan, id)
+                  .independent_reasons
+                  .iter()
+                  .any(|reason| reason.contains("secret-bearing step environments")));
+          }
+          '''
+          if tests.count(old_secret_loop) != 1:
+              raise SystemExit('expected one stale secret-context assertion loop')
+          tests = tests.replace(old_secret_loop, new_secret_checks, 1)
+
+          exact_sha = '0123456789abcdef0123456789abcdef01234567'
+          for action in ['ACTIONS/CHECKOUT', 'Actions/Setup-Node']:
+              stale = f'{action}@abc'
+              pinned = f'{action}@{exact_sha}'
+              if tests.count(stale) != 1 or pinned in tests:
+                  raise SystemExit(f'unexpected action-ref state for {action}')
+              tests = tests.replace(stale, pinned, 1)
+
+          planner.write_text(tests, encoding='utf-8')
           PY
 
           git diff --check
@@ -143,6 +188,7 @@ jobs:
             remote/deployments/gha-clone-server-rs/src/lib.rs \
             remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml \
             remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs \
+            remote/deployments/gha-clone-server-rs/tests/planner_adversarial.rs \
             remote/tests/general/gha-clone-server-config.test.ts
           git diff --cached --check
           test -z "$(git diff --cached --name-only | grep '^\.github/workflows/' || true)"
