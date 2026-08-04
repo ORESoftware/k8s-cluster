@@ -96,9 +96,20 @@ jobs:
           reindented = '\n'.join(
               ('          ' + line) if line else '' for line in publisher.splitlines()
           )
-          workflow_path.write_text(
+          patched_workflow = (
               workflow[:publisher_start] + reindented + workflow[publisher_end:]
           )
+          lint_replacements = (
+              (base64.b64decode('ICAgICAgICAgICAgcHJpbnRmICdPbmUtdGltZSBSU0EtT0FFUC1TSEEyNTYgY2hhbGxlbmdlIGZvciBgJXMvJXNgIGFuZCBgJXMvJXNgLiBUaGUgcHJpdmF0ZSBrZXkgZXhpc3RzIG9ubHkgaW4gdGhpcyBydW5uZXIgYW5kIGlzIGRlc3Ryb3llZCBvbiBleGl0LiBSZXBseSB3aXRoIHRoZSBtYXRjaGluZyBlbmNyeXB0ZWQgY2lwaGVydGV4dCBtYXJrZXIuXG5cbicgXAo=').decode('utf-8'), base64.b64decode('ICAgICAgICAgICAgcHJpbnRmICJPbmUtdGltZSBSU0EtT0FFUC1TSEEyNTYgY2hhbGxlbmdlIGZvciBcYCVzLyVzXGAgYW5kIFxgJXMvJXNcYC4gVGhlIHByaXZhdGUga2V5IGV4aXN0cyBvbmx5IGluIHRoaXMgcnVubmVyIGFuZCBpcyBkZXN0cm95ZWQgb24gZXhpdC4gUmVwbHkgd2l0aCB0aGUgbWF0Y2hpbmcgZW5jcnlwdGVkIGNpcGhlcnRleHQgbWFya2VyLlxuXG4iIFwK').decode('utf-8')),
+              (base64.b64decode('ICAgICAgICAgICAgcHJpbnRmICdgYGBwZW1cbicK').decode('utf-8'), base64.b64decode('ICAgICAgICAgICAgcHJpbnRmICclc1xuJyAiXGBcYFxgcGVtIgo=').decode('utf-8')),
+              (base64.b64decode('ICAgICAgICAgICAgcHJpbnRmICdgYGBcbicK').decode('utf-8'), base64.b64decode('ICAgICAgICAgICAgcHJpbnRmICclc1xuJyAiXGBcYFxgIgo=').decode('utf-8')),
+              (base64.b64decode('ICAgICAgICAgICAganEgLXIgJy5yZXBvc2l0b3JpZXNbXSB8ICJ8IFtgXCgucmVwb3NpdG9yeSlgXShcKC5odG1sX3VybCkpIHwgYFwoLmNvbW1pdClgIHwgXCguc291cmNlX2ZpbGVfY291bnQpIHwgXChpZiAuY3JlYXRlZCB0aGVuICJ5ZXMiIGVsc2UgImFscmVhZHkgZXhhY3QiIGVuZCkgfCBcKC50b3BpY3MpIHwgXCguYnJhbmNoX3Byb3RlY3Rpb24pIHwiJyBcCg==').decode('utf-8'), base64.b64decode('ICAgICAgICAgICAgIyBUaGUganEgcHJvZ3JhbSBhbmQgTWFya2Rvd24gYmFja3RpY2tzIG11c3QgcmVtYWluIGxpdGVyYWwuCiAgICAgICAgICAgICMgc2hlbGxjaGVjayBkaXNhYmxlPVNDMjAxNgogICAgICAgICAgICBqcSAtciAnLnJlcG9zaXRvcmllc1tdIHwgInwgW2BcKC5yZXBvc2l0b3J5KWBdKFwoLmh0bWxfdXJsKSkgfCBgXCguY29tbWl0KWAgfCBcKC5zb3VyY2VfZmlsZV9jb3VudCkgfCBcKGlmIC5jcmVhdGVkIHRoZW4gInllcyIgZWxzZSAiYWxyZWFkeSBleGFjdCIgZW5kKSB8IFwoLnRvcGljcykgfCBcKC5icmFuY2hfcHJvdGVjdGlvbikgfCInIFwK').decode('utf-8')),
+          )
+          for old_lint, new_lint in lint_replacements:
+              if patched_workflow.count(old_lint) != 1:
+                  raise SystemExit('exact literal-Markdown lint target not found once')
+              patched_workflow = patched_workflow.replace(old_lint, new_lint, 1)
+          workflow_path.write_text(patched_workflow)
 
           docs_path = Path('docs/operations/gha-indie-worker-ephemeral-publication.md')
           docs = docs_path.read_text()
