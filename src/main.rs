@@ -17,6 +17,7 @@ mod entity;
 mod error;
 mod events;
 mod fiducia;
+mod financial_audit;
 mod jobs;
 mod ledger;
 mod locks;
@@ -144,7 +145,7 @@ async fn shutdown_signal() {
             .expect("install SIGTERM handler")
             .recv()
             .await;
-    };
+    }
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
 
