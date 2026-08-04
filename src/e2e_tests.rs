@@ -297,6 +297,56 @@ async fn fdm_printer_catalog_advertises_three_additional_makes_over_http() {
 }
 
 #[tokio::test]
+async fn turning_catalog_advertises_named_lathe_profiles_over_http() {
+    let app = authenticated_app();
+    let reply = get_auth(&app, "/turning/catalog").await;
+    assert!(reply.ok(), "status {} body {}", reply.status, reply.body);
+    assert_eq!(reply.body["supportedTurningModelCount"], 2);
+
+    let models = reply.body["supportedTurningModels"]
+        .as_array()
+        .expect("supportedTurningModels array");
+    for expected in ["haas-st-20", "dn-solutions-lynx-2100b-fanuc"] {
+        assert!(
+            models.iter().any(|model| model["model"] == expected),
+            "named turning catalog missing {expected}"
+        );
+    }
+
+    let machines = reply.body["turningMachines"]
+        .as_array()
+        .expect("turningMachines array");
+    let haas = machines
+        .iter()
+        .find(|machine| machine["id"] == "haas-st-20-1")
+        .expect("Haas ST-20 fleet entry");
+    assert!(haas["acceptedInstructionLanguages"]
+        .as_array()
+        .is_some_and(|languages| languages.iter().any(|language| language == "haas-gcode")));
+    let lynx = machines
+        .iter()
+        .find(|machine| machine["id"] == "dn-solutions-lynx-2100b-fanuc-1")
+        .expect("Lynx 2100B Fanuc fleet entry");
+    assert!(lynx["acceptedInstructionLanguages"]
+        .as_array()
+        .is_some_and(|languages| languages.iter().any(|language| language == "fanuc-gcode")));
+
+    let lathe_reply = get_auth(&app, "/lathe/catalog").await;
+    assert!(
+        lathe_reply.ok(),
+        "status {} body {}",
+        lathe_reply.status,
+        lathe_reply.body
+    );
+    assert_eq!(lathe_reply.body["supportedTurningModelCount"], 2);
+    assert!(lathe_reply.body["latheMachines"]
+        .as_array()
+        .is_some_and(|lathe_machines| lathe_machines
+            .iter()
+            .any(|machine| machine["id"] == "haas-st-20-1")));
+}
+
+#[tokio::test]
 async fn elegoo_centauri_carbon_fiber_job_passes_preflight_over_http() {
     let app = authenticated_app();
     // A carbon-fiber PA job on a Centauri-class machine (320 C nozzle, 110 C bed,

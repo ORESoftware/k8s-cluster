@@ -144,6 +144,7 @@ mod tolerance_catalog_content;
 mod tooling_catalog_content;
 mod toolpath_catalog_content;
 mod transport;
+mod turning_model_catalog;
 mod utilities_catalog_content;
 mod web_server;
 mod workholding_catalog_content;
@@ -10039,6 +10040,9 @@ fn machine_class(kind: &str) -> MachineClass {
     if let Some(model) = printer_model_catalog::fdm_printer_model_for_token(&token) {
         return machine_class(model.machine_kind);
     }
+    if let Some(model) = turning_model_catalog::turning_machine_model_for_token(&token) {
+        return machine_class(model.machine_kind);
+    }
     if is_composite_layup_kind(&token)
         || is_hot_wire_foam_cutter_kind(&token)
         || is_gear_cutting_kind(&token)
@@ -11592,6 +11596,7 @@ fn default_machines() -> Vec<MachineProfile> {
         },
     ];
     machines.extend(printer_model_fleet_machines());
+    machines.extend(turning_model_fleet_machines());
     machines
 }
 
@@ -11613,6 +11618,34 @@ fn printer_model_fleet_machines() -> Vec<MachineProfile> {
             ),
             work_envelope_mm: Some(spec.work_envelope_mm.to_vec()),
             axes: Some(3),
+            operations: Some(
+                spec.operations
+                    .iter()
+                    .map(|operation| (*operation).to_string())
+                    .collect(),
+            ),
+            profile_evidence: None,
+        })
+        .collect()
+}
+
+/// Fleet entries for named turning-center models, derived from one catalog so
+/// aliases, physical limits, controller dialects, and HTTP surfaces cannot drift.
+fn turning_model_fleet_machines() -> Vec<MachineProfile> {
+    turning_model_catalog::TURNING_MACHINE_MODEL_SPECS
+        .iter()
+        .map(|spec| MachineProfile {
+            id: format!("{}-1", spec.model),
+            kind: spec.machine_kind.to_string(),
+            controller: Some(spec.controller.to_string()),
+            materials: Some(
+                spec.materials
+                    .iter()
+                    .map(|material| (*material).to_string())
+                    .collect(),
+            ),
+            work_envelope_mm: Some(spec.work_envelope_mm.to_vec()),
+            axes: Some(spec.axes),
             operations: Some(
                 spec.operations
                     .iter()
@@ -107295,7 +107328,14 @@ fn machine_catalog_instruction_languages(machine: &MachineProfile) -> Vec<String
                 languages.insert("mill-turn-gcode".to_string());
                 languages.insert("mill-turn-job".to_string());
             } else {
-                languages.insert("fanuc-gcode".to_string());
+                let controller = normalize_token(machine.controller.as_deref().unwrap_or(""));
+                if controller.contains("haas") {
+                    languages.insert("haas-gcode".to_string());
+                } else if controller.contains("siemens") || controller.contains("sinumerik") {
+                    languages.insert("siemens-sinumerik".to_string());
+                } else {
+                    languages.insert("fanuc-gcode".to_string());
+                }
                 languages.insert("lathe-job".to_string());
                 languages.insert("turning-job".to_string());
             }
@@ -112128,6 +112168,8 @@ fn turning_catalog_response() -> Value {
         ],
         "turningMachineCount": turning_machines.len(),
         "turningMachineKinds": turning_machine_kinds,
+        "supportedTurningModelCount": turning_model_catalog::TURNING_MACHINE_MODEL_SPECS.len(),
+        "supportedTurningModels": turning_model_catalog::turning_machine_models_json(),
         "controllers": controllers,
         "materials": materials,
         "operations": operations,
@@ -112223,6 +112265,8 @@ fn lathe_catalog_response() -> Value {
         ],
         "latheMachineCount": lathe_machines.len(),
         "latheMachineKinds": ["lathe"],
+        "supportedTurningModelCount": turning_model_catalog::TURNING_MACHINE_MODEL_SPECS.len(),
+        "supportedTurningModels": turning_model_catalog::turning_machine_models_json(),
         "controllers": controllers,
         "materials": materials,
         "operations": operations,

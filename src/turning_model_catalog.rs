@@ -187,8 +187,8 @@ mod tests {
         assert_eq!(haas.model, "haas-st-20");
         assert_eq!(haas.controller, "haas-gcode");
 
-        let lynx = turning_machine_model_for_token("Doosan Lynx 2100B")
-            .expect("legacy Doosan Lynx alias");
+        let lynx =
+            turning_machine_model_for_token("Doosan Lynx 2100B").expect("legacy Doosan Lynx alias");
         assert_eq!(lynx.model, "dn-solutions-lynx-2100b-fanuc");
         assert_eq!(lynx.controller, "fanuc-gcode");
         assert!(lynx.controller_options.contains(&"siemens-sinumerik"));
@@ -198,17 +198,17 @@ mod tests {
     #[test]
     fn named_turning_models_join_the_default_fleet_and_catalogs() {
         let machines = crate::default_machines();
-        for expected in [
-            "haas-st-20-1",
-            "dn-solutions-lynx-2100b-fanuc-1",
-        ] {
+        for expected in ["haas-st-20-1", "dn-solutions-lynx-2100b-fanuc-1"] {
             assert!(
                 machines.iter().any(|machine| machine.id == expected),
                 "default fleet missing {expected}"
             );
         }
 
-        assert_eq!(crate::machine_class("haas-st20"), crate::MachineClass::Lathe);
+        assert_eq!(
+            crate::machine_class("haas-st20"),
+            crate::MachineClass::Lathe
+        );
         assert_eq!(
             crate::machine_class("lynx-2100b"),
             crate::MachineClass::Lathe
