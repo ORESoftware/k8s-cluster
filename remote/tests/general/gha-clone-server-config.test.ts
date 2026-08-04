@@ -36,10 +36,20 @@ const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';
 const serverPath = 'remote/deployments/gha-clone-server-rs/src/main.rs';
 const routerSourcePath =
   'remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs';
+const routerServiceImplementationPath =
+  'remote/deployments/gha-clone-server-rs/src/executor_router_service.rs';
+const routerAssignmentImplementationPath =
+  'remote/deployments/gha-clone-server-rs/src/executor_router_service/assignment.rs';
+const routerSecurityImplementationPath =
+  'remote/deployments/gha-clone-server-rs/src/executor_router_service/security.rs';
+const routerUpstreamImplementationPath =
+  'remote/deployments/gha-clone-server-rs/src/executor_router_service/upstream.rs';
 const routerLibraryPath =
   'remote/deployments/gha-clone-server-rs/src/executor_router.rs';
 const routerProcessTestPath =
   'remote/deployments/gha-clone-server-rs/tests/executor_router_http.rs';
+const routerAssignmentTestPath =
+  'remote/deployments/gha-clone-server-rs/tests/executor_router_assignment.rs';
 const metaIntegrationTestPath =
   'remote/deployments/gha-clone-server-rs/tests/meta_self_test.rs';
 const workflowPath = '.github/workflows/gha-clone-server.yml';
@@ -288,13 +298,25 @@ test('planner and dispatcher preserve the fail-closed command boundary', () => {
 });
 
 test('executor router code and live tests preserve no-duplicate provider pinning', () => {
-  const source = read(routerSourcePath);
+  const source = [
+    routerSourcePath,
+    routerServiceImplementationPath,
+    routerAssignmentImplementationPath,
+    routerSecurityImplementationPath,
+    routerUpstreamImplementationPath,
+  ]
+    .map(read)
+    .join('\n');
   const library = read(routerLibraryPath);
-  const processTests = read(routerProcessTestPath);
+  const processTests = [routerProcessTestPath, routerAssignmentTestPath]
+    .map(read)
+    .join('\n');
   assert.match(source, /postSubmissionFailover": false/);
   assert.match(source, /ambiguous_submissions_total/);
   assert.match(source, /first_ready_executor/);
   assert.match(source, /automaticFailover": false/);
+  assert.match(source, /get_all\("x-build-server-auth"\)/);
+  assert.match(source, /get_all\("x-server-auth"\)/);
   assert.match(library, /disabled executors must omit url and authPath/);
   assert.match(library, /authPath must be a direct child/);
   assert.match(library, /lowercase 40-hex commit SHA/);
@@ -313,6 +335,14 @@ test('executor router code and live tests preserve no-duplicate provider pinning
   assert.match(
     processTests,
     /accepted_build_status_failure_remains_pinned_without_resubmission/,
+  );
+  assert.match(
+    processTests,
+    /sequential_and_concurrent_identical_requests_submit_once/,
+  );
+  assert.match(
+    processTests,
+    /ambiguous_assignment_is_retained_and_retry_never_switches_provider/,
   );
 });
 
