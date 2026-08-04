@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Fail-closed three-way reconciliation for the reviewed Messaging Intel product."""
 
-# Validation trigger after aligning the router-pinning contract name.
+# Reconcile from the immutable planner-hardened dev commit. Later dev movement
+# is allowed only when this reviewed commit remains its ancestor.
 
 from __future__ import annotations
 
@@ -14,7 +15,7 @@ from den977_workflow_resolver_fix import resolve_workflow
 
 RESOLVERS[WORKFLOW_PATH] = resolve_workflow
 
-CURRENT_DEV_SHA = "208bdcbe00f17a2a4a17548b28fe7a563a66445e"
+CURRENT_DEV_SHA = "a7d730abd874a1ee39875bbe5a2274aa681b480a"
 REVIEWED_MSGINT_SHA = "bf4fca2e22937caf18a07dc1bd7c4494fff4b95c"
 EXPECTED_MERGE_BASE = "4e701d8c9208956fe0890df1107168e032f335c3"
 
@@ -74,10 +75,16 @@ def conflict_excerpt(data: bytes) -> str:
 
 
 def main() -> None:
-    current_dev = git("rev-parse", "refs/remotes/origin/dev").stdout.decode().strip()
-    if current_dev != CURRENT_DEV_SHA:
+    latest_dev = git("rev-parse", "refs/remotes/origin/dev").stdout.decode().strip()
+    if git(
+        "merge-base",
+        "--is-ancestor",
+        CURRENT_DEV_SHA,
+        latest_dev,
+        check=False,
+    ).returncode != 0:
         raise SystemExit(
-            f"dev moved from reviewed base {CURRENT_DEV_SHA} to {current_dev}; restack required"
+            f"reviewed dev commit {CURRENT_DEV_SHA} is not an ancestor of {latest_dev}"
         )
     reviewed = git(
         "rev-parse", "refs/remotes/origin/agent/den-1550-msgint-stable-final"
