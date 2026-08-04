@@ -760,3 +760,38 @@ async fn asynchronous_execution_failures_are_persisted_and_observable() {
         );
     }
 }
+
+#[tokio::test]
+async fn active_run_capacity_is_atomic_and_rejects_before_second_submission() {
+    let mock = MockBuildServer::start(MockMode::KeepRunning).await;
+    let mut env = execution_env(&mock, 30);
+    env.insert("GHA_CLONE_MAX_RUNS", "1".to_string());
+    let server = spawn_server(env).await;
+    let client = Client::new();
+
+    let (status, first) = response_json(post_run(&client, &server, rust_workflow()).await).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert_eq!(first["status"], "queued");
+
+    let mut submitted = false;
+    for _ in 0..200 {
+        if mock.state.submissions.lock().await.len() == 1 {
+            submitted = true;
+            break;
+        }
+        sleep(Duration::from_millis(10)).await;
+    }
+    assert!(submitted, "first active run never reached the build server");
+
+    let (status, rejected) = response_json(post_run(&client, &server, rust_workflow()).await).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(rejected["error"], "run capacity is full");
+    assert_eq!(rejected["maxRuns"], 1);
+    assert_eq!(rejected["activeRuns"], 1);
+    assert_eq!(rejected["requestedRuns"], 1);
+
+    sleep(Duration::from_millis(25)).await;
+    assert_eq!(mock.state.submissions.lock().await.len(), 1);
+    let (_, health) = get_json(&client, &server, "/healthz").await;
+    assert_eq!(health["runsRetained"], 1);
+}
