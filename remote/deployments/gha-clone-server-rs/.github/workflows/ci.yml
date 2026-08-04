@@ -1,0 +1,115 @@
+name: gha-clone-server standalone CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: standalone-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-and-image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Setup Rust 1.90.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Verify source, formatting, lint, and every target
+        run: |
+          set -euo pipefail
+          test -f SOURCE-PROVENANCE.md
+          test -f .github/workflows/gha-clone-server-meta.yml
+          test -f .github/workflows/ci.yml
+          test -z "$(grep -R -n '\.\./\.\./\.\./\.github/workflows' tests src || true)"
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Build both immutable runtime targets
+        run: |
+          set -euo pipefail
+          revision="$(git rev-parse HEAD)"
+          created="$(git show -s --format=%cI HEAD)"
+          docker build \
+            --target clone-server \
+            --build-arg OCI_REVISION="$revision" \
+            --build-arg OCI_CREATED="$created" \
+            --build-arg OCI_SOURCE="https://github.com/${GITHUB_REPOSITORY}" \
+            --tag gha-clone-server:ci \
+            .
+          docker build \
+            --target executor-router \
+            --build-arg OCI_REVISION="$revision" \
+            --build-arg OCI_CREATED="$created" \
+            --build-arg OCI_SOURCE="https://github.com/${GITHUB_REPOSITORY}" \
+            --tag gha-executor-router:ci \
+            .
+          test "$(docker image inspect gha-clone-server:ci --format '{{.Config.User}}')" = '65532:65532'
+          test "$(docker image inspect gha-executor-router:ci --format '{{.Config.User}}')" = '65532:65532'
+          test "$(docker image inspect gha-clone-server:ci --format '{{json .Config.Entrypoint}}')" = '["/usr/local/bin/gha-clone-server"]'
+          test "$(docker image inspect gha-executor-router:ci --format '{{json .Config.Entrypoint}}')" = '["/usr/local/bin/gha-executor-router"]'
+
+      - name: Smoke the standalone clone-server image
+        run: |
+          set -euo pipefail
+          docker run --detach --rm \
+            --name gha-clone-server-ci \
+            --publish 18125:8125 \
+            --env HOST=0.0.0.0 \
+            --env PORT=8125 \
+            --env GHA_CLONE_AUTH_SECRET=ci-only-auth \
+            --env GHA_CLONE_ALLOWED_REPOSITORIES=gha-indie-worker/gha-clone-server.rs \
+            --env GHA_CLONE_WORKFLOW_RULES_JSON='{}' \
+            --env GHA_CLONE_EXECUTION_ENABLED=false \
+            --env GHA_CLONE_WEBHOOK_EXECUTION_ENABLED=false \
+            gha-clone-server:ci
+          for _ in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:18125/healthz >/dev/null && \
+               curl --fail --silent http://127.0.0.1:18125/readyz >/dev/null; then
+              exit 0
+            fi
+            if ! docker inspect gha-clone-server-ci >/dev/null 2>&1; then
+              docker logs gha-clone-server-ci >&2 || true
+              exit 1
+            fi
+            sleep 1
+          done
+          docker logs gha-clone-server-ci >&2 || true
+          exit 1
+
+      - name: Stop smoke container
+        if: always()
+        run: docker rm -f gha-clone-server-ci >/dev/null 2>&1 || true
+
+  secret-scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          show-progress: false
+      - name: Scan for committed secrets
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'false'
+          GITLEAKS_ENABLE_SUMMARY: 'true'
