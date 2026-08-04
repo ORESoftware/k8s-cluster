@@ -1,4 +1,4 @@
-name: Finalize DEN-1550 last two exact-head fixes
+name: Finalize DEN-1550 last exact-head fixes
 
 on:
   push:
@@ -6,12 +6,18 @@ on:
       - agent/den-1550-msgint-current-dev-final
     paths:
       - .github/workflows/finalize-den-1550-last-two.yml
+      - remote/deployments/gha-clone-server-rs/tests/msgint_exact_contract.rs
+      - remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs
+      - remote/tests/general/gha-clone-server-config.test.ts
   pull_request:
     branches:
       - dev
     types: [opened, synchronize, reopened]
     paths:
       - .github/workflows/finalize-den-1550-last-two.yml
+      - remote/deployments/gha-clone-server-rs/tests/msgint_exact_contract.rs
+      - remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs
+      - remote/tests/general/gha-clone-server-config.test.ts
 
 permissions:
   contents: write
@@ -101,12 +107,13 @@ jobs:
             general/gha-clone-webhook-config.test.ts \
             general/gha-clone-msgint-config.test.ts
 
-      - name: Commit only the two permanent fixes
+      - name: Commit only validated permanent fixes
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
+            remote/deployments/gha-clone-server-rs/tests/msgint_exact_contract.rs \
             remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs \
             remote/tests/general/gha-clone-server-config.test.ts
           git diff --cached --check
