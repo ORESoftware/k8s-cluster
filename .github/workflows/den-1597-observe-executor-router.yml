@@ -1,0 +1,81 @@
+name: DEN-1597 observe executor router
+
+on:
+  push:
+    branches:
+      - agent/den-1597-observe-executor-router-20260804
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1597-observe-executor-router
+  cancel-in-progress: false
+
+jobs:
+  repair-and-verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: agent/den-1597-observe-executor-router-20260804
+          persist-credentials: true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: '22'
+      - name: Add the executor router to both exporter watch contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          replacements = [
+              (
+                  Path("remote/argocd/observability/k8s-resource-exporter.configmap.yaml"),
+                  "dd-browser-test-server,dd-build-server,dd-gha-clone-server,",
+                  "dd-browser-test-server,dd-build-server,dd-gha-clone-server,dd-gha-executor-router,",
+              ),
+              (
+                  Path("remote/argocd/observability/k8s-resource-exporter.deployment.yaml"),
+                  "dd-browser-test-server,dd-build-server,dd-gha-clone-server,dd-cluster-mcp-rs,",
+                  "dd-browser-test-server,dd-build-server,dd-gha-clone-server,dd-gha-executor-router,dd-cluster-mcp-rs,",
+              ),
+          ]
+
+          for path, old, new in replacements:
+              text = path.read_text()
+              if text.count(old) != 1:
+                  raise SystemExit(f"{path}: expected exactly one watch-list insertion point, found {text.count(old)}")
+              if "dd-gha-executor-router" in text:
+                  raise SystemExit(f"{path}: executor router is already watched outside the expected insertion")
+              path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Verify complete observability coverage
+        run: node remote/tools/check-observability-coverage.mjs
+      - name: Verify render and product-only diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          allowed='^(\.github/workflows/den-1597-observe-executor-router.yml|remote/argocd/observability/k8s-resource-exporter\.configmap\.yaml|remote/argocd/observability/k8s-resource-exporter\.deployment\.yaml)$'
+          unexpected="$(git diff --name-only | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            echo "unexpected files changed:" >&2
+            echo "$unexpected" >&2
+            exit 1
+          fi
+      - name: Commit verified observability correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/den-1597-observe-executor-router.yml
+          git add \
+            remote/argocd/observability/k8s-resource-exporter.configmap.yaml \
+            remote/argocd/observability/k8s-resource-exporter.deployment.yaml
+          git diff --cached --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'fix(DEN-1597): observe executor router workload'
+          git push origin HEAD:agent/den-1597-observe-executor-router-20260804
