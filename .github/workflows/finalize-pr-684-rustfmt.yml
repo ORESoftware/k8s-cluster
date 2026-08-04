@@ -1,0 +1,53 @@
+name: Finalize PR 684 Rust formatting
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.github/workflows/finalize-pr-684-rustfmt.yml'
+      - 'remote/deployments/gha-clone-server-rs/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-pr-684-rustfmt
+  cancel-in-progress: false
+
+jobs:
+  format-commit-clean:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      (github.event_name != 'pull_request' || github.head_ref == 'agent/den-1550-msgint-current-dev-v4')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact writable branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1550-msgint-current-dev-v4
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt
+      - name: Apply and verify canonical crate formatting
+        run: |
+          set -euo pipefail
+          cargo fmt --all --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml
+          cargo fmt --all --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml -- --check
+          git diff --check
+      - name: Remove formatter and commit only formatted product sources
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/finalize-pr-684-rustfmt.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          test ! -e .github/workflows/finalize-pr-684-rustfmt.yml
+          git commit -m 'style(DEN-1550): format Messaging Intel continuity sources'
+          git push origin HEAD:agent/den-1550-msgint-current-dev-v4
