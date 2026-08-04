@@ -21,8 +21,11 @@ ChatGPT project IDs are not exposed by the available connector, so ChatGPT linka
 ## Enforcement
 
 - [`scripts/ops/validate_portfolio_project_links.py`](../scripts/ops/validate_portfolio_project_links.py) enforces the exact 41-key inventory, canonical naming and casing, the Project #1/#4 numbering contract, accepted Linear aliases, native UUID/channel IDs and URLs, uniqueness, sorted rows, the fixed Slack workspace, and rejection of credential-like values.
-- [`.github/workflows/validate-portfolio-project-links.yml`](../.github/workflows/validate-portfolio-project-links.yml) runs the validator on relevant pushes and pull requests.
+- [`.github/workflows/validate-portfolio-project-links.yml`](../.github/workflows/validate-portfolio-project-links.yml) validates relevant pushes and pull requests and performs the daily 03:00 `America/Chicago` provider reconciliation.
 - [`scripts/ops/sync_github_project_metadata.py`](../scripts/ops/sync_github_project_metadata.py) reconciles every GitHub Project readme and short description from the registry.
+- [`scripts/ops/sync_portfolio_project_links.py`](../scripts/ops/sync_portfolio_project_links.py) reconciles GitHub, Linear, Slack, and the optional ChatGPT bridge from the same registry.
+- The [daily synchronization runbook](daily-portfolio-project-sync.md) documents scheduling, provider behavior, credentials, evidence, and failure handling.
+- The separate [Linear next-steps workflow](../.github/workflows/sync-linear-next-steps-to-org-projects.yml) handles selected work-item mirroring while consuming the same canonical key contract.
 - Linear projects and Slack channels carry the marker `portfolio-link-registry:v1:<portfolio_key>` with reciprocal links.
 
 When adding another portfolio, update the expected key inventory, add or select the Linear project and Slack channel, append one sorted registry row, and run both validation and metadata synchronization. Never infer a match solely from display text when a native ID is available.
