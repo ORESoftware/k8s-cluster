@@ -1,0 +1,240 @@
+name: Apply DEN-1597 assignment CI repairs once
+
+on:
+  push:
+    branches:
+      - agent/den-1597-request-bound-assignment-current-dev-20260804
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-1597-assignment-ci-fixes-once
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1597-request-bound-assignment-current-dev-20260804
+          fetch-depth: 1
+          persist-credentials: true
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: 1.90.0
+          components: rustfmt, clippy
+
+      - name: Apply small-error and module-aware contract repairs
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path('remote/deployments/gha-clone-server-rs')
+          security_path = root / 'src/executor_router_service/security.rs'
+          assignment_path = root / 'src/executor_router_service/assignment.rs'
+          upstream_path = root / 'src/executor_router_service/upstream.rs'
+          contract_path = Path('remote/tests/general/gha-clone-server-config.test.ts')
+
+          security = security_path.read_text()
+          old_head = '''use super::*;
+
+          pub(super) fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Response> {
+          '''.replace('          ', '')
+          new_head = '''use super::*;
+
+          #[derive(Debug, Clone, Copy)]
+          pub(super) struct AuthFailure;
+
+          impl IntoResponse for AuthFailure {
+              fn into_response(self) -> Response {
+                  (
+                      StatusCode::UNAUTHORIZED,
+                      Json(json!({ "error": "unauthorized" })),
+                  )
+                      .into_response()
+              }
+          }
+
+          pub(super) fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), AuthFailure> {
+          '''.replace('          ', '')
+          assert security.count(old_head) == 1, 'unexpected security module header'
+          security = security.replace(old_head, new_head, 1)
+          security = security.replace('return unauthorized(state);', 'return Err(unauthorized(state));')
+          security = security.replace('        unauthorized(state)\n', '        Err(unauthorized(state))\n', 1)
+          old_unauthorized = '''fn unauthorized(state: &AppState) -> Result<(), Response> {
+              state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
+              Err((
+                  StatusCode::UNAUTHORIZED,
+                  Json(json!({ "error": "unauthorized" })),
+              )
+                  .into_response())
+          }
+          '''.replace('          ', '')
+          new_unauthorized = '''fn unauthorized(state: &AppState) -> AuthFailure {
+              state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
+              AuthFailure
+          }
+          '''.replace('          ', '')
+          assert security.count(old_unauthorized) == 1, 'unexpected unauthorized response helper'
+          security = security.replace(old_unauthorized, new_unauthorized, 1)
+          security_path.write_text(security)
+
+          for path in (assignment_path, upstream_path):
+              text = path.read_text()
+              old = '''    if let Err(response) = security::require_auth(&headers, &state) {
+                  return response;
+              }
+          '''.replace('          ', '')
+              new = '''    if let Err(error) = security::require_auth(&headers, &state) {
+                  return error.into_response();
+              }
+          '''.replace('          ', '')
+              assert text.count(old) == 1, f'unexpected auth call site in {path}'
+              path.write_text(text.replace(old, new, 1))
+
+          contract = contract_path.read_text()
+          path_marker = '''const routerSourcePath =
+            'remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs';
+          const routerLibraryPath =
+          '''
+          path_replacement = '''const routerSourcePath =
+            'remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs';
+          const routerServicePath =
+            'remote/deployments/gha-clone-server-rs/src/executor_router_service.rs';
+          const routerAssignmentPath =
+            'remote/deployments/gha-clone-server-rs/src/executor_router_service/assignment.rs';
+          const routerSecurityPath =
+            'remote/deployments/gha-clone-server-rs/src/executor_router_service/security.rs';
+          const routerUpstreamPath =
+            'remote/deployments/gha-clone-server-rs/src/executor_router_service/upstream.rs';
+          const routerLibraryPath =
+          '''
+          assert contract.count(path_marker) == 1, 'unexpected router path declarations'
+          contract = contract.replace(path_marker, path_replacement, 1)
+          process_marker = '''const routerProcessTestPath =
+            'remote/deployments/gha-clone-server-rs/tests/executor_router_http.rs';
+          const metaIntegrationTestPath =
+          '''
+          process_replacement = '''const routerProcessTestPath =
+            'remote/deployments/gha-clone-server-rs/tests/executor_router_http.rs';
+          const routerAssignmentTestPath =
+            'remote/deployments/gha-clone-server-rs/tests/executor_router_assignment.rs';
+          const metaIntegrationTestPath =
+          '''
+          assert contract.count(process_marker) == 1, 'unexpected router process test declarations'
+          contract = contract.replace(process_marker, process_replacement, 1)
+
+          old_test = '''test('executor router code and live tests preserve no-duplicate provider pinning', () => {
+            const source = read(routerSourcePath);
+            const library = read(routerLibraryPath);
+            const processTests = read(routerProcessTestPath);
+            assert.match(source, /postSubmissionFailover": false/);
+            assert.match(source, /ambiguous_submissions_total/);
+            assert.match(source, /first_ready_executor/);
+            assert.match(source, /automaticFailover": false/);
+            assert.match(library, /disabled executors must omit url and authPath/);
+            assert.match(library, /authPath must be a direct child/);
+            assert.match(library, /lowercase 40-hex commit SHA/);
+            assert.match(
+              processTests,
+              /selects_first_ready_aws_executor_and_pins_status_to_it/,
+            );
+            assert.match(
+              processTests,
+              /readiness_failure_routes_to_hetzner_before_any_submission/,
+            );
+            assert.match(
+              processTests,
+              /ambiguous_submission_never_fails_over_or_leaks_upstream_body/,
+            );
+            assert.match(
+              processTests,
+              /accepted_build_status_failure_remains_pinned_without_resubmission/,
+            );
+          });
+          '''
+          new_test = '''test('executor router code and live tests preserve no-duplicate provider pinning', () => {
+            const source = [
+              routerSourcePath,
+              routerServicePath,
+              routerAssignmentPath,
+              routerSecurityPath,
+              routerUpstreamPath,
+            ]
+              .map(read)
+              .join('\\n');
+            const library = read(routerLibraryPath);
+            const processTests = [routerProcessTestPath, routerAssignmentTestPath]
+              .map(read)
+              .join('\\n');
+            assert.match(source, /postSubmissionFailover": false/);
+            assert.match(source, /ambiguous_submissions_total/);
+            assert.match(source, /first_ready_executor/);
+            assert.match(source, /automaticFailover": false/);
+            assert.match(source, /struct AuthFailure/);
+            assert.match(source, /get_all\("x-build-server-auth"\)/);
+            assert.match(source, /get_all\("x-server-auth"\)/);
+            assert.match(library, /disabled executors must omit url and authPath/);
+            assert.match(library, /authPath must be a direct child/);
+            assert.match(library, /lowercase 40-hex commit SHA/);
+            assert.match(
+              processTests,
+              /selects_first_ready_aws_executor_and_pins_status_to_it/,
+            );
+            assert.match(
+              processTests,
+              /readiness_failure_routes_to_hetzner_before_any_submission/,
+            );
+            assert.match(
+              processTests,
+              /ambiguous_submission_never_fails_over_or_leaks_upstream_body/,
+            );
+            assert.match(
+              processTests,
+              /accepted_build_status_failure_remains_pinned_without_resubmission/,
+            );
+            assert.match(
+              processTests,
+              /concurrent_identical_requests_submit_once_and_share_the_result/,
+            );
+            assert.match(
+              processTests,
+              /ambiguous_assignment_never_switches_provider_after_readiness_changes/,
+            );
+          });
+          '''
+          assert contract.count(old_test) == 1, 'unexpected no-duplicate static contract'
+          contract_path.write_text(contract.replace(old_test, new_test, 1))
+
+          Path('.github/workflows/apply-den-1597-assignment-ci-fixes-once.yml').unlink()
+          PY
+
+      - name: Validate the permanent Rust repair
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --test executor_router_assignment
+
+      - name: Validate the focused static contract
+        working-directory: remote/tests
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm exec tsx --test general/gha-clone-server-config.test.ts
+
+      - name: Commit the self-cleaned semantic repair
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'fix(DEN-1597): repair assignment CI integration'
+          git push origin HEAD:agent/den-1597-request-bound-assignment-current-dev-20260804
