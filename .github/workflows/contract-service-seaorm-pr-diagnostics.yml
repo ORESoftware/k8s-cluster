@@ -1,0 +1,168 @@
+name: contract-service-seaorm-pr-diagnostics
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/contract-service-seaorm-pr-diagnostics.yml"
+      - "remote/deployments/contract-service-rs/**"
+      - "remote/libs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: contract-service-seaorm-pr-diagnostics-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      EXPECTED_SHARED_COMMIT: 3c84cab532b27d328378f09fba5841f02644ae3b
+      SERVICE_DIR: remote/deployments/contract-service-rs
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: "1.97.0"
+          components: rustfmt, clippy
+      - name: Materialize exact public shared authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          git init -q remote/libs
+          git -C remote/libs remote add origin \
+            https://github.com/ORESoftware/k8s-libs-and-shared-defs.git
+          GIT_TERMINAL_PROMPT=0 git -C remote/libs fetch \
+            --no-tags --depth=1 origin "$EXPECTED_SHARED_COMMIT"
+          git -C remote/libs checkout -q --detach FETCH_HEAD
+          test "$(git -C remote/libs rev-parse HEAD)" = "$EXPECTED_SHARED_COMMIT"
+      - name: Capture Cargo diagnostics without failing early
+        id: cargo
+        shell: bash
+        run: |
+          set -uo pipefail
+          install -d -m 700 test-results
+          cd "$SERVICE_DIR"
+          cargo generate-lockfile \
+            > "$GITHUB_WORKSPACE/test-results/generate-lockfile.stdout" \
+            2> "$GITHUB_WORKSPACE/test-results/generate-lockfile.stderr"
+          generate_status=$?
+          if [[ "$generate_status" -eq 0 ]]; then
+            cargo check --locked --all-targets --message-format=json \
+              > "$GITHUB_WORKSPACE/test-results/cargo-check.jsonl" \
+              2> "$GITHUB_WORKSPACE/test-results/cargo-check.stderr"
+            check_status=$?
+          else
+            check_status=125
+          fi
+          printf '%s\n' "$generate_status" > "$GITHUB_WORKSPACE/test-results/generate-lockfile.status"
+          printf '%s\n' "$check_status" > "$GITHUB_WORKSPACE/test-results/cargo-check.status"
+          exit 0
+      - name: Parse bounded diagnostic report
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          root = Path("test-results")
+          diagnostics = []
+          jsonl = root / "cargo-check.jsonl"
+          if jsonl.exists():
+              for line in jsonl.read_text(encoding="utf-8", errors="replace").splitlines():
+                  try:
+                      message = json.loads(line)
+                  except json.JSONDecodeError:
+                      continue
+                  if message.get("reason") != "compiler-message":
+                      continue
+                  body = message.get("message") or {}
+                  if body.get("level") != "error":
+                      continue
+                  rendered = body.get("rendered") or body.get("message") or "compiler error"
+                  diagnostics.append(rendered.strip())
+          fallback = ""
+          for name in ("generate-lockfile.stderr", "cargo-check.stderr"):
+              path = root / name
+              if path.exists():
+                  fallback += path.read_text(encoding="utf-8", errors="replace")
+          output = "\n\n".join(diagnostics[:50]) or fallback[-24000:] or "No compiler diagnostic was emitted."
+          (root / "cargo-errors.txt").write_text(output + "\n", encoding="utf-8")
+          summary = {
+              "head_sha": "${{ github.event.pull_request.head.sha || github.sha }}",
+              "generate_lockfile_status": int((root / "generate-lockfile.status").read_text().strip()),
+              "cargo_check_status": int((root / "cargo-check.status").read_text().strip()),
+              "compiler_error_count": len(diagnostics),
+              "shared_commit": "3c84cab532b27d328378f09fba5841f02644ae3b",
+          }
+          (root / "diagnostic-summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+      - name: Record generated lockfile when available
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f "$SERVICE_DIR/Cargo.lock" ]]; then
+            cp "$SERVICE_DIR/Cargo.lock" test-results/Cargo.lock
+            sha256sum test-results/Cargo.lock > test-results/Cargo.lock.sha256
+          fi
+      - name: Publish bounded diagnostics on the pull request
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- contract-service-seaorm-pr-diagnostics -->';
+            const summary = JSON.parse(fs.readFileSync('test-results/diagnostic-summary.json', 'utf8'));
+            const raw = fs.readFileSync('test-results/cargo-errors.txt', 'utf8');
+            const errors = raw.slice(0, 22000);
+            const body = `${marker}\n## Contract-service SeaORM exact-head diagnostics\n\n` +
+              `- head: \`${summary.head_sha}\`\n` +
+              `- shared authority: \`${summary.shared_commit}\`\n` +
+              `- lockfile generation status: \`${summary.generate_lockfile_status}\`\n` +
+              `- cargo check status: \`${summary.cargo_check_status}\`\n` +
+              `- compiler errors parsed: \`${summary.compiler_error_count}\`\n\n` +
+              `<details><summary>Bounded diagnostics</summary>\n\n\`\`\`text\n${errors}\n\`\`\`\n</details>`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find(comment => comment.user?.type === 'Bot' && comment.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+      - name: Upload bounded diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: contract-service-seaorm-pr-diagnostics-${{ github.run_id }}
+          path: test-results/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Enforce captured statuses
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat test-results/generate-lockfile.status)" -eq 0
+          test "$(cat test-results/cargo-check.status)" -eq 0
