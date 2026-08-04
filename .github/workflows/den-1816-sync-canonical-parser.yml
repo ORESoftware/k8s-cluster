@@ -1,0 +1,100 @@
+name: Sync canonical flags2env parser
+
+on:
+  push:
+    branches:
+      - agent/den-1816-trusted-flags-policy
+    paths:
+      - .github/workflows/den-1816-sync-canonical-parser.yml
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out consumer branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/den-1816-trusted-flags-policy
+          path: consumer
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Check out exact canonical parser revision
+        uses: actions/checkout@v4
+        with:
+          repository: ORESoftware/flags-2-env
+          ref: b596f2d1c99bd726b262a923916e3015bc80bc37
+          path: flags2env
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Synchronize canonical parser bytes and format branch
+        working-directory: consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp ../flags2env/src/parser.c vendor/flags2env/parser.c
+          cp ../flags2env/src/parser.h vendor/flags2env/parser.h
+
+          old_c=2567d723ccdf9f0703dda5dfebac8ac2cb0ff2dd
+          old_h=56668698e50bafd8ce1dc49518a93bf9e564d7b5
+          new_c="$(git hash-object vendor/flags2env/parser.c)"
+          new_h="$(git hash-object vendor/flags2env/parser.h)"
+          python3 - "$old_c" "$new_c" "$old_h" "$new_h" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path('.github/scripts/flags2env-runtime-smoke.sh')
+          text = path.read_text(encoding='utf-8')
+          old_c, new_c, old_h, new_h = sys.argv[1:]
+          if text.count(old_c) != 1 or text.count(old_h) != 1:
+              raise SystemExit('expected exactly one old parser hash per file')
+          path.write_text(text.replace(old_c, new_c).replace(old_h, new_h), encoding='utf-8')
+          PY
+
+          cmp -s vendor/flags2env/parser.c ../flags2env/src/parser.c
+          cmp -s vendor/flags2env/parser.h ../flags2env/src/parser.h
+          grep -F '#define _POSIX_C_SOURCE 200809L' vendor/flags2env/parser.c
+          cargo fmt --all
+          git diff --check
+
+      - name: Validate focused flags and flaky timing boundary
+        working-directory: consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked cli_flags::tests
+          for attempt in $(seq 1 12); do
+            echo "redirect ping-pong regression attempt $attempt"
+            cargo test --locked \
+              broker_raft::tests::follower_proxy_backs_off_on_redirect_ping_pong_instead_of_hot_looping \
+              -- --exact
+          done
+          cargo clippy --locked --all-targets -- -D warnings
+          bash .github/scripts/flags2env-runtime-smoke.sh
+
+      - name: Commit synchronized parser and formatting
+        working-directory: consumer
+        env:
+          HEAD_BRANCH: agent/den-1816-trusted-flags-policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add vendor/flags2env/parser.c vendor/flags2env/parser.h \
+            .github/scripts/flags2env-runtime-smoke.sh src/cli_flags.rs
+          if git diff --cached --quiet; then
+            echo 'No synchronized changes to commit.'
+            exit 0
+          fi
+          git commit -m 'fix(DEN-1816): sync canonical flags2env parser'
+          git push origin "HEAD:$HEAD_BRANCH"
