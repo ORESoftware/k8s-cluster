@@ -236,7 +236,10 @@ async fn running_server_dispatches_exact_threefa_node_and_generated_rust_profile
     assert_eq!(final_run["workflowPath"], WORKFLOW_PATH);
     assert_eq!(final_run["submissions"].as_array().map(Vec::len), Some(2));
     assert_eq!(final_run["submissions"][0]["profile"], "node-hardened-test");
-    assert_eq!(final_run["submissions"][1]["profile"], "rust-generated-verify");
+    assert_eq!(
+        final_run["submissions"][1]["profile"],
+        "rust-generated-verify"
+    );
 
     let submissions = mock_state.submissions.lock().await;
     assert_eq!(submissions.len(), 2);
@@ -250,13 +253,17 @@ async fn running_server_dispatches_exact_threefa_node_and_generated_rust_profile
         assert_eq!(submission["gitRef"], REVISION);
     }
     assert_eq!(submissions[0]["profile"], "node-hardened-test");
-    assert!(submissions[0]["requestId"]
-        .as_str()
-        .is_some_and(|value| value.starts_with("gha-clone:") && value.ends_with(":node_contracts")));
+    assert!(
+        submissions[0]["requestId"].as_str().is_some_and(
+            |value| value.starts_with("gha-clone:") && value.ends_with(":node_contracts")
+        )
+    );
     assert_eq!(submissions[1]["profile"], "rust-generated-verify");
-    assert!(submissions[1]["requestId"]
-        .as_str()
-        .is_some_and(|value| value.starts_with("gha-clone:") && value.ends_with(":generated_rust")));
+    assert!(
+        submissions[1]["requestId"].as_str().is_some_and(
+            |value| value.starts_with("gha-clone:") && value.ends_with(":generated_rust")
+        )
+    );
     drop(submissions);
 
     let reordered_rust = workflow_yaml.replacen(
@@ -306,7 +313,10 @@ async fn running_server_dispatches_exact_threefa_node_and_generated_rust_profile
             "{label} unexpectedly reached execution"
         );
         let rejected: Value = response.json().await.expect("rejected response JSON");
-        assert_eq!(rejected["error"], "workflow is not independently executable");
+        assert_eq!(
+            rejected["error"],
+            "workflow is not independently executable"
+        );
         assert!(
             rejected.to_string().contains(expected_reason),
             "{label} response did not explain {expected_reason}: {rejected}"
@@ -330,7 +340,7 @@ async fn running_server_dispatches_exact_threefa_node_and_generated_rust_profile
             &workflow_yaml,
         )
         .await;
-        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
         assert_eq!(mock_state.submissions.lock().await.len(), 2);
     }
 

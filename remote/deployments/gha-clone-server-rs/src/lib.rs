@@ -120,6 +120,7 @@ pub fn capabilities(limits: &PlannerLimits) -> CapabilityResponse {
         },
         independent_profiles: vec![
             "rust-verify".to_string(),
+            "rust-generated-verify".to_string(),
             "node-verify".to_string(),
             "node-hardened-verify".to_string(),
             "node-hardened-test".to_string(),
@@ -443,7 +444,18 @@ fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPla
     }
 
     let lower = combined.to_ascii_lowercase();
-    let profile = if hardened_node_intent(&lower) {
+    let profile = if generated_rust_intent(&lower) {
+        match generated_rust_profile(&run_commands) {
+            Some(profile) => Some(profile.to_string()),
+            None => {
+                reasons.push(
+                    "generated Rust jobs must use one exact reviewed command sequence in the documented order with no extra commands"
+                        .into(),
+                );
+                None
+            }
+        }
+    } else if hardened_node_intent(&lower) {
         match hardened_node_profile(&run_commands) {
             Some(profile) => Some(profile.to_string()),
             None => {
@@ -685,6 +697,24 @@ fn immutable_action_ref(action: &str) -> bool {
     action
         .rsplit_once('@')
         .is_some_and(|(_, reference)| is_full_commit_sha(reference))
+}
+
+fn generated_rust_intent(text: &str) -> bool {
+    text.contains("generated/rust/cargo.toml")
+}
+
+fn generated_rust_profile(commands: &[String]) -> Option<&'static str> {
+    const EXACT: [&str; 4] = [
+        "cargo generate-lockfile --manifest-path generated/rust/Cargo.toml",
+        "cargo fmt --manifest-path generated/rust/Cargo.toml -- --check",
+        "cargo clippy --locked --manifest-path generated/rust/Cargo.toml --all-targets -- -D warnings",
+        "cargo test --locked --manifest-path generated/rust/Cargo.toml --all-targets",
+    ];
+    commands
+        .iter()
+        .map(String::as_str)
+        .eq(EXACT)
+        .then_some("rust-generated-verify")
 }
 
 fn hardened_node_intent(text: &str) -> bool {
@@ -1254,5 +1284,38 @@ jobs:
         assert!(verify_github_signature("secret", b"body", &signature));
         assert!(!verify_github_signature("secret", b"tampered", &signature));
         assert!(!verify_github_signature("secret", b"body", "sha1=00"));
+    }
+
+    #[test]
+    fn generated_rust_commands_are_exact_and_order_sensitive() {
+        let exact = [
+            "cargo generate-lockfile --manifest-path generated/rust/Cargo.toml",
+            "cargo fmt --manifest-path generated/rust/Cargo.toml -- --check",
+            "cargo clippy --locked --manifest-path generated/rust/Cargo.toml --all-targets -- -D warnings",
+            "cargo test --locked --manifest-path generated/rust/Cargo.toml --all-targets",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+        assert_eq!(
+            generated_rust_profile(&exact),
+            Some("rust-generated-verify")
+        );
+
+        let mut reordered = exact.clone();
+        reordered.swap(2, 3);
+        assert_eq!(generated_rust_profile(&reordered), None);
+
+        let mut extra = exact.clone();
+        extra.push("cargo publish --manifest-path generated/rust/Cargo.toml".into());
+        assert_eq!(generated_rust_profile(&extra), None);
+        assert!(generated_rust_intent(
+            &exact
+                .join(
+                    "
+"
+                )
+                .to_ascii_lowercase()
+        ));
     }
 }
