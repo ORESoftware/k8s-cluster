@@ -22,10 +22,17 @@ const observabilityConfigPath =
 const observabilityDeploymentPath =
   'remote/argocd/observability/k8s-resource-exporter.deployment.yaml';
 const profilesPath = 'remote/deployments/build-server-rs/src/profiles.rs';
+const continuityPatchPath =
+  'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml';
+const profileAdmissionDocPath = 'docs/gha-profile-repository-admission.md';
 const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';
 const serverPath = 'remote/deployments/gha-clone-server-rs/src/main.rs';
 const metaIntegrationTestPath =
   'remote/deployments/gha-clone-server-rs/tests/meta_self_test.rs';
+const msgintIntegrationTestPath =
+  'remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs';
+const msgintFixturePath =
+  'remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml';
 const workflowPath = '.github/workflows/gha-clone-server.yml';
 const metaWorkflowPath = '.github/workflows/gha-clone-server-meta.yml';
 
@@ -104,6 +111,7 @@ test('network boundary permits only DNS, GitHub HTTPS, and build-server dispatch
 test('config allowlists exact trusted repositories and the bounded meta workflow', () => {
   const config = read(configMapPath);
   assert.match(config, /ORESoftware\/k8s-cluster/);
+  assert.match(config, /messaging-intel\/msgint-connectors/);
   assert.match(config, /sonus-auris\/sonus-auris-interfaces/);
   assert.match(config, /\.github\/workflows\/ci\.yml/);
   assert.match(
@@ -114,12 +122,22 @@ test('config allowlists exact trusted repositories and the bounded meta workflow
     config,
     /"ORESoftware\/k8s-cluster": \["\.github\/workflows\/gha-clone-server\.yml"\]/,
   );
+  assert.match(
+    config,
+    /"messaging-intel\/msgint-connectors": \["\.github\/workflows\/gha-clone-operator-config\.yml"\]/,
+  );
   assert.doesNotMatch(config, /https?:\/\/[^/\s]+\/\*|owner\/\*/);
 });
 
 test('build server exposes fixed Rust, Node, and Python continuity profiles', () => {
   const profiles = read(profilesPath);
-  for (const profile of ['rust-verify', 'node-verify', 'python-verify']) {
+  for (const profile of [
+    'rust-verify',
+    'node-verify',
+    'node-hardened-verify',
+    'node-hardened-test',
+    'python-verify',
+  ]) {
     assert.match(profiles, new RegExp(`name: "${profile}"`));
   }
   assert.match(
@@ -131,8 +149,27 @@ test('build server exposes fixed Rust, Node, and Python continuity profiles', ()
     /remote\/deployments\/gha-clone-server-rs\/Cargo\.toml/,
   );
   assert.match(profiles, /pnpm install --frozen-lockfile/);
+  assert.match(profiles, /npm ci --ignore-scripts/);
+  assert.match(profiles, /npm run test:operator-config/);
+  assert.match(profiles, /npm audit --audit-level=high/);
   assert.match(profiles, /python -m pytest/);
+
+  const continuityPatch = read(continuityPatchPath);
+  assert.match(continuityPatch, /node-hardened-verify/);
+  assert.match(continuityPatch, /node-hardened-test/);
+  assert.match(
+    continuityPatch,
+    /=https:\/\/github\.com\/messaging-intel\/msgint-connectors\.git/,
+  );
+  assert.doesNotMatch(
+    continuityPatch,
+    /https:\/\/github\.com\/messaging-intel\/(?!msgint-connectors\.git)/,
+  );
   assert.doesNotMatch(profiles, /find .*Cargo\.toml|for crate in/);
+
+  const admissionDoc = read(profileAdmissionDocPath);
+  assert.match(admissionDoc, /=https:\/\/github\.com\/messaging-intel\/msgint-connectors\.git/);
+  assert.match(admissionDoc, /suffix-appended lookalikes/);
 
   const imageAssignments = [
     ...profiles.matchAll(/const\s+[A-Z_]+_IMAGE:\s*&str\s*=\s*"([^"]+)";/g),
@@ -147,13 +184,19 @@ test('planner and dispatcher preserve the fail-closed command boundary', () => {
   const planner = read(plannerPath);
   const server = read(serverPath);
   assert.match(planner, /service containers require the isolated ARC DinD lane/);
-  assert.match(planner, /secret-bearing env\/with values are unsupported/);
+  assert.match(planner, /fixed profiles do not forward caller-selected variables/);
+  assert.match(planner, /secret-bearing setup inputs are unsupported/);
+  assert.match(planner, /expressions in setup inputs are unsupported/);
   assert.match(planner, /workflow job dependency graph contains a cycle/);
   assert.match(planner, /revision is not an exact 40-hex commit SHA/);
   assert.match(planner, /workflow-level .* is unsupported by the independent lane/);
   assert.match(planner, /"working-directory"/);
   assert.match(planner, /unsupported by the fixed-profile executor/);
   assert.match(planner, /non-Linux native execution is unavailable/);
+  assert.match(planner, /node-hardened-verify/);
+  assert.match(planner, /node-hardened-test/);
+  assert.match(planner, /exact reviewed command sequence/);
+  assert.match(planner, /exact 40-hex commit SHA/);
   assert.match(server, /job_kind: "run-profile"/);
   assert.match(server, /profile,/);
   assert.doesNotMatch(server, /command:\s*&|script:\s*&|runner_image/);
@@ -170,6 +213,40 @@ test('meta integration test starts the real server and submits its own workflow'
   assert.match(integration, /env_remove\("GHA_CLONE_GITHUB_TOKEN"\)/);
 });
 
+test('Messaging Intel integration dispatches exact profiles and rejects adjacent workflows', () => {
+  const integration = read(msgintIntegrationTestPath);
+  assert.match(integration, /CARGO_BIN_EXE_gha-clone-server/);
+  assert.match(integration, /messaging-intel\/msgint-connectors/);
+  assert.match(integration, /gha-clone-operator-config\.yml/);
+  assert.match(integration, /node-hardened-verify/);
+  assert.match(integration, /node-hardened-test/);
+  assert.match(integration, /submissions\.len\(\), 2/);
+  assert.match(integration, /UNPROCESSABLE_ENTITY/);
+  assert.match(integration, /npm publish/);
+  assert.match(integration, /PROD_TOKEN/);
+  assert.match(integration, /dispatched a build despite rejection/);
+  assert.match(integration, /env_remove\("GHA_CLONE_GITHUB_TOKEN"\)/);
+});
+
+test('Messaging Intel mirror remains independently compilable and non-secret', () => {
+  const workflow = read(msgintFixturePath);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /operator_config:/);
+  assert.match(workflow, /repository_tests:/);
+  assert.match(workflow, /needs: operator_config/);
+  assert.equal((workflow.match(/npm ci --ignore-scripts/g) ?? []).length, 2);
+  assert.match(workflow, /npm run check/);
+  assert.match(workflow, /npm run test:operator-config/);
+  assert.match(workflow, /npm audit --audit-level=high/);
+  assert.match(workflow, /npm test/);
+  assert.equal((workflow.match(/persist-credentials:\s*false/g) ?? []).length, 2);
+  assert.doesNotMatch(
+    workflow,
+    /\$\{\{|secrets\.|working-directory:|timeout-minutes:|permissions:|concurrency:/,
+  );
+  assert.doesNotMatch(workflow, /services:|container:|strategy:|\bcurl\b|\bwget\b/);
+});
+
 test('bounded meta workflow remains independently compilable', () => {
   const workflow = read(metaWorkflowPath);
   assert.match(workflow, /workflow_dispatch:/);
@@ -184,13 +261,26 @@ test('bounded meta workflow remains independently compilable', () => {
   assert.doesNotMatch(workflow, /services:|container:|strategy:|needs:/);
 });
 
-test('dedicated GitHub Actions workflow checks Rust and deployment contracts', () => {
+test('dedicated GitHub Actions workflow checks Rust, profiles, and manual private smoke', () => {
   const workflow = read(workflowPath);
   assert.match(workflow, /cargo fmt --all -- --check/);
   assert.match(workflow, /cargo clippy --locked --all-targets -- -D warnings/);
   assert.match(workflow, /cargo test --locked --all-targets/);
   assert.match(workflow, /gha-clone-server-config\.test\.ts/);
   assert.match(workflow, /gha-clone-server-meta\.yml/);
+  assert.match(workflow, /msgint-operator-config\.yml/);
+  assert.match(workflow, /dd-build-server-gha-continuity\.patch\.yaml/);
   assert.match(workflow, /actionlint@sha256:/);
+  assert.match(workflow, /run_msgint_profile_smoke/);
+  assert.match(workflow, /create-github-app-token@/);
+  assert.match(workflow, /K8S_SUBMODULE_APP_ID/);
+  assert.match(workflow, /K8S_SUBMODULE_APP_PRIVATE_KEY/);
+  assert.match(workflow, /NODE_HARDENED_TEST_STEPS/);
+  assert.match(workflow, /node-hardened-test/);
   assert.match(workflow, /persist-credentials:\s*false/);
+  assert.doesNotMatch(workflow, /\brm\s+-rf\b/);
+  assert.doesNotMatch(
+    workflow,
+    /ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}/,
+  );
 });
