@@ -1,9 +1,13 @@
 name: Finalize clean Messaging Intel continuity delta
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/msgint-gha-continuity-clean-20260804
+      - dev
+    types:
+      - opened
+      - synchronize
+      - reopened
     paths:
       - scripts/ci/apply-msgint-clean-continuity.py
       - .github/workflows/finalize-msgint-clean-continuity.yml
