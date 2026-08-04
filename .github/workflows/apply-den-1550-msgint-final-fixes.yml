@@ -3,6 +3,7 @@ name: Apply DEN-1550 Messaging Intel final fixes
 on:
   pull_request:
     paths:
+      - 'remote/deployments/gha-clone-server-rs/tests/msgint_exact_contract.rs'
       - '.github/workflows/apply-den-1550-msgint-final-fixes.yml'
 
 permissions:
@@ -120,6 +121,7 @@ jobs:
           PY
           rustfmt --edition 2021 \
             remote/deployments/gha-clone-server-rs/src/msgint_contract.rs \
+            remote/deployments/gha-clone-server-rs/tests/msgint_exact_contract.rs \
             remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs
 
       - name: Run exact Messaging Intel and generic continuity contracts
@@ -141,6 +143,7 @@ jobs:
           git rm .github/workflows/apply-den-1550-msgint-final-fixes.yml
           git add \
             remote/deployments/gha-clone-server-rs/src/msgint_contract.rs \
+            remote/deployments/gha-clone-server-rs/tests/msgint_exact_contract.rs \
             remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs \
             remote/tests/general/gha-clone-msgint-config.test.ts \
             remote/tests/general/gha-clone-server-config.test.ts
