@@ -6,6 +6,7 @@ on:
     paths:
       - scripts/ops/publish_requested_mcp_servers.py
       - scripts/ops/requested_mcp_publisher/**
+      - scripts/ops/run_protected_requested_mcp_publisher.sh
       - scripts/ops/run_requested_mcp_publisher_remote.sh
       - scripts/ops/tests/test_publish_requested_mcp_servers.py
       - .github/workflows/ops-publish-requested-mcp-servers-once.yml
@@ -55,6 +56,7 @@ jobs:
           python3 scripts/ops/publish_requested_mcp_servers.py --check > /tmp/requested-mcp-check.json
           test "$(jq '.repositories | length' /tmp/requested-mcp-check.json)" -eq 5
           test "$(cat .github/requested-mcp-publisher.activate)" = "publish-five-mcp-repositories-v1"
+          bash -n scripts/ops/run_protected_requested_mcp_publisher.sh
           bash -n scripts/ops/run_requested_mcp_publisher_remote.sh
           printf '%s\n' aws-oidc > "$RUNNER_TEMP/requested-mcp-stage"
 
@@ -67,7 +69,7 @@ jobs:
           retry-max-attempts: 2
           mask-aws-account-id: true
 
-      - name: Publish from the protected SSM host
+      - name: Publish through protected broker and unprivileged child
         shell: bash
         env:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
@@ -78,8 +80,11 @@ jobs:
           trusted_sha="$(git rev-parse HEAD)"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
 
-          encoded_script="$(base64 --wrap=0 scripts/ops/run_requested_mcp_publisher_remote.sh)"
-          remote_command="printf '%s' '$encoded_script' | base64 --decode > /tmp/run-requested-mcp-publisher.sh; chmod 700 /tmp/run-requested-mcp-publisher.sh; bash /tmp/run-requested-mcp-publisher.sh '$trusted_sha' > /tmp/run-requested-mcp-publisher.log 2>&1; status=\$?; tail -c 20000 /tmp/run-requested-mcp-publisher.log 2>/dev/null || true; rm -f /tmp/run-requested-mcp-publisher.sh /tmp/run-requested-mcp-publisher.log; exit \$status"
+          broker='scripts/ops/run_protected_requested_mcp_publisher.sh'
+          child='scripts/ops/run_requested_mcp_publisher_remote.sh'
+          encoded_broker="$(base64 --wrap=0 "$broker")"
+          encoded_child="$(base64 --wrap=0 "$child")"
+          remote_command="broker=/tmp/run-protected-requested-mcp-publisher.sh; child=/tmp/publish-requested-mcp-repositories.sh; log=/tmp/publish-requested-mcp-repositories.log; printf '%s' '$encoded_broker' | base64 --decode > \"\$broker\"; printf '%s' '$encoded_child' | base64 --decode > \"\$child\"; chmod 700 \"\$broker\" \"\$child\"; status=0; bash \"\$broker\" '$trusted_sha' \"\$child\" >\"\$log\" 2>&1 || status=\$?; tail -c 20000 \"\$log\" 2>/dev/null || true; rm -f \"\$broker\" \"\$child\" \"\$log\"; exit \$status"
           parameters="$RUNNER_TEMP/ssm-requested-mcp-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
 
