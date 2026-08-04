@@ -1,21 +1,21 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: dd-gha-clone-server
+  name: dd-gha-executor-router
   namespace: default
 spec:
   podSelector:
     matchLabels:
-      app: dd-gha-clone-server
+      app: dd-gha-executor-router
   policyTypes: [Ingress, Egress]
   ingress:
     - from:
         - podSelector:
             matchLabels:
-              app: dd-remote-gateway
+              app: dd-gha-clone-server
       ports:
         - protocol: TCP
-          port: 8125
+          port: 8126
   egress:
     - to:
         - namespaceSelector:
@@ -29,10 +29,13 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              app: dd-gha-executor-router
+              app: dd-build-server
       ports:
         - protocol: TCP
-          port: 8126
+          port: 8100
+    # Source bootstrap and a future reviewed Hetzner HTTPS executor. Metadata,
+    # loopback, carrier-grade NAT, and RFC1918 ranges remain blocked. A private
+    # cross-cloud route requires an explicit CIDR-scoped policy change.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

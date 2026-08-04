@@ -16,6 +16,16 @@ const networkPath =
   'remote/argocd/dd-next-runtime/dd-gha-clone-server.networkpolicy.yaml';
 const servicePath =
   'remote/argocd/dd-next-runtime/dd-gha-clone-server.service.yaml';
+const routerConfigPath =
+  'remote/argocd/dd-next-runtime/dd-gha-executor-router.configmap.yaml';
+const routerSecretPath =
+  'remote/argocd/dd-next-runtime/dd-gha-executor-router.externalsecret.yaml';
+const routerDeploymentPath =
+  'remote/argocd/dd-next-runtime/dd-gha-executor-router.deployment.yaml';
+const routerServicePath =
+  'remote/argocd/dd-next-runtime/dd-gha-executor-router.service.yaml';
+const routerNetworkPath =
+  'remote/argocd/dd-next-runtime/dd-gha-executor-router.networkpolicy.yaml';
 const kustomizationPath = 'remote/argocd/dd-next-runtime/kustomization.yaml';
 const observabilityConfigPath =
   'remote/argocd/observability/k8s-resource-exporter.configmap.yaml';
@@ -24,6 +34,12 @@ const observabilityDeploymentPath =
 const profilesPath = 'remote/deployments/build-server-rs/src/profiles.rs';
 const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';
 const serverPath = 'remote/deployments/gha-clone-server-rs/src/main.rs';
+const routerSourcePath =
+  'remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs';
+const routerLibraryPath =
+  'remote/deployments/gha-clone-server-rs/src/executor_router.rs';
+const routerProcessTestPath =
+  'remote/deployments/gha-clone-server-rs/tests/executor_router_http.rs';
 const metaIntegrationTestPath =
   'remote/deployments/gha-clone-server-rs/tests/meta_self_test.rs';
 const workflowPath = '.github/workflows/gha-clone-server.yml';
@@ -47,7 +63,34 @@ test('GHA continuity service is installed fail-closed with no cluster identity',
   assert.match(deployment, /name:\s*dd-gha-clone-server-secrets/);
 });
 
-test('all service resources participate in the dd-next-runtime render', () => {
+test('source-bootstrap pods cannot be activated before immutable images exist', () => {
+  const cloneDeployment = read(deploymentPath);
+  const routerDeployment = read(routerDeploymentPath);
+  for (const [name, deployment, executionGate] of [
+    [
+      'clone server',
+      cloneDeployment,
+      /name:\s*GHA_CLONE_EXECUTION_ENABLED\s+value:\s*"false"/,
+    ],
+    [
+      'executor router',
+      routerDeployment,
+      /name:\s*GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED\s+value:\s*"false"/,
+    ],
+  ] as const) {
+    assert.match(deployment, /\breplicas:\s*0\b/, `${name} must stay scaled to zero`);
+    assert.match(deployment, executionGate, `${name} execution must stay disabled`);
+    assert.match(deployment, /image:\s*docker\.io\/library\/rust:1\.90-bookworm/);
+    assert.match(deployment, /git[\s\S]*?clone[\s\S]*?cargo run --release/);
+    assert.doesNotMatch(
+      deployment,
+      /image:\s*\S+@sha256:[0-9a-f]{64}/,
+      `${name} bootstrap manifest must be replaced atomically by an immutable-image activation change`,
+    );
+  }
+});
+
+test('all continuity and executor-router resources participate in the shared render', () => {
   const kustomization = read(kustomizationPath);
   for (const resource of [
     'dd-gha-clone-server.configmap.yaml',
@@ -55,6 +98,11 @@ test('all service resources participate in the dd-next-runtime render', () => {
     'dd-gha-clone-server.deployment.yaml',
     'dd-gha-clone-server.service.yaml',
     'dd-gha-clone-server.networkpolicy.yaml',
+    'dd-gha-executor-router.configmap.yaml',
+    'dd-gha-executor-router.externalsecret.yaml',
+    'dd-gha-executor-router.deployment.yaml',
+    'dd-gha-executor-router.service.yaml',
+    'dd-gha-executor-router.networkpolicy.yaml',
   ]) {
     assert.ok(
       kustomization.includes(`- ${resource}`),
@@ -62,6 +110,7 @@ test('all service resources participate in the dd-next-runtime render', () => {
     );
   }
   assert.match(read(servicePath), /port:\s*8125/);
+  assert.match(read(routerServicePath), /port:\s*8126/);
 });
 
 test('continuity deployment is registered with both resource exporter inventories', () => {
@@ -74,30 +123,109 @@ test('continuity deployment is registered with both resource exporter inventorie
   }
 });
 
-test('secret mapping names values without committing credential material', () => {
+test('clone-server secret mapping names values without committing credential material', () => {
   const secret = read(secretPath);
   assert.match(secret, /dd\/remote-dev\/gha-clone-server-secrets/);
   for (const property of [
     'auth_secret',
     'github_webhook_secret',
     'github_app_installation_token',
-    'build_server_auth',
   ]) {
     assert.match(secret, new RegExp(`property: ${property}`));
   }
+  assert.doesNotMatch(secret, /build_server_auth/);
+  assert.match(secret, /Direct executor credentials belong only to/);
   assert.doesNotMatch(
     secret,
     /ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|BEGIN (?:RSA |EC )?PRIVATE KEY/,
   );
 });
 
-test('network boundary permits only DNS, GitHub HTTPS, and build-server dispatch', () => {
-  const policy = read(networkPath);
+test('executor router is rendered inert and has no cluster or host-runtime identity', () => {
+  const deployment = read(routerDeploymentPath);
+  assert.match(deployment, /\breplicas:\s*0\b/);
+  assert.match(deployment, /\bautomountServiceAccountToken:\s*false\b/);
+  assert.match(
+    deployment,
+    /name:\s*GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED\s+value:\s*"false"/,
+  );
+  assert.match(deployment, /cargo run --release --bin gha-executor-router/);
+  assert.match(
+    deployment,
+    /name:\s*GHA_EXECUTOR_ROUTER_SECRET_ROOT\s+value:\s*\/var\/run\/secrets\/gha-executor-router/,
+  );
+  assert.match(
+    deployment,
+    /name:\s*GHA_EXECUTOR_ROUTER_AUTH_PATH\s+value:\s*\/var\/run\/secrets\/gha-executor-router\/inbound-auth/,
+  );
+  assert.match(deployment, /secretName:\s*dd-gha-executor-router-secrets/);
+  assert.match(deployment, /defaultMode:\s*0400/);
+  assert.match(deployment, /key:\s*inbound_auth\s+path:\s*inbound-auth/);
+  assert.match(
+    deployment,
+    /key:\s*aws_build_server_auth\s+path:\s*aws-build-server-auth/,
+  );
+  assert.match(deployment, /capabilities:\s+drop:\s*\["ALL"\]/);
+  assert.doesNotMatch(deployment, /hostPath:/);
+  assert.doesNotMatch(deployment, /docker\.sock|containerd\.sock|buildkitd\.sock/);
+  assert.doesNotMatch(deployment, /valueFrom:\s*\n\s*secretKeyRef:[\s\S]{0,240}GHA_EXECUTOR_ROUTER/);
+});
+
+test('executor inventory enables AWS only and keeps Hetzner endpoint state absent', () => {
+  const config = read(routerConfigPath);
+  assert.match(
+    config,
+    /"id": "aws-primary"[\s\S]*?"provider": "aws"[\s\S]*?"enabled": true[\s\S]*?"url": "http:\/\/dd-build-server\.default\.svc\.cluster\.local:8100"[\s\S]*?"authPath": "\/var\/run\/secrets\/gha-executor-router\/aws-build-server-auth"/,
+  );
+  assert.match(
+    config,
+    /"id": "hetzner-secondary",\s*"provider": "hetzner",\s*"enabled": false\s*\}/,
+  );
+  const hetzner = config.slice(config.indexOf('"id": "hetzner-secondary"'));
+  assert.doesNotMatch(hetzner, /"url"|"authPath"/);
+});
+
+test('executor credentials are separate mounted-file properties and omit dormant Hetzner auth', () => {
+  const secret = read(routerSecretPath);
+  assert.match(secret, /dd\/remote-dev\/gha-executor-router-secrets/);
+  assert.match(secret, /property:\s*inbound_auth/);
+  assert.match(secret, /property:\s*aws_build_server_auth/);
+  assert.doesNotMatch(secret, /property:\s*hetzner_build_server_auth/);
+  assert.match(secret, /Do not add or mount hetzner_build_server_auth/);
+  assert.doesNotMatch(
+    secret,
+    /ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|BEGIN (?:RSA |EC )?PRIVATE KEY/,
+  );
+});
+
+test('clone server dispatch is forced through the authenticated router', () => {
+  const deployment = read(deploymentPath);
+  const network = read(networkPath);
+  assert.match(
+    deployment,
+    /name:\s*GHA_CLONE_BUILD_SERVER_URL\s+value:\s*http:\/\/dd-gha-executor-router\.default\.svc\.cluster\.local:8126/,
+  );
+  assert.match(
+    deployment,
+    /name:\s*GHA_CLONE_BUILD_SERVER_AUTH[\s\S]*?name:\s*dd-gha-executor-router-secrets[\s\S]*?key:\s*inbound_auth/,
+  );
+  assert.match(network, /app:\s*dd-gha-executor-router/);
+  assert.match(network, /port:\s*8126/);
+  assert.doesNotMatch(network, /app:\s*dd-build-server/);
+  assert.doesNotMatch(network, /port:\s*8100/);
+});
+
+test('router network boundary permits clone ingress, DNS, AWS dispatch, and reviewed HTTPS only', () => {
+  const policy = read(routerNetworkPath);
+  assert.match(policy, /app:\s*dd-gha-clone-server/);
+  assert.match(policy, /port:\s*8126/);
   assert.match(policy, /port:\s*53/);
   assert.match(policy, /app:\s*dd-build-server/);
   assert.match(policy, /port:\s*8100/);
   assert.match(policy, /port:\s*443/);
   assert.match(policy, /10\.0\.0\.0\/8/);
+  assert.match(policy, /100\.64\.0\.0\/10/);
+  assert.match(policy, /169\.254\.0\.0\/16/);
   assert.match(policy, /192\.168\.0\.0\/16/);
 });
 
@@ -159,6 +287,35 @@ test('planner and dispatcher preserve the fail-closed command boundary', () => {
   assert.doesNotMatch(server, /command:\s*&|script:\s*&|runner_image/);
 });
 
+test('executor router code and live tests preserve no-duplicate provider pinning', () => {
+  const source = read(routerSourcePath);
+  const library = read(routerLibraryPath);
+  const processTests = read(routerProcessTestPath);
+  assert.match(source, /postSubmissionFailover": false/);
+  assert.match(source, /ambiguous_submissions_total/);
+  assert.match(source, /first_ready_executor/);
+  assert.match(source, /automaticFailover": false/);
+  assert.match(library, /disabled executors must omit url and authPath/);
+  assert.match(library, /authPath must be a direct child/);
+  assert.match(library, /lowercase 40-hex commit SHA/);
+  assert.match(
+    processTests,
+    /selects_first_ready_aws_executor_and_pins_status_to_it/,
+  );
+  assert.match(
+    processTests,
+    /readiness_failure_routes_to_hetzner_before_any_submission/,
+  );
+  assert.match(
+    processTests,
+    /ambiguous_submission_never_fails_over_or_leaks_upstream_body/,
+  );
+  assert.match(
+    processTests,
+    /accepted_build_status_failure_remains_pinned_without_resubmission/,
+  );
+});
+
 test('meta integration test starts the real server and submits its own workflow', () => {
   const integration = read(metaIntegrationTestPath);
   assert.match(integration, /CARGO_BIN_EXE_gha-clone-server/);
@@ -184,11 +341,13 @@ test('bounded meta workflow remains independently compilable', () => {
   assert.doesNotMatch(workflow, /services:|container:|strategy:|needs:/);
 });
 
-test('dedicated GitHub Actions workflow checks Rust and deployment contracts', () => {
+test('dedicated GitHub Actions workflow checks Rust, live router, and deployment contracts', () => {
   const workflow = read(workflowPath);
   assert.match(workflow, /cargo fmt --all -- --check/);
   assert.match(workflow, /cargo clippy --locked --all-targets -- -D warnings/);
   assert.match(workflow, /cargo test --locked --all-targets/);
+  assert.match(workflow, /cargo test --locked --test executor_router_http/);
+  assert.match(workflow, /dd-gha-executor-router\*/);
   assert.match(workflow, /gha-clone-server-config\.test\.ts/);
   assert.match(workflow, /gha-clone-server-meta\.yml/);
   assert.match(workflow, /actionlint@sha256:/);
