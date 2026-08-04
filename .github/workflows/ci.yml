@@ -16,6 +16,8 @@ jobs:
           if [ -n "$bad" ]; then echo "forbidden tracked files:"; echo "$bad"; exit 1; fi
       - name: Cargo manifest parses
         run: cargo metadata --no-deps --format-version 1 > /dev/null
+      - name: Validate named turning model integration
+        run: python3 scripts/ci/check_turning_model_integration.py
   fmt:
     # Informational: full builds require the k8s-cluster superproject (path deps).
     runs-on: ubuntu-latest
