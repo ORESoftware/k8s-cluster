@@ -6,6 +6,7 @@ on:
       - agent/msgint-gha-clone-operator-verify-20260804
     paths:
       - scripts/ops/apply_msgint_gha_clone.py
+      - scripts/ops/fix_msgint_patcher.py
       - .github/workflows/finalize-msgint-gha-clone.yml
   pull_request:
     branches:
@@ -16,6 +17,7 @@ on:
       - reopened
     paths:
       - scripts/ops/apply_msgint_gha_clone.py
+      - scripts/ops/fix_msgint_patcher.py
       - .github/workflows/finalize-msgint-gha-clone.yml
 
 permissions:
@@ -41,7 +43,9 @@ jobs:
           persist-credentials: true
 
       - name: Apply the reviewed source patch
-        run: python3 scripts/ops/apply_msgint_gha_clone.py
+        run: |
+          python3 scripts/ops/fix_msgint_patcher.py
+          python3 scripts/ops/apply_msgint_gha_clone.py
 
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
@@ -66,6 +70,7 @@ jobs:
       - name: Remove one-shot finalization scaffolding
         run: |
           rm scripts/ops/apply_msgint_gha_clone.py
+          rm scripts/ops/fix_msgint_patcher.py
           rm .github/workflows/finalize-msgint-gha-clone.yml
 
       - name: Commit the validated source
