@@ -1,0 +1,421 @@
+{
+  "dry_run": false,
+  "generated_at": "2026-08-04T19:00:45+00:00",
+  "mapping_count": 41,
+  "registry": "ops/registries/portfolio-project-links.csv",
+  "results": [
+    {
+      "action": "updated",
+      "github_org": "3FA-app",
+      "github_project_number": 1,
+      "github_project_title": "3FA-app-project",
+      "github_project_url": "https://github.com/orgs/3FA-app/projects/1",
+      "linear_project_id": "4aff8a2b-092b-40c8-8af6-820e1538c4a7",
+      "portfolio_key": "3fa-app",
+      "slack_channel_id": "C0BL6BEDYFK"
+    },
+    {
+      "action": "updated",
+      "github_org": "agent-pontifex",
+      "github_project_number": 1,
+      "github_project_title": "agent-pontifex-project",
+      "github_project_url": "https://github.com/orgs/agent-pontifex/projects/1",
+      "linear_project_id": "71806431-748e-4332-b03a-820079d61ec0",
+      "portfolio_key": "agent-pontifex",
+      "slack_channel_id": "C0BMTHH0HMH"
+    },
+    {
+      "action": "updated",
+      "github_org": "akrion-sim",
+      "github_project_number": 1,
+      "github_project_title": "akrion-sim-project",
+      "github_project_url": "https://github.com/orgs/akrion-sim/projects/1",
+      "linear_project_id": "921fcb5b-5a3d-44ef-8663-a78121b476df",
+      "portfolio_key": "akrion-sim",
+      "slack_channel_id": "C0BL15P8P3P"
+    },
+    {
+      "action": "updated",
+      "github_org": "anticaptrad",
+      "github_project_number": 1,
+      "github_project_title": "anticaptrad-project",
+      "github_project_url": "https://github.com/orgs/anticaptrad/projects/1",
+      "linear_project_id": "17fc7fee-7a7b-41ba-8e6e-919d7866406e",
+      "portfolio_key": "anticaptrad",
+      "slack_channel_id": "C0BMWCYEX3P"
+    },
+    {
+      "action": "updated",
+      "github_org": "athlet-o",
+      "github_project_number": 1,
+      "github_project_title": "athlet-o-project",
+      "github_project_url": "https://github.com/orgs/athlet-o/projects/1",
+      "linear_project_id": "0de9ab82-98b3-4c1d-950b-2020d80bbccc",
+      "portfolio_key": "athlet-o",
+      "slack_channel_id": "C0BLYPTPSFJ"
+    },
+    {
+      "action": "updated",
+      "github_org": "benefactor-cc",
+      "github_project_number": 1,
+      "github_project_title": "benefactor-cc-project",
+      "github_project_url": "https://github.com/orgs/benefactor-cc/projects/1",
+      "linear_project_id": "e1db74d7-4fa3-4580-851d-ca8fc8145127",
+      "portfolio_key": "benefactor-cc",
+      "slack_channel_id": "C0BKP367N95"
+    },
+    {
+      "action": "updated",
+      "github_org": "canonical-cloud",
+      "github_project_number": 1,
+      "github_project_title": "canonical-cloud-project",
+      "github_project_url": "https://github.com/orgs/canonical-cloud/projects/1",
+      "linear_project_id": "9b3cec23-bc6f-4f8d-a696-2bc8a918e86a",
+      "portfolio_key": "canonical-cloud",
+      "slack_channel_id": "C0BMH08UD44"
+    },
+    {
+      "action": "updated",
+      "github_org": "channelsiege",
+      "github_project_number": 1,
+      "github_project_title": "channelsiege-project",
+      "github_project_url": "https://github.com/orgs/channelsiege/projects/1",
+      "linear_project_id": "05af31ea-abce-4425-bf95-9fd24957d5fb",
+      "portfolio_key": "channelsiege",
+      "slack_channel_id": "C0BMWCTMQDT"
+    },
+    {
+      "action": "updated",
+      "github_org": "claritas-viz",
+      "github_project_number": 1,
+      "github_project_title": "claritas-viz-project",
+      "github_project_url": "https://github.com/orgs/claritas-viz/projects/1",
+      "linear_project_id": "ff47fc82-5612-4bf6-a8cc-cc23da267931",
+      "portfolio_key": "claritas-viz",
+      "slack_channel_id": "C0BMVSD3P5K"
+    },
+    {
+      "action": "updated",
+      "github_org": "cliptown",
+      "github_project_number": 1,
+      "github_project_title": "cliptown-project",
+      "github_project_url": "https://github.com/orgs/cliptown/projects/1",
+      "linear_project_id": "83b03121-db08-4e34-a69f-99fd1c873ced",
+      "portfolio_key": "cliptown",
+      "slack_channel_id": "C0BLYPGGFH6"
+    },
+    {
+      "action": "updated",
+      "github_org": "daedalus-fab",
+      "github_project_number": 1,
+      "github_project_title": "daedalus-fab-project",
+      "github_project_url": "https://github.com/orgs/daedalus-fab/projects/1",
+      "linear_project_id": "b0356cba-8865-40d9-82f4-48f39ca2e396",
+      "portfolio_key": "daedalus-fab",
+      "slack_channel_id": "C0BKP3DDDPZ"
+    },
+    {
+      "action": "updated",
+      "github_org": "dancing-dragons",
+      "github_project_number": 4,
+      "github_project_title": "dancing-dragons-project",
+      "github_project_url": "https://github.com/orgs/dancing-dragons/projects/4",
+      "linear_project_id": "099aeb3b-9d3b-47a4-9fe5-ed0fd2f27763",
+      "portfolio_key": "dancing-dragons",
+      "slack_channel_id": "C0BMWM4J6SH"
+    },
+    {
+      "action": "updated",
+      "github_org": "declarative-migrations",
+      "github_project_number": 1,
+      "github_project_title": "declarative-migrations-project",
+      "github_project_url": "https://github.com/orgs/declarative-migrations/projects/1",
+      "linear_project_id": "78d51c47-c6ac-472c-ba3e-525461971027",
+      "portfolio_key": "declarative-migrations",
+      "slack_channel_id": "C0BN3FP4DV2"
+    },
+    {
+      "action": "updated",
+      "github_org": "discrete-event-systems",
+      "github_project_number": 1,
+      "github_project_title": "discrete-event-systems-project",
+      "github_project_url": "https://github.com/orgs/discrete-event-systems/projects/1",
+      "linear_project_id": "b352c0c6-02f5-4a5a-8460-017aedb5352f",
+      "portfolio_key": "discrete-event-systems",
+      "slack_channel_id": "C0BMZQGA410"
+    },
+    {
+      "action": "updated",
+      "github_org": "drone-mngr",
+      "github_project_number": 1,
+      "github_project_title": "drone-mngr-project",
+      "github_project_url": "https://github.com/orgs/drone-mngr/projects/1",
+      "linear_project_id": "89e8fc0d-283c-485a-94ac-a3d31917a64b",
+      "portfolio_key": "drone-mngr",
+      "slack_channel_id": "C0BMWD264TF"
+    },
+    {
+      "action": "updated",
+      "github_org": "fanwaave",
+      "github_project_number": 1,
+      "github_project_title": "fanwaave-project",
+      "github_project_url": "https://github.com/orgs/fanwaave/projects/1",
+      "linear_project_id": "d765e227-5726-42c8-8643-a8bd9e5a9a8c",
+      "portfolio_key": "fanwaave",
+      "slack_channel_id": "C0BN3FMEJGL"
+    },
+    {
+      "action": "updated",
+      "github_org": "fiducia-cloud",
+      "github_project_number": 1,
+      "github_project_title": "fiducia-cloud-project",
+      "github_project_url": "https://github.com/orgs/fiducia-cloud/projects/1",
+      "linear_project_id": "d9e89bd3-19da-47f3-9bf7-6dc8cc910b70",
+      "portfolio_key": "fiducia-cloud",
+      "slack_channel_id": "C0BLT1GCV32"
+    },
+    {
+      "action": "updated",
+      "github_org": "fifa-math",
+      "github_project_number": 1,
+      "github_project_title": "fifa-math-project",
+      "github_project_url": "https://github.com/orgs/fifa-math/projects/1",
+      "linear_project_id": "1ffb64f1-af3f-4b5e-b6ac-55d00ee52b74",
+      "portfolio_key": "fifa-math",
+      "slack_channel_id": "C0BMB9HG83G"
+    },
+    {
+      "action": "updated",
+      "github_org": "file-tunnel",
+      "github_project_number": 1,
+      "github_project_title": "file-tunnel-project",
+      "github_project_url": "https://github.com/orgs/file-tunnel/projects/1",
+      "linear_project_id": "0cb3346d-19e0-4aff-8758-c5d5a4a1ed80",
+      "portfolio_key": "file-tunnel",
+      "slack_channel_id": "C0BMT1K9MBM"
+    },
+    {
+      "action": "updated",
+      "github_org": "gha-indie-worker",
+      "github_project_number": 1,
+      "github_project_title": "gha-indie-worker-project",
+      "github_project_url": "https://github.com/orgs/gha-indie-worker/projects/1",
+      "linear_project_id": "69d23e78-b898-49bf-bc84-d319bdaa2059",
+      "portfolio_key": "gha-indie-worker",
+      "slack_channel_id": "C0BMVTP7PGD"
+    },
+    {
+      "action": "updated",
+      "github_org": "hypeblitz",
+      "github_project_number": 1,
+      "github_project_title": "hypeblitz-project",
+      "github_project_url": "https://github.com/orgs/hypeblitz/projects/1",
+      "linear_project_id": "db9d1d76-69a4-44bf-a476-c4ee0c31a00e",
+      "portfolio_key": "hypeblitz",
+      "slack_channel_id": "C0BMXR1K4LE"
+    },
+    {
+      "action": "updated",
+      "github_org": "hypesiege",
+      "github_project_number": 1,
+      "github_project_title": "hypesiege-project",
+      "github_project_url": "https://github.com/orgs/hypesiege/projects/1",
+      "linear_project_id": "cd247cb1-870b-471e-89f6-9484df19e798",
+      "portfolio_key": "hypesiege",
+      "slack_channel_id": "C0BMF6JDSHX"
+    },
+    {
+      "action": "updated",
+      "github_org": "memebank",
+      "github_project_number": 1,
+      "github_project_title": "memebank-project",
+      "github_project_url": "https://github.com/orgs/memebank/projects/1",
+      "linear_project_id": "aa7e93aa-0921-4e60-8ec3-a0e4da1e9572",
+      "portfolio_key": "memebank",
+      "slack_channel_id": "C0BLYPLKETS"
+    },
+    {
+      "action": "updated",
+      "github_org": "messaging-intel",
+      "github_project_number": 1,
+      "github_project_title": "messaging-intel-project",
+      "github_project_url": "https://github.com/orgs/messaging-intel/projects/1",
+      "linear_project_id": "3f6f6aea-d1aa-41a6-949e-859ffc154882",
+      "portfolio_key": "messaging-intel",
+      "slack_channel_id": "C0BKVCUUQKX"
+    },
+    {
+      "action": "updated",
+      "github_org": "meta-agents-demo",
+      "github_project_number": 1,
+      "github_project_title": "meta-agents-demo-project",
+      "github_project_url": "https://github.com/orgs/meta-agents-demo/projects/1",
+      "linear_project_id": "9914b9c3-8157-4ae5-a0c3-50b0a654ba06",
+      "portfolio_key": "meta-agents-demo",
+      "slack_channel_id": "C0BMZAL168J"
+    },
+    {
+      "action": "updated",
+      "github_org": "networking-components",
+      "github_project_number": 1,
+      "github_project_title": "networking-components-project",
+      "github_project_url": "https://github.com/orgs/networking-components/projects/1",
+      "linear_project_id": "387c602e-8b41-4b1e-80da-e07ba5c73c11",
+      "portfolio_key": "networking-components",
+      "slack_channel_id": "C0BMHU0CUMV"
+    },
+    {
+      "action": "updated",
+      "github_org": "OmniBlitz",
+      "github_project_number": 1,
+      "github_project_title": "OmniBlitz-project",
+      "github_project_url": "https://github.com/orgs/OmniBlitz/projects/1",
+      "linear_project_id": "179cf0a3-8865-4d3d-9f33-11ebf2b8534e",
+      "portfolio_key": "omniblitz",
+      "slack_channel_id": "C0BMWCUGXJR"
+    },
+    {
+      "action": "updated",
+      "github_org": "opto-sync",
+      "github_project_number": 1,
+      "github_project_title": "opto-sync-project",
+      "github_project_url": "https://github.com/orgs/opto-sync/projects/1",
+      "linear_project_id": "88c60373-3e46-4a12-8f10-907d239d48f8",
+      "portfolio_key": "opto-sync",
+      "slack_channel_id": "C0BMBARQ7N2"
+    },
+    {
+      "action": "updated",
+      "github_org": "quaestor-ledger",
+      "github_project_number": 1,
+      "github_project_title": "quaestor-ledger-project",
+      "github_project_url": "https://github.com/orgs/quaestor-ledger/projects/1",
+      "linear_project_id": "aced9d50-40ea-4634-9574-3a6afa49c4ad",
+      "portfolio_key": "quaestor-ledger",
+      "slack_channel_id": "C0BL4E85DGA"
+    },
+    {
+      "action": "updated",
+      "github_org": "rust-ssr-demos",
+      "github_project_number": 1,
+      "github_project_title": "rust-ssr-demos-project",
+      "github_project_url": "https://github.com/orgs/rust-ssr-demos/projects/1",
+      "linear_project_id": "31e60fc2-db6b-4c14-841a-762745c4555c",
+      "portfolio_key": "rust-ssr-demos",
+      "slack_channel_id": "C0BN1NJAE01"
+    },
+    {
+      "action": "updated",
+      "github_org": "sagitta-stack",
+      "github_project_number": 1,
+      "github_project_title": "sagitta-stack-project",
+      "github_project_url": "https://github.com/orgs/sagitta-stack/projects/1",
+      "linear_project_id": "bfa9081b-d718-47bc-922b-95d70b33240b",
+      "portfolio_key": "sagitta-stack",
+      "slack_channel_id": "C0BMZ754YCS"
+    },
+    {
+      "action": "updated",
+      "github_org": "scintilla-run",
+      "github_project_number": 1,
+      "github_project_title": "scintilla-run-project",
+      "github_project_url": "https://github.com/orgs/scintilla-run/projects/1",
+      "linear_project_id": "f5da817a-9c48-48ff-abcd-c6dd21045c20",
+      "portfolio_key": "scintilla-run",
+      "slack_channel_id": "C0BL4GDJHQA"
+    },
+    {
+      "action": "updated",
+      "github_org": "shared-auth",
+      "github_project_number": 1,
+      "github_project_title": "shared-auth-project",
+      "github_project_url": "https://github.com/orgs/shared-auth/projects/1",
+      "linear_project_id": "4bbe0ba4-d7f1-49ce-8f41-afd2cff6c2a2",
+      "portfolio_key": "shared-auth",
+      "slack_channel_id": "C0BMD90HED8"
+    },
+    {
+      "action": "updated",
+      "github_org": "sonus-auris",
+      "github_project_number": 1,
+      "github_project_title": "sonus-auris-project",
+      "github_project_url": "https://github.com/orgs/sonus-auris/projects/1",
+      "linear_project_id": "40905103-ae88-4186-9cff-858b7b9384d2",
+      "portfolio_key": "sonus-auris",
+      "slack_channel_id": "C0BKSE66CD9"
+    },
+    {
+      "action": "updated",
+      "github_org": "streamkore",
+      "github_project_number": 1,
+      "github_project_title": "streamkore-project",
+      "github_project_url": "https://github.com/orgs/streamkore/projects/1",
+      "linear_project_id": "067678fd-c2a3-4d60-b240-9ef5e4f71da4",
+      "portfolio_key": "streamkore",
+      "slack_channel_id": "C0BMTHECG03"
+    },
+    {
+      "action": "updated",
+      "github_org": "StreemPilot",
+      "github_project_number": 1,
+      "github_project_title": "StreemPilot-project",
+      "github_project_url": "https://github.com/orgs/StreemPilot/projects/1",
+      "linear_project_id": "3f5bd157-4424-42cc-94d0-0bed993cdc1d",
+      "portfolio_key": "streempilot",
+      "slack_channel_id": "C0BMB94FL86"
+    },
+    {
+      "action": "updated",
+      "github_org": "unreal-unity-poc",
+      "github_project_number": 1,
+      "github_project_title": "unreal-unity-poc-project",
+      "github_project_url": "https://github.com/orgs/unreal-unity-poc/projects/1",
+      "linear_project_id": "0f1defae-bf32-43b0-8288-ab21ee8e7f23",
+      "portfolio_key": "unreal-unity-poc",
+      "slack_channel_id": "C0BMZQB1DPU"
+    },
+    {
+      "action": "updated",
+      "github_org": "usa-acc",
+      "github_project_number": 1,
+      "github_project_title": "usa-acc-project",
+      "github_project_url": "https://github.com/orgs/usa-acc/projects/1",
+      "linear_project_id": "ed1f5d4e-4a8e-47e4-9149-0be068a07cbe",
+      "portfolio_key": "usa-acc",
+      "slack_channel_id": "C0BMX821LFQ"
+    },
+    {
+      "action": "updated",
+      "github_org": "voxletra",
+      "github_project_number": 1,
+      "github_project_title": "voxletra-project",
+      "github_project_url": "https://github.com/orgs/voxletra/projects/1",
+      "linear_project_id": "d45b6c31-6b98-467b-8440-e3c3480613fb",
+      "portfolio_key": "voxletra",
+      "slack_channel_id": "C0BMB9GPXC6"
+    },
+    {
+      "action": "updated",
+      "github_org": "zed-pkg",
+      "github_project_number": 1,
+      "github_project_title": "zed-pkg-project",
+      "github_project_url": "https://github.com/orgs/zed-pkg/projects/1",
+      "linear_project_id": "9107ce62-1112-43ff-89bc-f442613c4156",
+      "portfolio_key": "zed-pkg",
+      "slack_channel_id": "C0BL0K0HABB"
+    },
+    {
+      "action": "updated",
+      "github_org": "zed-pkg-test",
+      "github_project_number": 1,
+      "github_project_title": "zed-pkg-test-project",
+      "github_project_url": "https://github.com/orgs/zed-pkg-test/projects/1",
+      "linear_project_id": "2a3e49af-e2a2-4a1a-9385-f7e9a217a14f",
+      "portfolio_key": "zed-pkg-test",
+      "slack_channel_id": "C0BMTHM8Q9H"
+    }
+  ],
+  "schema_version": 1,
+  "unchanged_count": 0,
+  "updated_count": 41
+}
