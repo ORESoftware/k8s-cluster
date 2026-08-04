@@ -3,12 +3,15 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  publicEnvForNamedStep,
   publicEnvKeysForNamedStep,
   publicKeysFromDotenv,
   resolveBuildPath,
   resolveSameOriginBuildTarget,
 } from "../scripts/deploy-contract.mjs";
 
+const verifyStepName = "Verify the exact production-root static site before publication";
+const buildStepName = "Build with Astro";
 const workflow = `
 env:
   PUBLIC_TOP_LEVEL: ignored
@@ -19,14 +22,19 @@ jobs:
         env:
           PUBLIC_UNRELATED: ignored
         run: npm test
+      - name: ${verifyStepName}
+        run: npm run check
+        env:
+          PUBLIC_REAL_ONE: value-one
+          PUBLIC_REAL_TWO: value-two
   build:
     steps:
-      - name: Build with Astro
+      - name: ${buildStepName}
         uses: withastro/action@immutable
         env:
           # A comment inside the target map is allowed.
-          PUBLIC_REAL_ONE: value
-          PUBLIC_REAL_TWO: value
+          PUBLIC_REAL_ONE: value-one
+          PUBLIC_REAL_TWO: value-two
         with:
           node-version: 22
       - name: Later step
@@ -37,21 +45,37 @@ jobs:
 
 test("PUBLIC variables are scoped to the uniquely named Astro build step", () => {
   assert.deepEqual(
-    [...publicEnvKeysForNamedStep(workflow, "Build with Astro")].sort(),
+    [...publicEnvKeysForNamedStep(workflow, buildStepName)].sort(),
     ["PUBLIC_REAL_ONE", "PUBLIC_REAL_TWO"],
   );
 });
 
+test("verify and build environments can be compared by exact key and value", () => {
+  assert.deepEqual(
+    [...publicEnvForNamedStep(workflow, verifyStepName).entries()].sort(),
+    [...publicEnvForNamedStep(workflow, buildStepName).entries()].sort(),
+  );
+
+  const drifted = workflow.replace(
+    "          PUBLIC_REAL_TWO: value-two\n        with:",
+    "          PUBLIC_REAL_TWO: wrong-value\n        with:",
+  );
+  assert.notDeepEqual(
+    [...publicEnvForNamedStep(drifted, verifyStepName).entries()].sort(),
+    [...publicEnvForNamedStep(drifted, buildStepName).entries()].sort(),
+  );
+});
+
 test("an unrelated step cannot satisfy the Astro env contract", () => {
-  const withoutRealOne = workflow.replace("          PUBLIC_REAL_ONE: value\n", "");
-  const keys = publicEnvKeysForNamedStep(withoutRealOne, "Build with Astro");
+  const withoutRealOne = workflow.replace("          PUBLIC_REAL_ONE: value-one\n        with:", "        with:");
+  const keys = publicEnvKeysForNamedStep(withoutRealOne, buildStepName);
   assert.equal(keys.has("PUBLIC_REAL_ONE"), false);
   assert.equal(keys.has("PUBLIC_UNRELATED"), false);
 });
 
 test("duplicate or missing named steps fail closed", () => {
   assert.throws(
-    () => publicEnvKeysForNamedStep(`${workflow}\n      - name: Build with Astro\n        env:\n          PUBLIC_DUPLICATE: value\n`, "Build with Astro"),
+    () => publicEnvKeysForNamedStep(`${workflow}\n      - name: ${buildStepName}\n        env:\n          PUBLIC_DUPLICATE: value\n`, buildStepName),
     /exactly one workflow step/,
   );
   assert.throws(
@@ -60,12 +84,23 @@ test("duplicate or missing named steps fail closed", () => {
   );
 });
 
+test("duplicate PUBLIC keys fail closed", () => {
+  const duplicate = workflow.replace(
+    "          PUBLIC_REAL_TWO: value-two\n        with:",
+    "          PUBLIC_REAL_ONE: duplicate\n        with:",
+  );
+  assert.throws(
+    () => publicEnvForNamedStep(duplicate, buildStepName),
+    /duplicate environment key PUBLIC_REAL_ONE/,
+  );
+});
+
 test("missing or inline env maps fail closed", () => {
   assert.throws(
     () =>
       publicEnvKeysForNamedStep(
         "jobs:\n  build:\n    steps:\n      - name: Build with Astro\n        run: npm run build\n",
-        "Build with Astro",
+        buildStepName,
       ),
     /block-style env map/,
   );
@@ -73,7 +108,7 @@ test("missing or inline env maps fail closed", () => {
     () =>
       publicEnvKeysForNamedStep(
         "jobs:\n  build:\n    steps:\n      - name: Build with Astro\n        env: { PUBLIC_INLINE: value }\n",
-        "Build with Astro",
+        buildStepName,
       ),
     /block-style env map/,
   );
