@@ -82,6 +82,20 @@ jobs:
           python3 -m py_compile "$RUNNER_TEMP/contract-union.py"
           python3 "$RUNNER_TEMP/contract-union.py"
 
+          python3 <<'PYWORKFLOW'
+          from pathlib import Path
+
+          path = Path('.github/workflows/gha-clone-server.yml')
+          source = path.read_text(encoding='utf-8')
+          old = '          rustfmt --edition 2021 --check\n'
+          new = '          rustfmt --edition 2021 --config skip_children=true --check\n'
+          if source.count(old) != 1:
+              raise SystemExit(
+                  f'expected one recursive build-server rustfmt command, found {source.count(old)}'
+              )
+          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PYWORKFLOW
+
           git diff --check
           test "$(grep -c '952623b07fd83caa3a83ee27bdea293f6bd4372f' \
             .github/workflows/gha-clone-server.yml)" = 1
@@ -111,7 +125,7 @@ jobs:
         working-directory: remote/deployments/build-server-rs
         run: |
           set -euo pipefail
-          rustfmt --edition 2021 --check \
+          rustfmt --edition 2021 --config skip_children=true --check \
             src/jobs.rs \
             src/main.rs \
             src/nats_submit.rs \
