@@ -1,6 +1,7 @@
 # Thin wrapper over the reviewed primary carrier. It preserves Rust escape
-# literals for both path validators, validates the product, and self-deletes.
-# Re-triggered after isolating the stale-parser and escaped-literal failures.
+# literals for both path validators, fixes the generated reservation guard,
+# validates the product, and self-deletes.
+# Re-triggered after the transform reached Rust compilation.
 name: Run DEN-1606 direct hardening materializer v3 once
 
 on:
@@ -79,6 +80,23 @@ jobs:
           script = script.replace(marker_anchor, marker_replacement, 1)
 
           exec(compile(script, str(carrier), 'exec'), {'__name__': '__main__'})
+
+          main_path = Path('remote/deployments/gha-clone-server-rs/src/main.rs')
+          main = main_path.read_text(encoding='utf-8')
+          reserve_start = main.find(
+              'async fn reserve_runs(state: &AppState, records: &[RunRecord]) -> bool {'
+          )
+          reserve_end = main.find('\nasync fn remove_runs(', reserve_start)
+          if reserve_start == -1 or reserve_end == -1:
+              raise SystemExit('generated reserve_runs boundaries are missing')
+          reserve = '''async fn reserve_runs(state: &AppState, records: &[RunRecord]) -> bool {
+              let mut runs = state.runs.write().await;
+              reserve_run_records(&mut runs, records, state.config.max_runs)
+          }
+          '''.replace('          ', '')
+          main = main[:reserve_start] + reserve + main[reserve_end + 1:]
+          main_path.write_text(main, encoding='utf-8')
+
           for path in (
               '.github/workflows/run-den-1606-materializer-v2-once.yml',
               '.github/workflows/run-den-1606-materializer-v3-once.yml',
