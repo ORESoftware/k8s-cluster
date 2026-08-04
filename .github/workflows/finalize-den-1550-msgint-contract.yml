@@ -1,0 +1,257 @@
+name: Finalize exact Messaging Intel continuity contract
+
+on:
+  push:
+    branches:
+      - agent/den-1550-msgint-current-dev-v4
+    paths:
+      - .github/workflows/finalize-den-1550-msgint-contract.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-den-1550-msgint-contract
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out the exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1550-msgint-current-dev-v4
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Integrate the reserved repository, revision, and workflow contract
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          OLD_REVISION = '952623b07fd83caa3a83ee27bdea293f6bd4372f'
+          NEW_REVISION = 'a9cc977d78347ec0efdbe8e6766967f80d425882'
+          FINALIZER = '.github/workflows/finalize-den-1550-msgint-contract.yml'
+
+          def replace_once(path: str, old: str, new: str, label: str) -> None:
+              file = Path(path)
+              text = file.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match in {path}, found {count}')
+              file.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          module = Path('remote/deployments/gha-clone-server-rs/src/msgint_contract.rs')
+          module_text = module.read_text(encoding='utf-8')
+          old_helper = '''        assert_eq!(REVIEWED.matches(old).count(), 1, "mutation anchor must be unique");'''
+          new_helper = '''        assert!(REVIEWED.contains(old), "mutation anchor must exist");'''
+          if module_text.count(old_helper) != 1:
+              raise SystemExit('unexpected msgint mutation-helper state')
+          module.write_text(module_text.replace(old_helper, new_helper, 1), encoding='utf-8')
+
+          planner = 'remote/deployments/gha-clone-server-rs/src/lib.rs'
+          replace_once(
+              planner,
+              'use std::collections::{BTreeMap, BTreeSet, VecDeque};',
+              'mod msgint_contract;\n\nuse std::collections::{BTreeMap, BTreeSet, VecDeque};',
+              'declare exact-contract module',
+          )
+          replace_once(
+              planner,
+              '''    let root = workflow
+                  .as_mapping()
+                  .ok_or_else(|| vec!["workflow document must be a YAML mapping".to_string()])?;
+              let jobs = mapping_get(root, "jobs")''',
+              '''    let root = workflow
+                  .as_mapping()
+                  .ok_or_else(|| vec!["workflow document must be a YAML mapping".to_string()])?;
+              let reserved_profiles = match msgint_contract::classify_msgint_workflow(
+                  &request.repository,
+                  &request.revision,
+                  &request.workflow_path,
+                  root,
+              ) {
+                  msgint_contract::ContractMatch::NotApplicable => None,
+                  msgint_contract::ContractMatch::Match(profiles) => Some(profiles),
+                  msgint_contract::ContractMatch::Reject(reasons) => return Err(reasons),
+              };
+              let jobs = mapping_get(root, "jobs")''',
+              'reserve Messaging Intel identity before generic planning',
+          )
+          replace_once(
+              planner,
+              '''            Ok(mut plan) => {
+                      plan.independent_reasons.extend(workflow_reasons.clone());
+                      if !plan.independent_reasons.is_empty() {
+                          plan.independent_supported = false;
+                          plan.independent_profile = None;
+                      }
+                      plans.push(plan);
+                  }''',
+              '''            Ok(mut plan) => {
+                      plan.independent_reasons.extend(workflow_reasons.clone());
+                      if let Some(profile) = reserved_profiles
+                          .as_ref()
+                          .and_then(|profiles| profiles.get(&id))
+                      {
+                          if !plan.independent_reasons.is_empty() {
+                              errors.push(format!(
+                                  "jobs.{id}: reviewed Messaging Intel contract matched but generic safety checks rejected the job: {}",
+                                  plan.independent_reasons.join("; ")
+                              ));
+                              continue;
+                          }
+                          plan.independent_supported = true;
+                          plan.independent_profile = Some(profile.clone());
+                      } else if !plan.independent_reasons.is_empty() {
+                          plan.independent_supported = false;
+                          plan.independent_profile = None;
+                      }
+                      plans.push(plan);
+                  }''',
+              'bind exact profiles without generic fallback',
+          )
+
+          grep = subprocess.run(
+              ['git', 'grep', '-l', OLD_REVISION],
+              check=False,
+              text=True,
+              capture_output=True,
+          )
+          if grep.returncode not in (0, 1):
+              raise SystemExit(grep.stderr)
+          revision_files = [
+              Path(line)
+              for line in grep.stdout.splitlines()
+              if line and line != FINALIZER
+          ]
+          required = {
+              Path('.github/workflows/gha-clone-server.yml'),
+              Path('remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs'),
+          }
+          if not required.issubset(set(revision_files)):
+              raise SystemExit(
+                  f'required reviewed-revision pins missing; found {[str(path) for path in revision_files]}'
+              )
+          for path in revision_files:
+              text = path.read_text(encoding='utf-8')
+              path.write_text(text.replace(OLD_REVISION, NEW_REVISION), encoding='utf-8')
+
+          doc = Path('docs/gha-profile-repository-admission.md')
+          doc_text = doc.read_text(encoding='utf-8')
+          old_doc = 'The GHA continuity server independently allowlists the exact `messaging-intel/msgint-connectors` repository and `.github/workflows/gha-clone-operator-config.yml` workflow path, requires an immutable 40-hex revision for execution, and sends only the canonical HTTPS repository URL plus a fixed profile name to the build server.'
+          new_doc = f'The GHA continuity server reserves the exact `messaging-intel/msgint-connectors` repository and `.github/workflows/gha-clone-operator-config.yml` workflow path, requires reviewed revision `{NEW_REVISION}`, validates the exact workflow name, trigger, ordered DAG, action SHAs, action inputs, and command arrays before generic classification, and sends only the canonical HTTPS repository URL plus a fixed profile name to the build server. A reserved identity mismatch is terminal and cannot fall back to `node-verify`.'
+          if doc_text.count(old_doc) != 1:
+              raise SystemExit('unexpected profile-admission documentation state')
+          doc.write_text(doc_text.replace(old_doc, new_doc, 1), encoding='utf-8')
+
+          contract_test = Path('remote/tests/general/gha-clone-server-config.test.ts')
+          contract_text = contract_test.read_text(encoding='utf-8')
+          marker = "test('Messaging Intel compiler reserves the exact reviewed identity', () => {"
+          if marker in contract_text:
+              raise SystemExit('exact compiler contract test is already present')
+          contract_text += f'''\n\ntest('Messaging Intel compiler reserves the exact reviewed identity', () => {{
+            const contract = read(
+              'remote/deployments/gha-clone-server-rs/src/msgint_contract.rs',
+            );
+            const planner = read(plannerPath);
+            assert.match(contract, /messaging-intel\\/msgint-connectors/);
+            assert.match(contract, /gha-clone-operator-config\\.yml/);
+            assert.match(contract, /{NEW_REVISION}/);
+            assert.match(contract, /22\\.23\\.1/);
+            assert.match(contract, /persist-credentials/);
+            assert.match(contract, /exact reviewed command sequence/);
+            assert.match(contract, /reserved Messaging Intel repository\\/workflow identity mismatch/);
+            assert.match(planner, /classify_msgint_workflow/);
+            assert.match(planner, /ContractMatch::Reject/);
+            assert.match(planner, /reserved_profiles/);
+          }});\n'''
+          contract_test.write_text(contract_text, encoding='utf-8')
+          PY
+
+      - name: Format the exact-contract and continuity Rust sources
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all
+          rustfmt --edition 2021 \
+            remote/deployments/build-server-rs/src/profiles.rs \
+            remote/deployments/build-server-rs/src/validation.rs
+          git diff --check
+
+      - name: Run strict continuity compiler validation
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Compile and test build-server admission, idempotency, and NATS semantics
+        working-directory: remote/deployments/build-server-rs
+        run: |
+          set -euo pipefail
+          cargo check --locked --all-targets
+          cargo test --locked profiles::tests -- --nocapture
+          cargo test --locked validation::tests -- --nocapture
+          cargo test --locked idempotency_tests -- --nocapture
+          cargo test --locked nats_submit::tests -- --nocapture
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22.23.1'
+
+      - name: Execute the credential-free lifecycle trap fixture
+        working-directory: remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile
+        run: |
+          set -euo pipefail
+          rm -f LIFECYCLE_RAN
+          npm ci --ignore-scripts
+          npm run check
+          npm run test:operator-config
+          npm audit --audit-level=high
+          npm test
+          test ! -e LIFECYCLE_RAN
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - name: Validate deployment, webhook, and reserved-identity contracts
+        working-directory: remote/tests
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts
+
+      - name: Validate permanent workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/gha-clone-server.yml remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml
+
+      - name: Remove the one-shot finalizer and commit the validated source
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/finalize-den-1550-msgint-contract.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'test(DEN-1550): reserve the exact Messaging Intel continuity contract'
+          git push origin HEAD:agent/den-1550-msgint-current-dev-v4
