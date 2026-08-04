@@ -10,10 +10,12 @@ import pathlib
 import subprocess
 import tempfile
 
+from den977_lib_resolver_fix import LIB_PATH, PLANNER_PATH, resolve_lib, resolve_planner
 from den977_semantic_resolvers import RESOLVERS, WORKFLOW_PATH
 from den977_workflow_resolver_fix import resolve_workflow
 
 RESOLVERS[WORKFLOW_PATH] = resolve_workflow
+RESOLVERS[LIB_PATH] = resolve_lib
 
 CURRENT_DEV_SHA = "a7d730abd874a1ee39875bbe5a2274aa681b480a"
 REVIEWED_MSGINT_SHA = "bf4fca2e22937caf18a07dc1bd7c4494fff4b95c"
@@ -32,9 +34,9 @@ PRODUCT_PATHS = [
     "remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/src/operator-config.mjs",
     "remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/test/operator-config.test.mjs",
     "remote/deployments/gha-clone-server-rs/README.md",
-    "remote/deployments/gha-clone-server-rs/src/lib.rs",
+    LIB_PATH,
     "remote/deployments/gha-clone-server-rs/src/msgint_contract.rs",
-    "remote/deployments/gha-clone-server-rs/src/planner.rs",
+    PLANNER_PATH,
     "remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml",
     "remote/deployments/gha-clone-server-rs/tests/msgint_exact_contract.rs",
     "remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs",
@@ -104,6 +106,14 @@ def main() -> None:
             base_data = show(merge_base, path)
             current_data = show(CURRENT_DEV_SHA, path)
             reviewed_data = show(REVIEWED_MSGINT_SHA, path)
+
+            if path == PLANNER_PATH:
+                merged[path] = resolve_planner(
+                    show(CURRENT_DEV_SHA, LIB_PATH),
+                    show(merge_base, LIB_PATH),
+                    reviewed_data,
+                )
+                continue
 
             if reviewed_data is None:
                 if current_data == base_data:
