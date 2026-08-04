@@ -16,8 +16,8 @@ async fn create_checkout_session(
         Err(CheckoutError::NotFound) => None,
         Err(error) => return Err(error),
     };
-    if let Some(stored) = existing {
-        ensure_matching_checkout_intent(&stored, &fingerprint)?;
+    if let Some(stored) = existing.as_ref() {
+        ensure_matching_checkout_intent(stored, &fingerprint)?;
         if stored.provider_session_id.is_some() {
             return Ok((StatusCode::OK, Json(stored.view()?)).into_response());
         }
@@ -263,19 +263,25 @@ mod tests {
         let tenant_id = Uuid::new_v4();
         let checkout_id = Uuid::new_v4();
         let encoded = stripe_checkout_form(tenant_id, checkout_id, &intent).unwrap();
-        let parameters: Vec<(String, String)> = serde_urlencoded::from_str(&encoded).unwrap();
-        assert!(parameters.contains(&(
-            "line_items[0][price_data][unit_amount]".to_string(),
-            "12500".to_string()
-        )));
-        assert!(parameters.contains(&(
-            "metadata[quaestor_checkout_id]".to_string(),
-            checkout_id.to_string()
-        )));
-        assert!(parameters.contains(&(
-            "payment_intent_data[metadata][vehicle_kind]".to_string(),
-            "motorcycle".to_string()
-        )));
+        let parameters: BTreeMap<String, String> = serde_urlencoded::from_str(&encoded).unwrap();
+        assert_eq!(
+            parameters
+                .get("line_items[0][price_data][unit_amount]")
+                .map(String::as_str),
+            Some("12500")
+        );
+        assert_eq!(
+            parameters
+                .get("metadata[quaestor_checkout_id]")
+                .map(String::as_str),
+            Some(checkout_id.to_string().as_str())
+        );
+        assert_eq!(
+            parameters
+                .get("payment_intent_data[metadata][vehicle_kind]")
+                .map(String::as_str),
+            Some("motorcycle")
+        );
     }
 
     #[test]
