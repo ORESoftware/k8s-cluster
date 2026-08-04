@@ -7,6 +7,7 @@ on:
       - '.github/workflows/ops-bootstrap-org-dotgithub-direct.yml'
       - 'scripts/ops/bootstrap_org_dotgithub_repositories.py'
       - 'scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py'
+      - 'scripts/ops/run_direct_org_dotgithub_publisher.sh'
       - 'scripts/ops/run_protected_org_dotgithub_publisher.sh'
       - 'tests/ops/test_bootstrap_org_dotgithub_direct.py'
       - 'tests/ops/test_bootstrap_org_dotgithub_repositories.py'
@@ -19,6 +20,7 @@ on:
       - '.github/workflows/ops-bootstrap-org-dotgithub-direct.yml'
       - 'scripts/ops/bootstrap_org_dotgithub_repositories.py'
       - 'scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py'
+      - 'scripts/ops/run_direct_org_dotgithub_publisher.sh'
       - 'scripts/ops/run_protected_org_dotgithub_publisher.sh'
       - 'tests/ops/test_bootstrap_org_dotgithub_direct.py'
       - 'tests/ops/test_bootstrap_org_dotgithub_repositories.py'
@@ -59,6 +61,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          bash -n scripts/ops/run_direct_org_dotgithub_publisher.sh
           bash -n scripts/ops/run_protected_org_dotgithub_publisher.sh
           python3 -m py_compile \
             scripts/ops/bootstrap_org_dotgithub_repositories.py \
@@ -96,6 +99,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          bash -n scripts/ops/run_direct_org_dotgithub_publisher.sh
           bash -n scripts/ops/run_protected_org_dotgithub_publisher.sh
           python3 -m py_compile \
             scripts/ops/bootstrap_org_dotgithub_repositories.py \
@@ -126,7 +130,7 @@ jobs:
           : > "$error_log"
 
           set +e
-          bash scripts/ops/run_protected_org_dotgithub_publisher.sh \
+          bash scripts/ops/run_direct_org_dotgithub_publisher.sh \
             "$GITHUB_SHA" \
             "$GITHUB_WORKSPACE" \
             >"$report" \
