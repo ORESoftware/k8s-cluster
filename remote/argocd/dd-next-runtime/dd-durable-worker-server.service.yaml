@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-durable-worker-server
+  namespace: default
+  labels:
+    app: dd-durable-worker-server
+    app.kubernetes.io/name: dd-durable-worker-server
+    app.kubernetes.io/component: durable-execution-control-plane
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-durable-worker-server
+  ports:
+    - name: http
+      port: 8152
+      targetPort: http
+      protocol: TCP
