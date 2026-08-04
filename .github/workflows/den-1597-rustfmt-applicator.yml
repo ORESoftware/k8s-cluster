@@ -7,6 +7,7 @@ on:
     paths:
       - 'remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs'
       - 'remote/deployments/gha-clone-server-rs/tests/executor_router.rs'
+      - 'remote/deployments/gha-clone-server-rs/tests/executor_router_gitops.rs'
       - '.github/workflows/den-1597-rustfmt-applicator.yml'
 
 permissions:
@@ -42,7 +43,8 @@ jobs:
           git diff --check
           git add -- \
             remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs \
-            remote/deployments/gha-clone-server-rs/tests/executor_router.rs
+            remote/deployments/gha-clone-server-rs/tests/executor_router.rs \
+            remote/deployments/gha-clone-server-rs/tests/executor_router_gitops.rs
           if git diff --cached --quiet; then
             echo 'rustfmt already clean'
             exit 0
