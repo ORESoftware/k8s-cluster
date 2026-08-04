@@ -5,8 +5,7 @@ use gha_clone_server::{build_plan, PlanRequest, PlannerLimits, WorkflowPlan};
 const REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
 const API_WORKFLOW: &str = include_str!("../fixtures/streempilot-api-ci-mirror.yml");
 const WEB_WORKFLOW: &str = include_str!("../fixtures/streempilot-web-ci-mirror.yml");
-const INTERFACES_WORKFLOW: &str =
-    include_str!("../fixtures/streempilot-interfaces-ci-mirror.yml");
+const INTERFACES_WORKFLOW: &str = include_str!("../fixtures/streempilot-interfaces-ci-mirror.yml");
 
 fn plan(repository: &str, workflow: &str) -> WorkflowPlan {
     build_plan(
