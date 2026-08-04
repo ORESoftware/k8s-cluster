@@ -1,0 +1,112 @@
+name: Finalize DEN-1550 last two exact-head fixes
+
+on:
+  push:
+    branches:
+      - agent/den-1550-msgint-current-dev-final
+    paths:
+      - .github/workflows/finalize-den-1550-last-two.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-den-1550-last-two
+  cancel-in-progress: false
+
+jobs:
+  validate-and-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1550-msgint-current-dev-final
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Point the generic static contract at planner.rs
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/tests/general/gha-clone-server-config.test.ts')
+          source = path.read_text(encoding='utf-8')
+          declaration = "const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';\n"
+          expanded = (
+              declaration
+              + "const genericPlannerPath =\n"
+              + "  'remote/deployments/gha-clone-server-rs/src/planner.rs';\n"
+          )
+          if 'const genericPlannerPath =' not in source:
+              if source.count(declaration) != 1:
+                  raise SystemExit('unexpected planner declaration state')
+              source = source.replace(declaration, expanded, 1)
+
+          old = (
+              "test('planner and dispatcher preserve the fail-closed command boundary', () => {\n"
+              "  const planner = read(plannerPath);\n"
+          )
+          new = (
+              "test('planner and dispatcher preserve the fail-closed command boundary', () => {\n"
+              "  const planner = read(genericPlannerPath);\n"
+          )
+          if old in source:
+              source = source.replace(old, new, 1)
+          elif new not in source:
+              raise SystemExit('unexpected generic planner static-test state')
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Format and validate every clone-server target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22.23.1'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Run the permanent continuity contracts
+        working-directory: remote/tests
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts \
+            general/gha-clone-msgint-config.test.ts
+
+      - name: Commit only the two permanent fixes
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs \
+            remote/tests/general/gha-clone-server-config.test.ts
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'No permanent exact-head fixes were produced' >&2
+            exit 1
+          fi
+          git commit -m 'test(DEN-1550): finish exact-head continuity validation'
+          git push origin HEAD:agent/den-1550-msgint-current-dev-final
