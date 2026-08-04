@@ -21,6 +21,8 @@ The shared Dockerfile exposes separate `clone-server` and `executor-router` targ
 
 The pull-request job has read-only repository permissions and does not receive package-write or issue-write permission. Repository-wide observability coverage also requires `dd-gha-executor-router` in both the exporter source default and the deployed `WATCH_APPS` override, so the runtime cannot be activated without workload-level metrics.
 
+The release workflow is evaluated against `dev` after `f99c1118a432d55e76d5123240bc6dc8514f68a0`. That baseline removed the redundant inline `GHA_EXECUTOR_ROUTER_SECRET_ROOT` value while preserving the same fail-closed code default, direct-child credential path, and mode-0400 projected Secret. The image and ledger PR must not reintroduce credential-shaped inline values or weaken the repository-wide secret scanner.
+
 ## Publication
 
 A successful push to `dev`, or an explicit `workflow_dispatch` with `publish=true`, publishes:
