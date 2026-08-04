@@ -21,59 +21,51 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - name: Print exact integration anchors
+      - name: Capture exact integration anchors
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
+          output = []
+
           def show(path: str, start: int, end: int) -> None:
               lines = Path(path).read_text(encoding='utf-8').splitlines()
-              print(f'\n===== {path}:{start}-{end} =====')
+              output.append(f'\n===== {path}:{start}-{end} =====')
               for line_no in range(max(1, start), min(len(lines), end) + 1):
-                  print(f'{line_no:06d}: {lines[line_no - 1]}')
+                  output.append(f'{line_no:06d}: {lines[line_no - 1]}')
 
           def matches(path: str, needles: list[str], context: int = 12) -> None:
               lines = Path(path).read_text(encoding='utf-8').splitlines()
               for needle in needles:
                   indexes = [index for index, line in enumerate(lines) if needle in line]
-                  print(f'\n===== {path} {needle!r}: {len(indexes)} match(es) =====')
+                  output.append(f'\n===== {path} {needle!r}: {len(indexes)} match(es) =====')
                   for index in indexes[:20]:
                       show(path, index + 1 - context, index + 1 + context)
 
           lib = Path('src/lib.rs').read_text(encoding='utf-8').splitlines()
-          start = next(i for i, line in enumerate(lib) if line.startswith('fn default_machines()'))
-          depth = 0
-          opened = False
-          end = None
-          for i in range(start, len(lib)):
-              depth += lib[i].count('{') - lib[i].count('}')
-              opened = opened or '{' in lib[i]
-              if opened and depth == 0:
-                  end = i
-                  break
-          print(f'default_machines lines={start + 1}-{end + 1}')
-          show('src/lib.rs', max(start + 1, end - 140), end + 1)
+          for function in ('default_machines', 'turning_catalog_response', 'lathe_catalog_response', 'choose_machine'):
+              start = next(i for i, line in enumerate(lib) if line.startswith(f'fn {function}('))
+              depth = 0
+              opened = False
+              end = None
+              for i in range(start, len(lib)):
+                  depth += lib[i].count('{') - lib[i].count('}')
+                  opened = opened or '{' in lib[i]
+                  if opened and depth == 0:
+                      end = i
+                      break
+              output.append(f'{function} lines={start + 1}-{end + 1}')
+              show('src/lib.rs', start + 1, end + 1)
 
-          matches('src/lib.rs', [
-              'mod printer_model_catalog;',
-              'printer_model_catalog::',
-              'MachineClass::Lathe =>',
-              'fn lathe_catalog_response',
-              'supportedModels',
-              'modelCatalog',
-          ], 18)
-          matches('src/tests.rs', [
-              'fdm_printer_catalog',
-              'post_2024',
-              'turning_catalog',
-              'lathe_catalog',
-              'default_machines()',
-          ], 30)
-          matches('src/e2e_tests.rs', [
-              'fdm-printer/catalog',
-              'turning/catalog',
-              'lathe/catalog',
-              'post_2024',
-          ], 30)
-          show('src/printer_model_catalog.rs', 1, 260)
+          matches('src/lib.rs', ['mod printer_model_catalog;', 'fn machine_class(', 'fn printer_model_fleet_machines('], 30)
+          matches('src/tests.rs', ['fn post_2024_flagship_models_resolve', 'fn fdm_printer_catalog_advertises', 'fn turning_catalog', 'fn lathe_catalog', 'fn machine_selection'], 45)
+          matches('src/e2e_tests.rs', ['fn authorized_request', 'fn get_json', 'fdm-printer/catalog', 'machine_catalog'], 60)
+          Path('context.txt').write_text('\n'.join(output), encoding='utf-8')
           PY
+      - name: Upload context
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: lathe-support-context
+          path: context.txt
+          if-no-files-found: error
+          retention-days: 1
