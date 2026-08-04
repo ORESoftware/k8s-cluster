@@ -1,9 +1,14 @@
 use axum::Json;
-use axum::extract::{Path, Query, State};
+use axum::extract::{Extension, Path, Query, State};
+use axum::http::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::api::auth::Principal;
 use crate::error::{AppError, AppResult};
+use crate::financial_audit::{
+    BILLING_WRITE_SCOPE, FinancialOperationContext, REQUEST_ID_HEADER,
+};
 use crate::ledger::{AccountBalance, AccountKind, DraftTransaction};
 use crate::money::Currency;
 use crate::state::AppState;
@@ -53,13 +58,20 @@ pub async fn ensure_account(
 #[derive(Serialize)]
 pub struct PostTxResp {
     pub transaction_id: Uuid,
+    pub operation_event_id: Option<Uuid>,
+    pub operation_correlation_id: Option<Uuid>,
+    pub request_correlation_id: Uuid,
+    pub replayed: bool,
+    pub audit_status: &'static str,
 }
 
 pub async fn post_transaction(
     State(state): State<AppState>,
     Path(tenant_id): Path<Uuid>,
+    Extension(principal): Extension<Principal>,
+    headers: HeaderMap,
     Json(draft): Json<DraftTransaction>,
-) -> AppResult<Json<PostTxResp>> {
+) -> AppResult<(HeaderMap, Json<PostTxResp>)> {
     // Defense in depth: refuse rather than silently rewrite. A body
     // tenant_id that disagrees with the path almost always signals a
     // bug in the caller (which they want to know about) or an attempt
@@ -75,12 +87,39 @@ pub async fn post_transaction(
     }
     let mut draft = draft;
     draft.tenant_id = tenant_id;
+
+    // The middleware has already authenticated and authorized this exact
+    // tenant. Hand the verified principal—not untrusted request headers—to the
+    // ledger so actor attribution commits atomically with the postings.
+    let operation_context =
+        FinancialOperationContext::from_request(&principal, &headers, BILLING_WRITE_SCOPE)?;
+    let request_correlation_id = operation_context.request_correlation_id;
+
     let tenant = state.tenants.by_id(tenant_id).await?;
     let region = tenant.region()?;
-    let tx_id = state.ledger.post_transaction(&draft, region).await?;
-    Ok(Json(PostTxResp {
-        transaction_id: tx_id,
-    }))
+    let posted = state
+        .ledger
+        .post_transaction(&draft, region, &operation_context)
+        .await?;
+
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(
+        REQUEST_ID_HEADER,
+        HeaderValue::from_str(&request_correlation_id.to_string())
+            .map_err(|error| AppError::Other(error.into()))?,
+    );
+
+    Ok((
+        response_headers,
+        Json(PostTxResp {
+            transaction_id: posted.transaction_id,
+            operation_event_id: posted.audit.event_id,
+            operation_correlation_id: posted.audit.operation_correlation_id,
+            request_correlation_id,
+            replayed: posted.replayed,
+            audit_status: posted.audit.status.as_str(),
+        }),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -141,11 +180,6 @@ mod tests {
         }
     }
 
-    /// Replicate the body/path tenant-mismatch check that the handler
-    /// runs before touching the DB. We can't easily mock `AppState`
-    /// here, but the check itself is the load-bearing fix; keep its
-    /// behavior pinned with a unit test that mirrors the handler's
-    /// branch order.
     fn validate_body_tenant(path_tenant_id: Uuid, draft: &DraftTransaction) -> Result<(), String> {
         if !draft.tenant_id.is_nil() && draft.tenant_id != path_tenant_id {
             return Err(format!(
