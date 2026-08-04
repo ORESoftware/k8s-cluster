@@ -160,7 +160,11 @@ jobs:
           set -e
           printf '%s\n' "$output"
           test "$status" -eq 2
-          grep -q 'THREEFA_FLAGS_CONFIG does not name a readable file' <<<"$output"
+          grep -q 'THREEFA_FLAGS_CONFIG does not name a readable regular file' <<<"$output"
+          if grep -q '/tmp/missing.toml' <<<"$output"; then
+            echo 'explicit policy path leaked into diagnostics'
+            exit 1
+          fi
       - name: Accept declared operational flags before typed config
         run: |
           set +e
