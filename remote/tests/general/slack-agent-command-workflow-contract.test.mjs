@@ -8,6 +8,8 @@ const workflowPath = path.resolve(
   '.github/workflows/slack-agent-command-browser-e2e.yml',
 );
 const workflow = readFileSync(workflowPath, 'utf8');
+const expectedBridge = '63d4d9be4343d3eeba02205ec64dd443716c5249';
+const expectedCoordinator = 'f0adef6f384bac8024da59a26cb05e2fb9caac98';
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -27,10 +29,12 @@ function recordedRef(name) {
   return match[1];
 }
 
-test('cross-repository Slack canary dependencies are immutable and provenance-aligned', () => {
+test('cross-repository Slack canary dependencies are current, immutable, and provenance-aligned', () => {
   const bridge = checkoutRef('ORESoftware/ai-agent-bridge.rs');
   const coordinator = checkoutRef('ORESoftware/ai-agent-coordinator.rs');
 
+  assert.equal(bridge, expectedBridge);
+  assert.equal(coordinator, expectedCoordinator);
   assert.equal(recordedRef('BRIDGE_REF'), bridge);
   assert.equal(recordedRef('COORDINATOR_REF'), coordinator);
   assert.doesNotMatch(workflow, /inputs\.(?:bridge_ref|coordinator_ref)/);
@@ -41,7 +45,7 @@ test('cross-repository Slack canary dependencies are immutable and provenance-al
   );
 });
 
-test('recorded revisions are verified against the checked-out commits before evidence upload', () => {
+test('recorded revisions are verified against checked-out commits before evidence upload', () => {
   assert.match(workflow, /bridge_commit="\$\(git -C \.e2e\/bridge rev-parse HEAD\)"/);
   assert.match(
     workflow,
@@ -49,7 +53,18 @@ test('recorded revisions are verified against the checked-out commits before evi
   );
   assert.match(workflow, /test "\$bridge_commit" = "\$BRIDGE_REF"/);
   assert.match(workflow, /test "\$coordinator_commit" = "\$COORDINATOR_REF"/);
-  assert.match(workflow, /schema_version:\s*3/);
+  assert.match(workflow, /schema_version:\s*4/);
+  assert.match(workflow, /idempotency_contract:\s*"header_equals_payload_run_id"/);
+});
+
+test('the workflow fails closed on stale Slack run idempotency source', () => {
+  assert.match(
+    workflow,
+    /grep -F '\.header\("idempotency-key", &request\.run_id\)'/,
+  );
+  assert.match(workflow, /grep -F 'slack-command:\{\}'/);
+  assert.match(workflow, /bridge still prefixes the Slack run idempotency key/);
+  assert.match(workflow, /grep -R -F 'payload\.run_id' \.e2e\/coordinator\/src/);
 });
 
 test('the immutable-ref contract participates in pull-request and push path filters', () => {
