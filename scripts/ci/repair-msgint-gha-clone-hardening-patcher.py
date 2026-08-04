@@ -6,8 +6,8 @@ source = path.read_text(encoding="utf-8")
 needle = "combined.push('\\n');"
 replacement = "combined.push('\\\\n');"
 count = source.count(needle)
-if count != 2:
-    raise RuntimeError(f"expected two Rust newline anchors, found {count}")
+if count != 4:
+    raise RuntimeError(f"expected four Rust newline anchors, found {count}")
 source = source.replace(needle, replacement)
 
 if "job = '''  msgint-profile-smoke:" not in source:
