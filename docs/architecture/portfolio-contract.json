@@ -1,0 +1,704 @@
+{
+  "contract_version": 1,
+  "status": "proposed-defaults",
+  "last_reviewed": "2026-08-04",
+  "governance": {
+    "authority_repository": "ORESoftware/k8s-cluster",
+    "integration_branch": "dev",
+    "change_process": "pull-request",
+    "exception_process": {
+      "required_artifact": "architecture decision record",
+      "required_fields": [
+        "owner",
+        "rationale",
+        "security_review",
+        "migration_or_expiry_date"
+      ],
+      "default_expiry_days": 180
+    }
+  },
+  "repository_roles": {
+    "interfaces": {
+      "owns": [
+        "wire schemas",
+        "event schemas",
+        "configuration schemas",
+        "database desired-state contracts"
+      ],
+      "may_depend_on": [],
+      "must_not": [
+        "contain provider credentials",
+        "perform runtime network calls",
+        "own deployment state"
+      ]
+    },
+    "clients": {
+      "owns": [
+        "generated DTOs",
+        "transport adapters",
+        "authentication attachment",
+        "retry and pagination helpers"
+      ],
+      "may_depend_on": [
+        "interfaces"
+      ],
+      "must_not": [
+        "read product databases",
+        "contain server domain logic",
+        "redefine wire schemas"
+      ]
+    },
+    "api-server": {
+      "owns": [
+        "public command/query API",
+        "authorization",
+        "idempotency",
+        "domain orchestration"
+      ],
+      "may_depend_on": [
+        "interfaces",
+        "shared platform clients",
+        "product-local domain libraries"
+      ],
+      "must_not": [
+        "expose generic public table CRUD",
+        "read another product database"
+      ]
+    },
+    "web-server": {
+      "owns": [
+        "SSR",
+        "static assets",
+        "browser routing",
+        "session bootstrap",
+        "thin browser BFF"
+      ],
+      "may_depend_on": [
+        "clients",
+        "interfaces"
+      ],
+      "must_not": [
+        "become a second business API",
+        "write domain tables directly"
+      ]
+    },
+    "worker": {
+      "owns": [
+        "asynchronous execution",
+        "event consumption",
+        "retries",
+        "backfills"
+      ],
+      "may_depend_on": [
+        "interfaces",
+        "product-local domain libraries",
+        "shared platform clients"
+      ],
+      "must_not": [
+        "expose public browser ingress",
+        "bypass idempotency or fencing"
+      ]
+    },
+    "control-plane": {
+      "owns": [
+        "desired state",
+        "policy",
+        "scheduling",
+        "fleet metadata"
+      ],
+      "may_depend_on": [
+        "interfaces",
+        "shared platform clients"
+      ],
+      "must_not": [
+        "silently become the data-plane executor",
+        "bypass device-local safety"
+      ]
+    },
+    "sync": {
+      "owns": [
+        "product schemas",
+        "conflict policy",
+        "encryption",
+        "transport",
+        "offline queues"
+      ],
+      "may_depend_on": [
+        "interfaces",
+        "opto-sync"
+      ],
+      "must_not": [
+        "turn Opto Sync into a product schema authority",
+        "become a general worker queue"
+      ]
+    },
+    "mcp-server": {
+      "owns": [
+        "tool descriptions",
+        "MCP authorization",
+        "mutation confirmation",
+        "bounded redacted results"
+      ],
+      "may_depend_on": [
+        "mcp-rust-libs",
+        "clients",
+        "interfaces"
+      ],
+      "must_not": [
+        "read product databases directly",
+        "create a second business API"
+      ]
+    },
+    "infra": {
+      "owns": [
+        "DNS",
+        "WAF",
+        "object storage",
+        "cloud IAM",
+        "Terraform"
+      ],
+      "may_depend_on": [],
+      "must_not": [
+        "own application Kubernetes workloads",
+        "duplicate ArgoCD application definitions"
+      ]
+    },
+    "monorepo": {
+      "owns": [
+        "component inventory",
+        "release pins",
+        "integration status"
+      ],
+      "may_depend_on": [
+        "immutable component releases"
+      ],
+      "must_not": [
+        "copy product source",
+        "serve as an Argo render source",
+        "contain a second copy of workload manifests"
+      ]
+    },
+    "e2e": {
+      "owns": [
+        "black-box browser, CLI, API, and deployment conformance tests"
+      ],
+      "may_depend_on": [
+        "published clients",
+        "deployed endpoints"
+      ],
+      "must_not": [
+        "own production domain logic",
+        "require production write credentials for pull requests"
+      ]
+    }
+  },
+  "call_rules": {
+    "cross_product_database_access": "forbidden",
+    "mcp_direct_database_access": "forbidden",
+    "production_moving_branch_dependencies": "forbidden",
+    "external_commands_and_queries": "HTTPS REST/JSON",
+    "client_realtime": [
+      "WebSocket",
+      "Supabase Realtime when RLS-scoped"
+    ],
+    "media_negotiation": "WebRTC signaling contract",
+    "internal_async": "NATS JetStream with transactional outbox/inbox and idempotent consumers",
+    "internal_rpc": "HTTP by default; gRPC only with an ADR demonstrating a material need",
+    "bulk_binary_transfer": "signed object-storage URLs or File Tunnel",
+    "direct_supabase": {
+      "default": "forbidden",
+      "exception_requires": [
+        "user-owned rows",
+        "complete RLS",
+        "narrow grants",
+        "no privileged side effect",
+        "no competing API write path",
+        "documented deletion and audit behavior"
+      ]
+    },
+    "third_party_providers": "product-owned adapter by default; share only a semantic operation, never merely a vendor SDK",
+    "event_envelope_required_fields": [
+      "event_id",
+      "event_type",
+      "event_version",
+      "occurred_at",
+      "producer",
+      "correlation_id",
+      "causation_id",
+      "traceparent"
+    ]
+  },
+  "platform_boundaries": {
+    "ORESoftware/k8s-cluster": {
+      "owns": [
+        "cluster-scoped resources",
+        "ArgoCD registration and tenancy",
+        "shared operators",
+        "NATS",
+        "secrets delivery infrastructure",
+        "observability backends",
+        "durable worker platform"
+      ],
+      "does_not_own": [
+        "product domain APIs",
+        "product namespace workload source",
+        "external DNS/WAF Terraform"
+      ],
+      "calls": [
+        "fiducia-cloud for leases, fencing, elections, and protected-side-effect coordination"
+      ]
+    },
+    "shared-auth": {
+      "owns": [
+        "human identity",
+        "sessions",
+        "token exchange",
+        "JWKS",
+        "authentication assurance"
+      ],
+      "does_not_own": [
+        "product authorization",
+        "Fiducia project authorization",
+        "general workflow execution"
+      ]
+    },
+    "fiducia-cloud": {
+      "owns": [
+        "leases",
+        "locks",
+        "fencing",
+        "elections",
+        "coordination",
+        "fail-safe schedules"
+      ],
+      "deployment": "stateful Raft data-plane on dedicated Fiducia multi-cloud clusters; stateless API/web tenants may run on k8s-cluster",
+      "does_not_own": [
+        "human login",
+        "general durable workflow histories",
+        "product domain data"
+      ]
+    },
+    "scintilla-run": {
+      "owns": [
+        "ephemeral function/runtime execution"
+      ],
+      "does_not_own": [
+        "durable workflow authority",
+        "coordination state",
+        "human identity"
+      ]
+    },
+    "opto-sync": {
+      "owns": [
+        "schema-agnostic deterministic merge and reconciliation primitives"
+      ],
+      "does_not_own": [
+        "product schemas",
+        "product keys",
+        "transport credentials",
+        "deletion policy"
+      ]
+    },
+    "file-tunnel": {
+      "owns": [
+        "authenticated resumable byte and file transfer"
+      ],
+      "does_not_own": [
+        "product business APIs",
+        "product metadata authority"
+      ]
+    },
+    "networking-components": {
+      "owns": [
+        "reusable low-level routing, load-balancing, DNS, VPN, and switching primitives"
+      ],
+      "does_not_own": [
+        "Fiducia topology policy",
+        "product authorization",
+        "product ingress policy"
+      ]
+    },
+    "zed-pkg": {
+      "owns": [
+        "immutable cross-language package graph",
+        "lockfiles",
+        "content-addressed artifacts",
+        "native-registry mirrors"
+      ],
+      "does_not_own": [
+        "runtime service discovery",
+        "moving-branch production dependencies"
+      ]
+    },
+    "declarative-migrations": {
+      "owns": [
+        "database desired-state diff, review, verification, and guarded apply tooling"
+      ],
+      "does_not_own": [
+        "automatic destructive approval",
+        "application domain schema decisions"
+      ]
+    },
+    "ORESoftware/mcp-rust-libs": {
+      "owns": [
+        "MCP transport hardening",
+        "bounded IO",
+        "process handling",
+        "redaction",
+        "conformance"
+      ],
+      "does_not_own": [
+        "product credentials",
+        "product authorization",
+        "domain mutations"
+      ]
+    }
+  },
+  "observability": {
+    "backends": [
+      "OpenTelemetry Collector",
+      "Prometheus",
+      "Grafana",
+      "Loki",
+      "Tempo or Jaeger"
+    ],
+    "instrumentation": "explicit process and platform boundary instrumentation; no runtime monkey-patching",
+    "required_resource_attributes": [
+      "service.name",
+      "service.namespace",
+      "service.version",
+      "deployment.environment",
+      "deployment.region",
+      "k8s.cluster.name",
+      "k8s.namespace.name",
+      "product.name",
+      "component.role",
+      "git.commit.sha"
+    ],
+    "trace_propagation": "W3C trace-context across HTTP, NATS, WebSocket, MCP, child processes, and provider calls",
+    "high_cardinality_metric_or_log_labels_forbidden": [
+      "user_id",
+      "tenant_id",
+      "message_id",
+      "audio_id",
+      "task_id",
+      "file_name",
+      "email",
+      "phone"
+    ],
+    "sensitive_payloads_forbidden": [
+      "raw messages",
+      "raw audio",
+      "access or refresh tokens",
+      "provider response bodies",
+      "email addresses",
+      "phone numbers",
+      "RTMP stream keys",
+      "raw prompts",
+      "model outputs",
+      "health observations",
+      "biometric templates"
+    ],
+    "audit_separation": "security, consent, ledger, administrative, fencing, device-command, deletion, and key-rotation records use an append-only audit store separate from operational logs"
+  },
+  "deployment": {
+    "gitops": {
+      "cluster_repo_owns": [
+        "registration",
+        "tenancy",
+        "cluster-scoped resources"
+      ],
+      "app_repo_owns": [
+        "namespace-scoped workloads"
+      ],
+      "infra_repo_owns": [
+        "external cloud resources"
+      ]
+    },
+    "artifact_promotion": "build once, test the exact artifact, generate SBOM and provenance, sign, and promote by immutable digest",
+    "environments": [
+      "local",
+      "development",
+      "staging",
+      "production",
+      "ephemeral-pull-request"
+    ],
+    "production_isolation": [
+      "per-product namespace",
+      "RBAC",
+      "quota",
+      "network policy",
+      "secrets prefix",
+      "database role",
+      "NATS permissions"
+    ],
+    "database_migrations": "desired-state owned by the interface/schema authority; reviewed migration job runs before incompatible code; destructive SQL is never auto-approved",
+    "special_placement": {
+      "fiducia_raft": "dedicated multi-cloud topology",
+      "media": "bandwidth and latency aware TURN/SFU/recording/relay pools",
+      "gpu": "dedicated GPU pools with model and data egress policy",
+      "drone_and_embedded": "device-local safety authority with signed, replay-protected cloud requests"
+    }
+  },
+  "organizations": [
+    {
+      "name": "ORESoftware",
+      "class": "platform",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "channelsiege",
+      "class": "reserved",
+      "lifecycle": "reserved",
+      "runtime_dependency_allowed": false,
+      "production_dependency_allowed": false
+    },
+    {
+      "name": "OmniBlitz",
+      "class": "reserved",
+      "lifecycle": "reserved",
+      "runtime_dependency_allowed": false,
+      "production_dependency_allowed": false
+    },
+    {
+      "name": "streamkore",
+      "class": "reserved",
+      "lifecycle": "reserved",
+      "runtime_dependency_allowed": false,
+      "production_dependency_allowed": false
+    },
+    {
+      "name": "hypeblitz",
+      "class": "reserved",
+      "lifecycle": "reserved",
+      "runtime_dependency_allowed": false,
+      "production_dependency_allowed": false
+    },
+    {
+      "name": "3FA-app",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "messaging-intel",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "akrion-sim",
+      "class": "research",
+      "lifecycle": "research",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": false
+    },
+    {
+      "name": "athlet-o",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "benefactor-cc",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "canonical-cloud",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "claritas-viz",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "cliptown",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "daedalus-fab",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "declarative-migrations",
+      "class": "platform",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "fiducia-cloud",
+      "class": "platform",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "anticaptrad",
+      "class": "product",
+      "lifecycle": "incubating",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "opto-sync",
+      "class": "platform",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "quaestor-ledger",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "sagitta-stack",
+      "class": "product",
+      "lifecycle": "incubating",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "shared-auth",
+      "class": "platform",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "scintilla-run",
+      "class": "platform",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "rust-ssr-demos",
+      "class": "research",
+      "lifecycle": "research",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": false
+    },
+    {
+      "name": "sonus-auris",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "usa-acc",
+      "class": "research",
+      "lifecycle": "research",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": false
+    },
+    {
+      "name": "voxletra",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "zed-pkg",
+      "class": "platform",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "zed-pkg-test",
+      "class": "test-fixture",
+      "lifecycle": "test",
+      "runtime_dependency_allowed": false,
+      "production_dependency_allowed": false
+    },
+    {
+      "name": "memebank",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "meta-agents-demo",
+      "class": "research",
+      "lifecycle": "research",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": false
+    },
+    {
+      "name": "networking-components",
+      "class": "platform",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "StreemPilot",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "unreal-unity-poc",
+      "class": "research",
+      "lifecycle": "research",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": false
+    },
+    {
+      "name": "file-tunnel",
+      "class": "platform",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "hypesiege",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "discrete-event-systems",
+      "class": "research",
+      "lifecycle": "research",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": false
+    },
+    {
+      "name": "drone-mngr",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    }
+  ]
+}
