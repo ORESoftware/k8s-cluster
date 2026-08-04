@@ -10,81 +10,66 @@ import {
   resolveSameOriginBuildTarget,
 } from "../scripts/deploy-contract.mjs";
 
-const verifyStepName = "Verify the exact production-root static site before publication";
-const buildStepName = "Build with Astro";
+const productionStepName = "Build and verify the exact production-root static site";
 const workflow = `
 env:
   PUBLIC_TOP_LEVEL: ignored
 jobs:
-  verify:
+  build:
     steps:
       - name: Other step
         env:
           PUBLIC_UNRELATED: ignored
         run: npm test
-      - name: ${verifyStepName}
+      - name: ${productionStepName}
         run: npm run check
-        env:
-          PUBLIC_REAL_ONE: value-one
-          PUBLIC_REAL_TWO: value-two
-  build:
-    steps:
-      - name: ${buildStepName}
-        uses: withastro/action@immutable
         env:
           # A comment inside the target map is allowed.
           PUBLIC_REAL_ONE: value-one
           PUBLIC_REAL_TWO: value-two
-        with:
-          node-version: 22
       - name: Later step
         env:
           PUBLIC_TOO_LATE: ignored
         run: echo done
 `;
 
-test("PUBLIC variables are scoped to the uniquely named Astro build step", () => {
+test("PUBLIC variables are scoped to the uniquely named production build step", () => {
   assert.deepEqual(
-    [...publicEnvKeysForNamedStep(workflow, buildStepName)].sort(),
+    [...publicEnvKeysForNamedStep(workflow, productionStepName)].sort(),
     ["PUBLIC_REAL_ONE", "PUBLIC_REAL_TWO"],
   );
-});
-
-test("verify and build environments can be compared by exact key and value", () => {
   assert.deepEqual(
-    [...publicEnvForNamedStep(workflow, verifyStepName).entries()].sort(),
-    [...publicEnvForNamedStep(workflow, buildStepName).entries()].sort(),
-  );
-
-  const drifted = workflow.replace(
-    "          PUBLIC_REAL_TWO: value-two\n        with:",
-    "          PUBLIC_REAL_TWO: wrong-value\n        with:",
-  );
-  assert.notDeepEqual(
-    [...publicEnvForNamedStep(drifted, verifyStepName).entries()].sort(),
-    [...publicEnvForNamedStep(drifted, buildStepName).entries()].sort(),
+    [...publicEnvForNamedStep(workflow, productionStepName).entries()].sort(),
+    [
+      ["PUBLIC_REAL_ONE", "value-one"],
+      ["PUBLIC_REAL_TWO", "value-two"],
+    ],
   );
 });
 
-test("an unrelated step cannot satisfy the Astro env contract", () => {
-  const buildEnv = [
+test("an unrelated step cannot satisfy the production env contract", () => {
+  const targetBlock = [
     "          PUBLIC_REAL_ONE: value-one",
     "          PUBLIC_REAL_TWO: value-two",
-    "        with:",
+    "      - name: Later step",
   ].join("\n");
-  assert.ok(workflow.includes(buildEnv), "fixture must contain the intended build env block");
+  assert.ok(workflow.includes(targetBlock), "fixture must contain the intended production env block");
   const withoutRealOne = workflow.replace(
-    buildEnv,
-    ["          PUBLIC_REAL_TWO: value-two", "        with:"].join("\n"),
+    targetBlock,
+    ["          PUBLIC_REAL_TWO: value-two", "      - name: Later step"].join("\n"),
   );
-  const keys = publicEnvKeysForNamedStep(withoutRealOne, buildStepName);
+  const keys = publicEnvKeysForNamedStep(withoutRealOne, productionStepName);
   assert.equal(keys.has("PUBLIC_REAL_ONE"), false);
   assert.equal(keys.has("PUBLIC_UNRELATED"), false);
 });
 
-test("duplicate or missing named steps fail closed", () => {
+test("duplicate or missing production steps fail closed", () => {
   assert.throws(
-    () => publicEnvKeysForNamedStep(`${workflow}\n      - name: ${buildStepName}\n        env:\n          PUBLIC_DUPLICATE: value\n`, buildStepName),
+    () =>
+      publicEnvKeysForNamedStep(
+        `${workflow}\n      - name: ${productionStepName}\n        env:\n          PUBLIC_DUPLICATE: value\n`,
+        productionStepName,
+      ),
     /exactly one workflow step/,
   );
   assert.throws(
@@ -95,11 +80,11 @@ test("duplicate or missing named steps fail closed", () => {
 
 test("duplicate PUBLIC keys fail closed", () => {
   const duplicate = workflow.replace(
-    "          PUBLIC_REAL_TWO: value-two\n        with:",
-    "          PUBLIC_REAL_ONE: duplicate\n        with:",
+    "          PUBLIC_REAL_TWO: value-two\n      - name: Later step",
+    "          PUBLIC_REAL_ONE: duplicate\n      - name: Later step",
   );
   assert.throws(
-    () => publicEnvForNamedStep(duplicate, buildStepName),
+    () => publicEnvForNamedStep(duplicate, productionStepName),
     /duplicate environment key PUBLIC_REAL_ONE/,
   );
 });
@@ -108,16 +93,16 @@ test("missing or inline env maps fail closed", () => {
   assert.throws(
     () =>
       publicEnvKeysForNamedStep(
-        "jobs:\n  build:\n    steps:\n      - name: Build with Astro\n        run: npm run build\n",
-        buildStepName,
+        `jobs:\n  build:\n    steps:\n      - name: ${productionStepName}\n        run: npm run check\n`,
+        productionStepName,
       ),
     /block-style env map/,
   );
   assert.throws(
     () =>
       publicEnvKeysForNamedStep(
-        "jobs:\n  build:\n    steps:\n      - name: Build with Astro\n        env: { PUBLIC_INLINE: value }\n",
-        buildStepName,
+        `jobs:\n  build:\n    steps:\n      - name: ${productionStepName}\n        env: { PUBLIC_INLINE: value }\n`,
+        productionStepName,
       ),
     /block-style env map/,
   );

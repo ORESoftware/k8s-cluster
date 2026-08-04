@@ -13,6 +13,9 @@ on:
 permissions:
   contents: read
 
+env:
+  ASTRO_TELEMETRY_DISABLED: "1"
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -35,8 +38,19 @@ jobs:
         run: npm ci
       - name: Reject high or critical npm advisories
         run: npm audit --audit-level=high
-      - name: Build and verify generated legal, download, metadata, and link surfaces
+      - name: Build and verify generated legal, download, metadata, link, and security surfaces
         run: npm run check
+      - name: Upload failed generated-site evidence
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: site-ci-failure-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            dist/
+            npm-debug.log*
+          if-no-files-found: ignore
+          include-hidden-files: true
+          retention-days: 14
 
   browser-tests:
     name: Browser tests (Chromium)
@@ -77,7 +91,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
-          name: playwright-failure-artifacts
+          name: playwright-failure-artifacts-${{ github.sha }}-${{ github.run_attempt }}
           path: |
             playwright-report/
             test-results/

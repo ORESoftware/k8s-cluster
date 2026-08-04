@@ -156,30 +156,37 @@ for (const file of htmlFiles) {
   }
 }
 
-// Astro inlines PUBLIC_* variables at build time, so one the deploy workflow
-// forgets to forward does not error — the component silently renders its
-// unconfigured fallback and the site ships with dead CTAs. Scope the contract
-// to the uniquely named verification and build steps. Their exact key/value
-// maps must remain identical, and both must cover every variable read by src/.
+// Astro inlines PUBLIC_* variables at build time, so a value the deployment
+// workflow forgets does not error — the component silently renders its
+// unconfigured fallback and the site ships dead CTAs. The release workflow now
+// has exactly one framework build; scope the variable contract to that uniquely
+// named step and reject any return of a second Astro action/build path.
 const deployWorkflow = path.resolve(".github/workflows/deploy.yml");
 const envExample = path.resolve(".env.example");
 assert.ok(existsSync(deployWorkflow), ".github/workflows/deploy.yml is missing");
 assert.ok(existsSync(envExample), ".env.example is missing");
 
 const workflow = readFileSync(deployWorkflow, "utf8");
-const buildEnvironment = publicEnvForNamedStep(workflow, "Build with Astro");
-const verifyEnvironment = publicEnvForNamedStep(
+const productionEnvironment = publicEnvForNamedStep(
   workflow,
-  "Verify the exact production-root static site before publication",
+  "Build and verify the exact production-root static site",
 );
-const sortEntries = (entries) => [...entries].sort(([left], [right]) => left.localeCompare(right));
-assert.deepEqual(
-  sortEntries(verifyEnvironment.entries()),
-  sortEntries(buildEnvironment.entries()),
-  "deploy verify and build steps must use identical PUBLIC_* key/value mappings",
+assert.equal(
+  (workflow.match(/\bnpm run check\b/g) ?? []).length,
+  1,
+  "deploy workflow must run exactly one production framework build and verification path",
+);
+assert.equal(
+  (workflow.match(/\bnpm run evidence:pages\b/g) ?? []).length,
+  1,
+  "deploy workflow must seal the verified Pages tree exactly once",
+);
+assert.ok(
+  !workflow.includes("withastro/action@"),
+  "deploy workflow must not rebuild after verification with withastro/action",
 );
 
-const forwarded = new Set(buildEnvironment.keys());
+const forwarded = new Set(productionEnvironment.keys());
 const documented = publicKeysFromDotenv(readFileSync(envExample, "utf8"));
 const srcDir = path.resolve("src");
 const referenced = new Set();
@@ -194,8 +201,8 @@ const missingFromWorkflow = [...referenced].filter((name) => !forwarded.has(name
 assert.deepEqual(
   missingFromWorkflow,
   [],
-  `.github/workflows/deploy.yml does not forward ${missingFromWorkflow.join(", ")} in both ` +
-    "production build paths. src/ reads these, so production would render an unconfigured fallback.",
+  `.github/workflows/deploy.yml does not forward ${missingFromWorkflow.join(", ")} in the ` +
+    "single production build. src/ reads these, so production would render an unconfigured fallback.",
 );
 
 const unreferencedWorkflowKeys = [...forwarded].filter((name) => !referenced.has(name)).sort();
