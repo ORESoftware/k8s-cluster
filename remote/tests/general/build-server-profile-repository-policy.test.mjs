@@ -50,8 +50,8 @@ test('exact policy overrides broad prefix fallback and rejects lookalikes', () =
     'k8s-cluster.git-evil',
     'k8s-cluster-extra.git',
     'git@github.com:ORESoftware/k8s-cluster.git',
-    'exact_rule_compile_rejects_query_injection',
-    'exact_rule_compile_rejects_fragment_injection',
+    'exact_repository_validation_rejects_query_injection',
+    'exact_repository_validation_rejects_fragment_injection',
     'profile_name_validation_rejects_separator_injection',
   ]) {
     assert.ok(policy.includes(evidence), `missing negative-policy evidence: ${evidence}`);
