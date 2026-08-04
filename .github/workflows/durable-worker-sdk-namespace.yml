@@ -126,6 +126,7 @@ jobs:
             case "$path" in
               .github/workflows/durable-worker-typescript-sdk.yml|\
               .github/workflows/durable-worker-typescript-sdk-repair.yml|\
+              .github/workflows/durable-worker-sdk-namespace.yml|\
               remote/tests/general/durable-worker-typescript-sdk.test.mjs|\
               remote/api-sdks/typescript/durable-worker/*|\
               remote/worker-sdks/*)
