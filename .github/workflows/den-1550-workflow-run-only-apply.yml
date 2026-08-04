@@ -46,6 +46,18 @@ jobs:
           python3 <<'PY'
           from pathlib import Path
 
+          def replace_once_or_already(text: str, old: str, new: str, label: str) -> str:
+              old_count = text.count(old)
+              new_count = text.count(new)
+              if old_count == 1:
+                  return text.replace(old, new, 1)
+              if old_count == 0 and new_count == 1:
+                  return text
+              raise SystemExit(
+                  f'{label}: expected one old form or one new form; '
+                  f'found old={old_count}, new={new_count}'
+              )
+
           main_path = Path('remote/deployments/gha-clone-server-rs/src/main.rs')
           source = main_path.read_text(encoding='utf-8')
           boundary = (
@@ -179,58 +191,111 @@ jobs:
 
           http_path = Path('remote/deployments/gha-clone-server-rs/tests/http_api.rs')
           http = http_path.read_text(encoding='utf-8')
-          old_short = '''    let (status, value) = response_json(response).await;
-              assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-              assert_eq!(value["error"], "webhook revision is not a full commit SHA");
-          '''.replace('      ', '')
-          new_short = '''    let (status, value) = response_json(response).await;
-              assert_eq!(status, StatusCode::ACCEPTED);
-              assert_eq!(value["accepted"], false);
-              assert_eq!(
-                  value["reason"],
-                  "only workflow_run events may trigger the failure fallback"
-              );
-          '''.replace('      ', '')
-          if old_short in http:
-              http = http.replace(old_short, new_short, 1)
-          elif new_short not in http:
-              raise SystemExit('http_api.rs did not contain the reviewed short-revision assertion')
 
-          old_rules = '''    let (status, value) = response_json(response).await;
-              assert_eq!(status, StatusCode::ACCEPTED);
-              assert_eq!(value["accepted"], false);
-              assert!(value["reason"]
-                  .as_str()
-                  .unwrap()
-                  .contains("no workflow mirror rules"));
-          '''.replace('      ', '')
-          new_rules = '''    let (status, value) = response_json(response).await;
-              assert_eq!(status, StatusCode::ACCEPTED);
-              assert_eq!(value["accepted"], false);
-              assert_eq!(
-                  value["reason"],
-                  "only workflow_run events may trigger the failure fallback"
-              );
-          '''.replace('      ', '')
-          if old_rules in http:
-              http = http.replace(old_rules, new_rules, 1)
-          elif http.count(new_rules) < 2:
-              raise SystemExit('http_api.rs did not contain the reviewed no-rules assertion')
+          old_unsupported = "\n".join([
+              '    let response = post_webhook(&client, &server, "issues", &unsupported, Some(&signature)).await;',
+              '    let (status, value) = response_json(response).await;',
+              '    assert_eq!(status, StatusCode::ACCEPTED);',
+              '    assert_eq!(value["accepted"], false);',
+          ])
+          new_unsupported = old_unsupported + "\n" + "\n".join([
+              '    assert_eq!(',
+              '        value["reason"],',
+              '        "only workflow_run events may trigger the failure fallback"',
+              '    );',
+          ])
+          http = replace_once_or_already(
+              http, old_unsupported, new_unsupported, 'unsupported-event assertion'
+          )
+
+          old_short = "\n".join([
+              '    let short_revision = serde_json::to_vec(&json!({',
+              '        "repository": { "full_name": REPOSITORY },',
+              '        "after": "abc123"',
+              '    }))',
+              '    .unwrap();',
+              '    let signature = webhook_signature(&short_revision);',
+              '    let response = post_webhook(&client, &server, "push", &short_revision, Some(&signature)).await;',
+          ])
+          new_short = "\n".join([
+              '    let short_revision = serde_json::to_vec(&json!({',
+              '        "repository": { "full_name": REPOSITORY },',
+              '        "workflow_run": { "head_sha": "abc123" }',
+              '    }))',
+              '    .unwrap();',
+              '    let signature = webhook_signature(&short_revision);',
+              '    let response = post_webhook(',
+              '        &client,',
+              '        &server,',
+              '        "workflow_run",',
+              '        &short_revision,',
+              '        Some(&signature),',
+              '    )',
+              '    .await;',
+          ])
+          http = replace_once_or_already(
+              http, old_short, new_short, 'workflow-run short revision fixture'
+          )
+
+          old_rules = "\n".join([
+              '    let no_rules = serde_json::to_vec(&json!({',
+              '        "repository": { "full_name": REPOSITORY },',
+              '        "after": REVISION',
+              '    }))',
+              '    .unwrap();',
+              '    let signature = webhook_signature(&no_rules);',
+              '    let response = post_webhook(&client, &server, "push", &no_rules, Some(&signature)).await;',
+          ])
+          new_rules = "\n".join([
+              '    let no_rules = serde_json::to_vec(&json!({',
+              '        "repository": { "full_name": REPOSITORY },',
+              '        "workflow_run": { "head_sha": REVISION }',
+              '    }))',
+              '    .unwrap();',
+              '    let signature = webhook_signature(&no_rules);',
+              '    let response = post_webhook(',
+              '        &client,',
+              '        &server,',
+              '        "workflow_run",',
+              '        &no_rules,',
+              '        Some(&signature),',
+              '    )',
+              '    .await;',
+          ])
+          http = replace_once_or_already(
+              http, old_rules, new_rules, 'workflow-run no-rules fixture'
+          )
           http_path.write_text(http, encoding='utf-8')
           PY
 
-      - name: Validate the focused change and full Rust target set
+      - name: Format and validate the focused change and full Rust target set
         shell: bash
         run: |
           set -euo pipefail
           cd remote/deployments/gha-clone-server-rs
-          cargo fmt --all -- --check
+          cargo fmt --all
           cargo test --locked --test webhook_e2e non_workflow_run_events_never_fetch_or_dispatch -- --nocapture
           cargo test --locked --test http_api webhook_guards_reject_bad_inputs_before_any_github_fetch -- --nocapture
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked --all-targets
           cd ../../..
           git diff --check
+          python3 <<'PY'
+          import subprocess
+          allowed = {
+              'remote/deployments/gha-clone-server-rs/src/main.rs',
+              'remote/deployments/gha-clone-server-rs/tests/http_api.rs',
+              'remote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs',
+          }
+          changed = set(
+              subprocess.check_output(['git', 'diff', '--name-only'], text=True).splitlines()
+          )
+          unexpected = changed - allowed
+          if unexpected:
+              raise SystemExit(f'unexpected formatted paths: {sorted(unexpected)}')
+          if changed != allowed:
+              raise SystemExit(f'expected exactly {sorted(allowed)}, found {sorted(changed)}')
+          PY
 
       - name: Commit only the validated product and test changes
         shell: bash
