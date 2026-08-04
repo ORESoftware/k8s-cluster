@@ -11,6 +11,7 @@ on:
       - 'remote/tests/pnpm-lock.yaml'
       - 'tools/google-chat-space-export/**'
       - 'remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs'
+      - 'remote/tests/general/slack-agent-command-workflow-contract.test.mjs'
   push:
     branches: [main]
     paths:
@@ -22,16 +23,8 @@ on:
       - 'remote/tests/pnpm-lock.yaml'
       - 'tools/google-chat-space-export/**'
       - 'remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs'
+      - 'remote/tests/general/slack-agent-command-workflow-contract.test.mjs'
   workflow_dispatch:
-    inputs:
-      bridge_ref:
-        description: ai-agent-bridge.rs branch, tag, or commit
-        required: false
-        default: agent/den-1041-ores-slash-commands
-      coordinator_ref:
-        description: ai-agent-coordinator.rs branch, tag, or commit
-        required: false
-        default: agent/den-1231-slack-run-envelope
 
 permissions:
   contents: read
@@ -79,7 +72,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ORESoftware/ai-agent-bridge.rs
-          ref: ${{ github.event_name == 'push' && 'main' || (inputs.bridge_ref || 'agent/den-1041-ores-slash-commands') }}
+          ref: 0ba7d2d4eb8c44583503d4567af2de1f73bc5598
           path: .e2e/bridge
           fetch-depth: 1
           persist-credentials: false
@@ -89,7 +82,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ORESoftware/ai-agent-coordinator.rs
-          ref: ${{ github.event_name == 'push' && 'main' || (inputs.coordinator_ref || 'agent/den-1231-slack-run-envelope') }}
+          ref: 7453280125ca1bfbc34375bea90647a661d2027d
           path: .e2e/coordinator
           fetch-depth: 1
           persist-credentials: false
@@ -136,11 +129,13 @@ jobs:
             tools/google-chat-space-export/test/import-plan.test.mjs \
             | tee "$RUNNER_TEMP/slack-command-e2e-results/google-chat-tests.tap"
 
-      - name: Run AI bridge Kubernetes contract
+      - name: Run AI bridge and workflow contracts
         run: |
           set -euo pipefail
-          node --test remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs \
-            | tee "$RUNNER_TEMP/slack-command-e2e-results/bridge-k8s-contract.tap"
+          node --test \
+            remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs \
+            remote/tests/general/slack-agent-command-workflow-contract.test.mjs \
+            | tee "$RUNNER_TEMP/slack-command-e2e-results/integration-contracts.tap"
 
       - name: Install pinned Chromium runtime
         working-directory: remote/tests
@@ -150,21 +145,25 @@ jobs:
             | tee "$RUNNER_TEMP/slack-command-e2e-results/playwright-version.txt"
           pnpm exec playwright install --with-deps chromium
 
-      - name: Record tested revisions
+      - name: Record and verify tested revisions
         env:
-          BRIDGE_REF: ${{ github.event_name == 'push' && 'main' || (inputs.bridge_ref || 'agent/den-1041-ores-slash-commands') }}
-          COORDINATOR_REF: ${{ github.event_name == 'push' && 'main' || (inputs.coordinator_ref || 'agent/den-1231-slack-run-envelope') }}
+          BRIDGE_REF: 0ba7d2d4eb8c44583503d4567af2de1f73bc5598
+          COORDINATOR_REF: 7453280125ca1bfbc34375bea90647a661d2027d
         run: |
           set -euo pipefail
+          bridge_commit="$(git -C .e2e/bridge rev-parse HEAD)"
+          coordinator_commit="$(git -C .e2e/coordinator rev-parse HEAD)"
+          test "$bridge_commit" = "$BRIDGE_REF"
+          test "$coordinator_commit" = "$COORDINATOR_REF"
           jq -n \
             --arg harness "$GITHUB_SHA" \
             --arg bridge_ref "$BRIDGE_REF" \
-            --arg bridge_commit "$(git -C .e2e/bridge rev-parse HEAD)" \
+            --arg bridge_commit "$bridge_commit" \
             --arg coordinator_ref "$COORDINATOR_REF" \
-            --arg coordinator_commit "$(git -C .e2e/coordinator rev-parse HEAD)" \
+            --arg coordinator_commit "$coordinator_commit" \
             --arg postgres_image "$POSTGRES_TEST_IMAGE" \
             '{
-              schema_version: 2,
+              schema_version: 3,
               harness_commit: $harness,
               bridge_ref: $bridge_ref,
               bridge_commit: $bridge_commit,
