@@ -1,10 +1,19 @@
-# One-shot workflow; removed after the validated source commit lands.
+# One-shot workflow; product workflow publication is completed through the GitHub connector.
 name: Finalize GHA clone parent formatting
 
 on:
   push:
     branches:
       - agent/msgint-gha-clone-operator-verify-20260804
+    paths:
+      - .github/workflows/finalize-gha-clone-parent-format.yml
+  pull_request:
+    branches:
+      - dev
+    types:
+      - opened
+      - synchronize
+      - reopened
     paths:
       - .github/workflows/finalize-gha-clone-parent-format.yml
 
@@ -17,7 +26,9 @@ concurrency:
 
 jobs:
   format:
-    if: github.actor != 'github-actions[bot]'
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name == 'push' || github.head_ref == 'agent/msgint-gha-clone-operator-verify-20260804')
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
@@ -93,16 +104,23 @@ jobs:
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked --all-targets -- --nocapture
 
-      - name: Remove the one-shot workflow and commit validated changes
+      - name: Validate the revised continuity workflow
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/gha-clone-server.yml
+
+      - name: Commit only validated Rust changes
         run: |
           set -euo pipefail
-          git rm .github/workflows/finalize-gha-clone-parent-format.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
-            .github/workflows/gha-clone-server.yml \
             remote/deployments/gha-clone-server-rs/src/lib.rs \
             remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs
           git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "No Rust formatting or review-pin change was produced" >&2
+            exit 1
+          fi
           git commit -m "test(gha-clone): validate current Messaging Intel review head"
           git push origin HEAD:agent/msgint-gha-clone-operator-verify-20260804
