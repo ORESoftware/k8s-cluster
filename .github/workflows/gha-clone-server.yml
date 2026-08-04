@@ -263,6 +263,74 @@ jobs:
             exit 1
           fi
 
+  parent-format:
+    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'agent/msgint-gha-clone-operator-verify-20260804' }}
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out the live parent branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/msgint-gha-clone-operator-verify-20260804
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+      - name: Pin the tested Messaging Intel revision and format the crate
+        env:
+          OLD_MSGINT_REVISION: 7d905806b2000479bdacb9b206f33b26a707ba5e
+          NEW_MSGINT_REVISION: 952623b07fd83caa3a83ee27bdea293f6bd4372f
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import os
+          from pathlib import Path
+
+          path = Path('remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs')
+          text = path.read_text(encoding='utf-8')
+          old = os.environ['OLD_MSGINT_REVISION']
+          new = os.environ['NEW_MSGINT_REVISION']
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one old Messaging Intel revision pin')
+          if new in text:
+              raise SystemExit('new Messaging Intel revision already exists beside old pin')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all
+      - name: Keep the generated change inside the audited two-file boundary
+        run: |
+          set -euo pipefail
+          actual="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' \
+            remote/deployments/gha-clone-server-rs/src/lib.rs \
+            remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs \
+            | sort)"
+          if [ "$actual" != "$expected" ]; then
+            printf 'unexpected parent-format drift:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+      - name: Recheck formatting, reject warnings, and run every target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+      - name: Commit the validated Rust baseline
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            remote/deployments/gha-clone-server-rs/src/lib.rs \
+            remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs
+          git diff --cached --check
+          git commit -m "test(gha-clone): validate current Messaging Intel review head"
+          git push origin HEAD:agent/msgint-gha-clone-operator-verify-20260804
+
   arc-parity-smoke:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_arc_smoke }}
     runs-on: [self-hosted, linux, sonus-ci]
