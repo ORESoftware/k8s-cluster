@@ -1,12 +1,13 @@
 //! Broker command-line flag reconciliation.
 //!
 //! The broker keeps the existing `LMX_*` environment contract as its runtime
-//! configuration API. CLI flags are parsed through the native `flags2env`
-//! parser and reconciled into that same env-shaped map, with CLI values taking
-//! precedence over process environment values.
+//! configuration API. CLI flags are parsed through the statically linked
+//! `flags2env` parser and reconciled into that same env-shaped map, with CLI
+//! values taking precedence over process environment values.
 
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
+use std::fs::File;
 use std::os::raw::{c_char, c_int};
 use std::path::{Path, PathBuf};
 
@@ -14,6 +15,7 @@ pub const CLI_FLAGS_CONFIG_ENV: &str = "LMX_CLI_FLAGS_CONFIG";
 pub const CLI_FLAGS_FILE_NAME: &str = ".cli-flags.toml";
 pub const DEFAULT_ETC_CLI_FLAGS_CONFIG_PATH: &str = "/etc/dd-rust-network-mutex/.cli-flags.toml";
 
+const PACKAGE_SHARE_DIR: &str = "dd-rust-network-mutex";
 const PARSE_ERRORS_ENV: &str = "LMX_CLI_PARSE_ERRORS";
 const POSITIONALS_ENV: &str = "LMX_CLI_POSITIONALS";
 const UNKNOWN_OPTIONS_ENV: &str = "LMX_CLI_UNKNOWN_OPTIONS";
@@ -52,42 +54,45 @@ pub struct BrokerCliHelp {
 
 #[derive(Debug, thiserror::Error)]
 pub enum CliFlagError {
-    #[error("failed to serialize broker argv for flags2env: {source}")]
-    ArgsJson { source: serde_json::Error },
-    #[error(
-        "failed to parse flags2env JSON output while {operation}: {source}; raw output: {raw}"
-    )]
+    #[error("failed to serialize broker argv for flags2env")]
+    ArgsJson {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("failed to parse flags2env JSON output while {operation}")]
     NativeJson {
         operation: &'static str,
-        raw: String,
+        #[source]
         source: serde_json::Error,
     },
-    #[error("failed to parse flags2env metadata env {key}: {source}; value: {value}")]
+    #[error("failed to parse flags2env metadata env {key}")]
     MetadataJson {
         key: &'static str,
-        value: String,
+        #[source]
         source: serde_json::Error,
     },
-    #[error("broker CLI config path is not valid UTF-8: {path:?}")]
-    NonUtf8ConfigPath { path: PathBuf },
-    #[error("broker CLI config path contains an interior NUL byte: {path:?}")]
-    ConfigPathNul { path: PathBuf },
-    #[error("broker CLI command name contains an interior NUL byte: {value:?}")]
-    CommandNameNul { value: String },
+    #[error("broker CLI config path is not valid UTF-8")]
+    NonUtf8ConfigPath,
+    #[error("broker CLI config path contains an interior NUL byte")]
+    ConfigPathNul,
+    #[error("broker CLI command name contains an interior NUL byte")]
+    CommandNameNul,
     #[error("flags2env returned a null pointer while {operation}")]
     NativeNull { operation: &'static str },
     #[error(
-        "no .cli-flags.toml found for broker CLI arguments; set LMX_CLI_FLAGS_CONFIG or install /etc/dd-rust-network-mutex/.cli-flags.toml"
+        "no reviewed broker CLI contract found; set LMX_CLI_FLAGS_CONFIG to an absolute readable file or install the package-owned contract"
     )]
     MissingConfig,
-    #[error("broker CLI flags config path does not exist: {path:?}")]
-    MissingConfigPath { path: PathBuf },
-    #[error("invalid broker CLI flag value(s): {0}")]
-    ParseErrors(String),
-    #[error("unknown broker CLI option(s): {0}")]
-    UnknownOptions(String),
-    #[error("unexpected broker positional argument(s): {0}")]
-    Positionals(String),
+    #[error("LMX_CLI_FLAGS_CONFIG must be an absolute path")]
+    ExplicitConfigMustBeAbsolute,
+    #[error("LMX_CLI_FLAGS_CONFIG does not name a readable regular file")]
+    ExplicitConfigUnreadable,
+    #[error("invalid broker CLI flag value(s) (count: {count})")]
+    ParseErrors { count: usize },
+    #[error("unknown broker CLI option(s) (count: {count})")]
+    UnknownOptions { count: usize },
+    #[error("unexpected broker positional argument(s) (count: {count})")]
+    Positionals { count: usize },
 }
 
 impl BrokerCliEnv {
@@ -143,9 +148,9 @@ where
         .collect::<BTreeMap<_, _>>();
 
     let user_args = args.iter().skip(1).cloned().collect::<Vec<_>>();
-    let config_path = resolve_cli_flags_config_path(&process_env);
+    let config_path = resolve_cli_flags_config_path(&process_env)?;
 
-    if config_path.is_none() {
+    let Some(config_path) = config_path else {
         if user_args.is_empty() {
             return Ok(BrokerCliConfig::Run(BrokerCliEnv {
                 merged_env: process_env,
@@ -154,13 +159,9 @@ where
             }));
         }
         return Err(CliFlagError::MissingConfig);
-    }
+    };
 
-    let config_path = config_path.expect("checked above");
-    if !config_path.exists() {
-        return Err(CliFlagError::MissingConfigPath { path: config_path });
-    }
-    if args.iter().any(|arg| arg == "--help") {
+    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         return Ok(BrokerCliConfig::Help(BrokerCliHelp {
             table: render_help_table(&config_path, command_name(&args)?)?,
             source_path: config_path,
@@ -182,42 +183,67 @@ where
     }))
 }
 
-fn resolve_cli_flags_config_path(env: &BTreeMap<String, String>) -> Option<PathBuf> {
-    if let Some(path) = env
+fn resolve_cli_flags_config_path(
+    env: &BTreeMap<String, String>,
+) -> Result<Option<PathBuf>, CliFlagError> {
+    let explicit = env
         .get(CLI_FLAGS_CONFIG_ENV)
-        .map(|v| v.trim())
-        .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
-    {
-        return Some(path);
-    }
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from);
+    let executable = std::env::current_exe().ok();
+    let implicit_candidates = vec![
+        PathBuf::from(DEFAULT_ETC_CLI_FLAGS_CONFIG_PATH),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(CLI_FLAGS_FILE_NAME),
+    ];
 
-    find_upward_cli_flags_config().or_else(|| existing_path(DEFAULT_ETC_CLI_FLAGS_CONFIG_PATH))
+    resolve_cli_flags_config_path_from(explicit, executable, implicit_candidates)
 }
 
-fn find_upward_cli_flags_config() -> Option<PathBuf> {
-    let mut dir = std::env::current_dir().ok()?;
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-
-    loop {
-        if home.as_ref().is_some_and(|home| home == &dir) {
-            return None;
-        }
-
-        let candidate = dir.join(CLI_FLAGS_FILE_NAME);
-        if candidate.exists() {
-            return Some(candidate);
-        }
-
-        if !dir.pop() {
-            return None;
-        }
+fn resolve_cli_flags_config_path_from(
+    explicit: Option<PathBuf>,
+    executable: Option<PathBuf>,
+    implicit_candidates: Vec<PathBuf>,
+) -> Result<Option<PathBuf>, CliFlagError> {
+    if let Some(path) = explicit {
+        return validate_explicit_config(path).map(Some);
     }
+
+    let mut candidates = Vec::new();
+    if let Some(parent) = executable.as_deref().and_then(Path::parent) {
+        candidates.push(
+            parent
+                .join("..")
+                .join("share")
+                .join(PACKAGE_SHARE_DIR)
+                .join(CLI_FLAGS_FILE_NAME),
+        );
+        candidates.push(parent.join(CLI_FLAGS_FILE_NAME));
+    }
+    candidates.extend(implicit_candidates);
+
+    Ok(candidates
+        .into_iter()
+        .find_map(|candidate| trusted_regular_file(&candidate)))
 }
 
-fn existing_path(path: &str) -> Option<PathBuf> {
-    let path = PathBuf::from(path);
-    path.exists().then_some(path)
+fn validate_explicit_config(path: PathBuf) -> Result<PathBuf, CliFlagError> {
+    if !path.is_absolute() {
+        return Err(CliFlagError::ExplicitConfigMustBeAbsolute);
+    }
+    trusted_regular_file(&path).ok_or(CliFlagError::ExplicitConfigUnreadable)
+}
+
+fn trusted_regular_file(path: &Path) -> Option<PathBuf> {
+    if !path.is_absolute() {
+        return None;
+    }
+    let canonical = path.canonicalize().ok()?;
+    if !canonical.metadata().ok()?.is_file() {
+        return None;
+    }
+    File::open(&canonical).ok()?;
+    Some(canonical)
 }
 
 fn parse_cli_overrides(
@@ -237,17 +263,13 @@ fn parse_cli_overrides(
 
     serde_json::from_str(&raw).map_err(|source| CliFlagError::NativeJson {
         operation: "parsing broker CLI flags",
-        raw,
         source,
     })
 }
 
 fn render_help_table(config_path: &Path, command_name: String) -> Result<String, CliFlagError> {
     let config_path = cstring_path(config_path)?;
-    let command_name =
-        CString::new(command_name.clone()).map_err(|_| CliFlagError::CommandNameNul {
-            value: command_name,
-        })?;
+    let command_name = CString::new(command_name).map_err(|_| CliFlagError::CommandNameNul)?;
     let columns = terminal_columns();
     unsafe {
         take_owned_c_string(
@@ -265,13 +287,19 @@ fn validate_parser_metadata(
     let positionals = take_json_array(cli_overrides, POSITIONALS_ENV)?;
 
     if !parse_errors.is_empty() {
-        return Err(CliFlagError::ParseErrors(format_items(&parse_errors)));
+        return Err(CliFlagError::ParseErrors {
+            count: parse_errors.len(),
+        });
     }
     if !unknown_options.is_empty() {
-        return Err(CliFlagError::UnknownOptions(format_items(&unknown_options)));
+        return Err(CliFlagError::UnknownOptions {
+            count: unknown_options.len(),
+        });
     }
     if !positionals.is_empty() {
-        return Err(CliFlagError::Positionals(format_items(&positionals)));
+        return Err(CliFlagError::Positionals {
+            count: positionals.len(),
+        });
     }
 
     Ok(())
@@ -285,18 +313,12 @@ fn take_json_array(
         return Ok(Vec::new());
     };
 
-    serde_json::from_str(&value).map_err(|source| CliFlagError::MetadataJson { key, value, source })
+    serde_json::from_str(&value).map_err(|source| CliFlagError::MetadataJson { key, source })
 }
 
 fn cstring_path(path: &Path) -> Result<CString, CliFlagError> {
-    let value = path
-        .to_str()
-        .ok_or_else(|| CliFlagError::NonUtf8ConfigPath {
-            path: path.to_path_buf(),
-        })?;
-    CString::new(value).map_err(|_| CliFlagError::ConfigPathNul {
-        path: path.to_path_buf(),
-    })
+    let value = path.to_str().ok_or(CliFlagError::NonUtf8ConfigPath)?;
+    CString::new(value).map_err(|_| CliFlagError::ConfigPathNul)
 }
 
 unsafe fn take_owned_c_string(
@@ -332,18 +354,64 @@ fn command_name(args: &[String]) -> Result<String, CliFlagError> {
         .unwrap_or(raw)
         .to_string();
     if name.contains('\0') {
-        return Err(CliFlagError::CommandNameNul { value: name });
+        return Err(CliFlagError::CommandNameNul);
     }
     Ok(name)
-}
-
-fn format_items(items: &[String]) -> String {
-    items.join(", ")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    const SOURCE: &str = include_str!("cli_flags.rs");
+
+    struct TestTree(PathBuf);
+
+    impl TestTree {
+        fn new(name: &str) -> Self {
+            let nonce = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "live-mutex-cli-flags-{name}-{}-{nonce}",
+                std::process::id()
+            ));
+            fs::create_dir_all(&path).expect("create test tree");
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TestTree {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn write_contract(path: &Path) {
+        fs::create_dir_all(path.parent().expect("contract parent"))
+            .expect("create contract parent");
+        fs::write(
+            path,
+            r#"
+[parse]
+unknown_options_env = "LMX_CLI_UNKNOWN_OPTIONS"
+errors_env = "LMX_CLI_PARSE_ERRORS"
+
+[flags.tcp_port]
+env = "LMX_TCP_PORT"
+aliases = ["tcp-port"]
+type = "integer"
+"#,
+        )
+        .expect("write contract");
+    }
 
     fn manifest_cli_config() -> String {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -395,7 +463,7 @@ mod tests {
     fn env_values_remain_when_cli_omits_them() {
         let cfg = load_broker_cli_config_from(
             vec!["dd-rust-network-mutex".into()],
-            env_with_manifest_config(&[("LMX_HTTP_PORT", "7971")]),
+            env_with_manifest_config(&[("LMX_HTTP_PORT", "6971")]),
         )
         .expect("cli config");
 
@@ -403,53 +471,182 @@ mod tests {
             panic!("expected run config");
         };
 
-        assert_eq!(env.get("LMX_HTTP_PORT"), Some("7971"));
+        assert_eq!(env.get("LMX_HTTP_PORT"), Some("6971"));
         assert!(env.cli_overrides().is_empty());
     }
 
     #[test]
-    fn unknown_options_are_rejected() {
+    fn unknown_options_are_rejected_without_echoing_values() {
+        let rejected = "postgres://runtime-secret@redacted.invalid/lmx";
         let err = load_broker_cli_config_from(
-            vec!["dd-rust-network-mutex".into(), "--not-a-real-flag".into()],
+            vec![
+                "dd-rust-network-mutex".into(),
+                format!("--not-a-real-flag={rejected}"),
+            ],
             env_with_manifest_config(&[]),
         )
         .expect_err("unknown flag should fail");
 
-        assert!(matches!(err, CliFlagError::UnknownOptions(_)));
+        assert!(matches!(
+            &err,
+            CliFlagError::UnknownOptions { count } if *count > 0
+        ));
+        assert!(!err.to_string().contains(rejected));
+        assert!(!err.to_string().contains("runtime-secret"));
     }
 
     #[test]
-    fn invalid_typed_values_are_rejected() {
+    fn invalid_typed_values_are_rejected_without_echoing_values() {
+        let rejected = "not-a-port-runtime-secret";
         let err = load_broker_cli_config_from(
             vec![
                 "dd-rust-network-mutex".into(),
                 "--tcp-port".into(),
-                "not-a-port".into(),
+                rejected.into(),
             ],
             env_with_manifest_config(&[]),
         )
         .expect_err("invalid integer flag should fail");
 
-        assert!(matches!(err, CliFlagError::ParseErrors(_)));
+        assert!(matches!(
+            &err,
+            CliFlagError::ParseErrors { count } if *count > 0
+        ));
+        assert!(!err.to_string().contains(rejected));
+        assert!(!err.to_string().contains("runtime-secret"));
     }
 
     #[test]
-    fn explicit_missing_cli_flags_config_is_rejected() {
+    fn explicit_missing_cli_flags_config_is_rejected_without_path_echo() {
         let missing = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("target/definitely-missing-cli-flags.toml")
+            .join("target/definitely-missing-runtime-secret.toml")
             .to_string_lossy()
             .into_owned();
         let err = load_broker_cli_config_from(
             vec![
                 "dd-rust-network-mutex".into(),
                 "--tcp-port".into(),
-                "7970".into(),
+                "6970".into(),
             ],
-            vec![(CLI_FLAGS_CONFIG_ENV.to_string(), missing)],
+            vec![(CLI_FLAGS_CONFIG_ENV.to_string(), missing.clone())],
         )
         .expect_err("missing explicit config should fail");
 
-        assert!(matches!(err, CliFlagError::MissingConfigPath { .. }));
+        assert!(matches!(err, CliFlagError::ExplicitConfigUnreadable));
+        let display = CliFlagError::ExplicitConfigUnreadable.to_string();
+        assert!(!display.contains(&missing));
+        assert!(!display.contains("runtime-secret"));
+    }
+
+    #[test]
+    fn relative_explicit_cli_flags_config_fails_closed() {
+        let err = load_broker_cli_config_from(
+            vec!["dd-rust-network-mutex".into(), "--help".into()],
+            vec![(
+                CLI_FLAGS_CONFIG_ENV.to_string(),
+                "attacker-runtime-secret.toml".to_string(),
+            )],
+        )
+        .expect_err("relative explicit config should fail");
+
+        assert!(matches!(err, CliFlagError::ExplicitConfigMustBeAbsolute));
+        let display = CliFlagError::ExplicitConfigMustBeAbsolute.to_string();
+        assert!(!display.contains("attacker-runtime-secret.toml"));
+        assert!(!display.contains("runtime-secret"));
+    }
+
+    #[test]
+    fn explicit_selector_wins_and_never_falls_through() {
+        let tree = TestTree::new("explicit-precedence");
+        let source = tree.path().join("source/.cli-flags.toml");
+        write_contract(&source);
+
+        let err = resolve_cli_flags_config_path_from(
+            Some(PathBuf::from("relative.toml")),
+            None,
+            vec![source],
+        )
+        .expect_err("invalid explicit selector must not fall through");
+        assert!(matches!(err, CliFlagError::ExplicitConfigMustBeAbsolute));
+    }
+
+    #[test]
+    fn packaged_share_contract_beats_colocated_and_fixed_contracts() {
+        let tree = TestTree::new("package-order");
+        let executable = tree.path().join("install/bin/dd-rust-network-mutex");
+        fs::create_dir_all(executable.parent().expect("executable parent"))
+            .expect("create executable parent");
+        let packaged = tree
+            .path()
+            .join("install/share/dd-rust-network-mutex/.cli-flags.toml");
+        let colocated = tree.path().join("install/bin/.cli-flags.toml");
+        let fixed = tree.path().join("etc/.cli-flags.toml");
+        write_contract(&packaged);
+        write_contract(&colocated);
+        write_contract(&fixed);
+
+        let resolved = resolve_cli_flags_config_path_from(
+            None,
+            Some(executable),
+            vec![fixed],
+        )
+        .expect("trusted candidates")
+        .expect("packaged contract");
+        assert_eq!(
+            resolved,
+            packaged.canonicalize().expect("canonical packaged contract")
+        );
+    }
+
+    #[test]
+    fn fixed_or_source_owned_contracts_remain_supported() {
+        let tree = TestTree::new("fixed-source");
+        let fixed = tree.path().join("etc/.cli-flags.toml");
+        let source = tree.path().join("source/.cli-flags.toml");
+        write_contract(&fixed);
+        write_contract(&source);
+
+        let resolved = resolve_cli_flags_config_path_from(
+            None,
+            None,
+            vec![fixed.clone(), source],
+        )
+        .expect("trusted candidates")
+        .expect("fixed contract");
+        assert_eq!(
+            resolved,
+            fixed.canonicalize().expect("canonical fixed contract")
+        );
+    }
+
+    #[test]
+    fn unrelated_working_directory_contract_is_never_a_candidate() {
+        let tree = TestTree::new("hostile-cwd");
+        let attacker = tree.path().join("attacker/.cli-flags.toml");
+        let executable = tree.path().join("install/bin/dd-rust-network-mutex");
+        let packaged = tree
+            .path()
+            .join("install/share/dd-rust-network-mutex/.cli-flags.toml");
+        fs::create_dir_all(executable.parent().expect("executable parent"))
+            .expect("create executable parent");
+        write_contract(&attacker);
+        write_contract(&packaged);
+
+        let resolved = resolve_cli_flags_config_path_from(
+            None,
+            Some(executable),
+            Vec::new(),
+        )
+        .expect("trusted candidates")
+        .expect("packaged contract");
+        assert_ne!(
+            resolved,
+            attacker.canonicalize().expect("canonical attacker contract")
+        );
+        assert_eq!(
+            resolved,
+            packaged.canonicalize().expect("canonical packaged contract")
+        );
     }
 
     #[test]
@@ -466,5 +663,18 @@ mod tests {
 
         assert!(help.table().contains("--tcp-port"));
         assert!(help.table().contains("LMX_TCP_PORT"));
+    }
+
+    #[test]
+    fn production_source_has_no_working_directory_contract_discovery() {
+        for forbidden in [
+            concat!("current_", "dir("),
+            concat!("find_upward_", "cli_flags_config"),
+        ] {
+            assert!(
+                !SOURCE.contains(forbidden),
+                "cli_flags.rs contains forbidden ambient discovery: {forbidden}"
+            );
+        }
     }
 }
