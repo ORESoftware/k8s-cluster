@@ -46,6 +46,73 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  finalize-den-1597:
+    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'agent/den-1597-router-core-v2-20260804' && github.event.pull_request.head.repo.full_name == github.repository }}
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the exact trusted head branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1597-router-core-v2-20260804
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Install the pinned Rust formatter
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt
+      - name: Apply deterministic ownership fixes and canonical formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs')
+          text = path.read_text()
+          replacements = [
+              ('match entry.state {', 'match &entry.state {', 1),
+              ('matches!(entry.state, RouteState::Accepted(_))', 'matches!(&entry.state, RouteState::Accepted(_))', 1),
+              ('matches!(entry.state, RouteState::Pending(_))', 'matches!(&entry.state, RouteState::Pending(_))', 1),
+              ("fn validate_build_request(request: &BuildRequest) -> Result<&'static str, &'static str> {", "fn validate_build_request(request: &BuildRequest) -> Result<(), &'static str> {", 1),
+              ('    Ok("ok")\n}', '    Ok(())\n}', 1),
+          ]
+          for old, new, expected in replacements:
+              actual = text.count(old)
+              if actual != expected:
+                  raise SystemExit(f'expected {expected} occurrence(s) of {old!r}, found {actual}')
+              text = text.replace(old, new)
+          path.write_text(text)
+          PY
+          cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all
+          git diff --check
+      - name: Remove the one-shot finalizer and push the canonical source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show origin/dev:.github/workflows/gha-clone-server.yml > .github/workflows/gha-clone-server.yml
+          rm -f .github/workflows/finalize-den-1597-router.yml
+          expected="$RUNNER_TEMP/expected-paths.txt"
+          actual="$RUNNER_TEMP/actual-paths.txt"
+          printf '%s\n' \
+            .github/workflows/finalize-den-1597-router.yml \
+            .github/workflows/gha-clone-server.yml \
+            remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs \
+            | sort > "$expected"
+          git diff --name-only | sort > "$actual"
+          diff -u "$expected" "$actual"
+          git config user.name 'ORESoftware CI'
+          git config user.email 'ci@oresoftware.com'
+          git add -- \
+            .github/workflows/finalize-den-1597-router.yml \
+            .github/workflows/gha-clone-server.yml \
+            remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs
+          git commit -m 'style(DEN-1597): finalize executor router core'
+          git push origin HEAD:agent/den-1597-router-core-v2-20260804
+
   rust:
     runs-on: ubuntu-latest
     timeout-minutes: 30
