@@ -21,7 +21,7 @@ use tokio::{
 
 const SERVER_AUTH: &str = "msgint-server-auth";
 const BUILD_AUTH: &str = "msgint-build-auth";
-const REVISION: &str = "eb7e2cd53a40b20fe62c48a635f4919efb41d251";
+const REVISION: &str = "a9cc977d78347ec0efdbe8e6766967f80d425882";
 const REPOSITORY: &str = "messaging-intel/msgint-connectors";
 const WORKFLOW_PATH: &str = ".github/workflows/gha-clone-operator-config.yml";
 
@@ -258,12 +258,12 @@ async fn running_server_dispatches_exact_msgint_profiles_and_rejects_mutations()
     assert_eq!(submissions[1]["profile"], "node-hardened-test");
     assert!(submissions[1]["requestId"]
         .as_str()
-        .is_some_and(|value| value.starts_with("gha-clone:") && value.ends_with(":full_tests")));
+        .is_some_and(|value| value.starts_with("gha-clone:") && value.ends_with(":repository_tests")));
     drop(submissions);
 
     let extra_command = workflow_yaml.replacen(
-        "          npm run lint\n",
-        "          npm run lint\n          npm run publish\n",
+        "          npm audit --audit-level=high\n",
+        "          npm audit --audit-level=high\n          npm publish\n",
         1,
     );
     let mutable_action = workflow_yaml.replacen(
