@@ -26,9 +26,9 @@ permissions:
 
 jobs:
   compliance:
-    uses: ORESoftware/flags-2-env/.github/workflows/reusable-consumer-compliance.yml@2e3120b4a615093308eda89036456a565fea0dcf
+    uses: ORESoftware/flags-2-env/.github/workflows/reusable-consumer-compliance.yml@39e1b554520c736db406ce074f05acaee6111d75
     with:
-      tooling_ref: 2e3120b4a615093308eda89036456a565fea0dcf
+      tooling_ref: 39e1b554520c736db406ce074f05acaee6111d75
       parser_ref: 377bff1a4e7424eb98377997a232ddc0fc700f59
       kind: server
       command_name: threefa-sync-server
