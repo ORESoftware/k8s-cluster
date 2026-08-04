@@ -12,6 +12,7 @@ WORKFLOW_PATH = (
 OBSERVER_PATH = ROOT / ".github/workflows/observe-private-fleet-publisher.yml"
 PUBLISHER_PATH = ROOT / "scripts/ops/publish_missing_org_repositories_current.py"
 REMOTE_STATE_PATH = ROOT / "scripts/ops/repository_fleet_remote_state.py"
+CREATION_HELPER_PATH = ROOT / "scripts/ops/private_repository_creation.py"
 
 
 class PrivateFleetPublisherContractTests(unittest.TestCase):
@@ -21,6 +22,7 @@ class PrivateFleetPublisherContractTests(unittest.TestCase):
         cls.observer = OBSERVER_PATH.read_text(encoding="utf-8")
         cls.publisher = PUBLISHER_PATH.read_text(encoding="utf-8")
         cls.remote_state = REMOTE_STATE_PATH.read_text(encoding="utf-8")
+        cls.creation_helper = CREATION_HELPER_PATH.read_text(encoding="utf-8")
 
     def test_workflow_retriggers_when_publisher_contracts_change(self) -> None:
         self.assertIn(
@@ -115,14 +117,29 @@ class PrivateFleetPublisherContractTests(unittest.TestCase):
         self.assertIn("changed during gap publication", self.remote_state)
         self.assertIn("matches_sealed_commit", self.remote_state)
 
+    def test_publisher_uses_race_safe_private_creation_helper(self) -> None:
+        self.assertIn(
+            "ensure_private_repository as ensure_private_repository_with_api",
+            self.publisher,
+        )
+        self.assertIn("ensure_private_repository_with_api(", self.publisher)
+        self.assertIn("MODULE.api,", self.publisher)
+        self.assertIn("_CREATE_CONFLICT_STATUSES", self.creation_helper)
+        self.assertIn("reconciliation GET returned HTTP", self.creation_helper)
+        self.assertNotIn("def _create_payload", self.publisher)
+
     def test_missing_repositories_are_created_private_without_visibility_patch(self) -> None:
-        self.assertIn('"private": True', self.publisher)
-        self.assertIn('current.get("private") is not True', self.publisher)
-        self.assertIn('current.get("visibility") != "private"', self.publisher)
+        self.assertIn('"private": True', self.creation_helper)
+        self.assertIn('payload.get("private") is not True', self.creation_helper)
+        self.assertIn(
+            'payload.get("visibility") != "private"', self.creation_helper
+        )
+        self.assertNotIn('api("PATCH"', self.creation_helper)
         self.assertNotIn('MODULE.api("PATCH"', self.publisher)
 
     def test_publication_has_no_force_path(self) -> None:
         self.assertNotIn('"--force"', self.publisher)
+        self.assertNotIn("--force", self.creation_helper)
         self.assertNotIn("git push --force", self.workflow)
         self.assertNotIn("git push -f", self.workflow)
 
