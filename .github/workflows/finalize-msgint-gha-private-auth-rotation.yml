@@ -1,36 +1,26 @@
-name: Finalize Messaging Intel GHA private auth rotation
+name: Clean Messaging Intel credential rotation diff
 
 on:
   push:
     branches:
       - agent/msgint-gha-private-auth-rotation-20260804
     paths:
-      - scripts/apply-msgint-gha-private-auth-rotation.py
-      - scripts/fix-msgint-gha-private-auth-rotation-fixtures.py
-      - .github/workflows/finalize-msgint-gha-private-auth-rotation.yml
-  pull_request:
-    types: [opened, synchronize, reopened]
-    paths:
-      - scripts/apply-msgint-gha-private-auth-rotation.py
-      - scripts/fix-msgint-gha-private-auth-rotation-fixtures.py
       - .github/workflows/finalize-msgint-gha-private-auth-rotation.yml
 
 permissions:
   contents: write
 
 concurrency:
-  group: finalize-msgint-gha-private-auth-rotation
+  group: clean-msgint-gha-private-auth-rotation
   cancel-in-progress: false
 
 jobs:
-  finalize:
-    if: >-
-      github.actor != 'github-actions[bot]' &&
-      (github.event_name == 'push' || github.head_ref == 'agent/msgint-gha-private-auth-rotation-20260804')
+  clean:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 35
     steps:
-      - name: Check out the feature branch
+      - name: Check out the credential-rotation branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: agent/msgint-gha-private-auth-rotation-20260804
@@ -42,60 +32,40 @@ jobs:
         with:
           ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
+      - name: Restore unrelated files from the live parent branch
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin agent/msgint-gha-clone-operator-verify-20260804
+          git checkout FETCH_HEAD -- \
+            remote/deployments/build-server-rs/src/ecr.rs \
+            remote/deployments/build-server-rs/src/gh_secrets.rs \
+            remote/deployments/build-server-rs/src/jobs.rs \
+            remote/deployments/build-server-rs/src/validation.rs
+
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           toolchain: '1.90.0'
-          components: rustfmt, clippy
+          components: clippy
 
-      - name: Apply the reviewed source transformation and fixture hardening
-        run: |
-          python3 scripts/apply-msgint-gha-private-auth-rotation.py
-          python3 scripts/fix-msgint-gha-private-auth-rotation-fixtures.py
-
-      - name: Format and test the continuity server
-        working-directory: remote/deployments/gha-clone-server-rs
-        run: |
-          cargo fmt --all
-          cargo clippy --locked --all-targets -- -D warnings
-          cargo test --locked --all-targets -- --nocapture
-
-      - name: Format, lint, and test every build-server target
+      - name: Revalidate every build-server target after semantic restoration
         working-directory: remote/deployments/build-server-rs
         run: |
-          cargo fmt --all
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked --all-targets -- --nocapture
 
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
-        with:
-          version: 10.33.0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: '22'
-          cache: pnpm
-          cache-dependency-path: remote/tests/pnpm-lock.yaml
-
-      - name: Validate deployment and token-file contracts
-        working-directory: remote/tests
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm exec tsx --test general/gha-clone-server-config.test.ts
-
-      - name: Commit only validated product changes
+      - name: Commit only the formatting cleanup
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
-            remote/deployments/gha-clone-server-rs \
-            remote/deployments/build-server-rs \
-            remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml \
-            remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml \
-            remote/argocd/dd-next-runtime/dd-gha-clone-server.externalsecret.yaml \
-            remote/tests/general/gha-clone-server-config.test.ts
+            remote/deployments/build-server-rs/src/ecr.rs \
+            remote/deployments/build-server-rs/src/gh_secrets.rs \
+            remote/deployments/build-server-rs/src/jobs.rs \
+            remote/deployments/build-server-rs/src/validation.rs
           git diff --cached --check
           if git diff --cached --quiet; then
-            echo "No product source changes produced" >&2
+            echo "No unrelated formatting churn remained" >&2
             exit 1
           fi
-          git commit -m "feat: reload private repository tokens without restarts"
+          git commit -m "chore: remove unrelated build-server formatting churn"
           git push origin HEAD:agent/msgint-gha-private-auth-rotation-20260804
