@@ -1,5 +1,5 @@
-name: Prepare new product fleet credential handoff (2026-08-04)
-run-name: Prepare one-time encrypted GitHub credential handoff
+name: Retire new product fleet credential handoff (2026-08-04)
+run-name: Destroy unused one-time publication key
 
 on:
   push:
@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  prepare:
+  retire:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -27,11 +27,11 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
-          role-session-name: new-product-fleet-handoff
+          role-session-name: retire-new-product-fleet-handoff
           retry-max-attempts: 2
           mask-aws-account-id: true
 
-      - name: Generate the one-time key on the protected SSM host
+      - name: Destroy the unused key on the protected SSM host
         shell: bash
         env:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
@@ -40,32 +40,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${INSTANCE_ID:-}"
-
-          remote_script="$RUNNER_TEMP/prepare-handoff.sh"
-          cat > "$remote_script" <<'REMOTE_EOF'
-          #!/usr/bin/env bash
-          set -Eeuo pipefail
-          umask 077
-          handoff_dir=/root/.cache/new-product-fleet-handoff-20260804
-          private_key="$handoff_dir/private.pem"
-          public_key="$handoff_dir/public.pem"
-          rm -rf "$handoff_dir"
-          install -d -m 700 "$handoff_dir"
-          openssl genpkey -algorithm RSA \
-            -pkeyopt rsa_keygen_bits:4096 \
-            -out "$private_key" >/dev/null 2>&1
-          chmod 600 "$private_key"
-          openssl pkey -in "$private_key" -pubout -out "$public_key"
-          chmod 644 "$public_key"
-          fingerprint="$(openssl pkey -pubin -in "$public_key" -outform DER | sha256sum | awk '{print $1}')"
-          encoded="$(base64 --wrap=0 "$public_key")"
-          printf 'HANDOFF_FINGERPRINT=%s\n' "$fingerprint"
-          printf 'HANDOFF_PUBLIC_KEY_BASE64=%s\n' "$encoded"
-          REMOTE_EOF
-          chmod 700 "$remote_script"
-
-          encoded_script="$(base64 --wrap=0 "$remote_script")"
-          remote_command="printf '%s' '$encoded_script' | base64 --decode > /tmp/prepare-new-product-fleet-handoff.sh; chmod 700 /tmp/prepare-new-product-fleet-handoff.sh; bash /tmp/prepare-new-product-fleet-handoff.sh; status=\$?; rm -f /tmp/prepare-new-product-fleet-handoff.sh; exit \$status"
+          remote_command='set -euo pipefail; rm -rf /root/.cache/new-product-fleet-handoff-20260804; test ! -e /root/.cache/new-product-fleet-handoff-20260804; printf "HANDOFF_STATE=retired\n"'
           parameters="$RUNNER_TEMP/ssm-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
 
@@ -73,7 +48,7 @@ jobs:
             aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
               --document-name AWS-RunShellScript \
-              --comment "Prepare one-time RSA handoff for new product fleet publication" \
+              --comment "Destroy unused new product fleet RSA handoff key" \
               --parameters "file://$parameters" \
               --query 'Command.CommandId' \
               --output text
@@ -102,24 +77,6 @@ jobs:
             --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
             --output json > "$response"
           test "$(jq -r .Status "$response")" = Success
-
-          output="$(jq -r .Stdout "$response")"
-          fingerprint="$(printf '%s\n' "$output" | sed -n 's/^HANDOFF_FINGERPRINT=//p' | tail -n 1)"
-          public_key="$(printf '%s\n' "$output" | sed -n 's/^HANDOFF_PUBLIC_KEY_BASE64=//p' | tail -n 1)"
-          [[ "$fingerprint" =~ ^[0-9a-f]{64}$ ]]
-          [[ "$public_key" =~ ^[A-Za-z0-9+/=]+$ ]]
-
-          body="$RUNNER_TEMP/handoff-comment.md"
-          cat > "$body" <<EOF
-          One-time publication handoff key prepared on the protected SSM host.
-
-          - Fingerprint: \`$fingerprint\`
-          - State: **ready**
-
-          \`\`\`text
-          HANDOFF_PUBLIC_KEY_BASE64=$public_key
-          \`\`\`
-
-          The private key never left the SSM host and will be destroyed after the encrypted credential is consumed.
-          EOF
-          gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" --body-file "$body"
+          test "$(jq -r .Stdout "$response" | tail -n 1)" = HANDOFF_STATE=retired
+          gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" \
+            --body 'Unused one-time publication handoff key destroyed on the protected SSM host. State: **retired**.'
