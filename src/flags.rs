@@ -271,12 +271,8 @@ default = "0.0.0.0:8080"
         write_contract(&explicit);
         write_contract(&packaged);
 
-        let resolved = resolve_config_path_from(
-            Some(explicit.clone()),
-            Some(executable),
-            None,
-        )
-        .expect("explicit contract");
+        let resolved = resolve_config_path_from(Some(explicit.clone()), Some(executable), None)
+            .expect("explicit contract");
         assert_eq!(resolved, explicit);
     }
 
@@ -290,13 +286,9 @@ default = "0.0.0.0:8080"
             .join("install/share/threefa-backend/.cli-flags.toml");
         write_contract(&packaged);
 
-        let error = resolve_config_path_from(
-            Some(missing.clone()),
-            Some(executable),
-            None,
-        )
-        .expect_err("missing explicit override must fail closed")
-        .to_string();
+        let error = resolve_config_path_from(Some(missing.clone()), Some(executable), None)
+            .expect_err("missing explicit override must fail closed")
+            .to_string();
         assert!(error.contains(CONFIG_ENV));
         assert!(error.contains(&missing.display().to_string()));
     }
