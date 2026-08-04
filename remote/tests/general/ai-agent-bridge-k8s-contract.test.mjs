@@ -26,16 +26,44 @@ function envBlock(name) {
   return deployment.slice(start, next === -1 ? deployment.length : next);
 }
 
+function shellStringAssignment(name) {
+  const match = deployment.match(
+    new RegExp(`(?:^|\\n)\\s*${name}=(["'])([^\\n]*?)\\1(?:\\s|$)`),
+  );
+  assert.ok(match, `${name} is missing from ${deploymentPath}`);
+  return match[2];
+}
+
 test('bridge deployment executes the current Rust binary', () => {
+  assert.equal(
+    shellStringAssignment('bin_name'),
+    'fiducia-ai-agent-bridge',
+    'the runtime binary variable must use the current crate name',
+  );
   assert.match(
     deployment,
-    /\/release\/fiducia-ai-agent-bridge(?:["'\s]|$)/,
-    'the deployment must execute fiducia-ai-agent-bridge',
+    /built="\$\{CARGO_TARGET_DIR:-target\}\/release\/\$\{bin_name\}"/,
+    'the executable path must be derived from the checked binary variable',
+  );
+  assert.match(
+    deployment,
+    /if \[ ! -x "\$\{built\}" \]/,
+    'the deployment must fail closed when the expected executable is absent',
+  );
+  assert.match(
+    deployment,
+    /exec "\$\{built\}"/,
+    'the deployment must execute the validated build output',
+  );
+  assert.doesNotMatch(
+    deployment,
+    /bin_name=["']ai-agent-bridge["']/,
+    'the retired ai-agent-bridge binary name must not return',
   );
   assert.doesNotMatch(
     deployment,
     /\/release\/ai-agent-bridge(?:["'\s]|$)/,
-    'the retired ai-agent-bridge binary name must not return',
+    'the retired ai-agent-bridge executable path must not return',
   );
 });
 
