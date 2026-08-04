@@ -3,6 +3,10 @@ use std::collections::BTreeSet;
 use gha_clone_server::{build_plan, PlanRequest, PlannerLimits, WorkflowPlan};
 
 const REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
+const CHECKOUT_ACTION: &str = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
+const SETUP_NODE_ACTION: &str = "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020";
+const RUST_TOOLCHAIN_ACTION: &str =
+    "dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30";
 const API_WORKFLOW: &str = include_str!("../fixtures/streempilot-api-ci-mirror.yml");
 const WEB_WORKFLOW: &str = include_str!("../fixtures/streempilot-web-ci-mirror.yml");
 const INTERFACES_WORKFLOW: &str = include_str!("../fixtures/streempilot-interfaces-ci-mirror.yml");
@@ -68,7 +72,7 @@ fn interfaces_mirror_preserves_contract_before_generated_rust_order() {
 }
 
 #[test]
-fn every_streempilot_fixture_is_static_and_secret_free() {
+fn every_streempilot_fixture_is_static_secret_free_and_immutable() {
     for workflow in [API_WORKFLOW, WEB_WORKFLOW, INTERFACES_WORKFLOW] {
         for forbidden in [
             "${{",
@@ -81,6 +85,13 @@ fn every_streempilot_fixture_is_static_and_secret_free() {
             "working-directory:",
             "continue-on-error:",
             "timeout-minutes:",
+            "@v1",
+            "@v2",
+            "@v3",
+            "@v4",
+            "@main",
+            "@master",
+            "@stable",
         ] {
             assert!(
                 !workflow.contains(forbidden),
@@ -88,7 +99,7 @@ fn every_streempilot_fixture_is_static_and_secret_free() {
             );
         }
         assert!(workflow.contains("workflow_dispatch:"));
-        assert!(workflow.contains("actions/checkout@v4"));
+        assert!(workflow.contains(CHECKOUT_ACTION));
     }
 }
 
@@ -129,19 +140,25 @@ fn plan_identity_is_stable_and_repository_scoped() {
 }
 
 #[test]
-fn mirror_jobs_use_only_reviewed_setup_actions() {
-    let allowed = [
-        "actions/checkout@v4",
-        "actions/setup-node@v4",
-        "dtolnay/rust-toolchain@stable",
-    ]
-    .into_iter()
-    .collect::<BTreeSet<_>>();
+fn mirror_jobs_use_only_reviewed_immutable_setup_actions() {
+    let allowed = [CHECKOUT_ACTION, SETUP_NODE_ACTION, RUST_TOOLCHAIN_ACTION]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
 
     for workflow in [API_WORKFLOW, WEB_WORKFLOW, INTERFACES_WORKFLOW] {
         for line in workflow.lines().map(str::trim) {
             if let Some(action) = line.strip_prefix("- uses: ") {
                 assert!(allowed.contains(action), "unreviewed action {action:?}");
+                let (_, revision) = action
+                    .rsplit_once('@')
+                    .unwrap_or_else(|| panic!("action has no revision: {action:?}"));
+                assert_eq!(revision.len(), 40, "action is not pinned: {action:?}");
+                assert!(
+                    revision
+                        .bytes()
+                        .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()),
+                    "action revision is not lowercase hexadecimal: {action:?}"
+                );
             }
         }
     }

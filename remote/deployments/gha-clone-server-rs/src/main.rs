@@ -27,7 +27,12 @@ use tokio::{
     time::{sleep, Duration, Instant},
 };
 use tracing::{error, info};
+
 use uuid::Uuid;
+
+mod run_reservation;
+
+use run_reservation::{reserve_run_records, ReserveRunsError};
 
 #[derive(Clone)]
 struct AppState {
@@ -103,7 +108,7 @@ impl Config {
             },
             build_poll_seconds: env_u64("GHA_CLONE_BUILD_POLL_SECONDS", 2)?,
             build_timeout_seconds: env_u64("GHA_CLONE_BUILD_TIMEOUT_SECONDS", 3600)?,
-            max_runs: env_usize("GHA_CLONE_MAX_RUNS", 256)?,
+            max_runs: env_nonzero_usize("GHA_CLONE_MAX_RUNS", 256)?,
             webhook_failure_conclusions: csv_lower_set_or_default(
                 "GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS",
                 &[
@@ -382,24 +387,9 @@ async fn create_run(
             .into_response();
     }
 
-    let now = now_ms();
-    let record = RunRecord {
-        id: Uuid::new_v4(),
-        plan_id: plan.plan_id.clone(),
-        repository: plan.repository.clone(),
-        revision: plan.revision.clone(),
-        workflow_path: plan.workflow_path.clone(),
-        status: RunStatus::Queued,
-        current_job: None,
-        submissions: Vec::new(),
-        error: None,
-        created_at_ms: now,
-        updated_at_ms: now,
-    };
-    {
-        let mut runs = state.runs.write().await;
-        runs.insert(record.id, record.clone());
-        prune_runs(&mut runs, state.config.max_runs);
+    let record = queued_run_record(&plan);
+    if let Err(error) = reserve_runs(&state, vec![record.clone()]).await {
+        return reservation_error_response(error);
     }
     let run_id = record.id;
     tokio::spawn(async move {
@@ -635,28 +625,30 @@ async fn github_webhook(
             )
                 .into_response();
         }
-        let mut run_ids = Vec::new();
-        for plan in plans.clone() {
-            let now = now_ms();
-            let record = RunRecord {
-                id: Uuid::new_v4(),
-                plan_id: plan.plan_id.clone(),
-                repository: plan.repository.clone(),
-                revision: plan.revision.clone(),
-                workflow_path: plan.workflow_path.clone(),
-                status: RunStatus::Queued,
-                current_job: None,
-                submissions: Vec::new(),
-                error: None,
-                created_at_ms: now,
-                updated_at_ms: now,
-            };
+
+        let scheduled = plans
+            .clone()
+            .into_iter()
+            .map(|plan| {
+                let record = queued_run_record(&plan);
+                (record, plan)
+            })
+            .collect::<Vec<_>>();
+        let records = scheduled
+            .iter()
+            .map(|(record, _)| record.clone())
+            .collect::<Vec<_>>();
+        if let Err(error) = reserve_runs(&state, records).await {
+            forget_webhook_delivery(&state, &delivery).await;
+            return reservation_error_response(error);
+        }
+
+        let run_ids = scheduled
+            .iter()
+            .map(|(record, _)| record.id)
+            .collect::<Vec<_>>();
+        for (record, plan) in scheduled {
             let run_id = record.id;
-            {
-                let mut runs = state.runs.write().await;
-                runs.insert(run_id, record);
-                prune_runs(&mut runs, state.config.max_runs);
-            }
             let task_state = state.clone();
             tokio::spawn(async move {
                 if let Err(error) = execute_plan(&task_state, run_id, plan).await {
@@ -668,7 +660,6 @@ async fn github_webhook(
                     .await;
                 }
             });
-            run_ids.push(run_id);
         }
         return (
             StatusCode::ACCEPTED,
@@ -697,6 +688,55 @@ async fn github_webhook(
         })),
     )
         .into_response()
+}
+
+fn queued_run_record(plan: &WorkflowPlan) -> RunRecord {
+    let now = now_ms();
+    RunRecord {
+        id: Uuid::new_v4(),
+        plan_id: plan.plan_id.clone(),
+        repository: plan.repository.clone(),
+        revision: plan.revision.clone(),
+        workflow_path: plan.workflow_path.clone(),
+        status: RunStatus::Queued,
+        current_job: None,
+        submissions: Vec::new(),
+        error: None,
+        created_at_ms: now,
+        updated_at_ms: now,
+    }
+}
+
+async fn reserve_runs(state: &AppState, records: Vec<RunRecord>) -> Result<(), ReserveRunsError> {
+    let mut runs = state.runs.write().await;
+    reserve_run_records(&mut runs, records, state.config.max_runs)
+}
+
+fn reservation_error_response(error: ReserveRunsError) -> Response {
+    match error {
+        ReserveRunsError::Capacity {
+            max_runs,
+            active_runs,
+            requested,
+        } => (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({
+                "error": "run capacity is full",
+                "maxRuns": max_runs,
+                "activeRuns": active_runs,
+                "requestedRuns": requested
+            })),
+        )
+            .into_response(),
+        ReserveRunsError::DuplicateId(id) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "error": "generated run identifier collided with retained state",
+                "runId": id
+            })),
+        )
+            .into_response(),
+    }
 }
 
 async fn execute_plan(state: &AppState, run_id: Uuid, plan: WorkflowPlan) -> Result<(), String> {
@@ -966,6 +1006,10 @@ async fn remember_webhook_delivery(state: &AppState, delivery: &str) -> bool {
     true
 }
 
+async fn forget_webhook_delivery(state: &AppState, delivery: &str) {
+    state.webhook_deliveries.write().await.remove(delivery);
+}
+
 fn prune_webhook_deliveries(
     deliveries: &mut BTreeMap<String, Instant>,
     now: Instant,
@@ -1054,22 +1098,6 @@ where
     if let Some(run) = state.runs.write().await.get_mut(&id) {
         mutate(run);
         run.updated_at_ms = now_ms();
-    }
-}
-
-fn prune_runs(runs: &mut BTreeMap<Uuid, RunRecord>, max_runs: usize) {
-    let remove = runs.len().saturating_sub(max_runs);
-    if remove == 0 {
-        return;
-    }
-    let mut candidates = runs
-        .values()
-        .filter(|run| matches!(run.status, RunStatus::Succeeded | RunStatus::Failed))
-        .map(|run| (run.updated_at_ms, run.id))
-        .collect::<Vec<_>>();
-    candidates.sort_by_key(|(updated_at_ms, _)| *updated_at_ms);
-    for (_, id) in candidates.into_iter().take(remove) {
-        runs.remove(&id);
     }
 }
 
@@ -1460,38 +1488,5 @@ mod tests {
         assert!(normalize_github_api_base_url("http://example.com").is_err());
         assert!(normalize_github_api_base_url("https://user:pass@example.com").is_err());
         assert!(normalize_github_api_base_url("https://example.com?token=x").is_err());
-    }
-
-    #[test]
-    fn terminal_run_pruning_never_discards_active_runs() {
-        let now = now_ms();
-        let mut runs = BTreeMap::new();
-        for (index, status) in [RunStatus::Running, RunStatus::Succeeded, RunStatus::Failed]
-            .into_iter()
-            .enumerate()
-        {
-            let id = Uuid::new_v4();
-            runs.insert(
-                id,
-                RunRecord {
-                    id,
-                    plan_id: format!("plan-{index}"),
-                    repository: "owner/repo".into(),
-                    revision: "a".repeat(40),
-                    workflow_path: ".github/workflows/ci.yml".into(),
-                    status,
-                    current_job: None,
-                    submissions: vec![],
-                    error: None,
-                    created_at_ms: now + index as u128,
-                    updated_at_ms: now + index as u128,
-                },
-            );
-        }
-        prune_runs(&mut runs, 2);
-        assert_eq!(runs.len(), 2);
-        assert!(runs
-            .values()
-            .any(|run| matches!(run.status, RunStatus::Running)));
     }
 }
