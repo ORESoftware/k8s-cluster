@@ -1,12 +1,6 @@
-name: DEN-1597 port inert GitOps onto clean router core
+name: DEN-1597 port inert GitOps onto merged router core
 
 on:
-  push:
-    branches:
-      - agent/den-1597-router-gitops-on-core-20260804
-    paths:
-      - '.github/patches/den-1597-port-inert-gitops.trigger'
-      - '.github/workflows/den-1597-port-inert-gitops.yml'
   pull_request:
     paths:
       - '.github/patches/den-1597-port-inert-gitops.trigger'
@@ -16,34 +10,40 @@ permissions:
   contents: write
 
 concurrency:
-  group: den-1597-port-gitops-${{ github.event_name }}-${{ github.ref }}
+  group: den-1597-port-inert-gitops
   cancel-in-progress: false
 
 jobs:
-  port-and-verify:
+  port-verify-and-remove:
     if: >-
       github.repository == 'ORESoftware/k8s-cluster' &&
-      ((github.event_name == 'push' && github.ref == 'refs/heads/agent/den-1597-router-gitops-on-core-20260804') ||
-       (github.event_name == 'pull_request' && github.head_ref == 'agent/den-1597-router-gitops-on-core-20260804'))
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'agent/den-1597-router-gitops-on-core-20260804'
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 40
     env:
-      SOURCE_COMMIT: b9b6620d1176140c7b7b3c6ab197a6ad2e525e0b
+      SOURCE_COMMIT: 9c7711dfa10c3cffe6e33fbdf3a37b9989437516
+      CORE_COMMIT: cc5b5b56bf77d8489d8dcbd6d1bff7e7b42ea592
+      SUPERSEDED_SOURCE_PIN: d1e97bfe45054b3b6329398c2c0787cb0d250622
+      TARGET_BRANCH: agent/den-1597-router-gitops-on-core-20260804
       MANIFEST: remote/deployments/gha-clone-server-rs/Cargo.toml
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out the clean GitOps branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: agent/den-1597-router-gitops-on-core-20260804
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Port only the reviewed inert GitOps surface
+      - name: Port only the reviewed inert product surface
+        shell: bash
         run: |
           set -euo pipefail
           git fetch --no-tags origin "${SOURCE_COMMIT}"
           git checkout "${SOURCE_COMMIT}" -- \
             .github/workflows/gha-clone-server.yml \
             docs/gha-continuity-architecture.md \
+            docs/gha-executor-router-activation.md \
             remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml \
             remote/argocd/dd-next-runtime/dd-gha-clone-server.externalsecret.yaml \
             remote/argocd/dd-next-runtime/dd-gha-clone-server.networkpolicy.yaml \
@@ -53,21 +53,51 @@ jobs:
             remote/argocd/dd-next-runtime/dd-gha-executor-router.networkpolicy.yaml \
             remote/argocd/dd-next-runtime/dd-gha-executor-router.service.yaml \
             remote/argocd/dd-next-runtime/kustomization.yaml \
-            remote/tests/general/gha-clone-server-config.test.ts
+            remote/tests/general/gha-clone-server-config.test.ts \
+            remote/tests/general/gha-executor-router-config.test.mjs \
+            remote/tests/general/gha-executor-router-activation.test.mjs
 
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          old = os.environ['SUPERSEDED_SOURCE_PIN']
+          new = os.environ['CORE_COMMIT']
+          paths = [
+              Path('docs/gha-continuity-architecture.md'),
+              Path('remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml'),
+              Path('remote/argocd/dd-next-runtime/dd-gha-executor-router.deployment.yaml'),
+              Path('remote/tests/general/gha-executor-router-config.test.mjs'),
+          ]
+          replacements = 0
+          for path in paths:
+              text = path.read_text()
+              count = text.count(old)
+              replacements += count
+              path.write_text(text.replace(old, new))
+          if replacements < 4:
+              raise SystemExit(f'expected at least four exact source-pin replacements, got {replacements}')
+          for path in paths:
+              if old in path.read_text():
+                  raise SystemExit(f'superseded source pin remains in {path}')
+          PY
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           toolchain: '1.90.0'
           components: rustfmt, clippy
 
-      - name: Re-run the clean router core against the ported deployment contract
+      - name: Re-run the merged router core against the ported contract
+        shell: bash
         run: |
           set -euo pipefail
           cargo fmt --all --manifest-path "$MANIFEST" -- --check
-          cargo test --locked --manifest-path "$MANIFEST" --all-targets
           cargo clippy --locked --manifest-path "$MANIFEST" --all-targets -- -D warnings
+          cargo test --locked --manifest-path "$MANIFEST" --all-targets -- --nocapture
 
-      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+      - name: Install pinned Node contract toolchain
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 10.33.0
 
@@ -81,66 +111,89 @@ jobs:
         working-directory: remote/tests
         run: pnpm install --frozen-lockfile
 
-      - name: Run clone, router, and credential-boundary contracts
+      - name: Run clone, router, activation, and credential-boundary contracts
         working-directory: remote/tests
+        shell: bash
         run: |
           set -euo pipefail
           pnpm exec tsx --test \
             general/gha-clone-server-config.test.ts \
             general/gha-clone-webhook-config.test.ts
-          node --test general/gha-executor-router-config.test.mjs
+          node --test \
+            general/gha-executor-router-config.test.mjs \
+            general/gha-executor-router-activation.test.mjs
 
-      - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
+      - name: Install pinned kubectl renderer
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
         with:
           version: v1.32.2
 
-      - name: Render the full continuity overlay
+      - name: Render the complete continuity overlay
+        shell: bash
         run: |
           set -euo pipefail
-          kubectl kustomize remote/argocd/dd-next-runtime >"${RUNNER_TEMP}/dd-next-runtime.yaml"
-          test -s "${RUNNER_TEMP}/dd-next-runtime.yaml"
-          grep -F 'name: dd-gha-executor-router' "${RUNNER_TEMP}/dd-next-runtime.yaml"
-          grep -F 'replicas: 0' "${RUNNER_TEMP}/dd-next-runtime.yaml"
+          rendered="${RUNNER_TEMP}/dd-next-runtime.yaml"
+          kubectl kustomize remote/argocd/dd-next-runtime >"$rendered"
+          test -s "$rendered"
+          grep -F 'name: dd-gha-executor-router' "$rendered"
+          test "$(grep -c 'replicas: 0' "$rendered")" -ge 2
 
-      - name: Enforce the inert and no-dormant-authority gates
+      - name: Enforce immutable and inert activation gates
+        shell: bash
         run: |
           set -euo pipefail
-          config=remote/argocd/dd-next-runtime/dd-gha-executor-router.configmap.yaml
-          secret=remote/argocd/dd-next-runtime/dd-gha-executor-router.externalsecret.yaml
-          deployment=remote/argocd/dd-next-runtime/dd-gha-executor-router.deployment.yaml
-          policy=remote/argocd/dd-next-runtime/dd-gha-executor-router.networkpolicy.yaml
-          grep -F '"provider": "aws"' "$config"
-          grep -F '"enabled": true' "$config"
-          grep -F '"provider": "hetzner"' "$config"
-          grep -F '"enabled": false' "$config"
-          grep -F 'replicas: 0' "$deployment"
-          grep -F 'GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED' "$deployment"
-          grep -F 'value: "false"' "$deployment"
-          grep -F 'aws_build_server_auth' "$secret"
-          if grep -Ei 'hetzner.*(url|authPath)|hetzner_build_server_auth|port:[[:space:]]*443|cidr:[[:space:]]*0\.0\.0\.0/0' "$config" "$secret" "$deployment" "$policy"; then
-            echo 'dormant Hetzner endpoint, credential, or egress was staged' >&2
+          router_deployment=remote/argocd/dd-next-runtime/dd-gha-executor-router.deployment.yaml
+          clone_deployment=remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml
+          router_config=remote/argocd/dd-next-runtime/dd-gha-executor-router.configmap.yaml
+          router_secret=remote/argocd/dd-next-runtime/dd-gha-executor-router.externalsecret.yaml
+          router_policy=remote/argocd/dd-next-runtime/dd-gha-executor-router.networkpolicy.yaml
+
+          grep -F "value: ${CORE_COMMIT}" "$router_deployment"
+          grep -F "value: ${CORE_COMMIT}" "$clone_deployment"
+          grep -F 'replicas: 0' "$router_deployment"
+          grep -F 'replicas: 0' "$clone_deployment"
+          grep -F 'GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED' "$router_deployment"
+          grep -F 'GHA_CLONE_EXECUTION_ENABLED' "$clone_deployment"
+          grep -F 'GHA_CLONE_WEBHOOK_EXECUTION_ENABLED' "$clone_deployment"
+          grep -F '"provider": "aws"' "$router_config"
+          grep -F '"enabled": true' "$router_config"
+          grep -F '"provider": "hetzner"' "$router_config"
+          grep -F '"enabled": false' "$router_config"
+
+          test "$(grep -c 'secretKey:' "$router_secret")" -eq 1
+          grep -F 'secretKey: router_auth' "$router_secret"
+          if grep -Ei 'secretKey:[[:space:]]*(aws_build_server_auth|hetzner)|property:[[:space:]]*(aws_build_server_auth|hetzner)' "$router_secret"; then
+            echo 'duplicate or dormant executor authority was staged' >&2
             exit 1
           fi
-          if grep -RIE \
-            'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|BEGIN (RSA |EC )?PRIVATE KEY' \
-            remote/argocd/dd-next-runtime/dd-gha-executor-router* \
-            remote/tests/general/gha-executor-router-config.test.mjs; then
-            echo 'credential-like material found in inert router surface' >&2
+          if grep -Ei '"provider":[[:space:]]*"hetzner"[^}]*"(url|authPath)"|port:[[:space:]]*443|cidr:[[:space:]]*0\.0\.0\.0/0' "$router_config" "$router_policy"; then
+            echo 'dormant Hetzner endpoint or broad egress was staged' >&2
             exit 1
           fi
 
-      - name: Remove one-shot porter and commit exact reviewed files
-        env:
-          TARGET_BRANCH: agent/den-1597-router-gitops-on-core-20260804
+          prefix_a="gh""p_"
+          prefix_b="github""_pat_"
+          if grep -RIE "${prefix_a}[A-Za-z0-9]{20,}|${prefix_b}[A-Za-z0-9_]{20,}|BEGIN (RSA |EC )?PRIVATE KEY" \
+            remote/argocd/dd-next-runtime/dd-gha-clone-server* \
+            remote/argocd/dd-next-runtime/dd-gha-executor-router*; then
+            echo 'credential-like material found in rendered continuity manifests' >&2
+            exit 1
+          fi
+
+      - name: Commit the product-only GitOps diff and remove this porter
+        shell: bash
         run: |
           set -euo pipefail
-          rm -f \
+          git rm -f \
             .github/patches/den-1597-port-inert-gitops.trigger \
             .github/workflows/den-1597-port-inert-gitops.yml
           git diff --check
-          git add -- \
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A -- \
             .github/workflows/gha-clone-server.yml \
             docs/gha-continuity-architecture.md \
+            docs/gha-executor-router-activation.md \
             remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml \
             remote/argocd/dd-next-runtime/dd-gha-clone-server.externalsecret.yaml \
             remote/argocd/dd-next-runtime/dd-gha-clone-server.networkpolicy.yaml \
@@ -152,9 +205,8 @@ jobs:
             remote/argocd/dd-next-runtime/kustomization.yaml \
             remote/tests/general/gha-clone-server-config.test.ts \
             remote/tests/general/gha-executor-router-config.test.mjs \
+            remote/tests/general/gha-executor-router-activation.test.mjs \
             .github/patches/den-1597-port-inert-gitops.trigger \
             .github/workflows/den-1597-port-inert-gitops.yml
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'chore(DEN-1597): stage inert executor router GitOps on clean core'
+          git commit -m 'chore(DEN-1597): stage inert executor router GitOps on merged core'
           git push origin "HEAD:${TARGET_BRANCH}"
