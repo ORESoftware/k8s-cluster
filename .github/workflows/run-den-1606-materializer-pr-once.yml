@@ -1,0 +1,99 @@
+# One-shot pull-request trigger for the reviewed DEN-1606 source transformer.
+# The successful product commit deletes this file and both materializer carriers.
+name: Run DEN-1606 direct hardening materializer from PR once
+
+on:
+  pull_request:
+    branches:
+      - dev
+    types:
+      - synchronize
+    paths:
+      - .github/workflows/run-den-1606-materializer-pr-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: run-den-1606-direct-hardening-materializer-pr
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-1606-clone-server-direct-hardening'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1606-clone-server-direct-hardening
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Execute the reviewed explicit transformer
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from textwrap import dedent
+
+          workflow = Path('.github/workflows/materialize-den-1606-direct-hardening-once.yml')
+          text = workflow.read_text(encoding='utf-8')
+          start_marker = "          python3 - <<'PY'\n"
+          end_marker = "\n          PY\n\n      - name: Install the pinned Rust toolchain"
+          start = text.index(start_marker) + len(start_marker)
+          end = text.index(end_marker, start)
+          script = dedent(text[start:end])
+          exec(compile(script, str(workflow), 'exec'), {'__name__': '__main__'})
+          for path in (
+              Path('.github/workflows/run-den-1606-materializer-once.yml'),
+              Path('.github/workflows/run-den-1606-materializer-pr-once.yml'),
+          ):
+              path.unlink(missing_ok=True)
+          PY
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate every clone-server target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Validate repository continuity contracts
+        working-directory: remote/tests
+        run: |
+          set -euo pipefail
+          corepack enable
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts
+
+      - name: Commit the self-cleaned product diff
+        run: |
+          set -euo pipefail
+          git diff --check
+          test ! -e .github/workflows/materialize-den-1606-direct-hardening-once.yml
+          test ! -e .github/workflows/run-den-1606-materializer-once.yml
+          test ! -e .github/workflows/run-den-1606-materializer-pr-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          allowed='^(docs/gha-indie-worker-clone-reconciliation\.md|remote/deployments/gha-clone-server-rs/(README\.md|src/(lib|main)\.rs))$'
+          unexpected="$(git diff --cached --name-only | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected staged paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          git commit -m 'fix(DEN-1606): harden the bounded clone-server lane directly'
+          git push origin HEAD:agent/den-1606-clone-server-direct-hardening
