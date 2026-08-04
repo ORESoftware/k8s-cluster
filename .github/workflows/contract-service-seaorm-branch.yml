@@ -1,5 +1,7 @@
 name: contract-service-seaorm-branch
 
+# Temporary branch-only writer: it is removed after the exact shared gitlink and
+# Cargo.lock are committed. It never runs for forks, pull_request_target, or main.
 on:
   push:
     branches:
