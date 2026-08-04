@@ -6,6 +6,7 @@ on:
       - 'remote/deployments/gha-clone-server-rs/**'
       - 'remote/deployments/build-server-rs/src/profiles.rs'
       - 'remote/deployments/build-server-rs/src/validation.rs'
+      - 'remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/**'
       - 'remote/deployments/build-server-rs/readme.md'
       - 'remote/argocd/dd-next-runtime/dd-gha-clone-server*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
@@ -24,6 +25,7 @@ on:
       - 'remote/deployments/gha-clone-server-rs/**'
       - 'remote/deployments/build-server-rs/src/profiles.rs'
       - 'remote/deployments/build-server-rs/src/validation.rs'
+      - 'remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/**'
       - 'remote/deployments/build-server-rs/readme.md'
       - 'remote/argocd/dd-next-runtime/dd-gha-clone-server*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
@@ -101,7 +103,7 @@ jobs:
         run: cargo check --locked --all-targets
       - name: Test fixed profiles and repository admission rules
         working-directory: remote/deployments/build-server-rs
-        run: cargo test --locked --lib -- --nocapture
+        run: cargo test --locked --bin dd-build-server -- --nocapture
       - name: Execute the credential-free hardened Node fixture
         working-directory: remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile
         run: |
@@ -133,6 +135,7 @@ jobs:
           private-key: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
           owner: messaging-intel
           repositories: msgint-connectors
+          permission-contents: read
 
       - name: Checkout the immutable Messaging Intel revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
