@@ -1,0 +1,49 @@
+name: DEN-1550 apply build idempotency patch
+
+on:
+  push:
+    branches:
+      - agent/den-1550-build-idempotency-20260804
+    paths:
+      - .github/patches/den-1550-build-idempotency.patch
+      - .github/workflows/den-1550-apply-build-idempotency.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1550-build-idempotency-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact branch revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Apply reviewed patch and remove one-shot materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch_path='.github/patches/den-1550-build-idempotency.patch'
+          workflow_path='.github/workflows/den-1550-apply-build-idempotency.yml'
+          source_path='remote/deployments/build-server-rs/src/jobs.rs'
+
+          git apply --check "$patch_path"
+          git apply "$patch_path"
+          rm -f "$patch_path" "$workflow_path"
+
+          git diff --check
+          grep -Fq 'identical_request_id_reattaches_to_one_job' "$source_path"
+          grep -Fq 'queue_full_rejection_does_not_poison_request_id_retry' "$source_path"
+          grep -Fq 'requestId {request_id} is already bound to a different build request' "$source_path"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "$source_path" "$patch_path" "$workflow_path"
+          git commit -m 'fix(DEN-1550): make build submissions idempotent'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
