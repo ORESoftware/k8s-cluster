@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -20,6 +21,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
 
       - name: Select stable Rust
         shell: bash
@@ -48,6 +51,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --locked shared_auth::
+          cargo test --locked shared_auth_startup::
           cargo test --locked memberships::
           cargo test --locked api::auth::
           cargo test --locked api::oauth::
@@ -79,6 +83,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
 
       - name: Install PostgreSQL client
         shell: bash
@@ -99,25 +105,25 @@ jobs:
     name: real-shared-libs-contract
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      SHARED_REPOS_TOKEN: ${{ secrets.QUAESTOR_SHARED_REPOS_READ_TOKEN }}
     steps:
-      - name: Require a read-only cross-repository credential
-        shell: bash
-        env:
-          SHARED_REPOS_TOKEN: ${{ secrets.QUAESTOR_SHARED_REPOS_READ_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${SHARED_REPOS_TOKEN:-}" ]]; then
-            echo 'Configure QUAESTOR_SHARED_REPOS_READ_TOKEN with read-only Contents access to ORESoftware/k8s-libs-and-shared-defs.' >&2
-            exit 1
-          fi
-
       - name: Check out Quaestor at the pull-request revision
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           path: workspace/services/quaestor-ledger-server.rs
           persist-credentials: false
 
+      - name: Explain skipped real shared-crate validation
+        if: env.SHARED_REPOS_TOKEN == ''
+        shell: bash
+        run: |
+          echo 'QUAESTOR_SHARED_REPOS_READ_TOKEN is not configured.'
+          echo 'Stub-backed compilation and all authorization/PostgreSQL suites remain blocking.'
+          echo 'Configure a read-only GitHub App or deploy-key credential to enable the pinned real-crate contract.'
+
       - name: Check out pinned real shared crates
+        if: env.SHARED_REPOS_TOKEN != ''
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: ORESoftware/k8s-libs-and-shared-defs
@@ -132,6 +138,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Select stable Rust
+        if: env.SHARED_REPOS_TOKEN != ''
         shell: bash
         working-directory: workspace/services/quaestor-ledger-server.rs
         run: |
@@ -142,16 +149,19 @@ jobs:
           cargo --version
 
       - name: Compile against pinned real shared crates
+        if: env.SHARED_REPOS_TOKEN != ''
         working-directory: workspace/services/quaestor-ledger-server.rs
         run: cargo check --locked --all-targets
 
       - name: Compile and run the security suites against real shared crates
+        if: env.SHARED_REPOS_TOKEN != ''
         shell: bash
         working-directory: workspace/services/quaestor-ledger-server.rs
         run: |
           set -euo pipefail
           cargo test --locked --no-run
           cargo test --locked shared_auth::
+          cargo test --locked shared_auth_startup::
           cargo test --locked memberships::
           cargo test --locked api::auth::
           cargo test --locked api::oauth::
