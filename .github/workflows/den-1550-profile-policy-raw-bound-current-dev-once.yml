@@ -1,0 +1,92 @@
+name: Finalize DEN-1550 raw policy hardening once
+
+on:
+  push:
+    branches:
+      - agent/den-1550-profile-policy-raw-bound-current-dev
+    paths:
+      - .github/workflows/den-1550-profile-policy-raw-bound-current-dev-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1550-profile-policy-raw-bound-current-dev
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Port the reviewed one-file hardening onto current dev
+        run: |
+          set -euo pipefail
+          base='fd428a48bf72375d9959ddba765cedf991ff7fae'
+          workflow='.github/workflows/den-1550-profile-policy-raw-bound-current-dev-once.yml'
+          policy='remote/deployments/build-server-rs/src/config/profile_policy.rs'
+          actual="$(git diff --name-only "$base"...HEAD)"
+          if [[ "$actual" != "$workflow" ]]; then
+            printf 'unexpected pre-port paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+
+          git fetch origin agent/build-server-exact-profile-policy-final-20260804
+          git show FETCH_HEAD:"$policy" > "$policy"
+          git diff --check
+
+          grep -Fq 'if raw_untrimmed.len() > MAX_POLICY_BYTES' "$policy"
+          grep -Fq 'raw_policy_accepts_the_exact_byte_limit_and_rejects_one_more_byte' "$policy"
+          grep -Fq 'raw_policy_limit_counts_utf8_bytes_before_unicode_whitespace_trimming' "$policy"
+          grep -Fq 'repeats a profile' "$policy"
+          grep -Fq 'validate_profile_name(value)' "$policy"
+          if grep -Fq '.map(str::trim)' "$policy"; then
+            echo 'size validation still trims before enforcing the raw byte bound' >&2
+            exit 1
+          fi
+
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate every build-server target
+        working-directory: remote/deployments/build-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo check --locked --all-targets
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Publish the self-cleaned one-file product
+        run: |
+          set -euo pipefail
+          base='fd428a48bf72375d9959ddba765cedf991ff7fae'
+          rm .github/workflows/den-1550-profile-policy-raw-bound-current-dev-once.yml
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'security(DEN-1550): bound raw profile policy before trimming'
+          expected='remote/deployments/build-server-rs/src/config/profile_policy.rs'
+          actual="$(git diff --name-only "$base"...HEAD)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'unexpected final product paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          git push origin HEAD:agent/den-1550-profile-policy-raw-bound-current-dev
