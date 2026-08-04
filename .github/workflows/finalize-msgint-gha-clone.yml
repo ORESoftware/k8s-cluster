@@ -7,6 +7,16 @@ on:
     paths:
       - scripts/ops/apply_msgint_gha_clone.py
       - .github/workflows/finalize-msgint-gha-clone.yml
+  pull_request:
+    branches:
+      - agent/gha-clone-meta-self-test-20260803
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - scripts/ops/apply_msgint_gha_clone.py
+      - .github/workflows/finalize-msgint-gha-clone.yml
 
 permissions:
   contents: write
@@ -17,7 +27,9 @@ concurrency:
 
 jobs:
   finalize:
-    if: github.actor != 'github-actions[bot]'
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name == 'push' || github.head_ref == 'agent/msgint-gha-clone-operator-verify-20260804')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
