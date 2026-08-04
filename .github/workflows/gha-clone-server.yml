@@ -11,6 +11,7 @@ on:
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
       - 'docs/gha-continuity-architecture.md'
+      - 'docs/gha-executor-router.md'
       - '.github/actionlint.yaml'
       - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/gha-clone-server.yml'
@@ -26,6 +27,7 @@ on:
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
       - 'docs/gha-continuity-architecture.md'
+      - 'docs/gha-executor-router.md'
       - '.github/actionlint.yaml'
       - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/gha-clone-server.yml'
@@ -63,9 +65,12 @@ jobs:
       - name: Run Clippy
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo clippy --locked --all-targets -- -D warnings
-      - name: Run unit and meta integration tests
+      - name: Run all unit and meta integration tests
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo test --locked --all-targets
+      - name: Prove AWS and Hetzner executor-router failover contracts
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --bin executor_router
 
   build-server-profile:
     runs-on: ubuntu-latest
@@ -127,7 +132,8 @@ jobs:
             'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|BEGIN (RSA |EC )?PRIVATE KEY' \
             remote/deployments/gha-clone-server-rs \
             remote/argocd/dd-next-runtime/dd-gha-clone-server* \
-            docs/gha-continuity-architecture.md; then
+            docs/gha-continuity-architecture.md \
+            docs/gha-executor-router.md; then
             echo 'credential-like material found in GHA continuity files' >&2
             exit 1
           fi
