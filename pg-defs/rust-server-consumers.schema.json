@@ -65,11 +65,20 @@
     "dpm": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["repository", "version", "linuxX8664Sha256", "serviceStartupDdl"],
+      "required": [
+        "repository",
+        "version",
+        "linuxX8664Asset",
+        "linuxX8664Sha256",
+        "binary",
+        "serviceStartupDdl"
+      ],
       "properties": {
-        "repository": { "const": "declarative-migrations/declarative-migrations" },
-        "version": { "const": "1.4.2" },
+        "repository": { "const": "declarative-migrations/declarative-postgres-migrate.rs" },
+        "version": { "const": "0.3.2" },
+        "linuxX8664Asset": { "const": "dpm-v0.3.2-x86_64-unknown-linux-gnu.tar.gz" },
         "linuxX8664Sha256": { "$ref": "#/$defs/sha256" },
+        "binary": { "const": "dpm" },
         "serviceStartupDdl": { "const": false }
       }
     },

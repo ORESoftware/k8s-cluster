@@ -29,11 +29,18 @@ function invalid(value, pattern) {
   );
 }
 
-test("committed inventory pins all current consumers to one authority", () => {
+test("committed inventory pins all consumers and the actual dpm release", () => {
   const summary = validateRustServerConsumers(inventory);
   assert.deepEqual(summary, {
     valid: true,
     authorityCommit: "3c84cab532b27d328378f09fba5841f02644ae3b",
+    dpm: {
+      repository: "declarative-migrations/declarative-postgres-migrate.rs",
+      version: "0.3.2",
+      linuxX8664Asset: "dpm-v0.3.2-x86_64-unknown-linux-gnu.tar.gz",
+      linuxX8664Sha256: "4258755a946f6f3a49e33538889523e4736180624a186bddc90180994612d3aa",
+      binary: "dpm",
+    },
     consumerCount: 3,
     statusCounts: {
       inventory: 1,
@@ -59,9 +66,17 @@ test("schema and DPM authorities cannot drift", () => {
   schema.authority.schemaPath = "service/migrations/schema.sql";
   invalid(schema, /must remain pg-defs\/schema\/schema.sql/);
 
-  const dpm = clone(inventory);
-  dpm.declarativeMigrations.repository = "some-other/tool";
-  invalid(dpm, /unexpected migration authority/);
+  for (const [key, value] of [
+    ["repository", "declarative-migrations/declarative-migrations"],
+    ["version", "1.4.2"],
+    ["linuxX8664Asset", "declarative-postgres-migrate-linux-x86_64.tar.gz"],
+    ["linuxX8664Sha256", "f".repeat(64)],
+    ["binary", "declarative-postgres-migrate"],
+  ]) {
+    const dpm = clone(inventory);
+    dpm.declarativeMigrations[key] = value;
+    invalid(dpm, new RegExp(`declarativeMigrations\\.${key}: must equal`));
+  }
 });
 
 test("startup DDL and direct-driver targets remain prohibited", () => {
@@ -88,7 +103,7 @@ test("Leptos and Dioxus cannot fork persistence", () => {
   invalid(noSharedBoundary, /sharedRepositoryBoundaryRequired: must remain true/);
 });
 
-test("consumer identity, paths, statuses, and schema commits are exact", () => {
+test("consumer identity, paths, PRs, statuses, and schema commits are exact", () => {
   const repository = clone(inventory);
   repository.consumers[0].repository = "ORESoftware/other";
   invalid(repository, /repository: must equal ORESoftware\/k8s-cluster/);
@@ -96,6 +111,10 @@ test("consumer identity, paths, statuses, and schema commits are exact", () => {
   const pathMutation = clone(inventory);
   pathMutation.consumers[0].servicePath = "../outside";
   invalid(pathMutation, /servicePath: must equal remote\/deployments\/contract-service-rs/);
+
+  const pr = clone(inventory);
+  pr.consumers[2].pullRequest = null;
+  invalid(pr, /pullRequest: must equal 2/);
 
   const duplicate = clone(inventory);
   duplicate.consumers[2] = clone(duplicate.consumers[1]);
@@ -110,11 +129,10 @@ test("consumer identity, paths, statuses, and schema commits are exact", () => {
   invalid(status, /unsupported status/);
 });
 
-test("seaorm-only requires complete evidence and a PR identity", () => {
+test("seaorm-only requires complete evidence", () => {
   const complete = clone(inventory);
   const consumer = complete.consumers[2];
   consumer.migrationStatus = "seaorm-only";
-  consumer.pullRequest = 99;
   consumer.requiredEvidence = [...complete.completionGate.seaormOnlyRequires];
   const summary = validateRustServerConsumers(complete);
   assert.equal(summary.statusCounts["seaorm-only"], 1);
@@ -122,10 +140,6 @@ test("seaorm-only requires complete evidence and a PR identity", () => {
   const missingEvidence = clone(complete);
   missingEvidence.consumers[2].requiredEvidence.pop();
   invalid(missingEvidence, /seaorm-only is missing/);
-
-  const noPr = clone(complete);
-  noPr.consumers[2].pullRequest = null;
-  invalid(noPr, /seaorm-only requires a completed positive PR number/);
 });
 
 test("secret-bearing fields are rejected anywhere in inventory", () => {

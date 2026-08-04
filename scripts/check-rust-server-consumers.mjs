@@ -7,10 +7,17 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const inventoryPath = path.join(root, "pg-defs", "rust-server-consumers.json");
 const AUTHORITY_COMMIT = "3c84cab532b27d328378f09fba5841f02644ae3b";
+const DPM = Object.freeze({
+  repository: "declarative-migrations/declarative-postgres-migrate.rs",
+  version: "0.3.2",
+  linuxX8664Asset: "dpm-v0.3.2-x86_64-unknown-linux-gnu.tar.gz",
+  linuxX8664Sha256: "4258755a946f6f3a49e33538889523e4736180624a186bddc90180994612d3aa",
+  binary: "dpm",
+});
 const EXPECTED_CONSUMERS = new Map([
-  ["contract-service", { repository: "ORESoftware/k8s-cluster", servicePath: "remote/deployments/contract-service-rs" }],
-  ["ai-agent-bridge", { repository: "ORESoftware/ai-agent-bridge.rs", servicePath: "." }],
-  ["mip-solver-node", { repository: "ORESoftware/mip-solver-node.rs", servicePath: "." }],
+  ["contract-service", { repository: "ORESoftware/k8s-cluster", servicePath: "remote/deployments/contract-service-rs", pullRequest: 812 }],
+  ["ai-agent-bridge", { repository: "ORESoftware/ai-agent-bridge.rs", servicePath: ".", pullRequest: 78 }],
+  ["mip-solver-node", { repository: "ORESoftware/mip-solver-node.rs", servicePath: ".", pullRequest: 2 }],
 ]);
 const STATUS_ORDER = ["inventory", "conversion", "verification", "seaorm-only"];
 const REQUIRED_COMPLETION_EVIDENCE = [
@@ -94,14 +101,10 @@ export function validateRustServerConsumers(input) {
     errors.push("inventory.authority.seaOrmAdapterPath: must remain pg-defs/rust/sea-orm");
   }
 
-  if (inventory.declarativeMigrations?.repository !== "declarative-migrations/declarative-migrations") {
-    errors.push("inventory.declarativeMigrations.repository: unexpected migration authority");
-  }
-  if (inventory.declarativeMigrations?.version !== "1.4.2") {
-    errors.push("inventory.declarativeMigrations.version: must equal 1.4.2");
-  }
-  if (!/^[0-9a-f]{64}$/u.test(inventory.declarativeMigrations?.linuxX8664Sha256 ?? "")) {
-    errors.push("inventory.declarativeMigrations.linuxX8664Sha256: must be a lowercase SHA-256 digest");
+  for (const [key, expected] of Object.entries(DPM)) {
+    if (inventory.declarativeMigrations?.[key] !== expected) {
+      errors.push(`inventory.declarativeMigrations.${key}: must equal ${expected}`);
+    }
   }
   if (inventory.declarativeMigrations?.serviceStartupDdl !== false) {
     errors.push("inventory.declarativeMigrations.serviceStartupDdl: must remain false");
@@ -155,6 +158,9 @@ export function validateRustServerConsumers(input) {
     if (consumer.servicePath !== expected.servicePath) {
       errors.push(`${location}.servicePath: must equal ${expected.servicePath}`);
     }
+    if (consumer.pullRequest !== expected.pullRequest) {
+      errors.push(`${location}.pullRequest: must equal ${expected.pullRequest}`);
+    }
     if (!STATUS_ORDER.includes(consumer.migrationStatus)) {
       errors.push(`${location}.migrationStatus: unsupported status`);
     }
@@ -175,9 +181,6 @@ export function validateRustServerConsumers(input) {
           errors.push(`${location}.requiredEvidence: seaorm-only is missing ${evidence}`);
         }
       }
-      if (!Number.isSafeInteger(consumer.pullRequest) || consumer.pullRequest < 1) {
-        errors.push(`${location}.pullRequest: seaorm-only requires a completed positive PR number`);
-      }
     }
   }
   exactSet([...ids], [...EXPECTED_CONSUMERS.keys()], "inventory consumer ids", errors);
@@ -196,6 +199,7 @@ export function validateRustServerConsumers(input) {
   return {
     valid: true,
     authorityCommit: inventory.authority.commit,
+    dpm: structuredClone(DPM),
     consumerCount: inventory.consumers.length,
     statusCounts,
     directSqlxTarget: inventory.applicationStandard.directSqlxTarget,
