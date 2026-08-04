@@ -10,6 +10,6 @@ spec:
         - name: build-server
           env:
             - name: BUILD_SERVER_ALLOWED_PROFILES
-              value: rust-verify,node-verify,node-hardened-verify,python-verify,flutter-verify,flutter-android-debug,flutter-web-release,flutter-linux-release,flutter-linux-desktop-entrypoint,flutter-web-e2e,playwright,puppeteer,browser-e2e
+              value: rust-verify,node-verify,node-hardened-verify,node-hardened-test,python-verify,flutter-verify,flutter-android-debug,flutter-web-release,flutter-linux-release,flutter-linux-desktop-entrypoint,flutter-web-e2e,playwright,puppeteer,browser-e2e
             - name: BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES
               value: https://github.com/ORESoftware/,https://github.com/sonus-auris/,git@github.com:ORESoftware/,git@github.com:sonus-auris/,=https://github.com/messaging-intel/msgint-connectors.git
