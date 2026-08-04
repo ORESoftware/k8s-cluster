@@ -1,7 +1,11 @@
-# Second push after workflow registration; the workflow deletes itself on success.
+# Same-repository pull-request finalizer; deleted from the branch on success.
 name: Finalize Slack browser action semantics once
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/finalize-slack-browser-action-once.yml'
   push:
     branches:
       - agent/slack-browser-e2e-consolidated-20260804
@@ -17,7 +21,7 @@ concurrency:
 
 jobs:
   finalize:
-    if: github.actor != 'github-actions[bot]'
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -25,7 +29,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: agent/slack-browser-e2e-consolidated-20260804
-          fetch-depth: 3
+          fetch-depth: 0
           persist-credentials: true
           show-progress: false
 
@@ -33,11 +37,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_product_base='265f0808398c500d4f4bd1a40446a6024a46b8c5'
-          test "$(git rev-parse HEAD^^)" = "$expected_product_base"
-          expected='.github/workflows/finalize-slack-browser-action-once.yml'
-          actual="$(git diff --name-only HEAD^ HEAD)"
-          test "$actual" = "$expected"
+          product_base='265f0808398c500d4f4bd1a40446a6024a46b8c5'
+          test "$(git merge-base HEAD "$product_base")" = "$product_base"
+          unexpected="$(git diff --name-only "$product_base"...HEAD \
+            | grep -v '^\.github/workflows/finalize-slack-browser-action-once\.yml$' || true)"
+          test -z "$unexpected"
 
           python3 - <<'PY'
           from pathlib import Path
@@ -97,6 +101,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          product_base='265f0808398c500d4f4bd1a40446a6024a46b8c5'
           git rm .github/workflows/finalize-slack-browser-action-once.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -104,8 +109,12 @@ jobs:
             .github/workflows/slack-agent-command-browser-e2e.yml \
             remote/tests/ui/slack-agent-command.playwright.test.mjs
           git diff --cached --check
-          expected=$'.github/workflows/finalize-slack-browser-action-once.yml\n.github/workflows/slack-agent-command-browser-e2e.yml\nremote/tests/ui/slack-agent-command.playwright.test.mjs'
-          actual="$(git diff --cached --name-only | sort)"
-          test "$actual" = "$expected"
           git commit -m 'test(slack): align direct action and pin e2e sources'
+          expected=$'.github/workflows/slack-agent-command-browser-e2e.yml\nremote/tests/fixtures/slack-command-coordinator.yaml\nremote/tests/fixtures/slack-command-mock.mjs\nremote/tests/fixtures/slack-command-registry.json\nremote/tests/general/ai-agent-bridge-k8s-contract.test.mjs\nremote/tests/ui/slack-agent-command.playwright.test.mjs\nscripts/ci/run-slack-command-e2e.sh'
+          actual="$(git diff --name-only "${product_base}^"...HEAD | sort)"
+          test "$actual" = "$expected" || {
+            echo 'unexpected final product paths:' >&2
+            printf '%s\n' "$actual" >&2
+            exit 1
+          }
           git push origin HEAD:agent/slack-browser-e2e-consolidated-20260804
