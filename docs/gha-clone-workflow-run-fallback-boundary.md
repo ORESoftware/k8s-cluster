@@ -22,4 +22,8 @@ A `workflow_run` event must still pass the existing fail-closed checks:
 6. the fetched workflow is independently executable under reviewed fixed profiles; and
 7. the delivery UUID has not already claimed a dispatch within the bounded retention window.
 
-The regression suite signs representative `push` and `pull_request` payloads and proves zero GitHub workflow fetches, zero build-server submissions, and zero retained delivery claims. Native GitHub Actions or official Actions Runner Controller remains responsible for normal event-triggered workflow semantics.
+## Validation invariant
+
+The regression suite starts the real HTTP process, signs representative `push` and `pull_request` payloads, and proves HTTP 202 with the stable no-op reason, zero GitHub workflow fetches, zero build-server submissions, and zero retained delivery claims. The same suite keeps the legitimate `workflow_run` failure path covered so narrowing the event boundary cannot silently disable the fallback.
+
+Native GitHub Actions or official Actions Runner Controller remains responsible for normal event-triggered workflow semantics.
