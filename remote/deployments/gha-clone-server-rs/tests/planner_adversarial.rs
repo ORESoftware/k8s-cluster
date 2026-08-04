@@ -453,7 +453,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 5
         shell: bash
-      - uses: actions/setup-node@abc
+      - uses: actions/setup-node@0123456789abcdef0123456789abcdef01234567
         env:
           TOKEN: '${{ secrets.TOKEN }}'
         with:
@@ -469,7 +469,8 @@ jobs:
         "continue-on-error is unsupported",
         "timeout-minutes is unsupported",
         "shell is unsupported",
-        "secret-bearing env/with values are unsupported",
+        "secret-bearing step environments are unsupported",
+        "secret-bearing setup inputs are unsupported",
     ] {
         assert!(
             reasons.contains(expected),
@@ -492,7 +493,7 @@ jobs:
   compact_secret:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-node@abc
+      - uses: actions/setup-node@0123456789abcdef0123456789abcdef01234567
         with:
           token: '${{secrets.NPM_TOKEN}}'
       - run: npm test
@@ -515,11 +516,15 @@ jobs:
         .independent_reasons
         .iter()
         .any(|reason| reason.contains("job environment contains a secret expression")));
-    for id in ["compact_secret", "github_token", "oidc"] {
+    assert!(job(&plan, "compact_secret")
+        .independent_reasons
+        .iter()
+        .any(|reason| reason.contains("secret-bearing setup inputs")));
+    for id in ["github_token", "oidc"] {
         assert!(job(&plan, id)
             .independent_reasons
             .iter()
-            .any(|reason| reason.contains("secret-bearing env/with")));
+            .any(|reason| reason.contains("secret-bearing step environments")));
     }
     assert!(!plan.independent_executable);
 }
@@ -560,8 +565,8 @@ jobs:
   node:
     runs-on: ubuntu-latest
     steps:
-      - uses: ACTIONS/CHECKOUT@abc
-      - uses: Actions/Setup-Node@abc
+      - uses: ACTIONS/CHECKOUT@0123456789abcdef0123456789abcdef01234567
+      - uses: Actions/Setup-Node@0123456789abcdef0123456789abcdef01234567
         with:
           node-version: '22'
       - run: npm test

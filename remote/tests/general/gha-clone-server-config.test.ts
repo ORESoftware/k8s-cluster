@@ -33,6 +33,8 @@ const observabilityDeploymentPath =
   'remote/argocd/observability/k8s-resource-exporter.deployment.yaml';
 const profilesPath = 'remote/deployments/build-server-rs/src/profiles.rs';
 const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';
+const genericPlannerPath =
+  'remote/deployments/gha-clone-server-rs/src/planner.rs';
 const serverPath = 'remote/deployments/gha-clone-server-rs/src/main.rs';
 const routerSourcePath =
   'remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs';
@@ -272,10 +274,12 @@ test('build server exposes fixed Rust, Node, and Python continuity profiles', ()
 });
 
 test('planner and dispatcher preserve the fail-closed command boundary', () => {
-  const planner = read(plannerPath);
+  const planner = read(genericPlannerPath);
   const server = read(serverPath);
   assert.match(planner, /service containers require the isolated ARC DinD lane/);
-  assert.match(planner, /secret-bearing env\/with values are unsupported/);
+  assert.match(planner, /secret-bearing setup inputs are unsupported/);
+  assert.match(planner, /secret-bearing step environments are unsupported/);
+  assert.match(planner, /fixed profiles do not forward caller-selected variables/);
   assert.match(planner, /workflow job dependency graph contains a cycle/);
   assert.match(planner, /revision is not an exact 40-hex commit SHA/);
   assert.match(planner, /workflow-level .* is unsupported by the independent lane/);

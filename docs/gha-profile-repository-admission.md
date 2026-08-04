@@ -26,4 +26,4 @@ For Messaging Intel, the current reviewed rule is:
 =https://github.com/messaging-intel/msgint-connectors.git
 ```
 
-The GHA continuity server independently allowlists the exact `messaging-intel/msgint-connectors` repository and `.github/workflows/gha-clone-operator-config.yml` workflow path, requires an immutable 40-hex revision for execution, and sends only the canonical HTTPS repository URL plus a fixed profile name to the build server.
+The GHA continuity server reserves the exact `messaging-intel/msgint-connectors` repository and `.github/workflows/gha-clone-operator-config.yml` workflow path, requires reviewed revision `a9cc977d78347ec0efdbe8e6766967f80d425882`, validates the exact workflow name, trigger, ordered DAG, action SHAs, action inputs, and command arrays before privileged profile assignment, and sends only the canonical HTTPS repository URL plus a fixed profile name to the build server. A reserved identity mismatch is terminal and cannot fall back to `node-verify`.
