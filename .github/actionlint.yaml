@@ -4,3 +4,4 @@ self-hosted-runner:
     - sonus-browser
     - sonus-ci-dind
     - sonus-android-kvm
+    - streempilot-ci
