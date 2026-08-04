@@ -16,7 +16,8 @@ data:
     StreemPilot/streempilot-api-server.rs,
     StreemPilot/streempilot-web-server.rs,
     StreemPilot/streempilot-interfaces,
-    3FA-app/3fa-interfaces
+    3FA-app/3fa-interfaces,
+    messaging-intel/msgint-connectors
   GHA_CLONE_WORKFLOW_RULES_JSON: |
     {
       "ORESoftware/k8s-cluster": [".github/workflows/gha-clone-server-meta.yml"],
@@ -25,5 +26,6 @@ data:
       "StreemPilot/streempilot-api-server.rs": [".github/workflows/ci-mirror.yml"],
       "StreemPilot/streempilot-web-server.rs": [".github/workflows/ci-mirror.yml"],
       "StreemPilot/streempilot-interfaces": [".github/workflows/ci-mirror.yml"],
-      "3FA-app/3fa-interfaces": [".github/workflows/gha-clone-contracts.yml"]
+      "3FA-app/3fa-interfaces": [".github/workflows/gha-clone-contracts.yml"],
+      "messaging-intel/msgint-connectors": [".github/workflows/gha-clone-operator-config.yml"]
     }
