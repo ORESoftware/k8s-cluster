@@ -61,18 +61,30 @@ jobs:
           echo "before_sha=$before_sha" >> "$GITHUB_OUTPUT"
           echo "main_sha=$main_sha" >> "$GITHUB_OUTPUT"
           echo "synced_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - name: Materialize exact public shared schema and generated SeaORM adapter
+      - name: Require the existing shared-libraries deploy key
+        env:
+          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
         shell: bash
         run: |
           set -euo pipefail
+          test -n "$K8S_LIBS_DEPLOY_KEY"
           rm -rf remote/libs
-          git init -q remote/libs
-          git -C remote/libs remote add origin \
-            https://github.com/ORESoftware/k8s-libs-and-shared-defs.git
-          GIT_TERMINAL_PROMPT=0 git -C remote/libs fetch \
-            --no-tags --depth=1 origin "$EXPECTED_SHARED_COMMIT"
-          git -C remote/libs checkout -q --detach FETCH_HEAD
+      - name: Checkout the immutable private shared schema and SeaORM adapter
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          repository: ORESoftware/k8s-libs-and-shared-defs
+          ref: ${{ env.EXPECTED_SHARED_COMMIT }}
+          path: remote/libs
+          fetch-depth: 1
+          persist-credentials: false
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+      - name: Verify exact shared authority and parent gitlink
+        shell: bash
+        run: |
+          set -euo pipefail
           test "$(git -C remote/libs rev-parse HEAD)" = "$EXPECTED_SHARED_COMMIT"
+          test -z "$(git -C remote/libs status --porcelain=v1 --untracked-files=all)"
+          test "$(git ls-files --stage -- remote/libs | awk '$1 == 160000 { print $2; exit }')" = "$EXPECTED_SHARED_COMMIT"
       - name: Generate lockfile and apply bounded rustc and clippy repairs
         shell: bash
         run: |
