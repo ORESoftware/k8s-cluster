@@ -10,6 +10,8 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "ops-bootstrap-org-dotgithub-direct.yml"
 RUNNER = ROOT / "scripts" / "ops" / "run_protected_org_dotgithub_publisher.sh"
 
+# Trusted-main activation generation: 2026-08-04-v1.
+
 
 class DirectOrgDotgithubPublisherTests(unittest.TestCase):
     def test_runner_is_valid_bash(self) -> None:
