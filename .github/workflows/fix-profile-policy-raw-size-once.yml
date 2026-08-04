@@ -1,0 +1,88 @@
+name: Fix raw profile policy size bound once
+
+on:
+  push:
+    branches:
+      - agent/build-server-exact-profile-policy-20260804
+    paths:
+      - .github/workflows/fix-profile-policy-raw-size-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/build-server-exact-profile-policy-20260804
+          persist-credentials: true
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt
+      - name: Enforce the size bound before trimming
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/deployments/build-server-rs/src/config/profile_policy.rs')
+          source = path.read_text(encoding='utf-8')
+          old = '''    let Some(raw) = exact_rules_json
+              .map(str::trim)
+              .filter(|raw| !raw.is_empty())
+          else {
+              return Ok(compiled);
+          };
+          if raw.len() > MAX_POLICY_BYTES {
+              return Err(format!(
+                  "BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON exceeds {MAX_POLICY_BYTES} bytes"
+              ));
+          }
+
+          let rules: Vec<ExactRepositoryRule> =
+              serde_json::from_str(raw).map_err(|error| format!("invalid JSON: {error}"))?;
+          '''
+          new = '''    let Some(raw_untrimmed) = exact_rules_json else {
+              return Ok(compiled);
+          };
+          if raw_untrimmed.len() > MAX_POLICY_BYTES {
+              return Err(format!(
+                  "BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON exceeds {MAX_POLICY_BYTES} bytes"
+              ));
+          }
+          let raw = raw_untrimmed.trim();
+          if raw.is_empty() {
+              return Ok(compiled);
+          }
+
+          let rules: Vec<ExactRepositoryRule> =
+              serde_json::from_str(raw).map_err(|error| format!("invalid JSON: {error}"))?;
+          '''
+          if source.count(old) != 1:
+              raise SystemExit('expected exactly one pre-trim size-check block')
+          path.write_text(source.replace(old, new), encoding='utf-8')
+          PY
+          rustfmt --edition 2021 remote/deployments/build-server-rs/src/config/profile_policy.rs
+          rustfmt --edition 2021 --check remote/deployments/build-server-rs/src/config/profile_policy.rs
+          node --test remote/tests/general/build-server-profile-repository-policy.test.mjs
+      - name: Remove this workflow and commit the focused fix
+        run: |
+          set -euo pipefail
+          rm .github/workflows/fix-profile-policy-raw-size-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          expected=$'.github/workflows/gha-clone-server.yml\ndocs/build-server-profile-repository-policy.md\nremote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml\nremote/deployments/build-server-rs/src/config.rs\nremote/deployments/build-server-rs/src/config/profile_policy.rs\nremote/deployments/build-server-rs/src/validation.rs\nremote/tests/general/build-server-profile-repository-policy.test.mjs'
+          actual="$(git diff --cached --name-only "$(git merge-base HEAD origin/dev)" | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'unexpected final product paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          git commit -m 'fix(build-server): bound raw exact-profile policy bytes'
+          git push origin HEAD:agent/build-server-exact-profile-policy-20260804
