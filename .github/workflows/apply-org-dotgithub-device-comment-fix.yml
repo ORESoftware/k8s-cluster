@@ -1,6 +1,9 @@
 name: Apply organization device-comment quoting fix
 
 on:
+  push:
+    branches:
+      - agent/fix-org-dotgithub-device-comment-quoting-20260804
   pull_request:
     paths:
       - '.github/workflows/apply-org-dotgithub-device-comment-fix.yml'
@@ -18,15 +21,18 @@ jobs:
   apply-and-verify:
     if: >-
       github.repository == 'ORESoftware/k8s-cluster' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.head_ref == 'agent/fix-org-dotgithub-device-comment-quoting-20260804'
+      ((github.event_name == 'push' &&
+        github.ref == 'refs/heads/agent/fix-org-dotgithub-device-comment-quoting-20260804') ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.head_ref == 'agent/fix-org-dotgithub-device-comment-quoting-20260804'))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Check out the exact pull-request head
+      - name: Check out the exact feature head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
           fetch-depth: 1
           show-progress: false
@@ -107,7 +113,7 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
           REPOSITORY: ${{ github.repository }}
           BRANCH: agent/fix-org-dotgithub-device-comment-quoting-20260804
         run: |
