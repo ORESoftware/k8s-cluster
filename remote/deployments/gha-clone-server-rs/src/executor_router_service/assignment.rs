@@ -197,23 +197,19 @@ async fn submit_to_executor(
         };
     }
 
-    let body = match upstream::read_bounded_body(
-        response,
-        state.config.max_upstream_body_bytes,
-    )
-    .await
-    {
-        Ok(body) => body,
-        Err(_) => {
-            state
-                .metrics
-                .ambiguous_submissions_total
-                .fetch_add(1, Ordering::Relaxed);
-            return AssignmentOutcome::Ambiguous {
-                upstream_status: Some(StatusCode::ACCEPTED.as_u16()),
-            };
-        }
-    };
+    let body =
+        match upstream::read_bounded_body(response, state.config.max_upstream_body_bytes).await {
+            Ok(body) => body,
+            Err(_) => {
+                state
+                    .metrics
+                    .ambiguous_submissions_total
+                    .fetch_add(1, Ordering::Relaxed);
+                return AssignmentOutcome::Ambiguous {
+                    upstream_status: Some(StatusCode::ACCEPTED.as_u16()),
+                };
+            }
+        };
     let mut value: Value = match serde_json::from_slice(&body) {
         Ok(value) => value,
         Err(_) => {
@@ -273,10 +269,9 @@ fn outcome_response(executor_id: &str, outcome: AssignmentOutcome) -> Response {
     match outcome {
         AssignmentOutcome::Accepted(value) => (StatusCode::ACCEPTED, Json(value)).into_response(),
         AssignmentOutcome::Rejected { status, body } => (status, Json(body)).into_response(),
-        AssignmentOutcome::Ambiguous { upstream_status } => upstream::ambiguous_submission(
-            executor_id,
-            upstream_status.and_then(status_from_u16),
-        ),
+        AssignmentOutcome::Ambiguous { upstream_status } => {
+            upstream::ambiguous_submission(executor_id, upstream_status.and_then(status_from_u16))
+        }
     }
 }
 
