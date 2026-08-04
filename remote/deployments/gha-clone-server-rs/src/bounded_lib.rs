@@ -11,6 +11,8 @@ pub use legacy::{
     MAX_STEPS_PER_JOB_DEFAULT, MAX_WORKFLOW_BYTES_DEFAULT, PLAN_SCHEMA_VERSION, SERVICE_NAME,
 };
 
+const THREEFA_REPOSITORY: &str = "3FA-app/3fa-interfaces";
+const THREEFA_WORKFLOW_PATH: &str = ".github/workflows/gha-clone-contracts.yml";
 const GENERATED_RUST_PROFILE: &str = "rust-generated-verify";
 const NODE_HARDENED_VERIFY_PROFILE: &str = "node-hardened-verify";
 const NODE_HARDENED_TEST_PROFILE: &str = "node-hardened-test";
@@ -35,10 +37,12 @@ pub fn capabilities(limits: &PlannerLimits) -> CapabilityResponse {
     let mut response = legacy::capabilities(limits);
     let mut profiles = Vec::with_capacity(response.independent_profiles.len() + 3);
     for profile in response.independent_profiles {
-        profiles.push(profile.clone());
-        if profile == "rust-verify" {
+        let is_rust = profile == "rust-verify";
+        let is_node = profile == "node-verify";
+        profiles.push(profile);
+        if is_rust {
             profiles.push(GENERATED_RUST_PROFILE.to_string());
-        } else if profile == "node-verify" {
+        } else if is_node {
             profiles.push(NODE_HARDENED_VERIFY_PROFILE.to_string());
             profiles.push(NODE_HARDENED_TEST_PROFILE.to_string());
         }
@@ -52,8 +56,11 @@ pub fn build_plan(
     limits: &PlannerLimits,
 ) -> Result<WorkflowPlan, Vec<String>> {
     let mut plan = legacy::build_plan(request, limits)?;
-    let commands = workflow_run_commands(&request.workflow_yaml)?;
+    if !is_threefa_bounded_workflow(request) {
+        return Ok(plan);
+    }
 
+    let commands = workflow_run_commands(&request.workflow_yaml)?;
     for job in &mut plan.jobs {
         let Some(run_commands) = commands.get(&job.id) else {
             continue;
@@ -78,6 +85,10 @@ pub fn build_plan(
     plan.independent_executable =
         plan.immutable_revision && plan.jobs.iter().all(|job| job.independent_supported);
     Ok(plan)
+}
+
+fn is_threefa_bounded_workflow(request: &PlanRequest) -> bool {
+    request.repository == THREEFA_REPOSITORY && request.workflow_path == THREEFA_WORKFLOW_PATH
 }
 
 fn apply_exact_profile(job: &mut JobPlan, profile: Option<&'static str>, rejection: &str) {
@@ -226,5 +237,24 @@ mod tests {
         let mut reordered = generated.clone();
         reordered.swap(2, 3);
         assert_eq!(generated_rust_profile(&reordered), None);
+    }
+
+    #[test]
+    fn exact_command_enforcement_is_scoped_to_the_registered_threefa_workflow() {
+        let exact = PlanRequest {
+            repository: THREEFA_REPOSITORY.to_string(),
+            revision: "0123456789abcdef0123456789abcdef01234567".to_string(),
+            workflow_path: THREEFA_WORKFLOW_PATH.to_string(),
+            workflow_yaml: "jobs: {}".to_string(),
+        };
+        assert!(is_threefa_bounded_workflow(&exact));
+
+        let mut sibling = exact.clone();
+        sibling.repository = "StreemPilot/streempilot-interfaces".to_string();
+        assert!(!is_threefa_bounded_workflow(&sibling));
+
+        let mut other_path = exact;
+        other_path.workflow_path = ".github/workflows/ci.yml".to_string();
+        assert!(!is_threefa_bounded_workflow(&other_path));
     }
 }
