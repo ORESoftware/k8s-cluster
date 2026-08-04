@@ -31,7 +31,11 @@ regex = '''\bIQoJ[A-Za-z0-9+/=_\-]{180,}\b'''
 tags = ["aws", "credentials", "sts", "session"]
 
 [allowlist]
-description = "Files where the AWS shapes are intentionally referenced for redaction logic and tests."
+description = "Files and one exact synthetic fixture used by credential-shape detection and redaction tests."
+regexTarget = "secret"
+regexes = [
+  '''^ghp_a{30}$''',
+]
 paths = [
   '''remote/deployments/dev-server/src/server\.ts''',
   '''remote/deployments/dev-server/dist/server\.(js|js\.map)''',
