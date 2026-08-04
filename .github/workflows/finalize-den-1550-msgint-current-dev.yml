@@ -63,7 +63,7 @@ jobs:
           git show "$REVIEWED_SOURCE_SHA:.github/workflows/gha-clone-server.yml" \
             > .github/workflows/gha-clone-server.yml
 
-      - name: Semantically merge the idempotency and Messaging Intel workflow contracts
+      - name: Semantically merge idempotency and Messaging Intel workflow contracts
         shell: bash
         run: |
           set -euo pipefail
@@ -71,17 +71,31 @@ jobs:
           from pathlib import Path
 
           path = Path('.github/workflows/gha-clone-server.yml')
-          source = path.read_text(encoding='utf-8')
-          owned_paths = '''      - 'remote/deployments/build-server-rs/src/profiles.rs'
-              - 'remote/deployments/build-server-rs/src/validation.rs'
-              - 'remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/**'
-              - 'remote/deployments/build-server-rs/readme.md'
-          '''
-          replacement = "      - 'remote/deployments/build-server-rs/**'\n"
-          count = source.count(owned_paths)
-          if count != 2:
-              raise SystemExit(f'expected two build-server path blocks, found {count}')
-          source = source.replace(owned_paths, replacement)
+          lines = path.read_text(encoding='utf-8').splitlines(keepends=True)
+          owned = {
+              "- 'remote/deployments/build-server-rs/src/profiles.rs'",
+              "- 'remote/deployments/build-server-rs/src/validation.rs'",
+              "- 'remote/deployments/build-server-rs/readme.md'",
+          }
+          output = []
+          in_owned_block = False
+          replacement_blocks = 0
+          for line in lines:
+              stripped = line.strip()
+              if stripped in owned:
+                  if not in_owned_block:
+                      indent = line[: len(line) - len(line.lstrip())]
+                      output.append(f"{indent}- 'remote/deployments/build-server-rs/**'\n")
+                      replacement_blocks += 1
+                      in_owned_block = True
+                  continue
+              in_owned_block = False
+              output.append(line)
+          if replacement_blocks != 2:
+              raise SystemExit(
+                  f'expected two build-server trigger blocks, found {replacement_blocks}'
+              )
+          source = ''.join(output)
 
           before = 'run: rustfmt --edition 2021 --check src/profiles.rs src/validation.rs'
           after = 'run: rustfmt --edition 2021 --check src/jobs.rs src/profiles.rs src/validation.rs'
@@ -89,16 +103,16 @@ jobs:
               raise SystemExit('expected one Messaging Intel formatting command')
           source = source.replace(before, after, 1)
 
-          before = '''      - name: Test fixed profiles and repository admission rules
-                working-directory: remote/deployments/build-server-rs
-                run: cargo test --locked --bin dd-build-server -- --nocapture
-          '''
-          after = '''      - name: Test idempotency, fixed profiles, and repository admission rules
-                working-directory: remote/deployments/build-server-rs
-                run: cargo test --locked --bin dd-build-server -- --nocapture
-          '''
+          before = '- name: Test fixed profiles and repository admission rules'
+          after = '- name: Test idempotency, fixed profiles, and repository admission rules'
           if source.count(before) != 1:
-              raise SystemExit('expected one build-server binary-test step')
+              raise SystemExit('expected one build-server test step name')
+          source = source.replace(before, after, 1)
+
+          before = 'run: cargo test --locked --lib -- --nocapture'
+          after = 'run: cargo test --locked --bin dd-build-server -- --nocapture'
+          if source.count(before) != 1:
+              raise SystemExit('expected one build-server test command')
           path.write_text(source.replace(before, after, 1), encoding='utf-8')
           PY
 
@@ -140,7 +154,7 @@ jobs:
           npm audit --audit-level=high
           npm test
 
-      - name: Validate the permanent workflows and Messaging Intel fixture
+      - name: Validate permanent workflows and Messaging Intel fixture
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
           args: .github/workflows/gha-clone-server.yml .github/workflows/gha-clone-server-meta.yml remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml
@@ -177,7 +191,7 @@ jobs:
             exit 1
           fi
 
-      - name: Remove this one-shot reconciler and commit the product-only branch
+      - name: Remove one-shot reconciler and commit the product-only branch
         shell: bash
         run: |
           set -euo pipefail
