@@ -4,8 +4,7 @@ on:
   pull_request:
     paths:
       - 'remote/deployments/gha-clone-server-rs/**'
-      - 'remote/deployments/build-server-rs/src/profiles.rs'
-      - 'remote/deployments/build-server-rs/readme.md'
+      - 'remote/deployments/build-server-rs/**'
       - 'remote/argocd/dd-next-runtime/dd-gha-clone-server*'
       - 'remote/argocd/dd-next-runtime/dd-gha-executor-router*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
@@ -23,8 +22,7 @@ on:
     branches: [main, dev]
     paths:
       - 'remote/deployments/gha-clone-server-rs/**'
-      - 'remote/deployments/build-server-rs/src/profiles.rs'
-      - 'remote/deployments/build-server-rs/readme.md'
+      - 'remote/deployments/build-server-rs/**'
       - 'remote/argocd/dd-next-runtime/dd-gha-clone-server*'
       - 'remote/argocd/dd-next-runtime/dd-gha-executor-router*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
@@ -55,7 +53,7 @@ concurrency:
 
 jobs:
   rust:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -71,12 +69,12 @@ jobs:
       - name: Run Clippy
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo clippy --locked --all-targets -- -D warnings
-      - name: Run unit, router, and meta integration tests
+      - name: Run unit, router, webhook, and meta integration tests
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo test --locked --all-targets
 
   build-server-profile:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -90,18 +88,21 @@ jobs:
         with:
           toolchain: '1.90.0'
           components: rustfmt
-      - name: Check the modified fixed-profile source formatting
+      - name: Check the modified idempotency source formatting
         working-directory: remote/deployments/build-server-rs
-        run: rustfmt --edition 2021 --check src/profiles.rs
-      - name: Compile the build server against the exact private library gitlink
+        run: rustfmt --edition 2021 --check src/jobs.rs
+      - name: Compile the complete build server against the exact private library gitlink
         working-directory: remote/deployments/build-server-rs
         run: cargo check --locked --all-targets
       - name: Test the fixed-profile registry and meta fallback
         working-directory: remote/deployments/build-server-rs
         run: cargo test --locked profiles::tests -- --nocapture
+      - name: Test build request idempotency and retry semantics
+        working-directory: remote/deployments/build-server-rs
+        run: cargo test --locked idempotency_tests -- --nocapture
 
   contracts:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -121,7 +122,7 @@ jobs:
           cache-dependency-path: remote/tests/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: remote/tests
-      - name: Validate deployment, execution, webhook, and provider-routing boundaries
+      - name: Validate deployment, webhook, idempotency, and provider-routing boundaries
         working-directory: remote/tests
         run: |
           pnpm exec tsx --test \
