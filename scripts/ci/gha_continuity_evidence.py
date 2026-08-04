@@ -90,7 +90,7 @@ class Evidence:
 def _require_string(value: object, field: str) -> str:
     if not isinstance(value, str) or not value:
         raise EvidenceError(f"{field} must be a non-empty string")
-    if any(character.is_control() for character in value):
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
         raise EvidenceError(f"{field} must not contain control characters")
     return value
 

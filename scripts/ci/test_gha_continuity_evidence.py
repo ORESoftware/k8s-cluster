@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +12,7 @@ MODULE_PATH = Path(__file__).with_name("gha_continuity_evidence.py")
 SPEC = importlib.util.spec_from_file_location("gha_continuity_evidence", MODULE_PATH)
 assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 REVISION = "0123456789abcdef0123456789abcdef01234567"

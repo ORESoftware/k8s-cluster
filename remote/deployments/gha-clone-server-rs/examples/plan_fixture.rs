@@ -3,9 +3,7 @@ use std::{env, fs, process};
 use gha_clone_server::{build_plan, PlanRequest, PlannerLimits};
 
 fn usage() -> ! {
-    eprintln!(
-        "usage: plan_fixture OWNER/REPO 40_HEX_SHA .github/workflows/FILE.yml WORKFLOW_FILE"
-    );
+    eprintln!("usage: plan_fixture OWNER/REPO 40_HEX_SHA .github/workflows/FILE.yml WORKFLOW_FILE");
     process::exit(2);
 }
 
