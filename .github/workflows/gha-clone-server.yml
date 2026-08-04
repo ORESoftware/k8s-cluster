@@ -5,6 +5,7 @@ on:
     paths:
       - 'remote/deployments/gha-clone-server-rs/**'
       - 'remote/deployments/build-server-rs/src/profiles.rs'
+      - 'remote/deployments/build-server-rs/src/validation.rs'
       - 'remote/deployments/build-server-rs/readme.md'
       - 'remote/argocd/dd-next-runtime/dd-gha-clone-server*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
@@ -21,6 +22,7 @@ on:
     paths:
       - 'remote/deployments/gha-clone-server-rs/**'
       - 'remote/deployments/build-server-rs/src/profiles.rs'
+      - 'remote/deployments/build-server-rs/src/validation.rs'
       - 'remote/deployments/build-server-rs/readme.md'
       - 'remote/argocd/dd-next-runtime/dd-gha-clone-server*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
@@ -89,15 +91,15 @@ jobs:
         with:
           toolchain: '1.90.0'
           components: rustfmt
-      - name: Check the modified fixed-profile source formatting
+      - name: Check the modified build-server source formatting
         working-directory: remote/deployments/build-server-rs
-        run: rustfmt --edition 2021 --check src/profiles.rs
+        run: rustfmt --edition 2021 --check src/profiles.rs src/validation.rs
       - name: Compile the build server against the exact private library gitlink
         working-directory: remote/deployments/build-server-rs
         run: cargo check --locked --all-targets
-      - name: Test the fixed-profile registry and meta fallback
+      - name: Test fixed profiles and repository admission rules
         working-directory: remote/deployments/build-server-rs
-        run: cargo test --locked profiles::tests -- --nocapture
+        run: cargo test --locked --lib -- --nocapture
 
   msgint-profile-smoke:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_msgint_profile_smoke }}
