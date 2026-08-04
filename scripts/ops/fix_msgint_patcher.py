@@ -1,4 +1,5 @@
 # One-shot exact repair for the duplicated pull/push workflow path block.
+# Retained only until the full Rust integration and deployment contracts pass.
 from pathlib import Path
 
 path = Path("scripts/ops/apply_msgint_gha_clone.py")
