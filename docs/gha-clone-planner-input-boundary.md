@@ -1,4 +1,3 @@
-
 # GHA clone planner input boundary
 
 The independent clone-server lane accepts only a deliberately bounded static subset of GitHub workflow YAML. GitHub-hosted runners and official Actions Runner Controller remain the native-semantics lanes.
@@ -16,5 +15,11 @@ Block-scalar command text is excluded from structural scanning. The scanner uses
 ## Bounded limits
 
 Workflow-byte, job-count, and per-job step limits must all be strictly positive. Zero is configuration failure, not an instruction to disable the bound.
+
+## Validation invariant
+
+The all-target Rust suite covers valid repeated mapping keys across separate steps, duplicate keys inside one step, sibling fields after `- run: |`, block-scalar text containing YAML-looking tokens, document-marker comments, non-empty flow mappings, direct-path character constraints, and zero planner limits. The stricter path validator retains the established `workflowPath must stay under .github/workflows` diagnostic prefix so existing operators and adversarial contract tests remain compatible.
+
+Formatting, warnings-denied Clippy, library and binary unit tests, HTTP/process integration tests, router assignment tests, meta self-tests, and planner adversarial tests must all pass before this boundary changes.
 
 These checks are defense in depth. They do not expand the independent lane into a general GitHub Actions interpreter and do not weaken the fixed-profile compiler's fail-closed boundary.
