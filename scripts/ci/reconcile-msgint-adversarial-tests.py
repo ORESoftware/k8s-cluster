@@ -14,7 +14,7 @@ ADVERSARIAL_PATH = Path(
 CONTRACT_PATH = Path("remote/tests/general/gha-clone-server-config.test.ts")
 CHECKOUT_SHA = "3d3c42e5aac5ba805825da76410c181273ba90b1"
 SETUP_NODE_SHA = "820762786026740c76f36085b0efc47a31fe5020"
-APP_TOKEN_SHA = "bcd2ba49218906704ab6c1aa796996da409d3eb1"
+CREATE_APP_ACTION_REVISION = "bcd2ba49218906704ab6c1aa796996da409d3eb1"
 
 
 def replace_once(source: str, old: str, new: str, label: str) -> str:
@@ -87,7 +87,7 @@ def reconcile_workflow_contract() -> None:
         "  assert.match(workflow, /create-github-app-token@/);\n",
         "  assert.match(\n"
         "    workflow,\n"
-        f"    /actions\\/create-github-app-token@{APP_TOKEN_SHA}/,\n"
+        f"    /actions\\/create-github-app-token@{CREATE_APP_ACTION_REVISION}/,\n"
         "  );\n"
         "  assert.match(workflow, /owner: messaging-intel/);\n"
         "  assert.match(workflow, /repositories: msgint-connectors/);\n"
