@@ -2,16 +2,16 @@ use std::{
     collections::HashMap,
     env,
     ffi::{CStr, CString},
+    fs::File,
     os::raw::{c_char, c_int},
     path::{Path, PathBuf},
-    process::Command,
     sync::OnceLock,
 };
 
-use libloading::{Library, Symbol};
-
-type ParseJsonArgvFromFile = unsafe extern "C" fn(*const c_char, *const c_char) -> *mut c_char;
-type FreeValue = unsafe extern "C" fn(*mut c_char);
+const COMMAND_NAME: &str = "dd-in-house-mip-solver-node";
+const CONFIG_ENV: &str = "FLAGS2ENV_CONFIG";
+const CONFIG_FILE: &str = ".cli-flags.toml";
+const PACKAGE_SHARE_DIR: &str = "dd-in-house-mip-solver-node";
 
 unsafe extern "C" {
     fn f2e_parse_json_argv_from_file(
@@ -32,8 +32,6 @@ static RUNTIME_CONFIG: OnceLock<RuntimeConfig> = OnceLock::new();
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CliFlagSource {
     LinkedParser,
-    NativeLibrary,
-    CliBinary,
     EnvOnly,
 }
 
@@ -43,91 +41,127 @@ pub struct RuntimeConfig {
     cli_values: HashMap<String, String>,
     config_path: Option<PathBuf>,
     cli_flag_source: CliFlagSource,
+    help_requested: bool,
     help_table: Option<String>,
     warnings: Vec<String>,
+    fatal_error: Option<String>,
 }
 
 impl RuntimeConfig {
     pub fn load(argv: Vec<String>) -> Self {
         let env_values: HashMap<String, String> = env::vars().collect();
-        let config_path = discover_config_path(&env_values, &argv);
-        let should_report_parser_failure = has_cli_flags(&argv)
-            || has_non_empty(&env_values, "FLAGS2ENV_CONFIG")
-            || has_non_empty(&env_values, "FLAGS2ENV_NATIVE_LIB")
-            || has_non_empty(&env_values, "FLAGS2ENV_BIN");
-        let mut warnings = Vec::new();
-        let mut help_table = None;
+        let parsing_requested =
+            has_cli_flags(&argv) || has_non_empty(&env_values, CONFIG_ENV);
+        let help_requested = has_help_flag(&argv);
 
-        if let Some(path) = config_path.as_deref() {
-            match help_table_from_linked_parser(&argv, path) {
-                Ok(table) => help_table = table,
-                Err(error) if has_help_flag(&argv) => {
-                    warnings.push(format!("flags2env help table unavailable: {error}"));
-                }
-                Err(_) => {}
-            }
-        }
-
-        let (cli_values, cli_flag_source) = if help_table.is_some() {
-            (HashMap::new(), CliFlagSource::LinkedParser)
-        } else {
-            match config_path.as_deref() {
-                Some(path) => match parse_with_linked_parser(&argv, path) {
-                    Ok(values) => (values, CliFlagSource::LinkedParser),
-                    Err(linked_error) => {
-                        match parse_with_native_library(&argv, path, &env_values) {
-                            Ok(values) => (values, CliFlagSource::NativeLibrary),
-                            Err(native_error) => {
-                                match parse_with_cli_binary(&argv, path, &env_values) {
-                                    Ok(values) => (values, CliFlagSource::CliBinary),
-                                    Err(cli_error) => {
-                                        if should_report_parser_failure {
-                                            warnings.push(format!(
-                                                "flags2env unavailable; CLI flags were not applied ({linked_error}; {native_error}; {cli_error})"
-                                            ));
-                                        }
-                                        (HashMap::new(), CliFlagSource::EnvOnly)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                None => {
-                    if should_report_parser_failure {
-                        warnings.push(
-                            "flags2env config not found; CLI flags were not applied".to_string(),
-                        );
-                    }
-                    (HashMap::new(), CliFlagSource::EnvOnly)
-                }
+        let config_path = match discover_config_path(&env_values, &argv) {
+            Ok(path) => path,
+            Err(error) => {
+                return Self::from_parts(
+                    env_values,
+                    HashMap::new(),
+                    None,
+                    CliFlagSource::EnvOnly,
+                    help_requested,
+                    None,
+                    Vec::new(),
+                    Some(error),
+                );
             }
         };
 
-        if let Some(errors) = cli_values.get("MIP_SOLVER_CLI_PARSE_ERRORS") {
-            warnings.push(format!("flags2env parse errors: {errors}"));
-        }
-        if let Some(unknown) = cli_values.get("MIP_SOLVER_UNKNOWN_CLI_FLAGS") {
-            warnings.push(format!("flags2env unknown CLI flags: {unknown}"));
+        let Some(config_path) = config_path else {
+            let fatal_error = parsing_requested
+                .then(|| "trusted flags2env config not found".to_string());
+            return Self::from_parts(
+                env_values,
+                HashMap::new(),
+                None,
+                CliFlagSource::EnvOnly,
+                help_requested,
+                None,
+                Vec::new(),
+                fatal_error,
+            );
+        };
+
+        if help_requested {
+            return match help_table_from_linked_parser(&argv, &config_path) {
+                Ok(Some(help_table)) => Self::from_parts(
+                    env_values,
+                    HashMap::new(),
+                    Some(config_path),
+                    CliFlagSource::LinkedParser,
+                    true,
+                    Some(help_table),
+                    Vec::new(),
+                    None,
+                ),
+                Ok(None) | Err(_) => Self::from_parts(
+                    env_values,
+                    HashMap::new(),
+                    Some(config_path),
+                    CliFlagSource::LinkedParser,
+                    true,
+                    None,
+                    Vec::new(),
+                    Some(
+                        "flags2env linked parser could not generate the help table".to_string(),
+                    ),
+                ),
+            };
         }
 
-        Self::from_parts(
-            env_values,
-            cli_values,
-            config_path,
-            cli_flag_source,
-            help_table,
-            warnings,
-        )
+        let parsed = match parse_with_linked_parser(&argv, &config_path) {
+            Ok(values) => values,
+            Err(_) => {
+                return Self::from_parts(
+                    env_values,
+                    HashMap::new(),
+                    Some(config_path),
+                    CliFlagSource::LinkedParser,
+                    false,
+                    None,
+                    Vec::new(),
+                    Some("flags2env linked parser failed".to_string()),
+                );
+            }
+        };
+
+        match validated_cli_values(parsed) {
+            Ok(cli_values) => Self::from_parts(
+                env_values,
+                cli_values,
+                Some(config_path),
+                CliFlagSource::LinkedParser,
+                false,
+                None,
+                Vec::new(),
+                None,
+            ),
+            Err(error) => Self::from_parts(
+                env_values,
+                HashMap::new(),
+                Some(config_path),
+                CliFlagSource::LinkedParser,
+                false,
+                None,
+                Vec::new(),
+                Some(error),
+            ),
+        }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn from_parts(
         env_values: HashMap<String, String>,
         cli_values: HashMap<String, String>,
         config_path: Option<PathBuf>,
         cli_flag_source: CliFlagSource,
+        help_requested: bool,
         help_table: Option<String>,
         warnings: Vec<String>,
+        fatal_error: Option<String>,
     ) -> Self {
         let mut values = env_values;
         values.extend(cli_values.clone());
@@ -136,8 +170,10 @@ impl RuntimeConfig {
             cli_values,
             config_path,
             cli_flag_source,
+            help_requested,
             help_table,
             warnings,
+            fatal_error,
         }
     }
 
@@ -215,16 +251,25 @@ impl RuntimeConfig {
     }
 
     pub fn help_requested(&self) -> bool {
-        self.help_table.is_some()
+        self.help_requested
     }
 
     pub fn warnings(&self) -> &[String] {
         &self.warnings
     }
+
+    pub fn fatal_error(&self) -> Option<&str> {
+        self.fatal_error.as_deref()
+    }
 }
 
 pub fn initialize() -> &'static RuntimeConfig {
-    RUNTIME_CONFIG.get_or_init(|| RuntimeConfig::load(env::args().collect()))
+    let config = RUNTIME_CONFIG.get_or_init(|| RuntimeConfig::load(env::args().collect()));
+    if let Some(error) = config.fatal_error() {
+        eprintln!("runtime config error: {error}");
+        std::process::exit(2);
+    }
+    config
 }
 
 pub fn current() -> &'static RuntimeConfig {
@@ -280,17 +325,12 @@ fn help_table_from_linked_parser(
 
     let config_path = CString::new(config_path.to_string_lossy().as_bytes())
         .map_err(|error| error.to_string())?;
-    let command_name = CString::new(
-        argv.first()
-            .map(String::as_str)
-            .unwrap_or("dd-in-house-mip-solver-node"),
-    )
-    .map_err(|error| error.to_string())?;
+    let command_name = CString::new(COMMAND_NAME).map_err(|error| error.to_string())?;
 
     let table = unsafe {
         let result = f2e_help_table_from_file(config_path.as_ptr(), command_name.as_ptr(), 0);
         if result.is_null() {
-            return Err("native help table returned null".to_string());
+            return Err("linked help table returned null".to_string());
         }
         let raw = CStr::from_ptr(result).to_string_lossy().to_string();
         f2e_free(result);
@@ -312,7 +352,7 @@ fn parse_with_linked_parser(
     let parsed = unsafe {
         let result = f2e_parse_json_argv_from_file(config_path.as_ptr(), argv_json.as_ptr());
         if result.is_null() {
-            return Ok(HashMap::new());
+            return Err("linked parser returned null".to_string());
         }
         let raw = CStr::from_ptr(result).to_string_lossy().to_string();
         f2e_free(result);
@@ -322,203 +362,132 @@ fn parse_with_linked_parser(
     serde_json::from_str(&parsed).map_err(|error| error.to_string())
 }
 
-fn parse_with_native_library(
-    argv: &[String],
-    config_path: &Path,
-    env_values: &HashMap<String, String>,
+fn validated_cli_values(
+    mut values: HashMap<String, String>,
 ) -> Result<HashMap<String, String>, String> {
-    let argv_json = CString::new(serde_json::to_string(argv).map_err(|error| error.to_string())?)
-        .map_err(|error| error.to_string())?;
-    let config_path = CString::new(config_path.to_string_lossy().as_bytes())
-        .map_err(|error| error.to_string())?;
-    let candidates = native_library_candidates(env_values);
-    let mut errors = Vec::new();
+    let parse_errors = values
+        .remove("MIP_SOLVER_CLI_PARSE_ERRORS")
+        .is_some_and(|value| !value.trim().is_empty());
+    let unknown_options = values
+        .remove("MIP_SOLVER_UNKNOWN_CLI_FLAGS")
+        .is_some_and(|value| !value.trim().is_empty());
 
-    for candidate in candidates {
-        match unsafe { Library::new(&candidate) } {
-            Ok(library) => {
-                let parsed = unsafe {
-                    let parse: Symbol<ParseJsonArgvFromFile> = library
-                        .get(b"f2e_parse_json_argv_from_file")
-                        .map_err(|error| error.to_string())?;
-                    let free: Symbol<FreeValue> = library
-                        .get(b"f2e_free")
-                        .map_err(|error| error.to_string())?;
-                    let result = parse(config_path.as_ptr(), argv_json.as_ptr());
-                    if result.is_null() {
-                        return Ok(HashMap::new());
-                    }
-                    let raw = CStr::from_ptr(result).to_string_lossy().to_string();
-                    free(result);
-                    raw
-                };
-                return serde_json::from_str(&parsed).map_err(|error| error.to_string());
-            }
-            Err(error) => errors.push(format!("{candidate}: {error}")),
-        }
+    if parse_errors {
+        return Err("flags2env rejected one or more CLI values".to_string());
     }
-
-    Err(if errors.is_empty() {
-        "no native library candidates configured".to_string()
-    } else {
-        errors.join("; ")
-    })
-}
-
-fn parse_with_cli_binary(
-    argv: &[String],
-    config_path: &Path,
-    env_values: &HashMap<String, String>,
-) -> Result<HashMap<String, String>, String> {
-    let binary = map_value(env_values, "FLAGS2ENV_BIN").unwrap_or_else(|| "flags2env".to_string());
-    let output = Command::new(&binary)
-        .arg("shell-env")
-        .arg("--config")
-        .arg(config_path)
-        .arg("--")
-        .args(argv)
-        .output()
-        .map_err(|error| format!("{binary}: {error}"))?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "{binary} exited with status {}: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-
-    parse_shell_exports(&String::from_utf8_lossy(&output.stdout))
-}
-
-fn parse_shell_exports(output: &str) -> Result<HashMap<String, String>, String> {
-    let mut values = HashMap::new();
-    for line in output
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-    {
-        let Some(rest) = line.strip_prefix("export ") else {
-            continue;
-        };
-        let Some((key, raw_value)) = rest.split_once('=') else {
-            return Err(format!("invalid shell export line: {line}"));
-        };
-        let value = parse_single_quoted_value(raw_value)
-            .ok_or_else(|| format!("invalid shell export value for {key}"))?;
-        values.insert(key.to_string(), value);
+    if unknown_options {
+        return Err("flags2env rejected one or more unknown CLI options".to_string());
     }
     Ok(values)
 }
 
-fn parse_single_quoted_value(raw: &str) -> Option<String> {
-    let mut rest = raw.trim();
-    let mut value = String::new();
+fn discover_config_path(
+    env_values: &HashMap<String, String>,
+    argv: &[String],
+) -> Result<Option<PathBuf>, String> {
+    let cli_explicit = cli_config_path(argv)?;
+    let env_explicit = map_value(env_values, CONFIG_ENV).map(PathBuf::from);
+    let executable = env::current_exe().ok();
 
-    loop {
-        rest = rest.strip_prefix('\'')?;
-        let end = rest.find('\'')?;
-        value.push_str(&rest[..end]);
-        rest = &rest[end + 1..];
-        if rest.is_empty() {
-            return Some(value);
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mut source_candidates = vec![manifest_dir.join(CONFIG_FILE)];
+    if env!("CARGO_PKG_NAME").ends_with("-local") {
+        if let Some(parent) = manifest_dir.parent() {
+            source_candidates.push(parent.join(CONFIG_FILE));
         }
-        if let Some(next) = rest.strip_prefix("\\''") {
-            value.push('\'');
-            rest = next;
-            continue;
-        }
-        return None;
     }
+
+    discover_config_path_from(
+        cli_explicit,
+        env_explicit,
+        executable,
+        source_candidates,
+    )
 }
 
-fn discover_config_path(env_values: &HashMap<String, String>, argv: &[String]) -> Option<PathBuf> {
-    if let Some(path) = cli_config_path(argv) {
-        if path.is_file() {
-            return Some(path);
-        }
+fn discover_config_path_from(
+    cli_explicit: Option<PathBuf>,
+    env_explicit: Option<PathBuf>,
+    executable: Option<PathBuf>,
+    source_candidates: Vec<PathBuf>,
+) -> Result<Option<PathBuf>, String> {
+    if let Some(path) = cli_explicit {
+        return validate_explicit_config(path, "CLI flags config").map(Some);
     }
-
-    if let Some(path) = map_value(env_values, "FLAGS2ENV_CONFIG").map(PathBuf::from) {
-        if path.is_file() {
-            return Some(path);
-        }
+    if let Some(path) = env_explicit {
+        return validate_explicit_config(path, CONFIG_ENV).map(Some);
     }
 
     let mut candidates = Vec::new();
-    if let Ok(current_dir) = env::current_dir() {
-        candidates.push(current_dir.join(".cli-flags.toml"));
+    if let Some(parent) = executable.as_deref().and_then(Path::parent) {
+        candidates.push(
+            parent
+                .join("..")
+                .join("share")
+                .join(PACKAGE_SHARE_DIR)
+                .join(CONFIG_FILE),
+        );
+        candidates.push(parent.join(CONFIG_FILE));
     }
+    candidates.extend(source_candidates);
 
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    candidates.push(manifest_dir.join(".cli-flags.toml"));
-    if let Some(parent) = manifest_dir.parent() {
-        candidates.push(parent.join(".cli-flags.toml"));
-    }
-
-    candidates.into_iter().find(|path| path.is_file())
+    Ok(candidates
+        .into_iter()
+        .find_map(|candidate| trusted_regular_file(&candidate)))
 }
 
-fn cli_config_path(argv: &[String]) -> Option<PathBuf> {
+fn validate_explicit_config(path: PathBuf, source: &str) -> Result<PathBuf, String> {
+    if !path.is_absolute() {
+        return Err(format!("{source} must be an absolute path"));
+    }
+    trusted_regular_file(&path)
+        .ok_or_else(|| format!("{source} does not name a readable regular file"))
+}
+
+fn trusted_regular_file(path: &Path) -> Option<PathBuf> {
+    if !path.is_absolute() {
+        return None;
+    }
+    let canonical = path.canonicalize().ok()?;
+    if !canonical.metadata().ok()?.is_file() {
+        return None;
+    }
+    File::open(&canonical).ok()?;
+    Some(canonical)
+}
+
+fn cli_config_path(argv: &[String]) -> Result<Option<PathBuf>, String> {
     let mut args = argv.iter().skip(1).peekable();
     while let Some(arg) = args.next() {
         if arg == "--" {
-            return None;
+            return Ok(None);
         }
         if let Some(path) = arg
             .strip_prefix("--cli-flags-config=")
             .or_else(|| arg.strip_prefix("--flags2env-config="))
             .or_else(|| arg.strip_prefix("--config="))
         {
-            return non_empty_path(path);
+            return explicit_cli_path(path).map(Some);
         }
         if matches!(
             arg.as_str(),
             "--cli-flags-config" | "--flags2env-config" | "--config"
         ) {
-            return args.next().and_then(|path| non_empty_path(path));
+            let path = args
+                .next()
+                .ok_or_else(|| "CLI flags config requires a path".to_string())?;
+            return explicit_cli_path(path).map(Some);
         }
     }
-    None
+    Ok(None)
 }
 
-fn non_empty_path(path: &str) -> Option<PathBuf> {
+fn explicit_cli_path(path: &str) -> Result<PathBuf, String> {
     let path = path.trim();
     if path.is_empty() {
-        None
+        Err("CLI flags config requires a path".to_string())
     } else {
-        Some(PathBuf::from(path))
-    }
-}
-
-fn native_library_candidates(env_values: &HashMap<String, String>) -> Vec<String> {
-    let mut candidates = Vec::new();
-    if let Some(path) = map_value(env_values, "FLAGS2ENV_NATIVE_LIB") {
-        candidates.push(path);
-    }
-
-    if let Ok(current_dir) = env::current_dir() {
-        let lib_name = default_library_name();
-        candidates.push(
-            current_dir
-                .join("build")
-                .join(lib_name)
-                .to_string_lossy()
-                .to_string(),
-        );
-        candidates.push(current_dir.join(lib_name).to_string_lossy().to_string());
-    }
-    candidates.push(default_library_name().to_string());
-    dedupe(candidates)
-}
-
-fn default_library_name() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "libflags2env.dylib"
-    } else if cfg!(target_os = "windows") {
-        "flags2env.dll"
-    } else {
-        "libflags2env.so"
+        Ok(PathBuf::from(path))
     }
 }
 
@@ -543,19 +512,88 @@ fn has_help_flag(argv: &[String]) -> bool {
     argv.iter().skip(1).any(|arg| arg == "--help")
 }
 
-fn dedupe(values: Vec<String>) -> Vec<String> {
-    let mut deduped = Vec::new();
-    for value in values {
-        if !deduped.contains(&value) {
-            deduped.push(value);
-        }
-    }
-    deduped
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    const SOURCE: &str = include_str!("runtime_config.rs");
+
+    struct TestTree(PathBuf);
+
+    impl TestTree {
+        fn new(name: &str) -> Self {
+            let nonce = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock")
+                .as_nanos();
+            let path = env::temp_dir().join(format!(
+                "mip-solver-runtime-config-{name}-{}-{nonce}",
+                std::process::id()
+            ));
+            fs::create_dir_all(&path).expect("create test tree");
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TestTree {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn write_contract(path: &Path) {
+        fs::create_dir_all(path.parent().expect("contract parent"))
+            .expect("create contract parent");
+        fs::write(
+            path,
+            r#"
+[parse]
+allow_unknown = false
+
+[flags.port]
+env = "PORT"
+aliases = ["port"]
+type = "integer"
+"#,
+        )
+        .expect("write contract");
+    }
+
+    fn config_from_parser_result(
+        env_values: HashMap<String, String>,
+        parsed: HashMap<String, String>,
+    ) -> RuntimeConfig {
+        match validated_cli_values(parsed) {
+            Ok(cli_values) => RuntimeConfig::from_parts(
+                env_values,
+                cli_values,
+                None,
+                CliFlagSource::LinkedParser,
+                false,
+                None,
+                Vec::new(),
+                None,
+            ),
+            Err(error) => RuntimeConfig::from_parts(
+                env_values,
+                HashMap::new(),
+                None,
+                CliFlagSource::LinkedParser,
+                false,
+                None,
+                Vec::new(),
+                Some(error),
+            ),
+        }
+    }
 
     #[test]
     fn cli_values_override_environment_values() {
@@ -563,19 +601,22 @@ mod tests {
             HashMap::from([("PORT".to_string(), "8097".to_string())]),
             HashMap::from([("PORT".to_string(), "9090".to_string())]),
             None,
-            CliFlagSource::CliBinary,
+            CliFlagSource::LinkedParser,
+            false,
             None,
             Vec::new(),
+            None,
         );
 
         assert_eq!(config.value("PORT", "3000"), "9090");
         assert_eq!(config.usize_value("PORT", 3000), 9090);
+        assert!(config.fatal_error().is_none());
     }
 
     #[test]
     fn linked_parser_loads_cli_flags_from_toml() {
         let config = RuntimeConfig::load(vec![
-            "dd-in-house-mip-solver-node".to_string(),
+            COMMAND_NAME.to_string(),
             "--port".to_string(),
             "9191".to_string(),
             "--role=slave".to_string(),
@@ -584,6 +625,7 @@ mod tests {
             "--verbose".to_string(),
         ]);
 
+        assert!(config.fatal_error().is_none());
         assert_eq!(config.cli_flag_source, CliFlagSource::LinkedParser);
         assert_eq!(config.value("PORT", "8097"), "9191");
         assert_eq!(config.value("MIP_SOLVER_NODE_ROLE", "master"), "slave");
@@ -597,11 +639,9 @@ mod tests {
 
     #[test]
     fn linked_parser_generates_help_table() {
-        let config = RuntimeConfig::load(vec![
-            "dd-in-house-mip-solver-node".to_string(),
-            "--help".to_string(),
-        ]);
+        let config = RuntimeConfig::load(vec![COMMAND_NAME.to_string(), "--help".to_string()]);
 
+        assert!(config.fatal_error().is_none());
         assert!(config.help_requested());
         let help = config.help_table().expect("help table");
         assert!(help.contains("--port"));
@@ -612,49 +652,88 @@ mod tests {
     #[test]
     fn cli_config_path_overrides_default_discovery() {
         let cli_flags_path = cli_flags_path();
+        let canonical = cli_flags_path
+            .canonicalize()
+            .expect("canonical CLI flags path");
         let config = RuntimeConfig::load(vec![
-            "dd-in-house-mip-solver-node".to_string(),
+            COMMAND_NAME.to_string(),
             "--cli-flags-config".to_string(),
             cli_flags_path.display().to_string(),
             "--port=9292".to_string(),
         ]);
 
-        assert_eq!(
-            config.config_path.as_deref(),
-            Some(cli_flags_path.as_path())
-        );
+        assert!(config.fatal_error().is_none());
+        assert_eq!(config.config_path.as_deref(), Some(canonical.as_path()));
         assert_eq!(config.value("PORT", "8097"), "9292");
     }
 
     #[test]
-    fn invalid_typed_cli_values_are_reported() {
-        let config = RuntimeConfig::load(vec![
-            "dd-in-house-mip-solver-node".to_string(),
-            "--max-nodes=not-a-number".to_string(),
-        ]);
+    fn invalid_typed_cli_values_are_fatal_without_echoing_values() {
+        let rejected_value = "not-a-number-runtime-secret";
+        let config = config_from_parser_result(
+            HashMap::new(),
+            HashMap::from([(
+                "MIP_SOLVER_CLI_PARSE_ERRORS".to_string(),
+                rejected_value.to_string(),
+            )]),
+        );
 
-        assert!(config.optional_value("MIP_SOLVER_MAX_NODES").is_none());
-        assert!(config
-            .warnings
-            .iter()
-            .any(|warning| warning.contains("parse errors")));
+        assert_eq!(
+            config.fatal_error(),
+            Some("flags2env rejected one or more CLI values")
+        );
+        assert!(config.cli_values().is_empty());
+        assert!(!config
+            .fatal_error()
+            .expect("fatal error")
+            .contains(rejected_value));
     }
 
     #[test]
-    fn unknown_cli_flags_are_reported() {
-        let config = RuntimeConfig::load(vec![
-            "dd-in-house-mip-solver-node".to_string(),
-            "--definitely-not-a-real-flag".to_string(),
-        ]);
+    fn unknown_cli_flags_are_fatal_without_echoing_values() {
+        let rejected_value = "postgres://runtime-secret@redacted.invalid/mip";
+        let config = config_from_parser_result(
+            HashMap::new(),
+            HashMap::from([(
+                "MIP_SOLVER_UNKNOWN_CLI_FLAGS".to_string(),
+                rejected_value.to_string(),
+            )]),
+        );
 
-        assert!(config
-            .warnings
-            .iter()
-            .any(|warning| warning.contains("unknown CLI flags")));
+        assert_eq!(
+            config.fatal_error(),
+            Some("flags2env rejected one or more unknown CLI options")
+        );
+        assert!(config.cli_values().is_empty());
+        assert!(!config
+            .fatal_error()
+            .expect("fatal error")
+            .contains(rejected_value));
     }
 
     #[test]
-    fn typed_values_fall_back_when_invalid() {
+    fn parse_errors_win_without_merging_any_cli_values() {
+        let config = config_from_parser_result(
+            HashMap::from([("PORT".to_string(), "8097".to_string())]),
+            HashMap::from([
+                ("PORT".to_string(), "9292".to_string()),
+                (
+                    "MIP_SOLVER_CLI_PARSE_ERRORS".to_string(),
+                    "caller supplied text".to_string(),
+                ),
+            ]),
+        );
+
+        assert_eq!(
+            config.fatal_error(),
+            Some("flags2env rejected one or more CLI values")
+        );
+        assert_eq!(config.value("PORT", "3000"), "8097");
+        assert!(config.cli_values().is_empty());
+    }
+
+    #[test]
+    fn typed_values_fall_back_when_environment_values_are_invalid() {
         let config = RuntimeConfig::from_parts(
             HashMap::from([
                 ("COUNT".to_string(), "0".to_string()),
@@ -663,8 +742,10 @@ mod tests {
             HashMap::new(),
             None,
             CliFlagSource::EnvOnly,
+            false,
             None,
             Vec::new(),
+            None,
         );
 
         assert_eq!(config.u64_value("COUNT", 7), 7);
@@ -672,15 +753,187 @@ mod tests {
         assert!(config.bool_value("DEBUG", true));
     }
 
+    #[test]
+    fn explicit_contract_requires_an_absolute_readable_regular_file() {
+        let tree = TestTree::new("explicit");
+        let explicit = tree.path().join("operator/reviewed.toml");
+        write_contract(&explicit);
+
+        let resolved =
+            discover_config_path_from(Some(explicit.clone()), None, None, Vec::new())
+                .expect("explicit contract")
+                .expect("resolved explicit contract");
+        assert_eq!(
+            resolved,
+            explicit.canonicalize().expect("canonical explicit contract")
+        );
+
+        let relative = discover_config_path_from(
+            Some(PathBuf::from("reviewed.toml")),
+            None,
+            None,
+            Vec::new(),
+        )
+        .expect_err("relative explicit contract must fail closed");
+        assert_eq!(relative, "CLI flags config must be an absolute path");
+        assert!(!relative.contains("reviewed.toml"));
+
+        let missing = tree.path().join("operator/missing-runtime-secret.toml");
+        let error =
+            discover_config_path_from(None, Some(missing.clone()), None, Vec::new())
+                .expect_err("missing explicit contract must fail closed");
+        assert_eq!(
+            error,
+            "FLAGS2ENV_CONFIG does not name a readable regular file"
+        );
+        assert!(!error.contains(&missing.display().to_string()));
+        assert!(!error.contains("runtime-secret"));
+    }
+
+    #[test]
+    fn cli_selector_wins_and_fails_closed_instead_of_falling_back_to_env() {
+        let tree = TestTree::new("selector-precedence");
+        let env_contract = tree.path().join("operator/env.toml");
+        write_contract(&env_contract);
+
+        let error = discover_config_path_from(
+            Some(PathBuf::from("relative.toml")),
+            Some(env_contract),
+            None,
+            Vec::new(),
+        )
+        .expect_err("invalid CLI selector must not fall through");
+        assert_eq!(error, "CLI flags config must be an absolute path");
+    }
+
+    #[test]
+    fn packaged_share_contract_beats_colocated_contract() {
+        let tree = TestTree::new("package-order");
+        let executable = tree.path().join("install/bin/dd-in-house-mip-solver-node");
+        let packaged = tree.path().join(
+            "install/share/dd-in-house-mip-solver-node/.cli-flags.toml",
+        );
+        let colocated = tree.path().join("install/bin/.cli-flags.toml");
+        write_contract(&packaged);
+        write_contract(&colocated);
+
+        let resolved =
+            discover_config_path_from(None, None, Some(executable), Vec::new())
+                .expect("trusted candidates")
+                .expect("packaged contract");
+        assert_eq!(
+            resolved,
+            packaged.canonicalize().expect("canonical packaged contract")
+        );
+    }
+
+    #[test]
+    fn unrelated_working_directory_contract_is_never_a_candidate() {
+        let tree = TestTree::new("hostile-cwd");
+        let attacker_contract = tree.path().join("attacker/.cli-flags.toml");
+        let executable = tree.path().join("install/bin/dd-in-house-mip-solver-node");
+        let packaged = tree.path().join(
+            "install/share/dd-in-house-mip-solver-node/.cli-flags.toml",
+        );
+        fs::create_dir_all(executable.parent().expect("executable parent"))
+            .expect("create executable parent");
+        write_contract(&attacker_contract);
+        write_contract(&packaged);
+
+        let resolved =
+            discover_config_path_from(None, None, Some(executable), Vec::new())
+                .expect("trusted candidates")
+                .expect("packaged contract");
+        assert_ne!(
+            resolved,
+            attacker_contract
+                .canonicalize()
+                .expect("canonical attacker contract")
+        );
+        assert_eq!(
+            resolved,
+            packaged.canonicalize().expect("canonical packaged contract")
+        );
+    }
+
+    #[test]
+    fn compile_time_local_wrapper_can_name_the_reviewed_source_contract() {
+        let tree = TestTree::new("source-wrapper");
+        let root_contract = tree.path().join("source/.cli-flags.toml");
+        write_contract(&root_contract);
+
+        let resolved = discover_config_path_from(
+            None,
+            None,
+            Some(tree.path().join("target/debug/dd-in-house-mip-solver-node")),
+            vec![
+                tree.path().join("source/local/.cli-flags.toml"),
+                root_contract.clone(),
+            ],
+        )
+        .expect("trusted candidates")
+        .expect("source contract");
+        assert_eq!(
+            resolved,
+            root_contract
+                .canonicalize()
+                .expect("canonical source contract")
+        );
+    }
+
+    #[test]
+    fn missing_cli_config_value_fails_closed_without_consuming_solver_flags() {
+        let error = cli_config_path(&[
+            COMMAND_NAME.to_string(),
+            "--cli-flags-config".to_string(),
+        ])
+        .expect_err("missing config path");
+        assert_eq!(error, "CLI flags config requires a path");
+    }
+
+    #[test]
+    fn no_parser_request_can_use_environment_only_mode_without_a_contract() {
+        let config = RuntimeConfig::from_parts(
+            HashMap::from([("PORT".to_string(), "8097".to_string())]),
+            HashMap::new(),
+            None,
+            CliFlagSource::EnvOnly,
+            false,
+            None,
+            Vec::new(),
+            None,
+        );
+        assert!(config.fatal_error().is_none());
+        assert_eq!(config.value("PORT", "3000"), "8097");
+    }
+
+    #[test]
+    fn production_flags_runtime_has_no_ambient_code_or_contract_fallbacks() {
+        for forbidden in [
+            concat!("current_", "dir("),
+            concat!("Library", "::new"),
+            concat!("Command", "::new"),
+            concat!("parse_with_native_", "library"),
+            concat!("parse_with_cli_", "binary"),
+            concat!("FLAGS2ENV_NATIVE_", "LIB"),
+            concat!("FLAGS2ENV_", "BIN"),
+        ] {
+            assert!(
+                !SOURCE.contains(forbidden),
+                "runtime_config.rs contains forbidden flags fallback: {forbidden}"
+            );
+        }
+    }
+
     fn cli_flags_path() -> PathBuf {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let direct = manifest_dir.join(".cli-flags.toml");
+        let direct = manifest_dir.join(CONFIG_FILE);
         if direct.is_file() {
             return direct;
         }
         manifest_dir
             .parent()
-            .expect("manifest parent")
-            .join(".cli-flags.toml")
+            .expect("local wrapper manifest parent")
+            .join(CONFIG_FILE)
     }
 }
