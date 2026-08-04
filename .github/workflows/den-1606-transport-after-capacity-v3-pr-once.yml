@@ -30,12 +30,10 @@ jobs:
           persist-credentials: true
           show-progress: false
 
-      - name: Verify exact scope and composed safety invariants
+      - name: Add live-process identity, redirect, and bound regressions
         run: |
           set -euo pipefail
           base='a14072064f25d7b49807656d4231f93d335a6d55'
-          main='remote/deployments/gha-clone-server-rs/src/main.rs'
-          http_tests='remote/deployments/gha-clone-server-rs/tests/http_api.rs'
           expected=$'.github/workflows/den-1606-transport-after-capacity-v3-pr-once.yml\ndocs/gha-clone-build-server-boundary.md\nremote/deployments/gha-clone-server-rs/src/main.rs\nremote/deployments/gha-clone-server-rs/tests/http_api.rs\nremote/deployments/gha-clone-server-rs/tests/streempilot_http.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_retention.rs'
           actual="$(git diff --name-only "$base"...HEAD | sort)"
           if [[ "$actual" != "$expected" ]]; then
@@ -45,33 +43,311 @@ jobs:
           test ! -e .github/workflows/den-1606-transport-after-capacity-v3-once.yml
           git diff --check "$base"...HEAD
 
-          grep -Fq 'reserve_run_records' "$main"
-          grep -Fq 'forget_webhook_delivery' "$main"
-          grep -Fq 'StatusCode::TOO_MANY_REQUESTS' "$main"
-          grep -Fq 'env_nonzero_usize("GHA_CLONE_MAX_RUNS"' "$main"
-          grep -Fq 'env_nonzero_u64("GHA_CLONE_BUILD_POLL_SECONDS"' "$main"
-          grep -Fq 'env_nonzero_u64("GHA_CLONE_BUILD_TIMEOUT_SECONDS"' "$main"
-          grep -Fq 'redirect(reqwest::redirect::Policy::none())' "$main"
-          grep -Fq '!matches!(value, "" | "." | "..")' "$main"
-          grep -Fq 'fn valid_dns_label' "$main"
-          grep -Fq 'validate_build_job_response_id(&build, Some(build_job_id))' "$main"
-          grep -Fq 'DotSegmentSubmissionId' "$http_tests"
-          grep -Fq 'MismatchedStatusId' "$http_tests"
-          grep -Fq 'zero_runtime_bounds_fail_configuration_before_bind' "$http_tests"
-          if grep -Fq 'fn terminal_run_pruning_never_discards_active_runs' "$main"; then
-            echo 'obsolete prune_runs regression was reintroduced' >&2
-            exit 1
-          fi
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label} drifted: expected one match, found {count}')
+              return text.replace(old, new, 1)
+
+          path = Path('remote/deployments/gha-clone-server-rs/tests/http_api.rs')
+          text = path.read_text(encoding='utf-8')
+
+          text = replace_once(
+              text,
+              '''    InvalidSubmissionJson,
+              FailBuild,
+          ''',
+              '''    InvalidSubmissionJson,
+              DotSegmentSubmissionId,
+              RedirectSubmission,
+              FailBuild,
+              MismatchedStatusId,
+          ''',
+              'mock failure modes',
+          )
+          text = replace_once(
+              text,
+              '''    next_id: Arc<AtomicUsize>,
+          ''',
+              '''    next_id: Arc<AtomicUsize>,
+              status_requests: Arc<AtomicUsize>,
+          ''',
+              'status request counter field',
+          )
+          text = replace_once(
+              text,
+              '''            next_id: Arc::new(AtomicUsize::new(0)),
+          ''',
+              '''            next_id: Arc::new(AtomicUsize::new(0)),
+                      status_requests: Arc::new(AtomicUsize::new(0)),
+          ''',
+              'status request counter initialization',
+          )
+          text = replace_once(
+              text,
+              '''        MockMode::InvalidSubmissionJson => (StatusCode::ACCEPTED, "not-json").into_response(),
+                  _ => {
+          ''',
+              '''        MockMode::InvalidSubmissionJson => (StatusCode::ACCEPTED, "not-json").into_response(),
+                  MockMode::DotSegmentSubmissionId => (
+                      StatusCode::ACCEPTED,
+                      Json(json!({ "id": "..", "status": "queued", "error": null })),
+                  )
+                      .into_response(),
+                  MockMode::RedirectSubmission => {
+                      axum::response::Redirect::temporary("/redirected").into_response()
+                  }
+                  _ => {
+          ''',
+              'submission identity and redirect mocks',
+          )
+          text = replace_once(
+              text,
+              '''async fn mock_status(State(state): State<MockBuildState>, Path(id): Path<String>) -> Response {
+                  match state.mode {
+                      MockMode::FailBuild => (
+          ''',
+              '''async fn mock_status(State(state): State<MockBuildState>, Path(id): Path<String>) -> Response {
+                  state.status_requests.fetch_add(1, Ordering::SeqCst);
+                  match state.mode {
+                      MockMode::MismatchedStatusId => (
+                          StatusCode::OK,
+                          Json(json!({
+                              "id": "different-build",
+                              "status": "succeeded",
+                              "error": null
+                          })),
+                      )
+                          .into_response(),
+                      MockMode::FailBuild => (
+          ''',
+              'polled identity mismatch mock',
+          )
+
+          old_cases = '''        (
+                      MockMode::InvalidSubmissionJson,
+                      2,
+                      "build server returned invalid job JSON",
+                  ),
+                  (MockMode::FailBuild, 2, "ended as failed: simulated failure"),
+                  (MockMode::UnknownStatus, 2, "unknown status"),
+                  (
+                      MockMode::InvalidStatusJson,
+                      2,
+                      "build status JSON is invalid",
+                  ),
+                  (MockMode::KeepRunning, 1, "exceeded 1 seconds"),
+              ];
+
+              for (mode, timeout, expected) in cases {
+          '''
+          new_cases = '''        (
+                      MockMode::InvalidSubmissionJson,
+                      2,
+                      "build server returned invalid job JSON",
+                      false,
+                  ),
+                  (
+                      MockMode::DotSegmentSubmissionId,
+                      2,
+                      "build server returned an invalid job ID",
+                      false,
+                  ),
+                  (
+                      MockMode::RedirectSubmission,
+                      2,
+                      "build server rejected rust with HTTP 307",
+                      false,
+                  ),
+                  (MockMode::FailBuild, 2, "ended as failed: simulated failure", true),
+                  (
+                      MockMode::MismatchedStatusId,
+                      2,
+                      "build status returned a mismatched job ID",
+                      true,
+                  ),
+                  (MockMode::UnknownStatus, 2, "unknown status", true),
+                  (
+                      MockMode::InvalidStatusJson,
+                      2,
+                      "build status JSON is invalid",
+                      true,
+                  ),
+                  (MockMode::KeepRunning, 1, "exceeded 1 seconds", true),
+              ];
+
+              for (mode, timeout, expected, should_poll) in cases {
+          '''
+          text = replace_once(text, old_cases, new_cases, 'live failure-mode table')
+          text = replace_once(
+              text,
+              '''        assert!(
+                      run["error"].as_str().unwrap().contains(expected),
+                      "mode {mode:?} expected {expected:?}: {run}"
+                  );
+              }
+          }
+
+          #[tokio::test]
+          async fn active_run_capacity_is_atomic_and_rejects_before_second_submission() {
+          ''',
+              '''        assert!(
+                      run["error"].as_str().unwrap().contains(expected),
+                      "mode {mode:?} expected {expected:?}: {run}"
+                  );
+                  let status_requests = mock.state.status_requests.load(Ordering::SeqCst);
+                  if should_poll {
+                      assert!(status_requests >= 1, "mode {mode:?} never polled build status");
+                  } else {
+                      assert_eq!(
+                          status_requests, 0,
+                          "mode {mode:?} polled an untrusted build identity"
+                      );
+                  }
+              }
+          }
+
+          #[tokio::test]
+          async fn active_run_capacity_is_atomic_and_rejects_before_second_submission() {
+          ''',
+              'poll-before-trust process assertions',
+          )
+
+          config_test = r'''
+
+          #[test]
+          fn zero_runtime_bounds_fail_configuration_before_bind() {
+              for name in [
+                  "GHA_CLONE_MAX_WORKFLOW_BYTES",
+                  "GHA_CLONE_MAX_JOBS",
+                  "GHA_CLONE_MAX_STEPS_PER_JOB",
+                  "GHA_CLONE_BUILD_POLL_SECONDS",
+                  "GHA_CLONE_BUILD_TIMEOUT_SECONDS",
+                  "GHA_CLONE_MAX_RUNS",
+              ] {
+                  let mut command = Command::new(SERVER_BINARY);
+                  for &variable in SERVER_ENV_VARS {
+                      command.env_remove(variable);
+                  }
+                  let mut child = command
+                      .env(name, "0")
+                      .env("RUST_LOG", "error")
+                      .stdout(Stdio::null())
+                      .stderr(Stdio::piped())
+                      .spawn()
+                      .expect("run invalid clone-server configuration");
+
+                  let mut exited = false;
+                  for _ in 0..200 {
+                      if child.try_wait().expect("read invalid-config process").is_some() {
+                          exited = true;
+                          break;
+                      }
+                      std::thread::sleep(std::time::Duration::from_millis(10));
+                  }
+                  if !exited {
+                      let _ = child.kill();
+                      let _ = child.wait();
+                      panic!("{name}=0 started a server instead of failing configuration");
+                  }
+
+                  let output = child
+                      .wait_with_output()
+                      .expect("collect invalid-config process output");
+                  assert_eq!(output.status.code(), Some(2), "{name}");
+                  let stderr = String::from_utf8_lossy(&output.stderr);
+                  assert!(
+                      stderr.contains(name) && stderr.contains("greater than zero"),
+                      "{name}: {stderr}"
+                  );
+              }
+          }
+          '''
+          insertion = text.find(
+              '\n#[tokio::test]\nasync fn live_execution_dispatches_fixed_profiles_in_topological_order()'
+          )
+          if insertion == -1 or 'zero_runtime_bounds_fail_configuration_before_bind' in text:
+              raise SystemExit('zero-bound process-test insertion boundary drifted')
+          text = text[:insertion] + config_test + text[insertion:]
+          path.write_text(text, encoding='utf-8')
+
+          main_path = Path('remote/deployments/gha-clone-server-rs/src/main.rs')
+          main = main_path.read_text(encoding='utf-8')
+          main = replace_once(
+              main,
+              'for id in ["", ".", "..", "../build?token=x", "build/child"] {',
+              'for id in ["", ".", "..", "../build?token=x", "build/child", "%2e%2e"] {',
+              'encoded separator identity regression',
+          )
+          main = replace_once(
+              main,
+              '''        assert!(normalize_build_server_url("http://-build.remote.svc:8123").is_err());
+                  assert!(normalize_build_server_url("http://10.0.0.10:8123").is_err());
+          ''',
+              '''        assert!(normalize_build_server_url("http://-build.remote.svc:8123").is_err());
+                  assert!(normalize_build_server_url("http://build-.remote.svc:8123").is_err());
+                  assert!(
+                      normalize_build_server_url("http://dd-build-server.remote.svc.cluster.local.evil:8123")
+                          .is_err()
+                  );
+                  let oversized = format!("http://{}.remote.svc:8123", "a".repeat(64));
+                  assert!(normalize_build_server_url(&oversized).is_err());
+                  assert!(normalize_build_server_url("http://10.0.0.10:8123").is_err());
+          ''',
+              'DNS label and suffix regressions',
+          )
+          main_path.write_text(main, encoding='utf-8')
+          PY
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          main = Path('remote/deployments/gha-clone-server-rs/src/main.rs').read_text(encoding='utf-8')
+          http = Path('remote/deployments/gha-clone-server-rs/tests/http_api.rs').read_text(encoding='utf-8')
+          required_main = {
+              'atomic reservation': 'reserve_run_records',
+              'webhook claim rollback': 'forget_webhook_delivery',
+              'capacity response': 'StatusCode::TOO_MANY_REQUESTS',
+              'positive retention bound': 'env_nonzero_usize("GHA_CLONE_MAX_RUNS"',
+              'positive polling bound': 'env_nonzero_u64("GHA_CLONE_BUILD_POLL_SECONDS"',
+              'positive timeout bound': 'env_nonzero_u64("GHA_CLONE_BUILD_TIMEOUT_SECONDS"',
+              'redirect denial': 'redirect(reqwest::redirect::Policy::none())',
+              'dot-segment denial': '!matches!(value, "" | "." | "..")',
+              'Kubernetes DNS validation': 'fn valid_dns_label',
+              'poll identity binding': 'validate_build_job_response_id(&build, Some(build_job_id))',
+          }
+          required_http = {
+              'dot-segment process rejection': 'DotSegmentSubmissionId',
+              'redirect process rejection': 'RedirectSubmission',
+              'poll identity mismatch': 'MismatchedStatusId',
+              'status request proof': 'status_requests',
+              'zero-bound startup rejection': 'zero_runtime_bounds_fail_configuration_before_bind',
+              'capacity process proof': 'active_run_capacity_is_atomic_and_rejects_before_second_submission',
+          }
+          missing = [
+              label
+              for label, needle in {**required_main, **required_http}.items()
+              if needle not in (main if label in required_main else http)
+          ]
+          if missing:
+              raise SystemExit('missing composed invariants: ' + ', '.join(missing))
+          if 'fn terminal_run_pruning_never_discards_active_runs' in main:
+              raise SystemExit('obsolete prune_runs regression was reintroduced')
+          PY
 
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           toolchain: '1.90.0'
           components: rustfmt, clippy
 
-      - name: Validate every clone-server target without rewriting source
+      - name: Validate every clone-server target
         working-directory: remote/deployments/gha-clone-server-rs
         run: |
           set -euo pipefail
+          cargo fmt --all
           cargo fmt --all -- --check
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked --all-targets -- --nocapture
@@ -90,7 +366,7 @@ jobs:
             printf 'temporary workflow must be deletion-only:\n%s\n' "$workflow_non_deletions" >&2
             exit 1
           fi
-          git commit -m 'ci(DEN-1606): remove exact-head validation carrier'
+          git commit -m 'test(DEN-1606): prove clone transport boundaries through live process'
           expected=$'docs/gha-clone-build-server-boundary.md\nremote/deployments/gha-clone-server-rs/src/main.rs\nremote/deployments/gha-clone-server-rs/tests/http_api.rs\nremote/deployments/gha-clone-server-rs/tests/streempilot_http.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_retention.rs'
           actual="$(git diff --name-only "$base"...HEAD | sort)"
           if [[ "$actual" != "$expected" ]]; then
