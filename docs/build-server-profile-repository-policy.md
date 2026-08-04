@@ -36,6 +36,8 @@ Each configuration key must satisfy all of these conditions:
 - at most 256 exact repositories and 32 profiles per repository;
 - total JSON size at most 64 KiB.
 
+The 64 KiB ceiling is measured against the raw UTF-8 environment value before trimming or JSON parsing. Oversized whitespace and multibyte input therefore fail at the same bounded startup boundary rather than being normalized into a smaller policy.
+
 Invalid policy is a startup error. It is never logged and ignored, because that would silently reopen the broader prefix path.
 
 ## Canonical identity and aliases
