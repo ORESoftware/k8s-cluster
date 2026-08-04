@@ -27,8 +27,17 @@ jobs:
           git config -f .gitmodules --get-regexp 'submodule\..*\.path' | grep -F " $FABRICATION_PATH"
           git config -f .gitmodules --get-regexp 'submodule\..*\.url' | grep -F 'daedalus-fab/fabrication-server.rs'
           git update-index --cacheinfo "160000,$FABRICATION_SHA,$FABRICATION_PATH"
-          actual=$(git ls-files --stage -- "$FABRICATION_PATH")
-          test "$actual" = "160000 $FABRICATION_SHA 0\t$FABRICATION_PATH"
+
+          index_row=$(git ls-files --stage -- "$FABRICATION_PATH")
+          actual_mode=$(printf '%s\n' "$index_row" | awk '{print $1}')
+          actual_sha=$(printf '%s\n' "$index_row" | awk '{print $2}')
+          actual_stage=$(printf '%s\n' "$index_row" | awk '{print $3}')
+          actual_path=$(printf '%s\n' "$index_row" | cut -f2-)
+          test "$actual_mode" = "160000"
+          test "$actual_sha" = "$FABRICATION_SHA"
+          test "$actual_stage" = "0"
+          test "$actual_path" = "$FABRICATION_PATH"
+
           git diff --cached --submodule=short -- "$FABRICATION_PATH"
       - name: Commit deployment pin
         run: |
