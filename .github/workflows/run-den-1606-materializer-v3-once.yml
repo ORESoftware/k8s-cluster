@@ -1,5 +1,6 @@
 # Thin wrapper over the reviewed primary carrier. It preserves Rust escape
 # literals for both path validators, validates the product, and self-deletes.
+# Re-triggered after isolating the stale-parser and escaped-literal failures.
 name: Run DEN-1606 direct hardening materializer v3 once
 
 on:
