@@ -29,6 +29,8 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gha-executor-router
+          # Zero-replica review scaffold only. Activation requires replacing
+          # this source-build container with one immutable digest-pinned image.
           image: docker.io/library/rust:1.90-bookworm
           imagePullPolicy: IfNotPresent
           command: ["/bin/bash", "-lc"]
@@ -37,12 +39,21 @@ spec:
               set -euo pipefail
               export CARGO_HOME=/tmp/cargo
               export CARGO_TARGET_DIR=/tmp/gha-executor-router-target
+              test "${#GHA_EXECUTOR_ROUTER_SOURCE_SHA}" -eq 40
+              case "${GHA_EXECUTOR_ROUTER_SOURCE_SHA}" in
+                *[!0-9a-f]*) echo 'source SHA must be lowercase hexadecimal' >&2; exit 2 ;;
+              esac
               source_root="$(mktemp -d /tmp/gha-executor-router-source.XXXXXX)"
-              git -c protocol.ext.allow=never -c protocol.file.allow=never \
-                clone --depth 1 --no-tags --branch "${GHA_EXECUTOR_ROUTER_SOURCE_REF}" -- \
-                "${GHA_EXECUTOR_ROUTER_SOURCE_URL}" "$source_root"
+              git init "$source_root"
+              git -C "$source_root" remote add origin "${GHA_EXECUTOR_ROUTER_SOURCE_URL}"
+              git -C "$source_root" \
+                -c protocol.ext.allow=never \
+                -c protocol.file.allow=never \
+                fetch --depth 1 --no-tags origin "${GHA_EXECUTOR_ROUTER_SOURCE_SHA}"
+              git -C "$source_root" checkout --detach FETCH_HEAD
+              test "$(git -C "$source_root" rev-parse HEAD)" = "${GHA_EXECUTOR_ROUTER_SOURCE_SHA}"
               cd "$source_root/remote/deployments/gha-clone-server-rs"
-              exec cargo run --release --bin gha-executor-router
+              exec cargo run --locked --release --bin gha-executor-router
           env:
             - name: HOST
               value: 0.0.0.0
@@ -52,8 +63,8 @@ spec:
               value: gha_executor_router=info
             - name: GHA_EXECUTOR_ROUTER_SOURCE_URL
               value: https://github.com/ORESoftware/k8s-cluster.git
-            - name: GHA_EXECUTOR_ROUTER_SOURCE_REF
-              value: main
+            - name: GHA_EXECUTOR_ROUTER_SOURCE_SHA
+              value: 6146668400441de15a8d8e9f513786096db9a730
             - name: GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED
               value: "false"
             - name: GHA_EXECUTOR_ROUTER_SECRET_ROOT
@@ -129,11 +140,16 @@ spec:
           emptyDir:
             sizeLimit: 6Gi
         - name: executor-secrets
-          secret:
-            secretName: dd-gha-executor-router-secrets
+          projected:
             defaultMode: 0400
-            items:
-              - key: router_auth
-                path: router-auth
-              - key: aws_build_server_auth
-                path: aws-build-server-auth
+            sources:
+              - secret:
+                  name: dd-gha-executor-router-secrets
+                  items:
+                    - key: router_auth
+                      path: router-auth
+              - secret:
+                  name: dd-agent-secrets
+                  items:
+                    - key: SERVER_AUTH_SECRET
+                      path: aws-build-server-auth
