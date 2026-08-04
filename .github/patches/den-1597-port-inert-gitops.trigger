@@ -1,2 +1,2 @@
-trigger=2026-08-04T03:13:00Z
-nonce=connector-push-port-product-only-v2
+trigger=2026-08-04T03:29:00Z
+nonce=projected-secret-semantic-fix-v3
