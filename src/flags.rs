@@ -64,12 +64,20 @@ fn resolve_config_path_from(
     source_root: Option<PathBuf>,
 ) -> Result<PathBuf, CliFlagError> {
     if let Some(path) = explicit {
+        if !path.is_absolute() {
+            return Err(CliFlagError::Configuration(format!(
+                "{CONFIG_ENV} must be an absolute path"
+            )));
+        }
         if path.is_file() {
-            return Ok(path);
+            return path.canonicalize().map_err(|_| {
+                CliFlagError::Configuration(format!(
+                    "{CONFIG_ENV} does not name a readable regular file"
+                ))
+            });
         }
         return Err(CliFlagError::Configuration(format!(
-            "{CONFIG_ENV} does not name a readable file: {}",
-            path.display()
+            "{CONFIG_ENV} does not name a readable regular file"
         )));
     }
 
@@ -95,7 +103,7 @@ fn resolve_config_path_from(
         .find(|candidate| candidate.is_file())
         .ok_or_else(|| {
             CliFlagError::Configuration(format!(
-                "cannot locate trusted {CONFIG_FILE}; set {CONFIG_ENV} or install it beside the executable or under ../share/{PACKAGE_SHARE_DIR}"
+                "cannot locate trusted {CONFIG_FILE}; set {CONFIG_ENV} to an absolute reviewed path or install it beside the executable or under ../share/{PACKAGE_SHARE_DIR}"
             ))
         })
 }
@@ -261,7 +269,7 @@ default = "0.0.0.0:8080"
     }
 
     #[test]
-    fn explicit_contract_override_wins_over_packaged_contract() {
+    fn explicit_contract_override_requires_an_absolute_regular_file() {
         let tree = tempfile::tempdir().expect("temporary tree");
         let explicit = tree.path().join("operator/reviewed.toml");
         let executable = tree.path().join("install/bin/threefa-sync-server");
@@ -271,26 +279,33 @@ default = "0.0.0.0:8080"
         write_contract(&explicit);
         write_contract(&packaged);
 
-        let resolved = resolve_config_path_from(Some(explicit.clone()), Some(executable), None)
-            .expect("explicit contract");
-        assert_eq!(resolved, explicit);
-    }
+        let resolved = resolve_config_path_from(
+            Some(explicit.clone()),
+            Some(executable.clone()),
+            None,
+        )
+        .expect("explicit contract");
+        assert_eq!(
+            resolved,
+            explicit.canonicalize().expect("canonical explicit contract")
+        );
 
-    #[test]
-    fn invalid_explicit_contract_fails_closed_without_fallback() {
-        let tree = tempfile::tempdir().expect("temporary tree");
+        let relative_error = resolve_config_path_from(
+            Some(PathBuf::from("reviewed.toml")),
+            Some(executable.clone()),
+            None,
+        )
+        .expect_err("relative explicit override must fail closed")
+        .to_string();
+        assert!(relative_error.contains("absolute path"));
+        assert!(!relative_error.contains("reviewed.toml"));
+
         let missing = tree.path().join("missing.toml");
-        let executable = tree.path().join("install/bin/threefa-sync-server");
-        let packaged = tree
-            .path()
-            .join("install/share/threefa-backend/.cli-flags.toml");
-        write_contract(&packaged);
-
         let error = resolve_config_path_from(Some(missing.clone()), Some(executable), None)
             .expect_err("missing explicit override must fail closed")
             .to_string();
         assert!(error.contains(CONFIG_ENV));
-        assert!(error.contains(&missing.display().to_string()));
+        assert!(!error.contains(&missing.display().to_string()));
     }
 
     #[test]
