@@ -1,0 +1,258 @@
+name: Apply DEN-539 3FA fixed-profile integration
+
+on:
+  push:
+    branches:
+      - agent/den-539-threefa-interfaces-continuity
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-539-threefa-profile
+  cancel-in-progress: false
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-539-threefa-interfaces-continuity
+          persist-credentials: true
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Apply exact fixed profile and planner mappings
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          def checked(path_text: str, expected: str) -> tuple[Path, str]:
+              path = Path(path_text)
+              observed = subprocess.check_output(
+                  ['git', 'hash-object', str(path)], text=True
+              ).strip()
+              if observed != expected:
+                  raise SystemExit(
+                      f'refusing drifted {path}: expected {expected}, observed {observed}'
+                  )
+              return path, path.read_text(encoding='utf-8')
+
+          profiles_path, profiles = checked(
+              'remote/deployments/build-server-rs/src/profiles.rs',
+              'f0e2459e5a8233301b8fbd3b142398e080e2d96e',
+          )
+          if 'RUST_GENERATED_VERIFY_STEPS' not in profiles:
+              constant_anchor = 'const NODE_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {'
+              generated_constant = r'''const RUST_GENERATED_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
+              name: "Generated Rust interface formatting, Clippy, and tests",
+              image: RUST_IMAGE,
+              subdirectory: ".",
+              script: r#"set -euo pipefail
+              manifest=generated/rust/Cargo.toml
+              if [ ! -f "$manifest" ]; then
+                echo "rust-generated-verify requires generated/rust/Cargo.toml" >&2
+                exit 2
+              fi
+              cargo generate-lockfile --manifest-path "$manifest"
+              rustup component add rustfmt clippy
+              cargo fmt --manifest-path "$manifest" -- --check
+              cargo clippy --locked --manifest-path "$manifest" --all-targets -- -D warnings
+              cargo test --locked --manifest-path "$manifest" --all-targets"#,
+          }];
+
+          '''
+              if profiles.count(constant_anchor) != 1:
+                  raise SystemExit('profile constant anchor was not unique')
+              profiles = profiles.replace(constant_anchor, generated_constant + constant_anchor, 1)
+
+              spec_anchor = '''    ProfileSpec {
+                  name: "node-verify",
+          '''
+              generated_spec = '''    ProfileSpec {
+                  name: "rust-generated-verify",
+                  platform: "linux",
+                  description: "Generated Rust interface lock, formatting, warnings-denied Clippy, and tests",
+                  steps: RUST_GENERATED_VERIFY_STEPS,
+                  artifact_paths: &[],
+              },
+          '''
+              if profiles.count(spec_anchor) != 1:
+                  raise SystemExit('profile spec anchor was not unique')
+              profiles = profiles.replace(spec_anchor, generated_spec + spec_anchor, 1)
+
+              installed_anchor = '''            "rust-verify",
+                  "node-verify",
+          '''
+              if profiles.count(installed_anchor) != 1:
+                  raise SystemExit('installed-profile test anchor was not unique')
+              profiles = profiles.replace(
+                  installed_anchor,
+                  '''            "rust-verify",
+                  "rust-generated-verify",
+                  "node-verify",
+          ''',
+                  1,
+              )
+
+              test_anchor = '''    #[test]
+              fn rust_verify_has_only_the_reviewed_meta_server_monorepo_fallback() {
+          '''
+              generated_test = '''    #[test]
+              fn generated_rust_profile_is_manifest_scoped_and_ordered() {
+                  let profile = find("rust-generated-verify").expect("generated Rust profile");
+                  let script = profile.steps[0].script;
+                  let lock = script.find("cargo generate-lockfile").expect("lock step");
+                  let fmt = script.find("cargo fmt").expect("format step");
+                  let clippy = script.find("cargo clippy --locked").expect("Clippy step");
+                  let test = script.find("cargo test --locked").expect("test step");
+                  assert!(lock < fmt && fmt < clippy && clippy < test);
+                  assert_eq!(profile.steps[0].subdirectory, ".");
+                  assert!(script.contains("manifest=generated/rust/Cargo.toml"));
+                  assert!(!script.contains("cargo publish"));
+                  assert!(!script.contains("find "));
+                  assert!(!script.contains("|| true"));
+              }
+
+          '''
+              if profiles.count(test_anchor) != 1:
+                  raise SystemExit('generated-profile test anchor was not unique')
+              profiles = profiles.replace(test_anchor, generated_test + test_anchor, 1)
+              profiles_path.write_text(profiles, encoding='utf-8')
+
+          planner_path, planner = checked(
+              'remote/deployments/gha-clone-server-rs/src/lib.rs',
+              'da2140766c98e43e0d1aa6afc9893e94f9e3bfa0',
+          )
+          if 'fn generated_rust_profile' not in planner:
+              planner = planner.replace(
+                  '            "rust-verify".to_string(),\n',
+                  '            "rust-verify".to_string(),\n            "rust-generated-verify".to_string(),\n',
+                  1,
+              )
+
+              profile_anchor = '''    let profile = if hardened_node_intent(&lower) {
+          '''
+              profile_replacement = '''    let profile = if generated_rust_intent(&lower) {
+                  match generated_rust_profile(&run_commands) {
+                      Some(profile) => Some(profile.to_string()),
+                      None => {
+                          reasons.push(
+                              "generated Rust jobs must use one exact reviewed command sequence in the documented order with no extra commands"
+                                  .into(),
+                          );
+                          None
+                      }
+                  }
+              } else if hardened_node_intent(&lower) {
+          '''
+              if planner.count(profile_anchor) != 1:
+                  raise SystemExit('planner profile anchor was not unique')
+              planner = planner.replace(profile_anchor, profile_replacement, 1)
+
+              helper_anchor = '''fn hardened_node_intent(text: &str) -> bool {
+          '''
+              generated_helpers = '''fn generated_rust_intent(text: &str) -> bool {
+                  text.contains("generated/rust/cargo.toml")
+              }
+
+              fn generated_rust_profile(commands: &[String]) -> Option<&'static str> {
+                  const EXACT: [&str; 4] = [
+                      "cargo generate-lockfile --manifest-path generated/rust/Cargo.toml",
+                      "cargo fmt --manifest-path generated/rust/Cargo.toml -- --check",
+                      "cargo clippy --locked --manifest-path generated/rust/Cargo.toml --all-targets -- -D warnings",
+                      "cargo test --locked --manifest-path generated/rust/Cargo.toml --all-targets",
+                  ];
+                  commands
+                      .iter()
+                      .map(String::as_str)
+                      .eq(EXACT)
+                      .then_some("rust-generated-verify")
+              }
+
+          '''
+              if planner.count(helper_anchor) != 1:
+                  raise SystemExit('planner helper anchor was not unique')
+              planner = planner.replace(helper_anchor, generated_helpers + helper_anchor, 1)
+
+              final_close = planner.rfind('\n}')
+              if final_close < 0:
+                  raise SystemExit('planner test-module close was not found')
+              generated_test = '''
+
+                  #[test]
+                  fn generated_rust_commands_are_exact_and_order_sensitive() {
+                      let exact = [
+                          "cargo generate-lockfile --manifest-path generated/rust/Cargo.toml",
+                          "cargo fmt --manifest-path generated/rust/Cargo.toml -- --check",
+                          "cargo clippy --locked --manifest-path generated/rust/Cargo.toml --all-targets -- -D warnings",
+                          "cargo test --locked --manifest-path generated/rust/Cargo.toml --all-targets",
+                      ]
+                      .into_iter()
+                      .map(str::to_string)
+                      .collect::<Vec<_>>();
+                      assert_eq!(generated_rust_profile(&exact), Some("rust-generated-verify"));
+
+                      let mut reordered = exact.clone();
+                      reordered.swap(2, 3);
+                      assert_eq!(generated_rust_profile(&reordered), None);
+
+                      let mut extra = exact.clone();
+                      extra.push("cargo publish --manifest-path generated/rust/Cargo.toml".into());
+                      assert_eq!(generated_rust_profile(&extra), None);
+                      assert!(generated_rust_intent(&exact.join("\n").to_ascii_lowercase()));
+                  }
+          '''
+              planner = planner[:final_close] + generated_test + planner[final_close:]
+              planner_path.write_text(planner, encoding='utf-8')
+          PY
+
+      - name: Format and execute all changed contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all
+          rustfmt --edition 2021 \
+            remote/deployments/build-server-rs/src/profiles.rs \
+            remote/deployments/build-server-rs/src/validation.rs
+          cargo test --locked --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all-targets
+          cargo clippy --locked --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all-targets -- -D warnings
+          cargo check --locked --manifest-path remote/deployments/build-server-rs/Cargo.toml --all-targets
+          cargo test --locked --manifest-path remote/deployments/build-server-rs/Cargo.toml profiles::tests -- --nocapture
+          cargo test --locked --manifest-path remote/deployments/build-server-rs/Cargo.toml validation::tests -- --nocapture
+          pnpm install --frozen-lockfile --dir remote/tests
+          pnpm --dir remote/tests exec tsx --test general/gha-clone-threefa-config.test.ts
+
+      - name: Commit verified product changes and remove this one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/apply-den-539-threefa-profile.yml
+          git add \
+            remote/deployments/build-server-rs/src/profiles.rs \
+            remote/deployments/gha-clone-server-rs/src/lib.rs \
+            remote/deployments/gha-clone-server-rs/tests/threefa_interfaces.rs
+          git diff --cached --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'feat(DEN-539): add exact generated Rust continuity profile'
+          git push origin HEAD:agent/den-539-threefa-interfaces-continuity
