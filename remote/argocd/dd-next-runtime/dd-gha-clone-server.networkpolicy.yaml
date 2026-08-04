@@ -13,9 +13,6 @@ spec:
         - podSelector:
             matchLabels:
               app: dd-remote-gateway
-        - podSelector:
-            matchLabels:
-              app: dd-build-server
       ports:
         - protocol: TCP
           port: 8125
