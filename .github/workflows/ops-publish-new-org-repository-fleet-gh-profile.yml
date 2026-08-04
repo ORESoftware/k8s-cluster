@@ -236,6 +236,7 @@ jobs:
 
           stage=publisher-static-validation
           cd "$work/k8s-cluster"
+          export PYTHONPATH="$PWD/scripts/ops"
           python3 -m py_compile \
             scripts/ops/new_org_repository_templates.py \
             scripts/ops/new_org_fleet_templates/*.py \
