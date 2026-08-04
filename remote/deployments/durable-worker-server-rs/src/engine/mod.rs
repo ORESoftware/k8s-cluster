@@ -231,54 +231,71 @@ impl Engine {
         let now = self.now_ms();
         let request_hash = stable_hash(&request)?;
 
-        let (run_id, idempotent_replay) = if let Some(idempotency_key) =
-            request.idempotency_key.as_deref()
-        {
-            let record_key = idempotency_key_key(idempotency_key);
-            if let Some(existing) = self.load::<IdempotencyRecord>(&record_key).await? {
-                if existing.value.request_hash != request_hash {
-                    return Err(EngineError::IdempotencyMismatch);
-                }
-                self.metrics
-                    .idempotent_replays_total
-                    .fetch_add(1, Ordering::Relaxed);
-                return self
-                    .idempotent_submit_response(&existing.value.run_id)
-                    .await;
-            }
-
-            let run_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, idempotency_key.as_bytes()).to_string();
-            let record = IdempotencyRecord {
-                run_id: run_id.clone(),
-                request_hash: request_hash.clone(),
-                created_at_ms: now,
-            };
-            match self.create_value(&record_key, &record).await {
-                Ok(_) => (run_id, false),
-                Err(EngineError::Store(StoreError::Conflict)) => {
-                    let existing = self
-                        .load::<IdempotencyRecord>(&record_key)
-                        .await?
-                        .ok_or_else(|| {
-                            EngineError::Conflict(
-                                "idempotency record changed during submission".to_string(),
-                            )
-                        })?;
+        let (run_id, idempotent_replay) =
+            if let Some(idempotency_key) = request.idempotency_key.as_deref() {
+                let record_key = idempotency_key_key(idempotency_key);
+                if let Some(existing) = self.load::<IdempotencyRecord>(&record_key).await? {
                     if existing.value.request_hash != request_hash {
                         return Err(EngineError::IdempotencyMismatch);
                     }
-                    self.metrics
-                        .idempotent_replays_total
-                        .fetch_add(1, Ordering::Relaxed);
-                    return self
-                        .idempotent_submit_response(&existing.value.run_id)
-                        .await;
+                    if self
+                        .load::<RunRecord>(&run_key(&existing.value.run_id))
+                        .await?
+                        .is_some()
+                    {
+                        self.metrics
+                            .idempotent_replays_total
+                            .fetch_add(1, Ordering::Relaxed);
+                        return self
+                            .idempotent_submit_response(&existing.value.run_id)
+                            .await;
+                    }
+                    // A process may stop after reserving the idempotency key but
+                    // before committing the deterministic run and step records.
+                    // Resume materialization rather than poisoning every retry.
+                    (existing.value.run_id, true)
+                } else {
+                    let run_id =
+                        Uuid::new_v5(&Uuid::NAMESPACE_URL, idempotency_key.as_bytes()).to_string();
+                    let record = IdempotencyRecord {
+                        run_id: run_id.clone(),
+                        request_hash: request_hash.clone(),
+                        created_at_ms: now,
+                    };
+                    match self.create_value(&record_key, &record).await {
+                        Ok(_) => (run_id, false),
+                        Err(EngineError::Store(StoreError::Conflict)) => {
+                            let existing = self
+                                .load::<IdempotencyRecord>(&record_key)
+                                .await?
+                                .ok_or_else(|| {
+                                    EngineError::Conflict(
+                                        "idempotency record changed during submission".to_string(),
+                                    )
+                                })?;
+                            if existing.value.request_hash != request_hash {
+                                return Err(EngineError::IdempotencyMismatch);
+                            }
+                            if self
+                                .load::<RunRecord>(&run_key(&existing.value.run_id))
+                                .await?
+                                .is_some()
+                            {
+                                self.metrics
+                                    .idempotent_replays_total
+                                    .fetch_add(1, Ordering::Relaxed);
+                                return self
+                                    .idempotent_submit_response(&existing.value.run_id)
+                                    .await;
+                            }
+                            (existing.value.run_id, true)
+                        }
+                        Err(error) => return Err(error),
+                    }
                 }
-                Err(error) => return Err(error),
-            }
-        } else {
-            (Uuid::new_v4().to_string(), false)
-        };
+            } else {
+                (Uuid::new_v4().to_string(), false)
+            };
 
         if let Some(existing) = self.load::<RunRecord>(&run_key(&run_id)).await? {
             self.metrics
