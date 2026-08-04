@@ -18,11 +18,30 @@ pub enum CliFlagError {
     InvalidValues(String),
 }
 
+fn is_safe_option_name(option: &str) -> bool {
+    option
+        .strip_prefix("--")
+        .or_else(|| option.strip_prefix('-'))
+        .is_some_and(|name| {
+            !name.is_empty()
+                && name
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.'))
+        })
+}
+
 fn redact_unknown_option(option: &str) -> String {
-    option.split_once('=').map_or_else(
-        || option.to_owned(),
-        |(name, _)| format!("{name}=<redacted>"),
-    )
+    let (name, has_value) = option
+        .split_once('=')
+        .map_or((option, false), |(name, _)| (name, true));
+    if !is_safe_option_name(name) {
+        return "<redacted-option>".to_string();
+    }
+    if has_value {
+        format!("{name}=<redacted>")
+    } else {
+        name.to_owned()
+    }
 }
 
 pub fn parse_cli_flags(
@@ -137,5 +156,34 @@ default = "0.0.0.0:9091"
         let rendered = error.to_string();
         assert!(rendered.contains("--database-url=<redacted>"));
         assert!(!rendered.contains("should-not-be-a-flag"));
+    }
+
+    #[test]
+    fn split_unknown_flag_does_not_echo_the_following_positional_value() {
+        let dir = config();
+        let path = dir.path().join(".cli-flags.toml");
+        let argv = vec![
+            "threefa-sync-server".to_string(),
+            "--database-url".to_string(),
+            "postgres://split-secret@redacted.invalid/threefa".to_string(),
+        ];
+        let error = parse_cli_flags(&argv, path.to_str()).expect_err("unknown flag");
+        let rendered = error.to_string();
+        assert!(rendered.contains("--database-url"));
+        assert!(!rendered.contains("split-secret"));
+    }
+
+    #[test]
+    fn malformed_secret_bearing_option_tokens_are_fully_redacted() {
+        let dir = config();
+        let path = dir.path().join(".cli-flags.toml");
+        let argv = vec![
+            "threefa-sync-server".to_string(),
+            "--postgres://embedded-secret@redacted.invalid/threefa".to_string(),
+        ];
+        let error = parse_cli_flags(&argv, path.to_str()).expect_err("unknown flag");
+        let rendered = error.to_string();
+        assert!(rendered.contains("<redacted-option>"));
+        assert!(!rendered.contains("embedded-secret"));
     }
 }
