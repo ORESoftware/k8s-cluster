@@ -5,9 +5,6 @@ export CI="${CI:-1}"
 export NO_COLOR="${NO_COLOR:-1}"
 export RUST_BACKTRACE="${RUST_BACKTRACE:-1}"
 
-readonly INACTIVE_RKYV_ADVISORY="RUSTSEC-2026-0235"
-readonly INACTIVE_RKYV_PACKAGE="rkyv@0.7.46"
-
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
@@ -97,32 +94,10 @@ verify_postgres_only_orm_graph() {
     'verified DEN-538: rsa is absent and sqlx-mysql is not active' >&2
 }
 
-verify_inactive_rkyv_advisory() {
-  # SeaORM 2.0's published package metadata records its optional Decimal edge
-  # in Cargo.lock, so cargo-audit sees rkyv 0.7.46 even though this application
-  # disables SeaORM defaults and does not enable with-rust_decimal. The exact
-  # advisory may be ignored only after proving the vulnerable crate is absent
-  # from every feature and target in the executable graph.
-  if cargo tree --locked --all-features --target all \
-    -i "$INACTIVE_RKYV_PACKAGE" 2>/dev/null | grep -q .; then
-    printf '%s\n' \
-      "$INACTIVE_RKYV_PACKAGE became active; remove the $INACTIVE_RKYV_ADVISORY exception and upgrade the reachable dependency" >&2
-    return 1
-  fi
-
-  printf '%s\n' \
-    "verified DEN-1771: $INACTIVE_RKYV_PACKAGE is lockfile-only and absent from the all-feature graph" >&2
-}
-
 prepare_audit() {
   require_cargo_audit
   cargo fetch --locked
   verify_postgres_only_orm_graph
-  verify_inactive_rkyv_advisory
-}
-
-run_cargo_audit() {
-  cargo audit --deny warnings --ignore "$INACTIVE_RKYV_ADVISORY" "$@"
 }
 
 run_stage() {
@@ -157,11 +132,11 @@ run_stage() {
       ;;
     audit)
       prepare_audit
-      run_cargo_audit
+      cargo audit --deny warnings
       ;;
     audit-json)
       prepare_audit
-      run_cargo_audit --json
+      cargo audit --deny warnings --json
       ;;
     *)
       printf 'unknown agent-check stage: %s\n' "$stage" >&2
