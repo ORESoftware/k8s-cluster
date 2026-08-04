@@ -1,5 +1,6 @@
 name: durable-worker-dev-sync
 
+# Final reconciliation after durable deadline hardening.
 on:
   push:
     branches:
