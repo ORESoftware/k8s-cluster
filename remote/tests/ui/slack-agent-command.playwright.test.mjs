@@ -116,6 +116,7 @@ async function verifyDispatch(
   const normalizedRepository = expectedRepository.toLowerCase();
   assert.equal(job.task_type, 'slack_agent_run');
   assert.equal(payload.run_id, ids.run);
+  assert.equal(payload.observable_event.correlation.run_id, ids.run);
   assert.equal(payload.provider, expectedProvider);
   assert.equal(payload.action, expectedAction);
   assert.equal(payload.bridge_workflow_id, ids.workflow);
@@ -155,20 +156,34 @@ async function verifyDispatch(
     'Slack repository metadata must not opt the workflow into file leases',
   );
 
-  const duplicate = await request.post(`${coordinatorBase}/v1/jobs`, {
+  const duplicateRequest = {
+    org: job.org,
+    repo: job.repo,
+    task_type: job.task_type,
+    payload: job.payload,
+    priority: job.priority,
+    max_attempts: job.max_attempts,
+    budget_usd: job.budget_usd,
+  };
+  const prefixed = await request.post(`${coordinatorBase}/v1/jobs`, {
     headers: {
       authorization: `Bearer ${coordinatorBearer}`,
       'idempotency-key': `slack-command:${ids.run}`,
     },
-    data: {
-      org: job.org,
-      repo: job.repo,
-      task_type: job.task_type,
-      payload: job.payload,
-      priority: job.priority,
-      max_attempts: job.max_attempts,
-      budget_usd: job.budget_usd,
+    data: duplicateRequest,
+  });
+  assert.equal(
+    prefixed.status(),
+    400,
+    `prefixed Slack idempotency key was not rejected: ${await prefixed.text()}`,
+  );
+
+  const duplicate = await request.post(`${coordinatorBase}/v1/jobs`, {
+    headers: {
+      authorization: `Bearer ${coordinatorBearer}`,
+      'idempotency-key': ids.run,
     },
+    data: duplicateRequest,
   });
   assert.equal(duplicate.status(), 202, await duplicate.text());
   assert.equal((await duplicate.json()).job.id, ids.job, 'coordinator idempotency created a second job');
