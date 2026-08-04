@@ -261,15 +261,15 @@ class SlackClient:
                 value = json.load(response)
         except urllib.error.HTTPError as exc:
             body_text = exc.read(1200).decode("utf-8", "replace")
-            raise ProviderError(
-                f"Slack HTTP {exc.code}: {body_text[:1200]}"
-            ) from exc
+            raise ProviderError(f"Slack HTTP {exc.code}: {body_text[:1200]}") from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise ProviderError(f"Slack request failed: {exc}") from exc
         if not isinstance(value, Mapping):
             raise ProviderError("Slack returned a non-object response")
         if value.get("ok") is not True:
-            raise ProviderError(f"Slack {method} failed: {value.get('error', 'unknown')}")
+            raise ProviderError(
+                f"Slack {method} failed: {value.get('error', 'unknown')}"
+            )
         return value
 
     def channels(self) -> list[Mapping[str, Any]]:
@@ -288,9 +288,13 @@ class SlackClient:
             channels = value.get("channels")
             if not isinstance(channels, list):
                 raise ProviderError("Slack conversations.list omitted channels")
-            results.extend(channel for channel in channels if isinstance(channel, Mapping))
+            results.extend(
+                channel for channel in channels if isinstance(channel, Mapping)
+            )
             metadata = value.get("response_metadata")
-            cursor = metadata.get("next_cursor", "") if isinstance(metadata, Mapping) else ""
+            cursor = (
+                metadata.get("next_cursor", "") if isinstance(metadata, Mapping) else ""
+            )
             if not cursor:
                 return results
 
@@ -337,8 +341,12 @@ def _github_result(
     expected_number = int(github["project_number"])
     expected_title = str(github["project_title"])
     owner_id, projects = client.organization_projects(org)
-    by_number = [project for project in projects if project.get("number") == expected_number]
-    by_title = [project for project in projects if project.get("title") == expected_title]
+    by_number = [
+        project for project in projects if project.get("number") == expected_number
+    ]
+    by_title = [
+        project for project in projects if project.get("title") == expected_title
+    ]
     if len(by_number) > 1 or len(by_title) > 1:
         raise ProviderError(f"ambiguous GitHub Project match for {org}")
     if by_title and by_title[0].get("number") != expected_number:
@@ -561,8 +569,12 @@ def run(args: argparse.Namespace) -> int:
         )
         return 2
 
-    github_client = GitHubClient(token_specs["github"]) if token_specs["github"] else None
-    linear_client = LinearClient(token_specs["linear"]) if token_specs["linear"] else None
+    github_client = (
+        GitHubClient(token_specs["github"]) if token_specs["github"] else None
+    )
+    linear_client = (
+        LinearClient(token_specs["linear"]) if token_specs["linear"] else None
+    )
     slack_client = SlackClient(token_specs["slack"]) if token_specs["slack"] else None
 
     linear_projects = linear_client.projects() if linear_client else []
@@ -575,29 +587,33 @@ def run(args: argparse.Namespace) -> int:
         providers = (
             (
                 "github",
-                lambda: _github_result(github_client, entry, args.apply)
-                if github_client
-                else Result(key, "github", "skipped_missing_credential"),
+                lambda: (
+                    _github_result(github_client, entry, args.apply)
+                    if github_client
+                    else Result(key, "github", "skipped_missing_credential")
+                ),
             ),
             (
                 "linear",
-                lambda: _linear_result(
-                    linear_projects, linear_client, entry, args.apply
-                )
-                if linear_client
-                else Result(key, "linear", "skipped_missing_credential"),
+                lambda: (
+                    _linear_result(linear_projects, linear_client, entry, args.apply)
+                    if linear_client
+                    else Result(key, "linear", "skipped_missing_credential")
+                ),
             ),
             (
                 "slack",
-                lambda: _slack_result(
-                    slack_channels,
-                    slack_client,
-                    entry,
-                    args.apply,
-                    args.create_missing_slack,
-                )
-                if slack_client
-                else Result(key, "slack", "skipped_missing_credential"),
+                lambda: (
+                    _slack_result(
+                        slack_channels,
+                        slack_client,
+                        entry,
+                        args.apply,
+                        args.create_missing_slack,
+                    )
+                    if slack_client
+                    else Result(key, "slack", "skipped_missing_credential")
+                ),
             ),
         )
         for provider, operation in providers:
@@ -626,7 +642,9 @@ def run(args: argparse.Namespace) -> int:
             client.reconcile(projects, args.apply)
             for result in results:
                 if result.provider == "chatgpt":
-                    result.status = "webhook_applied" if args.apply else "webhook_checked"
+                    result.status = (
+                        "webhook_applied" if args.apply else "webhook_checked"
+                    )
         except ProviderError as exc:
             for result in results:
                 if result.provider == "chatgpt":
@@ -636,7 +654,11 @@ def run(args: argparse.Namespace) -> int:
     failed = [result for result in results if result.status == "failed"]
     changed = [result for result in results if result.changed]
 
-    if slack_client and args.summary_channel and (failed or changed or args.post_noop_summary):
+    if (
+        slack_client
+        and args.summary_channel
+        and (failed or changed or args.post_noop_summary)
+    ):
         summary_matches = [
             channel
             for channel in slack_channels
@@ -658,9 +680,7 @@ def run(args: argparse.Namespace) -> int:
                 )
                 failed.append(results[-1])
 
-    _write_reports(
-        args.json_output, args.markdown_output, mode, results, generated_at
-    )
+    _write_reports(args.json_output, args.markdown_output, mode, results, generated_at)
     print(
         json.dumps(
             {

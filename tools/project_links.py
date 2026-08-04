@@ -32,9 +32,7 @@ UUID = re.compile(
     r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
     re.IGNORECASE,
 )
-SECRET = re.compile(
-    r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{20,})\b"
-)
+SECRET = re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{20,})\b")
 
 
 def load_json(path: Path) -> Any:
@@ -95,21 +93,21 @@ def validate_catalog(value: Any) -> list[str]:
 
     duplicate_fields = {
         "key": lambda entry: _mapping(entry).get("key"),
-        "github.organization": lambda entry: _mapping(
-            _mapping(entry).get("github")
-        ).get("organization", "").lower(),
-        "github.project_title": lambda entry: _mapping(
-            _mapping(entry).get("github")
-        ).get("project_title", "").lower(),
-        "linear.project_name": lambda entry: _mapping(
-            _mapping(entry).get("linear")
-        ).get("project_name", "").lower(),
-        "chatgpt.project_name": lambda entry: _mapping(
-            _mapping(entry).get("chatgpt")
-        ).get("project_name", "").lower(),
-        "slack.channel_name": lambda entry: _mapping(
-            _mapping(entry).get("slack")
-        ).get("channel_name", "").lower(),
+        "github.organization": lambda entry: (
+            _mapping(_mapping(entry).get("github")).get("organization", "").lower()
+        ),
+        "github.project_title": lambda entry: (
+            _mapping(_mapping(entry).get("github")).get("project_title", "").lower()
+        ),
+        "linear.project_name": lambda entry: (
+            _mapping(_mapping(entry).get("linear")).get("project_name", "").lower()
+        ),
+        "chatgpt.project_name": lambda entry: (
+            _mapping(_mapping(entry).get("chatgpt")).get("project_name", "").lower()
+        ),
+        "slack.channel_name": lambda entry: (
+            _mapping(_mapping(entry).get("slack")).get("channel_name", "").lower()
+        ),
     }
     for field, extractor in duplicate_fields.items():
         values = [extractor(entry) for entry in projects]
@@ -148,9 +146,7 @@ def _validate_entry(value: Any, identity: str) -> list[str]:
     org = github.get("organization")
     title = github.get("project_title")
     number = github.get("project_number")
-    if not isinstance(org, str) or not re.fullmatch(
-        r"[A-Za-z0-9][A-Za-z0-9-]*", org
-    ):
+    if not isinstance(org, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*", org):
         errors.append(f"{identity}.github.organization is invalid")
         org = None
     if org and key != canonical_key(org):
@@ -159,9 +155,7 @@ def _validate_entry(value: Any, identity: str) -> list[str]:
             f"({canonical_key(org)})"
         )
     if org and title != f"{org}-project":
-        errors.append(
-            f"{identity}.github.project_title must be exactly {org}-project"
-        )
+        errors.append(f"{identity}.github.project_title must be exactly {org}-project")
     if not isinstance(number, int) or isinstance(number, bool) or number < 1:
         errors.append(f"{identity}.github.project_number must be a positive integer")
     elif org:
@@ -296,7 +290,9 @@ def compact_marker(entry: Mapping[str, Any]) -> str:
     )
 
 
-def merge_compact_marker(current: str | None, entry: Mapping[str, Any], limit: int) -> str:
+def merge_compact_marker(
+    current: str | None, entry: Mapping[str, Any], limit: int
+) -> str:
     marker = compact_marker(entry)
     key = re.escape(str(entry.get("key")))
     pattern = re.compile(rf"(?:\s*\|\s*)?\[sync:{key}\][^\[]*$")
@@ -308,7 +304,9 @@ def merge_compact_marker(current: str | None, entry: Mapping[str, Any], limit: i
                 f"existing provider description leaves no room for managed marker "
                 f"({len(merged)} > {limit})"
             )
-        raise ValueError(f"managed marker exceeds provider limit ({len(merged)} > {limit})")
+        raise ValueError(
+            f"managed marker exceeds provider limit ({len(merged)} > {limit})"
+        )
     return merged
 
 

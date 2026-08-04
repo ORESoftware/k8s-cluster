@@ -127,9 +127,7 @@ class ProjectSyncTests(unittest.TestCase):
     def test_slack_apply_updates_existing_channel_topic(self):
         client = FakeSlack()
         channel_name = self.entry["slack"]["channel_name"][1:]
-        channels = [
-            {"id": "channel-id", "name": channel_name, "topic": {"value": ""}}
-        ]
+        channels = [{"id": "channel-id", "name": channel_name, "topic": {"value": ""}}]
         result = _slack_result(
             channels, client, self.entry, apply=True, create_missing=False
         )
