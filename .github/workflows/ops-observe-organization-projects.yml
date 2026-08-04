@@ -1,0 +1,42 @@
+name: Observe organization Projects bootstrap
+
+on:
+  workflow_run:
+    workflows:
+      - Ensure organization Projects once
+    types:
+      - requested
+      - completed
+
+permissions:
+  issues: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record bootstrap state
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_ACTION: ${{ github.event.action }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_STATUS: ${{ github.event.workflow_run.status }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          body="$(jq -nc \
+            --arg kind organization-projects-bootstrap-state \
+            --arg event_action "$EVENT_ACTION" \
+            --arg run_id "$RUN_ID" \
+            --arg run_url "$RUN_URL" \
+            --arg status "$RUN_STATUS" \
+            --arg conclusion "$RUN_CONCLUSION" \
+            --arg head_sha "$RUN_SHA" \
+            '{kind:$kind,event_action:$event_action,run_id:$run_id,run_url:$run_url,status:$status,conclusion:$conclusion,head_sha:$head_sha}')"
+          gh api --method POST \
+            repos/ORESoftware/k8s-cluster/issues/831/comments \
+            -f body="$body" >/dev/null
