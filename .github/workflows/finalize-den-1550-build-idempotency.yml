@@ -1,0 +1,70 @@
+name: Finalize DEN-1550 build idempotency
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.github/workflows/finalize-den-1550-build-idempotency.yml'
+      - '.github/workflows/gha-clone-server.yml'
+      - 'remote/deployments/build-server-rs/src/jobs.rs'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-den-1550-build-idempotency
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      (github.event_name != 'pull_request' || github.head_ref == 'agent/den-1550-build-idempotency-20260804')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact writable feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1550-build-idempotency-20260804
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+      - name: Checkout exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt
+      - name: Format only the owned idempotency source
+        working-directory: remote/deployments/build-server-rs
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 src/jobs.rs
+          rustfmt --edition 2021 --check src/jobs.rs
+      - name: Compile the complete build server and run focused contracts
+        working-directory: remote/deployments/build-server-rs
+        run: |
+          set -euo pipefail
+          cargo check --locked --all-targets
+          cargo test --locked profiles::tests -- --nocapture
+          cargo test --locked idempotency_tests -- --nocapture
+      - name: Validate permanent workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/gha-clone-server.yml
+      - name: Remove one-shot finalizer and commit the product-only tree
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/finalize-den-1550-build-idempotency.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A -- . ':(exclude)remote/libs'
+          git diff --cached --check
+          test ! -e .github/workflows/finalize-den-1550-build-idempotency.yml
+          git diff --cached --name-status | grep -Eq '^D[[:space:]]+\.github/workflows/finalize-den-1550-build-idempotency\.yml$'
+          git commit -m 'fix(DEN-1550): finalize idempotent build admission'
+          git push origin HEAD:agent/den-1550-build-idempotency-20260804
