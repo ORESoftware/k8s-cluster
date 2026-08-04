@@ -9,7 +9,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
       - name: Validate GitHub Actions
@@ -24,13 +24,14 @@ jobs:
         run: python3 scripts/check_sensitive_debug.py
       - run: cargo check --locked
       - run: cargo test --locked
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
   fmt:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - run: cargo fmt --check
+      - run: cargo fmt --all --check
   signal-postgres:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -51,7 +52,7 @@ jobs:
     env:
       THREEFA_SIGNAL_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/threefa_signal_test
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
       - name: Run real Signal transaction and retention tests
@@ -60,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
       - name: Build final runtime image
@@ -68,13 +69,14 @@ jobs:
       - name: Verify self-contained parser and packaged contract
         run: |
           docker run --rm threefa-backend:flags-test sh -lc '
-            test -r /app/.cli-flags.toml
+            test -r /usr/local/share/threefa-backend/.cli-flags.toml
+            test ! -e /app/.cli-flags.toml
             if ldd /usr/local/bin/threefa-sync-server 2>/dev/null | grep -qi flags2env; then
               echo "runtime binary unexpectedly depends on a flags2env shared library" >&2
               exit 1
             fi
           '
-      - name: Reject secret-bearing flags in the final image
+      - name: Reject secret-bearing flags without echoing values
         run: |
           set +e
           output=$(docker run --rm threefa-backend:flags-test \
@@ -85,6 +87,64 @@ jobs:
           printf '%s\n' "$output"
           test "$status" -eq 2
           grep -q 'unknown command-line option' <<<"$output"
+          grep -q -- '--database-url=<redacted>' <<<"$output"
+          if grep -q 'must-remain-environment-only' <<<"$output"; then
+            echo 'rejected secret-bearing flag leaked its value'
+            exit 1
+          fi
+      - name: Ignore an attacker-controlled working-directory contract
+        run: |
+          set -euo pipefail
+          hostile=$(mktemp -d)
+          trap 'rm -rf "$hostile"' EXIT
+          cat >"$hostile/.cli-flags.toml" <<'TOML'
+          [parse]
+          allow_unknown = true
+
+          [flags.database-url]
+          env = "DATABASE_URL"
+          aliases = ["database-url"]
+          type = "string"
+          TOML
+          set +e
+          output=$(docker run --rm \
+            --volume "$hostile:/tmp/hostile:ro" \
+            --workdir /tmp/hostile \
+            threefa-backend:flags-test \
+            /usr/local/bin/threefa-sync-server \
+            --database-url=postgres://hostile-cwd-secret@redacted.invalid/threefa 2>&1)
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          test "$status" -eq 2
+          grep -q -- '--database-url=<redacted>' <<<"$output"
+          if grep -q 'hostile-cwd-secret' <<<"$output"; then
+            echo 'ambient CWD contract was selected or a secret value leaked'
+            exit 1
+          fi
+      - name: Relative and missing explicit overrides fail closed
+        run: |
+          set +e
+          relative=$(docker run --rm \
+            --env THREEFA_FLAGS_CONFIG=reviewed.toml \
+            threefa-backend:flags-test \
+            /usr/local/bin/threefa-sync-server \
+            --bind-addr=127.0.0.1:18080 2>&1)
+          relative_status=$?
+          missing=$(docker run --rm \
+            --env THREEFA_FLAGS_CONFIG=/tmp/missing.toml \
+            threefa-backend:flags-test \
+            /usr/local/bin/threefa-sync-server \
+            --bind-addr=127.0.0.1:18080 2>&1)
+          missing_status=$?
+          set -e
+          printf '%s\n%s\n' "$relative" "$missing"
+          test "$relative_status" -eq 2
+          test "$missing_status" -eq 2
+          grep -q 'THREEFA_FLAGS_CONFIG must be an absolute path' <<<"$relative"
+          grep -q 'THREEFA_FLAGS_CONFIG does not name a readable regular file' <<<"$missing"
+          ! grep -q 'reviewed.toml' <<<"$relative"
+          ! grep -q '/tmp/missing.toml' <<<"$missing"
       - name: Accept declared operational flags before typed config
         run: |
           set +e
