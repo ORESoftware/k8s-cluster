@@ -6,6 +6,16 @@ on:
       - agent/restore-slack-browser-harness-current-main
     paths:
       - .github/workflows/materialize-slack-browser-harness-once.yml
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+    paths:
+      - .github/workflows/materialize-slack-browser-harness-once.yml
 
 permissions:
   contents: write
@@ -16,6 +26,10 @@ concurrency:
 
 jobs:
   materialize:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.head.ref == 'agent/restore-slack-browser-harness-current-main')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
