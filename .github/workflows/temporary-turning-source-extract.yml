@@ -1,9 +1,10 @@
 name: Temporary turning source extract
 
 on:
-  push:
-    branches:
-      - agent/den-lathe-machine-profiles-20260804
+  pull_request:
+    paths:
+      - ".github/workflows/temporary-turning-source-extract.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
