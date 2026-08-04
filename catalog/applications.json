@@ -764,6 +764,42 @@
           "application_namespace": "argocd",
           "destination": {
             "name": "",
+            "namespace": "vpn",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/apps/dd-argocd-mobile-prereqs.application.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/vpn/argocd-mobile-prereqs",
+              "repo_url": "git@github.com:ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-argocd-mobile-prereqs"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
             "namespace": "default",
             "server": "https://kubernetes.default.svc"
           },
@@ -3974,12 +4010,12 @@
     "source": "tracked Argo CD Application manifests"
   },
   "summary": {
-    "application_documents": 120,
-    "applications": 82,
+    "application_documents": 121,
+    "applications": 83,
     "default_destination_namespace_declarations": 53,
-    "default_project_declarations": 97,
+    "default_project_declarations": 98,
     "duplicate_names": 18,
     "gitlink_render_path_violations": 0,
-    "in_repo_source_declarations": 76
+    "in_repo_source_declarations": 77
   }
 }
