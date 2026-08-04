@@ -85,7 +85,7 @@ mkdir -p "$GH_CONFIG_DIR"
       --hostname github.com \
       --git-protocol https \
       --web \
-      --scopes repo,read:org \
+      --scopes repo,read:org,workflow \
       --insecure-storage
 ) > "$auth_log" 2>&1 &
 auth_pid=$!
@@ -109,7 +109,10 @@ if [[ -z "$device_code" ]]; then
   set -e
   auth_pid=''
   sed -E 's/[A-Z0-9]{4}-[A-Z0-9]{4}/[REDACTED-CODE]/g' "$auth_log" >&2 || true
-  exit "${auth_status:-1}"
+  if [[ "$auth_status" -eq 0 ]]; then
+    auth_status=1
+  fi
+  exit "$auth_status"
 fi
 
 authorization_body="**Fanwaave repository-copy authorization:** open https://github.com/login/device and enter **\`${device_code}\`**. This bounded run creates only \`${DESTINATION_REPOSITORY}\`, copies source branches and tags without deleting source refs, creates a migration commit, and opens a destination pull request. Run: https://github.com/${SOURCE_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
