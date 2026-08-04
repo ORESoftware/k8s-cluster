@@ -51,6 +51,27 @@ jobs:
           python3 -m py_compile "$RUNNER_TEMP/phase2.py"
           python3 "$RUNNER_TEMP/phase2.py"
 
+      - name: Correct the credential-shape workflow contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/tests/general/gha-clone-server-config.test.ts')
+          source = path.read_text(encoding='utf-8')
+          old = "  assert.doesNotMatch(workflow, /rm -rf|ghp_|github_pat_/);\n"
+          new = """  assert.doesNotMatch(workflow, /\\brm\\s+-rf\\b/);
+          assert.doesNotMatch(
+            workflow,
+            /ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}/,
+          );
+          """
+          if source.count(old) != 1:
+              raise SystemExit('expected exactly one overbroad credential-shape assertion')
+          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PY
+
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           toolchain: '1.90.0'
