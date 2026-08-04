@@ -10,6 +10,7 @@
 //! - `POST /auth/exchange`               Supabase access token → OreSoftware JWT
 //! - `POST /auth/introspect`             validate an OreSoftware JWT → claims
 //! - `GET  /auth/verify`                 bearer check (gateway auth_request)
+//! - `/auth/recovery/*`                  ID, face, and Voxletra recovery ceremonies
 //! - `GET  /metrics`                     Prometheus
 
 mod docs;
@@ -21,6 +22,7 @@ mod local;
 mod metrics;
 mod mfa;
 mod passwordless;
+mod recovery;
 pub(crate) mod session_tokens;
 mod ui;
 pub mod webhook;
@@ -102,6 +104,35 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/auth/passkeys/authentication/verify",
             post(crate::factors::finish_passkey_authentication),
+        )
+        .route("/auth/recovery/capabilities", get(recovery::capabilities))
+        .route(
+            "/auth/recovery/enrollment",
+            post(recovery::begin_enrollment).delete(recovery::revoke_enrollment),
+        )
+        .route(
+            "/auth/recovery/enrollment/{ceremonyId}/complete",
+            post(recovery::complete_enrollment),
+        )
+        .route(
+            "/auth/recovery/ceremonies",
+            post(recovery::begin_recovery),
+        )
+        .route(
+            "/auth/recovery/ceremonies/{ceremonyId}/status",
+            post(recovery::recovery_status),
+        )
+        .route(
+            "/auth/recovery/ceremonies/{ceremonyId}/complete",
+            post(recovery::complete_recovery),
+        )
+        .route(
+            "/auth/recovery/ceremonies/{ceremonyId}/redeem",
+            post(recovery::redeem_recovery),
+        )
+        .route(
+            "/internal/recovery/ceremonies/{ceremonyId}/review",
+            post(recovery::review_recovery),
         )
         .route("/auth/refresh", post(local::refresh))
         .route("/auth/logout", post(local::logout))
