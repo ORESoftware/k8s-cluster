@@ -29,6 +29,7 @@ use tokio::{
 const SERVER_BINARY: &str = env!("CARGO_BIN_EXE_gha-clone-server");
 const AUTH_SECRET: &str = "test-server-auth";
 const WEBHOOK_SECRET: &str = "test-webhook-secret";
+const WEBHOOK_DELIVERY: &str = "4f5f1f6e-68a6-4d95-90b4-c0a892938f0f";
 const BUILD_AUTH: &str = "test-build-auth";
 const REPOSITORY: &str = "owner/repo";
 const REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -51,6 +52,10 @@ const SERVER_ENV_VARS: &[&str] = &[
     "GHA_CLONE_BUILD_POLL_SECONDS",
     "GHA_CLONE_BUILD_TIMEOUT_SECONDS",
     "GHA_CLONE_MAX_RUNS",
+    "GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS",
+    "GHA_CLONE_WEBHOOK_IGNORED_WORKFLOWS",
+    "GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS",
+    "GHA_CLONE_MAX_WEBHOOK_DELIVERIES",
 ];
 
 struct ServerProcess {
@@ -248,6 +253,7 @@ async fn post_webhook(
         .post(format!("{}/webhooks/github", server.base_url))
         .header("content-type", "application/json")
         .header("x-github-event", event)
+        .header("x-github-delivery", WEBHOOK_DELIVERY)
         .body(body.to_vec());
     if let Some(signature) = signature {
         request = request.header("x-hub-signature-256", signature);
@@ -271,6 +277,7 @@ async fn public_endpoints_describe_the_dormant_fail_closed_server() {
     assert_eq!(health["executionEnabled"], false);
     assert_eq!(health["allowedRepositories"], 1);
     assert_eq!(health["runsRetained"], 0);
+    assert_eq!(health["webhookDeliveriesRetained"], 0);
 
     let (status, readiness) = get_json(&client, &server, "/readyz").await;
     assert_eq!(status, StatusCode::OK);
@@ -408,6 +415,40 @@ async fn webhook_guards_reject_bad_inputs_before_any_github_fetch() {
     let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(value["error"], "invalid GitHub webhook signature");
+
+    let signature = webhook_signature(&body);
+    let response = client
+        .post(format!("{}/webhooks/github", server.base_url))
+        .header("content-type", "application/json")
+        .header("x-github-event", "issues")
+        .header("x-hub-signature-256", &signature)
+        .body(body.clone())
+        .send()
+        .await
+        .expect("webhook without delivery");
+    let (status, value) = response_json(response).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        value["error"],
+        "missing or invalid X-GitHub-Delivery UUID"
+    );
+
+    let response = client
+        .post(format!("{}/webhooks/github", server.base_url))
+        .header("content-type", "application/json")
+        .header("x-github-event", "issues")
+        .header("x-hub-signature-256", &signature)
+        .header("x-github-delivery", "not-a-uuid")
+        .body(body.clone())
+        .send()
+        .await
+        .expect("webhook with invalid delivery");
+    let (status, value) = response_json(response).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        value["error"],
+        "missing or invalid X-GitHub-Delivery UUID"
+    );
 
     let invalid_json = b"{";
     let signature = webhook_signature(invalid_json);
