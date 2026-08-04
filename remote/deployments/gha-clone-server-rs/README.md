@@ -50,6 +50,7 @@ Example plan:
 | Workflow evidence | Fixed build-server profile |
 | --- | --- |
 | Cargo/rustfmt/Clippy/tests | `rust-verify` |
+| This repository's bounded GHA-clone meta workflow | `rust-verify`, with an exact reviewed fallback to `remote/deployments/gha-clone-server-rs` when the repository root is not a Cargo crate |
 | npm/pnpm/yarn/Node tests | `node-verify` |
 | Python compile/pytest | `python-verify` |
 | Flutter analyze/tests | `flutter-verify` |
@@ -63,6 +64,42 @@ Example plan:
 Static `needs` dependencies are validated for unknown nodes and cycles. Runs
 execute in deterministic topological order and poll each build-server job to a
 terminal result before submitting its dependents.
+
+## Meta self-test: the server uses itself
+
+`.github/workflows/gha-clone-server-meta.yml` is deliberately limited to the
+independent compiler's supported subset. It describes one Rust verification job
+for this service and contains no secrets, dynamic expressions, matrices,
+conditions, service containers, caller-selected working directory, or mutable
+revision.
+
+`tests/meta_self_test.rs` starts the real `gha-clone-server` binary, starts a
+recording build-server double, submits that exact workflow through the running
+server's authenticated `POST /v1/runs` endpoint, polls `GET /v1/runs/<uuid>` to a
+terminal state, and verifies the outgoing request contains only:
+
+- `ORESoftware/k8s-cluster`;
+- an exact 40-hex commit SHA;
+- `jobKind=run-profile`;
+- the fixed `rust-verify` profile;
+- the deterministic plan/job request ID.
+
+That gives CI an end-to-end test of the real HTTP server, authentication,
+planner, run store, topological dispatcher, build submission, polling, and
+terminal-state update. The build-server double does not execute repository code;
+its purpose is to keep pull-request CI hermetic and credential-free.
+
+After deployment activation, submitting the same fixture at the exact merged SHA
+uses the real `dd-build-server`. Its `rust-verify` profile first accepts a root
+`Cargo.toml`; for this monorepo it has one additional exact, operator-reviewed
+fallback to `remote/deployments/gha-clone-server-rs/Cargo.toml`. It performs no
+filesystem search and accepts no caller-selected directory or command.
+
+This is dogfooding, not unbounded recursion. The independent execution does not
+start another GitHub Actions workflow or emit a webhook that re-submits itself;
+it creates one fixed build-server job for the immutable commit and stops at its
+terminal result. Duplicate delivery is bounded by the deterministic request ID
+and the build server's idempotency path.
 
 ## Fail-closed exclusions
 
@@ -109,11 +146,16 @@ exist. Activation requires:
 
 1. provision `dd-gha-clone-server-secrets` through the reviewed ExternalSecret;
 2. verify the GitHub App is installed only on allowlisted organizations/repos;
-3. confirm `dd-build-server` is healthy and its new fixed profiles are present;
+3. confirm `dd-build-server` is healthy and its fixed profiles include the
+   reviewed monorepo Rust fallback;
 4. pin the deployment to the merged source revision;
 5. scale to one replica and run plan-only fixtures;
-6. enable API execution for immutable trusted commits;
-7. enable webhook execution only after HMAC and idempotency evidence.
+6. enable API execution for immutable trusted commits and submit
+   `.github/workflows/gha-clone-server-meta.yml` at the exact merged SHA;
+7. verify the real build-server job tests this crate and the run reaches
+   `succeeded` without creating a second independent run;
+8. enable webhook execution only after HMAC, duplicate-delivery, and
+   idempotency evidence.
 
 AWS is the initial independent executor because the existing build server,
 containerd/buildkit, ECR and Postgres are there. Hetzner can immediately host ARC
