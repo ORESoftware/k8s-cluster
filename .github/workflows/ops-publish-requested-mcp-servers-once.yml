@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - scripts/ops/publish_requested_mcp_servers.py
+      - scripts/ops/requested_mcp_publisher/**
       - scripts/ops/tests/test_publish_requested_mcp_servers.py
       - .github/workflows/ops-publish-requested-mcp-servers-once.yml
   workflow_dispatch:
@@ -32,7 +33,7 @@ jobs:
       - name: Validate the exact trusted publisher
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/ops/publish_requested_mcp_servers.py
+          python3 -m py_compile scripts/ops/publish_requested_mcp_servers.py scripts/ops/requested_mcp_publisher/*.py
           python3 -m unittest -v scripts/ops/tests/test_publish_requested_mcp_servers.py
           python3 scripts/ops/publish_requested_mcp_servers.py --check > /tmp/requested-mcp-check.json
           test "$(jq '.repositories | length' /tmp/requested-mcp-check.json)" -eq 5
@@ -95,7 +96,7 @@ jobs:
           test "$(git -C "$work/k8s-cluster" rev-parse HEAD)" = "$trusted_sha"
 
           cd "$work/k8s-cluster"
-          python3 -m py_compile scripts/ops/publish_requested_mcp_servers.py
+          python3 -m py_compile scripts/ops/publish_requested_mcp_servers.py scripts/ops/requested_mcp_publisher/*.py
           python3 -m unittest -v scripts/ops/tests/test_publish_requested_mcp_servers.py
           python3 scripts/ops/publish_requested_mcp_servers.py \
             --execute \
