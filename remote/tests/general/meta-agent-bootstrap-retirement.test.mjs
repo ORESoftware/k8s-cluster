@@ -23,9 +23,9 @@ const completionDocument = resolve(
   'docs/operations/meta-agent-repository-publication-completion.md',
 );
 const assetsDirectory = resolve(root, 'scripts/critical-org-fleet/assets');
-const publisher = resolve(
+const publicationOrchestrator = resolve(
   root,
-  'scripts/critical-org-fleet/publish_meta_control_plane.py',
+  'scripts/ops/publish_meta_agent_control_plane_from_actions.sh',
 );
 const snapshotVerifier = resolve(
   root,
@@ -37,6 +37,7 @@ const ephemeralRunbook = resolve(
 );
 
 const read = (path) => readFile(path, 'utf8');
+const normalizedText = (value) => value.replace(/\s+/g, ' ').trim();
 
 test('completed interactive Meta owner bootstrap is absent from the active workflow surface', async () => {
   assert.equal(existsSync(retiredWorkflow), false);
@@ -59,7 +60,7 @@ test('completed interactive Meta owner bootstrap is absent from the active workf
 });
 
 test('completion record pins the exact target and initial reviewed history', async () => {
-  const document = await read(completionDocument);
+  const document = normalizedText(await read(completionDocument));
   for (const contract of [
     'Status: completed on 2026-08-03 UTC and reverified on 2026-08-04 UTC.',
     '`meta-agents-demo/meta-agent-control-plane.rs`',
@@ -71,12 +72,12 @@ test('completion record pins the exact target and initial reviewed history', asy
     'must be revoked and rotated',
     'DEN-1057, DEN-1058, and DEN-319',
   ]) {
-    assert.match(document, new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.equal(document.includes(contract), true, `missing contract: ${contract}`);
   }
 });
 
 test('immutable recovery evidence remains present after privileged workflow retirement', async () => {
-  assert.equal(existsSync(publisher), true);
+  assert.equal(existsSync(publicationOrchestrator), true);
   assert.equal(existsSync(snapshotVerifier), true);
   assert.equal(existsSync(ephemeralRunbook), true);
 
@@ -94,4 +95,9 @@ test('immutable recovery evidence remains present after privileged workflow reti
     document,
     /e2fe6eaa622db02a54f83e27a822f64ad4b54971c883f97bbda4ac0a4db5d278/,
   );
+  assert.match(
+    document,
+    /scripts\/ops\/publish_meta_agent_control_plane_from_actions\.sh/,
+  );
+  assert.match(document, /scripts\/ops\/verify_meta_agent_source_snapshot\.py/);
 });
