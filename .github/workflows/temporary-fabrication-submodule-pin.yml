@@ -1,0 +1,42 @@
+name: Temporary fabrication submodule pin
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/temporary-fabrication-submodule-pin.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  pin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: agent/advance-fabrication-lathe-profiles
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Advance canonical fabrication submodule
+        env:
+          FABRICATION_SHA: 32be546f5ee020c1de3b099a47e6760d00e3f6e4
+          FABRICATION_PATH: remote/deployments/fabrication-server-rs
+        run: |
+          set -euo pipefail
+          git config -f .gitmodules --get-regexp 'submodule\..*\.path' | grep -F " $FABRICATION_PATH"
+          git config -f .gitmodules --get-regexp 'submodule\..*\.url' | grep -F 'daedalus-fab/fabrication-server.rs'
+          git update-index --cacheinfo "160000,$FABRICATION_SHA,$FABRICATION_PATH"
+          actual=$(git ls-files --stage -- "$FABRICATION_PATH")
+          test "$actual" = "160000 $FABRICATION_SHA 0\t$FABRICATION_PATH"
+          git diff --cached --submodule=short -- "$FABRICATION_PATH"
+      - name: Commit deployment pin
+        run: |
+          git config user.name "ORESoftware CI"
+          git config user.email "actions@users.noreply.github.com"
+          if git diff --cached --quiet; then
+            echo "Fabrication submodule already current"
+            exit 0
+          fi
+          git commit -m "Advance fabrication server for named turning profiles"
+          git push origin HEAD:agent/advance-fabrication-lathe-profiles
