@@ -1,0 +1,220 @@
+--- a/remote/deployments/build-server-rs/src/gha_workflow.rs
++++ b/remote/deployments/build-server-rs/src/gha_workflow.rs
+@@ -54,14 +54,36 @@
+ impl PlannerLimits {
+     fn from_env() -> Self {
+         Self {
+-            max_yaml_bytes: env_usize("BUILD_SERVER_GHA_MAX_YAML_BYTES", MAX_YAML_BYTES_DEFAULT),
+-            max_jobs: env_usize("BUILD_SERVER_GHA_MAX_JOBS", MAX_JOBS_DEFAULT),
+-            max_steps_per_job: env_usize(
++            max_yaml_bytes: bounded_env_usize(
++                "BUILD_SERVER_GHA_MAX_YAML_BYTES",
++                MAX_YAML_BYTES_DEFAULT,
++                1_024,
++                1_048_576,
++            ),
++            max_jobs: bounded_env_usize(
++                "BUILD_SERVER_GHA_MAX_JOBS",
++                MAX_JOBS_DEFAULT,
++                1,
++                256,
++            ),
++            max_steps_per_job: bounded_env_usize(
+                 "BUILD_SERVER_GHA_MAX_STEPS_PER_JOB",
+                 MAX_STEPS_PER_JOB_DEFAULT,
++                1,
++                512,
++            ),
++            max_yaml_nodes: bounded_env_usize(
++                "BUILD_SERVER_GHA_MAX_YAML_NODES",
++                MAX_YAML_NODES_DEFAULT,
++                128,
++                65_536,
++            ),
++            max_yaml_depth: bounded_env_usize(
++                "BUILD_SERVER_GHA_MAX_YAML_DEPTH",
++                MAX_YAML_DEPTH_DEFAULT,
++                8,
++                128,
+             ),
+-            max_yaml_nodes: env_usize("BUILD_SERVER_GHA_MAX_YAML_NODES", MAX_YAML_NODES_DEFAULT),
+-            max_yaml_depth: env_usize("BUILD_SERVER_GHA_MAX_YAML_DEPTH", MAX_YAML_DEPTH_DEFAULT),
+         }
+     }
+ }
+@@ -189,18 +211,26 @@
+             counter: Arc::new(AtomicU64::new(0)),
+             limits: PlannerLimits::from_env(),
+             execution_enabled: env_bool("BUILD_SERVER_GHA_WORKFLOW_EXECUTION_ENABLED", false),
+-            poll_interval: Duration::from_millis(env_u64(
+-                "BUILD_SERVER_GHA_POLL_MILLISECONDS",
+-                250,
+-            )),
+-            run_timeout: Duration::from_secs(env_u64("BUILD_SERVER_GHA_RUN_TIMEOUT_SECONDS", 3600)),
+-            max_runs: env_usize("BUILD_SERVER_GHA_MAX_RUNS", 512),
++            poll_interval: Duration::from_millis(
++                env_u64("BUILD_SERVER_GHA_POLL_MILLISECONDS", 250).clamp(10, 60_000),
++            ),
++            run_timeout: Duration::from_secs(
++                env_u64("BUILD_SERVER_GHA_RUN_TIMEOUT_SECONDS", 3600).clamp(1, 86_400),
++            ),
++            max_runs: bounded_env_usize("BUILD_SERVER_GHA_MAX_RUNS", 512, 1, 10_000),
+         }
+     }
+ }
+ 
++fn bounded_env_usize(name: &str, default: usize, minimum: usize, maximum: usize) -> usize {
++    env_usize(name, default).clamp(minimum, maximum)
++}
++
+ pub(crate) fn router(build: AppState) -> Router {
+-    let state = WorkflowState::from_env(build);
++    workflow_router(WorkflowState::from_env(build))
++}
++
++fn workflow_router(state: WorkflowState) -> Router {
+     Router::new()
+         .route("/gha/workflows/capabilities", get(capabilities_handler))
+         .route("/gha/workflows/plan", post(plan_handler))
+@@ -328,25 +358,12 @@
+         .filter(|value| !value.is_empty())
+         .unwrap_or(&plan.plan_id)
+         .to_string();
+-    {
+-        let runs = state.runs.read().await;
+-        if let Some(existing) = runs.values().find(|run| run.request_id == request_id) {
+-            return (
+-                StatusCode::CONFLICT,
+-                Json(json!({
+-                    "error": "workflow request was already accepted",
+-                    "run": existing,
+-                })),
+-            )
+-                .into_response();
+-        }
+-    }
+ 
+     let counter = state.counter.fetch_add(1, Ordering::Relaxed) + 1;
+     let run_id = format!("gha-{}-{counter}", now_ms());
+     let record = WorkflowRunRecord {
+         id: run_id.clone(),
+-        request_id,
++        request_id: request_id.clone(),
+         status: WorkflowRunStatus::Queued,
+         jobs: plan
+             .jobs
+@@ -371,9 +388,32 @@
+     };
+     {
+         let mut runs = state.runs.write().await;
++        if let Some(existing) = runs
++            .values()
++            .find(|run| run.request_id == request_id)
++            .cloned()
++        {
++            return (
++                StatusCode::CONFLICT,
++                Json(json!({
++                    "error": "workflow request was already accepted",
++                    "run": existing,
++                })),
++            )
++                .into_response();
++        }
++        prune_terminal_runs(&mut runs, state.max_runs.saturating_sub(1));
++        if runs.len() >= state.max_runs {
++            return (
++                StatusCode::TOO_MANY_REQUESTS,
++                Json(json!({
++                    "error": "workflow run retention is full; wait for an active run to finish"
++                })),
++            )
++                .into_response();
++        }
+         runs.insert(run_id.clone(), record.clone());
+     }
+-    prune_runs(&state).await;
+ 
+     let task_state = state.clone();
+     let task_id = run_id.clone();
+@@ -443,6 +483,20 @@
+             return;
+         };
+ 
++        if Instant::now() >= deadline {
++            let error = format!(
++                "workflow exceeded its {} second execution deadline before job submission",
++                state.run_timeout.as_secs()
++            );
++            mutate_job(&state, &run_id, &job.id, |record| {
++                record.status = WorkflowJobStatus::Failed;
++                record.error = Some(error.clone());
++            })
++            .await;
++            outcomes.insert(job.id.clone(), WorkflowJobStatus::Failed);
++            continue;
++        }
++
+         let dependency_failed = job.needs.iter().any(|dependency| {
+             !matches!(outcomes.get(dependency), Some(WorkflowJobStatus::Succeeded))
+         });
+@@ -585,9 +639,8 @@
+     }
+ }
+ 
+-async fn prune_runs(state: &WorkflowState) {
+-    let mut runs = state.runs.write().await;
+-    if runs.len() <= state.max_runs {
++fn prune_terminal_runs(runs: &mut HashMap<String, WorkflowRunRecord>, target_len: usize) {
++    if runs.len() <= target_len {
+         return;
+     }
+     let mut candidates = runs
+@@ -601,7 +654,7 @@
+         .map(|run| (run.created_at_ms, run.id.clone()))
+         .collect::<Vec<_>>();
+     candidates.sort_by_key(|(created_at_ms, _)| *created_at_ms);
+-    let remove_count = runs.len().saturating_sub(state.max_runs);
++    let remove_count = runs.len().saturating_sub(target_len);
+     for (_, id) in candidates.into_iter().take(remove_count) {
+         runs.remove(&id);
+     }
+@@ -647,6 +700,15 @@
+             "workflowPath must stay under .github/workflows and end in .yml or .yaml".to_string(),
+         );
+     }
++    if request
++        .request_id
++        .as_deref()
++        .is_some_and(|request_id| !valid_request_id(request_id))
++    {
++        errors.push(
++            "requestId must be 1-128 printable GitHub-safe characters when supplied".to_string(),
++        );
++    }
+     if request.workflow_yaml.len() > limits.max_yaml_bytes {
+         errors.push(format!(
+             "workflowYaml exceeds the {} byte limit",
+@@ -685,13 +747,18 @@
+     }
+ 
+     let mut workflow_reasons = Vec::new();
+-    for key in root.keys().filter_map(Value::as_str) {
+-        if !matches!(key, "name" | "run-name" | "on" | "jobs") {
+-            workflow_reasons.push(format!(
++    for key in root.keys() {
++        match key.as_str() {
++            Some("name" | "run-name" | "on" | "jobs") => {}
++            Some(key) => workflow_reasons.push(format!(
+                 "workflow-level {key} is unsupported by the independent worker"
+-            ));
++            )),
++            None => errors.push("every workflow-level key must be a string".to_string()),
+         }
+     }
++    if !errors.is_empty() {
++        return Err(errors);
++    }
+ 
+     let job_ids = jobs
+         .keys()
