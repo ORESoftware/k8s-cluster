@@ -1,0 +1,140 @@
+name: Finalize exact profile policy byte bound once
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [synchronize]
+    paths:
+      - .github/workflows/den-1550-policy-byte-bound-finalize-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1550-policy-byte-bound-finalize-once
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/build-server-exact-profile-policy-20260804'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/build-server-exact-profile-policy-20260804
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Enforce the raw byte bound before whitespace normalization
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/deployments/build-server-rs/src/config/profile_policy.rs')
+          text = path.read_text(encoding='utf-8')
+          old = '''    let Some(raw) = exact_rules_json
+              .map(str::trim)
+              .filter(|raw| !raw.is_empty())
+          else {
+              return Ok(compiled);
+          };
+          if raw.len() > MAX_POLICY_BYTES {
+              return Err(format!(
+                  "BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON exceeds {MAX_POLICY_BYTES} bytes"
+              ));
+          }
+          '''
+          new = '''    let Some(configured) = exact_rules_json else {
+              return Ok(compiled);
+          };
+          if configured.len() > MAX_POLICY_BYTES {
+              return Err(format!(
+                  "BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON exceeds {MAX_POLICY_BYTES} bytes"
+              ));
+          }
+          let raw = configured.trim();
+          if raw.is_empty() {
+              return Ok(compiled);
+          }
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('raw policy byte-bound implementation drifted')
+          text = text.replace(old, new, 1)
+
+          old_test = '''        let oversized = " ".repeat(MAX_POLICY_BYTES + 1);
+              assert!(compile_rules(Vec::new(), Some(&oversized), &globally_allowed()).is_err());
+          '''
+          new_test = '''        let valid = r#"[{"repository":"https://github.com/ORESoftware/k8s-cluster.git","profiles":["rust-verify"]}]"#;
+              let at_limit = format!("{valid}{}", " ".repeat(MAX_POLICY_BYTES - valid.len()));
+              assert_eq!(at_limit.len(), MAX_POLICY_BYTES);
+              assert!(compile_rules(Vec::new(), Some(&at_limit), &globally_allowed()).is_ok());
+
+              let oversized = format!("{at_limit} ");
+              let error = compile_rules(Vec::new(), Some(&oversized), &globally_allowed())
+                  .expect_err("raw policy bytes above the bound must fail before trimming");
+              assert!(error.contains("exceeds"));
+
+              let oversized_multibyte = "é".repeat((MAX_POLICY_BYTES / 2) + 1);
+              assert!(oversized_multibyte.chars().count() < MAX_POLICY_BYTES);
+              assert!(oversized_multibyte.len() > MAX_POLICY_BYTES);
+              assert!(compile_rules(
+                  Vec::new(),
+                  Some(&oversized_multibyte),
+                  &globally_allowed(),
+              )
+              .is_err());
+          '''
+          if text.count(old_test) != 1:
+              raise SystemExit('policy byte-bound regression test drifted')
+          path.write_text(text.replace(old_test, new_test, 1), encoding='utf-8')
+          PY
+
+      - uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt
+
+      - name: Run the focused compiled and static policy gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 \
+            remote/deployments/build-server-rs/src/config/profile_policy.rs
+          rustfmt --edition 2021 --check \
+            remote/deployments/build-server-rs/src/config.rs \
+            remote/deployments/build-server-rs/src/config/profile_policy.rs \
+            remote/deployments/build-server-rs/src/validation.rs
+          cargo test --locked \
+            --manifest-path remote/deployments/build-server-rs/Cargo.toml \
+            config::profile_policy::tests \
+            -- --nocapture
+          node --test remote/tests/general/build-server-profile-repository-policy.test.mjs
+          git diff --check
+
+      - name: Commit only the self-cleaned seven-file policy product
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/den-1550-policy-byte-bound-finalize-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          expected=$'.github/workflows/gha-clone-server.yml\ndocs/build-server-profile-repository-policy.md\nremote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml\nremote/deployments/build-server-rs/src/config.rs\nremote/deployments/build-server-rs/src/config/profile_policy.rs\nremote/deployments/build-server-rs/src/validation.rs\nremote/tests/general/build-server-profile-repository-policy.test.mjs'
+          actual="$(git diff --cached --name-only "$(git merge-base HEAD origin/dev)" | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'unexpected final product paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          git commit -m 'fix(DEN-1550): enforce profile policy raw byte bound'
+          git push origin HEAD:agent/build-server-exact-profile-policy-20260804
