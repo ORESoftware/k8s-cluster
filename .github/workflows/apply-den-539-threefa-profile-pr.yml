@@ -6,6 +6,7 @@ on:
       - 'scripts/ops/apply_den539_threefa_profile.py'
       - 'scripts/ops/fix_den539_planner_adversarial.py'
       - 'scripts/ops/fix_den539_threefa_process_status.py'
+      - 'scripts/ops/fix_den539_direct_workflow_guard.py'
       - '.github/workflows/apply-den-539-threefa-profile-pr.yml'
 
 permissions:
@@ -46,6 +47,7 @@ jobs:
           python3 scripts/ops/apply_den539_threefa_profile.py
           python3 scripts/ops/fix_den539_planner_adversarial.py
           python3 scripts/ops/fix_den539_threefa_process_status.py
+          python3 scripts/ops/fix_den539_direct_workflow_guard.py
       - name: Format and execute all changed contracts
         run: |
           set -euo pipefail
@@ -71,6 +73,7 @@ jobs:
               'scripts/ops/apply_den539_threefa_profile.py',
               'scripts/ops/fix_den539_planner_adversarial.py',
               'scripts/ops/fix_den539_threefa_process_status.py',
+              'scripts/ops/fix_den539_direct_workflow_guard.py',
           ):
               Path(name).unlink(missing_ok=True)
           PY
