@@ -66,6 +66,12 @@ That permits the GHA continuity server to dogfood its Rust verification profile 
 
 Repositories without an exact rule continue to use the reviewed prefix fallback. Adding a sensitive repository should normally include an exact rule in the same pull request as its fixed profile and workflow contract.
 
+## Review and rollout rule
+
+An exact binding is a code-execution policy change, not a convenience mapping. Every new or modified rule must be reviewed with the corresponding fixed profile, immutable workflow contract, repository URL aliases, and GitOps value in the same pull request. The change must prove both the intended allow decision and at least one denied profile that the broader organization prefix would otherwise admit.
+
+A rollout must start with one exact repository, keep the broader prefix fallback unchanged for unrelated repositories, and verify startup failure for malformed or disabled-profile policy. Do not remove a broad prefix merely to simulate an exact denylist; migrate repositories incrementally and remove a prefix only after every intended repository beneath it has an explicit reviewed binding.
+
 ## Test contract
 
 The Rust policy tests prove:
