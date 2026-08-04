@@ -16,6 +16,7 @@
 //! - [`supabase`] — per-project JWKS verification, issuer routing, Management API
 //! - [`db`]      — the RDS identity store (`shared_auth.principals`)
 //! - [`token`]   — minting unified OreSoftware JWTs and publishing our JWKS
+//! - [`recovery`] — government-ID, face, and Voxletra-assisted account recovery
 //! - [`http`]    — the axum surface
 //! - [`state`]   — shared application state
 //! - [`error`], [`telemetry`]
@@ -30,6 +31,7 @@ pub mod flags;
 pub mod http;
 pub mod metrics;
 pub mod password;
+pub mod recovery;
 pub mod session;
 pub mod state;
 pub mod supabase;
@@ -84,6 +86,7 @@ async fn serve() -> anyhow::Result<()> {
         %bind_addr,
         projects = state.supabase.len(),
         db = state.db.is_some(),
+        recovery = state.recovery.is_some(),
         "shared-auth-server listening"
     );
 
