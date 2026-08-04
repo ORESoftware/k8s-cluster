@@ -8,6 +8,7 @@
 mod admin;
 mod api;
 mod cdc;
+mod checkout;
 mod config;
 mod crypto;
 mod customer_locks;
