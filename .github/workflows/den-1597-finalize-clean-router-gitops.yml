@@ -53,6 +53,15 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
+          def replace_section(text: str, start: str, end: str, replacement: str, label: str) -> str:
+              start_index = text.find(start)
+              if start_index < 0:
+                  raise SystemExit(f"{label}: start marker not found")
+              end_index = text.find(end, start_index + len(start))
+              if end_index < 0:
+                  raise SystemExit(f"{label}: end marker not found")
+              return text[:start_index] + replacement + text[end_index:]
+
           def replace_once(text: str, old: str, new: str, label: str) -> str:
               count = text.count(old)
               if count != 1:
@@ -61,40 +70,28 @@ jobs:
 
           test_path = Path('remote/tests/general/gha-clone-server-config.test.ts')
           text = test_path.read_text()
-          text = replace_once(
-              text,
-              """  for (const property of [
-            'auth_secret',
-            'github_webhook_secret',
-            'github_app_installation_token',
-            'build_server_auth',
-          ]) {
-            assert.match(secret, new RegExp(`property: ${property}`));
-          }
-          assert.doesNotMatch(
-            secret,
-            /ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|BEGIN (?:RSA |EC )?PRIVATE KEY/,
-          );
-          """,
-              """  for (const property of [
-            'auth_secret',
-            'github_webhook_secret',
-            'github_app_installation_token',
-          ]) {
-            assert.match(secret, new RegExp(`property: ${property}`));
-          }
-          assert.doesNotMatch(secret, /build_server_auth/);
-          assert.match(secret, /Direct executor credentials belong only to/);
-          assert.doesNotMatch(
-            secret,
-            /ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|BEGIN (?:RSA |EC )?PRIVATE KEY/,
-          );
-          """,
-              'clone secret properties',
-          )
+          secret_start = "test('clone-server secret mapping names values without committing credential material', () => {\n"
+          secret_end = "\n\ntest('executor router is rendered inert and has no cluster or host-runtime identity', () => {\n"
+          secret_test = """test('clone-server secret mapping names values without committing credential material', () => {
+            const secret = read(secretPath);
+            assert.match(secret, /dd\\/remote-dev\\/gha-clone-server-secrets/);
+            for (const property of [
+              'auth_secret',
+              'github_webhook_secret',
+              'github_app_installation_token',
+            ]) {
+              assert.match(secret, new RegExp(`property: ${property}`));
+            }
+            assert.doesNotMatch(secret, /build_server_auth/);
+            assert.match(secret, /Direct executor credentials belong only to/);
+            assert.doesNotMatch(
+              secret,
+              /ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|BEGIN (?:RSA |EC )?PRIVATE KEY/,
+            );
+          });"""
+          text = replace_section(text, secret_start, secret_end, secret_test, 'clone secret test')
 
-          marker = """test('all continuity and executor-router resources participate in the shared render', () => {
-          """
+          render_marker = "test('all continuity and executor-router resources participate in the shared render', () => {\n"
           activation_test = """test('source-bootstrap pods cannot be activated before immutable images exist', () => {
             const cloneDeployment = read(deploymentPath);
             const routerDeployment = read(routerDeploymentPath);
@@ -124,7 +121,7 @@ jobs:
 
           """
           if 'source-bootstrap pods cannot be activated before immutable images exist' not in text:
-              text = replace_once(text, marker, activation_test + marker, 'activation test insertion')
+              text = replace_once(text, render_marker, activation_test + render_marker, 'activation test insertion')
           test_path.write_text(text)
 
           doc_path = Path('docs/gha-executor-router-gitops.md')
