@@ -36,14 +36,16 @@ const DEFAULT_PORT: u16 = 8126;
 const DEFAULT_SECRET_ROOT: &str = "/var/run/secrets/gha-executor-router";
 const DEFAULT_MAX_ASSIGNMENTS: usize = 4096;
 
+#[path = "executor_router_service/assignment.rs"]
 mod assignment;
+#[path = "executor_router_service/security.rs"]
 mod security;
+#[path = "executor_router_service/upstream.rs"]
 mod upstream;
 
 use assignment::submit_build;
 use security::{
-    env_bool, env_optional, env_required, env_u16, env_u64, env_usize, read_secret,
-    shutdown_signal,
+    env_bool, env_optional, env_required, env_u16, env_u64, env_usize, read_secret, shutdown_signal,
 };
 use upstream::get_build;
 
@@ -387,10 +389,8 @@ mod tests {
     #[test]
     fn bounded_errors_never_include_an_upstream_body() {
         let body = "secret-token=do-not-return";
-        let response = upstream::ambiguous_submission(
-            "aws-primary",
-            Some(StatusCode::SERVICE_UNAVAILABLE),
-        );
+        let response =
+            upstream::ambiguous_submission("aws-primary", Some(StatusCode::SERVICE_UNAVAILABLE));
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
         assert_eq!(bounded_text(body, 6), "secret");
     }
