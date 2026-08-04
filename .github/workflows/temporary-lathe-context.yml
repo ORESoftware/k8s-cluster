@@ -21,36 +21,59 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - name: Print machine and turning anchors
+      - name: Print exact integration anchors
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          path = Path('src/lib.rs')
-          lines = path.read_text(encoding='utf-8').splitlines()
-          needles = [
-              'struct MachineProfile',
-              'fn default_machines',
-              'fn machine_class',
-              'fn turning_catalog_response',
-              'fn turning_preflight_catalog_response',
-              'fn subtractive_catalog_response',
-              'fn firmware_gcode_dialect',
-              'lathe',
-              'turning-center',
-              'swiss',
-          ]
-          print(f'src/lib.rs lines={len(lines)}')
-          for needle in needles:
-              matches = [i for i, line in enumerate(lines) if needle in line]
-              print(f'\n===== {needle!r}: {len(matches)} match(es) =====')
-              for index in matches[:12]:
-                  start = max(0, index - 12)
-                  end = min(len(lines), index + 45)
-                  print(f'--- lines {start+1}-{end} ---')
-                  for lineno in range(start, end):
-                      print(f'{lineno+1:06d}: {lines[lineno]}')
-          print('\n===== src files =====')
-          for item in sorted(Path('src').glob('*')):
-              print(item)
+          def show(path: str, start: int, end: int) -> None:
+              lines = Path(path).read_text(encoding='utf-8').splitlines()
+              print(f'\n===== {path}:{start}-{end} =====')
+              for line_no in range(max(1, start), min(len(lines), end) + 1):
+                  print(f'{line_no:06d}: {lines[line_no - 1]}')
+
+          def matches(path: str, needles: list[str], context: int = 12) -> None:
+              lines = Path(path).read_text(encoding='utf-8').splitlines()
+              for needle in needles:
+                  indexes = [index for index, line in enumerate(lines) if needle in line]
+                  print(f'\n===== {path} {needle!r}: {len(indexes)} match(es) =====')
+                  for index in indexes[:20]:
+                      show(path, index + 1 - context, index + 1 + context)
+
+          lib = Path('src/lib.rs').read_text(encoding='utf-8').splitlines()
+          start = next(i for i, line in enumerate(lib) if line.startswith('fn default_machines()'))
+          depth = 0
+          opened = False
+          end = None
+          for i in range(start, len(lib)):
+              depth += lib[i].count('{') - lib[i].count('}')
+              opened = opened or '{' in lib[i]
+              if opened and depth == 0:
+                  end = i
+                  break
+          print(f'default_machines lines={start + 1}-{end + 1}')
+          show('src/lib.rs', max(start + 1, end - 140), end + 1)
+
+          matches('src/lib.rs', [
+              'mod printer_model_catalog;',
+              'printer_model_catalog::',
+              'MachineClass::Lathe =>',
+              'fn lathe_catalog_response',
+              'supportedModels',
+              'modelCatalog',
+          ], 18)
+          matches('src/tests.rs', [
+              'fdm_printer_catalog',
+              'post_2024',
+              'turning_catalog',
+              'lathe_catalog',
+              'default_machines()',
+          ], 30)
+          matches('src/e2e_tests.rs', [
+              'fdm-printer/catalog',
+              'turning/catalog',
+              'lathe/catalog',
+              'post_2024',
+          ], 30)
+          show('src/printer_model_catalog.rs', 1, 260)
           PY
