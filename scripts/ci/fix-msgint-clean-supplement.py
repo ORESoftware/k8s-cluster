@@ -26,8 +26,8 @@ replacements = (
     ),
     (
         "  assert.match(validation, /msgint-connectors-extra\\.git/);",
-        "  assert.match(validation, /repo-extra\\.git/);",
-        "generic sibling-lookalike rejection",
+        "  assert.match(validation, /disallow_near_match_for_exact_rule/);",
+        "generic exact-rule near-match regression",
     ),
     (
         "  assert.match(readme, /This hermetic proof needs neither the private Messaging Intel repository nor a Kubernetes context/);",
