@@ -1,0 +1,199 @@
+name: Apply DEN-1603 OCI ledger once
+
+on:
+  push:
+    branches:
+      - agent/den-1603-continuity-digest-ledger
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-1603-ledger-once
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1603-continuity-digest-ledger
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Apply the reviewed workflow and documentation changes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow_path = Path('.github/workflows/gha-continuity-images.yml')
+          docs_path = Path('docs/gha-continuity-images.md')
+          workflow = workflow_path.read_text()
+
+          path_marker = (
+              "      - 'remote/deployments/gha-clone-server-rs/scripts/validate-image-export.py'\n"
+              "      - 'docs/gha-continuity-images.md'"
+          )
+          path_replacement = (
+              "      - 'remote/deployments/gha-clone-server-rs/scripts/validate-image-export.py'\n"
+              "      - 'remote/deployments/gha-clone-server-rs/scripts/render-oci-release-ledger-entry.sh'\n"
+              "      - 'remote/deployments/gha-clone-server-rs/scripts/check-oci-release-ledger-comments.py'\n"
+              "      - 'remote/deployments/gha-clone-server-rs/scripts/check-oci-release-ledger-contract.sh'\n"
+              "      - 'docs/gha-continuity-images.md'"
+          )
+          assert workflow.count(path_marker) == 2, 'expected PR and push path lists'
+          workflow = workflow.replace(path_marker, path_replacement)
+
+          validate_marker = "      - name: Create an isolated BuildKit builder\n"
+          validate_step = '''      - name: Validate immutable release-ledger behavior
+                shell: bash
+                run: |
+                  set -euo pipefail
+                  bash -n \\
+                    remote/deployments/gha-clone-server-rs/scripts/render-oci-release-ledger-entry.sh \\
+                    remote/deployments/gha-clone-server-rs/scripts/check-oci-release-ledger-contract.sh
+                  python3 -m py_compile \\
+                    remote/deployments/gha-clone-server-rs/scripts/check-oci-release-ledger-comments.py
+                  bash remote/deployments/gha-clone-server-rs/scripts/check-oci-release-ledger-contract.sh
+
+          '''.replace('              ', '')
+          assert workflow.count(validate_marker) == 1, 'unexpected validate job shape'
+          workflow = workflow.replace(validate_marker, validate_step + validate_marker, 1)
+
+          permission_marker = "    permissions:\n      contents: read\n      packages: write\n"
+          permission_replacement = (
+              "    permissions:\n"
+              "      contents: read\n"
+              "      packages: write\n"
+              "      issues: write # Append validated immutable release metadata to issue 702.\n"
+          )
+          assert workflow.count(permission_marker) == 1, 'unexpected publish permission shape'
+          workflow = workflow.replace(permission_marker, permission_replacement, 1)
+
+          remove_marker = '''      - name: Remove the isolated builder
+                if: ${{ always() }}
+                shell: bash
+                run: docker buildx rm "$BUILDX_BUILDER" >/dev/null 2>&1 || true
+          '''.replace('              ', '')
+          insert_at = workflow.rfind(remove_marker)
+          assert insert_at >= 0, 'missing publish builder cleanup step'
+          record_step = '''      - name: Record immutable digest in the release ledger
+                env:
+                  GH_TOKEN: ${{ github.token }}
+                  OCI_RELEASE_LEDGER_ISSUE: "702"
+                  SOURCE_REPOSITORY: ${{ github.repository }}
+                  SOURCE_SHA: ${{ github.sha }}
+                  TARGET: ${{ matrix.target }}
+                  IMAGE: ${{ matrix.image }}
+                  DIGEST: ${{ steps.publish.outputs.digest }}
+                shell: bash
+                run: |
+                  set -euo pipefail
+                  scripts='remote/deployments/gha-clone-server-rs/scripts'
+                  entry="${RUNNER_TEMP}/${TARGET}-release-entry.md"
+                  comments="${RUNNER_TEMP}/oci-release-comments.json"
+                  payload="${RUNNER_TEMP}/${TARGET}-release-comment.json"
+
+                  bash "${scripts}/render-oci-release-ledger-entry.sh" \\
+                    "$SOURCE_REPOSITORY" \\
+                    "$SOURCE_SHA" \\
+                    "$TARGET" \\
+                    "$IMAGE" \\
+                    "$DIGEST" >"$entry"
+
+                  gh api --paginate --slurp \\
+                    -H 'Accept: application/vnd.github+json' \\
+                    -H 'X-GitHub-Api-Version: 2022-11-28' \\
+                    "repos/${SOURCE_REPOSITORY}/issues/${OCI_RELEASE_LEDGER_ISSUE}/comments?per_page=100" \\
+                    >"$comments"
+
+                  set +e
+                  classification="$(python3 "${scripts}/check-oci-release-ledger-comments.py" \\
+                    "$entry" "$comments" 2>&1)"
+                  status=$?
+                  set -e
+                  case "$status" in
+                    0)
+                      printf 'release ledger entry already present; no comment created\\n'
+                      ;;
+                    10)
+                      python3 - "$entry" "$payload" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          body = Path(sys.argv[1]).read_text(encoding='utf-8')
+          Path(sys.argv[2]).write_text(json.dumps({'body': body}), encoding='utf-8')
+          PY
+                      gh api --method POST \\
+                        -H 'Accept: application/vnd.github+json' \\
+                        -H 'X-GitHub-Api-Version: 2022-11-28' \\
+                        "repos/${SOURCE_REPOSITORY}/issues/${OCI_RELEASE_LEDGER_ISSUE}/comments" \\
+                        --input "$payload" >/dev/null
+                      printf 'release ledger entry appended\\n'
+                      ;;
+                    *)
+                      # The classifier fails closed with: release marker already exists with conflicting metadata
+                      printf '%s\\n' "$classification" >&2
+                      exit "$status"
+                      ;;
+                  esac
+
+          '''.replace('              ', '')
+          workflow = workflow[:insert_at] + record_step + workflow[insert_at:]
+          workflow_path.write_text(workflow)
+
+          docs = docs_path.read_text()
+          docs_marker = (
+              'Every published image carries an SPDX SBOM and max-mode SLSA provenance. '
+              'CI reads both attestations back from GHCR by digest, scans the exact digest, '
+              'and writes the immutable reference to the workflow summary. Production manifests '
+              'must never use `:dev` or a SHA tag as authority; a follow-up GitOps PR must copy '
+              'the exact `image@sha256:...` references.\n'
+          )
+          docs_replacement = docs_marker + '''
+          ## GHA continuity OCI release digest ledger
+
+          The workflow also appends one validated machine-readable record per target to
+          `ORESoftware/k8s-cluster#702`. Each record binds schema version, source repository,
+          exact 40-hex revision, Docker target, canonical GHCR image, lowercase digest, and
+          canonical `image@sha256` reference.
+
+          Publication uses only the workflow-scoped `GITHUB_TOKEN`. The trusted publish job has
+          `packages: write` and `issues: write`; pull-request validation remains read-only and the
+          publish job is skipped for pull requests. No personal token, GitHub App key, runner
+          registration credential, executor credential, or repository secret is required.
+
+          The ledger is idempotent. An identical record for the same `(source_sha, target)` marker
+          creates no new comment. If that marker already exists with a different body or digest,
+          publication stops as a reproducibility conflict. GitOps must copy the exact `ref` from
+          the record matching the reviewed source revision and target; workflow summaries and
+          mutable tags are not release authority.
+          '''.replace('          ', '')
+          assert docs.count(docs_marker) == 1, 'unexpected publication documentation shape'
+          docs_path.write_text(docs.replace(docs_marker, docs_replacement, 1))
+
+          Path('.github/workflows/apply-den-1603-ledger-once.yml').unlink()
+          PY
+
+      - name: Validate the permanent product diff
+        run: |
+          set -euo pipefail
+          bash -n \
+            remote/deployments/gha-clone-server-rs/scripts/render-oci-release-ledger-entry.sh \
+            remote/deployments/gha-clone-server-rs/scripts/check-oci-release-ledger-contract.sh
+          python3 -m py_compile \
+            remote/deployments/gha-clone-server-rs/scripts/check-oci-release-ledger-comments.py
+          bash remote/deployments/gha-clone-server-rs/scripts/check-oci-release-ledger-contract.sh
+          git diff --check
+
+      - name: Commit and push the self-cleaned ledger contract
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'feat(DEN-1603): publish durable continuity image digests'
+          git push origin HEAD:agent/den-1603-continuity-digest-ledger
