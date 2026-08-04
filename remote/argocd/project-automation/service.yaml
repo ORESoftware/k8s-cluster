@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: project-automation
+  namespace: project-automation
+  labels:
+    app.kubernetes.io/name: project-automation
+    app.kubernetes.io/component: webhook
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: project-automation
+    app.kubernetes.io/component: webhook
+  ports:
+    - name: http
+      port: 8787
+      targetPort: http
+      protocol: TCP

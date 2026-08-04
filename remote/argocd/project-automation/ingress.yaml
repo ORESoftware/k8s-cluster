@@ -1,0 +1,32 @@
+# Active on clusters with ingress-nginx and cert-manager (Hetzner today); inert on
+# clusters without the nginx IngressClass. Configure the GitHub App webhook only
+# after this host serves a valid certificate and /healthz succeeds.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: project-automation
+  namespace: project-automation
+  labels:
+    app.kubernetes.io/name: project-automation
+    app.kubernetes.io/component: webhook
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "5m"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - project-automation.95-217-171-250.sslip.io
+      secretName: project-automation-public-tls
+  rules:
+    - host: project-automation.95-217-171-250.sslip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: project-automation
+                port:
+                  name: http
