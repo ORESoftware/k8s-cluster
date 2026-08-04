@@ -8,6 +8,16 @@ on:
     paths:
       - scripts/apply-build-server-immutable-sha-clone.py
       - .github/workflows/finalize-build-server-immutable-sha-clone.yml
+  pull_request:
+    branches:
+      - agent/msgint-gha-clone-operator-verify-20260804
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - scripts/apply-build-server-immutable-sha-clone.py
+      - .github/workflows/finalize-build-server-immutable-sha-clone.yml
 
 permissions:
   contents: write
@@ -18,7 +28,9 @@ concurrency:
 
 jobs:
   finalize:
-    if: github.actor != 'github-actions[bot]'
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name == 'push' || github.head_ref == 'agent/build-server-immutable-sha-clone-20260804')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
