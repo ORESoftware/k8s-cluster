@@ -31,6 +31,11 @@ resources:
   - dd-gha-clone-server.deployment.yaml
   - dd-gha-clone-server.service.yaml
   - dd-gha-clone-server.networkpolicy.yaml
+  - dd-gha-executor-router.configmap.yaml
+  - dd-gha-executor-router.externalsecret.yaml
+  - dd-gha-executor-router.deployment.yaml
+  - dd-gha-executor-router.service.yaml
+  - dd-gha-executor-router.networkpolicy.yaml
   - dd-image-builder.deployment.yaml
   - dd-image-builder.service.yaml
   - dd-image-builder.networkpolicy.yaml

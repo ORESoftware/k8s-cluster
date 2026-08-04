@@ -1,0 +1,63 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-gha-executor-router
+  namespace: default
+  labels:
+    app: dd-gha-executor-router
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-gha-executor-router
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Only the reviewed workflow mirror may submit or poll independent jobs.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dd-gha-clone-server
+      ports:
+        - protocol: TCP
+          port: 8126
+  egress:
+    # Kubernetes DNS.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Existing in-cluster AWS-side build server.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-build-server
+      ports:
+        - protocol: TCP
+          port: 8100
+    # Source checkout and the future reviewed Hetzner HTTPS executor endpoint.
+    # Cloud metadata, loopback, carrier-grade NAT, and private networks remain
+    # blocked; a private inter-cluster endpoint needs its own reviewed patch.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 224.0.0.0/4
+      ports:
+        - protocol: TCP
+          port: 443
