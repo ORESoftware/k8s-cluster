@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Fail-closed three-way reconciliation for the reviewed Messaging Intel product."""
 
-# Synchronization trigger for the registered v2 workflow.
-
 from __future__ import annotations
 
 import pathlib
 import subprocess
 import tempfile
+
+from den977_semantic_resolvers import RESOLVERS
 
 CURRENT_DEV_SHA = "208bdcbe00f17a2a4a17548b28fe7a563a66445e"
 REVIEWED_MSGINT_SHA = "bf4fca2e22937caf18a07dc1bd7c4494fff4b95c"
@@ -69,7 +69,6 @@ def conflict_excerpt(data: bytes) -> str:
 
 
 def main() -> None:
-    git("merge-base", "--is-ancestor", CURRENT_DEV_SHA, "HEAD")
     current_dev = git("rev-parse", "refs/remotes/origin/dev").stdout.decode().strip()
     if current_dev != CURRENT_DEV_SHA:
         raise SystemExit(
@@ -136,6 +135,8 @@ def main() -> None:
             )
             if result.returncode == 0:
                 merged[path] = result.stdout
+            elif result.returncode > 0 and path in RESOLVERS:
+                merged[path] = RESOLVERS[path](current_data, reviewed_data)
             elif result.returncode > 0:
                 conflicts.append((path, conflict_excerpt(result.stdout)))
             else:
@@ -150,7 +151,12 @@ def main() -> None:
             print(f"::group::CONFLICT {path}")
             print(detail)
             print("::endgroup::")
-        raise SystemExit(f"{len(conflicts)} semantic conflict(s) require explicit resolution")
+        raise SystemExit(f"{len(conflicts)} unresolved semantic conflict(s)")
+
+    if set(merged) != set(PRODUCT_PATHS):
+        missing = sorted(set(PRODUCT_PATHS) - set(merged))
+        extra = sorted(set(merged) - set(PRODUCT_PATHS))
+        raise SystemExit(f"reconciliation path-set drift: missing={missing}, extra={extra}")
 
     for path, data in merged.items():
         target = pathlib.Path(path)
