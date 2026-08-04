@@ -1,5 +1,7 @@
 # Push-trigger carrier for the reviewed semantic merge. The final product commit
 # deletes this carrier, the source workflow, and the bounded conflict diagnostic.
+# Retriggered by the authenticated repository owner after the bot-authored carrier
+# commit was correctly skipped by the actor guard.
 name: Run DEN-1606 transport-capacity semantic merge once
 
 on:
