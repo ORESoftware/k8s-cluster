@@ -1,0 +1,63 @@
+name: inspect-den-1590-archive
+
+on:
+  push:
+    branches:
+      - agent/inspect-den-1590-archive
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+      - name: Decode and safely inventory prototype
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path, PurePosixPath
+          import base64
+          import hashlib
+          import tarfile
+
+          parts = sorted(Path('.bootstrap/den-1590').glob('part-*'))
+          if len(parts) != 4:
+              raise SystemExit(f'expected 4 archive parts, found {len(parts)}')
+          encoded = ''.join(''.join(part.read_text().split()) for part in parts)
+          payload = base64.b64decode(encoded, validate=True)
+          print(f'archive sha256={hashlib.sha256(payload).hexdigest()} bytes={len(payload)}')
+          archive_path = Path('/tmp/den-1590.tgz')
+          archive_path.write_bytes(payload)
+          destination = Path('inspection/den-1590')
+          destination.mkdir(parents=True, exist_ok=True)
+          with tarfile.open(archive_path, mode='r:gz') as archive:
+              members = archive.getmembers()
+              if not members or len(members) > 2000:
+                  raise SystemExit(f'unexpected member count: {len(members)}')
+              total = 0
+              for member in members:
+                  path = PurePosixPath(member.name)
+                  if path.is_absolute() or '..' in path.parts:
+                      raise SystemExit(f'unsafe path: {member.name}')
+                  if member.issym() or member.islnk() or member.isdev():
+                      raise SystemExit(f'unsupported entry: {member.name}')
+                  total += max(member.size, 0)
+                  print(f'{member.name}\t{member.size}')
+              if total > 100 * 1024 * 1024:
+                  raise SystemExit(f'expanded archive too large: {total}')
+              archive.extractall(destination, filter='data')
+          print(f'validated {len(members)} members, {total} expanded bytes')
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add inspection/den-1590
+          git commit -m 'chore: unpack DEN-1590 prototype for inspection'
+          git push origin HEAD:agent/inspect-den-1590-archive
