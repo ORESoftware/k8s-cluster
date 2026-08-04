@@ -132,6 +132,8 @@ jobs:
             general/gha-clone-server-config.test.ts \
             general/gha-clone-webhook-config.test.ts
           node --test general/gha-executor-router-config.test.mjs
+      - name: Render the complete continuity GitOps overlay
+        run: kubectl kustomize remote/argocd/dd-next-runtime >/tmp/dd-next-runtime.yaml
       - name: Validate webhook registration shell syntax
         run: bash -n remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh
       - name: Reject committed credentials
