@@ -1,0 +1,72 @@
+# One-shot cleanup: remove the now-obsolete write-capable normalizer embedded
+# in the permanent continuity workflow, validate the result, then self-delete.
+name: Remove DEN-1550 embedded normalizer once
+
+on:
+  pull_request:
+    branches:
+      - dev
+    types:
+      - synchronize
+    paths:
+      - .github/workflows/remove-den-1550-normalizer-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: remove-den-1550-embedded-normalizer
+  cancel-in-progress: false
+
+jobs:
+  clean:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-1550-msgint-clean-current-dev-20260804'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1550-msgint-clean-current-dev-20260804
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Remove only the reviewed marker block and this carrier
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/gha-clone-server.yml')
+          source = workflow.read_text(encoding='utf-8')
+          begin = '\n  # DEN-1550-NORMALIZER-BEGIN\n'
+          end = '\n  # DEN-1550-NORMALIZER-END'
+          if source.count(begin) != 1 or source.count(end) != 1:
+              raise SystemExit('embedded normalizer markers are not unique')
+          start = source.index(begin)
+          finish = source.index(end, start) + len(end)
+          workflow.write_text(source[:start].rstrip() + '\n', encoding='utf-8')
+          Path('.github/workflows/remove-den-1550-normalizer-once.yml').unlink()
+          PY
+          git diff --check
+          test ! -e .github/workflows/remove-den-1550-normalizer-once.yml
+          test "$(git status --porcelain | wc -l | tr -d ' ')" = 2
+
+      - name: Validate the permanent workflow
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/gha-clone-server.yml
+
+      - name: Commit the product-only workflow cleanup
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/gha-clone-server.yml
+          git add -u .github/workflows/remove-den-1550-normalizer-once.yml
+          unexpected="$(git diff --cached --name-only | grep -Ev '^\.github/workflows/(gha-clone-server|remove-den-1550-normalizer-once)\.yml$' || true)"
+          test -z "$unexpected"
+          git commit -m 'ci(DEN-1550): remove completed branch normalizer'
+          git push origin HEAD:agent/den-1550-msgint-clean-current-dev-20260804
