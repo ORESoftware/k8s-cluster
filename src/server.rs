@@ -101,9 +101,7 @@ fn export_openapi_scope(args: &[String]) -> Result<Option<OpenApiScope>, Argumen
     match value.as_str() {
         "internal" => Ok(Some(OpenApiScope::Internal)),
         "public" => Ok(Some(OpenApiScope::Public)),
-        other => Err(ArgumentError(format!(
-            "unsupported OpenAPI scope: {other}"
-        ))),
+        other => Err(ArgumentError(format!("unsupported OpenAPI scope: {other}"))),
     }
 }
 
@@ -157,10 +155,7 @@ mod tests {
             Some(OpenApiScope::Public)
         );
 
-        let internal = vec![
-            "server".to_owned(),
-            "--export-openapi=internal".to_owned(),
-        ];
+        let internal = vec!["server".to_owned(), "--export-openapi=internal".to_owned()];
         assert_eq!(
             export_openapi_scope(&internal).expect("internal scope"),
             Some(OpenApiScope::Internal)
