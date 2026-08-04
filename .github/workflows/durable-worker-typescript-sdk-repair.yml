@@ -34,7 +34,7 @@ jobs:
         with:
           node-version: '22.23.1'
 
-      - name: Apply exact SDK and contract corrections
+      - name: Apply scoped SDK and contract corrections
         shell: bash
         run: |
           set -euo pipefail
@@ -43,33 +43,24 @@ jobs:
 
           source = Path('remote/api-sdks/typescript/durable-worker/index.mjs')
           text = source.read_text(encoding='utf-8')
-          old = '''    const timer = setTimeout(() => {
-                signal?.removeEventListener('abort', onAbort);
-                resolve();
-              }, ms);
-              timer.unref?.();
-          
-              function onAbort() {'''.replace('          ', '')
-          new = '''    const timer = setTimeout(() => {
-                signal?.removeEventListener('abort', onAbort);
-                resolve();
-              }, ms);
-          
-              function onAbort() {'''.replace('          ', '')
-          if text.count(old) != 1:
-              raise SystemExit(f'expected one sleep timer block, found {text.count(old)}')
-          source.write_text(text.replace(old, new, 1), encoding='utf-8')
+          start = text.index('export function sleep(ms, signal) {')
+          end = text.index('\n}\n\nasync function parseResponse', start) + 2
+          segment = text[start:end]
+          needle = '    timer.unref?.();\n'
+          if segment.count(needle) != 1:
+              raise SystemExit(f'expected one unref in sleep(), found {segment.count(needle)}')
+          segment = segment.replace(needle, '', 1)
+          source.write_text(text[:start] + segment + text[end:], encoding='utf-8')
 
           tests = Path('remote/api-sdks/typescript/durable-worker/test/client.test.mjs')
           text = tests.read_text(encoding='utf-8')
-          old = '''          });
-                    resolve();
-                  },'''.replace('          ', '')
-          new = '''          });
-                  },'''.replace('          ', '')
-          if text.count(old) != 1:
-              raise SystemExit(f'expected one unreachable resolve, found {text.count(old)}')
-          tests.write_text(text.replace(old, new, 1), encoding='utf-8')
+          start = text.index("test('aborts the handler and suppresses completion")
+          segment = text[start:]
+          needle = '          resolve();\n'
+          if segment.count(needle) != 1:
+              raise SystemExit(f'expected one unreachable resolve in fenced test, found {segment.count(needle)}')
+          segment = segment.replace(needle, '', 1)
+          tests.write_text(text[:start] + segment, encoding='utf-8')
 
           contract = Path('remote/tests/general/durable-worker-typescript-sdk.test.mjs')
           text = contract.read_text(encoding='utf-8')
