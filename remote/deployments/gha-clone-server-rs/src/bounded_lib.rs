@@ -191,7 +191,10 @@ mod tests {
             NODE_HARDENED_TEST_PROFILE,
         ] {
             assert_eq!(
-                profiles.iter().filter(|profile| profile.as_str() == expected).count(),
+                profiles
+                    .iter()
+                    .filter(|profile| profile.as_str() == expected)
+                    .count(),
                 1,
                 "{expected} must appear exactly once"
             );
@@ -204,7 +207,10 @@ mod tests {
             .into_iter()
             .map(str::to_string)
             .collect::<Vec<_>>();
-        assert_eq!(hardened_node_profile(&node), Some(NODE_HARDENED_TEST_PROFILE));
+        assert_eq!(
+            hardened_node_profile(&node),
+            Some(NODE_HARDENED_TEST_PROFILE)
+        );
         let mut extra_node = node.clone();
         extra_node.push("npm audit --audit-level=high".to_string());
         assert_eq!(hardened_node_profile(&extra_node), None);
@@ -213,7 +219,10 @@ mod tests {
             .into_iter()
             .map(str::to_string)
             .collect::<Vec<_>>();
-        assert_eq!(generated_rust_profile(&generated), Some(GENERATED_RUST_PROFILE));
+        assert_eq!(
+            generated_rust_profile(&generated),
+            Some(GENERATED_RUST_PROFILE)
+        );
         let mut reordered = generated.clone();
         reordered.swap(2, 3);
         assert_eq!(generated_rust_profile(&reordered), None);
