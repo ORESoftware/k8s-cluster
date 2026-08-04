@@ -1,24 +1,18 @@
-# One-use workflow: patch interrupted idempotent submission recovery, prove it,
-# commit the reviewable source change, and remove this workflow.
 name: durable-worker-idempotency-recovery-fix
 
 on:
   push:
     branches:
-      - agent/durable-worker-server-rs-v2
+      - agent/durable-worker-runtime
     paths:
       - '.github/workflows/durable-worker-idempotency-recovery-fix.yml'
-  pull_request:
-    branches:
-      - dev
-    paths:
-      - '.github/workflows/durable-worker-idempotency-recovery-fix.yml'
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: durable-worker-idempotency-recovery-fix-${{ github.event.pull_request.number || github.ref }}
+  group: durable-worker-idempotency-recovery-fix-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -27,10 +21,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Checkout the pull-request branch
+      - name: Checkout the durable-worker branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: agent/durable-worker-server-rs-v2
+          ref: agent/durable-worker-runtime
           persist-credentials: true
           fetch-depth: 1
 
@@ -40,171 +34,28 @@ jobs:
           toolchain: '1.90.0'
           components: rustfmt
 
-      - name: Patch interrupted-submission recovery and regression test
+      - name: Apply and verify interrupted-submission recovery
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          engine_path = Path('remote/deployments/durable-worker-server-rs/src/engine/mod.rs')
-          engine = engine_path.read_text()
-          start_marker = '''        let (run_id, idempotent_replay) = if let Some(idempotency_key) =
-            request.idempotency_key.as_deref()
-        {'''
-          end_marker = '''        } else {
-            (Uuid::new_v4().to_string(), false)
-        };'''
-          start = engine.find(start_marker)
-          if start < 0:
-              raise SystemExit('submit_run idempotency start marker not found')
-          end_start = engine.find(end_marker, start)
-          if end_start < 0:
-              raise SystemExit('submit_run idempotency end marker not found')
-          end = end_start + len(end_marker)
-          replacement = '''        let (run_id, idempotent_replay) = if let Some(idempotency_key) =
-            request.idempotency_key.as_deref()
-        {
-            let record_key = idempotency_key_key(idempotency_key);
-            if let Some(existing) = self.load::<IdempotencyRecord>(&record_key).await? {
-                if existing.value.request_hash != request_hash {
-                    return Err(EngineError::IdempotencyMismatch);
-                }
-                if self
-                    .load::<RunRecord>(&run_key(&existing.value.run_id))
-                    .await?
-                    .is_some()
-                {
-                    self.metrics
-                        .idempotent_replays_total
-                        .fetch_add(1, Ordering::Relaxed);
-                    return self
-                        .idempotent_submit_response(&existing.value.run_id)
-                        .await;
-                }
-                // A process may stop after reserving the idempotency key but
-                // before committing the deterministic run and step records.
-                // Resume materialization rather than poisoning every retry.
-                (existing.value.run_id, true)
-            } else {
-                let run_id =
-                    Uuid::new_v5(&Uuid::NAMESPACE_URL, idempotency_key.as_bytes()).to_string();
-                let record = IdempotencyRecord {
-                    run_id: run_id.clone(),
-                    request_hash: request_hash.clone(),
-                    created_at_ms: now,
-                };
-                match self.create_value(&record_key, &record).await {
-                    Ok(_) => (run_id, false),
-                    Err(EngineError::Store(StoreError::Conflict)) => {
-                        let existing = self
-                            .load::<IdempotencyRecord>(&record_key)
-                            .await?
-                            .ok_or_else(|| {
-                                EngineError::Conflict(
-                                    "idempotency record changed during submission".to_string(),
-                                )
-                            })?;
-                        if existing.value.request_hash != request_hash {
-                            return Err(EngineError::IdempotencyMismatch);
-                        }
-                        if self
-                            .load::<RunRecord>(&run_key(&existing.value.run_id))
-                            .await?
-                            .is_some()
-                        {
-                            self.metrics
-                                .idempotent_replays_total
-                                .fetch_add(1, Ordering::Relaxed);
-                            return self
-                                .idempotent_submit_response(&existing.value.run_id)
-                                .await;
-                        }
-                        (existing.value.run_id, true)
-                    }
-                    Err(error) => return Err(error),
-                }
-            }
-        } else {
-            (Uuid::new_v4().to_string(), false)
-        };'''
-          engine_path.write_text(engine[:start] + replacement + engine[end:])
-
-          test_path = Path('remote/deployments/durable-worker-server-rs/tests/state_machine.rs')
-          tests = test_path.read_text()
-          marker = 'resumes_submission_after_idempotency_record_was_committed_first'
-          if marker in tests:
-              raise SystemExit('idempotency interruption regression test already exists')
-          tests = tests.replace(
-              'use dd_durable_worker_server::{',
-              'use bytes::Bytes;\nuse sha2::{Digest, Sha256};\nuse uuid::Uuid;\n\nuse dd_durable_worker_server::{',
-              1,
-          )
-          tests = tests.replace(
-              'CompleteStepRequest, ConcurrencyPolicy, FailStepRequest, JsonObject, LeaseCommand,',
-              'CompleteStepRequest, ConcurrencyPolicy, FailStepRequest, IdempotencyRecord, JsonObject, LeaseCommand,',
-              1,
-          )
-          tests = tests.replace(
-              'Engine, MemoryEventSink, MemoryStore,\n};',
-              'Engine, MemoryEventSink, MemoryStore, StateStore,\n};',
-              1,
-          )
-          tests += r'''
-
-#[tokio::test]
-async fn resumes_submission_after_idempotency_record_was_committed_first() {
-    let now_ms = 9_000_000;
-    let store = Arc::new(MemoryStore::new());
-    let clock = Arc::new(ManualClock::new(now_ms));
-    let events = Arc::new(MemoryEventSink::new());
-    let engine = Engine::new(store.clone(), events, clock);
-    let idempotency_key = "interrupted-before-run";
-    let request = SubmitRunRequest {
-        idempotency_key: Some(idempotency_key.to_string()),
-        name: Some("resume materialization".to_string()),
-        metadata: JsonObject::new(),
-        steps: vec![step("recover", &[])],
-    };
-    let run_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, idempotency_key.as_bytes()).to_string();
-    let request_hash = hex::encode(Sha256::digest(serde_json::to_vec(&request).unwrap()));
-    let record = IdempotencyRecord {
-        run_id: run_id.clone(),
-        request_hash,
-        created_at_ms: now_ms,
-    };
-    let record_key = format!(
-        "idempotency.{}",
-        hex::encode(Sha256::digest(idempotency_key.as_bytes()))
-    );
-    store
-        .create(
-            &record_key,
-            Bytes::from(serde_json::to_vec(&record).unwrap()),
-        )
-        .await
-        .unwrap();
-
-    let submitted = engine.submit_run(request).await.unwrap();
-    assert_eq!(submitted.run_id, run_id);
-    assert!(submitted.idempotent_replay);
-
-    let snapshot = engine.get_run_snapshot(&submitted.run_id).await.unwrap();
-    assert_eq!(snapshot.run.counts.total, 1);
-    assert_eq!(snapshot.steps.len(), 1);
-    assert_eq!(snapshot.steps[0].key, "recover");
-}
-'''
-          test_path.write_text(tests)
-          Path('.github/workflows/durable-worker-idempotency-recovery-fix.yml').unlink()
-          PY
-
+          python3 remote/deployments/durable-worker-server-rs/scripts/repair_idempotency_recovery.py
           cargo fmt --manifest-path remote/deployments/durable-worker-server-rs/Cargo.toml --all
           cargo test --locked --manifest-path remote/deployments/durable-worker-server-rs/Cargo.toml \
             resumes_submission_after_idempotency_record_was_committed_first -- --nocapture
           git diff --check
+
+      - name: Publish source and regression test only
+        shell: bash
+        run: |
+          set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -A
+          git add \
+            remote/deployments/durable-worker-server-rs/src/engine/mod.rs \
+            remote/deployments/durable-worker-server-rs/tests/idempotency_recovery.rs
+          if git diff --cached --quiet; then
+            echo 'repair already present'
+            exit 0
+          fi
           git commit -m 'fix(workers): resume interrupted idempotent submissions'
-          git push origin HEAD:agent/durable-worker-server-rs-v2
+          git push origin HEAD:agent/durable-worker-runtime
