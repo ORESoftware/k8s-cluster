@@ -266,13 +266,8 @@ async fn real_server_dispatches_all_streempilot_mirrors_to_fixed_profiles() {
 
     let api = run_to_success(&client, &server, API_REPOSITORY, API_WORKFLOW).await;
     let web = run_to_success(&client, &server, WEB_REPOSITORY, WEB_WORKFLOW).await;
-    let interfaces = run_to_success(
-        &client,
-        &server,
-        INTERFACES_REPOSITORY,
-        INTERFACES_WORKFLOW,
-    )
-    .await;
+    let interfaces =
+        run_to_success(&client, &server, INTERFACES_REPOSITORY, INTERFACES_WORKFLOW).await;
 
     assert_eq!(api["submissions"].as_array().unwrap().len(), 1);
     assert_eq!(api["submissions"][0]["jobId"], "rust");
@@ -287,8 +282,14 @@ async fn real_server_dispatches_all_streempilot_mirrors_to_fixed_profiles() {
 
     let submissions = mock.state.submissions.lock().await.clone();
     assert_eq!(submissions.len(), 4);
-    assert_eq!(submissions[0]["repoUrl"], format!("https://github.com/{API_REPOSITORY}.git"));
-    assert_eq!(submissions[1]["repoUrl"], format!("https://github.com/{WEB_REPOSITORY}.git"));
+    assert_eq!(
+        submissions[0]["repoUrl"],
+        format!("https://github.com/{API_REPOSITORY}.git")
+    );
+    assert_eq!(
+        submissions[1]["repoUrl"],
+        format!("https://github.com/{WEB_REPOSITORY}.git")
+    );
     assert_eq!(
         submissions[2]["repoUrl"],
         format!("https://github.com/{INTERFACES_REPOSITORY}.git")
@@ -300,7 +301,9 @@ async fn real_server_dispatches_all_streempilot_mirrors_to_fixed_profiles() {
         assert_eq!(submission["gitRef"], REVISION);
         assert!(submission.get("command").is_none());
         assert!(submission.get("image").is_none());
-        assert!(submission["requestId"].as_str().is_some_and(|id| id.contains(':')));
+        assert!(submission["requestId"]
+            .as_str()
+            .is_some_and(|id| id.contains(':')));
     }
 
     let auth_headers = mock.state.auth_headers.lock().await.clone();
