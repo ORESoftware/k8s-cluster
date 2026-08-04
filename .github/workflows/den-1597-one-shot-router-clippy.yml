@@ -1,0 +1,103 @@
+name: DEN-1597 one-shot router Clippy repair
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/den-1597-one-shot-router-clippy.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1597-one-shot-router-clippy
+  cancel-in-progress: false
+
+jobs:
+  repair-test-and-remove:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact router branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1597-aws-hetzner-executor-router
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: 1.90.0
+          components: rustfmt, clippy
+
+      - name: Apply bounded production use of validated request metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs')
+          text = path.read_text()
+          text = text.replace('    collections::BTreeMap,\n', '', 1)
+          text = text.replace('use tracing::{info, warn};', 'use tracing::info;', 1)
+          old = '''    if let Err(error) = validate_build_request(&request) {
+              state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
+              return (
+                  StatusCode::UNPROCESSABLE_ENTITY,
+                  Json(json!({ "error": error })),
+              )
+                  .into_response();
+          }
+          '''
+          old = old.replace('          ', '')
+          new = '''    let validated = match validate_build_request(&request) {
+              Ok(validated) => validated,
+              Err(error) => {
+                  state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
+                  return (
+                      StatusCode::UNPROCESSABLE_ENTITY,
+                      Json(json!({
+                          "error": bounded_text(&error, state.config.max_error_chars)
+                      })),
+                  )
+                      .into_response();
+              }
+          };
+          info!(
+              request_id = %validated.request_id,
+              repository = %validated.repository,
+              revision = %validated.revision,
+              profile = %validated.profile,
+              "validated fixed-profile executor request"
+          );
+          '''
+          new = new.replace('          ', '')
+          if old not in text:
+              raise SystemExit('expected validate_build_request block not found')
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+
+      - name: Format and run every router target
+        working-directory: remote/deployments/gha-clone-server-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Commit only the reviewed repair and remove this workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/den-1597-one-shot-router-clippy.yml
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs
+          git commit -m 'fix(DEN-1597): pass router Clippy and live process tests'
+          git push origin HEAD:agent/den-1597-aws-hetzner-executor-router
