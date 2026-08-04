@@ -34,6 +34,7 @@ struct AppState {
     config: Arc<Config>,
     client: reqwest::Client,
     runs: Arc<RwLock<BTreeMap<Uuid, RunRecord>>>,
+    webhook_deliveries: Arc<RwLock<BTreeMap<String, Instant>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -53,6 +54,10 @@ struct Config {
     build_poll_seconds: u64,
     build_timeout_seconds: u64,
     max_runs: usize,
+    webhook_failure_conclusions: BTreeSet<String>,
+    webhook_ignored_workflows: BTreeSet<String>,
+    webhook_delivery_ttl_seconds: u64,
+    max_webhook_deliveries: usize,
 }
 
 impl Config {
@@ -103,6 +108,27 @@ impl Config {
             build_poll_seconds: env_u64("GHA_CLONE_BUILD_POLL_SECONDS", 2)?,
             build_timeout_seconds: env_u64("GHA_CLONE_BUILD_TIMEOUT_SECONDS", 3600)?,
             max_runs: env_usize("GHA_CLONE_MAX_RUNS", 256)?,
+            webhook_failure_conclusions: csv_lower_set_or_default(
+                "GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS",
+                &[
+                    "failure",
+                    "cancelled",
+                    "timed_out",
+                    "action_required",
+                    "startup_failure",
+                    "stale",
+                ],
+            ),
+            webhook_ignored_workflows: csv_set_or_default(
+                "GHA_CLONE_WEBHOOK_IGNORED_WORKFLOWS",
+                &["GHA continuity server"],
+            ),
+            webhook_delivery_ttl_seconds: env_u64(
+                "GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS",
+                86_400,
+            )?
+            .max(1),
+            max_webhook_deliveries: env_usize("GHA_CLONE_MAX_WEBHOOK_DELIVERIES", 4_096)?.max(1),
         })
     }
 
@@ -198,6 +224,7 @@ async fn main() {
             .build()
             .expect("reqwest client"),
         runs: Arc::new(RwLock::new(BTreeMap::new())),
+        webhook_deliveries: Arc::new(RwLock::new(BTreeMap::new())),
     };
     let app = router(state);
     let listener = TcpListener::bind(&address)
@@ -252,7 +279,10 @@ async fn healthz(State(state): State<AppState>) -> Json<Value> {
             && state.config.build_server_auth.is_some(),
         "allowedRepositories": state.config.allowed_repositories.len(),
         "workflowRules": state.config.workflow_rules.len(),
-        "runsRetained": state.runs.read().await.len()
+        "runsRetained": state.runs.read().await.len(),
+        "webhookDeliveriesRetained": state.webhook_deliveries.read().await.len(),
+        "webhookFailureConclusions": state.config.webhook_failure_conclusions,
+        "webhookIgnoredWorkflows": state.config.webhook_ignored_workflows
     }))
 }
 
@@ -421,6 +451,13 @@ async fn github_webhook(
         )
             .into_response();
     }
+    let Some(delivery) = github_delivery(&headers) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": "missing or invalid X-GitHub-Delivery UUID" })),
+        )
+            .into_response();
+    };
     let event = headers
         .get("x-github-event")
         .and_then(|value| value.to_str().ok())
@@ -467,7 +504,7 @@ async fn github_webhook(
         )
             .into_response();
     }
-    let Some(paths) = state.config.workflow_rules.get(&repository) else {
+    let Some(configured_paths) = state.config.workflow_rules.get(&repository) else {
         return (
             StatusCode::ACCEPTED,
             Json(json!({
@@ -479,8 +516,31 @@ async fn github_webhook(
         )
             .into_response();
     };
+    let paths = match webhook_paths(
+        event,
+        &payload,
+        configured_paths,
+        &state.config.webhook_failure_conclusions,
+        &state.config.webhook_ignored_workflows,
+    ) {
+        Ok(paths) => paths,
+        Err(reason) => {
+            return (
+                StatusCode::ACCEPTED,
+                Json(json!({
+                    "accepted": false,
+                    "event": event,
+                    "delivery": delivery,
+                    "repository": repository,
+                    "revision": revision,
+                    "reason": reason
+                })),
+            )
+                .into_response()
+        }
+    };
     let mut plans = Vec::new();
-    for path in paths {
+    for path in &paths {
         let workflow_yaml = match fetch_workflow(&state, &repository, &revision, path).await {
             Ok(workflow) => workflow,
             Err(error) => {
@@ -524,18 +584,32 @@ async fn github_webhook(
             )
                 .into_response();
         }
+        if let Some(plan) = plans.iter().find(|plan| !plan.independent_executable) {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({
+                    "error": "webhook workflow is not independently executable",
+                    "plan": plan
+                })),
+            )
+                .into_response();
+        }
+        if !remember_webhook_delivery(&state, &delivery).await {
+            return (
+                StatusCode::ACCEPTED,
+                Json(json!({
+                    "accepted": false,
+                    "event": event,
+                    "delivery": delivery,
+                    "repository": repository,
+                    "revision": revision,
+                    "reason": "duplicate GitHub delivery was already dispatched"
+                })),
+            )
+                .into_response();
+        }
         let mut run_ids = Vec::new();
         for plan in plans.clone() {
-            if !plan.independent_executable {
-                return (
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    Json(json!({
-                        "error": "webhook workflow is not independently executable",
-                        "plan": plan
-                    })),
-                )
-                    .into_response();
-            }
             let now = now_ms();
             let record = RunRecord {
                 id: Uuid::new_v4(),
@@ -780,6 +854,109 @@ async fn fetch_workflow(
     Ok(body)
 }
 
+fn webhook_paths(
+    event: &str,
+    payload: &Value,
+    configured_paths: &[String],
+    failure_conclusions: &BTreeSet<String>,
+    ignored_workflows: &BTreeSet<String>,
+) -> Result<Vec<String>, String> {
+    if event != "workflow_run" {
+        return Ok(configured_paths.to_vec());
+    }
+
+    let action = payload.get("action").and_then(Value::as_str).unwrap_or("");
+    if action != "completed" {
+        return Err(format!(
+            "workflow_run action {action:?} is not the completed terminal phase"
+        ));
+    }
+
+    let workflow_name = payload
+        .pointer("/workflow_run/name")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if ignored_workflows.contains(workflow_name) {
+        return Err(format!(
+            "workflow {workflow_name:?} is excluded to prevent fallback recursion"
+        ));
+    }
+
+    let conclusion = payload
+        .pointer("/workflow_run/conclusion")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "completed workflow_run is missing a conclusion".to_string())?
+        .to_ascii_lowercase();
+    if !failure_conclusions.contains(&conclusion) {
+        return Err(format!(
+            "workflow_run conclusion {conclusion:?} is not configured for failure fallback"
+        ));
+    }
+
+    let workflow_path = payload
+        .pointer("/workflow_run/path")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "workflow_run is missing workflow_run.path".to_string())?;
+    if !configured_paths.iter().any(|path| path == workflow_path) {
+        return Err(format!(
+            "failed workflow path {workflow_path:?} is not configured for this repository"
+        ));
+    }
+    Ok(vec![workflow_path.to_string()])
+}
+
+fn github_delivery(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("x-github-delivery")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .map(|value| value.to_string())
+}
+
+async fn remember_webhook_delivery(state: &AppState, delivery: &str) -> bool {
+    let now = Instant::now();
+    let ttl = Duration::from_secs(state.config.webhook_delivery_ttl_seconds);
+    let mut deliveries = state.webhook_deliveries.write().await;
+    prune_webhook_deliveries(
+        &mut deliveries,
+        now,
+        ttl,
+        state.config.max_webhook_deliveries,
+    );
+    if deliveries.contains_key(delivery) {
+        return false;
+    }
+    deliveries.insert(delivery.to_string(), now);
+    prune_webhook_deliveries(
+        &mut deliveries,
+        now,
+        ttl,
+        state.config.max_webhook_deliveries,
+    );
+    true
+}
+
+fn prune_webhook_deliveries(
+    deliveries: &mut BTreeMap<String, Instant>,
+    now: Instant,
+    ttl: Duration,
+    max_deliveries: usize,
+) {
+    deliveries.retain(|_, seen_at| now.duration_since(*seen_at) < ttl);
+    let remove = deliveries.len().saturating_sub(max_deliveries);
+    if remove == 0 {
+        return;
+    }
+    let mut oldest = deliveries
+        .iter()
+        .map(|(delivery, seen_at)| (*seen_at, delivery.clone()))
+        .collect::<Vec<_>>();
+    oldest.sort_by_key(|(seen_at, _)| *seen_at);
+    for (_, delivery) in oldest.into_iter().take(remove) {
+        deliveries.remove(&delivery);
+    }
+}
+
 fn webhook_revision(event: &str, payload: &Value) -> Option<String> {
     match event {
         "push" => payload.get("after").and_then(Value::as_str),
@@ -876,6 +1053,22 @@ fn csv_set(name: &str) -> BTreeSet<String> {
         .collect()
 }
 
+fn csv_set_or_default(name: &str, defaults: &[&str]) -> BTreeSet<String> {
+    let configured = csv_set(name);
+    if configured.is_empty() {
+        defaults.iter().map(|value| (*value).to_string()).collect()
+    } else {
+        configured
+    }
+}
+
+fn csv_lower_set_or_default(name: &str, defaults: &[&str]) -> BTreeSet<String> {
+    csv_set_or_default(name, defaults)
+        .into_iter()
+        .map(|value| value.to_ascii_lowercase())
+        .collect()
+}
+
 fn env_optional(name: &str) -> Option<String> {
     env::var(name)
         .ok()
@@ -953,7 +1146,7 @@ async fn shutdown_signal() {
             .expect("install SIGTERM handler")
             .recv()
             .await;
-    };
+    }
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
     tokio::select! {
@@ -990,6 +1183,98 @@ mod tests {
             Some("c".repeat(40))
         );
         assert_eq!(webhook_revision("issues", &payload), None);
+    }
+
+    #[test]
+    fn workflow_run_fallback_is_completed_failure_only_and_exact_path() {
+        let configured = vec![".github/workflows/ci.yml".to_string()];
+        let failures = BTreeSet::from(["failure".to_string(), "timed_out".to_string()]);
+        let ignored = BTreeSet::from(["GHA continuity server".to_string()]);
+        let failed = json!({
+            "action": "completed",
+            "workflow_run": {
+                "name": "CI",
+                "path": ".github/workflows/ci.yml",
+                "conclusion": "failure"
+            }
+        });
+        assert_eq!(
+            webhook_paths("workflow_run", &failed, &configured, &failures, &ignored).unwrap(),
+            configured
+        );
+
+        let mut success = failed.clone();
+        success["workflow_run"]["conclusion"] = json!("success");
+        assert!(
+            webhook_paths("workflow_run", &success, &configured, &failures, &ignored)
+                .unwrap_err()
+                .contains("not configured for failure fallback")
+        );
+
+        let mut in_progress = failed.clone();
+        in_progress["action"] = json!("in_progress");
+        assert!(webhook_paths(
+            "workflow_run",
+            &in_progress,
+            &configured,
+            &failures,
+            &ignored
+        )
+        .unwrap_err()
+        .contains("not the completed terminal phase"));
+
+        let mut recursive = failed.clone();
+        recursive["workflow_run"]["name"] = json!("GHA continuity server");
+        assert!(
+            webhook_paths("workflow_run", &recursive, &configured, &failures, &ignored)
+                .unwrap_err()
+                .contains("excluded to prevent fallback recursion")
+        );
+
+        let mut unrelated = failed;
+        unrelated["workflow_run"]["path"] = json!(".github/workflows/release.yml");
+        assert!(
+            webhook_paths("workflow_run", &unrelated, &configured, &failures, &ignored)
+                .unwrap_err()
+                .contains("is not configured for this repository")
+        );
+    }
+
+    #[test]
+    fn github_delivery_requires_a_uuid() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-github-delivery",
+            "4f5f1f6e-68a6-4d95-90b4-c0a892938f0f".parse().unwrap(),
+        );
+        assert_eq!(
+            github_delivery(&headers).as_deref(),
+            Some("4f5f1f6e-68a6-4d95-90b4-c0a892938f0f")
+        );
+        headers.insert("x-github-delivery", "not-a-uuid".parse().unwrap());
+        assert_eq!(github_delivery(&headers), None);
+    }
+
+    #[test]
+    fn delivery_retention_expires_old_entries_and_bounds_memory() {
+        let now = Instant::now();
+        let mut deliveries = BTreeMap::from([
+            (
+                "expired".to_string(),
+                now.checked_sub(Duration::from_secs(120)).unwrap(),
+            ),
+            (
+                "older".to_string(),
+                now.checked_sub(Duration::from_secs(20)).unwrap(),
+            ),
+            (
+                "newer".to_string(),
+                now.checked_sub(Duration::from_secs(5)).unwrap(),
+            ),
+        ]);
+        prune_webhook_deliveries(&mut deliveries, now, Duration::from_secs(60), 1);
+        assert_eq!(deliveries.len(), 1);
+        assert!(deliveries.contains_key("newer"));
     }
 
     #[test]
