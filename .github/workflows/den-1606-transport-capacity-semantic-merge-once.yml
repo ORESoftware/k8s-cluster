@@ -1,0 +1,210 @@
+name: Merge DEN-1606 transport and capacity semantics once
+
+on:
+  push:
+    branches:
+      - agent/den-1606-transport-capacity-semantic-merge-20260804
+    paths:
+      - .github/workflows/den-1606-transport-capacity-semantic-merge-once.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1606-transport-capacity-semantic-merge-once
+  cancel-in-progress: false
+
+jobs:
+  merge-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1606-transport-capacity-semantic-merge-20260804
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Reconstruct transport then preserve atomic admission
+        run: |
+          set -euo pipefail
+          base='a14072064f25d7b49807656d4231f93d335a6d55'
+          transport='6d050a5c516c0dcc1c13646fe8742dfed477346c'
+          capacity='a14072064f25d7b49807656d4231f93d335a6d55'
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+
+          # The transport commit predates atomic run admission. Resolve its
+          # overlapping main.rs hunk in transport-first order, then reapply the
+          # capacity commit's main.rs patch so neither safety boundary wins by
+          # textual accident.
+          git cherry-pick -X theirs "$transport"
+          git show "$capacity" -- remote/deployments/gha-clone-server-rs/src/main.rs \
+            | git apply --3way
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/deployments/gha-clone-server-rs/src/main.rs')
+          text = path.read_text(encoding='utf-8')
+
+          replacements = [
+              (
+                  '''fn valid_build_job_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':'))
+}
+''',
+                  '''fn valid_build_job_id(value: &str) -> bool {
+    !matches!(value, "" | "." | "..")
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':'))
+}
+''',
+                  'build ID validation',
+              ),
+              (
+                  '''fn is_kubernetes_service_dns(host: &str) -> bool {
+    let labels = host.split('.').collect::<Vec<_>>();
+    let Some(index) = labels.iter().position(|label| *label == "svc") else {
+        return false;
+    };
+    index >= 2 && (index + 1 == labels.len() || labels[index + 1..] == ["cluster", "local"])
+}
+''',
+                  '''fn valid_dns_label(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let (Some(first), Some(last)) = (bytes.first(), bytes.last()) else {
+        return false;
+    };
+    bytes.len() <= 63
+        && first.is_ascii_alphanumeric()
+        && last.is_ascii_alphanumeric()
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
+}
+
+fn is_kubernetes_service_dns(host: &str) -> bool {
+    let labels = host.split('.').collect::<Vec<_>>();
+    match labels.as_slice() {
+        [service, namespace, "svc"]
+        | [service, namespace, "svc", "cluster", "local"] => {
+            valid_dns_label(service) && valid_dns_label(namespace)
+        }
+        _ => false,
+    }
+}
+''',
+                  'Kubernetes service DNS',
+              ),
+              (
+                  '''    let loopback_http =
+        parsed.scheme() == "http" && matches!(host, "127.0.0.1" | "localhost" | "::1");
+''',
+                  '''    let loopback_http = parsed.scheme() == "http"
+        && matches!(host, "127.0.0.1" | "localhost" | "::1" | "[::1]");
+''',
+                  'loopback transport',
+              ),
+          ]
+          for old, new, label in replacements:
+              if text.count(old) != 1:
+                  raise SystemExit(f'{label} boundary drifted')
+              text = text.replace(old, new, 1)
+
+          old_origin = '''        assert!(normalize_build_server_url("http://dd-build-server.remote.svc:8123").is_ok());
+        assert!(normalize_build_server_url("http://10.0.0.10:8123").is_err());
+'''
+          new_origin = '''        assert!(normalize_build_server_url("http://dd-build-server.remote.svc:8123").is_ok());
+        assert!(normalize_build_server_url("http://[::1]:8123").is_ok());
+        assert!(normalize_build_server_url("http://extra.dd-build-server.remote.svc:8123").is_err());
+        assert!(normalize_build_server_url("http://dd_build.remote.svc:8123").is_err());
+        assert!(normalize_build_server_url("http://-build.remote.svc:8123").is_err());
+        assert!(normalize_build_server_url("http://10.0.0.10:8123").is_err());
+'''
+          if text.count(old_origin) != 1:
+              raise SystemExit('build-server origin tests drifted')
+          text = text.replace(old_origin, new_origin, 1)
+
+          old_invalid = '''        let invalid = BuildJobResponse {
+            id: "../build?token=x".into(),
+            status: "queued".into(),
+            error: None,
+        };
+        assert!(validate_build_job_response_id(&invalid, None).is_err());
+'''
+          new_invalid = '''        for id in ["", ".", "..", "../build?token=x", "build/child"] {
+            let invalid = BuildJobResponse {
+                id: id.into(),
+                status: "queued".into(),
+                error: None,
+            };
+            assert!(validate_build_job_response_id(&invalid, None).is_err());
+        }
+        let too_long = BuildJobResponse {
+            id: "a".repeat(129),
+            status: "queued".into(),
+            error: None,
+        };
+        assert!(validate_build_job_response_id(&too_long, None).is_err());
+'''
+          if text.count(old_invalid) != 1:
+              raise SystemExit('build ID negative tests drifted')
+          path.write_text(text.replace(old_invalid, new_invalid, 1), encoding='utf-8')
+
+          doc_path = Path('docs/gha-clone-build-server-boundary.md')
+          doc = doc_path.read_text(encoding='utf-8')
+          old = 'HTTPS is required except for loopback test servers and Kubernetes service DNS such as `service.namespace.svc` or `service.namespace.svc.cluster.local`.'
+          new = old + ' The HTTP exception accepts exactly those three- or five-label service forms, with DNS-safe service and namespace labels; extra-prefix lookalikes are rejected.'
+          if doc.count(old) != 1:
+              raise SystemExit('transport documentation drifted')
+          doc = doc.replace(old, new, 1)
+          old = 'Every accepted build response must contain a bounded path-safe identifier.'
+          new = old + ' Empty IDs and URL dot-segments (`.` and `..`) are rejected explicitly before a polling URL is formed.'
+          if doc.count(old) != 1:
+              raise SystemExit('identity documentation drifted')
+          doc_path.write_text(doc.replace(old, new, 1), encoding='utf-8')
+          PY
+
+          git add docs remote/deployments/gha-clone-server-rs
+          git commit --amend --no-edit
+          git diff --check "$base"...HEAD
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate the complete semantic composition
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Commit the product-only branch
+        run: |
+          set -euo pipefail
+          base='a14072064f25d7b49807656d4231f93d335a6d55'
+          rm .github/workflows/den-1606-transport-capacity-semantic-merge-once.yml
+          git add -A
+          git commit --amend --no-edit
+          expected=$'docs/gha-clone-build-server-boundary.md\nremote/deployments/gha-clone-server-rs/src/main.rs\nremote/deployments/gha-clone-server-rs/tests/http_api.rs\nremote/deployments/gha-clone-server-rs/tests/streempilot_http.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_retention.rs'
+          actual="$(git diff --name-only "$base"...HEAD | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'unexpected final product paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          git push --force-with-lease origin HEAD:agent/den-1606-transport-capacity-semantic-merge-20260804
