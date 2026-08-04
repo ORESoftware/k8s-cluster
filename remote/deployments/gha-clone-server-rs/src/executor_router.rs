@@ -195,9 +195,7 @@ pub fn materialize_executors(
             id: spec.id.clone(),
             provider: spec.provider,
             base_url: normalize_executor_url(
-                spec.url
-                    .as_deref()
-                    .expect("enabled executor URL validated"),
+                spec.url.as_deref().expect("enabled executor URL validated"),
             )?,
             auth,
         });
@@ -385,8 +383,14 @@ fn required_string<'a>(value: Option<&'a Value>, label: &str) -> Result<&'a str,
 }
 
 fn validate_repo_url(value: &str) -> Result<String, String> {
-    if value.contains('@') || value.contains('?') || value.contains('#') || value.contains(char::is_whitespace) {
-        return Err("repoUrl must not contain credentials, query, fragment, or whitespace".to_string());
+    if value.contains('@')
+        || value.contains('?')
+        || value.contains('#')
+        || value.contains(char::is_whitespace)
+    {
+        return Err(
+            "repoUrl must not contain credentials, query, fragment, or whitespace".to_string(),
+        );
     }
     let path = value
         .strip_prefix("https://github.com/")
@@ -406,9 +410,9 @@ fn valid_repo_component(value: &str) -> bool {
         && value.len() <= 100
         && value != "."
         && value != ".."
-        && value
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'))
+        && value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
+        })
 }
 
 pub fn is_full_commit_sha(value: &str) -> bool {
@@ -421,22 +425,19 @@ pub fn is_full_commit_sha(value: &str) -> bool {
 fn valid_profile(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 64
-        && value
-            .bytes()
-            .enumerate()
-            .all(|(index, byte)| {
-                byte.is_ascii_lowercase()
-                    || byte.is_ascii_digit()
-                    || (byte == b'-' && index > 0 && index + 1 < value.len())
-            })
+        && value.bytes().enumerate().all(|(index, byte)| {
+            byte.is_ascii_lowercase()
+                || byte.is_ascii_digit()
+                || (byte == b'-' && index > 0 && index + 1 < value.len())
+        })
 }
 
 fn valid_request_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 256
-        && value.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b':' | b'_' | b'-')
-        })
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b':' | b'_' | b'-'))
 }
 
 pub fn validate_executor_id(value: &str) -> Result<(), String> {
@@ -487,9 +488,9 @@ pub fn parse_namespaced_build_id(value: &str) -> Result<(&str, &str), String> {
 fn valid_upstream_build_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 128
-        && value.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-')
-        })
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
 }
 
 pub fn digest_eq(left: &str, right: &str) -> bool {
@@ -641,7 +642,10 @@ mod tests {
                 .as_object_mut()
                 .unwrap()
                 .insert(field.to_string(), json!("caller-controlled"));
-            assert!(validate_build_request(&invalid).is_err(), "accepted {field}");
+            assert!(
+                validate_build_request(&invalid).is_err(),
+                "accepted {field}"
+            );
         }
     }
 
@@ -667,8 +671,8 @@ mod tests {
 
     #[test]
     fn build_ids_are_executor_namespaced_and_unambiguous() {
-        let value = namespace_build_id("aws-primary", "550e8400-e29b-41d4-a716-446655440000")
-            .unwrap();
+        let value =
+            namespace_build_id("aws-primary", "550e8400-e29b-41d4-a716-446655440000").unwrap();
         assert_eq!(value, "aws-primary~550e8400-e29b-41d4-a716-446655440000");
         assert_eq!(
             parse_namespaced_build_id(&value).unwrap(),

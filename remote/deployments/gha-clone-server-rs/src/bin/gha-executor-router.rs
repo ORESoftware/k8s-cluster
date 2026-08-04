@@ -19,10 +19,10 @@ use axum::{
 #[path = "../executor_router.rs"]
 mod executor_router;
 use executor_router::{
-    bounded_text, digest_eq, materialize_executors, namespace_build_id,
-    parse_executor_specs, parse_namespaced_build_id, validate_build_request, validate_secret_root,
-    Executor, Provider, MAX_ERROR_CHARS_DEFAULT, MAX_EXECUTORS_DEFAULT, MAX_REQUEST_BYTES_DEFAULT,
-    MAX_SECRET_BYTES, MIN_SECRET_BYTES, ROUTER_SERVICE_NAME,
+    bounded_text, digest_eq, materialize_executors, namespace_build_id, parse_executor_specs,
+    parse_namespaced_build_id, validate_build_request, validate_secret_root, Executor, Provider,
+    MAX_ERROR_CHARS_DEFAULT, MAX_EXECUTORS_DEFAULT, MAX_REQUEST_BYTES_DEFAULT, MAX_SECRET_BYTES,
+    MIN_SECRET_BYTES, ROUTER_SERVICE_NAME,
 };
 use serde_json::{json, Value};
 use tokio::{net::TcpListener, time::Duration};
@@ -322,11 +322,7 @@ async fn metrics(State(state): State<AppState>) -> Response {
         .into_response()
 }
 
-async fn submit_build(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Response {
+async fn submit_build(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
     state.metrics.requests_total.fetch_add(1, Ordering::Relaxed);
     if let Err(response) = require_auth(&headers, &state) {
         return response;
@@ -375,7 +371,10 @@ async fn submit_build(
             .into_response();
     };
     record_selection(&state.metrics, executor.provider);
-    state.metrics.submissions_total.fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .submissions_total
+        .fetch_add(1, Ordering::Relaxed);
 
     let response = match state
         .client
@@ -708,7 +707,10 @@ fn read_secret(path: &Path, root: &Path, label: &str) -> Result<String, String> 
     let raw = fs::read_to_string(&canonical_path)
         .map_err(|error| format!("{label} file could not be read: {error}"))?;
     let value = raw.trim().to_string();
-    if value.len() < MIN_SECRET_BYTES || value.len() > MAX_SECRET_BYTES || value.as_bytes().contains(&0) {
+    if value.len() < MIN_SECRET_BYTES
+        || value.len() > MAX_SECRET_BYTES
+        || value.as_bytes().contains(&0)
+    {
         return Err(format!(
             "{label} must contain between {MIN_SECRET_BYTES} and {MAX_SECRET_BYTES} non-NUL bytes"
         ));
@@ -841,11 +843,6 @@ mod tests {
         record_selection(&metrics, Provider::Aws);
         record_selection(&metrics, Provider::Hetzner);
         assert_eq!(metrics.aws_selections_total.load(Ordering::Relaxed), 1);
-        assert_eq!(
-            metrics
-                .hetzner_selections_total
-                .load(Ordering::Relaxed),
-            1
-        );
+        assert_eq!(metrics.hetzner_selections_total.load(Ordering::Relaxed), 1);
     }
 }
