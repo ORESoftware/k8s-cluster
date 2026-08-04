@@ -38,7 +38,9 @@ jobs:
           git fetch --no-tags origin "$SOURCE_SHA" "$MERGE_BASE_SHA"
           git cat-file -e "$SOURCE_SHA^{commit}"
           git cat-file -e "$MERGE_BASE_SHA^{commit}"
-          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/dev)"
+          test "$(git rev-parse HEAD^)" = "$(git rev-parse origin/dev)"
+          workflow_delta="$(git diff-tree --no-commit-id --name-only -r HEAD)"
+          test "$workflow_delta" = ".github/workflows/finalize-den-1550-current-dev-v4.yml"
 
       - name: Transplant product surface and semantically merge overlapping files
         id: transplant
