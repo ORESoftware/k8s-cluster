@@ -196,11 +196,11 @@ test('no manifest carries a credential as an inline env value', async () => {
 
       const value = valueMatch[1].trim().replace(/^['"]|['"]$/g, '');
       if (NOT_A_SECRET.test(value)) return;
-      // A *_PATH variable may point to a projected Secret file. Keep this
-      // exception deliberately narrow: an absolute runtime mount only, with no
-      // parent traversal. The secret bytes themselves remain forbidden here.
+      // A *_PATH or *_ROOT variable may identify a projected Secret mount.
+      // Keep this exception deliberately narrow: an absolute runtime mount only,
+      // with no parent traversal. The secret bytes themselves remain forbidden.
       if (
-        envName.endsWith('_PATH') &&
+        (envName.endsWith('_PATH') || envName.endsWith('_ROOT')) &&
         RUNTIME_SECRET_PATH.test(value) &&
         !value.includes('..')
       ) {
