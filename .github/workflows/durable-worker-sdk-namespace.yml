@@ -1,6 +1,11 @@
 name: durable-worker-sdk-namespace-migration
 
 on:
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/durable-worker-sdk-namespace.yml'
   push:
     branches:
       - agent/durable-worker-typescript-sdk
