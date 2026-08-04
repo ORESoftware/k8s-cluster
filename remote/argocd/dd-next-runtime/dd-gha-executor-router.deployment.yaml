@@ -1,0 +1,140 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-gha-executor-router
+  namespace: default
+  labels:
+    app: dd-gha-executor-router
+spec:
+  # Source-complete but intentionally inactive. Provision/verify the
+  # ExternalSecret, replace source compilation with a digest-pinned image, then
+  # scale to one while execution remains false for readiness and plan smokes.
+  replicas: 0
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-gha-executor-router
+  template:
+    metadata:
+      labels:
+        app: dd-gha-executor-router
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: executor-router
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              export CARGO_HOME=/tmp/cargo
+              export CARGO_TARGET_DIR=/tmp/gha-executor-router-target
+              source_root="$(mktemp -d /tmp/gha-executor-router-source.XXXXXX)"
+              git -c protocol.ext.allow=never -c protocol.file.allow=never \
+                clone --depth 1 --no-tags --branch "${GHA_EXECUTOR_ROUTER_SOURCE_REF}" -- \
+                "${GHA_EXECUTOR_ROUTER_SOURCE_URL}" "$source_root"
+              cd "$source_root/remote/deployments/gha-clone-server-rs"
+              exec cargo run --release --bin gha-executor-router
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: "8126"
+            - name: RUST_LOG
+              value: gha_executor_router=info
+            - name: GHA_EXECUTOR_ROUTER_SOURCE_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: GHA_EXECUTOR_ROUTER_SOURCE_REF
+              value: main
+            - name: GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED
+              value: "false"
+            - name: GHA_EXECUTOR_ROUTER_SECRET_ROOT
+              value: /var/run/secrets/gha-executor-router
+            - name: GHA_EXECUTOR_ROUTER_AUTH_PATH
+              value: /var/run/secrets/gha-executor-router/inbound-auth
+            - name: GHA_EXECUTOR_ROUTER_EXECUTORS_JSON
+              valueFrom:
+                configMapKeyRef:
+                  name: dd-gha-executor-router
+                  key: GHA_EXECUTOR_ROUTER_EXECUTORS_JSON
+            - name: GHA_EXECUTOR_ROUTER_MAX_EXECUTORS
+              value: "2"
+            - name: GHA_EXECUTOR_ROUTER_MAX_REQUEST_BYTES
+              value: "65536"
+            - name: GHA_EXECUTOR_ROUTER_MAX_UPSTREAM_BODY_BYTES
+              value: "65536"
+            - name: GHA_EXECUTOR_ROUTER_MAX_ERROR_CHARS
+              value: "512"
+            - name: GHA_EXECUTOR_ROUTER_PROBE_TIMEOUT_MS
+              value: "2000"
+            - name: GHA_EXECUTOR_ROUTER_UPSTREAM_TIMEOUT_SECONDS
+              value: "60"
+          ports:
+            - name: http
+              containerPort: 8126
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+              ephemeral-storage: 1Gi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+              ephemeral-storage: 6Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: executor-auth
+              mountPath: /var/run/secrets/gha-executor-router
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: executor-auth
+          secret:
+            secretName: dd-gha-executor-router-secrets
+            defaultMode: 0400
+            items:
+              - key: inbound_auth
+                path: inbound-auth
+              - key: aws_build_server_auth
+                path: aws-build-server-auth
+        - name: tmp
+          emptyDir:
+            sizeLimit: 6Gi
