@@ -164,6 +164,20 @@ jobs:
             remote/deployments/build-server-rs/src/http.rs \
             remote/deployments/build-server-rs/tests/profile_policy_http.rs
 
+          pinned_libs="$(git ls-files --stage -- remote/libs | awk '$1 == 160000 { print $2; exit }')"
+          if [[ ! "$pinned_libs" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'remote/libs does not resolve to exactly one mode-160000 gitlink.' >&2
+            exit 1
+          fi
+          if [[ "$(git -C remote/libs rev-parse HEAD)" != "$pinned_libs" ]]; then
+            echo 'remote/libs checkout does not match the superproject gitlink.' >&2
+            exit 1
+          fi
+          if [[ -n "$(git -C remote/libs status --porcelain)" ]]; then
+            echo 'remote/libs checkout is unexpectedly dirty.' >&2
+            exit 1
+          fi
+
           rm "$carrier"
           git diff --check
           git config user.name github-actions[bot]
@@ -180,8 +194,9 @@ jobs:
             printf 'unexpected staged paths:\n%s\n' "$actual_staged" >&2
             exit 1
           fi
-          if [[ -n "$(git diff --name-only)" ]]; then
-            printf 'unstaged paths remain after scope cleanup:\n%s\n' "$(git diff --name-only)" >&2
+          unstaged="$(git diff --name-only | grep -v '^remote/libs$' || true)"
+          if [[ -n "$unstaged" ]]; then
+            printf 'unstaged paths remain after scope cleanup:\n%s\n' "$unstaged" >&2
             exit 1
           fi
 
