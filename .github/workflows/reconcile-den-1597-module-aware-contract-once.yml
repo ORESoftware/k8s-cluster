@@ -1,0 +1,224 @@
+name: Reconcile DEN-1597 module-aware router contract once
+
+on:
+  pull_request:
+    branches:
+      - dev
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - .github/workflows/reconcile-den-1597-module-aware-contract-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: reconcile-den-1597-module-aware-router-contract
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-1597-request-bound-assignment-current-dev-20260804'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out the exact assignment branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1597-request-bound-assignment-current-dev-20260804
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Replace textual anchors with implementation-aware checks
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          shim_path = Path('remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs')
+          test_path = Path('remote/tests/general/gha-clone-server-config.test.ts')
+
+          anchored = '''//! Stable repository-policy anchors for the delegated router service.
+          //!
+          //! The implementation in `executor_router_service` reports
+          //! `"postSubmissionFailover": false` and `"automaticFailover": false`, increments
+          //! `ambiguous_submissions_total` for uncertain submissions, and calls
+          //! `first_ready_executor` only before the first upstream submission attempt.
+
+          #[path = "../executor_router_service.rs"]
+          mod executor_router_service;
+
+          #[tokio::main]
+          async fn main() {
+              executor_router_service::run().await;
+          }
+          '''.replace('          ', '')
+          plain = '''#[path = "../executor_router_service.rs"]
+          mod executor_router_service;
+
+          #[tokio::main]
+          async fn main() {
+              executor_router_service::run().await;
+          }
+          '''.replace('          ', '')
+          shim = shim_path.read_text()
+          if shim != anchored:
+              raise SystemExit('router shim does not match the reviewed temporary-anchor state')
+          shim_path.write_text(plain)
+
+          test = test_path.read_text()
+          path_marker = '''const routerSourcePath =
+            'remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs';
+          const routerLibraryPath =
+          '''
+          path_replacement = '''const routerSourcePath =
+            'remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs';
+          const routerServicePath =
+            'remote/deployments/gha-clone-server-rs/src/executor_router_service.rs';
+          const routerAssignmentPath =
+            'remote/deployments/gha-clone-server-rs/src/executor_router_service/assignment.rs';
+          const routerSecurityPath =
+            'remote/deployments/gha-clone-server-rs/src/executor_router_service/security.rs';
+          const routerUpstreamPath =
+            'remote/deployments/gha-clone-server-rs/src/executor_router_service/upstream.rs';
+          const routerLibraryPath =
+          '''
+          if test.count(path_marker) != 1:
+              raise SystemExit('unexpected router source path declarations')
+          test = test.replace(path_marker, path_replacement, 1)
+
+          process_marker = '''const routerProcessTestPath =
+            'remote/deployments/gha-clone-server-rs/tests/executor_router_http.rs';
+          const metaIntegrationTestPath =
+          '''
+          process_replacement = '''const routerProcessTestPath =
+            'remote/deployments/gha-clone-server-rs/tests/executor_router_http.rs';
+          const routerAssignmentTestPath =
+            'remote/deployments/gha-clone-server-rs/tests/executor_router_assignment.rs';
+          const metaIntegrationTestPath =
+          '''
+          if test.count(process_marker) != 1:
+              raise SystemExit('unexpected router process test declarations')
+          test = test.replace(process_marker, process_replacement, 1)
+
+          old_block = '''test('executor router code and live tests preserve no-duplicate provider pinning', () => {
+            const source = read(routerSourcePath);
+            const library = read(routerLibraryPath);
+            const processTests = read(routerProcessTestPath);
+            assert.match(source, /postSubmissionFailover": false/);
+            assert.match(source, /ambiguous_submissions_total/);
+            assert.match(source, /first_ready_executor/);
+            assert.match(source, /automaticFailover": false/);
+            assert.match(library, /disabled executors must omit url and authPath/);
+            assert.match(library, /authPath must be a direct child/);
+            assert.match(library, /lowercase 40-hex commit SHA/);
+            assert.match(
+              processTests,
+              /selects_first_ready_aws_executor_and_pins_status_to_it/,
+            );
+            assert.match(
+              processTests,
+              /readiness_failure_routes_to_hetzner_before_any_submission/,
+            );
+            assert.match(
+              processTests,
+              /ambiguous_submission_never_fails_over_or_leaks_upstream_body/,
+            );
+            assert.match(
+              processTests,
+              /accepted_build_status_failure_remains_pinned_without_resubmission/,
+            );
+          });
+          '''
+          new_block = '''test('executor router code and live tests preserve no-duplicate provider pinning', () => {
+            const source = [
+              routerSourcePath,
+              routerServicePath,
+              routerAssignmentPath,
+              routerSecurityPath,
+              routerUpstreamPath,
+            ]
+              .map(read)
+              .join('\\n');
+            const library = read(routerLibraryPath);
+            const processTests = [routerProcessTestPath, routerAssignmentTestPath]
+              .map(read)
+              .join('\\n');
+            assert.match(source, /postSubmissionFailover": false/);
+            assert.match(source, /ambiguous_submissions_total/);
+            assert.match(source, /first_ready_executor/);
+            assert.match(source, /automaticFailover": false/);
+            assert.match(source, /get_all\("x-build-server-auth"\)/);
+            assert.match(source, /get_all\("x-server-auth"\)/);
+            assert.match(library, /disabled executors must omit url and authPath/);
+            assert.match(library, /authPath must be a direct child/);
+            assert.match(library, /lowercase 40-hex commit SHA/);
+            assert.match(
+              processTests,
+              /selects_first_ready_aws_executor_and_pins_status_to_it/,
+            );
+            assert.match(
+              processTests,
+              /readiness_failure_routes_to_hetzner_before_any_submission/,
+            );
+            assert.match(
+              processTests,
+              /ambiguous_submission_never_fails_over_or_leaks_upstream_body/,
+            );
+            assert.match(
+              processTests,
+              /accepted_build_status_failure_remains_pinned_without_resubmission/,
+            );
+            assert.match(
+              processTests,
+              /concurrent_identical_requests_submit_once_and_share_the_result/,
+            );
+            assert.match(
+              processTests,
+              /ambiguous_assignment_never_switches_provider_after_readiness_changes/,
+            );
+          });
+          '''
+          if test.count(old_block) != 1:
+              raise SystemExit('unexpected no-duplicate static contract block')
+          test_path.write_text(test.replace(old_block, new_block, 1))
+
+          Path('.github/workflows/reconcile-den-1597-module-aware-contract-once.yml').unlink()
+          PY
+
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate all router Rust targets
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --test executor_router_assignment
+          cargo test --locked --test executor_router_http
+
+      - name: Validate the module-aware static contract
+        working-directory: remote/tests
+        run: |
+          set -euo pipefail
+          corepack enable
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm exec tsx --test general/gha-clone-server-config.test.ts
+
+      - name: Commit only permanent product and test changes
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'test(DEN-1597): read split router implementation directly'
+          git push origin HEAD:agent/den-1597-request-bound-assignment-current-dev-20260804
