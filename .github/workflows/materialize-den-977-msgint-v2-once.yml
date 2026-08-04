@@ -112,6 +112,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          # `cargo fmt --all` normalizes two inherited planner-limit tests that
+          # are outside DEN-977. They were fully compiled and tested above, but
+          # this product commit must remain the reviewed 21-path semantic union.
+          format_only=(
+            remote/deployments/gha-clone-server-rs/tests/den_1606_planner_input_followup.rs
+            remote/deployments/gha-clone-server-rs/tests/den_1606_planner_inputs.rs
+          )
+          git restore --source=HEAD --worktree -- "${format_only[@]}"
+          git diff --quiet -- "${format_only[@]}"
+
           cat >"${RUNNER_TEMP}/allowed-paths" <<'EOF'
           .github/workflows/gha-clone-server.yml
           docs/gha-profile-repository-admission.md
