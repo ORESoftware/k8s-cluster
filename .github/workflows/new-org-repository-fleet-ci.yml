@@ -1,0 +1,104 @@
+name: New organization repository fleet CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/new-org-repository-fleet-ci.yml
+      - .github/workflows/ops-publish-new-org-repository-fleet-gh-profile.yml
+      - scripts/ops/new_org_repository_fleet.json
+      - scripts/ops/new_org_repository_templates.py
+      - scripts/ops/new_org_fleet_templates/**
+      - scripts/ops/publish_new_org_repository_fleet.py
+      - scripts/ops/test_publish_new_org_repository_fleet.py
+      - scripts/ops/validate_new_org_repository_fleet.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/new-org-repository-fleet-ci.yml
+      - .github/workflows/ops-publish-new-org-repository-fleet-gh-profile.yml
+      - scripts/ops/new_org_repository_fleet.json
+      - scripts/ops/new_org_repository_templates.py
+      - scripts/ops/new_org_fleet_templates/**
+      - scripts/ops/publish_new_org_repository_fleet.py
+      - scripts/ops/test_publish_new_org_repository_fleet.py
+      - scripts/ops/validate_new_org_repository_fleet.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: new-org-repository-fleet-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+  RUSTDOCFLAGS: -Dwarnings
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out repository without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compile publisher and validation modules
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ops/new_org_repository_templates.py \
+            scripts/ops/new_org_fleet_templates/*.py \
+            scripts/ops/publish_new_org_repository_fleet.py \
+            scripts/ops/test_publish_new_org_repository_fleet.py \
+            scripts/ops/validate_new_org_repository_fleet.py
+
+      - name: Run publisher contract tests
+        run: python3 -m unittest -v scripts/ops/test_publish_new_org_repository_fleet.py
+
+      - name: Verify the dry-run plan is bounded to 65 repositories
+        run: |
+          set -euo pipefail
+          summary="$RUNNER_TEMP/new-org-fleet-dry-run.json"
+          python3 scripts/ops/publish_new_org_repository_fleet.py \
+            --manifest scripts/ops/new_org_repository_fleet.json \
+            --summary-file "$summary" >/dev/null
+          python3 - "$summary" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          summary = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assert summary["execute"] is False
+          assert summary["expected_repository_count"] == 65
+          assert len(summary["planned"]) == 65
+          assert not summary["created"]
+          assert not summary["initialized"]
+          assert not summary["preserved"]
+          PY
+
+      - name: Run materialized static seed contracts
+        run: |
+          python3 scripts/ops/validate_new_org_repository_fleet.py \
+            --manifest scripts/ops/new_org_repository_fleet.json \
+            --static-only
+
+      - name: Install pinned Rust toolchain
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --component rustfmt,clippy
+          rustup default 1.88.0
+          rustc --version
+          cargo --version
+          go version
+          mvn --version
+          node --version
+          npm --version
+
+      - name: Compile and test representative generated repositories
+        run: |
+          python3 scripts/ops/validate_new_org_repository_fleet.py \
+            --manifest scripts/ops/new_org_repository_fleet.json
