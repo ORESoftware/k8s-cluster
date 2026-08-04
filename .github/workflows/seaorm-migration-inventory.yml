@@ -25,6 +25,8 @@ jobs:
   inventory:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      DES_ENGINE_COMMIT: 894e86fb188b88b0e2c734b5cf7caa27c6b18e00
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -39,11 +41,29 @@ jobs:
           toolchain: "1.97.0"
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Materialize the existing sibling path dependency at an immutable commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          destination=../../submodules/discrete-event-system.rs
+          rm -rf "$destination"
+          mkdir -p "$(dirname "$destination")"
+          git init -q "$destination"
+          git -C "$destination" remote add origin \
+            https://github.com/ORESoftware/discrete-event-system.rs.git
+          GIT_TERMINAL_PROMPT=0 git -C "$destination" fetch \
+            --no-tags --depth=1 origin "$DES_ENGINE_COMMIT"
+          git -C "$destination" checkout -q --detach FETCH_HEAD
+          test "$(git -C "$destination" rev-parse HEAD)" = "$DES_ENGINE_COMMIT"
+          test -z "$(git -C "$destination" status --porcelain=v1 --untracked-files=all)"
+          git -C "$destination" remote remove origin
+          printf '%s\n' "$DES_ENGINE_COMMIT" > /tmp/des-engine-commit.txt
       - name: Validate migration contract and inventory direct drivers
         shell: bash
         run: |
           set -euo pipefail
           install -d -m 700 test-results
+          cp /tmp/des-engine-commit.txt test-results/des-engine-commit.txt
           node --test scripts/audit-seaorm-migration.test.mjs
           node scripts/audit-seaorm-migration.mjs \
             --report test-results/seaorm-migration-inventory.json \
@@ -70,7 +90,7 @@ jobs:
             "sharedAuthority": "ORESoftware/k8s-libs-and-shared-defs",
             "sharedCommit": "3c84cab532b27d328378f09fba5841f02644ae3b",
             "migrationTool": "declarative-migrations/declarative-migrations@1.4.2",
-            "reason": "Private cross-repository schema and DPM checks run from k8s-cluster through its existing read-only GitHub App/deploy-key boundary; this consumer PR receives no PAT or copied private key."
+            "reason": "Private cross-repository schema and DPM checks run from k8s-cluster through its existing read-only GitHub App boundary; this consumer PR receives no PAT or copied private key."
           }
           JSON
       - name: Upload non-secret migration inventory
