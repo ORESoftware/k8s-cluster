@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Fail-closed three-way reconciliation for the reviewed Messaging Intel product."""
 
+# Validation trigger after aligning the router-pinning contract name.
+
 from __future__ import annotations
 
 import pathlib
