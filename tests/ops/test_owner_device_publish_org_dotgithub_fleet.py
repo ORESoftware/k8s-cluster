@@ -60,6 +60,26 @@ class OwnerDeviceOrgDotgithubFleetTests(unittest.TestCase):
             self.assertIn(phrase, self.text)
         self.assertNotIn("scope=repo read:org", self.text)
 
+    def test_authorization_comment_is_literal_and_file_backed(self) -> None:
+        publish = self.text.split("  publish:", 1)[1]
+        start = publish.index(
+            'authorization_body_file="$RUNNER_TEMP/org-dotgithub-device-authorization.md"'
+        )
+        end = publish.index("stage=await-device-authorization", start)
+        comment_block = publish[start:end]
+        for phrase in (
+            'AUTHORIZATION_BODY_FILE="$authorization_body_file"',
+            "python3 - <<'PY'",
+            "body = f\"\"\"## Authorize the 36-organization `.github` governance publication",
+            "- Requested OAuth scopes: `public_repo` and `read:org`",
+            "- This uses the GitHub CLI OAuth app; do not revoke that entire app unless you intend to reauthenticate other `gh` CLI sessions",
+            '-F "body=@${authorization_body_file}"',
+        ):
+            self.assertIn(phrase, comment_block)
+        self.assertNotIn('authorization_body="$(cat <<EOF', publish)
+        self.assertNotIn("<<EOF", publish)
+        self.assertNotIn("gh <command> <subcommand>", publish)
+
     def test_token_is_memory_only_masked_and_not_persisted(self) -> None:
         publish = self.text.split("  publish:", 1)[1]
         for phrase in (
@@ -129,7 +149,7 @@ class OwnerDeviceOrgDotgithubFleetTests(unittest.TestCase):
     def test_authorization_code_is_bounded_and_only_user_action_required(self) -> None:
         self.assertIn("expires_in", self.text)
         self.assertIn(". <= 900", self.text)
-        self.assertIn("Open ${verification_uri} and enter", self.text)
+        self.assertIn("Open {os.environ['VERIFICATION_URI']} and enter", self.text)
         self.assertIn("EXPECTED_LOGIN: ORESoftware", self.text)
         self.assertIn("Mutation starts only after", self.text)
 

@@ -192,26 +192,38 @@ jobs:
           [[ "$user_code" =~ ^[A-Z0-9]{4}-[A-Z0-9]{4}$ ]]
           unset device_response device_json device_status
 
-          authorization_body="$(cat <<EOF
-          ## Authorize the 36-organization `.github` governance publication
+          authorization_body_file="$RUNNER_TEMP/org-dotgithub-device-authorization.md"
+          AUTHORIZATION_BODY_FILE="$authorization_body_file" \
+          VERIFICATION_URI="$verification_uri" \
+          USER_CODE="$user_code" \
+          EXPIRES_MINUTES="$((expires_in / 60))" \
+          EXPECTED_AUTH_LOGIN="$EXPECTED_LOGIN" \
+          AUTH_REPOSITORY="$GITHUB_REPOSITORY" \
+          AUTH_RUN_ID="$GITHUB_RUN_ID" \
+            python3 - <<'PY'
+          import os
+          from pathlib import Path
 
-          Open ${verification_uri} and enter **\`${user_code}\`**.
+          body = f"""## Authorize the 36-organization `.github` governance publication
 
-          - Code lifetime: about $((expires_in / 60)) minutes
-          - Requested OAuth scopes: \`public_repo\` and \`read:org\`
-          - Accepted account: \`${EXPECTED_LOGIN}\` only
+          Open {os.environ['VERIFICATION_URI']} and enter **`{os.environ['USER_CODE']}`**.
+
+          - Code lifetime: about {os.environ['EXPIRES_MINUTES']} minutes
+          - Requested OAuth scopes: `public_repo` and `read:org`
+          - Accepted account: `{os.environ['EXPECTED_AUTH_LOGIN']}` only
           - Mutation starts only after active owner/admin membership is verified for all 36 organizations
           - The token remains memory-only and is never persisted; the runner cannot recover it after exit
           - This uses the GitHub CLI OAuth app; do not revoke that entire app unless you intend to reauthenticate other `gh` CLI sessions
 
-          Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
-          EOF
-          )"
+          Run: https://github.com/{os.environ['AUTH_REPOSITORY']}/actions/runs/{os.environ['AUTH_RUN_ID']}
+          """
+          Path(os.environ['AUTHORIZATION_BODY_FILE']).write_text(body, encoding='utf-8')
+          PY
           GH_TOKEN="$workflow_token" gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_ISSUE}/comments" \
-            -f body="$authorization_body" >/dev/null
+            -F "body=@${authorization_body_file}" >/dev/null
           echo "::notice title=GitHub owner authorization::Open ${verification_uri} and enter ${user_code}"
-          unset authorization_body user_code verification_uri
+          unset authorization_body_file user_code verification_uri
 
           stage=await-device-authorization
           elapsed=0
