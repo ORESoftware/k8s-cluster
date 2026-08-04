@@ -65,10 +65,18 @@ impl Drop for ServerProcess {
     }
 }
 
+fn unused_port() -> u16 {
+    StdTcpListener::bind(("127.0.0.1", 0))
+        .expect("reserve local port")
+        .local_addr()
+        .expect("local address")
+        .port()
+}
+
 async fn spawn_server(overrides: BTreeMap<&str, String>) -> ServerProcess {
     let port = unused_port();
     let mut command = Command::new(SERVER_BINARY);
-    for name in SERVER_ENV_VARS {
+    for &name in SERVER_ENV_VARS {
         command.env_remove(name);
     }
     command
@@ -88,14 +96,6 @@ async fn spawn_server(overrides: BTreeMap<&str, String>) -> ServerProcess {
     };
     wait_for_server(&mut server).await;
     server
-}
-
-fn unused_port() -> u16 {
-    StdTcpListener::bind(("127.0.0.1", 0))
-        .expect("reserve local port")
-        .local_addr()
-        .expect("local address")
-        .port()
 }
 
 async fn wait_for_server(server: &mut ServerProcess) {
@@ -119,18 +119,18 @@ async fn wait_for_server(server: &mut ServerProcess) {
 }
 
 fn dormant_env() -> BTreeMap<&'static str, String> {
-    BTreeMap::from([
-        ("GHA_CLONE_AUTH_SECRET", AUTH_SECRET.to_string()),
-        (
-            "GHA_CLONE_ALLOWED_REPOSITORIES",
-            REPOSITORY.to_string(),
-        ),
-        ("GHA_CLONE_EXECUTION_ENABLED", "false".to_string()),
-        (
-            "GHA_CLONE_WEBHOOK_EXECUTION_ENABLED",
-            "false".to_string(),
-        ),
-    ])
+    let mut env = BTreeMap::new();
+    env.insert("GHA_CLONE_AUTH_SECRET", AUTH_SECRET.to_string());
+    env.insert(
+        "GHA_CLONE_ALLOWED_REPOSITORIES",
+        REPOSITORY.to_string(),
+    );
+    env.insert("GHA_CLONE_EXECUTION_ENABLED", "false".to_string());
+    env.insert(
+        "GHA_CLONE_WEBHOOK_EXECUTION_ENABLED",
+        "false".to_string(),
+    );
+    env
 }
 
 fn plan_request(repository: &str, workflow_yaml: &str) -> Value {
@@ -173,6 +173,17 @@ async fn response_json(response: reqwest::Response) -> (StatusCode, Value) {
     let value = serde_json::from_str(&body)
         .unwrap_or_else(|error| panic!("response was not JSON ({error}): {body}"));
     (status, value)
+}
+
+async fn get_json(client: &Client, server: &ServerProcess, path: &str) -> (StatusCode, Value) {
+    response_json(
+        client
+            .get(format!("{}{path}", server.base_url))
+            .send()
+            .await
+            .expect("GET request"),
+    )
+    .await
 }
 
 async fn post_plan(
@@ -218,8 +229,8 @@ async fn wait_for_terminal_run(client: &Client, server: &ServerProcess, id: &str
         let (status, run) = response_json(get_run(client, server, id).await).await;
         assert_eq!(status, StatusCode::OK);
         match run["status"].as_str() {
-            Some("succeeded" | "failed") => return run,
-            Some("queued" | "running") => sleep(Duration::from_millis(10)).await,
+            Some("succeeded") | Some("failed") => return run,
+            Some("queued") | Some("running") => sleep(Duration::from_millis(10)).await,
             other => panic!("unexpected run status {other:?}: {run}"),
         }
     }
@@ -255,51 +266,23 @@ async fn public_endpoints_describe_the_dormant_fail_closed_server() {
     let server = spawn_server(dormant_env()).await;
     let client = Client::new();
 
-    let (status, descriptor) = response_json(
-        client
-            .get(format!("{}/", server.base_url))
-            .send()
-            .await
-            .unwrap(),
-    )
-    .await;
+    let (status, descriptor) = get_json(&client, &server, "/").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(descriptor["service"], "gha-clone-server");
     assert_eq!(descriptor["endpoints"]["plan"], "POST /v1/plans");
 
-    let (status, health) = response_json(
-        client
-            .get(format!("{}/healthz", server.base_url))
-            .send()
-            .await
-            .unwrap(),
-    )
-    .await;
+    let (status, health) = get_json(&client, &server, "/healthz").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(health["ok"], true);
     assert_eq!(health["executionEnabled"], false);
     assert_eq!(health["allowedRepositories"], 1);
     assert_eq!(health["runsRetained"], 0);
 
-    let (status, readiness) = response_json(
-        client
-            .get(format!("{}/readyz", server.base_url))
-            .send()
-            .await
-            .unwrap(),
-    )
-    .await;
+    let (status, readiness) = get_json(&client, &server, "/readyz").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(readiness["executionReady"], true);
 
-    let (status, capabilities) = response_json(
-        client
-            .get(format!("{}/v1/capabilities", server.base_url))
-            .send()
-            .await
-            .unwrap(),
-    )
-    .await;
+    let (status, capabilities) = get_json(&client, &server, "/v1/capabilities").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(capabilities["service"], "gha-clone-server");
     assert_eq!(capabilities["planSchemaVersion"], "gha-clone-plan.v1");
@@ -312,14 +295,7 @@ async fn readiness_fails_when_execution_is_enabled_without_build_prerequisites()
     let server = spawn_server(env).await;
     let client = Client::new();
 
-    let (status, readiness) = response_json(
-        client
-            .get(format!("{}/readyz", server.base_url))
-            .send()
-            .await
-            .unwrap(),
-    )
-    .await;
+    let (status, readiness) = get_json(&client, &server, "/readyz").await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(readiness["ok"], false);
     assert_eq!(readiness["executionReady"], false);
@@ -330,54 +306,45 @@ async fn planning_enforces_auth_allowlists_and_structural_rejection() {
     let server = spawn_server(dormant_env()).await;
     let client = Client::new();
 
-    let (status, body) = response_json(
-        post_plan(
-            &client,
-            &server,
-            None,
-            plan_request(REPOSITORY, rust_workflow()),
-        )
-        .await,
+    let response = post_plan(
+        &client,
+        &server,
+        None,
+        plan_request(REPOSITORY, rust_workflow()),
     )
     .await;
+    let (status, body) = response_json(response).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body["error"], "unauthorized");
 
-    let (status, _) = response_json(
-        post_plan(
-            &client,
-            &server,
-            Some("wrong-secret"),
-            plan_request(REPOSITORY, rust_workflow()),
-        )
-        .await,
+    let response = post_plan(
+        &client,
+        &server,
+        Some("wrong-secret"),
+        plan_request(REPOSITORY, rust_workflow()),
     )
     .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
-    let (status, body) = response_json(
-        post_plan(
-            &client,
-            &server,
-            Some(AUTH_SECRET),
-            plan_request("other/repo", rust_workflow()),
-        )
-        .await,
+    let response = post_plan(
+        &client,
+        &server,
+        Some(AUTH_SECRET),
+        plan_request("other/repo", rust_workflow()),
     )
     .await;
+    let (status, body) = response_json(response).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(body["repository"], "other/repo");
 
-    let (status, body) = response_json(
-        post_plan(
-            &client,
-            &server,
-            Some(AUTH_SECRET),
-            plan_request(REPOSITORY, "jobs: {}"),
-        )
-        .await,
+    let response = post_plan(
+        &client,
+        &server,
+        Some(AUTH_SECRET),
+        plan_request(REPOSITORY, "jobs: {}"),
     )
     .await;
+    let (status, body) = response_json(response).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(body["error"], "workflow plan rejected");
     assert!(body["reasons"][0]
@@ -385,16 +352,14 @@ async fn planning_enforces_auth_allowlists_and_structural_rejection() {
         .unwrap()
         .contains("at least one job"));
 
-    let (status, plan) = response_json(
-        post_plan(
-            &client,
-            &server,
-            Some(AUTH_SECRET),
-            plan_request(REPOSITORY, rust_workflow()),
-        )
-        .await,
+    let response = post_plan(
+        &client,
+        &server,
+        Some(AUTH_SECRET),
+        plan_request(REPOSITORY, rust_workflow()),
     )
     .await;
+    let (status, plan) = response_json(response).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(plan["repository"], REPOSITORY);
     assert_eq!(plan["independentExecutable"], true);
@@ -406,12 +371,14 @@ async fn run_creation_remains_disabled_before_planning_or_dispatch() {
     let server = spawn_server(dormant_env()).await;
     let client = Client::new();
 
-    let (status, body) = response_json(post_run(&client, &server, "not valid: [").await).await;
+    let response = post_run(&client, &server, "not valid: [").await;
+    let (status, body) = response_json(response).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(body["error"], "independent execution is disabled");
 
     let unknown_id = "00000000-0000-4000-8000-000000000000";
-    let (status, body) = response_json(get_run(&client, &server, unknown_id).await).await;
+    let response = get_run(&client, &server, unknown_id).await;
+    let (status, body) = response_json(response).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body["error"], "run not found");
 }
@@ -419,18 +386,16 @@ async fn run_creation_remains_disabled_before_planning_or_dispatch() {
 #[tokio::test]
 async fn webhook_guards_reject_bad_inputs_before_any_github_fetch() {
     let client = Client::new();
+    let body = serde_json::to_vec(&json!({
+        "repository": { "full_name": REPOSITORY }
+    }))
+    .unwrap();
 
     let no_secret_server = spawn_server(dormant_env()).await;
-    let body = serde_json::to_vec(&json!({ "repository": { "full_name": REPOSITORY } })).unwrap();
-    let (status, response) = response_json(
-        post_webhook(&client, &no_secret_server, "issues", &body, None).await,
-    )
-    .await;
+    let response = post_webhook(&client, &no_secret_server, "issues", &body, None).await;
+    let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(
-        response["error"],
-        "GitHub webhook secret is not configured"
-    );
+    assert_eq!(value["error"], "GitHub webhook secret is not configured");
     drop(no_secret_server);
 
     let mut env = dormant_env();
@@ -440,52 +405,53 @@ async fn webhook_guards_reject_bad_inputs_before_any_github_fetch() {
     );
     let server = spawn_server(env).await;
 
-    let (status, response) =
-        response_json(post_webhook(&client, &server, "issues", &body, None).await).await;
+    let response = post_webhook(&client, &server, "issues", &body, None).await;
+    let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-    assert_eq!(response["error"], "missing X-Hub-Signature-256");
+    assert_eq!(value["error"], "missing X-Hub-Signature-256");
 
-    let (status, response) = response_json(
-        post_webhook(&client, &server, "issues", &body, Some("sha256=00")).await,
+    let response = post_webhook(
+        &client,
+        &server,
+        "issues",
+        &body,
+        Some("sha256=00"),
     )
     .await;
+    let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-    assert_eq!(response["error"], "invalid GitHub webhook signature");
+    assert_eq!(value["error"], "invalid GitHub webhook signature");
 
     let invalid_json = b"{";
     let signature = webhook_signature(invalid_json);
-    let (status, response) = response_json(
-        post_webhook(
-            &client,
-            &server,
-            "issues",
-            invalid_json,
-            Some(&signature),
-        )
-        .await,
+    let response = post_webhook(
+        &client,
+        &server,
+        "issues",
+        invalid_json,
+        Some(&signature),
     )
     .await;
+    let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(response["error"]
+    assert!(value["error"]
         .as_str()
         .unwrap()
         .contains("invalid webhook JSON"));
 
     let missing_repository = serde_json::to_vec(&json!({ "after": REVISION })).unwrap();
     let signature = webhook_signature(&missing_repository);
-    let (status, response) = response_json(
-        post_webhook(
-            &client,
-            &server,
-            "push",
-            &missing_repository,
-            Some(&signature),
-        )
-        .await,
+    let response = post_webhook(
+        &client,
+        &server,
+        "push",
+        &missing_repository,
+        Some(&signature),
     )
     .await;
+    let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(response["error"]
+    assert!(value["error"]
         .as_str()
         .unwrap()
         .contains("repository.full_name"));
@@ -496,31 +462,34 @@ async fn webhook_guards_reject_bad_inputs_before_any_github_fetch() {
     }))
     .unwrap();
     let signature = webhook_signature(&forbidden);
-    let (status, response) = response_json(
-        post_webhook(&client, &server, "push", &forbidden, Some(&signature)).await,
+    let response = post_webhook(
+        &client,
+        &server,
+        "push",
+        &forbidden,
+        Some(&signature),
     )
     .await;
+    let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(response["repository"], "other/repo");
+    assert_eq!(value["repository"], "other/repo");
 
     let unsupported = serde_json::to_vec(&json!({
         "repository": { "full_name": REPOSITORY }
     }))
     .unwrap();
     let signature = webhook_signature(&unsupported);
-    let (status, response) = response_json(
-        post_webhook(
-            &client,
-            &server,
-            "issues",
-            &unsupported,
-            Some(&signature),
-        )
-        .await,
+    let response = post_webhook(
+        &client,
+        &server,
+        "issues",
+        &unsupported,
+        Some(&signature),
     )
     .await;
+    let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::ACCEPTED);
-    assert_eq!(response["accepted"], false);
+    assert_eq!(value["accepted"], false);
 
     let short_revision = serde_json::to_vec(&json!({
         "repository": { "full_name": REPOSITORY },
@@ -528,19 +497,20 @@ async fn webhook_guards_reject_bad_inputs_before_any_github_fetch() {
     }))
     .unwrap();
     let signature = webhook_signature(&short_revision);
-    let (status, response) = response_json(
-        post_webhook(
-            &client,
-            &server,
-            "push",
-            &short_revision,
-            Some(&signature),
-        )
-        .await,
+    let response = post_webhook(
+        &client,
+        &server,
+        "push",
+        &short_revision,
+        Some(&signature),
     )
     .await;
+    let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(response["error"], "webhook revision is not a full commit SHA");
+    assert_eq!(
+        value["error"],
+        "webhook revision is not a full commit SHA"
+    );
 
     let no_rules = serde_json::to_vec(&json!({
         "repository": { "full_name": REPOSITORY },
@@ -548,13 +518,18 @@ async fn webhook_guards_reject_bad_inputs_before_any_github_fetch() {
     }))
     .unwrap();
     let signature = webhook_signature(&no_rules);
-    let (status, response) = response_json(
-        post_webhook(&client, &server, "push", &no_rules, Some(&signature)).await,
+    let response = post_webhook(
+        &client,
+        &server,
+        "push",
+        &no_rules,
+        Some(&signature),
     )
     .await;
+    let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::ACCEPTED);
-    assert_eq!(response["accepted"], false);
-    assert!(response["reason"]
+    assert_eq!(value["accepted"], false);
+    assert!(value["reason"]
         .as_str()
         .unwrap()
         .contains("no workflow mirror rules"));
@@ -653,10 +628,7 @@ async fn mock_submit(
     }
 }
 
-async fn mock_status(
-    State(state): State<MockBuildState>,
-    Path(id): Path<String>,
-) -> Response {
+async fn mock_status(State(state): State<MockBuildState>, Path(id): Path<String>) -> Response {
     match state.mode {
         MockMode::FailBuild => (
             StatusCode::OK,
@@ -687,25 +659,16 @@ async fn mock_status(
 }
 
 fn execution_env(mock: &MockBuildServer, timeout_seconds: u64) -> BTreeMap<&'static str, String> {
-    BTreeMap::from([
-        ("GHA_CLONE_AUTH_SECRET", AUTH_SECRET.to_string()),
-        (
-            "GHA_CLONE_ALLOWED_REPOSITORIES",
-            REPOSITORY.to_string(),
-        ),
-        ("GHA_CLONE_EXECUTION_ENABLED", "true".to_string()),
-        (
-            "GHA_CLONE_WEBHOOK_EXECUTION_ENABLED",
-            "false".to_string(),
-        ),
-        ("GHA_CLONE_BUILD_SERVER_URL", mock.base_url.clone()),
-        ("GHA_CLONE_BUILD_SERVER_AUTH", BUILD_AUTH.to_string()),
-        ("GHA_CLONE_BUILD_POLL_SECONDS", "0".to_string()),
-        (
-            "GHA_CLONE_BUILD_TIMEOUT_SECONDS",
-            timeout_seconds.to_string(),
-        ),
-    ])
+    let mut env = dormant_env();
+    env.insert("GHA_CLONE_EXECUTION_ENABLED", "true".to_string());
+    env.insert("GHA_CLONE_BUILD_SERVER_URL", mock.base_url.clone());
+    env.insert("GHA_CLONE_BUILD_SERVER_AUTH", BUILD_AUTH.to_string());
+    env.insert("GHA_CLONE_BUILD_POLL_SECONDS", "0".to_string());
+    env.insert(
+        "GHA_CLONE_BUILD_TIMEOUT_SECONDS",
+        timeout_seconds.to_string(),
+    );
+    env
 }
 
 #[tokio::test]
@@ -714,8 +677,8 @@ async fn live_execution_dispatches_fixed_profiles_in_topological_order() {
     let server = spawn_server(execution_env(&mock, 5)).await;
     let client = Client::new();
 
-    let (status, accepted) =
-        response_json(post_run(&client, &server, rust_node_workflow()).await).await;
+    let response = post_run(&client, &server, rust_node_workflow()).await;
+    let (status, accepted) = response_json(response).await;
     assert_eq!(status, StatusCode::ACCEPTED);
     assert_eq!(accepted["status"], "queued");
     let run_id = accepted["id"].as_str().expect("run id");
@@ -734,7 +697,10 @@ async fn live_execution_dispatches_fixed_profiles_in_topological_order() {
     assert_eq!(submissions.len(), 2);
     assert_eq!(submissions[0]["schemaVersion"], "build-server.v1");
     assert_eq!(submissions[0]["jobKind"], "run-profile");
-    assert_eq!(submissions[0]["repoUrl"], "https://github.com/owner/repo.git");
+    assert_eq!(
+        submissions[0]["repoUrl"],
+        "https://github.com/owner/repo.git"
+    );
     assert_eq!(submissions[0]["gitRef"], REVISION);
     assert_eq!(submissions[0]["profile"], "rust-verify");
     assert!(submissions[0]["requestId"]
@@ -748,12 +714,15 @@ async fn live_execution_dispatches_fixed_profiles_in_topological_order() {
         .ends_with(":node"));
 
     let auth_headers = mock.state.auth_headers.lock().await.clone();
-    assert_eq!(auth_headers, vec![Some(BUILD_AUTH.into()), Some(BUILD_AUTH.into())]);
+    assert_eq!(
+        auth_headers,
+        vec![Some(BUILD_AUTH.into()), Some(BUILD_AUTH.into())]
+    );
 }
 
 #[tokio::test]
 async fn asynchronous_execution_failures_are_persisted_and_observable() {
-    for (mode, timeout, expected) in [
+    let cases = [
         (
             MockMode::RejectSubmission,
             2,
@@ -764,11 +733,7 @@ async fn asynchronous_execution_failures_are_persisted_and_observable() {
             2,
             "build server returned invalid job JSON",
         ),
-        (
-            MockMode::FailBuild,
-            2,
-            "ended as failed: simulated failure",
-        ),
+        (MockMode::FailBuild, 2, "ended as failed: simulated failure"),
         (MockMode::UnknownStatus, 2, "unknown status"),
         (
             MockMode::InvalidStatusJson,
@@ -776,13 +741,15 @@ async fn asynchronous_execution_failures_are_persisted_and_observable() {
             "build status JSON is invalid",
         ),
         (MockMode::KeepRunning, 0, "exceeded 0 seconds"),
-    ] {
+    ];
+
+    for (mode, timeout, expected) in cases {
         let mock = MockBuildServer::start(mode).await;
         let server = spawn_server(execution_env(&mock, timeout)).await;
         let client = Client::new();
 
-        let (status, accepted) =
-            response_json(post_run(&client, &server, rust_workflow()).await).await;
+        let response = post_run(&client, &server, rust_workflow()).await;
+        let (status, accepted) = response_json(response).await;
         assert_eq!(status, StatusCode::ACCEPTED, "mode {mode:?}");
         let run_id = accepted["id"].as_str().expect("run id");
         let run = wait_for_terminal_run(&client, &server, run_id).await;
