@@ -147,6 +147,16 @@ pub fn capabilities(limits: &PlannerLimits) -> CapabilityResponse {
     }
 }
 
+fn is_block_scalar_header(value: &str) -> bool {
+    let token = value.split_whitespace().next().unwrap_or_default();
+    let Some(modifiers) = token.strip_prefix('|').or_else(|| token.strip_prefix('>')) else {
+        return false;
+    };
+    modifiers
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || matches!(byte, b'+' | b'-'))
+}
+
 fn validate_workflow_document(source: &str) -> Result<(), String> {
     if source.as_bytes().contains(&b'\t') {
         return Err("workflowYaml contains a tab; indentation must use spaces".into());
@@ -171,7 +181,11 @@ fn validate_workflow_document(source: &str) -> Result<(), String> {
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        if matches!(trimmed, "---" | "...") {
+        if trimmed == "---"
+            || trimmed.starts_with("--- ")
+            || trimmed == "..."
+            || trimmed.starts_with("... ")
+        {
             return Err(format!(
                 "workflowYaml line {line_number} uses a YAML document marker"
             ));
@@ -184,29 +198,41 @@ fn validate_workflow_document(source: &str) -> Result<(), String> {
             parents.pop();
         }
 
-        let mut content = raw_line[indent..].trim_end();
-        if content == "-" || content.starts_with("- ") {
-            let parent_scope = parents
-                .iter()
-                .map(|(_, parent)| parent.as_str())
-                .collect::<Vec<_>>()
-                .join("/");
-            let counter = sequence_ordinals
-                .entry(format!("{parent_scope}@{indent}"))
-                .or_default();
-            parents.push((indent, format!("[{counter}]")));
-            *counter += 1;
-            content = content
-                .strip_prefix('-')
-                .expect("validated sequence item")
-                .trim_start();
-        }
+        let raw_content = raw_line[indent..].trim_end();
+        let (content, key_indent) = if let Some(after_dash) = raw_content.strip_prefix('-') {
+            if after_dash.is_empty() || after_dash.starts_with(' ') {
+                let spaces_after_dash = after_dash.bytes().take_while(|byte| *byte == b' ').count();
+                let parent_scope = parents
+                    .iter()
+                    .map(|(_, parent)| parent.as_str())
+                    .collect::<Vec<_>>()
+                    .join("/");
+                let counter = sequence_ordinals
+                    .entry(format!("{parent_scope}@{indent}"))
+                    .or_default();
+                parents.push((indent, format!("[{counter}]")));
+                *counter += 1;
+                (
+                    after_dash[spaces_after_dash..].trim_end(),
+                    indent + 1 + spaces_after_dash,
+                )
+            } else {
+                (raw_content, indent)
+            }
+        } else {
+            (raw_content, indent)
+        };
         if content.is_empty() {
             continue;
         }
         if content.starts_with(['!', '&', '*']) {
             return Err(format!(
                 "workflowYaml line {line_number} uses a YAML tag, anchor, or alias"
+            ));
+        }
+        if content.starts_with('{') && content.trim() != "{}" {
+            return Err(format!(
+                "workflowYaml line {line_number} uses a non-empty flow mapping"
             ));
         }
 
@@ -233,6 +259,12 @@ fn validate_workflow_document(source: &str) -> Result<(), String> {
                 "workflowYaml line {line_number} uses a YAML tag, anchor, or alias"
             ));
         }
+        let uncommented_value = value.split('#').next().unwrap_or(value).trim_end();
+        if uncommented_value.starts_with('{') && uncommented_value != "{}" {
+            return Err(format!(
+                "workflowYaml line {line_number} uses a non-empty flow mapping"
+            ));
+        }
 
         let scope = parents
             .iter()
@@ -249,12 +281,10 @@ fn validate_workflow_document(source: &str) -> Result<(), String> {
             ));
         }
 
-        let scalar = value.split_whitespace().next().unwrap_or_default();
-        if matches!(scalar, "|" | "|-" | "|+" | ">" | ">-" | ">+") {
-            block_scalar_indent = Some(indent);
-        }
-        if value.is_empty() {
-            parents.push((indent, key.to_ascii_lowercase()));
+        if is_block_scalar_header(value) {
+            block_scalar_indent = Some(key_indent);
+        } else if value.is_empty() {
+            parents.push((key_indent, key.to_ascii_lowercase()));
         }
     }
     Ok(())
@@ -281,7 +311,7 @@ pub fn build_plan(
     }
     if !valid_workflow_path(&request.workflow_path) {
         errors
-            .push("workflowPath must stay under .github/workflows and end in .yml or .yaml".into());
+            .push("workflowPath must stay under .github/workflows as one direct ASCII <file>.yml or .yaml file".into());
     }
     if request.workflow_yaml.len() > limits.max_workflow_bytes {
         errors.push(format!(
@@ -788,9 +818,11 @@ fn valid_workflow_path(value: &str) -> bool {
     !file.is_empty()
         && !file.contains('/')
         && !file.contains('\\')
-        && file != "."
-        && file != ".."
+        && !file.contains("..")
         && (file.ends_with(".yml") || file.ends_with(".yaml"))
+        && file
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
         && value.len() <= 256
 }
 
@@ -1255,5 +1287,100 @@ jobs:
         .unwrap_err()
         .join("\n");
         assert!(errors.contains("repeats mapping key \"run\""), "{errors}");
+    }
+}
+
+#[cfg(test)]
+mod den_1606_planner_input_followup_tests {
+    use super::*;
+
+    fn request(yaml: &str) -> PlanRequest {
+        PlanRequest {
+            repository: "sonus-auris/sonus-auris-interfaces".into(),
+            revision: "0123456789abcdef0123456789abcdef01234567".into(),
+            workflow_path: ".github/workflows/ci.yml".into(),
+            workflow_yaml: yaml.into(),
+        }
+    }
+
+    #[test]
+    fn block_scalar_siblings_return_to_the_sequence_item_scope() {
+        let valid = build_plan(
+            &request(
+                r#"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: first
+        run: |
+          echo ok
+          cargo test
+        shell: bash
+      - name: second
+        run: cargo fmt --check
+        shell: bash
+"#,
+            ),
+            &PlannerLimits::default(),
+        )
+        .expect("separate sequence items may repeat mapping keys");
+        assert!(!valid.independent_executable);
+
+        let errors = build_plan(
+            &request(
+                r#"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: duplicate
+        run: |
+          echo ok
+          cargo test
+        shell: bash
+        shell: sh
+"#,
+            ),
+            &PlannerLimits::default(),
+        )
+        .unwrap_err()
+        .join("\n");
+        assert!(errors.contains("repeats mapping key \"shell\""), "{errors}");
+    }
+
+    #[test]
+    fn flow_mappings_and_unsafe_direct_paths_fail_closed() {
+        let flow_errors = build_plan(
+            &request("jobs: { test: { runs-on: ubuntu-latest } }\n"),
+            &PlannerLimits::default(),
+        )
+        .unwrap_err()
+        .join("\n");
+        assert!(flow_errors.contains("flow mapping"), "{flow_errors}");
+
+        for invalid in [
+            ".github/workflows/ci file.yml",
+            ".github/workflows/cí.yml",
+            ".github/workflows/ci..yml",
+        ] {
+            let mut input = request("jobs: {}");
+            input.workflow_path = invalid.into();
+            let errors = build_plan(&input, &PlannerLimits::default())
+                .unwrap_err()
+                .join("\n");
+            assert!(errors.contains("workflowPath"), "{invalid}: {errors}");
+        }
+    }
+
+    #[test]
+    fn commented_document_markers_fail_closed() {
+        let errors = build_plan(
+            &request("--- # document one\njobs: {}\n"),
+            &PlannerLimits::default(),
+        )
+        .unwrap_err()
+        .join("\n");
+        assert!(errors.contains("document marker"), "{errors}");
     }
 }
