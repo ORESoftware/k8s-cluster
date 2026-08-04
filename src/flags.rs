@@ -24,9 +24,9 @@ fn is_safe_option_name(option: &str) -> bool {
         .or_else(|| option.strip_prefix('-'))
         .is_some_and(|name| {
             !name.is_empty()
-                && name
-                    .chars()
-                    .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.'))
+                && name.chars().all(|character| {
+                    character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
+                })
         })
 }
 
