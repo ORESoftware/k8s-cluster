@@ -1,0 +1,160 @@
+name: Portfolio project sync
+
+on:
+  pull_request:
+    paths:
+      - "config/portfolio-projects.json"
+      - "config/chatgpt-projects.snapshot.example.json"
+      - "docs/portfolio-project-sync.md"
+      - "scripts/ops/sync_portfolio_projects.py"
+      - "tests/ops/test_sync_portfolio_projects.py"
+      - ".github/workflows/portfolio-project-sync.yml"
+  push:
+    branches: [main]
+    paths:
+      - "config/portfolio-projects.json"
+      - "config/chatgpt-projects.snapshot.example.json"
+      - "docs/portfolio-project-sync.md"
+      - "scripts/ops/sync_portfolio_projects.py"
+      - "tests/ops/test_sync_portfolio_projects.py"
+      - ".github/workflows/portfolio-project-sync.yml"
+  schedule:
+    - cron: "0 3 * * *"
+      timezone: "America/Chicago"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Apply detected identity and issue-mirror drift
+        required: true
+        default: false
+        type: boolean
+      sync_issues:
+        description: Mirror active Linear issues into managed GitHub Project draft items
+        required: true
+        default: true
+        type: boolean
+      require_chatgpt_snapshot:
+        description: Fail unless CHATGPT_PROJECTS_SNAPSHOT_JSON is configured and complete
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: portfolio-project-sync
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate portfolio sync contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Compile and test
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ops/sync_portfolio_projects.py
+          python3 -m unittest discover -s tests/ops -p 'test_sync_portfolio_projects.py'
+
+      - name: Validate the canonical 41-project registry
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/sync_portfolio_projects.py \
+            --validate-only \
+            --registry config/portfolio-projects.json \
+            --report artifacts/portfolio-project-sync-validation.json \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload validation evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: portfolio-project-sync-validation
+          path: artifacts/portfolio-project-sync-validation.json
+          if-no-files-found: error
+          retention-days: 14
+
+  sync:
+    name: Reconcile GitHub, Linear, ChatGPT keys, and Slack
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PORTFOLIO_GITHUB_TOKEN: ${{ secrets.PORTFOLIO_GITHUB_TOKEN }}
+      LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+      CHATGPT_PROJECTS_SNAPSHOT_JSON: ${{ secrets.CHATGPT_PROJECTS_SNAPSHOT_JSON }}
+      APPLY_REQUESTED: ${{ github.event_name == 'schedule' || inputs.apply }}
+      ISSUE_SYNC_REQUESTED: ${{ github.event_name == 'schedule' || inputs.sync_issues }}
+      REQUIRE_CHATGPT_SNAPSHOT: ${{ github.event_name == 'workflow_dispatch' && inputs.require_chatgpt_snapshot }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Materialize optional ChatGPT Projects snapshot
+        id: chatgpt-snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          snapshot_path=""
+          if [[ -n "${CHATGPT_PROJECTS_SNAPSHOT_JSON:-}" ]]; then
+            snapshot_path="$RUNNER_TEMP/chatgpt-projects.json"
+            SNAPSHOT_PATH="$snapshot_path" python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          raw = os.environ["CHATGPT_PROJECTS_SNAPSHOT_JSON"]
+          decoded = json.loads(raw)
+          Path(os.environ["SNAPSHOT_PATH"]).write_text(
+              json.dumps(decoded, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          fi
+          printf 'path=%s\n' "$snapshot_path" >> "$GITHUB_OUTPUT"
+
+      - name: Run bounded portfolio reconciliation
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            --registry config/portfolio-projects.json
+            --report artifacts/portfolio-project-sync-report.json
+            --summary "$GITHUB_STEP_SUMMARY"
+          )
+          if [[ "$APPLY_REQUESTED" == "true" ]]; then
+            args+=(--apply)
+          fi
+          if [[ "$ISSUE_SYNC_REQUESTED" == "true" ]]; then
+            args+=(--sync-issues)
+          fi
+          if [[ "$REQUIRE_CHATGPT_SNAPSHOT" == "true" ]]; then
+            args+=(--require-chatgpt-snapshot)
+          fi
+          snapshot_path="${{ steps.chatgpt-snapshot.outputs.path }}"
+          if [[ -n "$snapshot_path" ]]; then
+            args+=(--chatgpt-snapshot "$snapshot_path")
+          fi
+          python3 scripts/ops/sync_portfolio_projects.py "${args[@]}"
+
+      - name: Upload reconciliation evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: portfolio-project-sync-report
+          path: artifacts/portfolio-project-sync-report.json
+          if-no-files-found: error
+          retention-days: 30
