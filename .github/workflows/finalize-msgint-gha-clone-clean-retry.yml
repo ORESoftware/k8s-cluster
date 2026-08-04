@@ -1,0 +1,127 @@
+name: Finalize isolated Messaging Intel continuity retry
+
+on:
+  push:
+    branches:
+      - agent/msgint-gha-clone-clean-20260804
+    paths:
+      - .github/workflows/finalize-msgint-gha-clone-clean-retry.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-msgint-gha-clone-clean-retry
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out the exact isolated branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/msgint-gha-clone-clean-20260804
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Apply the reviewed planner, test, and durable workflow hardening
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/repair-msgint-gha-clone-hardening-patcher.py \
+            scripts/ci/apply-msgint-gha-clone-hardening.py \
+            scripts/ci/apply-msgint-gha-clone-clean-final.py
+          python3 scripts/ci/repair-msgint-gha-clone-hardening-patcher.py
+          python3 scripts/ci/apply-msgint-gha-clone-hardening.py
+          python3 scripts/ci/apply-msgint-gha-clone-clean-final.py
+
+      - name: Format and verify every GHA clone server target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets
+
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Format, compile, and test the binary-only build server
+        working-directory: remote/deployments/build-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo check --locked --all-targets
+          cargo test --locked --bin dd-build-server -- --nocapture
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+
+      - name: Execute the credential-free fixed-profile parity suite
+        working-directory: remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm run check
+          npm run test:operator-config
+          npm audit --audit-level=high
+          npm test
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - name: Execute deployment and durable-workflow contracts
+        working-directory: remote/tests
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm exec tsx --test general/gha-clone-server-config.test.ts
+
+      - name: Validate durable and fixture workflow syntax
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/repo:ro" \
+            -w /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            .github/workflows/gha-clone-server.yml \
+            remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml
+
+      - name: Remove every one-shot finalizer and patch helper
+        run: |
+          set -euo pipefail
+          rm -f \
+            scripts/ci/apply-msgint-gha-clone-hardening.py \
+            scripts/ci/repair-msgint-gha-clone-hardening-patcher.py \
+            scripts/ci/apply-msgint-gha-clone-clean-final.py \
+            .github/workflows/finalize-msgint-gha-clone-hardening.yml \
+            .github/workflows/finalize-pr-636.yml \
+            .github/workflows/run-pr-636-finalizer.yml \
+            .github/workflows/finalize-msgint-gha-clone-clean.yml \
+            .github/workflows/finalize-msgint-gha-clone-clean-retry.yml
+
+      - name: Commit only validated durable source, tests, docs, and workflow changes
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'No clean continuity changes were produced' >&2
+            exit 1
+          fi
+          git commit -m 'test: harden Messaging Intel GHA clone continuity'
+          git push origin HEAD:agent/msgint-gha-clone-clean-20260804
