@@ -1,0 +1,6 @@
+target-repository=shared-auth/shared-auth-server.rs
+target-pr=30
+target-start-sha=4148e5b96a448a20da00922cc62386455e211126
+trusted-main=4697242bd3919a6b4c4e7f03f6fed8e8d55076cb
+protocol=rsa-oaep-sha256-v1
+purpose=shared-auth-introspection-patch-validation
