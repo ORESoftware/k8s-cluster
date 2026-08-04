@@ -47,6 +47,32 @@ jobs:
       - name: Apply durable run deadlines
         run: python3 .github/scripts/apply-durable-worker-run-deadlines.py
 
+      - name: Normalize generated deadline predicate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/deployments/durable-worker-server-rs/src/engine/mod.rs')
+          text = path.read_text(encoding='utf-8')
+          old = '''            if run.value.status.is_terminal()
+              || !run
+                  .value
+                  .deadline_ms
+                  .is_some_and(|deadline_ms| now >= deadline_ms)
+            {'''
+          new = '''            if run.value.status.is_terminal()
+              || run
+                  .value
+                  .deadline_ms
+                  .is_none_or(|deadline_ms| now < deadline_ms)
+            {'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one deadline predicate, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
       - name: Format, lint, and run all Rust tests
         shell: bash
         run: |
