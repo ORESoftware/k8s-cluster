@@ -121,3 +121,31 @@ Alert on increases in `dd_durable_run_deadlines_exceeded_total` and correlate
 `run.deadline_exceeded` with queue latency, worker capacity, and downstream
 dependency traces. A deadline failure is terminal; retry as a new run with a
 new idempotency key and an explicit later deadline.
+
+## Restart recovery drill
+
+The permanent worker CI includes a destructive synthetic recovery drill against
+an isolated file-backed JetStream instance. It starts a run, acquires and starts
+a lease, persists an output checkpoint, then terminates both the Rust control
+plane and the NATS process. NATS is recreated with the same storage volume and
+the control plane is restarted against that recovered state.
+
+The drill must prove all of the following before an image is publishable:
+
+1. The run, active step, worker registration, idempotency binding, output
+   sequence, output receipt, lease generation, and fencing token survive both
+   process restarts.
+2. Replaying the same submission returns the original run, and replaying the
+   same output `chunkId` with the same payload remains idempotent.
+3. Reusing that `chunkId` with changed data is rejected as an invalid request.
+4. After the old lease expires, the same step is redelivered at the next attempt
+   with a strictly larger generation and fencing token and a different opaque
+   lease token.
+5. Completion under the old lease is rejected with HTTP 409 and cannot mutate
+   the recovered run.
+6. Completion under the new lease succeeds exactly once and leaves the run in a
+   terminal succeeded state.
+
+Treat failure of this drill as a durability regression. Do not work around it by
+extending the lease indefinitely, preserving the old server process, using an
+in-memory NATS store, or accepting a stale completion.
