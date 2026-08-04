@@ -15,13 +15,16 @@ test('workflow_run fallback is failure-only, exact-path, loop-safe, and deduplic
   assert.match(server, /x-github-delivery/);
   assert.match(server, /remember_webhook_delivery/);
   assert.match(server, /duplicate GitHub delivery/);
+  assert.match(server, /GHA_CLONE_GITHUB_API_BASE_URL/);
+  assert.match(server, /HTTP is allowed only for loopback tests/);
 });
 
-test('deployment declares bounded webhook policy while execution remains disabled', () => {
+test('deployment declares bounded webhook policy while remaining dormant', () => {
   const deployment = read(
     'remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml',
   );
   for (const name of [
+    'GHA_CLONE_GITHUB_API_BASE_URL',
     'GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS',
     'GHA_CLONE_WEBHOOK_IGNORED_WORKFLOWS',
     'GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS',
@@ -31,8 +34,17 @@ test('deployment declares bounded webhook policy while execution remains disable
   }
   assert.match(
     deployment,
+    /GHA_CLONE_GITHUB_API_BASE_URL\s+value: https:\/\/api\.github\.com/,
+  );
+  assert.match(
+    deployment,
     /GHA_CLONE_WEBHOOK_EXECUTION_ENABLED\s+value: "false"/,
   );
+  assert.match(
+    deployment,
+    /GHA_CLONE_EXECUTION_ENABLED\s+value: "false"/,
+  );
+  assert.match(deployment, /\breplicas:\s*0\b/);
   assert.match(deployment, /GHA continuity server/);
 });
 
