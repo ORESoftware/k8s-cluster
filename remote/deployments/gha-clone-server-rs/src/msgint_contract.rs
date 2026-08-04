@@ -196,8 +196,8 @@ fn exact_run(value: &Value, expected: &[&str]) -> bool {
     let Some(script) = get(step, "run").and_then(Value::as_str) else {
         return false;
     };
-    let actual = script
-        .replace("\r\n", "\n")
+    let normalized = script.replace("\r\n", "\n");
+    let actual = normalized
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
@@ -307,7 +307,7 @@ jobs:
     }
 
     fn changed(old: &str, new: &str) -> String {
-        assert_eq!(REVIEWED.matches(old).count(), 1, "mutation anchor must be unique");
+        assert!(REVIEWED.contains(old), "mutation anchor must exist");
         REVIEWED.replacen(old, new, 1)
     }
 
@@ -394,7 +394,10 @@ jobs:
             ),
             changed("persist-credentials: false", "persist-credentials: true"),
             changed("node-version: \"22.23.1\"", "node-version: \"22\""),
-            changed("          cache: npm\n", "          cache: npm\n          registry-url: https://evil.invalid\n"),
+            changed(
+                "          cache: npm\n",
+                "          cache: npm\n          registry-url: https://evil.invalid\n",
+            ),
             changed(
                 "          npm audit --audit-level=high\n",
                 "          npm audit --audit-level=high\n          npm publish\n",

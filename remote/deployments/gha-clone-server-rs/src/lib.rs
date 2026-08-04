@@ -43,8 +43,8 @@ mod original {
 pub use original::{
     capabilities, is_full_commit_sha, verify_github_signature, ArchitectureCapabilities,
     CapabilityLimits, CapabilityResponse, JobPlan, PlanRequest, PlannerLimits, WorkflowPlan,
-    MAX_JOBS_DEFAULT, MAX_STEPS_PER_JOB_DEFAULT, MAX_WORKFLOW_BYTES_DEFAULT,
-    PLAN_SCHEMA_VERSION, SERVICE_NAME,
+    MAX_JOBS_DEFAULT, MAX_STEPS_PER_JOB_DEFAULT, MAX_WORKFLOW_BYTES_DEFAULT, PLAN_SCHEMA_VERSION,
+    SERVICE_NAME,
 };
 
 /// Build a generic plan, then apply the exact reserved Messaging Intel

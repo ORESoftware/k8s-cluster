@@ -63,7 +63,10 @@ fn replace_once(old: &str, new: &str) -> String {
 fn exact_reviewed_identity_maps_only_the_two_privileged_profiles() {
     let plan = reviewed(REVIEWED).expect("reviewed workflow should execute");
     assert!(plan.independent_executable);
-    assert_eq!(plan.topological_order, ["operator_config", "repository_tests"]);
+    assert_eq!(
+        plan.topological_order,
+        ["operator_config", "repository_tests"]
+    );
     assert_eq!(plan.jobs.len(), 2);
     assert_eq!(
         plan.jobs[0].independent_profile.as_deref(),
