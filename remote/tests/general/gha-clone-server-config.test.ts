@@ -270,10 +270,22 @@ test('executor router code and live tests preserve no-duplicate provider pinning
   assert.match(library, /disabled executors must omit url and authPath/);
   assert.match(library, /authPath must be a direct child/);
   assert.match(library, /lowercase 40-hex commit SHA/);
-  assert.match(processTests, /aws_accepts_first_without_hetzner_submission/);
-  assert.match(processTests, /aws_readiness_failure_selects_hetzner_before_submission/);
-  assert.match(processTests, /ambiguous_aws_submission_never_falls_through/);
-  assert.match(processTests, /accepted_status_remains_pinned/);
+  assert.match(
+    processTests,
+    /selects_first_ready_aws_executor_and_pins_status_to_it/,
+  );
+  assert.match(
+    processTests,
+    /readiness_failure_routes_to_hetzner_before_any_submission/,
+  );
+  assert.match(
+    processTests,
+    /ambiguous_submission_never_fails_over_or_leaks_upstream_body/,
+  );
+  assert.match(
+    processTests,
+    /accepted_build_status_failure_remains_pinned_without_resubmission/,
+  );
 });
 
 test('meta integration test starts the real server and submits its own workflow', () => {
