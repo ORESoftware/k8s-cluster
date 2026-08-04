@@ -116,9 +116,10 @@ jobs:
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add \
+          git add -A -- \
             .github/workflows/durable-worker-typescript-sdk.yml \
             .github/workflows/durable-worker-typescript-sdk-repair.yml \
+            .github/workflows/durable-worker-sdk-namespace.yml \
             remote/api-sdks/typescript/durable-worker \
             remote/worker-sdks \
             remote/tests/general/durable-worker-typescript-sdk.test.mjs
