@@ -1,0 +1,124 @@
+name: Sync Linear next steps to organization projects
+run-name: Sync Linear next steps to 40 organization projects
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/sync-linear-next-steps-to-org-projects.yml
+      - scripts/ci/linear_project_sync_github.py
+      - scripts/ci/sync_linear_next_steps_to_org_projects.py
+      - ops/linear-github-project-sync/2026-08-04/**
+      - tests/ops/test_sync_linear_next_steps_to_org_projects.py
+  workflow_dispatch:
+    inputs:
+      tracker_issue:
+        description: Issue number that receives the bounded sync report
+        required: true
+        type: string
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-linear-next-steps-to-org-projects-2026-08-04
+  cancel-in-progress: false
+
+jobs:
+  validate-pr:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out pull-request revision without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate the immutable selection and synchronizer
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile \
+            scripts/ci/linear_project_sync_github.py \
+            scripts/ci/sync_linear_next_steps_to_org_projects.py \
+            tests/ops/test_sync_linear_next_steps_to_org_projects.py
+          python3 scripts/ci/sync_linear_next_steps_to_org_projects.py \
+            --manifest-dir ops/linear-github-project-sync/2026-08-04 \
+            --validate-only
+          python3 tests/ops/test_sync_linear_next_steps_to_org_projects.py -v
+
+  sync:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        !github.event.issue.pull_request &&
+        github.actor == 'ORESoftware' &&
+        github.event.comment.body == 'linear-project-sync:2026-08-04-v1'
+      )
+    permissions:
+      contents: read
+      issues: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+      K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+      TRACKER_ISSUE: ${{ github.event_name == 'workflow_dispatch' && inputs.tracker_issue || github.event.issue.number }}
+    steps:
+      - name: Check out trusted default branch without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate the immutable selection and secrets
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/ci/sync_linear_next_steps_to_org_projects.py \
+            --manifest-dir ops/linear-github-project-sync/2026-08-04 \
+            --validate-only
+          [[ "${K8S_SUBMODULE_APP_ID:-}" =~ ^[0-9]+$ ]]
+          test -n "${K8S_SUBMODULE_APP_PRIVATE_KEY:-}"
+          grep -Eq '^-----BEGIN (RSA )?PRIVATE KEY-----' <<<"$K8S_SUBMODULE_APP_PRIVATE_KEY"
+          [[ "${TRACKER_ISSUE:-}" =~ ^[0-9]+$ ]]
+
+      - name: Idempotently synchronize selected Linear issues
+        id: synchronize
+        shell: bash
+        run: |
+          set -uo pipefail
+          umask 077
+          report="$RUNNER_TEMP/linear-project-sync.md"
+          python3 scripts/ci/sync_linear_next_steps_to_org_projects.py \
+            --manifest-dir ops/linear-github-project-sync/2026-08-04 \
+            --report-path "$report"
+          exit_code=$?
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Publish bounded sync evidence to the tracker issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          report="$RUNNER_TEMP/linear-project-sync.md"
+          if [[ ! -s "$report" ]]; then
+            printf '%s\n' '# Linear → GitHub Projects v2 sync failed before bounded evidence was produced' > "$report"
+          fi
+          printf '\nWorkflow run: https://github.com/%s/actions/runs/%s\n' \
+            "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> "$report"
+          gh issue comment "$TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" --body-file "$report"
+
+      - name: Require a complete warning-free sync
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "${{ steps.synchronize.outputs.exit_code }}" = 0
