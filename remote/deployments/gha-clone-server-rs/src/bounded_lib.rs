@@ -1,9 +1,12 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_yaml::{Mapping, Value};
 
 #[path = "lib.rs"]
 mod legacy;
+mod msgint_contract;
+
+use msgint_contract::{classify_msgint_workflow, ContractMatch};
 
 pub use legacy::{
     is_full_commit_sha, verify_github_signature, ArchitectureCapabilities, CapabilityLimits,
@@ -69,6 +72,27 @@ pub fn build_plan(
     limits: &PlannerLimits,
 ) -> Result<WorkflowPlan, Vec<String>> {
     let mut plan = legacy::build_plan(request, limits)?;
+
+    if is_msgint_reserved(request) {
+        let root = workflow_root_mapping(&request.workflow_yaml)?;
+        match classify_msgint_workflow(
+            &request.repository,
+            &request.revision,
+            &request.workflow_path,
+            &root,
+        ) {
+            ContractMatch::NotApplicable => {}
+            ContractMatch::Match(profiles) => {
+                apply_reserved_profiles(&mut plan, &profiles, "Messaging Intel");
+                return Ok(plan);
+            }
+            ContractMatch::Reject(reasons) => {
+                reject_reserved_plan(&mut plan, &reasons);
+                return Ok(plan);
+            }
+        }
+    }
+
     if !is_threefa_bounded_workflow(request) {
         return Ok(plan);
     }
@@ -97,9 +121,73 @@ pub fn build_plan(
         }
     }
 
+    recalculate_independent_execution(&mut plan);
+    Ok(plan)
+}
+
+fn is_msgint_reserved(request: &PlanRequest) -> bool {
+    request.repository == msgint_contract::MSGINT_REPOSITORY
+        || request.workflow_path == msgint_contract::MSGINT_WORKFLOW_PATH
+}
+
+fn apply_reserved_profiles(
+    plan: &mut WorkflowPlan,
+    profiles: &BTreeMap<String, String>,
+    contract_name: &str,
+) {
+    let mut assigned = BTreeSet::new();
+    for job in &mut plan.jobs {
+        match profiles.get(&job.id) {
+            Some(profile) if job.independent_reasons.is_empty() => {
+                job.independent_supported = true;
+                job.independent_profile = Some(profile.clone());
+                assigned.insert(job.id.clone());
+            }
+            Some(_) => {
+                job.independent_supported = false;
+                job.independent_profile = None;
+            }
+            None => {
+                job.independent_supported = false;
+                job.independent_profile = None;
+                job.independent_reasons.push(format!(
+                    "{contract_name} exact contract has no reviewed profile for job {}",
+                    job.id
+                ));
+            }
+        }
+    }
+    for job_id in profiles.keys() {
+        if !assigned.contains(job_id) && !plan.jobs.iter().any(|job| &job.id == job_id) {
+            plan.warnings.push(format!(
+                "{contract_name} exact contract expected missing job {job_id}"
+            ));
+        }
+    }
+    recalculate_independent_execution(plan);
+}
+
+fn reject_reserved_plan(plan: &mut WorkflowPlan, reasons: &[String]) {
+    for job in &mut plan.jobs {
+        job.independent_supported = false;
+        job.independent_profile = None;
+        job.independent_reasons.extend(reasons.iter().cloned());
+    }
+    plan.independent_executable = false;
+}
+
+fn recalculate_independent_execution(plan: &mut WorkflowPlan) {
     plan.independent_executable =
         plan.immutable_revision && plan.jobs.iter().all(|job| job.independent_supported);
-    Ok(plan)
+}
+
+fn workflow_root_mapping(source: &str) -> Result<Mapping, Vec<String>> {
+    let workflow: Value = serde_yaml::from_str(source)
+        .map_err(|error| vec![format!("workflowYaml is not valid YAML: {error}")])?;
+    workflow
+        .as_mapping()
+        .cloned()
+        .ok_or_else(|| vec!["workflow document must be a YAML mapping".to_string()])
 }
 
 fn is_threefa_bounded_workflow(request: &PlanRequest) -> bool {
