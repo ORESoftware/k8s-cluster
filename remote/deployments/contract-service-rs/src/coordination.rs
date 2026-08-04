@@ -24,6 +24,7 @@ use sea_orm::{
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use tokio::sync::OnceCell;
 
 const DEFAULT_LEASE_MS: u64 = 5 * 60 * 1_000;
 const DEFAULT_RETENTION_MS: u64 = 7 * 24 * 60 * 60 * 1_000;
@@ -42,7 +43,9 @@ pub(crate) struct CoordinationState {
 }
 
 struct CoordinationInner {
-    database: DatabaseConnection,
+    database: OnceCell<DatabaseConnection>,
+    database_url: String,
+    pool_size: u32,
     client: Client,
     fiducia_url: String,
     fiducia_api_key: String,
@@ -84,8 +87,27 @@ pub(crate) struct CoordinationLease {
     fencing_token: u64,
 }
 
+impl CoordinationInner {
+    async fn database(&self) -> Result<&DatabaseConnection, String> {
+        self.database
+            .get_or_try_init(|| async {
+                let mut options = ConnectOptions::new(self.database_url.clone());
+                options
+                    .max_connections(self.pool_size)
+                    .min_connections(0)
+                    .connect_timeout(POSTGRES_TIMEOUT)
+                    .acquire_timeout(POSTGRES_TIMEOUT)
+                    .sqlx_logging(false);
+                Database::connect(options)
+                    .await
+                    .map_err(|error| format!("postgres coordination connection failed: {error}"))
+            })
+            .await
+    }
+}
+
 impl CoordinationState {
-    pub(crate) async fn from_env(client: Client) -> Result<Self, String> {
+    pub(crate) fn from_env(client: Client) -> Result<Self, String> {
         let enabled = crate::env_bool("CONTRACT_COORDINATION_ENABLED", false);
         let required = crate::env_bool("CONTRACT_COORDINATION_REQUIRED", false);
         let metrics = Arc::new(CoordinationMetrics::default());
@@ -118,16 +140,6 @@ impl CoordinationState {
                 .to_string()
         })?;
         let pool_size = crate::env_u64("CONTRACT_COORDINATION_PG_POOL_SIZE", 4).clamp(1, 16) as u32;
-        let mut options = ConnectOptions::new(database_url);
-        options
-            .max_connections(pool_size)
-            .min_connections(0)
-            .connect_timeout(POSTGRES_TIMEOUT)
-            .acquire_timeout(POSTGRES_TIMEOUT)
-            .sqlx_logging(false);
-        let database = Database::connect(options)
-            .await
-            .map_err(|error| format!("postgres coordination connection failed: {error}"))?;
         let owner = crate::env_value(
             "CONTRACT_COORDINATION_HOLDER",
             &crate::env_value("HOSTNAME", "dd-contract-service"),
@@ -139,7 +151,9 @@ impl CoordinationState {
 
         Ok(Self {
             inner: Some(Arc::new(CoordinationInner {
-                database,
+                database: OnceCell::new(),
+                database_url,
+                pool_size,
                 client,
                 fiducia_url,
                 fiducia_api_key,
@@ -169,10 +183,13 @@ impl CoordinationState {
             };
         };
 
-        let postgres = tokio::time::timeout(
-            READINESS_TIMEOUT,
-            ReadinessRow::find_by_statement(readiness_statement()).one(&inner.database),
-        );
+        let postgres = tokio::time::timeout(READINESS_TIMEOUT, async {
+            let database = inner.database().await?;
+            ReadinessRow::find_by_statement(readiness_statement())
+                .one(database)
+                .await
+                .map_err(|error| format!("postgres coordination unavailable: {error}"))
+        });
         // OPTIONS on the write-only claim route is non-mutating, but the Fiducia
         // edge still applies the route's requests:write/admin:write scope check
         // before forwarding it. Axum commonly answers 405 after authorization;
@@ -193,7 +210,7 @@ impl CoordinationState {
             Ok(Ok(Some(_))) | Ok(Ok(None)) => {
                 return Err("postgres coordination readiness returned unexpected value".to_string())
             }
-            Ok(Err(error)) => return Err(format!("postgres coordination unavailable: {error}")),
+            Ok(Err(error)) => return Err(error),
             Err(_) => return Err("postgres coordination readiness timed out".to_string()),
         }
         match fiducia {
@@ -239,7 +256,11 @@ impl CoordinationState {
         let key = format!("solana/broadcast/{digest_hex}");
         let owner = format!("{}:{}", inner.owner, &digest_hex[..16]);
 
-        let transaction = inner.database.begin().await.map_err(|error| {
+        let database = inner.database().await.map_err(|error| {
+            self.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+            error
+        })?;
+        let transaction = database.begin().await.map_err(|error| {
             self.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
             format!("postgres coordination unavailable: {error}")
         })?;
