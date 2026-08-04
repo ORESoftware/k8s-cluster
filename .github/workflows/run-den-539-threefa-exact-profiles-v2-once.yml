@@ -1,0 +1,216 @@
+# Structure-aware successor to the first DEN-539 carrier. Both temporary
+# workflows delete themselves before the permanent product commit.
+name: Run DEN-539 exact 3FA profiles v2 once
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [synchronize]
+    paths:
+      - .github/workflows/run-den-539-threefa-exact-profiles-v2-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-539-threefa-exact-profiles
+  cancel-in-progress: false
+
+jobs:
+  build-product:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-539-threefa-exact-profiles-current-dev-v2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-539-threefa-exact-profiles-current-dev-v2
+          fetch-depth: 1
+          persist-credentials: true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v4.4.0
+        with:
+          node-version: '22.17.0'
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Apply structure-aware fixed profiles and exact binding
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def once(source: str, old: str, new: str, label: str) -> str:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one anchor, found {count}')
+              return source.replace(old, new, 1)
+
+          def insert_spec_after(source: str, profile_name: str, block: str) -> str:
+              marker = f'        name: "{profile_name}",'
+              name_index = source.index(marker)
+              start = source.rfind('    ProfileSpec {\n', 0, name_index)
+              end = source.index('    },\n', name_index) + len('    },\n')
+              return source[:end] + block + source[end:]
+
+          profiles_path = Path('remote/deployments/build-server-rs/src/profiles.rs')
+          profiles = profiles_path.read_text(encoding='utf-8')
+          generated = r'''const RUST_GENERATED_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
+              name: "Generated Rust interface formatting, Clippy, and tests",
+              image: RUST_IMAGE,
+              subdirectory: ".",
+              script: r#"set -euo pipefail
+          manifest=generated/rust/Cargo.toml
+          test -f "$manifest" || { echo "rust-generated-verify requires generated/rust/Cargo.toml" >&2; exit 2; }
+          cargo generate-lockfile --manifest-path "$manifest"
+          rustup component add rustfmt clippy
+          cargo fmt --manifest-path "$manifest" -- --check
+          cargo clippy --locked --manifest-path "$manifest" --all-targets -- -D warnings
+          cargo test --locked --manifest-path "$manifest" --all-targets"#,
+          }];
+
+          '''.replace('          ', '')
+          hardened = r'''const NODE_HARDENED_TEST_STEPS: &[ProfileStep] = &[ProfileStep {
+              name: "Lifecycle-script-free Node repository tests",
+              image: NODE_IMAGE,
+              subdirectory: ".",
+              script: r#"set -euo pipefail
+          if [ ! -f package-lock.json ] && [ ! -f npm-shrinkwrap.json ]; then
+            echo "node-hardened-test requires package-lock.json or npm-shrinkwrap.json" >&2
+            exit 2
+          fi
+          npm ci --ignore-scripts
+          npm test"#,
+          }];
+
+          '''.replace('          ', '')
+          profiles = once(profiles, 'const NODE_VERIFY_STEPS:', generated + 'const NODE_VERIFY_STEPS:', 'generated profile constant')
+          profiles = once(profiles, 'const PYTHON_VERIFY_STEPS:', hardened + 'const PYTHON_VERIFY_STEPS:', 'hardened Node constant')
+          profiles = insert_spec_after(profiles, 'rust-verify', '''    ProfileSpec {
+              name: "rust-generated-verify",
+              platform: "linux",
+              description: "Generated Rust interface lock, formatting, warnings-denied Clippy, and tests",
+              steps: RUST_GENERATED_VERIFY_STEPS,
+              artifact_paths: &[],
+          },
+          '''.replace('          ', ''))
+          profiles = insert_spec_after(profiles, 'node-verify', '''    ProfileSpec {
+              name: "node-hardened-test",
+              platform: "linux",
+              description: "Lifecycle-script-free lockfile installation and complete Node tests",
+              steps: NODE_HARDENED_TEST_STEPS,
+              artifact_paths: &[],
+          },
+          '''.replace('          ', ''))
+          profiles = once(
+              profiles,
+              '        for name in ["rust-verify", "node-verify", "python-verify"] {\n',
+              '        for name in [\n            "rust-verify",\n            "rust-generated-verify",\n            "node-verify",\n            "node-hardened-test",\n            "python-verify",\n        ] {\n',
+              'continuity inventory',
+          )
+          test_anchor = '    #[test]\n    fn rust_verify_has_only_reviewed_monorepo_fallbacks() {\n'
+          test_block = r'''    #[test]
+              fn threefa_profiles_are_fixed_and_non_publishing() {
+                  let node = find("node-hardened-test").expect("node profile");
+                  let node_script = node.steps[0].script;
+                  assert!(node_script.find("npm ci --ignore-scripts").unwrap() < node_script.find("npm test").unwrap());
+                  let rust = find("rust-generated-verify").expect("Rust profile");
+                  let rust_script = rust.steps[0].script;
+                  for command in [
+                      "cargo generate-lockfile --manifest-path \"$manifest\"",
+                      "cargo fmt --manifest-path \"$manifest\" -- --check",
+                      "cargo clippy --locked --manifest-path \"$manifest\" --all-targets -- -D warnings",
+                      "cargo test --locked --manifest-path \"$manifest\" --all-targets",
+                  ] {
+                      assert!(rust_script.contains(command));
+                  }
+                  for script in [node_script, rust_script] {
+                      for forbidden in ["publish", "curl", "wget", "docker", "kubectl", "sudo"] {
+                          assert!(!script.to_ascii_lowercase().contains(forbidden));
+                      }
+                  }
+              }
+
+          '''.replace('          ', '')
+          profiles = once(profiles, test_anchor, test_block + test_anchor, 'profile regression test')
+          profiles_path.write_text(profiles, encoding='utf-8')
+
+          patch_path = Path('remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml')
+          patch = patch_path.read_text(encoding='utf-8')
+          patch = once(patch, 'value: rust-verify,node-verify,python-verify,', 'value: rust-verify,rust-generated-verify,node-verify,node-hardened-test,python-verify,', 'profile allowlist')
+          old_policy = '[{"repository":"https://github.com/ORESoftware/k8s-cluster.git","profiles":["rust-verify"]}]'
+          new_policy = '[{"repository":"https://github.com/ORESoftware/k8s-cluster.git","profiles":["rust-verify"]},{"repository":"https://github.com/3FA-app/3fa-interfaces.git","profiles":["node-hardened-test","rust-generated-verify"]}]'
+          patch = once(patch, old_policy, new_policy, 'exact repository/profile policy')
+          patch_path.write_text(patch, encoding='utf-8')
+
+          Path('remote/tests/general/threefa-build-profile-contract.test.py').write_text(r'''#!/usr/bin/env python3
+          import json, os, re, subprocess, tempfile
+          from pathlib import Path
+          ROOT = Path(__file__).resolve().parents[2]
+          source = (ROOT / "remote/deployments/build-server-rs/src/profiles.rs").read_text()
+          patch = (ROOT / "remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml").read_text()
+          def profile(name):
+              match = re.search(rf"const {name}:.*?script: r#\"(.*?)\"#,\n\}}\];", source, re.S)
+              assert match, name
+              return match.group(1) + "\n"
+          def run(script, root):
+              path = root / ".profile.sh"; path.write_text(script); subprocess.run(["bash", str(path)], cwd=root, env={**os.environ, "HOME": str(root / ".home")}, check=True)
+          policy = json.loads(re.search(r"value: >-\n\s+(\[.*\])", patch).group(1))
+          rule = next(item for item in policy if item["repository"] == "https://github.com/3FA-app/3fa-interfaces.git")
+          assert sorted(rule["profiles"]) == ["node-hardened-test", "rust-generated-verify"]
+          assert "https://github.com/3FA-app/" not in patch
+          with tempfile.TemporaryDirectory() as d:
+              root=Path(d); (root/"package.json").write_text('{"name":"f","version":"1.0.0","scripts":{"test":"node --test"}}\n'); (root/"package-lock.json").write_text('{"name":"f","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"f","version":"1.0.0"}}}\n'); (root/"x.test.js").write_text('const test=require("node:test");test("ok",()=>{});\n'); run(profile("NODE_HARDENED_TEST_STEPS"),root)
+          with tempfile.TemporaryDirectory() as d:
+              root=Path(d); crate=root/"generated/rust"; (crate/"src").mkdir(parents=True); (crate/"Cargo.toml").write_text('[package]\nname="fixture"\nversion="0.1.0"\nedition="2021"\n'); (crate/"src/lib.rs").write_text('pub fn answer()->u32{42}\n#[cfg(test)]mod tests{use super::*;#[test]fn ok(){assert_eq!(answer(),42);}}\n'); run(profile("RUST_GENERATED_VERIFY_STEPS"),root); assert (crate/"Cargo.lock").is_file()
+          print("3FA exact build-profile contract passed")
+          '''.replace('          ', ''))
+          Path('docs/gha-threefa-build-profile-boundary.md').write_text('''# 3FA exact build-profile boundary
+
+          `https://github.com/3FA-app/3fa-interfaces.git` is bound exactly to `node-hardened-test` and `rust-generated-verify`. Exact repository policy overrides prefix fallback; sibling 3FA repositories receive no authority. Callers cannot provide commands, images, publication, signing, environments, OIDC, services, or deployment objects. Native GitHub-hosted or official ARC workflows remain authoritative for TLA+, Dart, publishing, signing, and deployment.
+          '''.replace('          ', ''))
+          Path('.github/workflows/gha-threefa-build-profiles.yml').write_text('''name: 3FA exact build profiles
+          on:
+            pull_request:
+              paths: [remote/deployments/build-server-rs/src/profiles.rs, remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml, remote/tests/general/threefa-build-profile-contract.test.py, docs/gha-threefa-build-profile-boundary.md, .github/workflows/gha-threefa-build-profiles.yml]
+            push:
+              branches: [dev]
+              paths: [remote/deployments/build-server-rs/src/profiles.rs, remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml, remote/tests/general/threefa-build-profile-contract.test.py, docs/gha-threefa-build-profile-boundary.md, .github/workflows/gha-threefa-build-profiles.yml]
+            workflow_dispatch:
+          permissions: {contents: read}
+          jobs:
+            contract:
+              runs-on: ubuntu-24.04
+              timeout-minutes: 20
+              steps:
+                - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+                  with: {persist-credentials: false}
+                - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+                  with: {node-version: '22.17.0'}
+                - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+                  with: {toolchain: '1.90.0', components: 'rustfmt, clippy'}
+                - run: rustfmt --edition 2021 --check remote/deployments/build-server-rs/src/profiles.rs
+                - run: python3 remote/tests/general/threefa-build-profile-contract.test.py
+          '''.replace('          ', ''))
+          for temporary in [Path('.github/workflows/apply-den-539-threefa-exact-profiles-once.yml'), Path('.github/workflows/run-den-539-threefa-exact-profiles-v2-once.yml')]: temporary.unlink(missing_ok=True)
+          PY
+
+      - name: Execute both exact fixed profiles
+        run: |
+          rustfmt --edition 2021 --check remote/deployments/build-server-rs/src/profiles.rs
+          python3 remote/tests/general/threefa-build-profile-contract.test.py
+
+      - name: Publish product-only branch
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          test -z "$(git diff --cached --name-only --diff-filter=ACMRTUXB -- .github/workflows | grep -v '^\.github/workflows/gha-threefa-build-profiles.yml$' || true)"
+          git commit -m 'feat(DEN-539): bind 3FA to exact fixed profiles'
+          git push origin HEAD:agent/den-539-threefa-exact-profiles-current-dev-v2
