@@ -1,0 +1,195 @@
+name: Apply Slack browser current-main product v2 once
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-slack-browser-current-main-product-v2-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-slack-browser-current-main-product-v2-once
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact current-main successor branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/slack-browser-e2e-current-main-v2-20260804
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Compose reviewed fixtures and current-main semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='6673884077e3f3d375c1edbdb47df46db9f35157'
+          source='265f0808398c500d4f4bd1a40446a6024a46b8c5'
+          test "$(git merge-base HEAD "$base")" = "$base"
+          git fetch --no-tags origin "$source"
+
+          for path in \
+            remote/tests/fixtures/slack-command-coordinator.yaml \
+            remote/tests/fixtures/slack-command-mock.mjs \
+            remote/tests/fixtures/slack-command-registry.json
+          do
+            git show "${source}:${path}" >"${path}"
+          done
+
+          git show "${source}:remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs" \
+            >"${RUNNER_TEMP}/reviewed-ai-agent-bridge-contract.mjs"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def splice(source: str, start: str, end: str, replacement: str, label: str) -> str:
+              start_index = source.find(start)
+              end_index = source.find(end, start_index + len(start))
+              if start_index < 0 or end_index < 0:
+                  raise SystemExit(f'{label} boundary drifted')
+              return source[:start_index] + replacement + source[end_index:]
+
+          contract_path = Path('remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs')
+          current_contract = contract_path.read_text(encoding='utf-8')
+          reviewed_contract = Path(
+              '/home/runner/work/_temp/reviewed-ai-agent-bridge-contract.mjs'
+          )
+          if not reviewed_contract.exists():
+              # RUNNER_TEMP is not guaranteed to use the common path.
+              import os
+              reviewed_contract = Path(os.environ['RUNNER_TEMP']) / 'reviewed-ai-agent-bridge-contract.mjs'
+          reviewed = reviewed_contract.read_text(encoding='utf-8')
+
+          current_start = "test('bridge deployment builds and executes the current Rust binary through a checked path', () => {"
+          next_test = "test('non-loopback bridge bind has a required secret-backed API bearer', () => {"
+          reviewed_start = 'function shellStringAssignment(name) {'
+          reviewed_start_index = reviewed.find(reviewed_start)
+          reviewed_end_index = reviewed.find(next_test, reviewed_start_index)
+          if reviewed_start_index < 0 or reviewed_end_index < 0:
+              raise SystemExit('reviewed executable contract boundary drifted')
+          reviewed_block = reviewed[reviewed_start_index:reviewed_end_index]
+          current_contract = splice(
+              current_contract,
+              current_start,
+              next_test,
+              reviewed_block,
+              'current executable contract',
+          )
+          contract_path.write_text(current_contract, encoding='utf-8')
+
+          playwright_path = Path('remote/tests/ui/slack-agent-command.playwright.test.mjs')
+          playwright = playwright_path.read_text(encoding='utf-8')
+          if 'trigger-claude-direct' in playwright:
+              raise SystemExit('direct Claude scenario already exists unexpectedly')
+
+          duplicate_marker = "    const duplicateResponse = await postSigned(request, '/slack/commands/ores-chatgpt', chatgptBody);"
+          if playwright.count(duplicate_marker) != 1:
+              raise SystemExit('duplicate request marker drifted')
+          direct_scenario = """    const claudeBody = encodedCommand({
+                command: '/ores-claude',
+                text: 'Implement DEN-1231 with tests',
+                trigger: 'trigger-claude-direct',
+              });
+              const claudeResponse = await postSigned(request, '/slack/commands/ores-claude', claudeBody);
+              assert.equal(claudeResponse.status(), 200, await claudeResponse.text());
+              assert.match((await claudeResponse.json()).text, /Accepted Claude run/);
+              state = await waitFor(
+                request,
+                (candidate) => candidate.messages.length === 3,
+                'Direct Claude dispatch status was not posted',
+              );
+              await verifyDispatch(request, state.messages[2].text, {
+                expectedProvider: 'claude',
+                expectedAgent: 'claude-fable-5',
+                expectedRepository: 'ORESoftware/ai-agent-bridge.rs',
+                expectedIssue: 'DEN-1231',
+                expectedAction: 'implement',
+              });
+
+          """
+          playwright = playwright.replace(duplicate_marker, direct_scenario + duplicate_marker, 1)
+
+          replacements = [
+              (
+                  "    assert.equal(state.messages.length, 2, 'duplicate Slack request posted a second status');",
+                  "    assert.equal(state.messages.length, 3, 'duplicate Slack request posted a second status');",
+                  'duplicate status count',
+              ),
+              (
+                  '    assert.equal(state.messages.length, 2);',
+                  '    assert.equal(state.messages.length, 3);',
+                  'final message count',
+              ),
+              (
+                  "    assert.equal(state.historyCalls, 2, 'one bounded history read is performed per live dispatch');",
+                  "    assert.equal(state.historyCalls, 3, 'one bounded history read is performed per live dispatch');",
+                  'history call count',
+              ),
+              (
+                  "    assert.equal(await page.getByTestId('message-count').innerText(), '2');",
+                  "    assert.equal(await page.getByTestId('message-count').innerText(), '3');",
+                  'browser message count',
+              ),
+          ]
+          for old, new, label in replacements:
+              count = playwright.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label} drifted: expected one match, got {count}')
+              playwright = playwright.replace(old, new, 1)
+
+          playwright_path.write_text(playwright, encoding='utf-8')
+          PY
+
+      - name: Validate the exact semantic product
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          node --check remote/tests/fixtures/slack-command-mock.mjs
+          node --check remote/tests/ui/slack-agent-command.playwright.test.mjs
+          node --check remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs
+          node --test remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs
+
+          workflow='.github/workflows/slack-agent-command-browser-e2e.yml'
+          grep -Fq 'ref: 0ba7d2d4eb8c44583503d4567af2de1f73bc5598' "$workflow"
+          grep -Fq 'ref: 29e827244a517a54c3c861a9654b355b584140df' "$workflow"
+          docker run --rm \
+            -v "$PWD:/repo" \
+            -w /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            "$workflow"
+
+          grep -Fq "text: 'Implement DEN-1231 with tests'" \
+            remote/tests/ui/slack-agent-command.playwright.test.mjs
+          grep -Fq "expectedAction: 'implement'" \
+            remote/tests/ui/slack-agent-command.playwright.test.mjs
+          grep -Fq "shellStringAssignment('bin_name')" \
+            remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs
+
+      - name: Commit and push only the five necessary product files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            remote/tests/fixtures/slack-command-coordinator.yaml \
+            remote/tests/fixtures/slack-command-mock.mjs \
+            remote/tests/fixtures/slack-command-registry.json \
+            remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs \
+            remote/tests/ui/slack-agent-command.playwright.test.mjs
+          git diff --cached --check
+          expected=$'remote/tests/fixtures/slack-command-coordinator.yaml\nremote/tests/fixtures/slack-command-mock.mjs\nremote/tests/fixtures/slack-command-registry.json\nremote/tests/general/ai-agent-bridge-k8s-contract.test.mjs\nremote/tests/ui/slack-agent-command.playwright.test.mjs'
+          actual="$(git diff --cached --name-only | sort)"
+          test "$actual" = "$expected"
+          git commit -m 'test(slack): restack the identity-bound browser harness'
+          git push origin HEAD:agent/slack-browser-e2e-current-main-v2-20260804
