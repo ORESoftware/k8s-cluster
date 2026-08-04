@@ -464,26 +464,33 @@ export function sha256(value) {
 }
 
 export function buildDryRunReport({ category, providers, records, counters }) {
-  const normalizedRecords = records.map((record) => ({
-    businessName: String(record.businessName ?? '').slice(0, 200),
-    confidence: Number(record.confidence ?? 0),
-    domain: String(record.domain ?? ''),
-    emailDomain: String(record.email ?? '').split('@')[1] ?? '',
-    emailSha256: sha256(String(record.email ?? '').toLowerCase()),
-    phones: [...new Set(record.phones ?? [])].sort(),
-    provider: String(record.provider ?? ''),
-    providerRank: Number(record.providerRank ?? 0),
-    query: String(record.query ?? '').slice(0, 500),
-    queryId: String(record.queryId ?? ''),
-    sourceUrl: String(record.sourceUrl ?? ''),
-    verificationStatus: String(record.verificationStatus ?? 'unverified'),
-  })).sort((a, b) =>
+  const normalizedRecords = records.map((record) => {
+    const email = String(record.email ?? '').toLowerCase();
+    const emailDomain = email.split('@')[1] ?? '';
+    const phones = [...new Set(record.phones ?? [])]
+      .map((phone) => sha256(String(phone)))
+      .sort();
+    return {
+      businessNameSha256: sha256(String(record.businessName ?? '').slice(0, 200)),
+      confidence: Number(record.confidence ?? 0),
+      domainSha256: sha256(String(record.domain ?? '').toLowerCase()),
+      emailDomainSha256: sha256(emailDomain),
+      emailSha256: sha256(email),
+      phoneSha256: phones,
+      provider: String(record.provider ?? ''),
+      providerRank: Number(record.providerRank ?? 0),
+      queryId: String(record.queryId ?? ''),
+      querySha256: sha256(String(record.query ?? '').slice(0, 500)),
+      sourceUrlSha256: sha256(String(record.sourceUrl ?? '')),
+      verificationStatus: String(record.verificationStatus ?? 'unverified'),
+    };
+  }).sort((a, b) =>
     a.emailSha256.localeCompare(b.emailSha256)
-    || a.domain.localeCompare(b.domain)
-    || a.sourceUrl.localeCompare(b.sourceUrl));
+    || a.domainSha256.localeCompare(b.domainSha256)
+    || a.sourceUrlSha256.localeCompare(b.sourceUrlSha256));
 
   const body = {
-    category: String(category ?? ''),
+    categorySha256: sha256(String(category ?? '')),
     counters: stableValue(counters ?? {}),
     providers: (providers ?? []).map((provider) => ({
       enabled: Boolean(provider.enabled),
