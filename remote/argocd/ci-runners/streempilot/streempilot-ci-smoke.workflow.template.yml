@@ -1,7 +1,7 @@
 # INERT TEMPLATE: copy into a trusted first-party StreemPilot repository only
 # after the scale set is registered. Keep workflow_dispatch-only for the first
-# proof; never expose self-hosted runners to untrusted fork pull requests.
-name: StreemPilot CI self-hosted smoke
+# proof; never expose ARC runners to untrusted fork pull requests.
+name: StreemPilot CI ARC smoke
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: streempilot-ci-self-hosted-smoke
+  group: streempilot-ci-arc-smoke
   cancel-in-progress: false
 
 jobs:
