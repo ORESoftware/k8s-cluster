@@ -73,7 +73,10 @@ test('the compiler emits only immutable fixed-profile build requests', async () 
   assert.match(source, /repo_url: format!\("https:\/\/github\.com\/\{\}\.git", plan\.repository\)/);
   assert.match(source, /git_ref: Some\(plan\.revision\.clone\(\)\)/);
   assert.match(source, /profile: job\.profile\.clone\(\)/);
-  assert.match(source, /request_id: Some\(format!\("gha:\{\}:\{\}", plan\.plan_id, job\.id\)\)/);
+  assert.match(
+    source,
+    /request_id:\s*Some\(format!\(\s*"gha:\{\}:\{\}",\s*plan\.plan_id,\s*job\.id\s*\)\s*\)/s,
+  );
   assert.match(source, /validate_build_request\(&state\.build\.config, &request\)/);
   assert.match(source, /enqueue_build\(&state\.build, build_request, "gha-yaml"\)/);
   assert.doesNotMatch(source, /command:\s|runner_image|build_args: Some|deploy: Some/);
