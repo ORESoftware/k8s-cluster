@@ -108,7 +108,7 @@ def main() -> None:
             "requiresControllerConfirmation",
             "Siemens-equipped machine",
             "first-piece inspection",
-            "Named model support is planning metadata, not live-machine certification",
+            "Named support is **not** remote-control certification",
         ),
         "turning documentation",
     )
