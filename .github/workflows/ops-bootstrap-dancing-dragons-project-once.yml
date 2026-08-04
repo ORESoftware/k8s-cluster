@@ -1,3 +1,4 @@
+# Activated after the workflow was established on the default branch.
 name: Bootstrap dancing-dragons Project once
 run-name: Bootstrap dancing-dragons canonical Project @ ${{ github.sha }}
 
