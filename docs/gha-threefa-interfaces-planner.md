@@ -36,7 +36,9 @@ cargo clippy --locked --manifest-path generated/rust/Cargo.toml --all-targets --
 cargo test --locked --manifest-path generated/rust/Cargo.toml --all-targets
 ```
 
-Pinned checkout, Node setup, and Rust toolchain actions may appear because the independent fixed profiles own the actual toolchain and command execution. Mutable action refs, secret expressions, service or job containers, environment approvals, strategy matrices, custom shells, working directories, publication, and caller-selected commands fail closed.
+The fixture pins checkout, Node setup, and Rust toolchain actions because the independent fixed profiles own the actual toolchain and command execution. This PR enforces exact run-command sequences and immutable repository revisions. General setup-action reference immutability is tracked separately so unrelated existing fixtures are not silently reclassified in this change.
+
+Secret expressions, service or job containers, environment approvals, strategy matrices, custom shells, working directories, publication, and caller-selected commands fail closed.
 
 ## Separation from execution
 
