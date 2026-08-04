@@ -5,6 +5,7 @@ on:
     branches: [dev]
     types: [opened, synchronize, reopened]
     paths:
+      - .github/workflows/den-1606-transport-capacity-semantic-merge-once.yml
       - .github/workflows/den-1606-transport-capacity-pr-finalize-once.yml
 
 permissions:
