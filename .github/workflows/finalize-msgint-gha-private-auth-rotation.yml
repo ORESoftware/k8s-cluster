@@ -1,0 +1,96 @@
+name: Finalize Messaging Intel GHA private auth rotation
+
+on:
+  push:
+    branches:
+      - agent/msgint-gha-private-auth-rotation-20260804
+    paths:
+      - scripts/apply-msgint-gha-private-auth-rotation.py
+      - .github/workflows/finalize-msgint-gha-private-auth-rotation.yml
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - scripts/apply-msgint-gha-private-auth-rotation.py
+      - .github/workflows/finalize-msgint-gha-private-auth-rotation.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-msgint-gha-private-auth-rotation
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name == 'push' || github.head_ref == 'agent/msgint-gha-private-auth-rotation-20260804')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/msgint-gha-private-auth-rotation-20260804
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Apply the reviewed source transformation
+        run: python3 scripts/apply-msgint-gha-private-auth-rotation.py
+
+      - name: Format and test the continuity server
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          cargo fmt --all
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets
+
+      - name: Format and compile the build-server credential path
+        working-directory: remote/deployments/build-server-rs
+        run: |
+          cargo fmt --all
+          cargo check --locked --all-targets
+          cargo test --locked git_credential_tests -- --nocapture
+          cargo test --locked profiles::tests -- --nocapture
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - name: Validate deployment and token-file contracts
+        working-directory: remote/tests
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec tsx --test general/gha-clone-server-config.test.ts
+
+      - name: Remove one-shot transformation scaffolding
+        run: |
+          rm scripts/apply-msgint-gha-private-auth-rotation.py
+          rm .github/workflows/finalize-msgint-gha-private-auth-rotation.yml
+
+      - name: Commit clean source changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "No source changes produced" >&2
+            exit 1
+          fi
+          git commit -m "feat: reload private repository tokens without restarts"
+          git push origin HEAD:agent/msgint-gha-private-auth-rotation-20260804
