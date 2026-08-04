@@ -10,6 +10,7 @@ on:
       - reopened
     paths:
       - scripts/ci/apply-msgint-clean-continuity.py
+      - scripts/ci/fix-msgint-clean-supplement.py
       - .github/workflows/finalize-msgint-clean-continuity.yml
 
 permissions:
@@ -38,6 +39,8 @@ jobs:
           git fetch --no-tags --depth=1 origin 826342499235e6938c019aca33ddf95119982b4c
           python3 -m py_compile scripts/ci/apply-msgint-clean-continuity.py
           python3 scripts/ci/apply-msgint-clean-continuity.py
+          python3 -m py_compile scripts/ci/fix-msgint-clean-supplement.py
+          python3 scripts/ci/fix-msgint-clean-supplement.py
 
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
@@ -152,6 +155,7 @@ jobs:
         run: |
           set -euo pipefail
           git rm scripts/ci/apply-msgint-clean-continuity.py
+          git rm scripts/ci/fix-msgint-clean-supplement.py
           git rm .github/workflows/finalize-msgint-clean-continuity.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
