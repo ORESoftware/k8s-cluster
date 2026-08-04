@@ -1,0 +1,156 @@
+name: Finalize exact repository/profile policy once
+
+on:
+  push:
+    branches:
+      - agent/build-server-exact-profile-policy-20260804
+    paths:
+      - .github/workflows/fix-profile-policy-raw-size-once.yml
+  pull_request:
+    branches: [dev]
+    types: [synchronize]
+    paths:
+      - .github/workflows/fix-profile-policy-raw-size-once.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: exact-profile-policy-single-writer
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name != 'pull_request' ||
+        (github.event.pull_request.head.repo.full_name == github.repository &&
+         github.event.pull_request.head.ref == 'agent/build-server-exact-profile-policy-20260804'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact writable policy branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/build-server-exact-profile-policy-20260804
+          persist-credentials: true
+          fetch-depth: 0
+          show-progress: false
+
+      - name: Enforce the raw UTF-8 byte bound before trimming
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/deployments/build-server-rs/src/config/profile_policy.rs')
+          source = path.read_text(encoding='utf-8')
+          start_marker = '    let Some(raw) = exact_rules_json'
+          end_marker = '    let rules: Vec<ExactRepositoryRule> ='
+          start = source.find(start_marker)
+          end = source.find(end_marker, start)
+          if start < 0 or end < 0 or end <= start:
+              raise SystemExit('unable to locate the exact policy raw-input boundary')
+          replacement = '''    let Some(configured) = exact_rules_json else {
+              return Ok(compiled);
+          };
+          if configured.len() > MAX_POLICY_BYTES {
+              return Err(format!(
+                  "BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON exceeds {MAX_POLICY_BYTES} bytes"
+              ));
+          }
+          let raw = configured.trim();
+          if raw.is_empty() {
+              return Ok(compiled);
+          }
+
+          '''
+          source = source[:start] + replacement + source[end:]
+
+          old_test = '''        let oversized = " ".repeat(MAX_POLICY_BYTES + 1);
+              assert!(compile_rules(Vec::new(), Some(&oversized), &globally_allowed()).is_err());
+          '''
+          new_test = '''        let valid = r#"[{"repository":"https://github.com/ORESoftware/k8s-cluster.git","profiles":["rust-verify"]}]"#;
+              let at_limit = format!("{valid}{}", " ".repeat(MAX_POLICY_BYTES - valid.len()));
+              assert_eq!(at_limit.len(), MAX_POLICY_BYTES);
+              assert!(compile_rules(Vec::new(), Some(&at_limit), &globally_allowed()).is_ok());
+
+              let oversized = format!("{at_limit} ");
+              let error = compile_rules(Vec::new(), Some(&oversized), &globally_allowed())
+                  .expect_err("raw policy bytes above the bound must fail before trimming");
+              assert!(error.contains("exceeds"));
+
+              let oversized_multibyte = "é".repeat((MAX_POLICY_BYTES / 2) + 1);
+              assert!(oversized_multibyte.chars().count() < MAX_POLICY_BYTES);
+              assert!(oversized_multibyte.len() > MAX_POLICY_BYTES);
+              assert!(compile_rules(
+                  Vec::new(),
+                  Some(&oversized_multibyte),
+                  &globally_allowed(),
+              )
+              .is_err());
+          '''
+          if source.count(old_test) != 1:
+              raise SystemExit('policy byte-bound regression test drifted')
+          source = source.replace(old_test, new_test, 1)
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Setup Rust 1.90.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate the complete build-server policy surface
+        working-directory: remote/deployments/build-server-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Validate GitOps and adversarial policy contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test remote/tests/general/build-server-profile-repository-policy.test.mjs
+          git diff --check
+          if git grep -nE '^(<<<<<<< |=======|>>>>>>> )' -- \
+            docs/build-server-profile-repository-policy.md \
+            remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml \
+            remote/deployments/build-server-rs \
+            remote/tests/general/build-server-profile-repository-policy.test.mjs; then
+            echo 'git conflict marker detected' >&2
+            exit 1
+          fi
+
+      - name: Remove all temporary fixers and commit the seven-file product
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            .github/workflows/fix-profile-policy-raw-size-once.yml \
+            .github/workflows/den-1550-policy-byte-bound-finalize-once.yml \
+            .github/workflows/repair-build-server-profile-policy-size-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          expected=$'.github/workflows/gha-clone-server.yml\ndocs/build-server-profile-repository-policy.md\nremote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml\nremote/deployments/build-server-rs/src/config.rs\nremote/deployments/build-server-rs/src/config/profile_policy.rs\nremote/deployments/build-server-rs/src/validation.rs\nremote/tests/general/build-server-profile-repository-policy.test.mjs'
+          actual="$(git diff --cached --name-only "$(git merge-base HEAD origin/dev)" | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'unexpected final product paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          git commit -m 'security(DEN-1550): bind exact repositories to reviewed profiles'
+          git push origin HEAD:agent/build-server-exact-profile-policy-20260804
