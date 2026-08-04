@@ -7,6 +7,11 @@ on:
       - agent/den-1550-raw-profile-policy-bytes
     paths:
       - '.github/workflows/apply-den-1550-raw-profile-policy-bytes.yml'
+  pull_request:
+    branches: [dev]
+    types: [synchronize]
+    paths:
+      - '.github/workflows/apply-den-1550-raw-profile-policy-bytes.yml'
   workflow_dispatch: {}
 
 permissions:
@@ -18,7 +23,11 @@ concurrency:
 
 jobs:
   materialize-validate-clean:
-    if: github.actor != 'github-actions[bot]'
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name != 'pull_request' ||
+        (github.event.pull_request.head.repo.full_name == github.repository &&
+         github.event.pull_request.head.ref == 'agent/den-1550-raw-profile-policy-bytes'))
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     steps:
