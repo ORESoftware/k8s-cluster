@@ -67,7 +67,16 @@ test("verify and build environments can be compared by exact key and value", () 
 });
 
 test("an unrelated step cannot satisfy the Astro env contract", () => {
-  const withoutRealOne = workflow.replace("          PUBLIC_REAL_ONE: value-one\n        with:", "        with:");
+  const buildEnv = [
+    "          PUBLIC_REAL_ONE: value-one",
+    "          PUBLIC_REAL_TWO: value-two",
+    "        with:",
+  ].join("\n");
+  assert.ok(workflow.includes(buildEnv), "fixture must contain the intended build env block");
+  const withoutRealOne = workflow.replace(
+    buildEnv,
+    ["          PUBLIC_REAL_TWO: value-two", "        with:"].join("\n"),
+  );
   const keys = publicEnvKeysForNamedStep(withoutRealOne, buildStepName);
   assert.equal(keys.has("PUBLIC_REAL_ONE"), false);
   assert.equal(keys.has("PUBLIC_UNRELATED"), false);
