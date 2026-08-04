@@ -72,7 +72,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ORESoftware/ai-agent-bridge.rs
-          ref: 0ba7d2d4eb8c44583503d4567af2de1f73bc5598
+          ref: 63d4d9be4343d3eeba02205ec64dd443716c5249
           path: .e2e/bridge
           fetch-depth: 1
           persist-credentials: false
@@ -82,7 +82,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ORESoftware/ai-agent-coordinator.rs
-          ref: 29e827244a517a54c3c861a9654b355b584140df
+          ref: f0adef6f384bac8024da59a26cb05e2fb9caac98
           path: .e2e/coordinator
           fetch-depth: 1
           persist-credentials: false
@@ -129,6 +129,19 @@ jobs:
             tools/google-chat-space-export/test/import-plan.test.mjs \
             | tee "$RUNNER_TEMP/slack-command-e2e-results/google-chat-tests.tap"
 
+      - name: Verify exact Slack run idempotency source contracts
+        run: |
+          set -euo pipefail
+          grep -F '.header("idempotency-key", &request.run_id)' \
+            .e2e/bridge/src/slack_commands_parts/part4.rs
+          if grep -F 'slack-command:{}' \
+            .e2e/bridge/src/slack_commands_parts/part4.rs; then
+            echo 'bridge still prefixes the Slack run idempotency key' >&2
+            exit 1
+          fi
+          grep -R -F 'slack_agent_run' .e2e/coordinator/src >/dev/null
+          grep -R -F 'payload.run_id' .e2e/coordinator/src >/dev/null
+
       - name: Run AI bridge and workflow contracts
         run: |
           set -euo pipefail
@@ -147,8 +160,8 @@ jobs:
 
       - name: Record and verify tested revisions
         env:
-          BRIDGE_REF: 0ba7d2d4eb8c44583503d4567af2de1f73bc5598
-          COORDINATOR_REF: 29e827244a517a54c3c861a9654b355b584140df
+          BRIDGE_REF: 63d4d9be4343d3eeba02205ec64dd443716c5249
+          COORDINATOR_REF: f0adef6f384bac8024da59a26cb05e2fb9caac98
         run: |
           set -euo pipefail
           bridge_commit="$(git -C .e2e/bridge rev-parse HEAD)"
@@ -163,12 +176,13 @@ jobs:
             --arg coordinator_commit "$coordinator_commit" \
             --arg postgres_image "$POSTGRES_TEST_IMAGE" \
             '{
-              schema_version: 3,
+              schema_version: 4,
               harness_commit: $harness,
               bridge_ref: $bridge_ref,
               bridge_commit: $bridge_commit,
               coordinator_ref: $coordinator_ref,
               coordinator_commit: $coordinator_commit,
+              idempotency_contract: "header_equals_payload_run_id",
               postgres_image: $postgres_image
             }' >"$RUNNER_TEMP/slack-command-e2e-results/revisions.json"
 
@@ -186,6 +200,9 @@ jobs:
             echo '## Slack agent command browser E2E'
             echo
             echo "- Harness: \`${GITHUB_SHA}\`"
+            echo '- Bridge: `63d4d9be4343d3eeba02205ec64dd443716c5249`'
+            echo '- Coordinator: `f0adef6f384bac8024da59a26cb05e2fb9caac98`'
+            echo '- Idempotency: `Idempotency-Key == payload.run_id`'
             echo "- Run attempt: \`${GITHUB_RUN_ATTEMPT}\`"
             echo "- Evidence artifact: \`slack-agent-command-browser-e2e-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}\`"
           } >>"$GITHUB_STEP_SUMMARY"
