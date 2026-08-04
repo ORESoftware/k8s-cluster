@@ -7,7 +7,10 @@ import pathlib
 import subprocess
 import tempfile
 
-from den977_semantic_resolvers import RESOLVERS
+from den977_semantic_resolvers import RESOLVERS, WORKFLOW_PATH
+from den977_workflow_resolver_fix import resolve_workflow
+
+RESOLVERS[WORKFLOW_PATH] = resolve_workflow
 
 CURRENT_DEV_SHA = "208bdcbe00f17a2a4a17548b28fe7a563a66445e"
 REVIEWED_MSGINT_SHA = "bf4fca2e22937caf18a07dc1bd7c4494fff4b95c"
