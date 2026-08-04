@@ -311,10 +311,7 @@ async fn mock_build_status(Path(id): Path<String>) -> Json<Value> {
     }))
 }
 
-fn execution_env(
-    github: &MockGithub,
-    build: &MockBuildServer,
-) -> BTreeMap<&'static str, String> {
+fn execution_env(github: &MockGithub, build: &MockBuildServer) -> BTreeMap<&'static str, String> {
     let mut env = BTreeMap::new();
     env.insert("GHA_CLONE_AUTH_SECRET", AUTH_SECRET.to_string());
     env.insert(
@@ -322,10 +319,7 @@ fn execution_env(
         WEBHOOK_SECRET.to_string(),
     );
     env.insert("GHA_CLONE_GITHUB_TOKEN", GITHUB_TOKEN.to_string());
-    env.insert(
-        "GHA_CLONE_GITHUB_API_BASE_URL",
-        github.base_url.clone(),
-    );
+    env.insert("GHA_CLONE_GITHUB_API_BASE_URL", github.base_url.clone());
     env.insert("GHA_CLONE_BUILD_SERVER_URL", build.base_url.clone());
     env.insert("GHA_CLONE_BUILD_SERVER_AUTH", BUILD_AUTH.to_string());
     env.insert("GHA_CLONE_ALLOWED_REPOSITORIES", REPOSITORY.to_string());
@@ -343,10 +337,7 @@ fn execution_env(
         "GHA_CLONE_WEBHOOK_IGNORED_WORKFLOWS",
         "GHA continuity server".to_string(),
     );
-    env.insert(
-        "GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS",
-        "3600".to_string(),
-    );
+    env.insert("GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS", "3600".to_string());
     env.insert("GHA_CLONE_MAX_WEBHOOK_DELIVERIES", "32".to_string());
     env.insert("GHA_CLONE_BUILD_POLL_SECONDS", "0".to_string());
     env.insert("GHA_CLONE_BUILD_TIMEOUT_SECONDS", "5".to_string());
@@ -571,7 +562,10 @@ async fn workflow_run_policy_rejections_never_fetch_or_dispatch() {
 
     assert!(github.state.requests.lock().await.is_empty());
     assert!(build.state.submissions.lock().await.is_empty());
-    assert_eq!(health(&client, &server).await["webhookDeliveriesRetained"], 0);
+    assert_eq!(
+        health(&client, &server).await["webhookDeliveriesRetained"],
+        0
+    );
 }
 
 #[tokio::test]
@@ -591,7 +585,10 @@ async fn transient_github_failure_does_not_consume_delivery_identity() {
         .as_str()
         .unwrap()
         .contains("GitHub workflow fetch returned HTTP 500"));
-    assert_eq!(health(&client, &server).await["webhookDeliveriesRetained"], 0);
+    assert_eq!(
+        health(&client, &server).await["webhookDeliveriesRetained"],
+        0
+    );
     assert!(build.state.submissions.lock().await.is_empty());
 
     let retry = post_workflow_run(&client, &server, delivery, &payload).await;
@@ -606,7 +603,10 @@ async fn transient_github_failure_does_not_consume_delivery_identity() {
 
     assert_eq!(github.state.requests.lock().await.len(), 2);
     assert_eq!(build.state.submissions.lock().await.len(), 1);
-    assert_eq!(health(&client, &server).await["webhookDeliveriesRetained"], 1);
+    assert_eq!(
+        health(&client, &server).await["webhookDeliveriesRetained"],
+        1
+    );
 }
 
 #[tokio::test]
@@ -638,7 +638,10 @@ async fn concurrent_duplicate_deliveries_dispatch_exactly_once() {
 
     assert_eq!(github.state.requests.lock().await.len(), 2);
     assert_eq!(build.state.submissions.lock().await.len(), 1);
-    assert_eq!(health(&client, &server).await["webhookDeliveriesRetained"], 1);
+    assert_eq!(
+        health(&client, &server).await["webhookDeliveriesRetained"],
+        1
+    );
 }
 
 #[tokio::test]

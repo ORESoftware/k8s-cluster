@@ -170,7 +170,10 @@ fn every_unallowlisted_rule_is_reported_deterministically() {
 #[test]
 fn empty_invalid_and_duplicate_workflow_paths_fail_before_network_startup() {
     let cases = [
-        (r#"{"owner/repo":[]}"#, "must contain at least one workflow path"),
+        (
+            r#"{"owner/repo":[]}"#,
+            "must contain at least one workflow path",
+        ),
         (r#"{"owner/repo":["../ci.yml"]}"#, "contains invalid path"),
         (
             r#"{"owner/repo":[".github/workflows/../ci.yml"]}"#,

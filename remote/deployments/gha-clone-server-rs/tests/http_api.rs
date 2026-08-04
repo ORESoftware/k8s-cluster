@@ -428,10 +428,7 @@ async fn webhook_guards_reject_bad_inputs_before_any_github_fetch() {
         .expect("webhook without delivery");
     let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(
-        value["error"],
-        "missing or invalid X-GitHub-Delivery UUID"
-    );
+    assert_eq!(value["error"], "missing or invalid X-GitHub-Delivery UUID");
 
     let response = client
         .post(format!("{}/webhooks/github", server.base_url))
@@ -445,10 +442,7 @@ async fn webhook_guards_reject_bad_inputs_before_any_github_fetch() {
         .expect("webhook with invalid delivery");
     let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(
-        value["error"],
-        "missing or invalid X-GitHub-Delivery UUID"
-    );
+    assert_eq!(value["error"], "missing or invalid X-GitHub-Delivery UUID");
 
     let invalid_json = b"{";
     let signature = webhook_signature(invalid_json);

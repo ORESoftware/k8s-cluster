@@ -123,10 +123,7 @@ impl Config {
                 "GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS",
                 86_400,
             )?,
-            max_webhook_deliveries: env_nonzero_usize(
-                "GHA_CLONE_MAX_WEBHOOK_DELIVERIES",
-                4_096,
-            )?,
+            max_webhook_deliveries: env_nonzero_usize("GHA_CLONE_MAX_WEBHOOK_DELIVERIES", 4_096)?,
         })
     }
 
@@ -1281,7 +1278,7 @@ async fn shutdown_signal() {
             .expect("install SIGTERM handler")
             .recv()
             .await;
-    }
+    };
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
     tokio::select! {
@@ -1421,10 +1418,8 @@ mod tests {
         )]);
         assert!(validate_workflow_configuration(&allowed, &valid).is_ok());
 
-        let invalid_path = BTreeMap::from([(
-            "owner/repo".to_string(),
-            vec!["../ci.yml".to_string()],
-        )]);
+        let invalid_path =
+            BTreeMap::from([("owner/repo".to_string(), vec!["../ci.yml".to_string()])]);
         assert!(validate_workflow_configuration(&allowed, &invalid_path)
             .unwrap_err()
             .contains("invalid path"));
