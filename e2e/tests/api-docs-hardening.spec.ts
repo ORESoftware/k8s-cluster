@@ -1,11 +1,5 @@
 import { expect, test } from "@playwright/test";
 
-function expectCommonHeaders(
-  response: Awaited<ReturnType<Parameters<typeof test>[1] extends never ? never : never>>,
-): never {
-  throw new Error(`unreachable: ${String(response)}`);
-}
-
 function assertHeaders(
   headers: Record<string, string>,
   { privateRoute = false, html = false } = {},
@@ -105,7 +99,6 @@ test("documentation routes reject unsupported methods without reflecting credent
     expect(response.status()).toBe(405);
     assertHeaders(response.headers(), {
       privateRoute: path.startsWith("/internal/"),
-      html: false,
     });
     expect(await response.text()).not.toContain("browser-server-secret");
   }
