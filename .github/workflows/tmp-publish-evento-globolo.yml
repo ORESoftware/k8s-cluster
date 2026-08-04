@@ -56,10 +56,67 @@ jobs:
 
           script_url="https://raw.githubusercontent.com/ORESoftware/k8s-cluster/${GITHUB_SHA}/scripts/ops/publish_evento_globolo_repositories.sh"
           source_base_url="https://raw.githubusercontent.com/ORESoftware/k8s-cluster/${GITHUB_SHA}/scripts/ops/assets/evento-globolo-source-2026-08-04.tar.gz.b64"
+          remote_wrapper="$RUNNER_TEMP/run-evento-globolo-publisher.sh"
+
+          cat > "$remote_wrapper" <<'REMOTE_EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          umask 077
+
+          : "${SCRIPT_URL:?SCRIPT_URL is required}"
+          : "${SCRIPT_SHA256:?SCRIPT_SHA256 is required}"
+          : "${SOURCE_BASE_URL:?SOURCE_BASE_URL is required}"
+          : "${SOURCE_SHA256:?SOURCE_SHA256 is required}"
+
           remote_script=/tmp/publish-evento-globolo-repositories.sh
           remote_log=/tmp/publish-evento-globolo-repositories.log
 
-          remote_command="set -Eeuo pipefail; umask 077; curl -fsSL '$script_url' -o '$remote_script'; printf '%s  %s\\n' '$SCRIPT_SHA256' '$remote_script' | sha256sum -c -; chown ec2-user:ec2-user '$remote_script'; chmod 700 '$remote_script'; status=0; sudo -u ec2-user -H env SOURCE_BASE_URL='$source_base_url' SOURCE_SHA256='$SOURCE_SHA256' bash -lc 'unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS; exec bash /tmp/publish-evento-globolo-repositories.sh' >'$remote_log' 2>&1 || status=\$?; tail -c 30000 '$remote_log'; rm -f '$remote_script' '$remote_log'; exit \$status"
+          cleanup() {
+            rm -f "$remote_script" "$remote_log"
+          }
+          trap cleanup EXIT
+
+          curl --fail --silent --show-error --location "$SCRIPT_URL" -o "$remote_script"
+          printf '%s  %s\n' "$SCRIPT_SHA256" "$remote_script" | sha256sum -c -
+          chmod 700 "$remote_script"
+
+          auth_user=''
+          auth_home=''
+          while IFS=: read -r candidate _ uid _ _ home _; do
+            [[ "$uid" =~ ^[0-9]+$ ]] || continue
+            test -d "$home" || continue
+            login="$(
+              sudo -u "$candidate" -H \
+                env -u GH_TOKEN -u GITHUB_TOKEN -u GITHUB_REPOSITORY_ADMIN_TOKEN -u GIT_ASKPASS \
+                gh api user --jq .login 2>/dev/null || true
+            )"
+            if test "$login" = ORESoftware; then
+              auth_user="$candidate"
+              auth_home="$home"
+              break
+            fi
+          done < /etc/passwd
+
+          test -n "$auth_user" || {
+            printf 'publisher status=failed stage=locate-owner-gh-session detail=no-authenticated-os-account\n' >&2
+            exit 65
+          }
+          printf 'authenticated_os_user=%s login=ORESoftware\n' "$auth_user"
+          chown "$auth_user" "$remote_script"
+
+          status=0
+          sudo -u "$auth_user" -H \
+            env GH_CONFIG_DIR="$auth_home/.config/gh" SOURCE_BASE_URL="$SOURCE_BASE_URL" SOURCE_SHA256="$SOURCE_SHA256" \
+            bash -lc \
+              'unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS; exec bash /tmp/publish-evento-globolo-repositories.sh' \
+            > "$remote_log" 2>&1 || status=$?
+          tail -c 30000 "$remote_log"
+          exit "$status"
+          REMOTE_EOF
+
+          bash -n "$remote_wrapper"
+          encoded="$(base64 --wrap=0 "$remote_wrapper")"
+          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/run-evento-globolo-publisher.sh; chmod 700 /tmp/run-evento-globolo-publisher.sh; SCRIPT_URL='$script_url' SCRIPT_SHA256='$SCRIPT_SHA256' SOURCE_BASE_URL='$source_base_url' SOURCE_SHA256='$SOURCE_SHA256' bash /tmp/run-evento-globolo-publisher.sh; status=\$?; rm -f /tmp/run-evento-globolo-publisher.sh; exit \$status"
           parameters="$RUNNER_TEMP/evento-globolo-publisher-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
 
