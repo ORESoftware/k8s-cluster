@@ -68,6 +68,28 @@ jobs:
           """.replace('          ', '')
           script = script[:brittle_start] + replacement + script[brittle_end:]
 
+          import_anchor = 'from pathlib import Path\n'
+          if script.count(import_anchor) != 1:
+              raise SystemExit('planner builder import boundary drifted')
+          script = script.replace(
+              import_anchor,
+              import_anchor + 'from textwrap import dedent\n',
+              1,
+          )
+
+          tests_start = script.index("tests = r'''")
+          tests_end = script.index(
+              "if 'mod den_1606_planner_input_tests {' in text:",
+              tests_start,
+          )
+          tests_block = script[tests_start:tests_end]
+          tests_tail = "'''.replace('          ', '')\n"
+          if tests_block.count(tests_tail) != 1:
+              raise SystemExit('planner test-module indentation boundary drifted')
+          tests_block = tests_block.replace("tests = r'''", "tests = dedent(r'''", 1)
+          tests_block = tests_block.replace(tests_tail, "''')\n", 1)
+          script = script[:tests_start] + tests_block + script[tests_end:]
+
           target = Path('/tmp/den-1606-planner-input.py')
           compile(script, str(workflow), 'exec')
           target.write_text(script, encoding='utf-8')
