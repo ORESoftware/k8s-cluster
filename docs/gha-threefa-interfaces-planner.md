@@ -1,6 +1,6 @@
 # 3FA interfaces bounded continuity planner
 
-This increment classifies one credential-free workflow from one exact private repository. It does not enable the continuity service, fetch private source, dispatch builds, or alter GitHub required checks.
+This continuity path classifies one credential-free workflow from one exact private repository. It does not enable the zero-replica deployment, fetch private source through a live GitHub App, or alter GitHub required checks.
 
 ## Exact source identity
 
@@ -36,23 +36,49 @@ cargo clippy --locked --manifest-path generated/rust/Cargo.toml --all-targets --
 cargo test --locked --manifest-path generated/rust/Cargo.toml --all-targets
 ```
 
-The fixture pins checkout, Node setup, and Rust toolchain actions because the independent fixed profiles own the actual toolchain and command execution. This PR enforces exact run-command sequences and immutable repository revisions. General setup-action reference immutability is tracked separately so unrelated existing fixtures are not silently reclassified in this change.
+The fixture pins checkout, Node setup, and Rust toolchain actions because the independent fixed profiles own the actual toolchain and command execution. Exact run-command sequences and immutable repository revisions are enforced for the registered 3FA tuple. General setup-action reference immutability is tracked separately so unrelated existing fixtures are not silently reclassified.
 
 Secret expressions, service or job containers, environment approvals, strategy matrices, custom shells, working directories, publication, and caller-selected commands fail closed.
 
-## Separation from execution
+## Real-process execution evidence
 
-This planner change only produces a deterministic plan and explicit rejection reasons. The deployment remains at zero replicas with API and webhook execution disabled. A later PR must prove real-process dispatch against a mock build server before any private-repository installation token or live source fetch is considered.
+The `threefa_http` integration starts the actual `gha-clone-server` binary with API execution enabled only inside the test process and points it at a recording local build-server mock.
 
-The build server independently enforces the exact repository-to-profile rule merged through DEN-539: `3FA-app/3fa-interfaces` may use only `node-hardened-test` and `rust-generated-verify`. The planner cannot widen that authority.
+It proves that one accepted immutable request produces exactly two authenticated build submissions in deterministic topological order:
 
-## Evidence required
+```text
+node_contracts  -> node-hardened-test
+generated_rust -> rust-generated-verify
+```
 
-The planner PR must pass:
+Every submission contains:
+
+- `schemaVersion=build-server.v1`;
+- `jobKind=run-profile`;
+- exact `https://github.com/3FA-app/3fa-interfaces.git` repository URL;
+- the exact immutable 40-hex revision;
+- no caller command or image; and
+- deterministic `gha-clone:{planId}:{jobId}` request identity.
+
+Repeating the exact run reuses each job's request identity while keeping the Node and Rust job identities distinct. Mutable revisions, unreviewed sibling repositories, and command-extended workflow variants are rejected before the mock build server receives any submission.
+
+This is execution-contract evidence against a mock build server; it is not a live private-source run. The GitOps deployment remains at zero replicas with API and webhook execution disabled.
+
+## Independent authority
+
+The build server independently enforces the exact repository-to-profile rule merged through DEN-539: `3FA-app/3fa-interfaces` may use only `node-hardened-test` and `rust-generated-verify`. The planner and dispatcher cannot widen that authority.
+
+## Evidence required before live activation
+
+The reviewed path must retain:
 
 - Rust formatting and warnings-denied Clippy;
-- all existing workflow parser and transport/auth regressions;
-- the 3FA fixture planner and adversarial tests;
+- all existing workflow parser, StreemPilot, transport, and auth regressions;
+- 3FA planner and adversarial tests;
+- the real-process 3FA dispatch, retry, and zero-submission rejection tests;
+- complete build-server profile/admission/idempotency/NATS tests;
 - actionlint and complete continuity Kustomize render;
-- exact repository/workflow static contract checks; and
+- exact repository/workflow static contracts; and
 - credential-pattern rejection.
+
+Live private-source execution still requires the least-privilege GitHub App, reconciled ExternalSecret, plan-only deployment evidence, and explicit activation review.
