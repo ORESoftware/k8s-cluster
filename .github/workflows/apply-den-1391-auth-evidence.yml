@@ -1,0 +1,103 @@
+name: Apply DEN-1391 auth evidence
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-den-1391-auth-evidence.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-1391-auth-evidence
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.repository == 'fiducia-cloud/fiducia-monorepo' && github.head_ref == 'agent/den-1390-1391-production-gates'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1390-1391-production-gates
+          persist-credentials: true
+
+      - name: Append bounded automated evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path('docs/security/automated-evidence/den-1391.json')
+          doc = json.loads(path.read_text())
+          existing = {entry['id'] for entry in doc['evidence']}
+          additions = [
+              {
+                  'id': 'AUTH-003',
+                  'status': 'automated',
+                  'repository': 'fiducia-cloud/fiducia-e2e',
+                  'pull_request': 22,
+                  'commit': 'bf62ecb39fe243079a1a7cccd62647cb84421c25',
+                  'workflow_run': 'https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30875280958',
+                  'workflow': '.github/workflows/auth-authority-system.yml',
+                  'source_tests': ['tests/system/auth-authority.test.mjs'],
+                  'environment': 'The exact fiducia-auth PR 41 candidate at 75cac04f15f6fb29287acafa46c305a8976f1437 was formatted, linted, tested, built, and started as a real process against an ephemeral ES256 Supabase JWKS and organization-system-of-record stub.',
+                  'assertions': [
+                      'Only the configured Supabase issuer/project, audience, authenticated token role, AAL, and trusted app_metadata were accepted.',
+                      'Wrong issuer/project, wrong audience, service-role tokens, and user-writable metadata privilege injection were rejected.',
+                      'Duplicate, repeated-identical, reordered, and comma-coalesced Authorization values failed closed.'
+                  ],
+                  'limitations': [
+                      'The Supabase/JWKS/system-of-record environment was synthetic and local, not the separately deployed production customer and administrator identity projects.',
+                      'External ingress/header normalization, production cookies/CORS/CSP, certificates, network policy, exact release images/configuration, and independent review remain pending.'
+                  ],
+                  'executed_at': '2026-08-04T03:42:00Z'
+              },
+              {
+                  'id': 'AUTH-006',
+                  'status': 'automated',
+                  'repository': 'fiducia-cloud/fiducia-e2e',
+                  'pull_request': 22,
+                  'commit': 'bf62ecb39fe243079a1a7cccd62647cb84421c25',
+                  'workflow_run': 'https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30875280958',
+                  'workflow': '.github/workflows/auth-authority-system.yml',
+                  'source_tests': ['tests/system/auth-authority.test.mjs'],
+                  'environment': 'The exact fiducia-auth PR 41 candidate at 75cac04f15f6fb29287acafa46c305a8976f1437 ran as a real process with a strong synthetic internal introspection credential and no production customer secrets.',
+                  'assertions': [
+                      'Missing, wrong, duplicated, correct-first, correct-last, repeated-identical, and comma-coalesced x-server-auth values failed closed.',
+                      'One exact internal server credential could call introspection but could not authorize an invalid customer API key.',
+                      'The public token exchange remained customer API-key-possession-based and did not treat the internal server secret as customer authority.'
+                  ],
+                  'limitations': [
+                      'The proof does not establish live ingress reachability, Kubernetes NetworkPolicy, TLS/mTLS, every deployed verifier, or the 60-second credential-revocation objective.',
+                      'Exact release images/configuration and independent reviewer acceptance remain pending.'
+                  ],
+                  'executed_at': '2026-08-04T03:42:00Z'
+              }
+          ]
+          for entry in additions:
+              if entry['id'] in existing:
+                  raise SystemExit(f"evidence entry {entry['id']} already exists")
+              doc['evidence'].append(entry)
+          doc['evidence'].sort(key=lambda entry: entry['id'])
+          path.write_text(json.dumps(doc, indent=2) + '\n')
+          PY
+          node tools/validate-automated-evidence.mjs
+          git diff --check
+          git config user.name 'ORESoftware Automation'
+          git config user.email 'noreply@github.com'
+          git add docs/security/automated-evidence/den-1391.json
+          git commit -m 'docs(DEN-1391): record AUTH-003 and AUTH-006 automation'
+
+      - name: Remove the one-shot applicator and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/apply-den-1391-auth-evidence.yml
+          git commit -m 'chore: remove one-shot evidence applicator'
+          git push origin HEAD:refs/heads/agent/den-1390-1391-production-gates
