@@ -1,9 +1,9 @@
 //! Public continuity-planner API.
 //!
-//! The generic planner remains preserved byte-for-byte in `lib_original.rs`.
-//! This wrapper reserves one privileged private-repository workflow identity
-//! before returning an independently executable plan. A reserved identity
-//! mismatch is terminal and never falls back to generic Node classification.
+//! The generic bounded planner lives in `planner.rs`. This wrapper reserves one
+//! privileged private-repository workflow identity before returning an
+//! independently executable plan. A reserved identity mismatch is terminal and
+//! never falls back to generic Node classification.
 
 #[cfg(not(test))]
 mod msgint_contract;
@@ -29,18 +29,15 @@ mod msgint_contract {
     ) -> ContractMatch {
         // The real module is compiled by every normal library/binary build and
         // therefore by the process-level integration tests. Keeping the
-        // original planner's unit-test module isolated preserves its existing
-        // generic-classifier coverage without running the same private
-        // contract fixtures twice.
+        // generic planner's unit-test module isolated preserves its classifier
+        // coverage without running the private contract fixtures twice.
         ContractMatch::NotApplicable
     }
 }
 
-mod original {
-    include!("lib_original.rs");
-}
+mod planner;
 
-pub use original::{
+pub use planner::{
     capabilities, is_full_commit_sha, verify_github_signature, ArchitectureCapabilities,
     CapabilityLimits, CapabilityResponse, JobPlan, PlanRequest, PlannerLimits, WorkflowPlan,
     MAX_JOBS_DEFAULT, MAX_STEPS_PER_JOB_DEFAULT, MAX_WORKFLOW_BYTES_DEFAULT, PLAN_SCHEMA_VERSION,
@@ -54,7 +51,7 @@ pub fn build_plan(
     request: &PlanRequest,
     limits: &PlannerLimits,
 ) -> Result<WorkflowPlan, Vec<String>> {
-    let mut plan = original::build_plan(request, limits)?;
+    let mut plan = planner::build_plan(request, limits)?;
     let workflow: serde_yaml::Value = serde_yaml::from_str(&request.workflow_yaml)
         .map_err(|error| vec![format!("workflowYaml is not valid YAML: {error}")])?;
     let root = workflow
