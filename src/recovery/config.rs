@@ -50,33 +50,23 @@ impl RecoveryConfig {
         }
 
         let identity_base = validate_base_url(
-            &identity_base.ok_or(RecoveryConfigError::Missing(
-                "AUTH_RECOVERY_IDENTITY_URL",
-            ))?,
+            &identity_base.ok_or(RecoveryConfigError::Missing("AUTH_RECOVERY_IDENTITY_URL"))?,
             "AUTH_RECOVERY_IDENTITY_URL",
         )?;
         let identity_token = validate_secret(
-            identity_token.ok_or(RecoveryConfigError::Missing(
-                "AUTH_RECOVERY_IDENTITY_TOKEN",
-            ))?,
+            identity_token.ok_or(RecoveryConfigError::Missing("AUTH_RECOVERY_IDENTITY_TOKEN"))?,
             "AUTH_RECOVERY_IDENTITY_TOKEN",
         )?;
         let voxletra_base = validate_base_url(
-            &voxletra_base.ok_or(RecoveryConfigError::Missing(
-                "AUTH_RECOVERY_VOXLETRA_URL",
-            ))?,
+            &voxletra_base.ok_or(RecoveryConfigError::Missing("AUTH_RECOVERY_VOXLETRA_URL"))?,
             "AUTH_RECOVERY_VOXLETRA_URL",
         )?;
         let voxletra_token = validate_secret(
-            voxletra_token.ok_or(RecoveryConfigError::Missing(
-                "AUTH_RECOVERY_VOXLETRA_TOKEN",
-            ))?,
+            voxletra_token.ok_or(RecoveryConfigError::Missing("AUTH_RECOVERY_VOXLETRA_TOKEN"))?,
             "AUTH_RECOVERY_VOXLETRA_TOKEN",
         )?;
         let subject_pepper = validate_secret(
-            subject_pepper.ok_or(RecoveryConfigError::Missing(
-                "AUTH_RECOVERY_SUBJECT_PEPPER",
-            ))?,
+            subject_pepper.ok_or(RecoveryConfigError::Missing("AUTH_RECOVERY_SUBJECT_PEPPER"))?,
             "AUTH_RECOVERY_SUBJECT_PEPPER",
         )?;
         let review_secret = secret_env("AUTH_RECOVERY_REVIEW_SECRET")
@@ -206,9 +196,9 @@ fn parse_bool(name: &'static str, default: bool) -> Result<bool, RecoveryConfigE
 fn validate_consent_version(value: &str) -> Result<(), RecoveryConfigError> {
     if value.is_empty()
         || value.len() > 64
-        || !value.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.')
-        })
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
     {
         return Err(RecoveryConfigError::Invalid(
             "AUTH_RECOVERY_CONSENT_VERSION",

@@ -122,9 +122,7 @@ pub async fn revoke_enrollment(
     headers: HeaderMap,
 ) -> Result<Response, AuthError> {
     let shared_user_id = current_aal2_user(&state, &headers).await?;
-    service(&state)?
-        .revoke_enrollment(shared_user_id)
-        .await?;
+    service(&state)?.revoke_enrollment(shared_user_id).await?;
     Ok(no_store(StatusCode::NO_CONTENT))
 }
 
@@ -179,11 +177,7 @@ pub async fn redeem_recovery(
 ) -> Result<Response, AuthError> {
     let ceremony_id = parse_ceremony_id(&ceremony_id)?;
     service(&state)?
-        .redeem(
-            ceremony_id,
-            &request.ceremony_token,
-            request.new_password,
-        )
+        .redeem(ceremony_id, &request.ceremony_token, request.new_password)
         .await?;
     Ok(no_store(StatusCode::NO_CONTENT))
 }

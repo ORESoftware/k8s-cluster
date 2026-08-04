@@ -1,6 +1,6 @@
 //! Provider adapters for government-ID/face verification and Voxletra-backed
-//! voice analysis. Only opaque references and normalized verdicts cross this
-//! boundary; raw images, video, audio, and biometric templates do not.
+//! voice analysis. Only opaque references and normalized verdicts cross
+//! this boundary; raw images, video, audio, and biometric templates do not.
 
 use std::sync::Arc;
 
@@ -286,10 +286,7 @@ fn validate_identity_launch(
     validate_expiry(launch.expires_at, requested_ttl)
 }
 
-fn validate_voice_launch(
-    launch: &VoiceSessionLaunch,
-    requested_ttl: u64,
-) -> Result<(), AuthError> {
+fn validate_voice_launch(launch: &VoiceSessionLaunch, requested_ttl: u64) -> Result<(), AuthError> {
     validate_response_session_id(&launch.session_id)?;
     validate_capture_url(&launch.capture_url)?;
     if !(4..=160).contains(&launch.challenge_phrase.len())
@@ -366,7 +363,9 @@ fn validate_request_reference(value: &str) -> Result<(), AuthError> {
     if valid_reference(value) {
         Ok(())
     } else {
-        Err(AuthError::BadRequest("invalid biometric provider reference"))
+        Err(AuthError::BadRequest(
+            "invalid biometric provider reference",
+        ))
     }
 }
 
@@ -380,9 +379,9 @@ fn validate_response_reference(value: &str) -> Result<(), AuthError> {
 
 fn valid_session_id(value: &str) -> bool {
     (MIN_SESSION_ID_BYTES..=MAX_SESSION_ID_BYTES).contains(&value.len())
-        && value.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':')
-        })
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'))
 }
 
 fn validate_request_session_id(value: &str) -> Result<(), AuthError> {
@@ -450,7 +449,10 @@ mod tests {
 
     #[test]
     fn decoy_mode_is_a_stable_wire_value() {
-        assert_eq!(serde_json::to_string(&ProviderMode::Decoy).unwrap(), "\"decoy\"");
+        assert_eq!(
+            serde_json::to_string(&ProviderMode::Decoy).unwrap(),
+            "\"decoy\""
+        );
     }
 
     #[test]
