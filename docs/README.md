@@ -4,6 +4,7 @@ This directory documents the contracts, provider adapters, deployment boundaries
 
 ## Start here
 
+- [Repository relocation to Fanwaave](repository-relocation.md) — direct-transfer preconditions, immutable-ID verification, redirect safety, CI checks, and downstream remote updates.
 - [Provider and app-store interoperability](provider-interop.md) — end-to-end Android/FCM, Apple/APNs, Expo, SendGrid, and Twilio setup, testing, receipts, and troubleshooting.
 - [Contracts v1](contracts-v1.md) — canonical `PushJob` and `PushOutcome` wire contracts.
 - [HTTP ingestion v1](http-ingestion-v1.md) — authenticated HTTP routes and request behavior.
