@@ -190,8 +190,8 @@ async fn running_server_dispatches_exact_msgint_profiles_and_rejects_mutations()
         .expect("HTTP client");
     wait_until_ready(&client, &server_url, &mut child).await;
 
-    let workflow_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/msgint-operator-config.yml");
+    let workflow_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/msgint-operator-config.yml");
     let workflow_yaml = std::fs::read_to_string(&workflow_path)
         .unwrap_or_else(|error| panic!("read {}: {error}", workflow_path.display()));
     let response = submit_run(
@@ -237,7 +237,10 @@ async fn running_server_dispatches_exact_msgint_profiles_and_rejects_mutations()
     assert_eq!(final_run["revision"], REVISION);
     assert_eq!(final_run["workflowPath"], WORKFLOW_PATH);
     assert_eq!(final_run["submissions"].as_array().map(Vec::len), Some(2));
-    assert_eq!(final_run["submissions"][0]["profile"], "node-hardened-verify");
+    assert_eq!(
+        final_run["submissions"][0]["profile"],
+        "node-hardened-verify"
+    );
     assert_eq!(final_run["submissions"][1]["profile"], "node-hardened-test");
 
     let submissions = mock_state.submissions.lock().await;
@@ -254,11 +257,15 @@ async fn running_server_dispatches_exact_msgint_profiles_and_rejects_mutations()
     assert_eq!(submissions[0]["profile"], "node-hardened-verify");
     assert!(submissions[0]["requestId"]
         .as_str()
-        .is_some_and(|value| value.starts_with("gha-clone:") && value.ends_with(":operator_config")));
+        .is_some_and(
+            |value| value.starts_with("gha-clone:") && value.ends_with(":operator_config")
+        ));
     assert_eq!(submissions[1]["profile"], "node-hardened-test");
     assert!(submissions[1]["requestId"]
         .as_str()
-        .is_some_and(|value| value.starts_with("gha-clone:") && value.ends_with(":repository_tests")));
+        .is_some_and(
+            |value| value.starts_with("gha-clone:") && value.ends_with(":repository_tests")
+        ));
     drop(submissions);
 
     let extra_command = workflow_yaml.replacen(
