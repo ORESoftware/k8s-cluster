@@ -54,23 +54,14 @@ struct PlannerLimits {
 impl PlannerLimits {
     fn from_env() -> Self {
         Self {
-            max_yaml_bytes: env_usize(
-                "BUILD_SERVER_GHA_MAX_YAML_BYTES",
-                MAX_YAML_BYTES_DEFAULT,
-            ),
+            max_yaml_bytes: env_usize("BUILD_SERVER_GHA_MAX_YAML_BYTES", MAX_YAML_BYTES_DEFAULT),
             max_jobs: env_usize("BUILD_SERVER_GHA_MAX_JOBS", MAX_JOBS_DEFAULT),
             max_steps_per_job: env_usize(
                 "BUILD_SERVER_GHA_MAX_STEPS_PER_JOB",
                 MAX_STEPS_PER_JOB_DEFAULT,
             ),
-            max_yaml_nodes: env_usize(
-                "BUILD_SERVER_GHA_MAX_YAML_NODES",
-                MAX_YAML_NODES_DEFAULT,
-            ),
-            max_yaml_depth: env_usize(
-                "BUILD_SERVER_GHA_MAX_YAML_DEPTH",
-                MAX_YAML_DEPTH_DEFAULT,
-            ),
+            max_yaml_nodes: env_usize("BUILD_SERVER_GHA_MAX_YAML_NODES", MAX_YAML_NODES_DEFAULT),
+            max_yaml_depth: env_usize("BUILD_SERVER_GHA_MAX_YAML_DEPTH", MAX_YAML_DEPTH_DEFAULT),
         }
     }
 }
@@ -197,18 +188,12 @@ impl WorkflowState {
             runs: Arc::new(RwLock::new(HashMap::new())),
             counter: Arc::new(AtomicU64::new(0)),
             limits: PlannerLimits::from_env(),
-            execution_enabled: env_bool(
-                "BUILD_SERVER_GHA_WORKFLOW_EXECUTION_ENABLED",
-                false,
-            ),
+            execution_enabled: env_bool("BUILD_SERVER_GHA_WORKFLOW_EXECUTION_ENABLED", false),
             poll_interval: Duration::from_millis(env_u64(
                 "BUILD_SERVER_GHA_POLL_MILLISECONDS",
                 250,
             )),
-            run_timeout: Duration::from_secs(env_u64(
-                "BUILD_SERVER_GHA_RUN_TIMEOUT_SECONDS",
-                3600,
-            )),
+            run_timeout: Duration::from_secs(env_u64("BUILD_SERVER_GHA_RUN_TIMEOUT_SECONDS", 3600)),
             max_runs: env_usize("BUILD_SERVER_GHA_MAX_RUNS", 512),
         }
     }
@@ -224,10 +209,7 @@ pub(crate) fn router(build: AppState) -> Router {
         .with_state(state)
 }
 
-async fn capabilities_handler(
-    State(state): State<WorkflowState>,
-    headers: HeaderMap,
-) -> Response {
+async fn capabilities_handler(State(state): State<WorkflowState>, headers: HeaderMap) -> Response {
     if let Err(response) = require_auth(&headers, &state.build) {
         return response;
     }
@@ -406,7 +388,13 @@ async fn list_runs(State(state): State<WorkflowState>, headers: HeaderMap) -> Re
     if let Err(response) = require_auth(&headers, &state.build) {
         return response;
     }
-    let mut runs = state.runs.read().await.values().cloned().collect::<Vec<_>>();
+    let mut runs = state
+        .runs
+        .read()
+        .await
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
     runs.sort_by_key(|run| std::cmp::Reverse(run.created_at_ms));
     Json(runs).into_response()
 }
@@ -456,10 +444,7 @@ async fn execute_workflow(state: WorkflowState, run_id: String) {
         };
 
         let dependency_failed = job.needs.iter().any(|dependency| {
-            !matches!(
-                outcomes.get(dependency),
-                Some(WorkflowJobStatus::Succeeded)
-            )
+            !matches!(outcomes.get(dependency), Some(WorkflowJobStatus::Succeeded))
         });
         if dependency_failed {
             mutate_job(&state, &run_id, &job.id, |record| {
@@ -542,7 +527,8 @@ async fn execute_workflow(state: WorkflowState, run_id: String) {
                 None => {
                     mutate_job(&state, &run_id, &job.id, |record| {
                         record.status = WorkflowJobStatus::Failed;
-                        record.error = Some("build record disappeared before completion".to_string());
+                        record.error =
+                            Some("build record disappeared before completion".to_string());
                     })
                     .await;
                     break WorkflowJobStatus::Failed;
@@ -690,7 +676,8 @@ fn build_plan(
     if jobs.len() > limits.max_jobs {
         errors.push(format!(
             "workflow has {} jobs; maximum is {}",
-            jobs.len(), limits.max_jobs
+            jobs.len(),
+            limits.max_jobs
         ));
     }
     if !errors.is_empty() {
@@ -834,7 +821,8 @@ fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPla
     if steps.len() > limits.max_steps_per_job {
         errors.push(format!(
             "jobs.{id} has {} steps; maximum is {}",
-            steps.len(), limits.max_steps_per_job
+            steps.len(),
+            limits.max_steps_per_job
         ));
     }
 
@@ -890,7 +878,9 @@ fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPla
                 ));
             }
         } else if mapping_get(step, "with").is_some() {
-            reasons.push(format!("{path}: with is valid only for a supported setup action"));
+            reasons.push(format!(
+                "{path}: with is valid only for a supported setup action"
+            ));
         }
         if mapping_get(step, "run").is_none() && mapping_get(step, "uses").is_none() {
             errors.push(format!("{path}: step must contain run or uses"));
@@ -967,9 +957,8 @@ fn classify_profile(text: &str, reasons: &mut Vec<String>) -> Option<String> {
         return Some("puppeteer".to_string());
     }
 
-    let rust = lower.contains("cargo ")
-        || lower.contains("rust-toolchain")
-        || lower.contains("rustfmt");
+    let rust =
+        lower.contains("cargo ") || lower.contains("rust-toolchain") || lower.contains("rustfmt");
     let python = lower.contains("pytest")
         || lower.contains("python -m")
         || lower.contains("setup-python")
@@ -1053,7 +1042,7 @@ fn validate_dependencies(
     }
     if ordered.len() != jobs.len() {
         return Err(vec![
-            "workflow job dependency graph contains a cycle".to_string(),
+            "workflow job dependency graph contains a cycle".to_string()
         ]);
     }
     Ok(ordered)
