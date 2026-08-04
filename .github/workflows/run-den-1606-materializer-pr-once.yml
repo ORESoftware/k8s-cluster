@@ -150,6 +150,24 @@ jobs:
           """,
                   'HTTP client builder insertion',
               ),
+              (
+                  """if main.count(webhook_old) != 1:
+              raise SystemExit('unexpected webhook run insertion block')
+          main = main.replace(webhook_old, webhook_new, 1)
+          """,
+                  """webhook_start_marker = '        if !remember_webhook_delivery(&state, &delivery).await {'
+          webhook_end_marker = '            run_ids.push(run_id);\\n        }\\n'
+          webhook_start = main.find(webhook_start_marker)
+          if webhook_start == -1:
+              raise SystemExit('could not locate webhook dispatch start')
+          webhook_end = main.find(webhook_end_marker, webhook_start)
+          if webhook_end == -1:
+              raise SystemExit('could not locate webhook dispatch end')
+          webhook_end += len(webhook_end_marker)
+          main = main[:webhook_start] + webhook_new + main[webhook_end:]
+          """,
+                  'webhook dispatch replacement',
+              ),
           ]
           for brittle, robust, label in replacements:
               if script.count(brittle) != 1:
