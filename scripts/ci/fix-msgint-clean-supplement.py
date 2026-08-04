@@ -2,10 +2,39 @@ from pathlib import Path
 
 path = Path("remote/tests/general/gha-clone-msgint-config.test.ts")
 source = path.read_text(encoding="utf-8")
-old = "  assert.match(validation, /Exact repository admission/);"
-new = """  assert.match(validation, /ensure_allowed_prefix_or_exact/);
-  assert.ok(validation.includes(\"rule.strip_prefix('=')\"));"""
-count = source.count(old)
-if count != 1:
-    raise RuntimeError(f"expected one stale exact-admission assertion, found {count}")
-path.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+replacements = (
+    (
+        "  assert.match(validation, /Exact repository admission/);",
+        """  assert.match(validation, /ensure_allowed_prefix_or_exact/);
+  assert.ok(validation.includes(\"rule.strip_prefix('=')\"));""",
+        "generic exact-admission implementation",
+    ),
+    (
+        "  assert.match(validation, /messaging-intel\\/msgint-connectors/);",
+        """  assert.match(buildPatch, /BUILD_SERVER_ALLOWED_REPOSITORY_RULES_JSON/);
+  assert.match(
+    buildPatch,
+    /=https:\\/\\/github\\.com\\/messaging-intel\\/msgint-connectors\\.git/,
+  );""",
+        "exact Messaging Intel deployment rule",
+    ),
+    (
+        "  assert.match(validation, /msgint-connectors\\.git-evil/);",
+        "  assert.match(validation, /repo\\.git-suffix/);",
+        "generic suffix-lookalike rejection",
+    ),
+    (
+        "  assert.match(validation, /msgint-connectors-extra\\.git/);",
+        "  assert.match(validation, /repo-extra\\.git/);",
+        "generic sibling-lookalike rejection",
+    ),
+)
+
+for old, new, label in replacements:
+    count = source.count(old)
+    if count != 1:
+        raise RuntimeError(f"{label}: expected one stale assertion, found {count}")
+    source = source.replace(old, new, 1)
+
+path.write_text(source, encoding="utf-8")
