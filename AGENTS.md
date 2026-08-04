@@ -2,8 +2,9 @@
 
 ## Repository and tracking
 
-- Repository: `github.com/ORESoftware/push-notification-server.rs`
-- Linear project: `github.com/ORESoftware/push-notification-server.rs`
+- Repository: `github.com/fanwaave/push-notification-server.rs`
+- Legacy transfer source: `github.com/ORESoftware/push-notification-server.rs` (redirect only; do not recreate)
+- Linear project: `github.com/ORESoftware/push-notification-server.rs` (legacy tracker name retained during the repository transfer)
 - Parent implementation issue: `DEN-257`
 - Bootstrap: `DEN-259`
 - Provider extraction: `DEN-261`
