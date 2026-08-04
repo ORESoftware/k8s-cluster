@@ -92,11 +92,8 @@ spec:
                 secretKeyRef:
                   name: dd-gha-clone-server-secrets
                   key: github_webhook_secret
-            - name: GHA_CLONE_GITHUB_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: dd-gha-clone-server-secrets
-                  key: github_app_installation_token
+            - name: GHA_CLONE_GITHUB_TOKEN_FILE
+              value: /var/run/secrets/gha-clone-github/github_app_installation_token
             - name: GHA_CLONE_BUILD_SERVER_AUTH
               valueFrom:
                 secretKeyRef:
@@ -144,9 +141,19 @@ spec:
             timeoutSeconds: 3
             failureThreshold: 3
           volumeMounts:
+            - name: github-token
+              mountPath: /var/run/secrets/gha-clone-github
+              readOnly: true
             - name: tmp
               mountPath: /tmp
       volumes:
+        - name: github-token
+          secret:
+            secretName: dd-gha-clone-server-secrets
+            defaultMode: 256
+            items:
+              - key: github_app_installation_token
+                path: github_app_installation_token
         - name: tmp
           emptyDir:
             sizeLimit: 8Gi

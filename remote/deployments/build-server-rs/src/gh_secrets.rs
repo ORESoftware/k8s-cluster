@@ -81,12 +81,14 @@ const FORBIDDEN_ENV_SUBSTRINGS: &[&str] = &[
 ];
 
 fn repo_owner(repo: &str) -> Option<&str> {
-    repo.split_once('/').map(|(owner, _)| owner).filter(|owner| {
-        !owner.is_empty()
-            && owner
-                .chars()
-                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
-    })
+    repo.split_once('/')
+        .map(|(owner, _)| owner)
+        .filter(|owner| {
+            !owner.is_empty()
+                && owner
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+        })
 }
 
 fn env_source_allowed(from_env: &str, policy: &SyncPolicy) -> Result<(), String> {
@@ -121,7 +123,10 @@ pub fn parse_rules(raw: &str, policy: &SyncPolicy) -> Result<Vec<SyncRule>, Stri
         // `x/../../gists` dot-segment trick that reqwest would normalize into a
         // different GitHub endpoint.
         let owner = repo_owner(&rule.repo).ok_or_else(|| {
-            format!("gh sync rule repo {:?} must be a valid owner/name", rule.repo)
+            format!(
+                "gh sync rule repo {:?} must be a valid owner/name",
+                rule.repo
+            )
         })?;
         let (_, name) = rule.repo.split_once('/').unwrap_or_default();
         let name_ok = !name.is_empty()
@@ -457,7 +462,8 @@ mod tests {
         assert!(parse_rules(good, &policy()).is_ok());
         let bad_repo = r#"[{"repo":"nope","secrets":{}}]"#;
         assert!(parse_rules(bad_repo, &policy()).is_err());
-        let bad_name = r#"[{"repo":"ORESoftware/b","secrets":{"BAD NAME":{"fromEnv":"GH_SYNC_X"}}}]"#;
+        let bad_name =
+            r#"[{"repo":"ORESoftware/b","secrets":{"BAD NAME":{"fromEnv":"GH_SYNC_X"}}}]"#;
         assert!(parse_rules(bad_name, &policy()).is_err());
     }
 
@@ -480,9 +486,8 @@ mod tests {
             "GH_PAT",
             "BUILD_SERVER_DATABASE_URL",
         ] {
-            let raw = format!(
-                r#"[{{"repo":"ORESoftware/x","secrets":{{"S":{{"fromEnv":"{env}"}}}}}}]"#
-            );
+            let raw =
+                format!(r#"[{{"repo":"ORESoftware/x","secrets":{{"S":{{"fromEnv":"{env}"}}}}}}]"#);
             assert!(
                 parse_rules(&raw, &policy()).is_err(),
                 "{env} must be blocked as a sync source"

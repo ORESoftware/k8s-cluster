@@ -167,7 +167,8 @@ These jobs still receive an ARC classification such as `sonus-ci`,
 | --- | --- |
 | `GHA_CLONE_AUTH_SECRET` | operator/API authentication |
 | `GHA_CLONE_GITHUB_WEBHOOK_SECRET` | GitHub webhook HMAC |
-| `GHA_CLONE_GITHUB_TOKEN` | short-lived GitHub App installation token for private workflow reads |
+| `GHA_CLONE_GITHUB_TOKEN_FILE` | preferred projected file containing a rotating GitHub App installation token |
+| `GHA_CLONE_GITHUB_TOKEN` | legacy inline token for local tests; mutually exclusive with the file source |
 | `GHA_CLONE_BUILD_SERVER_URL` | internal `dd-build-server` origin |
 | `GHA_CLONE_BUILD_SERVER_AUTH` | scoped build-server auth |
 | `GHA_CLONE_ALLOWED_REPOSITORIES` | exact comma-separated `owner/repo` allowlist |
@@ -181,6 +182,9 @@ These jobs still receive an ARC classification such as `sonus-ci`,
 
 Use a GitHub App and External Secrets. Do not put classic PATs, private keys, or
 shared secrets in source, Argo parameters, Linear, logs, URLs, or image layers.
+The Kubernetes deployment projects the installation token as a Secret volume;
+the server reads that file for every workflow fetch so broker rotation is live
+without a restart. Inline and file token sources are mutually exclusive.
 
 ## Deployment state
 

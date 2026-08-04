@@ -166,7 +166,10 @@ pub(crate) fn ecr_headers(
     Ok(headers)
 }
 
-pub(crate) async fn ecr_authorization_password(state: &AppState, ecr: &EcrImage) -> Result<String, String> {
+pub(crate) async fn ecr_authorization_password(
+    state: &AppState,
+    ecr: &EcrImage,
+) -> Result<String, String> {
     let credentials = aws_credentials_from_env()?;
     let body = "{}";
     let host = format!("api.ecr.{}.amazonaws.com", ecr.region);
