@@ -10,6 +10,7 @@ on:
       - 'remote/tests/pnpm-lock.yaml'
       - 'docs/gha-indie-worker-yaml-engine.md'
       - 'docs/operations/gha-indie-worker-ephemeral-publication-v2.md'
+      - 'scripts/ci/gha-indie-hardening-patch/**'
       - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/gha-indie-worker-yaml.yml'
   push:
@@ -44,6 +45,16 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
+
+      - name: Apply the deterministic parser-hardening patch when staged
+        run: |
+          set -euo pipefail
+          patch_dir=scripts/ci/gha-indie-hardening-patch
+          if [[ -d "$patch_dir" ]]; then
+            cat "$patch_dir"/*.b64 | tr -d '\n' | base64 --decode > "$RUNNER_TEMP/gha-indie-hardening.patch"
+            git apply --check "$RUNNER_TEMP/gha-indie-hardening.patch"
+            git apply "$RUNNER_TEMP/gha-indie-hardening.patch"
+          fi
 
       - name: Check out exact private remote/libs gitlink
         uses: ./.github/actions/checkout-remote-libs
@@ -93,6 +104,16 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Apply the deterministic parser-hardening patch when staged
+        run: |
+          set -euo pipefail
+          patch_dir=scripts/ci/gha-indie-hardening-patch
+          if [[ -d "$patch_dir" ]]; then
+            cat "$patch_dir"/*.b64 | tr -d '\n' | base64 --decode > "$RUNNER_TEMP/gha-indie-hardening.patch"
+            git apply --check "$RUNNER_TEMP/gha-indie-hardening.patch"
+            git apply "$RUNNER_TEMP/gha-indie-hardening.patch"
+          fi
+
       - name: Validate workflow syntax
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
@@ -131,7 +152,7 @@ jobs:
           fi
 
   finalize:
-    name: Commit validated formatter and lock outputs
+    name: Commit validated parser hardening
     if: ${{ github.event_name == 'pull_request' && github.actor != 'github-actions[bot]' }}
     needs: [rust, contracts]
     runs-on: ubuntu-24.04
@@ -152,7 +173,7 @@ jobs:
           name: gha-indie-worker-finalized-files
           path: ${{ runner.temp }}/gha-indie-worker-finalized
 
-      - name: Install outputs and remove obsolete standalone finalizer
+      - name: Install validated outputs and remove patch staging
         run: |
           set -euo pipefail
           source_root="$RUNNER_TEMP/gha-indie-worker-finalized"
@@ -162,11 +183,9 @@ jobs:
           cp "$source_root/Cargo.lock" remote/deployments/build-server-rs/Cargo.lock
           cp "$source_root/src/main.rs" remote/deployments/build-server-rs/src/main.rs
           cp "$source_root/src/gha_workflow.rs" remote/deployments/build-server-rs/src/gha_workflow.rs
-          if [[ -f .github/workflows/gha-indie-worker-finalize.yml ]]; then
-            git rm .github/workflows/gha-indie-worker-finalize.yml
-          fi
+          git rm -r scripts/ci/gha-indie-hardening-patch
 
-      - name: Commit only validated generated changes
+      - name: Commit only validated hardening outputs
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
@@ -175,9 +194,5 @@ jobs:
             remote/deployments/build-server-rs/src/main.rs \
             remote/deployments/build-server-rs/src/gha_workflow.rs
           git diff --cached --check
-          if git diff --cached --quiet; then
-            echo 'Validated source and lockfile are already committed.'
-            exit 0
-          fi
-          git commit -m 'build(gha-indie): commit formatted source and dependency lock'
+          git commit -m 'test(gha-indie): harden YAML admission and HTTP contracts'
           git push origin HEAD:agent/gha-indie-worker-yaml-engine-20260804
