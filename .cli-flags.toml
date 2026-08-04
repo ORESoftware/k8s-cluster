@@ -11,7 +11,7 @@ allow_unknown = false
 
 # These may hold secrets — flags-2-env must never surface them in help/echo.
 [env]
-ignore = ["AUTH_SIGNING_KEY_PEM", "AUTH_SIGNING_KEY_FILE", "AUTH_DATABASE_URL", "AUTH_REDIS_URL", "AUTH_WEBHOOK_SECRET", "AUTH_INTROSPECT_SECRET", "AUTH_SUPABASE_PROJECTS", "SUPABASE_ACCESS_TOKEN", "AUTH_SUPABASE_PUBLISHABLE_KEY", "AUTH_SUPABASE_SECRET_KEY", "AUTH_SUPABASE_SERVICE_ROLE_KEY", "AUTH_SUPABASE_JWT_SECRET", "AUTH_SENDGRID_API_KEY", "AUTH_OTP_PEPPER", "AUTH_TWILIO_ACCOUNT_SID", "AUTH_TWILIO_AUTH_TOKEN", "AUTH_TWILIO_VERIFY_SERVICE_SID"]
+ignore = ["AUTH_SIGNING_KEY_PEM", "AUTH_SIGNING_KEY_FILE", "AUTH_DATABASE_URL", "AUTH_REDIS_URL", "AUTH_WEBHOOK_SECRET", "AUTH_INTROSPECT_SECRET", "AUTH_SUPABASE_PROJECTS", "SUPABASE_ACCESS_TOKEN", "AUTH_SUPABASE_PUBLISHABLE_KEY", "AUTH_SUPABASE_SECRET_KEY", "AUTH_SUPABASE_SERVICE_ROLE_KEY", "AUTH_SUPABASE_JWT_SECRET", "AUTH_SENDGRID_API_KEY", "AUTH_OTP_PEPPER", "AUTH_TWILIO_ACCOUNT_SID", "AUTH_TWILIO_AUTH_TOKEN", "AUTH_TWILIO_VERIFY_SERVICE_SID", "AUTH_RECOVERY_IDENTITY_TOKEN", "AUTH_RECOVERY_VOXLETRA_TOKEN", "AUTH_RECOVERY_SUBJECT_PEPPER", "AUTH_RECOVERY_REVIEW_SECRET"]
 
 [flags.bind-addr]
 env = "AUTH_BIND_ADDR"
@@ -118,6 +118,76 @@ aliases = ["magic-link-allow-signup"]
 type = "bool"
 default = false
 help = "Allow a verified email link or OTP to create an RDS-backed account."
+
+[flags.recovery-identity-url]
+env = "AUTH_RECOVERY_IDENTITY_URL"
+aliases = ["recovery-identity-url"]
+type = "string"
+default = ""
+help = "HTTPS origin for the government-ID and face-verification service."
+
+[flags.recovery-voxletra-url]
+env = "AUTH_RECOVERY_VOXLETRA_URL"
+aliases = ["recovery-voxletra-url"]
+type = "string"
+default = ""
+help = "HTTPS origin for the Voxletra voice-verification adapter."
+
+[flags.recovery-ttl-secs]
+env = "AUTH_RECOVERY_TTL_SECS"
+aliases = ["recovery-ttl-secs"]
+type = "integer"
+default = 900
+help = "Lifetime of camera/microphone capture ceremonies, 300-3600 seconds."
+
+[flags.recovery-cooldown-secs]
+env = "AUTH_RECOVERY_COOLDOWN_SECS"
+aliases = ["recovery-cooldown-secs"]
+type = "integer"
+default = 86400
+help = "Delay after recovery approval before password redemption, 900-604800 seconds."
+
+[flags.recovery-redeem-ttl-secs]
+env = "AUTH_RECOVERY_REDEEM_TTL_SECS"
+aliases = ["recovery-redeem-ttl-secs"]
+type = "integer"
+default = 86400
+help = "Lifetime of an approved recovery after its cooldown, 3600-604800 seconds."
+
+[flags.recovery-document-threshold]
+env = "AUTH_RECOVERY_DOCUMENT_THRESHOLD"
+aliases = ["recovery-document-threshold"]
+type = "string"
+default = "0.85"
+help = "Minimum normalized government-ID confidence, 0.50-1.0."
+
+[flags.recovery-face-threshold]
+env = "AUTH_RECOVERY_FACE_THRESHOLD"
+aliases = ["recovery-face-threshold"]
+type = "string"
+default = "0.90"
+help = "Minimum normalized face-match confidence, 0.50-1.0."
+
+[flags.recovery-voice-liveness-threshold]
+env = "AUTH_RECOVERY_VOICE_LIVENESS_THRESHOLD"
+aliases = ["recovery-voice-liveness-threshold"]
+type = "string"
+default = "0.90"
+help = "Minimum normalized voice-liveness confidence, 0.50-1.0."
+
+[flags.recovery-always-manual-review]
+env = "AUTH_RECOVERY_ALWAYS_MANUAL_REVIEW"
+aliases = ["recovery-always-manual-review"]
+type = "bool"
+default = false
+help = "Require human review even when all pre-enrolled biometric references match."
+
+[flags.recovery-consent-version]
+env = "AUTH_RECOVERY_CONSENT_VERSION"
+aliases = ["recovery-consent-version"]
+type = "string"
+default = "2026-08-04"
+help = "Version identifier for the biometric-processing consent presented to users."
 
 [flags.rust-log]
 env = "RUST_LOG"
