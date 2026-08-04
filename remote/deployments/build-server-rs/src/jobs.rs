@@ -8,7 +8,9 @@ use tokio::{fs, time::timeout};
 
 use crate::config::Config;
 use crate::ecr::login_to_ecr;
-use crate::exec::{append_log, redacted_build_args, run_logged_command, run_logged_command_inner};
+use crate::exec::{
+    append_log, redacted_build_args, run_logged_command, run_logged_command_inner,
+};
 use crate::state::{AppState, SERVICE_NAME};
 use crate::types::{BuildJobRecord, BuildRequest, BuildStatus, NatsSubmitError};
 use crate::util::{now_ms, sha256_hex};
@@ -631,10 +633,7 @@ pub(crate) async fn enqueue_build(
 }
 
 /// NATS intake: parse a build-server.v1 document and enqueue it.
-pub(crate) async fn submit_from_nats(
-    state: &AppState,
-    payload: &[u8],
-) -> Result<(), NatsSubmitError> {
+pub(crate) async fn submit_from_nats(state: &AppState, payload: &[u8]) -> Result<(), NatsSubmitError> {
     let request: BuildRequest = serde_json::from_slice(payload).map_err(|error| {
         NatsSubmitError::Invalid(format!("invalid build request JSON: {error}"))
     })?;
