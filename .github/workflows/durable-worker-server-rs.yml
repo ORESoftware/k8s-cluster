@@ -11,6 +11,7 @@ on:
   push:
     branches:
       - dev
+      - main
     paths:
       - '.github/workflows/durable-worker-server-rs.yml'
       - 'remote/deployments/durable-worker-server-rs/**'
@@ -21,6 +22,7 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
 concurrency:
   group: durable-worker-server-rs-${{ github.ref }}
@@ -142,3 +144,46 @@ jobs:
       - name: Cleanup test containers
         if: always()
         run: docker rm --force dd-durable-worker-nats >/dev/null 2>&1 || true
+
+  publish-image:
+    if: github.event_name == 'push'
+    needs:
+      - rust-contract-and-e2e
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        with:
+          images: ghcr.io/oresoftware/dd-durable-worker-server
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=sha-
+
+      - name: Build and publish immutable worker image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: ./remote/deployments/durable-worker-server-rs
+          file: ./remote/deployments/durable-worker-server-rs/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=dd-durable-worker-server
+          cache-to: type=gha,mode=max,scope=dd-durable-worker-server
+          provenance: mode=max
+          sbom: true

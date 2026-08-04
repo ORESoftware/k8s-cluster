@@ -15,6 +15,7 @@ const kustomizationPath = 'remote/argocd/dd-next-runtime/kustomization.yaml';
 const workflowPath = '.github/workflows/durable-worker-server-rs.yml';
 const dockerfilePath = 'remote/deployments/durable-worker-server-rs/Dockerfile';
 const protocolPath = 'remote/deployments/durable-worker-server-rs/PROTOCOL.md';
+const operationsPath = 'remote/deployments/durable-worker-server-rs/OPERATIONS.md';
 
 const deployment = read(deploymentPath);
 const service = read(servicePath);
@@ -24,18 +25,24 @@ const kustomization = read(kustomizationPath);
 const workflow = read(workflowPath);
 const dockerfile = read(dockerfilePath);
 const protocol = read(protocolPath);
+const operations = read(operationsPath);
 
-test('durable worker deployment is source-complete but inert by default', () => {
+test('durable worker deployment is portable, hardened, and inert by default', () => {
   assert.match(deployment, /\breplicas:\s*0\b/);
   assert.match(deployment, /name:\s*DURABLE_WORKER_SHADOW_MODE\s+value:\s*'true'/);
-  assert.match(deployment, /cargo run --release --locked/);
-  assert.match(deployment, /remote\/deployments\/durable-worker-server-rs/);
+  assert.match(deployment, /image:\s*ghcr\.io\/oresoftware\/dd-durable-worker-server(?::[A-Za-z0-9._-]+|@sha256:[a-f0-9]{64})/);
+  assert.match(deployment, /\bimagePullPolicy:\s*Always\b/);
   assert.match(deployment, /\bautomountServiceAccountToken:\s*false\b/);
+  assert.match(deployment, /\benableServiceLinks:\s*false\b/);
   assert.match(deployment, /\breadOnlyRootFilesystem:\s*true\b/);
   assert.match(deployment, /capabilities:\s+drop:\s+- ALL/);
   assert.match(deployment, /seccompProfile:\s+type:\s*RuntimeDefault/);
   assert.match(deployment, /name:\s*DURABLE_WORKER_AUTH_SECRET\s+valueFrom:\s+secretKeyRef:/);
   assert.match(deployment, /name:\s*dd-agent-secrets\s+key:\s*SERVER_AUTH_SECRET/);
+  assert.doesNotMatch(deployment, /cargo run --release --locked/);
+  assert.doesNotMatch(deployment, /docker\.io\/library\/rust:/);
+  assert.doesNotMatch(deployment, /\bhostPath:/);
+  assert.doesNotMatch(deployment, /\/home\/ec2-user\/codes/);
   assert.doesNotMatch(
     deployment,
     /name:\s*DURABLE_WORKER_AUTH_SECRET\s+value:/,
@@ -69,21 +76,33 @@ test('dd-next-runtime renders every durable-worker resource', () => {
   }
 });
 
-test('CI uses ephemeral credentials, locked dependencies, and pinned actions', () => {
+test('CI uses ephemeral credentials, locked dependencies, pinned actions, and GHCR publication', () => {
   assert.match(workflow, /secrets\.token_hex\(32\)/);
   assert.doesNotMatch(workflow, /^\s*DURABLE_WORKER_AUTH_SECRET:\s*\S+/m);
+  assert.match(workflow, /permissions:\s+contents:\s*read\s+packages:\s*write/);
   assert.match(workflow, /actions\/checkout@[0-9a-f]{40}/);
   assert.match(workflow, /dtolnay\/rust-toolchain@[0-9a-f]{40}/);
   assert.match(workflow, /imranismail\/setup-kustomize@[0-9a-f]{40}/);
+  assert.match(workflow, /docker\/setup-buildx-action@[0-9a-f]{40}/);
+  assert.match(workflow, /docker\/login-action@[0-9a-f]{40}/);
+  assert.match(workflow, /docker\/metadata-action@[0-9a-f]{40}/);
+  assert.match(workflow, /docker\/build-push-action@[0-9a-f]{40}/);
   assert.match(workflow, /cargo clippy --locked/);
   assert.match(workflow, /cargo test --locked/);
   assert.match(workflow, /nats:2\.14\.3-alpine/);
+  assert.match(workflow, /ghcr\.io\/oresoftware\/dd-durable-worker-server/);
+  assert.match(workflow, /publish-image:[\s\S]*if:\s*github\.event_name == 'push'/);
+  assert.match(workflow, /push:\s*true/);
 });
 
-test('the production image and protocol are reproducible and explicit', () => {
+test('the production image, protocol, and rollout runbook are reproducible and explicit', () => {
   assert.match(dockerfile, /COPY Cargo\.toml Cargo\.lock/);
   assert.match(dockerfile, /cargo build --release --locked/);
+  assert.match(dockerfile, /gcr\.io\/distroless\/cc-debian12:nonroot/);
   assert.match(protocol, /does not replay a worker language stack/i);
   assert.match(protocol, /lease token/i);
   assert.match(protocol, /replicas: 0/);
+  assert.match(operations, /digest/i);
+  assert.match(operations, /scale the Deployment to zero/i);
+  assert.match(operations, /fencing token/i);
 });

@@ -9,11 +9,12 @@ metadata:
     app.kubernetes.io/component: durable-execution-control-plane
     app.kubernetes.io/part-of: dd-agent-runtime
 spec:
-  # Source-complete but deliberately inert. Shadow mode is informational only;
-  # scaling above zero is the explicit execution-enablement gate.
+  # Deliberately inert until the image is digest-pinned and the shadow rollout
+  # gates in OPERATIONS.md have passed.
   replicas: 0
+  revisionHistoryLimit: 3
   minReadySeconds: 5
-  progressDeadlineSeconds: 2400
+  progressDeadlineSeconds: 600
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -26,6 +27,7 @@ spec:
     metadata:
       annotations:
         dd.dev/rollout-mode: shadow-disabled
+        dd.dev/image-policy: publish-on-dev-pin-digest-before-scale
         prometheus.io/path: /metrics
         prometheus.io/port: '8152'
         prometheus.io/scrape: 'true'
@@ -36,38 +38,24 @@ spec:
         app.kubernetes.io/part-of: dd-agent-runtime
     spec:
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 45
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: durable-worker-server
-          image: docker.io/library/rust:1.90-bookworm
-          imagePullPolicy: IfNotPresent
-          command:
-            - /bin/bash
-            - -lc
-          args:
-            - |
-              set -euo pipefail
-              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-              export HOME=/tmp
-              export CARGO_HOME=/tmp/cargo
-              export CARGO_TARGET_DIR=/tmp/dd-durable-worker-server-target
-              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
-              cd /opt/dd-next-1/remote/deployments/durable-worker-server-rs
-              exec /usr/local/cargo/bin/cargo run --release --locked
+          # The dev tag is published only after the full Rust, protocol, manifest,
+          # and container suite succeeds on dev. Replace this with the emitted
+          # sha256 digest before scaling the Deployment above zero.
+          image: ghcr.io/oresoftware/dd-durable-worker-server:dev
+          imagePullPolicy: Always
           env:
-            - name: HOME
-              value: /tmp
-            - name: CARGO_HOME
-              value: /tmp/cargo
-            - name: CARGO_TARGET_DIR
-              value: /tmp/dd-durable-worker-server-target
             - name: PORT
               value: '8152'
             - name: RUST_LOG
@@ -103,20 +91,19 @@ spec:
             requests:
               cpu: 50m
               memory: 128Mi
-              ephemeral-storage: 1Gi
             limits:
               cpu: '2'
               memory: 1Gi
-              ephemeral-storage: 6Gi
           securityContext:
             allowPrivilegeEscalation: false
+            privileged: false
             capabilities:
               drop:
                 - ALL
             readOnlyRootFilesystem: true
             runAsNonRoot: true
-            runAsUser: 1000
-            runAsGroup: 1000
+            runAsUser: 65532
+            runAsGroup: 65532
             seccompProfile:
               type: RuntimeDefault
           startupProbe:
@@ -125,7 +112,7 @@ spec:
               port: http
             periodSeconds: 5
             timeoutSeconds: 3
-            failureThreshold: 360
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /readyz
@@ -140,17 +127,3 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 3
             failureThreshold: 3
-          volumeMounts:
-            - name: repo
-              mountPath: /opt/dd-next-1
-              readOnly: true
-            - name: tmp
-              mountPath: /tmp
-      volumes:
-        - name: repo
-          hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory
-        - name: tmp
-          emptyDir:
-            sizeLimit: 6Gi

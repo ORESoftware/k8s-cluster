@@ -8,18 +8,24 @@ JetStream consumers.
 ## Rollout gates
 
 The checked-in Kubernetes Deployment intentionally starts with `replicas: 0`.
+The initial `:dev` image reference is also a rollout placeholder: replace it
+with the `sha256` digest produced by a successful `dev` or `main` image publish
+before scaling the Deployment above zero.
+
 Before scaling it above zero, verify all of the following:
 
-1. The `DD_DURABLE_WORKER_STATE` KV bucket and
+1. The image reference is immutable (`@sha256:...`) and its build completed the
+   Rust, protocol, manifest, end-to-end JetStream, SBOM, and provenance gates.
+2. The `DD_DURABLE_WORKER_STATE` KV bucket and
    `DD_DURABLE_WORKER_EVENTS` stream can be created with the configured NATS
    account.
-2. `DURABLE_WORKER_AUTH_SECRET` is present through `dd-agent-secrets` and is
+3. `DURABLE_WORKER_AUTH_SECRET` is present through `dd-agent-secrets` and is
    different from public API credentials.
-3. `/readyz` returns success and `/metrics` is scraped under the
+4. `/readyz` returns success and `/metrics` is scraped under the
    `dd-durable-worker-server` application label.
-4. Only synthetic queues are enabled; no existing Node.js or Gleam submitter is
+5. Only synthetic queues are enabled; no existing Node.js or Gleam submitter is
    routed to the service yet.
-5. At least two synthetic workers have completed lease-expiry, retry,
+6. At least two synthetic workers have completed lease-expiry, retry,
    cancellation, signal, concurrency-lane, and stale-fencing tests.
 
 Scale to one replica first. Scale to multiple replicas only after the same tests
