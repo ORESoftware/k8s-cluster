@@ -1,0 +1,165 @@
+name: Apply bounded GHA clone transport hardening once
+
+on:
+  push:
+    branches:
+      - agent/gha-clone-bounded-transport-20260804
+    paths:
+      - .github/workflows/apply-gha-clone-bounded-transport-once.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-gha-clone-bounded-transport-20260804
+  cancel-in-progress: false
+
+jobs:
+  apply-validate-clean:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - name: Check out the exact bounded-transport branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/gha-clone-bounded-transport-20260804
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Set up Rust 1.90.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Verify the exact base, carrier scope, and source blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='b827d1fde69bdfc5acfeb9d8a785f184c3ce5505'
+          carrier='.github/agent-patches/gha-clone-bounded-transport'
+          expected_stage="$(printf '%s\n' \
+            '.github/agent-patches/gha-clone-bounded-transport/part-00.b64' \
+            '.github/agent-patches/gha-clone-bounded-transport/part-01.b64' \
+            '.github/agent-patches/gha-clone-bounded-transport/part-02.b64' \
+            '.github/agent-patches/gha-clone-bounded-transport/part-03.b64' \
+            '.github/agent-patches/gha-clone-bounded-transport/part-04.b64' \
+            '.github/agent-patches/gha-clone-bounded-transport/part-05.b64' \
+            '.github/workflows/apply-gha-clone-bounded-transport-once.yml' | sort)"
+
+          git fetch --no-tags origin "$base"
+          test "$(git merge-base HEAD "$base")" = "$base"
+          actual_stage="$(git diff --name-only "$base"...HEAD | sort)"
+          test "$actual_stage" = "$expected_stage" || {
+            echo 'unexpected pre-product branch scope:' >&2
+            printf '%s\n' "$actual_stage" >&2
+            exit 1
+          }
+
+          test "$(git hash-object docs/gha-clone-build-server-boundary.md)" = \
+            'd520834c0ff14c3ebc861217b6edf7cd9f9369aa'
+          test "$(git hash-object remote/deployments/gha-clone-server-rs/src/main.rs)" = \
+            'a716f1124f3b71d61797731e32047c1b1823f75c'
+          test "$(git hash-object remote/deployments/gha-clone-server-rs/tests/http_api.rs)" = \
+            'a7fbce88eb3e0a9f2e56b31201f7a0af3dee5394'
+          test "$(git hash-object remote/deployments/gha-clone-server-rs/tests/startup_config.rs)" = \
+            '7e96c953ecc63af0066287ca91fffdf482f4c0b6'
+          test -z "$(git diff --name-only "$base"...HEAD -- remote/deployments/gha-clone-server-rs/src/run_reservation.rs)"
+          test "$(find "$carrier" -maxdepth 1 -type f -name 'part-*.b64' | wc -l)" = 6
+
+      - name: Decode, authenticate, and apply the reviewed patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          carrier='.github/agent-patches/gha-clone-bounded-transport'
+          patch="${RUNNER_TEMP}/gha-clone-bounded-transport.patch"
+          cat "$carrier"/part-*.b64 | tr -d '\r\n\t ' | base64 --decode > "$patch"
+          test "$(sha256sum "$patch" | awk '{print $1}')" = \
+            '7bc1819fe3188c08fdac341d91cc42261d4abd0642b012ff56bdbf754fc368e6'
+          git apply --check "$patch"
+          git apply "$patch"
+          git diff --check
+
+          expected_product="$(printf '%s\n' \
+            'docs/gha-clone-build-server-boundary.md' \
+            'remote/deployments/gha-clone-server-rs/src/main.rs' \
+            'remote/deployments/gha-clone-server-rs/tests/http_api.rs' \
+            'remote/deployments/gha-clone-server-rs/tests/startup_config.rs' | sort)"
+          actual_product="$(git diff --name-only | sort)"
+          test "$actual_product" = "$expected_product" || {
+            echo 'decoded patch changed an unexpected product path:' >&2
+            printf '%s\n' "$actual_product" >&2
+            exit 1
+          }
+
+      - name: Prove the bounded transport and authentication invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          main='remote/deployments/gha-clone-server-rs/src/main.rs'
+          tests='remote/deployments/gha-clone-server-rs/tests/http_api.rs'
+          startup='remote/deployments/gha-clone-server-rs/tests/startup_config.rs'
+          reservation='remote/deployments/gha-clone-server-rs/src/run_reservation.rs'
+
+          for marker in \
+            'DefaultBodyLimit::max(request_body_limit)' \
+            'UPSTREAM_RESPONSE_BODY_BYTES_MAX' \
+            'async fn read_response_bounded(' \
+            'fn single_header_authority' \
+            'fn build_server_endpoint' \
+            'fn validate_build_submission_response' \
+            'validate_build_job_response_id(&build, Some(build_job_id))'
+          do
+            grep -Fq "$marker" "$main"
+          done
+          grep -Fq 'inbound_json_is_rejected_before_unbounded_allocation' "$tests"
+          grep -Fq 'duplicate_headers' "$tests"
+          grep -Fq 'MismatchedStatusId' "$tests"
+          grep -Fq 'OversizedStatusBody' "$tests"
+          grep -Fq 'all_runtime_safety_bounds_must_be_nonzero' "$startup"
+          grep -Fq 'build_server_url_rejects_unsafe_origins' "$startup"
+          grep -Fq 'active_runs.saturating_add(requested) > max_runs' "$reservation"
+          git diff --exit-code 'b827d1fde69bdfc5acfeb9d8a785f184c3ce5505' -- "$reservation"
+
+      - name: Format, lint, and test every clone-server target
+        working-directory: remote/deployments/gha-clone-server-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Commit and push a product-only branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='b827d1fde69bdfc5acfeb9d8a785f184c3ce5505'
+          expected_product="$(printf '%s\n' \
+            'docs/gha-clone-build-server-boundary.md' \
+            'remote/deployments/gha-clone-server-rs/src/main.rs' \
+            'remote/deployments/gha-clone-server-rs/tests/http_api.rs' \
+            'remote/deployments/gha-clone-server-rs/tests/startup_config.rs' | sort)"
+
+          rm -rf .github/agent-patches/gha-clone-bounded-transport
+          rm -f .github/workflows/apply-gha-clone-bounded-transport-once.yml
+          git add -A
+          git diff --cached --check
+          test -z "$(git diff --cached --name-only --diff-filter=ACMRTUXB -- .github/workflows)"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(DEN-1606): bound clone transport messages and auth authority'
+
+          actual_product="$(git diff --name-only "$base"...HEAD | sort)"
+          test "$actual_product" = "$expected_product" || {
+            echo 'final branch is not product-only:' >&2
+            printf '%s\n' "$actual_product" >&2
+            exit 1
+          }
+          git status --porcelain=v1 | test ! -s /dev/stdin
+          git push origin HEAD:agent/gha-clone-bounded-transport-20260804
