@@ -9,6 +9,7 @@ data:
   GHA_CLONE_ALLOWED_REPOSITORIES: >-
     ORESoftware/k8s-cluster,
     messaging-intel/msgint-connectors,
+    3FA-app/3fa-interfaces,
     sonus-auris/sonus-auris-interfaces,
     sonus-auris/sonus-auris-ui.dart,
     sonus-auris/sonus-auris-backend.rs,
@@ -18,6 +19,7 @@ data:
     {
       "ORESoftware/k8s-cluster": [".github/workflows/gha-clone-server-meta.yml"],
       "messaging-intel/msgint-connectors": [".github/workflows/gha-clone-operator-config.yml"],
+      "3FA-app/3fa-interfaces": [".github/workflows/gha-clone-contracts.yml"],
       "sonus-auris/sonus-auris-interfaces": [".github/workflows/ci.yml"],
       "sonus-auris/sonus-auris-ui.dart": [".github/workflows/ci.yml", ".github/workflows/android-emulator-test.yml"]
     }
