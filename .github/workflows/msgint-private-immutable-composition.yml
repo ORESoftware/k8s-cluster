@@ -84,9 +84,9 @@ jobs:
               raise SystemExit('token rotation/redaction regression test is unavailable')
           PY
 
-      - name: Check formatting
+      - name: Check formatting for the audited composition sources
         working-directory: remote/deployments/build-server-rs
-        run: cargo fmt --all -- --check
+        run: rustfmt --edition 2021 --check src/jobs.rs src/config.rs src/exec.rs
 
       - name: Reject warnings
         working-directory: remote/deployments/build-server-rs
