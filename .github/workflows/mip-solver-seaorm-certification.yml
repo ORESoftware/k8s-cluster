@@ -34,14 +34,16 @@ jobs:
           --health-retries 20
     env:
       DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/mip_solver
+      SHADOW_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
       CONSUMER_REPOSITORY: mip-solver-node.rs
       CONSUMER_PULL_REQUEST: "2"
       CONSUMER_BRANCH: agent/seaorm-shared-schema-20260804
       SHARED_REPOSITORY: k8s-libs-and-shared-defs
       EXPECTED_SHARED_COMMIT: 3c84cab532b27d328378f09fba5841f02644ae3b
       DES_ENGINE_COMMIT: 894e86fb188b88b0e2c734b5cf7caa27c6b18e00
-      DPM_VERSION: 1.4.2
-      DPM_SHA256: 42dd9d638a57edbde6c931d776a4ba295bcb2614e498203968c321d84ad90bdb
+      DPM_VERSION: 0.3.2
+      DPM_ASSET: dpm-v0.3.2-x86_64-unknown-linux-gnu.tar.gz
+      DPM_SHA256: 4258755a946f6f3a49e33538889523e4736180624a186bddc90180994612d3aa
     steps:
       - name: Checkout certification authority
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -186,33 +188,41 @@ jobs:
             > "$GITHUB_WORKSPACE/test-results/cargo-metadata.json"
           cargo fmt --all -- --check
           cargo test --locked --all-targets
-      - name: Install the pinned declarative-migrations release
+      - name: Install the pinned dpm v0.3.2 release
         shell: bash
         run: |
           set -euo pipefail
-          archive="$RUNNER_TEMP/mip-solver-certification/dpm.tar.gz"
+          work="$RUNNER_TEMP/mip-solver-certification"
+          archive="$work/$DPM_ASSET"
+          release="$work/dpm-release"
+          install -d -m 700 "$release" "$work/bin"
           curl --fail --location --silent --show-error \
-            "https://github.com/declarative-migrations/declarative-migrations/releases/download/v${DPM_VERSION}/declarative-postgres-migrate-linux-x86_64.tar.gz" \
+            "https://github.com/declarative-migrations/declarative-postgres-migrate.rs/releases/download/v${DPM_VERSION}/${DPM_ASSET}" \
             --output "$archive"
           printf '%s  %s\n' "$DPM_SHA256" "$archive" | sha256sum --check -
-          tar -xzf "$archive" -C "$RUNNER_TEMP/mip-solver-certification"
-          install -m 0755 \
-            "$RUNNER_TEMP/mip-solver-certification/declarative-postgres-migrate" \
-            "$RUNNER_TEMP/mip-solver-certification/dpm"
+          tar -xzf "$archive" -C "$release"
+          test -f "$release/dpm"
+          install -m 0755 "$release/dpm" "$work/bin/dpm"
+          "$work/bin/dpm" --version
           printf '%s\n' "$DPM_VERSION" > test-results/dpm-version.txt
-      - name: Apply and converge the exact shared schema on PostgreSQL 17
+          printf '%s\n' "$DPM_ASSET" > test-results/dpm-asset.txt
+      - name: Apply and verify the exact shared schema on PostgreSQL 17
         shell: bash
         run: |
           set -euo pipefail
-          schema="$RUNNER_TEMP/mip-solver-certification/shared/pg-defs/schema/schema.sql"
-          "$RUNNER_TEMP/mip-solver-certification/dpm" apply \
-            --database-url "$DATABASE_URL" \
-            --schema-file "$schema" \
-            > test-results/dpm-first-apply.txt
-          "$RUNNER_TEMP/mip-solver-certification/dpm" apply \
-            --database-url "$DATABASE_URL" \
-            --schema-file "$schema" \
-            > test-results/dpm-second-apply.txt
+          work="$RUNNER_TEMP/mip-solver-certification"
+          schema="$work/shared/pg-defs/schema/schema.sql"
+          "$work/bin/dpm" apply \
+            --source-sql "$schema" \
+            --target "$DATABASE_URL" \
+            --shadow "$SHADOW_DATABASE_URL" \
+            --yes \
+            > test-results/dpm-apply.txt
+          "$work/bin/dpm" verify \
+            --source-sql "$schema" \
+            --target "$DATABASE_URL" \
+            --shadow "$SHADOW_DATABASE_URL" \
+            > test-results/dpm-verify.txt
       - name: Record the bounded certification result
         shell: python
         env:
@@ -231,13 +241,17 @@ jobs:
               "sharedRepository": "ORESoftware/k8s-libs-and-shared-defs",
               "sharedCommit": "3c84cab532b27d328378f09fba5841f02644ae3b",
               "desEngineCommit": "894e86fb188b88b0e2c734b5cf7caa27c6b18e00",
-              "dpmVersion": "1.4.2",
+              "dpmRepository": "declarative-migrations/declarative-postgres-migrate.rs",
+              "dpmVersion": "0.3.2",
+              "dpmAsset": "dpm-v0.3.2-x86_64-unknown-linux-gnu.tar.gz",
+              "dpmSha256": "4258755a946f6f3a49e33538889523e4736180624a186bddc90180994612d3aa",
               "postgresMajor": 17,
               "inventoryStatus": inventory["status"],
               "migrationComplete": inventory["migrationComplete"],
               "directDriverCounts": inventory["counts"],
               "lockedBaselinePassed": True,
-              "dpmAppliedTwice": True,
+              "dpmApplied": True,
+              "dpmVerified": True,
               "decision": "certification evidence only; the consumer remains migration-in-progress until direct-driver counts and required restart/concurrency evidence reach the completion gate",
           }
           Path("test-results/mip-solver-seaorm-certification.json").write_text(
