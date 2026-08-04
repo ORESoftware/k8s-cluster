@@ -71,10 +71,17 @@ jobs:
           feature_ref=agent/den-1057-meta-agent-control-plane
           gh api "repos/${target}/commits/${initial_main}" --jq .sha | grep -Fx "$initial_main"
           gh api "repos/${target}/commits/${initial_feature}" --jq .sha | grep -Fx "$initial_feature"
-          current_feature="$(gh api "repos/${target}/git/ref/heads/${feature_ref}" --jq .object.sha 2>/dev/null || true)"
-          if test -n "$current_feature"; then
+
+          current_feature="$(
+            gh api --paginate "repos/${target}/branches?per_page=100" \
+              --jq ".[] | select(.name == \"${feature_ref}\") | .commit.sha"
+          )"
+          if test -z "$current_feature"; then
+            echo "merged feature branch is absent by repository cleanup policy"
+          else
             [[ "$current_feature" =~ ^[0-9a-f]{40}$ ]]
           fi
+          true
 
       - name: Reject conflict markers and accidental credential material
         shell: bash
