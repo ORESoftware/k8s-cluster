@@ -1,0 +1,56 @@
+name: Finalize DEN-1597 executor router formatting
+
+on:
+  push:
+    branches:
+      - agent/den-1597-router-core-v2-20260804
+    paths:
+      - .github/workflows/finalize-den-1597-router.yml
+      - remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-den-1597-router
+  cancel-in-progress: false
+
+jobs:
+  format:
+    if: github.repository == 'ORESoftware/k8s-cluster'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: agent/den-1597-router-core-v2-20260804
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Install the pinned Rust formatter
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.90.0
+          components: rustfmt
+
+      - name: Format and commit only the router source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all
+          git diff --check
+          if git diff --quiet -- remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs; then
+            echo 'Router source is already formatted.'
+            exit 0
+          fi
+          if ! git diff --quiet -- . ':(exclude)remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs'; then
+            echo 'rustfmt changed an unexpected path; refusing to commit.' >&2
+            git status --short >&2
+            exit 1
+          fi
+          git config user.name 'ORESoftware CI'
+          git config user.email 'ci@oresoftware.com'
+          git add -- remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs
+          git commit -m 'style(DEN-1597): format executor router'
+          git push origin HEAD:agent/den-1597-router-core-v2-20260804
