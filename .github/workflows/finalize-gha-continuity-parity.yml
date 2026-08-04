@@ -68,13 +68,14 @@ jobs:
           )
           PY
 
-      - name: Validate Python, Rust example, fixture, and workflow syntax
+      - name: Format and validate Python, Rust, fixture, and workflow syntax
         run: |
           set -euo pipefail
           python3 -m py_compile \
             scripts/ci/gha_continuity_evidence.py \
             scripts/ci/test_gha_continuity_evidence.py
           python3 -m unittest -v scripts/ci/test_gha_continuity_evidence.py
+          cargo fmt --all --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml
           cargo fmt --all --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml -- --check
           cargo test --locked --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all-targets
           node --check remote/tests/ui/gha-continuity.playwright.test.mjs
