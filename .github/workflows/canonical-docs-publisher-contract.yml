@@ -1,0 +1,45 @@
+name: Canonical docs publisher contract
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/canonical-docs-publisher-contract.yml
+      - .github/workflows/ops-publish-canonical-docs-20260804.yml
+      - ops/canonical-docs/**
+      - scripts/ops/publish_canonical_docs_no_pat_20260804.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: canonical-docs-contract-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the reviewed pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Validate publisher syntax
+        run: bash -n scripts/ops/publish_canonical_docs_no_pat_20260804.sh
+      - name: Validate source, documentation tests, and deterministic history
+        env:
+          PUBLISH_DRY_RUN: "1"
+        run: bash scripts/ops/publish_canonical_docs_no_pat_20260804.sh "$GITHUB_WORKSPACE"
+      - name: Parse workflow YAML
+        run: |
+          ruby -e 'require "yaml"; ARGV.each { |path| YAML.load_file(path) }' \
+            .github/workflows/canonical-docs-publisher-contract.yml \
+            .github/workflows/ops-publish-canonical-docs-20260804.yml
+      - name: Reject patch and whitespace errors
+        run: git diff --check "origin/${{ github.base_ref }}...HEAD"
