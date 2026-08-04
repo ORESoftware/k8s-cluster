@@ -122,6 +122,19 @@ jobs:
               streempilot_text.replace(streempilot_old, streempilot_new, 1),
               encoding='utf-8',
           )
+
+          webhook_path = Path(
+              'remote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs'
+          )
+          webhook_text = webhook_path.read_text(encoding='utf-8')
+          webhook_old = '    env.insert("GHA_CLONE_BUILD_POLL_SECONDS", "0".to_string());\n'
+          webhook_new = '    env.insert("GHA_CLONE_BUILD_POLL_SECONDS", "1".to_string());\n'
+          if webhook_text.count(webhook_old) != 1:
+              raise SystemExit('workflow_run webhook polling fixture boundary drifted')
+          webhook_path.write_text(
+              webhook_text.replace(webhook_old, webhook_new, 1),
+              encoding='utf-8',
+          )
           PY
 
       - name: Install pinned Rust toolchain
@@ -149,8 +162,9 @@ jobs:
             remote/deployments/gha-clone-server-rs/src/main.rs \
             remote/deployments/gha-clone-server-rs/tests/http_api.rs \
             remote/deployments/gha-clone-server-rs/tests/streempilot_http.rs \
+            remote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs \
             docs/gha-clone-build-server-boundary.md
-          unexpected="$(git diff --cached --name-only | grep -Ev '^(remote/deployments/gha-clone-server-rs/(src/main\.rs|tests/(http_api|streempilot_http)\.rs)|docs/gha-clone-build-server-boundary\.md)$' || true)"
+          unexpected="$(git diff --cached --name-only | grep -Ev '^(remote/deployments/gha-clone-server-rs/(src/main\.rs|tests/(http_api|streempilot_http|webhook_e2e)\.rs)|docs/gha-clone-build-server-boundary\.md)$' || true)"
           if [[ -n "$unexpected" ]]; then
             printf 'unexpected product paths:\n%s\n' "$unexpected" >&2
             exit 1
