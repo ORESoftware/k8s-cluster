@@ -27,14 +27,10 @@ pub(crate) async fn submit_from_nats(
     map_enqueue_result(enqueue_build(state, request, "nats").await)
 }
 
-fn map_enqueue_result<T>(
-    result: Result<T, (StatusCode, String)>,
-) -> Result<(), NatsSubmitError> {
+fn map_enqueue_result<T>(result: Result<T, (StatusCode, String)>) -> Result<(), NatsSubmitError> {
     match result {
         Ok(_) => Ok(()),
-        Err((StatusCode::SERVICE_UNAVAILABLE, message)) => {
-            Err(NatsSubmitError::Transient(message))
-        }
+        Err((StatusCode::SERVICE_UNAVAILABLE, message)) => Err(NatsSubmitError::Transient(message)),
         // Includes a deterministic request-ID/content conflict. JetStream must
         // terminate that payload instead of silently acknowledging it.
         Err((_, message)) => Err(NatsSubmitError::Invalid(message)),
