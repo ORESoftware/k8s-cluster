@@ -25,12 +25,12 @@ data:
     PORT = os.environ.get("KUBERNETES_SERVICE_PORT", "443")
     BASE_URL = "https://%s:%s" % (HOST, PORT)
     SCRAPE_TIMEOUT = float(os.environ.get("SCRAPE_TIMEOUT_SECONDS", "5"))
-    DEFAULT_WATCH_NAMESPACES = "ai-agent-coordinator,ai-ml,airbyte,anon-proxy,arc-runners-sonus,athleto,big-data,canonical-cloud,daedalus,default,fiducia,headlamp,kafka,messaging,observability,presence,scintilla,shared-auth,spark,threefa,vpn,zed"
+    DEFAULT_WATCH_NAMESPACES = "ai-agent-coordinator,ai-ml,airbyte,anon-proxy,arc-runners-sonus,arc-runners-streempilot,athleto,big-data,canonical-cloud,daedalus,default,fiducia,headlamp,kafka,messaging,observability,presence,scintilla,shared-auth,spark,threefa,vpn,zed"
     DEFAULT_WATCH_APPS = (
         "dd-agent-worker-broker,dd-ai-agent-coordinator,dd-ai-ml-pipeline,dd-akka-ws-server,dd-apostille-services-server,"
         "dd-athleto-app-rs,dd-athleto-backend,dd-bastion,"
         "dd-airbyte-postgresql,dd-billing-server,dd-browser-job-runner,dd-browser-mcp-rs,dd-browser-test-server,dd-build-server,dd-gha-clone-server,dd-gha-executor-router,"
-        "dd-cluster-mcp-rs,dd-compliance-rs,dd-container-pool,dd-contract-service,dd-daedalus-api-server,dd-daedalus-web-server,dd-dagster-postgresql,dd-dart-server,dd-des-rs,dd-des-simulator,"
+        "dd-cluster-mcp-rs,dd-compliance-rs,dd-container-pool,dd-contract-service,dd-daedalus-api-server,dd-daedalus-web-server,dd-dagster-postgresql,dd-dart-server,dd-durable-worker-server,dd-des-rs,dd-des-simulator,"
         "dd-dev-server-api,dd-economics-server,dd-escrow-rs,dd-fabrication-server,dd-formal-methods-server,dd-formal-methods-service,"
         "dd-fsharp-ws-server,dd-gleam-lambda-runner,dd-gleam-mcp-server,"
         "dd-gleamlang-server,dd-gleamlang-ws-loadtest,"
@@ -52,7 +52,7 @@ data:
         "dd-ws-loadtest-rs-akkaws-akkastreams,dd-ws-loadtest-rs-akkaws-asyncjava,"
         "dd-ws-loadtest-rs-dart,dd-ws-loadtest-rs-fsharp-rx,dd-ws-loadtest-rs-gcs,"
         "dd-ws-loadtest-rs-go-wss,dd-ws-loadtest-rs-rust-wss,gcs,gcs-kafka,"
-        "gcs-mongodb,gcs-rabbitmq,gcs-router,gha-capacity-broker-sonus,headlamp,minio,presence,reloader,"
+        "gcs-mongodb,gcs-rabbitmq,gcs-router,gha-capacity-broker-sonus,gha-capacity-broker-streempilot,headlamp,minio,presence,reloader,"
         "spark,spark-master,spark-worker,airflow,benefactor-backend-rs,dd-agent-sim-server,"
         "dd-ai-agent-bridge,dd-akrion-web-server-rs,dd-alertmanager,dd-benefactor-marketing-rs,"
         "dd-canonical-cloud,dd-chaos,dd-constraint-scheduler,dd-data-viz-rs,dd-dataset-labeling,"

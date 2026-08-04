@@ -32,6 +32,9 @@ case "$target" in
   executor-router)
     expected_image='ghcr.io/oresoftware/gha-executor-router'
     ;;
+  capacity-broker)
+    expected_image='ghcr.io/oresoftware/gha-capacity-broker'
+    ;;
   *)
     printf 'unexpected Docker target\n' >&2
     exit 65

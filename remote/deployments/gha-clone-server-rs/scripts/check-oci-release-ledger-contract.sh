@@ -33,7 +33,8 @@ for required in \
   'ORESoftware/k8s-cluster#702' \
   'image@sha256' \
   'workflow-scoped `GITHUB_TOKEN`' \
-  'reproducibility conflict'
+  'reproducibility conflict' \
+  'ghcr.io/oresoftware/gha-capacity-broker'
 do
   require_literal "$documentation" "$required"
 done
@@ -44,6 +45,7 @@ for required in \
   '[[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]' \
   "expected_image='ghcr.io/oresoftware/gha-clone-server'" \
   "expected_image='ghcr.io/oresoftware/gha-executor-router'" \
+  "expected_image='ghcr.io/oresoftware/gha-capacity-broker'" \
   'immutable_ref="${image}@${digest}"' \
   "printf '<!-- gha-continuity-oci-release:%s:%s -->\\n'" \
   '"schema_version":1'
@@ -104,6 +106,25 @@ do
   fi
 done
 
+capacity_image='ghcr.io/oresoftware/gha-capacity-broker'
+capacity_ref="${capacity_image}@${sample_digest}"
+capacity_entry="${tmpdir}/capacity-entry.md"
+bash "$renderer" \
+  'ORESoftware/k8s-cluster' \
+  "$sample_sha" \
+  'capacity-broker' \
+  "$capacity_image" \
+  "$sample_digest" >"$capacity_entry"
+for exact in \
+  "<!-- gha-continuity-oci-release:${sample_sha}:capacity-broker -->" \
+  "{\"schema_version\":1,\"repository\":\"ORESoftware/k8s-cluster\",\"source_sha\":\"${sample_sha}\",\"target\":\"capacity-broker\",\"image\":\"${capacity_image}\",\"digest\":\"${sample_digest}\",\"ref\":\"${capacity_ref}\"}"
+do
+  if ! grep -Fxq -- "$exact" "$capacity_entry"; then
+    printf 'capacity renderer output missing exact line: %s\n' "$exact" >&2
+    exit 1
+  fi
+done
+
 expect_renderer_failure() {
   if bash "$renderer" "$@" >/dev/null 2>&1; then
     printf 'renderer unexpectedly accepted invalid release metadata\n' >&2
@@ -120,6 +141,9 @@ expect_renderer_failure \
 expect_renderer_failure \
   'ORESoftware/k8s-cluster' "$sample_sha" 'executor-router' \
   'ghcr.io/oresoftware/gha-clone-server' "$sample_digest"
+expect_renderer_failure \
+  'ORESoftware/k8s-cluster' "$sample_sha" 'capacity-broker' \
+  'ghcr.io/oresoftware/gha-executor-router' "$sample_digest"
 expect_renderer_failure \
   'ORESoftware/k8s-cluster' "$sample_sha" 'executor-router' "$sample_image" 'sha256:ABCDEF'
 

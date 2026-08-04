@@ -3,6 +3,9 @@ name = "gha-clone-server"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+path = "src/bounded_lib.rs"
+
 [dependencies]
 axum = { version = "0.7", features = ["macros"] }
 hex = "0.4"

@@ -7,7 +7,7 @@ use std::{
 
 use axum::{
     body::Bytes,
-    extract::{Path, State},
+    extract::{DefaultBodyLimit, Path, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -27,7 +27,16 @@ use tokio::{
     time::{sleep, Duration, Instant},
 };
 use tracing::{error, info};
+
 use uuid::Uuid;
+
+const UPSTREAM_RESPONSE_BODY_BYTES_MAX: usize = 64 * 1024;
+const REQUEST_BODY_JSON_EXPANSION_FACTOR: usize = 2;
+const REQUEST_BODY_ENVELOPE_BYTES: usize = 64 * 1024;
+
+mod run_reservation;
+
+use run_reservation::{reserve_run_records, ReserveRunsError};
 
 #[derive(Clone)]
 struct AppState {
@@ -83,27 +92,29 @@ impl Config {
             webhook_secret: env_optional("GHA_CLONE_GITHUB_WEBHOOK_SECRET"),
             github_token: env_optional("GHA_CLONE_GITHUB_TOKEN"),
             github_api_base_url: github_api_base_url_from_env()?,
-            build_server_url: env_optional("GHA_CLONE_BUILD_SERVER_URL")
-                .map(|value| value.trim_end_matches('/').to_string()),
+            build_server_url: build_server_url_from_env()?,
             build_server_auth: env_optional("GHA_CLONE_BUILD_SERVER_AUTH"),
             allowed_repositories,
             workflow_rules,
             execution_enabled: env_bool("GHA_CLONE_EXECUTION_ENABLED", false)?,
             webhook_execution_enabled: env_bool("GHA_CLONE_WEBHOOK_EXECUTION_ENABLED", false)?,
             limits: PlannerLimits {
-                max_workflow_bytes: env_usize(
+                max_workflow_bytes: env_nonzero_usize(
                     "GHA_CLONE_MAX_WORKFLOW_BYTES",
                     gha_clone_server::MAX_WORKFLOW_BYTES_DEFAULT,
                 )?,
-                max_jobs: env_usize("GHA_CLONE_MAX_JOBS", gha_clone_server::MAX_JOBS_DEFAULT)?,
-                max_steps_per_job: env_usize(
+                max_jobs: env_nonzero_usize(
+                    "GHA_CLONE_MAX_JOBS",
+                    gha_clone_server::MAX_JOBS_DEFAULT,
+                )?,
+                max_steps_per_job: env_nonzero_usize(
                     "GHA_CLONE_MAX_STEPS_PER_JOB",
                     gha_clone_server::MAX_STEPS_PER_JOB_DEFAULT,
                 )?,
             },
-            build_poll_seconds: env_u64("GHA_CLONE_BUILD_POLL_SECONDS", 2)?,
-            build_timeout_seconds: env_u64("GHA_CLONE_BUILD_TIMEOUT_SECONDS", 3600)?,
-            max_runs: env_usize("GHA_CLONE_MAX_RUNS", 256)?,
+            build_poll_seconds: env_nonzero_u64("GHA_CLONE_BUILD_POLL_SECONDS", 2)?,
+            build_timeout_seconds: env_nonzero_u64("GHA_CLONE_BUILD_TIMEOUT_SECONDS", 3600)?,
+            max_runs: env_nonzero_usize("GHA_CLONE_MAX_RUNS", 256)?,
             webhook_failure_conclusions: csv_lower_set_or_default(
                 "GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS",
                 &[
@@ -197,6 +208,38 @@ struct BuildJobResponse {
     error: Option<String>,
 }
 
+fn valid_build_job_id(value: &str) -> bool {
+    !matches!(value, "" | "." | "..")
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':'))
+}
+
+fn validate_build_job_response_id(
+    build: &BuildJobResponse,
+    expected: Option<&str>,
+) -> Result<(), String> {
+    if !valid_build_job_id(&build.id) {
+        return Err("build server returned an invalid job ID".into());
+    }
+    if expected.is_some_and(|expected| build.id != expected) {
+        return Err("build status returned a mismatched job ID".into());
+    }
+    Ok(())
+}
+
+fn validate_build_submission_response(build: &BuildJobResponse) -> Result<(), String> {
+    validate_build_job_response_id(build, None)?;
+    if !matches!(build.status.as_str(), "queued" | "running") {
+        return Err(format!(
+            "build server returned invalid accepted status {:?}",
+            build.status
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct BuildServerRequest<'a> {
@@ -224,12 +267,7 @@ async fn main() {
     let address = format!("{}:{}", config.host, config.port);
     let state = AppState {
         config: Arc::new(config),
-        client: reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(60))
-            .user_agent("gha-clone-server/0.1")
-            .build()
-            .expect("reqwest client"),
+        client: build_http_client().expect("reqwest client"),
         runs: Arc::new(RwLock::new(BTreeMap::new())),
         webhook_deliveries: Arc::new(RwLock::new(BTreeMap::new())),
     };
@@ -244,7 +282,23 @@ async fn main() {
         .expect("server");
 }
 
+fn build_http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(60))
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent("gha-clone-server/0.1")
+        .build()
+        .map_err(|error| format!("failed to build HTTP client: {error}"))
+}
+
 fn router(state: AppState) -> Router {
+    let request_body_limit = state
+        .config
+        .limits
+        .max_workflow_bytes
+        .saturating_mul(REQUEST_BODY_JSON_EXPANSION_FACTOR)
+        .saturating_add(REQUEST_BODY_ENVELOPE_BYTES);
     Router::new()
         .route("/", get(descriptor))
         .route("/healthz", get(healthz))
@@ -254,6 +308,7 @@ fn router(state: AppState) -> Router {
         .route("/v1/runs", post(create_run))
         .route("/v1/runs/:id", get(get_run))
         .route("/webhooks/github", post(github_webhook))
+        .layer(DefaultBodyLimit::max(request_body_limit))
         .with_state(state)
 }
 
@@ -382,24 +437,9 @@ async fn create_run(
             .into_response();
     }
 
-    let now = now_ms();
-    let record = RunRecord {
-        id: Uuid::new_v4(),
-        plan_id: plan.plan_id.clone(),
-        repository: plan.repository.clone(),
-        revision: plan.revision.clone(),
-        workflow_path: plan.workflow_path.clone(),
-        status: RunStatus::Queued,
-        current_job: None,
-        submissions: Vec::new(),
-        error: None,
-        created_at_ms: now,
-        updated_at_ms: now,
-    };
-    {
-        let mut runs = state.runs.write().await;
-        runs.insert(record.id, record.clone());
-        prune_runs(&mut runs, state.config.max_runs);
+    let record = queued_run_record(&plan);
+    if let Err(error) = reserve_runs(&state, vec![record.clone()]).await {
+        return reservation_error_response(error);
     }
     let run_id = record.id;
     tokio::spawn(async move {
@@ -497,6 +537,19 @@ async fn github_webhook(
     };
     if let Err(response) = require_allowed_repository(&repository, &state) {
         return response;
+    }
+    if event != "workflow_run" {
+        return (
+            StatusCode::ACCEPTED,
+            Json(json!({
+                "accepted": false,
+                "event": event,
+                "delivery": delivery,
+                "repository": repository,
+                "reason": "only workflow_run events may trigger the failure fallback"
+            })),
+        )
+            .into_response();
     }
     let Some(revision) = webhook_revision(event, &payload) else {
         return (
@@ -622,28 +675,30 @@ async fn github_webhook(
             )
                 .into_response();
         }
-        let mut run_ids = Vec::new();
-        for plan in plans.clone() {
-            let now = now_ms();
-            let record = RunRecord {
-                id: Uuid::new_v4(),
-                plan_id: plan.plan_id.clone(),
-                repository: plan.repository.clone(),
-                revision: plan.revision.clone(),
-                workflow_path: plan.workflow_path.clone(),
-                status: RunStatus::Queued,
-                current_job: None,
-                submissions: Vec::new(),
-                error: None,
-                created_at_ms: now,
-                updated_at_ms: now,
-            };
+
+        let scheduled = plans
+            .clone()
+            .into_iter()
+            .map(|plan| {
+                let record = queued_run_record(&plan);
+                (record, plan)
+            })
+            .collect::<Vec<_>>();
+        let records = scheduled
+            .iter()
+            .map(|(record, _)| record.clone())
+            .collect::<Vec<_>>();
+        if let Err(error) = reserve_runs(&state, records).await {
+            forget_webhook_delivery(&state, &delivery).await;
+            return reservation_error_response(error);
+        }
+
+        let run_ids = scheduled
+            .iter()
+            .map(|(record, _)| record.id)
+            .collect::<Vec<_>>();
+        for (record, plan) in scheduled {
             let run_id = record.id;
-            {
-                let mut runs = state.runs.write().await;
-                runs.insert(run_id, record);
-                prune_runs(&mut runs, state.config.max_runs);
-            }
             let task_state = state.clone();
             tokio::spawn(async move {
                 if let Err(error) = execute_plan(&task_state, run_id, plan).await {
@@ -655,7 +710,6 @@ async fn github_webhook(
                     .await;
                 }
             });
-            run_ids.push(run_id);
         }
         return (
             StatusCode::ACCEPTED,
@@ -684,6 +738,55 @@ async fn github_webhook(
         })),
     )
         .into_response()
+}
+
+fn queued_run_record(plan: &WorkflowPlan) -> RunRecord {
+    let now = now_ms();
+    RunRecord {
+        id: Uuid::new_v4(),
+        plan_id: plan.plan_id.clone(),
+        repository: plan.repository.clone(),
+        revision: plan.revision.clone(),
+        workflow_path: plan.workflow_path.clone(),
+        status: RunStatus::Queued,
+        current_job: None,
+        submissions: Vec::new(),
+        error: None,
+        created_at_ms: now,
+        updated_at_ms: now,
+    }
+}
+
+async fn reserve_runs(state: &AppState, records: Vec<RunRecord>) -> Result<(), ReserveRunsError> {
+    let mut runs = state.runs.write().await;
+    reserve_run_records(&mut runs, records, state.config.max_runs)
+}
+
+fn reservation_error_response(error: ReserveRunsError) -> Response {
+    match error {
+        ReserveRunsError::Capacity {
+            max_runs,
+            active_runs,
+            requested,
+        } => (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({
+                "error": "run capacity is full",
+                "maxRuns": max_runs,
+                "activeRuns": active_runs,
+                "requestedRuns": requested
+            })),
+        )
+            .into_response(),
+        ReserveRunsError::DuplicateId(id) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "error": "generated run identifier collided with retained state",
+                "runId": id
+            })),
+        )
+            .into_response(),
+    }
 }
 
 async fn execute_plan(state: &AppState, run_id: Uuid, plan: WorkflowPlan) -> Result<(), String> {
@@ -724,25 +827,27 @@ async fn execute_plan(state: &AppState, run_id: Uuid, plan: WorkflowPlan) -> Res
         };
         let response = state
             .client
-            .post(format!("{build_server_url}/builds"))
+            .post(build_server_endpoint(build_server_url, &["builds"])?)
             .header("x-build-server-auth", build_server_auth)
             .json(&request)
             .send()
             .await
             .map_err(|error| format!("build server submission failed for {job_id}: {error}"))?;
-        let status = response.status();
-        let body = response
-            .text()
-            .await
-            .map_err(|error| format!("build server response read failed: {error}"))?;
+        let (status, body) = read_response_bounded(
+            response,
+            UPSTREAM_RESPONSE_BODY_BYTES_MAX,
+            "build server submission response",
+        )
+        .await?;
         if status != StatusCode::ACCEPTED {
             return Err(format!(
                 "build server rejected {job_id} with HTTP {status}: {}",
-                bounded_text(&body, 1024)
+                bounded_bytes(&body, 1024)
             ));
         }
-        let build: BuildJobResponse = serde_json::from_str(&body)
+        let build: BuildJobResponse = serde_json::from_slice(&body)
             .map_err(|error| format!("build server returned invalid job JSON: {error}"))?;
+        validate_build_submission_response(&build)?;
         update_run(state, run_id, |run| {
             run.submissions.push(BuildSubmission {
                 job_id: job_id.clone(),
@@ -806,24 +911,29 @@ async fn wait_for_build(
         }
         let response = state
             .client
-            .get(format!("{build_server_url}/builds/{build_job_id}"))
+            .get(build_server_endpoint(
+                build_server_url,
+                &["builds", build_job_id],
+            )?)
             .header("x-build-server-auth", build_server_auth)
             .send()
             .await
             .map_err(|error| format!("build status request failed: {error}"))?;
-        let status = response.status();
-        let body = response
-            .text()
-            .await
-            .map_err(|error| format!("build status response read failed: {error}"))?;
+        let (status, body) = read_response_bounded(
+            response,
+            UPSTREAM_RESPONSE_BODY_BYTES_MAX,
+            "build status response",
+        )
+        .await?;
         if status != StatusCode::OK {
             return Err(format!(
                 "build status returned HTTP {status}: {}",
-                bounded_text(&body, 1024)
+                bounded_bytes(&body, 1024)
             ));
         }
-        let build: BuildJobResponse = serde_json::from_str(&body)
+        let build: BuildJobResponse = serde_json::from_slice(&body)
             .map_err(|error| format!("build status JSON is invalid: {error}"))?;
+        validate_build_job_response_id(&build, Some(build_job_id))?;
         match build.status.as_str() {
             "succeeded" | "failed" => return Ok(build),
             "queued" | "running" => {
@@ -855,20 +965,21 @@ async fn fetch_workflow(
         .await
         .map_err(|error| format!("GitHub workflow fetch failed: {error}"))?;
     let status = response.status();
-    let body = response
-        .text()
-        .await
-        .map_err(|error| format!("GitHub workflow response read failed: {error}"))?;
+    let max_body_bytes = if status.is_success() {
+        state.config.limits.max_workflow_bytes
+    } else {
+        UPSTREAM_RESPONSE_BODY_BYTES_MAX
+    };
+    let (status, body) =
+        read_response_bounded(response, max_body_bytes, "GitHub workflow response").await?;
     if !status.is_success() {
         return Err(format!(
             "GitHub workflow fetch returned HTTP {status}: {}",
-            bounded_text(&body, 512)
+            bounded_bytes(&body, 512)
         ));
     }
-    if body.len() > state.config.limits.max_workflow_bytes {
-        return Err("GitHub workflow exceeds configured byte limit".into());
-    }
-    Ok(body)
+    String::from_utf8(body)
+        .map_err(|error| format!("GitHub workflow response is not UTF-8: {error}"))
 }
 
 fn webhook_paths(
@@ -953,6 +1064,10 @@ async fn remember_webhook_delivery(state: &AppState, delivery: &str) -> bool {
     true
 }
 
+async fn forget_webhook_delivery(state: &AppState, delivery: &str) {
+    state.webhook_deliveries.write().await.remove(delivery);
+}
+
 fn prune_webhook_deliveries(
     deliveries: &mut BTreeMap<String, Instant>,
     now: Instant,
@@ -988,6 +1103,26 @@ fn webhook_revision(event: &str, payload: &Value) -> Option<String> {
     .map(str::to_string)
 }
 
+enum HeaderAuthority<'a> {
+    Absent,
+    Present(&'a str),
+    Invalid,
+}
+
+fn single_header_authority<'a>(headers: &'a HeaderMap, name: &'static str) -> HeaderAuthority<'a> {
+    let mut values = headers.get_all(name).iter();
+    let Some(first) = values.next() else {
+        return HeaderAuthority::Absent;
+    };
+    if values.next().is_some() {
+        return HeaderAuthority::Invalid;
+    }
+    match first.to_str() {
+        Ok(value) => HeaderAuthority::Present(value),
+        Err(_) => HeaderAuthority::Invalid,
+    }
+}
+
 #[allow(clippy::result_large_err)] // Axum guard returns a response only when a request is rejected.
 fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Response> {
     let Some(expected) = state.config.auth_secret.as_deref() else {
@@ -997,10 +1132,13 @@ fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Response> {
         )
             .into_response());
     };
-    let presented = headers
-        .get("x-server-auth")
-        .or_else(|| headers.get("x-gha-clone-auth"))
-        .and_then(|value| value.to_str().ok());
+    let server_auth = single_header_authority(headers, "x-server-auth");
+    let clone_auth = single_header_authority(headers, "x-gha-clone-auth");
+    let presented = match (server_auth, clone_auth) {
+        (HeaderAuthority::Present(value), HeaderAuthority::Absent)
+        | (HeaderAuthority::Absent, HeaderAuthority::Present(value)) => Some(value),
+        _ => None,
+    };
     if presented.is_some_and(|value| digest_eq(value, expected)) {
         Ok(())
     } else {
@@ -1041,22 +1179,6 @@ where
     if let Some(run) = state.runs.write().await.get_mut(&id) {
         mutate(run);
         run.updated_at_ms = now_ms();
-    }
-}
-
-fn prune_runs(runs: &mut BTreeMap<Uuid, RunRecord>, max_runs: usize) {
-    let remove = runs.len().saturating_sub(max_runs);
-    if remove == 0 {
-        return;
-    }
-    let mut candidates = runs
-        .values()
-        .filter(|run| matches!(run.status, RunStatus::Succeeded | RunStatus::Failed))
-        .map(|run| (run.updated_at_ms, run.id))
-        .collect::<Vec<_>>();
-    candidates.sort_by_key(|(updated_at_ms, _)| *updated_at_ms);
-    for (_, id) in candidates.into_iter().take(remove) {
-        runs.remove(&id);
     }
 }
 
@@ -1120,6 +1242,69 @@ fn valid_configured_workflow_path(value: &str) -> bool {
         && !value.contains("..")
         && !value.contains('\\')
         && value.len() <= 256
+}
+
+fn build_server_url_from_env() -> Result<Option<String>, String> {
+    env_optional("GHA_CLONE_BUILD_SERVER_URL")
+        .map(|value| normalize_build_server_url(&value))
+        .transpose()
+}
+
+fn valid_dns_label(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let (Some(first), Some(last)) = (bytes.first(), bytes.last()) else {
+        return false;
+    };
+    bytes.len() <= 63
+        && first.is_ascii_alphanumeric()
+        && last.is_ascii_alphanumeric()
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
+}
+
+fn is_kubernetes_service_dns(host: &str) -> bool {
+    let labels = host.split('.').collect::<Vec<_>>();
+    match labels.as_slice() {
+        [service, namespace, "svc"] | [service, namespace, "svc", "cluster", "local"] => {
+            valid_dns_label(service) && valid_dns_label(namespace)
+        }
+        _ => false,
+    }
+}
+
+fn normalize_build_server_url(value: &str) -> Result<String, String> {
+    let value = value.trim().trim_end_matches('/');
+    if value.is_empty() {
+        return Err("GHA_CLONE_BUILD_SERVER_URL must not be empty".into());
+    }
+    let parsed = reqwest::Url::parse(value)
+        .map_err(|error| format!("GHA_CLONE_BUILD_SERVER_URL is invalid: {error}"))?;
+    if !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err(
+            "GHA_CLONE_BUILD_SERVER_URL must not contain credentials, query, or fragment".into(),
+        );
+    }
+    if parsed.path() != "/" {
+        return Err("GHA_CLONE_BUILD_SERVER_URL must be an origin without a path".into());
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "GHA_CLONE_BUILD_SERVER_URL must contain a host".to_string())?;
+    let loopback_http =
+        parsed.scheme() == "http" && matches!(host, "127.0.0.1" | "localhost" | "::1" | "[::1]");
+    let kubernetes_http = parsed.scheme() == "http" && is_kubernetes_service_dns(host);
+    if parsed.scheme() != "https" && !loopback_http && !kubernetes_http {
+        return Err(
+            "GHA_CLONE_BUILD_SERVER_URL must use HTTPS; HTTP is allowed only for loopback tests or Kubernetes service DNS"
+                .into(),
+        );
+    }
+    Ok(value.to_string())
 }
 
 fn github_api_base_url_from_env() -> Result<String, String> {
@@ -1255,8 +1440,59 @@ fn env_nonzero_usize(name: &str, default: usize) -> Result<usize, String> {
     }
 }
 
+fn build_server_endpoint(base: &str, segments: &[&str]) -> Result<reqwest::Url, String> {
+    let mut url = reqwest::Url::parse(base)
+        .map_err(|error| format!("configured build server origin is invalid: {error}"))?;
+    {
+        let mut path = url
+            .path_segments_mut()
+            .map_err(|_| "configured build server origin cannot be a base URL".to_string())?;
+        path.clear();
+        for segment in segments {
+            path.push(segment);
+        }
+    }
+    Ok(url)
+}
+
+async fn read_response_bounded(
+    mut response: reqwest::Response,
+    max_bytes: usize,
+    context: &str,
+) -> Result<(StatusCode, Vec<u8>), String> {
+    let status = response.status();
+    let max_bytes_u64 = u64::try_from(max_bytes).unwrap_or(u64::MAX);
+    if response
+        .content_length()
+        .is_some_and(|length| length > max_bytes_u64)
+    {
+        return Err(format!("{context} exceeds {max_bytes}-byte limit"));
+    }
+    let capacity = response
+        .content_length()
+        .and_then(|length| usize::try_from(length).ok())
+        .unwrap_or(0)
+        .min(max_bytes);
+    let mut body = Vec::with_capacity(capacity);
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| format!("{context} read failed: {error}"))?
+    {
+        if body.len().saturating_add(chunk.len()) > max_bytes {
+            return Err(format!("{context} exceeds {max_bytes}-byte limit"));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok((status, body))
+}
+
 fn bounded_text(value: &str, max_chars: usize) -> String {
     value.chars().take(max_chars).collect()
+}
+
+fn bounded_bytes(value: &[u8], max_chars: usize) -> String {
+    bounded_text(&String::from_utf8_lossy(value), max_chars)
 }
 
 fn now_ms() -> u128 {
@@ -1450,35 +1686,124 @@ mod tests {
     }
 
     #[test]
-    fn terminal_run_pruning_never_discards_active_runs() {
-        let now = now_ms();
-        let mut runs = BTreeMap::new();
-        for (index, status) in [RunStatus::Running, RunStatus::Succeeded, RunStatus::Failed]
-            .into_iter()
-            .enumerate()
-        {
-            let id = Uuid::new_v4();
-            runs.insert(
-                id,
-                RunRecord {
-                    id,
-                    plan_id: format!("plan-{index}"),
-                    repository: "owner/repo".into(),
-                    revision: "a".repeat(40),
-                    workflow_path: ".github/workflows/ci.yml".into(),
-                    status,
-                    current_job: None,
-                    submissions: vec![],
-                    error: None,
-                    created_at_ms: now + index as u128,
-                    updated_at_ms: now + index as u128,
-                },
-            );
+    fn build_server_origin_is_credential_free_and_transport_safe() {
+        assert_eq!(
+            normalize_build_server_url("https://build.example.com/").unwrap(),
+            "https://build.example.com"
+        );
+        assert!(normalize_build_server_url("http://127.0.0.1:8123").is_ok());
+        assert!(normalize_build_server_url("http://localhost:8123").is_ok());
+        assert!(
+            normalize_build_server_url("http://dd-build-server.remote.svc.cluster.local:8123")
+                .is_ok()
+        );
+        assert!(normalize_build_server_url("http://dd-build-server.remote.svc:8123").is_ok());
+        assert!(normalize_build_server_url("http://[::1]:8123").is_ok());
+        assert!(
+            normalize_build_server_url("http://extra.dd-build-server.remote.svc:8123").is_err()
+        );
+        assert!(normalize_build_server_url("http://dd_build.remote.svc:8123").is_err());
+        assert!(normalize_build_server_url("http://-build.remote.svc:8123").is_err());
+        assert!(normalize_build_server_url("http://10.0.0.10:8123").is_err());
+        assert!(normalize_build_server_url("http://build.example.com").is_err());
+        assert!(normalize_build_server_url("http://service.svc.evil.example").is_err());
+        assert!(normalize_build_server_url("https://user:pass@build.example.com").is_err());
+        assert!(normalize_build_server_url("https://build.example.com/api").is_err());
+        assert!(normalize_build_server_url("https://build.example.com?token=x").is_err());
+    }
+
+    #[test]
+    fn build_job_response_identity_is_validated_and_bound() {
+        let valid = BuildJobResponse {
+            id: "build:0123-abc_def.test".into(),
+            status: "queued".into(),
+            error: None,
+        };
+        assert!(validate_build_job_response_id(&valid, None).is_ok());
+        assert!(validate_build_job_response_id(&valid, Some(&valid.id)).is_ok());
+        assert!(validate_build_job_response_id(&valid, Some("different")).is_err());
+
+        for id in ["", ".", "..", "../build?token=x", "build/child"] {
+            let invalid = BuildJobResponse {
+                id: id.into(),
+                status: "queued".into(),
+                error: None,
+            };
+            assert!(validate_build_job_response_id(&invalid, None).is_err());
         }
-        prune_runs(&mut runs, 2);
-        assert_eq!(runs.len(), 2);
-        assert!(runs
-            .values()
-            .any(|run| matches!(run.status, RunStatus::Running)));
+        let too_long = BuildJobResponse {
+            id: "a".repeat(129),
+            status: "queued".into(),
+            error: None,
+        };
+        assert!(validate_build_job_response_id(&too_long, None).is_err());
+    }
+
+    #[test]
+    fn authentication_header_authority_rejects_duplicates() {
+        let mut headers = HeaderMap::new();
+        assert!(matches!(
+            single_header_authority(&headers, "x-server-auth"),
+            HeaderAuthority::Absent
+        ));
+        headers.append("x-server-auth", "first".parse().unwrap());
+        assert!(matches!(
+            single_header_authority(&headers, "x-server-auth"),
+            HeaderAuthority::Present("first")
+        ));
+        headers.append("x-server-auth", "second".parse().unwrap());
+        assert!(matches!(
+            single_header_authority(&headers, "x-server-auth"),
+            HeaderAuthority::Invalid
+        ));
+    }
+
+    #[test]
+    fn build_server_endpoint_uses_encoded_path_segments() {
+        let endpoint = build_server_endpoint(
+            "https://build.example.com",
+            &["builds", "build:abc.def_123"],
+        )
+        .unwrap();
+        assert_eq!(
+            endpoint.as_str(),
+            "https://build.example.com/builds/build:abc.def_123"
+        );
+    }
+
+    #[test]
+    fn submission_status_is_validated_before_state_mutation() {
+        let unknown = BuildJobResponse {
+            id: "build-1".into(),
+            status: "mystery".into(),
+            error: None,
+        };
+        assert!(validate_build_submission_response(&unknown)
+            .unwrap_err()
+            .contains("invalid accepted status"));
+    }
+
+    #[tokio::test]
+    async fn configured_http_client_does_not_follow_redirects() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route(
+                "/start",
+                get(|| async { axum::response::Redirect::temporary("/final") }),
+            )
+            .route("/final", get(|| async { StatusCode::OK }));
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let response = build_http_client()
+            .unwrap()
+            .get(format!("http://{address}/start"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+        server.abort();
     }
 }

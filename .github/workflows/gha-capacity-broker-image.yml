@@ -1,0 +1,427 @@
+name: GHA capacity broker OCI image
+
+on:
+  pull_request:
+    paths:
+      - 'remote/deployments/gha-capacity-broker-rs/Dockerfile'
+      - 'remote/deployments/gha-capacity-broker-rs/.dockerignore'
+      - 'remote/deployments/gha-capacity-broker-rs/Cargo.toml'
+      - 'remote/deployments/gha-capacity-broker-rs/Cargo.lock'
+      - 'remote/deployments/gha-capacity-broker-rs/src/**'
+      - 'remote/deployments/gha-capacity-broker-rs/scripts/**'
+      - 'remote/deployments/gha-clone-server-rs/scripts/validate-image-export.py'
+      - 'remote/deployments/gha-clone-server-rs/scripts/render-oci-release-ledger-entry.sh'
+      - 'remote/deployments/gha-clone-server-rs/scripts/check-oci-release-ledger-comments.py'
+      - 'remote/deployments/gha-clone-server-rs/scripts/check-oci-release-ledger-contract.sh'
+      - 'docs/gha-continuity-images.md'
+      - '.github/workflows/gha-capacity-broker-image.yml'
+  push:
+    branches: [dev]
+    paths:
+      - 'remote/deployments/gha-capacity-broker-rs/Dockerfile'
+      - 'remote/deployments/gha-capacity-broker-rs/.dockerignore'
+      - 'remote/deployments/gha-capacity-broker-rs/Cargo.toml'
+      - 'remote/deployments/gha-capacity-broker-rs/Cargo.lock'
+      - 'remote/deployments/gha-capacity-broker-rs/src/**'
+      - 'remote/deployments/gha-capacity-broker-rs/scripts/**'
+      - 'remote/deployments/gha-clone-server-rs/scripts/validate-image-export.py'
+      - 'remote/deployments/gha-clone-server-rs/scripts/render-oci-release-ledger-entry.sh'
+      - 'remote/deployments/gha-clone-server-rs/scripts/check-oci-release-ledger-comments.py'
+      - 'remote/deployments/gha-clone-server-rs/scripts/check-oci-release-ledger-contract.sh'
+      - 'docs/gha-continuity-images.md'
+      - '.github/workflows/gha-capacity-broker-image.yml'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the immutable SHA-tagged broker image and refresh the dev tag
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gha-capacity-broker-image-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CRATE_DIR: remote/deployments/gha-capacity-broker-rs
+  BROKER_IMAGE: gha-capacity-broker:test
+  PUBLISHED_IMAGE: ghcr.io/oresoftware/gha-capacity-broker
+  TARGET: capacity-broker
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate image and release-ledger contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash remote/deployments/gha-capacity-broker-rs/scripts/check-container-image-contract.sh
+          bash remote/deployments/gha-clone-server-rs/scripts/check-oci-release-ledger-contract.sh
+
+      - name: Create an isolated BuildKit builder
+        shell: bash
+        run: |
+          set -euo pipefail
+          builder="gha-capacity-broker-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "BUILDX_BUILDER=${builder}" >> "$GITHUB_ENV"
+          docker buildx create --name "$builder" --driver docker-container --use
+          docker buildx inspect --bootstrap
+
+      - name: Lint the Dockerfile with BuildKit
+        working-directory: ${{ env.CRATE_DIR }}
+        run: docker buildx build --builder "$BUILDX_BUILDER" --check .
+
+      - name: Build the hardened broker runtime
+        shell: bash
+        working-directory: ${{ env.CRATE_DIR }}
+        run: |
+          set -euo pipefail
+          export SOURCE_DATE_EPOCH="$(git -C "$GITHUB_WORKSPACE" show -s --format=%ct "$GITHUB_SHA")"
+          created="$(date --utc --date="@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)"
+          docker buildx build \
+            --builder "$BUILDX_BUILDER" \
+            --platform linux/amd64 \
+            --build-arg "OCI_CREATED=${created}" \
+            --build-arg "OCI_REVISION=${GITHUB_SHA}" \
+            --build-arg 'OCI_SOURCE=https://github.com/ORESoftware/k8s-cluster' \
+            --tag "$BROKER_IMAGE" \
+            --load \
+            .
+
+      - name: Run the read-only non-root broker smoke
+        shell: bash
+        working-directory: ${{ env.CRATE_DIR }}
+        run: |
+          set -euo pipefail
+          chmod 0755 scripts/smoke-container-image.sh
+          scripts/smoke-container-image.sh "$BROKER_IMAGE"
+
+      - name: Export and validate SPDX and SLSA attestations
+        shell: bash
+        working-directory: ${{ env.CRATE_DIR }}
+        run: |
+          set -euo pipefail
+          export SOURCE_DATE_EPOCH="$(git -C "$GITHUB_WORKSPACE" show -s --format=%ct "$GITHUB_SHA")"
+          created="$(date --utc --date="@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)"
+          destination="${RUNNER_TEMP}/capacity-broker-export"
+          rm -rf "$destination"
+          docker buildx build \
+            --builder "$BUILDX_BUILDER" \
+            --platform linux/amd64 \
+            --build-arg "OCI_CREATED=${created}" \
+            --build-arg "OCI_REVISION=${GITHUB_SHA}" \
+            --build-arg 'OCI_SOURCE=https://github.com/ORESoftware/k8s-cluster' \
+            --sbom=true \
+            --provenance=mode=max,version=v1 \
+            --output "type=local,dest=${destination}" \
+            .
+          python3 "$GITHUB_WORKSPACE/remote/deployments/gha-clone-server-rs/scripts/validate-image-export.py" \
+            "$destination" gha-capacity-broker
+
+      - name: Scan broker image for fixable high and critical vulnerabilities
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # immutable 0.35.0 / Trivy 0.69.3
+        with:
+          image-ref: ${{ env.BROKER_IMAGE }}
+          scan-type: image
+          scanners: vuln
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+          cache: 'false'
+          version: v0.69.3
+
+      - name: Remove the isolated builder
+        if: ${{ always() }}
+        shell: bash
+        run: docker buildx rm "$BUILDX_BUILDER" >/dev/null 2>&1 || true
+
+  publish:
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+      issues: write # Append validated immutable release metadata to issue 702.
+    steps:
+      - name: Check out the exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Authenticate to GHCR with the repository token
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' '${{ github.token }}' | \
+            docker login ghcr.io --username '${{ github.actor }}' --password-stdin
+
+      - name: Create an isolated BuildKit builder
+        shell: bash
+        run: |
+          set -euo pipefail
+          builder="gha-capacity-broker-publish-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "BUILDX_BUILDER=${builder}" >> "$GITHUB_ENV"
+          docker buildx create --name "$builder" --driver docker-container --use
+          docker buildx inspect --bootstrap
+
+      - name: Publish SHA and dev tags with SBOM and max SLSA provenance
+        id: publish
+        shell: bash
+        working-directory: ${{ env.CRATE_DIR }}
+        run: |
+          set -euo pipefail
+          export SOURCE_DATE_EPOCH="$(git -C "$GITHUB_WORKSPACE" show -s --format=%ct "$GITHUB_SHA")"
+          created="$(date --utc --date="@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)"
+          metadata="${RUNNER_TEMP}/capacity-broker-metadata.json"
+          docker buildx build \
+            --builder "$BUILDX_BUILDER" \
+            --platform linux/amd64 \
+            --build-arg "OCI_CREATED=${created}" \
+            --build-arg "OCI_REVISION=${GITHUB_SHA}" \
+            --build-arg 'OCI_SOURCE=https://github.com/ORESoftware/k8s-cluster' \
+            --tag "${PUBLISHED_IMAGE}:sha-${GITHUB_SHA}" \
+            --tag "${PUBLISHED_IMAGE}:dev" \
+            --sbom=true \
+            --provenance=mode=max,version=v1 \
+            --metadata-file "$metadata" \
+            --push \
+            .
+          digest="$(python3 - "$metadata" <<'PY'
+          import json
+          import re
+          import sys
+
+          metadata = json.load(open(sys.argv[1]))
+          digest = metadata.get('containerimage.digest', '')
+          if not re.fullmatch(r'sha256:[0-9a-f]{64}', digest):
+              raise SystemExit(f'invalid published digest: {digest!r}')
+          print(digest)
+          PY
+          )"
+          reference="${PUBLISHED_IMAGE}@${digest}"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "reference=${reference}" >> "$GITHUB_OUTPUT"
+          {
+            echo '### Published capacity-broker'
+            echo
+            echo "- Reference: \`${reference}\`"
+            echo "- Revision tag: \`${PUBLISHED_IMAGE}:sha-${GITHUB_SHA}\`"
+            echo '- Attestations: SPDX SBOM + max SLSA provenance'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify published SBOM and provenance by digest
+        shell: bash
+        env:
+          REFERENCE: ${{ steps.publish.outputs.reference }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "$REFERENCE" \
+            --format '{{ json .SBOM.SPDX }}' >"${RUNNER_TEMP}/sbom.json"
+          docker buildx imagetools inspect "$REFERENCE" \
+            --format '{{ json .Provenance.SLSA }}' >"${RUNNER_TEMP}/provenance.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          sbom = json.loads(Path(os.environ['RUNNER_TEMP'], 'sbom.json').read_text())
+          provenance = json.loads(Path(os.environ['RUNNER_TEMP'], 'provenance.json').read_text())
+          if sbom.get('SPDXID') != 'SPDXRef-DOCUMENT':
+              raise SystemExit('published image lacks an SPDX document')
+          if not provenance:
+              raise SystemExit('published image lacks SLSA provenance')
+          print(json.dumps({'spdx': True, 'provenance': True}, sort_keys=True))
+          PY
+
+      - name: Scan the exact published digest
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # immutable 0.35.0 / Trivy 0.69.3
+        with:
+          image-ref: ${{ steps.publish.outputs.reference }}
+          scan-type: image
+          scanners: vuln
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+          cache: 'false'
+          version: v0.69.3
+
+      - name: Record immutable digest in the release ledger
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OCI_RELEASE_LEDGER_ISSUE: "702"
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+          TARGET: capacity-broker
+          IMAGE: ghcr.io/oresoftware/gha-capacity-broker
+          DIGEST: ${{ steps.publish.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts='remote/deployments/gha-clone-server-rs/scripts'
+          entry="${RUNNER_TEMP}/${TARGET}-release-entry.md"
+          comments="${RUNNER_TEMP}/oci-release-comments.json"
+          payload="${RUNNER_TEMP}/${TARGET}-release-comment.json"
+
+          bash "${scripts}/render-oci-release-ledger-entry.sh" \
+            "$SOURCE_REPOSITORY" \
+            "$SOURCE_SHA" \
+            "$TARGET" \
+            "$IMAGE" \
+            "$DIGEST" >"$entry"
+
+          gh api --paginate --slurp \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "repos/${SOURCE_REPOSITORY}/issues/${OCI_RELEASE_LEDGER_ISSUE}/comments?per_page=100" \
+            >"$comments"
+
+          set +e
+          classification="$(python3 "${scripts}/check-oci-release-ledger-comments.py" \
+            "$entry" "$comments" 2>&1)"
+          status=$?
+          set -e
+          case "$status" in
+            0)
+              printf 'release ledger entry already present; no comment created\n'
+              ;;
+            10)
+              python3 - "$entry" "$payload" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          body = Path(sys.argv[1]).read_text(encoding='utf-8')
+          Path(sys.argv[2]).write_text(json.dumps({'body': body}), encoding='utf-8')
+          PY
+              gh api --method POST \
+                -H 'Accept: application/vnd.github+json' \
+                -H 'X-GitHub-Api-Version: 2022-11-28' \
+                "repos/${SOURCE_REPOSITORY}/issues/${OCI_RELEASE_LEDGER_ISSUE}/comments" \
+                --input "$payload" >/dev/null
+              printf 'release ledger entry appended\n'
+              ;;
+            *)
+              printf '%s\n' "$classification" >&2
+              exit "$status"
+              ;;
+          esac
+
+      - name: Remove the isolated builder
+        if: ${{ always() }}
+        shell: bash
+        run: docker buildx rm "$BUILDX_BUILDER" >/dev/null 2>&1 || true
+
+  receipt:
+    if: ${{ always() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish)) }}
+    needs: [validate, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write # Report trusted broker publication failures to issue 702.
+    steps:
+      - name: Verify the release record or append a fail-closed publication receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: "702"
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+          VALIDATE_RESULT: ${{ needs.validate.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          WORKFLOW_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          comments="${RUNNER_TEMP}/capacity-broker-publication-comments.json"
+          payload="${RUNNER_TEMP}/capacity-broker-publication-receipt.json"
+          release_marker="<!-- gha-continuity-oci-release:${SOURCE_SHA}:capacity-broker -->"
+          receipt_marker="<!-- gha-continuity-oci-publication-receipt:${SOURCE_SHA}:capacity-broker -->"
+
+          gh api --paginate --slurp \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "repos/${SOURCE_REPOSITORY}/issues/${ISSUE}/comments?per_page=100" \
+            >"$comments"
+
+          read -r release_present receipt_present < <(
+            python3 - "$comments" "$release_marker" "$receipt_marker" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          pages = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          comments = []
+          for page in pages:
+              if isinstance(page, list):
+                  comments.extend(page)
+          bodies = [item.get('body', '') for item in comments if isinstance(item, dict)]
+          print(
+              'true' if any(sys.argv[2] in body for body in bodies) else 'false',
+              'true' if any(sys.argv[3] in body for body in bodies) else 'false',
+          )
+          PY
+          )
+
+          if [[ "$release_present" == 'true' ]]; then
+            {
+              echo '### Capacity-broker publication receipt'
+              echo
+              echo '- Release ledger record: present'
+              echo "- Source SHA: \`${SOURCE_SHA}\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [[ "$receipt_present" != 'true' ]]; then
+            python3 - "$payload" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          marker = f"<!-- gha-continuity-oci-publication-receipt:{os.environ['SOURCE_SHA']}:capacity-broker -->"
+          record = {
+              'schema_version': 1,
+              'repository': os.environ['SOURCE_REPOSITORY'],
+              'source_sha': os.environ['SOURCE_SHA'],
+              'target': 'capacity-broker',
+              'validate_result': os.environ['VALIDATE_RESULT'],
+              'publish_result': os.environ['PUBLISH_RESULT'],
+              'release_record_present': False,
+              'run_url': os.environ['WORKFLOW_RUN_URL'],
+          }
+          body = marker + '\n```json\n' + json.dumps(record, separators=(',', ':')) + '\n```\n'
+          Path(sys.argv[1]).write_text(json.dumps({'body': body}), encoding='utf-8')
+          PY
+            gh api --method POST \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "repos/${SOURCE_REPOSITORY}/issues/${ISSUE}/comments" \
+              --input "$payload" >/dev/null
+          fi
+
+          {
+            echo '### Capacity-broker publication receipt'
+            echo
+            echo '- Release ledger record: missing'
+            echo "- Validate result: \`${VALIDATE_RESULT}\`"
+            echo "- Publish result: \`${PUBLISH_RESULT}\`"
+            echo "- Run: ${WORKFLOW_RUN_URL}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo 'trusted capacity-broker publication completed without an authoritative ledger record' >&2
+          exit 1
