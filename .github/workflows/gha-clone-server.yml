@@ -4,15 +4,13 @@ on:
   pull_request:
     paths:
       - 'remote/deployments/gha-clone-server-rs/**'
-      - 'remote/deployments/build-server-rs/src/profiles.rs'
-      - 'remote/deployments/build-server-rs/src/validation.rs'
-      - 'remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/**'
-      - 'remote/deployments/build-server-rs/readme.md'
+      - 'remote/deployments/build-server-rs/**'
       - 'remote/argocd/dd-next-runtime/dd-gha-clone-server*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
       - 'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml'
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
+      - 'remote/tests/general/gha-clone-webhook-config.test.ts'
       - 'docs/gha-continuity-architecture.md'
       - 'docs/gha-profile-repository-admission.md'
       - '.github/actionlint.yaml'
@@ -23,15 +21,13 @@ on:
     branches: [main, dev]
     paths:
       - 'remote/deployments/gha-clone-server-rs/**'
-      - 'remote/deployments/build-server-rs/src/profiles.rs'
-      - 'remote/deployments/build-server-rs/src/validation.rs'
-      - 'remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/**'
-      - 'remote/deployments/build-server-rs/readme.md'
+      - 'remote/deployments/build-server-rs/**'
       - 'remote/argocd/dd-next-runtime/dd-gha-clone-server*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
       - 'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml'
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
+      - 'remote/tests/general/gha-clone-webhook-config.test.ts'
       - 'docs/gha-continuity-architecture.md'
       - 'docs/gha-profile-repository-admission.md'
       - '.github/actionlint.yaml'
@@ -76,7 +72,7 @@ jobs:
       - name: Run Clippy
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo clippy --locked --all-targets -- -D warnings
-      - name: Run unit and meta integration tests
+      - name: Run every server unit, runtime, webhook, and integration target
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo test --locked --all-targets
 
@@ -97,11 +93,11 @@ jobs:
           components: rustfmt
       - name: Check the modified build-server source formatting
         working-directory: remote/deployments/build-server-rs
-        run: rustfmt --edition 2021 --check src/profiles.rs src/validation.rs
-      - name: Compile the build server against the exact private library gitlink
+        run: rustfmt --edition 2021 --check src/jobs.rs src/profiles.rs src/validation.rs
+      - name: Compile the complete build server against the exact private library gitlink
         working-directory: remote/deployments/build-server-rs
         run: cargo check --locked --all-targets
-      - name: Test fixed profiles and repository admission rules
+      - name: Test idempotency, fixed profiles, and exact repository admission
         working-directory: remote/deployments/build-server-rs
         run: cargo test --locked --bin dd-build-server -- --nocapture
       - name: Execute the credential-free hardened Node fixture
@@ -246,9 +242,14 @@ jobs:
           cache-dependency-path: remote/tests/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: remote/tests
-      - name: Validate deployment and execution boundary
+      - name: Validate deployment, execution, and webhook boundaries
         working-directory: remote/tests
-        run: pnpm exec tsx --test general/gha-clone-server-config.test.ts
+        run: |
+          pnpm exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts
+      - name: Validate webhook registration shell syntax
+        run: bash -n remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh
       - name: Reject committed credentials
         run: |
           if grep -RIE \
