@@ -75,7 +75,7 @@ jobs:
           for path in \
             .github/workflows/gha-clone-server.yml \
             remote/tests/general/gha-clone-server-config.test.ts; do
-            safe_name="${path//\//__}"
+            safe_name="merge-${path//\//__}"
             git show "HEAD:$path" > "$conflict_dir/${safe_name}.current-dev"
             git show "$MERGE_BASE_SHA:$path" > "$conflict_dir/${safe_name}.merge-base"
             git show "$SOURCE_SHA:$path" > "$conflict_dir/${safe_name}.reviewed-source"
@@ -87,13 +87,13 @@ jobs:
               > "$conflict_dir/${safe_name}.merged"
             status=$?
             set -e
-            if [ "$status" -gt 1 ]; then
-              echo "git merge-file failed for $path with status $status" >&2
+            if [ "$status" -eq 255 ]; then
+              echo "git merge-file failed internally for $path" >&2
               exit "$status"
             fi
             cp "$conflict_dir/${safe_name}.merged" "$path"
-            if [ "$status" -eq 1 ]; then
-              echo "semantic merge requires explicit resolution: $path" >&2
+            if [ "$status" -ne 0 ]; then
+              echo "semantic merge requires explicit resolution: $path ($status conflict hunks)" >&2
               conflicts=1
             fi
           done
@@ -116,6 +116,7 @@ jobs:
           name: den-1550-semantic-merge-inputs
           path: ${{ runner.temp }}/den1550-semantic-merge
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 7
 
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
