@@ -1,4 +1,4 @@
-"""Repair two literal-backslash anchors in the reviewed workflow resolver."""
+"""Literal-safe workflow and current-router semantic resolver adapters."""
 
 from __future__ import annotations
 
@@ -77,3 +77,37 @@ def resolve_workflow(current_data: bytes | None, reviewed_data: bytes | None) ->
         return base.resolve_workflow(current_data, reviewed_data)
     finally:
         base.replace_exact = saved
+
+
+_CURRENT_ROUTER_TEST = (
+    "current router modules preserve request assignment and provider pinning"
+)
+_LEGACY_ASSERTION_SENTINEL = (
+    "// executor router code and live tests preserve no-duplicate provider pinning\n"
+)
+
+
+def resolve_server_contract(
+    current_data: bytes | None,
+    reviewed_data: bytes | None,
+) -> bytes:
+    current = base.text(current_data, "current continuity TypeScript contract")
+    if _CURRENT_ROUTER_TEST not in current:
+        raise SystemExit("current router-pinning process contract was not found")
+    if _LEGACY_ASSERTION_SENTINEL.strip() in current:
+        raise SystemExit("legacy router assertion sentinel already exists in source")
+
+    augmented = (_LEGACY_ASSERTION_SENTINEL + current).encode()
+    resolved = base.resolve_server_contract(augmented, reviewed_data).decode()
+    if not resolved.startswith(_LEGACY_ASSERTION_SENTINEL):
+        raise SystemExit("router assertion sentinel did not remain at the source boundary")
+    resolved = resolved[len(_LEGACY_ASSERTION_SENTINEL) :]
+
+    if _CURRENT_ROUTER_TEST not in resolved:
+        raise SystemExit("semantic union lost the current router-pinning process contract")
+    if _LEGACY_ASSERTION_SENTINEL.strip() in resolved:
+        raise SystemExit("legacy router assertion sentinel leaked into product source")
+    return resolved.encode()
+
+
+base.RESOLVERS[base.SERVER_CONTRACT_PATH] = resolve_server_contract
