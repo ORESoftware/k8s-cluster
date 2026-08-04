@@ -34,7 +34,7 @@ jobs:
         with:
           node-version: '22.23.1'
 
-      - name: Apply scoped SDK and contract corrections
+      - name: Apply scoped SDK lifecycle corrections
         shell: bash
         run: |
           set -euo pipefail
@@ -61,14 +61,6 @@ jobs:
               raise SystemExit(f'expected one unreachable resolve in fenced test, found {segment.count(needle)}')
           segment = segment.replace(needle, '', 1)
           tests.write_text(text[:start] + segment, encoding='utf-8')
-
-          contract = Path('remote/tests/general/durable-worker-typescript-sdk.test.mjs')
-          text = contract.read_text(encoding='utf-8')
-          old = r"assert.match(readme, /will not turn an ambiguous network failure into a duplicate run/i);"
-          new = r"assert.match(readme, /will not turn\s+an ambiguous network failure into a duplicate run/i);"
-          if text.count(old) != 1:
-              raise SystemExit(f'expected one wrapped README assertion, found {text.count(old)}')
-          contract.write_text(text.replace(old, new, 1), encoding='utf-8')
           PY
 
       - name: Verify SDK runtime, ratchets, and package payload
@@ -98,7 +90,6 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add \
             remote/api-sdks/typescript/durable-worker/index.mjs \
-            remote/api-sdks/typescript/durable-worker/test/client.test.mjs \
-            remote/tests/general/durable-worker-typescript-sdk.test.mjs
+            remote/api-sdks/typescript/durable-worker/test/client.test.mjs
           git commit -m 'fix(workers): harden TypeScript SDK lifecycle tests'
           git push origin HEAD:agent/durable-worker-typescript-sdk
