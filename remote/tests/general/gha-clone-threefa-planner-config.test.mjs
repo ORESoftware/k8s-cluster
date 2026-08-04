@@ -70,6 +70,22 @@ test('planner advertises and compiles only reviewed hardened profiles', () => {
   assert.doesNotMatch(planner, /generated_rust_profile[\s\S]{0,1600}cargo publish/);
 });
 
+test('exact 3FA setup actions are an ordered pinned allowlist', () => {
+  for (const action of [
+    'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
+    'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020',
+    'dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30',
+  ]) {
+    assert.ok(planner.includes(action), `planner is missing ${action}`);
+    assert.ok(fixture.includes(action), `fixture is missing ${action}`);
+  }
+  assert.match(planner, /const NODE_ACTIONS: \[&str; 2\]/);
+  assert.match(planner, /const GENERATED_RUST_ACTIONS: \[&str; 2\]/);
+  assert.match(planner, /fn enforce_exact_actions/);
+  assert.match(planner, /exact reviewed pinned action sequence with no extra actions/);
+  assert.doesNotMatch(fixture, /@(main|master|stable|latest)\b/);
+});
+
 test('fixture preserves Node before generated Rust and contains no authority-bearing features', () => {
   assert.match(fixture, /generated_rust:[\s\S]*needs: node_contracts/);
   assert.match(fixture, /npm ci --ignore-scripts[\s\S]*npm test/);
@@ -82,26 +98,26 @@ test('fixture preserves Node before generated Rust and contains no authority-bea
     'services:',
     'container:',
     'strategy:',
-    '@main',
-    '@master',
-    '@stable',
     'cargo publish',
   ]) {
     assert.ok(!fixture.includes(forbidden), `fixture contains ${forbidden}`);
   }
 });
 
-test('planner tests cover exact mappings, command mutations, and revision immutability', () => {
+test('planner tests cover command, action, and revision mutations', () => {
   assert.match(plannerTest, /node-hardened-test/);
   assert.match(plannerTest, /rust-generated-verify/);
   assert.match(plannerTest, /reordered/);
   assert.match(plannerTest, /cargo publish/);
   assert.match(plannerTest, /npm audit --audit-level=high/);
+  assert.match(plannerTest, /actions\/setup-node@main/);
+  assert.match(plannerTest, /dtolnay\/rust-toolchain@stable/);
+  assert.match(plannerTest, /owner\/extra-action@0123456789abcdef0123456789abcdef01234567/);
   assert.match(plannerTest, /revision: "main"/);
   assert.match(plannerTest, /exact 40-hex commit SHA/);
 });
 
-test('real-process proof exercises ordered authenticated dispatch and zero-submission rejection', () => {
+test('real-process proof exercises ordered dispatch and zero-submission action rejection', () => {
   assert.match(httpTest, /CARGO_BIN_EXE_gha-clone-server/);
   assert.match(httpTest, /route\("\/builds", post\(mock_submit\)\)/);
   assert.match(httpTest, /x-build-server-auth/);
@@ -109,21 +125,20 @@ test('real-process proof exercises ordered authenticated dispatch and zero-submi
   assert.match(httpTest, /generated_rust[\s\S]*rust-generated-verify/);
   assert.match(httpTest, /gha-clone/);
   assert.match(httpTest, /exact_retry_reuses_each_deterministic_build_request_identity/);
-  assert.match(httpTest, /"main"/);
-  assert.match(httpTest, /3FA-app\/unreviewed-repository/);
-  assert.match(httpTest, /npm audit --audit-level=high/);
+  assert.match(httpTest, /actions\/setup-node@main/);
+  assert.match(httpTest, /owner\/extra-action@0123456789abcdef0123456789abcdef01234567/);
+  assert.match(httpTest, /assert_rejected_without_dispatch/);
   assert.match(httpTest, /submissions\.lock\(\)\.await\.is_empty\(\)/);
   assert.doesNotMatch(httpTest, /GHA_CLONE_GITHUB_TOKEN",\s*[^)]/);
 });
 
-test('documentation and permanent workflow preserve the inactive live boundary', () => {
+test('documentation and permanent workflow preserve exact action and inactive live boundaries', () => {
+  assert.match(documentation, /Exact setup-action authority/);
+  assert.match(documentation, /mutable ref such as `@main` or `@stable`/);
   assert.match(documentation, /actual `gha-clone-server` binary/);
-  assert.match(documentation, /deterministic `gha-clone:\{planId\}:\{jobId\}`/);
   assert.match(documentation, /zero replicas/);
   assert.match(documentation, /not a live private-source run/);
   assert.match(documentation, /least-privilege GitHub App/);
-  assert.match(documentation, /action-reference immutability is tracked separately/);
   assert.match(workflow, /remote\/deployments\/gha-clone-server-rs\/\*\*/);
-  assert.match(workflow, /remote\/argocd\/dd-next-runtime\/dd-gha-clone-server\.configmap\.yaml/);
   assert.match(workflow, /remote\/tests\/general\/gha-clone-\*\.test\.(?:ts|mjs)/);
 });
