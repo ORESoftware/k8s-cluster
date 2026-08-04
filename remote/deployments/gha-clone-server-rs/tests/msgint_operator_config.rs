@@ -169,8 +169,8 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
         .expect("HTTP client");
     wait_until_ready(&client, &server_url, &mut child).await;
 
-    let workflow_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/msgint-operator-config.yml");
+    let workflow_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/msgint-operator-config.yml");
     let workflow_yaml = fs::read_to_string(&workflow_path)
         .unwrap_or_else(|error| panic!("read {}: {error}", workflow_path.display()));
     let response = client
@@ -240,13 +240,13 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
         assert_eq!(submission["gitRef"], REVISION);
     }
     assert_eq!(submissions[0]["profile"], "node-hardened-verify");
-    assert!(submissions[0]["requestId"]
-        .as_str()
-        .is_some_and(|value| value.starts_with("gha-clone:") && value.ends_with(":operator_config")));
+    assert!(submissions[0]["requestId"].as_str().is_some_and(
+        |value| value.starts_with("gha-clone:") && value.ends_with(":operator_config")
+    ));
     assert_eq!(submissions[1]["profile"], "node-verify");
-    assert!(submissions[1]["requestId"]
-        .as_str()
-        .is_some_and(|value| value.starts_with("gha-clone:") && value.ends_with(":repository_tests")));
+    assert!(submissions[1]["requestId"].as_str().is_some_and(
+        |value| value.starts_with("gha-clone:") && value.ends_with(":repository_tests")
+    ));
 
     mock_task.abort();
 }
