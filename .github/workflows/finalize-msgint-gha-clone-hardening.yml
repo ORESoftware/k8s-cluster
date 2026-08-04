@@ -1,0 +1,316 @@
+name: Finalize Messaging Intel GHA clone hardening
+
+on:
+  push:
+    branches:
+      - agent/msgint-gha-clone-operator-verify-20260804
+    paths:
+      - scripts/ci/apply-msgint-gha-clone-hardening.py
+      - scripts/ci/repair-msgint-gha-clone-hardening-patcher.py
+      - .github/workflows/finalize-msgint-gha-clone-hardening.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-msgint-gha-clone-hardening
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/msgint-gha-clone-operator-verify-20260804
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Normalize and apply the reviewed deterministic patch
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/ci/apply-msgint-gha-clone-hardening.py')
+          source = path.read_text(encoding='utf-8')
+          replacements = {
+              "    '''        if contains_secret_expression(mapping_get(step, \"env\"))":
+                  "    r'''        if contains_secret_expression(mapping_get(step, \"env\"))",
+              "    '''        if let Some(environment) = mapping_get(step, \"env\") {":
+                  "    r'''        if let Some(environment) = mapping_get(step, \"env\") {",
+          }
+          for old, new in replacements.items():
+              old_count = source.count(old)
+              new_count = source.count(new)
+              if old_count == 1 and new_count == 0:
+                  source = source.replace(old, new, 1)
+              elif old_count == 0 and new_count == 1:
+                  pass
+              else:
+                  raise SystemExit(
+                      f'unexpected raw-string normalization state: old={old_count} new={new_count}'
+                  )
+
+          single = r"combined.push('\n');"
+          doubled = r"combined.push('\\n');"
+          source = source.replace(doubled, single)
+          if source.count(single) != 4:
+              raise SystemExit(
+                  f'expected four preserved Rust newline anchors, found {source.count(single)}'
+              )
+          path.write_text(source, encoding='utf-8')
+          PY
+          python3 <<'PYDOC'
+          from pathlib import Path
+
+          readme = Path('remote/deployments/gha-clone-server-rs/README.md')
+          original = readme.read_text(encoding='utf-8')
+          Path('/tmp/gha-clone-readme.original').write_text(original, encoding='utf-8')
+          normalized = original
+          profile_line = '| npm install-script suppression + complete repository tests | `node-hardened-test` |\n'
+          if normalized.count(profile_line) > 1:
+              raise SystemExit('duplicate hardened-test profile documentation found')
+          normalized = normalized.replace(profile_line, '', 1)
+          legacy_exclusion = '- secret/OIDC expressions in `env`, `with`, or commands;\n'
+          if legacy_exclusion not in normalized:
+              starts = [
+                  normalized.find('- every caller-selected job/step environment'),
+                  normalized.find('- secret/OIDC expressions in setup inputs or commands;'),
+              ]
+              starts = [position for position in starts if position >= 0]
+              end = normalized.find('- dynamic matrices and conditional jobs/steps;')
+              if not starts or end < 0:
+                  raise SystemExit('could not normalize the already-hardened README exclusions')
+              start = min(starts)
+              normalized = normalized[:start] + legacy_exclusion + normalized[end:]
+          readme.write_text(normalized, encoding='utf-8')
+          PYDOC
+          python3 -m py_compile scripts/ci/apply-msgint-gha-clone-hardening.py
+          python3 scripts/ci/apply-msgint-gha-clone-hardening.py
+          cp /tmp/gha-clone-readme.original remote/deployments/gha-clone-server-rs/README.md
+
+      - name: Normalize ordinary continuity CI
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/gha-clone-server.yml')
+          text = path.read_text(encoding='utf-8')
+
+          old_test = 'cargo test --locked --lib -- --nocapture'
+          new_test = 'cargo test --locked --bin dd-build-server -- --nocapture'
+          if text.count(old_test) == 1 and new_test not in text:
+              text = text.replace(old_test, new_test, 1)
+          elif old_test not in text and text.count(new_test) == 1:
+              pass
+          else:
+              raise SystemExit('unexpected ordinary build-server test selector state')
+
+          fixture_path = "      - 'remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/**'\n"
+          if fixture_path not in text:
+              anchor = "      - 'remote/deployments/build-server-rs/src/validation.rs'\n"
+              if text.count(anchor) != 2:
+                  raise SystemExit('expected two build-server validation path anchors')
+              text = text.replace(anchor, anchor + fixture_path)
+
+          permission_line = '          permission-contents: read\n'
+          if permission_line not in text:
+              anchor = '          repositories: msgint-connectors\n'
+              if text.count(anchor) != 1:
+                  raise SystemExit('expected one repository-scoped App token anchor')
+              text = text.replace(anchor, anchor + permission_line, 1)
+
+          hermetic_job = r'''  node-profile-hermetic-smoke:
+            needs: [build-server-profile]
+            runs-on: ubuntu-24.04
+            timeout-minutes: 20
+            steps:
+              - name: Checkout continuity source
+                uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+                with:
+                  persist-credentials: false
+              - name: Execute both fixed profiles against the credential-free fixture
+                run: |
+                  set -euo pipefail
+                  fixture_source="$GITHUB_WORKSPACE/remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile"
+                  base_fixture="$RUNNER_TEMP/node-hardened-profile"
+                  rm -rf -- "$base_fixture"
+                  cp -R -- "$fixture_source" "$base_fixture"
+                  python3 <<'PYFIXTURE'
+                  import os
+                  import re
+                  from pathlib import Path
+
+                  source = Path('remote/deployments/build-server-rs/src/profiles.rs').read_text(encoding='utf-8')
+                  image_match = re.search(r'const NODE_IMAGE: &str = "([^"]+)";', source)
+                  if image_match is None:
+                      raise SystemExit('NODE_IMAGE was not found')
+                  output_dir = Path(os.environ['RUNNER_TEMP'])
+                  (output_dir / 'node-profile-image').write_text(image_match.group(1), encoding='utf-8')
+                  for profile, constant in (
+                      ('node-hardened-verify', 'NODE_HARDENED_VERIFY_STEPS'),
+                      ('node-hardened-test', 'NODE_HARDENED_TEST_STEPS'),
+                  ):
+                      pattern = rf'const {constant}:.*?script: r#"(.*?)"#,\n\}}\];'
+                      match = re.search(pattern, source, flags=re.DOTALL)
+                      if match is None:
+                          raise SystemExit(f'{constant} script was not found')
+                      script_path = output_dir / f'{profile}.sh'
+                      script_path.write_text(match.group(1) + '\n', encoding='utf-8')
+                      script_path.chmod(0o500)
+                  PYFIXTURE
+                  profile_image="$(cat "$RUNNER_TEMP/node-profile-image")"
+                  docker pull "$profile_image"
+                  resolved_image="$(docker image inspect --format='{{index .RepoDigests 0}}' "$profile_image")"
+                  case "$resolved_image" in
+                    *@sha256:*) ;;
+                    *) echo 'Node profile image did not resolve to an immutable digest' >&2; exit 1 ;;
+                  esac
+                  for profile in node-hardened-verify node-hardened-test; do
+                    worktree="$RUNNER_TEMP/${profile}-fixture"
+                    rm -rf -- "$worktree"
+                    cp -R -- "$base_fixture" "$worktree"
+                    docker run --rm \
+                      --pull=never \
+                      --cap-drop=ALL \
+                      --security-opt=no-new-privileges \
+                      --pids-limit=256 \
+                      --memory=2g \
+                      --cpus=2 \
+                      --read-only \
+                      --tmpfs /tmp:rw,nosuid,nodev,noexec,size=512m \
+                      --network=bridge \
+                      -e CI=true \
+                      -e HOME=/tmp/home \
+                      -v "$worktree:/workspace:rw" \
+                      -v "$RUNNER_TEMP/${profile}.sh:/profile.sh:ro" \
+                      -w /workspace \
+                      "$resolved_image" \
+                      bash /profile.sh
+                  done
+
+          '''
+          if '  node-profile-hermetic-smoke:\n' not in text:
+              marker = '  msgint-profile-smoke:\n'
+              if text.count(marker) != 1:
+                  raise SystemExit('expected one manual Messaging Intel smoke anchor')
+              text = text.replace(marker, hermetic_job + marker, 1)
+
+          old_needs = '  msgint-profile-smoke:\n    if:'
+          if old_needs not in text:
+              raise SystemExit('manual Messaging Intel smoke is missing')
+          current = '    needs: [rust, build-server-profile]\n'
+          hardened = '    needs: [rust, build-server-profile, node-profile-hermetic-smoke]\n'
+          if current in text:
+              text = text.replace(current, hardened, 1)
+          elif hardened not in text:
+              raise SystemExit('unexpected manual smoke dependency state')
+
+          path.write_text(text, encoding='utf-8')
+
+          contract = Path('remote/tests/general/gha-clone-server-config.test.ts')
+          contract_text = contract.read_text(encoding='utf-8')
+          assertion = '  assert.match(workflow, /node-profile-hermetic-smoke/);\n'
+          if assertion not in contract_text:
+              anchor = '  assert.match(workflow, /node-hardened-test/);\n'
+              if contract_text.count(anchor) < 1:
+                  raise SystemExit('expected hardened profile workflow assertion')
+              contract_text = contract_text.replace(anchor, anchor + assertion, 1)
+          contract.write_text(contract_text, encoding='utf-8')
+          PY
+
+      - name: Format changed Rust source
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 \
+            remote/deployments/build-server-rs/src/profiles.rs \
+            remote/deployments/build-server-rs/src/validation.rs
+          cargo fmt --all --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml
+
+      - name: Run server Clippy and every Rust target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets
+
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Compile and test build-server admission and profiles
+        working-directory: remote/deployments/build-server-rs
+        run: |
+          set -euo pipefail
+          cargo check --locked --all-targets
+          cargo test --locked --bin dd-build-server -- --nocapture
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+
+      - name: Execute the credential-free hardened Node fixture
+        working-directory: remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm run check
+          npm run test:operator-config
+          npm audit --audit-level=high
+          npm test
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/gha-clone-server.yml remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - name: Run deployment and workflow contracts
+        working-directory: remote/tests
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm exec tsx --test general/gha-clone-server-config.test.ts
+
+      - name: Remove all one-shot patch machinery
+        run: |
+          set -euo pipefail
+          for path in \
+            scripts/ci/apply-msgint-gha-clone-hardening.py \
+            scripts/ci/repair-msgint-gha-clone-hardening-patcher.py \
+            .github/workflows/finalize-msgint-gha-clone-hardening.yml \
+            .github/workflows/finalize-pr-636.yml \
+            .github/workflows/run-pr-636-finalizer.yml \
+            .github/workflows/repair-msgint-applicator-once.yml; do
+            if git ls-files --error-unmatch -- "$path" >/dev/null 2>&1; then
+              git rm -- "$path"
+            fi
+          done
+
+      - name: Commit the validated source changes
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "No validated source changes were produced" >&2
+            exit 1
+          fi
+          git commit -m "test: harden Messaging Intel GHA clone execution"
+          git push origin HEAD:agent/msgint-gha-clone-operator-verify-20260804
