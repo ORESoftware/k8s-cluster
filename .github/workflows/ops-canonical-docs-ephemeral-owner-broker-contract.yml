@@ -1,0 +1,101 @@
+name: Canonical Docs ephemeral owner broker contract
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/ops-canonical-docs-ephemeral-owner-broker.yml
+      - .github/workflows/ops-canonical-docs-ephemeral-owner-broker-contract.yml
+      - scripts/critical-org-fleet/assets/canonical-docs.part*
+      - scripts/ops/verify_canonical_docs_bundle.py
+      - scripts/ops/test_verify_canonical_docs_bundle.py
+      - scripts/ops/publish_canonical_docs.py
+      - scripts/ops/test_publish_canonical_docs.py
+      - scripts/ops/test_canonical_docs_ephemeral_owner_broker.py
+      - docs/operations/canonical-docs-ephemeral-credential-publication.md
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-canonical-docs-ephemeral-owner-broker.yml
+      - .github/workflows/ops-canonical-docs-ephemeral-owner-broker-contract.yml
+      - scripts/critical-org-fleet/assets/canonical-docs.part*
+      - scripts/ops/verify_canonical_docs_bundle.py
+      - scripts/ops/test_verify_canonical_docs_bundle.py
+      - scripts/ops/publish_canonical_docs.py
+      - scripts/ops/test_publish_canonical_docs.py
+      - scripts/ops/test_canonical_docs_ephemeral_owner_broker.py
+      - docs/operations/canonical-docs-ephemeral-credential-publication.md
+
+permissions:
+  contents: read
+
+concurrency:
+  group: canonical-docs-ephemeral-owner-broker-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out proposed tree without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: >-
+            .github/workflows/ops-canonical-docs-ephemeral-owner-broker.yml
+            .github/workflows/ops-canonical-docs-ephemeral-owner-broker-contract.yml
+
+      - name: Compile and run fail-closed contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ops/verify_canonical_docs_bundle.py \
+            scripts/ops/test_verify_canonical_docs_bundle.py \
+            scripts/ops/publish_canonical_docs.py \
+            scripts/ops/test_publish_canonical_docs.py \
+            scripts/ops/test_canonical_docs_ephemeral_owner_broker.py
+          python3 -m unittest -v \
+            scripts/ops/test_verify_canonical_docs_bundle.py \
+            scripts/ops/test_publish_canonical_docs.py \
+            scripts/ops/test_canonical_docs_ephemeral_owner_broker.py
+          git diff --check
+          if git grep -nE '^(<{7}|={7}|>{7})' -- \
+            .github/workflows/ops-canonical-docs-ephemeral-owner-broker.yml \
+            .github/workflows/ops-canonical-docs-ephemeral-owner-broker-contract.yml \
+            scripts/ops/verify_canonical_docs_bundle.py \
+            scripts/ops/test_verify_canonical_docs_bundle.py \
+            scripts/ops/publish_canonical_docs.py \
+            scripts/ops/test_publish_canonical_docs.py \
+            scripts/ops/test_canonical_docs_ephemeral_owner_broker.py \
+            docs/operations/canonical-docs-ephemeral-credential-publication.md; then
+            echo 'Git conflict markers are forbidden.' >&2
+            exit 1
+          fi
+
+      - name: Verify the exact credential-free repository source
+        shell: bash
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/canonical-docs-source.json"
+          python3 scripts/ops/verify_canonical_docs_bundle.py --json-report "$report"
+          test -s "$report"
+          jq -e '
+            .bundle_sha256 == "3169c190a11f8889ca0a29d5db58acabae1e3b887cc302407ccc350d3a461828" and
+            .heads["refs/heads/main"] == "1848835599049ca41f68a079b5ac04f7d360fe87" and
+            .heads["refs/heads/agent/den-1049-repository-baseline"] == "54aa2efcbcfd21020614cbecccea5a907ead813f" and
+            .main_tree == "06fc9f6856015679b57489f03def643c8182537b" and
+            .feature_tree == "b938d01e1cf8b8270cdc2d7b1eb9691ac4254ba8" and
+            .business_plan_sha256 == "b3bfd4d8596adffd3ed93ef3f530c46c5710f2ed6e6b9bff2929943628c22fe7" and
+            .asset_count == 4 and
+            (.documentation_contract | startswith("documentation contract: PASS"))
+          ' "$report" >/dev/null
+          REPORT_TO_CLEAN="$report" python3 - <<'PY_CLEANUP'
+          import os
+          from pathlib import Path
+          Path(os.environ["REPORT_TO_CLEAN"]).unlink(missing_ok=True)
+          PY_CLEANUP
