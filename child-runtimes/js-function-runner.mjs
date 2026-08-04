@@ -10,6 +10,7 @@ import { compileFunction as compileVmFunction, createContext } from 'node:vm';
 import {
   containerPoolLanguageRequestsSubject,
 } from '../../../../../libs/nats/subject-defs/generated/javascript/index.mjs';
+import { createLambdaContext } from './lambda-context.mjs';
 
 const maxCompiledFunctions = positiveInt(env.LAMBDA_FUNCTION_CACHE_MAX, 128);
 const maxFunctionBodyBytes = positiveInt(env.LAMBDA_FUNCTION_BODY_MAX_BYTES, 262_144);
@@ -503,39 +504,13 @@ async function invoke(line) {
   const request = envelope.request || {};
   const browserAutomation = browserAutomationEnabled(definition);
   const actorSession = envelope.mode === 'actor' ? createActorSession(envelope.actor) : null;
-  const context = {
-    id: definition.id,
-    invocationId: envelope.invocationId,
-    slug: definition.slug || envelope.slug,
-    release: Object.freeze({
-      mode: definition.releaseMode || 'latest',
-      alias: definition.alias || null,
-      revisionId: definition.revisionId || null,
-      revisionNumber: definition.revisionNumber || null,
-      routingVersion: definition.routingVersion || null,
-      definitionDigest: definition.definitionDigest || null,
-    }),
-    containerPool: Object.freeze({
-      dispatch: dispatchContainerPool,
-      request: dispatchContainerPool,
-    }),
-    capabilities: Object.freeze({
-      browserAutomation,
-      browserEngines: browserAutomation ? Object.freeze(['playwright', 'puppeteer']) : Object.freeze([]),
-      durableActor: actorSession !== null,
-      immutableRevision: Boolean(definition.revisionId),
-    }),
-    meta: {
-      runtime: definition.runtime,
-      labels: definition.labels,
-      metaData: definition.metaData,
-      releaseMode: definition.releaseMode || 'latest',
-      revisionId: definition.revisionId || null,
-      revisionNumber: definition.revisionNumber || null,
-      alias: definition.alias || null,
-      ...(envelope.meta || {}),
-    },
-  };
+  const context = createLambdaContext({
+  definition,
+  envelope,
+  browserAutomation,
+  actorSession,
+  dispatchContainerPool,
+});
   if (actorSession) {
     context.actor = actorSession.api;
   }

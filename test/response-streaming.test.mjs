@@ -42,6 +42,10 @@ test('Node runtime streams async iterables as bounded frames', async () => {
   await mkdir(dirname(runner), { recursive: true });
   await mkdir(dirname(subjectDefs), { recursive: true });
   await copyFile(join(root, 'child-runtimes/js-function-runner.mjs'), runner);
+  await copyFile(
+    join(root, 'child-runtimes/lambda-context.mjs'),
+    join(dirname(runner), 'lambda-context.mjs'),
+  );
   await writeFile(
     subjectDefs,
     'export const containerPoolLanguageRequestsSubject = (name) => `test.${name}`;\n',
