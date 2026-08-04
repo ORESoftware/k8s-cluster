@@ -1,0 +1,115 @@
+name: Messaging Intel private immutable checkout composition
+
+on:
+  pull_request:
+    branches:
+      - agent/msgint-gha-private-auth-rotation-20260804
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - remote/deployments/build-server-rs/**
+      - .github/workflows/msgint-private-immutable-composition.yml
+  push:
+    branches:
+      - agent/msgint-private-immutable-composition-20260804
+    paths:
+      - remote/deployments/build-server-rs/**
+      - .github/workflows/msgint-private-immutable-composition.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: msgint-private-immutable-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-server:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out the exact composition branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Verify the structural composition boundary
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          jobs = Path('remote/deployments/build-server-rs/src/jobs.rs').read_text(encoding='utf-8')
+          execution = Path('remote/deployments/build-server-rs/src/exec.rs').read_text(encoding='utf-8')
+          config = Path('remote/deployments/build-server-rs/src/config.rs').read_text(encoding='utf-8')
+
+          required_jobs = [
+              'fn is_immutable_commit_sha',
+              'fn clone_repository_commands',
+              '"fetch".to_string()',
+              '"--detach".to_string()',
+              'format!("{git_ref}^{{commit}}")',
+              'for args in clone_repository_commands(request, repo_dir)',
+              'run_logged_command(config, log_path, job_dir, &config.git_bin, args).await?',
+          ]
+          for marker in required_jobs:
+              if marker not in jobs:
+                  raise SystemExit(f'missing immutable-checkout marker: {marker}')
+          immutable_region = jobs.split('Some(git_ref) if is_immutable_commit_sha(&git_ref)', 1)[1].split('git_ref =>', 1)[0]
+          if '"--branch"' in immutable_region:
+              raise SystemExit('immutable checkout region contains a branch fallback')
+
+          if 'if program == config.git_bin' not in execution:
+              raise SystemExit('Git credential injection is not scoped to Git processes')
+          if 'config.git_http_auth_header()?' not in execution:
+              raise SystemExit('Git processes do not reload the current credential')
+          if '.env("GIT_CONFIG_VALUE_0", auth_header)' not in execution:
+              raise SystemExit('Git credential is not injected through the child environment')
+          if 'GitCredentialSource::File' not in config:
+              raise SystemExit('projected token-file source is unavailable')
+          if 'fn token_file_is_reloaded_and_debug_output_is_redacted' not in config:
+              raise SystemExit('token rotation/redaction regression test is unavailable')
+          PY
+
+      - name: Check formatting
+        working-directory: remote/deployments/build-server-rs
+        run: cargo fmt --all -- --check
+
+      - name: Reject warnings
+        working-directory: remote/deployments/build-server-rs
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Run every build-server test target
+        working-directory: remote/deployments/build-server-rs
+        run: cargo test --locked --all-targets -- --nocapture
+
+      - name: Run the focused immutable and credential suites explicitly
+        working-directory: remote/deployments/build-server-rs
+        run: |
+          cargo test --locked jobs::tests -- --nocapture
+          cargo test --locked config::git_credential_tests -- --nocapture
+
+  workflow-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate this workflow with pinned actionlint
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/msgint-private-immutable-composition.yml
