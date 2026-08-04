@@ -121,6 +121,8 @@ pub fn capabilities(limits: &PlannerLimits) -> CapabilityResponse {
         independent_profiles: vec![
             "rust-verify".to_string(),
             "node-verify".to_string(),
+            "node-hardened-verify".to_string(),
+            "node-hardened-test".to_string(),
             "python-verify".to_string(),
             "flutter-verify".to_string(),
             "flutter-android-debug".to_string(),
@@ -142,7 +144,8 @@ pub fn capabilities(limits: &PlannerLimits) -> CapabilityResponse {
                 .to_string(),
             "arbitrary marketplace actions, job containers, service containers, KVM, and caller-selected commands"
                 .to_string(),
-            "secret-bearing expressions or mutable branch execution".to_string(),
+            "caller-selected environments, secret-bearing expressions, mutable setup actions, or mutable branch execution"
+                .to_string(),
         ],
     }
 }
@@ -297,6 +300,7 @@ fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPla
     let mut reasons = Vec::new();
     let mut notes = Vec::new();
     let mut combined = String::new();
+    let mut run_commands = Vec::new();
     let has_services = mapping_get(job, "services").is_some();
     let has_container = mapping_get(job, "container").is_some();
     let has_strategy = mapping_get(job, "strategy").is_some();
@@ -336,8 +340,15 @@ fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPla
             compact_yaml(value)
         ));
     }
-    if contains_secret_expression(mapping_get(job, "env")) {
-        reasons.push("job environment contains a secret expression".into());
+    if let Some(environment) = mapping_get(job, "env") {
+        if contains_secret_expression(Some(environment)) {
+            reasons.push("job environment contains a secret expression".into());
+        } else {
+            reasons.push(
+                "job environment is unsupported because fixed profiles do not forward caller-selected variables"
+                    .into(),
+            );
+        }
     }
 
     let Some(steps) = mapping_get(job, "steps").and_then(Value::as_sequence) else {
@@ -373,16 +384,33 @@ fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPla
                 ));
             }
         }
-        if contains_secret_expression(mapping_get(step, "env"))
-            || contains_secret_expression(mapping_get(step, "with"))
-        {
+        if let Some(environment) = mapping_get(step, "env") {
+            if contains_secret_expression(Some(environment)) {
+                reasons.push(format!(
+                    "{path}: secret-bearing step environments are unsupported"
+                ));
+            } else {
+                reasons.push(format!(
+                    "{path}: step environments are unsupported because fixed profiles do not forward caller-selected variables"
+                ));
+            }
+        }
+        if contains_secret_expression(mapping_get(step, "with")) {
             reasons.push(format!(
-                "{path}: secret-bearing env/with values are unsupported"
+                "{path}: secret-bearing setup inputs are unsupported"
             ));
+        } else if contains_expression(mapping_get(step, "with")) {
+            reasons.push(format!("{path}: expressions in setup inputs are unsupported"));
         }
         if let Some(run) = mapping_get(step, "run").and_then(Value::as_str) {
             combined.push_str(run);
             combined.push('\n');
+            run_commands.extend(
+                run.lines()
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                    .map(str::to_string),
+            );
             if run.contains("${{") {
                 reasons.push(format!(
                     "{path}: expressions inside run commands are unsupported"
@@ -392,9 +420,13 @@ fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPla
         if let Some(action) = mapping_get(step, "uses").and_then(Value::as_str) {
             combined.push_str(action);
             combined.push('\n');
-            if !allowed_setup_action(action) {
+            if !known_setup_action(action) {
                 reasons.push(format!(
                     "{path}: marketplace action {action:?} has no independent-lane equivalence"
+                ));
+            } else if !immutable_action_ref(action) {
+                reasons.push(format!(
+                    "{path}: setup action {action:?} must use an exact 40-hex commit SHA"
                 ));
             } else if mapping_get(step, "with").is_some() {
                 notes.push(format!(
@@ -409,8 +441,21 @@ fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPla
     }
 
     let lower = combined.to_ascii_lowercase();
-    let profile = classify_profile(&lower);
-    if profile.is_none() {
+    let profile = if hardened_node_intent(&lower) {
+        match hardened_node_profile(&run_commands) {
+            Some(profile) => Some(profile.to_string()),
+            None => {
+                reasons.push(
+                    "hardened Node jobs must use one exact reviewed command sequence in the documented order with no extra commands"
+                        .into(),
+                );
+                None
+            }
+        }
+    } else {
+        classify_profile(&lower)
+    };
+    if profile.is_none() && reasons.is_empty() {
         reasons.push("no fixed build-server profile matches this job".into());
     }
     let independent_supported = reasons.is_empty() && profile.is_some();
@@ -598,17 +643,28 @@ fn parse_string_or_sequence(
     }
 }
 
+fn contains_expression(value: Option<&Value>) -> bool {
+    value.is_some_and(|value| compact_yaml(value).contains("${{"))
+}
+
 fn contains_secret_expression(value: Option<&Value>) -> bool {
     value.is_some_and(|value| {
-        let text = compact_yaml(value).to_ascii_lowercase();
-        text.contains("${{ secrets.")
-            || text.contains("${{secrets.")
-            || text.contains("github.token")
-            || text.contains("actions_id_token_request")
+        let compact = compact_yaml(value)
+            .to_ascii_lowercase()
+            .chars()
+            .filter(|character| !character.is_whitespace())
+            .collect::<String>();
+        compact.contains("${{secrets")
+            || compact.contains("tojson(secrets)")
+            || compact.contains("fromjson(secrets)")
+            || compact.contains("github.token")
+            || compact.contains("github['token']")
+            || compact.contains("github[\"token\"]")
+            || compact.contains("actions_id_token_request")
     })
 }
 
-fn allowed_setup_action(action: &str) -> bool {
+fn known_setup_action(action: &str) -> bool {
     let lower = action.to_ascii_lowercase();
     [
         "actions/checkout@",
@@ -621,6 +677,35 @@ fn allowed_setup_action(action: &str) -> bool {
     ]
     .iter()
     .any(|prefix| lower.starts_with(prefix))
+}
+
+fn immutable_action_ref(action: &str) -> bool {
+    action
+        .rsplit_once('@')
+        .is_some_and(|(_, reference)| is_full_commit_sha(reference))
+}
+
+fn hardened_node_intent(text: &str) -> bool {
+    text.contains("npm ci --ignore-scripts")
+        || text.contains("npm run test:operator-config")
+        || text.contains("npm audit --audit-level=high")
+}
+
+fn hardened_node_profile(commands: &[String]) -> Option<&'static str> {
+    const OPERATOR: [&str; 4] = [
+        "npm ci --ignore-scripts",
+        "npm run check",
+        "npm run test:operator-config",
+        "npm audit --audit-level=high",
+    ];
+    const FULL_TEST: [&str; 2] = ["npm ci --ignore-scripts", "npm test"];
+    if commands.iter().map(String::as_str).eq(OPERATOR) {
+        Some("node-hardened-verify")
+    } else if commands.iter().map(String::as_str).eq(FULL_TEST) {
+        Some("node-hardened-test")
+    } else {
+        None
+    }
 }
 
 fn mapping_get<'a>(mapping: &'a Mapping, key: &str) -> Option<&'a Value> {
@@ -727,21 +812,21 @@ jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@abc
-      - uses: dtolnay/rust-toolchain@abc
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567
+      - uses: dtolnay/rust-toolchain@0123456789abcdef0123456789abcdef01234567
       - run: cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
   node:
     needs: rust
     runs-on: [self-hosted, linux]
     steps:
-      - uses: actions/checkout@abc
-      - uses: actions/setup-node@abc
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567
+      - uses: actions/setup-node@0123456789abcdef0123456789abcdef01234567
       - run: npm ci && npm test
   python:
     needs: [rust, node]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-python@abc
+      - uses: actions/setup-python@0123456789abcdef0123456789abcdef01234567
       - run: python -m compileall . && python -m pytest
 "#,
             ),
@@ -764,6 +849,176 @@ jobs:
             plan.jobs[2].independent_profile.as_deref(),
             Some("python-verify")
         );
+    }
+
+    #[test]
+    fn maps_messaging_intel_operator_workflow_to_hardened_and_full_profiles() {
+        let mut input = request(
+            r#"
+name: Messaging Intel GHA clone operator verification
+on:
+  workflow_dispatch:
+jobs:
+  operator_config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.17.0'
+          cache: npm
+      - run: |
+          npm ci --ignore-scripts
+          npm run check
+          npm run test:operator-config
+          npm audit --audit-level=high
+  repository_tests:
+    needs: operator_config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - run: |
+          npm ci --ignore-scripts
+          npm test
+"#,
+        );
+        input.repository = "messaging-intel/msgint-connectors".into();
+        input.workflow_path = ".github/workflows/gha-clone-operator-config.yml".into();
+        let plan = build_plan(&input, &PlannerLimits::default()).expect("valid plan");
+
+        assert!(plan.independent_executable);
+        assert_eq!(
+            plan.topological_order,
+            vec!["operator_config", "repository_tests"]
+        );
+        assert_eq!(
+            plan.jobs[0].independent_profile.as_deref(),
+            Some("node-hardened-verify")
+        );
+        assert_eq!(
+            plan.jobs[1].independent_profile.as_deref(),
+            Some("node-hardened-test")
+        );
+    }
+
+    #[test]
+    fn hardened_node_profile_requires_complete_reviewed_evidence() {
+        let plan = build_plan(
+            &request(
+                r#"
+jobs:
+  operator_config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@0123456789abcdef0123456789abcdef01234567
+      - run: |
+          npm ci --ignore-scripts
+          npm run check
+          npm run test:operator-config
+"#,
+            ),
+            &PlannerLimits::default(),
+        )
+        .expect("valid plan");
+        assert!(!plan.independent_executable);
+        assert!(!plan.jobs[0].independent_supported);
+        assert!(plan.jobs[0].independent_profile.is_none());
+        assert!(plan.jobs[0]
+            .independent_reasons
+            .iter()
+            .any(|reason| reason.contains("exact reviewed command sequence")));
+    }
+
+    #[test]
+    fn hardened_node_profiles_reject_spoofed_extra_and_reordered_commands() {
+        for run in [
+            r#"echo 'npm ci --ignore-scripts npm run check npm run test:operator-config npm audit --audit-level=high'"#,
+            r#"npm ci --ignore-scripts
+npm run check
+npm run test:operator-config
+npm audit --audit-level=high
+npm publish"#,
+            r#"npm run check
+npm ci --ignore-scripts
+npm run test:operator-config
+npm audit --audit-level=high"#,
+        ] {
+            let yaml = format!(
+                "jobs:\n  operator_config:\n    runs-on: ubuntu-latest\n    steps:\n      - run: |\n{}",
+                run.lines()
+                    .map(|line| format!("          {line}\n"))
+                    .collect::<String>()
+            );
+            let plan = build_plan(&request(&yaml), &PlannerLimits::default())
+                .expect("structurally valid plan");
+            assert!(!plan.independent_executable, "unexpected executable plan: {run}");
+            assert!(plan.jobs[0].independent_profile.is_none());
+            assert!(plan.jobs[0]
+                .independent_reasons
+                .iter()
+                .any(|reason| reason.contains("exact reviewed command sequence")));
+        }
+    }
+
+    #[test]
+    fn setup_actions_require_immutable_commit_refs() {
+        let plan = build_plan(
+            &request(
+                r#"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@main
+      - run: npm test
+"#,
+            ),
+            &PlannerLimits::default(),
+        )
+        .expect("valid but unsupported plan");
+        assert!(!plan.independent_executable);
+        assert!(plan.jobs[0]
+            .independent_reasons
+            .iter()
+            .any(|reason| reason.contains("exact 40-hex commit SHA")));
+    }
+
+    #[test]
+    fn plain_environments_and_bracket_secret_expressions_fail_closed() {
+        let plan = build_plan(
+            &request(
+                r#"
+jobs:
+  plain:
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+    steps:
+      - run: npm test
+  secret:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@0123456789abcdef0123456789abcdef01234567
+        env:
+          TOKEN: ${{ secrets['PROD_TOKEN'] }}
+      - run: npm test
+"#,
+            ),
+            &PlannerLimits::default(),
+        )
+        .expect("valid but unsupported plan");
+        assert!(!plan.independent_executable);
+        assert!(plan.jobs[0]
+            .independent_reasons
+            .iter()
+            .any(|reason| reason.contains("fixed profiles do not forward")));
+        assert!(plan.jobs[1]
+            .independent_reasons
+            .iter()
+            .any(|reason| reason.contains("secret-bearing")));
     }
 
     #[test]
@@ -969,7 +1224,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-node@abc
+      - uses: actions/setup-node@0123456789abcdef0123456789abcdef01234567
         with:
           node-version: '22'
       - run: npm test
