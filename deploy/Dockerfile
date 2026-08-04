@@ -9,15 +9,12 @@ FROM rust:1.95-bookworm@sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92e
 WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
-COPY .cli-flags.toml ./
 COPY src ./src
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
     --mount=type=cache,target=/app/target,id=threefa-backend-target,sharing=locked \
     cargo build --release --locked \
- && cp target/release/threefa-sync-server /usr/local/bin/threefa-sync-server \
- && mkdir -p /usr/local/share/threefa-backend \
- && cp .cli-flags.toml /usr/local/share/threefa-backend/.cli-flags.toml
+ && cp target/release/threefa-sync-server /usr/local/bin/threefa-sync-server
 
 FROM debian:bookworm-slim@sha256:96e378d7e6531ac9a15ad505478fcc2e69f371b10f5cdf87857c4b8188404716
 RUN apt-get update \
@@ -25,9 +22,10 @@ RUN apt-get update \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /usr/local/bin/threefa-sync-server /usr/local/bin/threefa-sync-server
-COPY --from=build /usr/local/share/threefa-backend/.cli-flags.toml /usr/local/share/threefa-backend/.cli-flags.toml
+# The service resolves executable-owned policy from ../share/threefa-backend;
+# WORKDIR is deliberately not part of the production trust boundary.
+COPY .cli-flags.toml /usr/local/share/threefa-backend/.cli-flags.toml
 
-ENV THREEFA_FLAGS_CONFIG=/usr/local/share/threefa-backend/.cli-flags.toml
 ENV BIND_ADDR=0.0.0.0:8080
 EXPOSE 8080
 USER 10001:10001
