@@ -1,4 +1,5 @@
 # Activated after the workflow was established on the default branch.
+# Re-activated after the workflow-run observer was installed.
 name: Ensure organization Projects once
 run-name: Ensure canonical organization Projects @ ${{ github.sha }}
 
