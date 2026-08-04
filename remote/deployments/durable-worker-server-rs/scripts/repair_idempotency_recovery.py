@@ -111,7 +111,7 @@ test_path = Path(
 )
 test_path.write_text(
     dedent(
-        r"""\
+        r"""
         use std::{collections::BTreeSet, sync::Arc};
 
         use bytes::Bytes;
@@ -197,5 +197,5 @@ test_path.write_text(
             assert_eq!(snapshot.steps[0].key, "recover");
         }
         """
-    )
+    ).lstrip()
 )
