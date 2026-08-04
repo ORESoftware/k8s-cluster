@@ -3,16 +3,184 @@ name: ci
 on:
   pull_request:
   push:
-    branches: [main]
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: tor-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   rust:
-    runs-on: ubuntu-latest
+    name: fmt · clippy · test · release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test --all-features
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 0
+
+      - name: Setup Rust 1.88
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.88.0'
+          components: rustfmt, clippy
+
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+
+      - name: Check formatting of changed Rust files
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          base="$BASE_SHA"
+          if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            base="$(git rev-parse HEAD^)"
+          fi
+          mapfile -t rust_files < <(
+            git diff --name-only --diff-filter=ACMRT "$base" "$GITHUB_SHA" -- '*.rs'
+          )
+          if (( ${#rust_files[@]} == 0 )); then
+            echo 'No Rust files changed.'
+          else
+            printf 'Checking rustfmt for %s\n' "${rust_files[@]}"
+            rustfmt --edition 2021 --check "${rust_files[@]}"
+          fi
+
+      - name: Compile and lint with warnings denied
+        run: |
+          set -euo pipefail
+          cargo check --locked --all-targets
+          cargo clippy --locked --all-targets -- \
+            -D warnings \
+            -A clippy::needless_return \
+            -A clippy::needless_range_loop \
+            -A clippy::doc_overindented_list_items
+
+      - name: Run unit and integration tests
+        run: cargo test --locked --all-targets
+
+      - name: Build the release binary from the lockfile
+        run: cargo build --release --locked
+
+      - name: Reject whitespace and conflict-marker drift
+        run: |
+          set -euo pipefail
+          git diff --check
+          if git grep -nE '^(<<<<<<< |=======|>>>>>>> )' -- . \
+            ':(exclude)generated' ':(exclude)tests/fixtures'; then
+            echo 'git conflict marker detected' >&2
+            exit 1
+          fi
+
+  arti:
+    name: Arti backend compile contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Setup Rust 1.91 for Arti 0.44
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.91.0'
+
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+
+      - name: Compile the optional Arti backend
+        run: cargo check --locked --features arti
+
+  browser-e2e:
+    name: Playwright + Puppeteer through the onion proxy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Setup Rust 1.88
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.88.0'
+
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+
+      - name: Build the release binary used by the overlay harness
+        run: cargo build --release --locked
+
+      - name: Setup Node 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Install the previously green browser-driver versions
+        working-directory: tests
+        run: |
+          set -euo pipefail
+          npm install --no-save --package-lock=false --no-audit --no-fund \
+            @playwright/test@1.61.1 \
+            playwright@1.61.1 \
+            puppeteer@23.11.1
+          npx playwright install --with-deps chromium
+
+      - name: Exercise the real three-relay onion overlay
+        working-directory: tests
+        env:
+          TOR_E2E_RUST_LOG: warn
+        run: npm test
+
+      - name: Upload browser evidence on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tor-browser-evidence-${{ github.sha }}
+          path: |
+            tests/test-results
+            tests/playwright-report
+          if-no-files-found: ignore
+          retention-days: 7
+
+  audit:
+    name: cargo-audit · RustSec
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Setup Rust 1.88
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.88.0'
+
+      - name: Install cargo-audit with checksum verification
+        uses: taiki-e/install-action@1beb33eee6d086258184383af9a538940be190ed # v2
+        with:
+          tool: cargo-audit
+
+      - name: Audit the locked dependency graph
+        run: cargo audit
