@@ -68,6 +68,26 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31.11.0
 
+      - name: Capture canonical Ruff formatting evidence
+        run: |
+          mkdir -p artifacts/formatted/tools
+          nix develop --accept-flake-config -c ruff format \
+            tools/project_links.py \
+            tools/project_sync.py \
+            tools/test_project_links.py \
+            tools/test_project_sync.py
+          git diff --binary -- \
+            tools/project_links.py \
+            tools/project_sync.py \
+            tools/test_project_links.py \
+            tools/test_project_sync.py \
+            > artifacts/ruff-format.patch
+          cp tools/project_links.py artifacts/formatted/tools/
+          cp tools/project_sync.py artifacts/formatted/tools/
+          cp tools/test_project_links.py artifacts/formatted/tools/
+          cp tools/test_project_sync.py artifacts/formatted/tools/
+          test -s artifacts/ruff-format.patch
+
       - name: Run the locked development-shell gate
         run: nix develop --accept-flake-config -c agent-check all
 
