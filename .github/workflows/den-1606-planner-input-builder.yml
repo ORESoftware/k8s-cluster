@@ -1,3 +1,4 @@
+# Retriggered after first-seen workflow registration on 2026-08-04.
 name: Build DEN-1606 planner-input product commit
 
 on:
