@@ -4,10 +4,18 @@ metadata:
   name: dd-des-simulator
   namespace: default
   labels:
-    app: dd-des-simulator
+    app: dd-des-web
+    app.kubernetes.io/name: des-web
+    app.kubernetes.io/part-of: discrete-event-systems
+  annotations:
+    dd.dev/compatibility-alias: 'true'
+    dd.dev/canonical-service: dd-des-web
 spec:
+  # The main gateway already proxies /des/ to this stable Service name on
+  # port 8099. Selecting dd-des-web performs the cutover without changing the
+  # public URL or duplicating gateway rules across AWS and Hetzner.
   selector:
-    app: dd-des-simulator
+    app: dd-des-web
   ports:
     - name: http
       port: 8099

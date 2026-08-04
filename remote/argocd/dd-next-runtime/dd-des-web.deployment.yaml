@@ -1,0 +1,131 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-des-web
+  namespace: default
+  labels:
+    app: dd-des-web
+    app.kubernetes.io/name: des-web
+    app.kubernetes.io/part-of: discrete-event-systems
+  annotations:
+    dd.dev/source-repository: https://github.com/discrete-event-systems/des-web.rs
+    dd.dev/source-revision: '77741ec8b5331617f71416748ef5f06846e43a5d'
+    dd.dev/source-image-digest: 'sha256:c3b32a5ef767bcdba515c8199fce363871ba2916e4c824609a09a37b3adc02e5'
+spec:
+  replicas: 2
+  minReadySeconds: 5
+  progressDeadlineSeconds: 600
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: dd-des-web
+  template:
+    metadata:
+      labels:
+        app: dd-des-web
+        app.kubernetes.io/name: des-web
+        app.kubernetes.io/part-of: discrete-event-systems
+      annotations:
+        dd.dev/public-base-path: /des
+        dd.dev/source-revision: '77741ec8b5331617f71416748ef5f06846e43a5d'
+        dd.dev/source-image-digest: 'sha256:c3b32a5ef767bcdba515c8199fce363871ba2916e4c824609a09a37b3adc02e5'
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: des-web
+          # Immutable image built from the exact green head of
+          # discrete-event-systems/des-web.rs PR #10.
+          image: ghcr.io/discrete-event-systems/des-web.rs:sha-77741ec8b5331617f71416748ef5f06846e43a5d@sha256:c3b32a5ef767bcdba515c8199fce363871ba2916e4c824609a09a37b3adc02e5
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: HOME
+              value: /tmp
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8130'
+            # The gateway strips /des/ before proxying. Mounted mode rewrites
+            # first-party links, htmx endpoints, forms, JS URLs, and redirects
+            # back to the canonical browser namespace.
+            - name: DES_PUBLIC_PATH_MODE
+              value: mounted
+            # Engine-only work remains in dd-des-rs; des-web owns browser pages.
+            - name: DES_UPSTREAM_URL
+              value: http://dd-des-rs.default.svc.cluster.local:8112
+            # Optional: when absent, the app serves its degraded catalog. When
+            # configured, /readyz gates traffic on Postgres reachability.
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-remote-rest-api-secrets
+                  key: RDS_DATABASE_URL
+                  optional: true
+            - name: RUST_LOG
+              value: info,des_web=info
+          ports:
+            - name: http
+              containerPort: 8130
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+              ephemeral-storage: 16Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+              ephemeral-storage: 128Mi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 24
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
