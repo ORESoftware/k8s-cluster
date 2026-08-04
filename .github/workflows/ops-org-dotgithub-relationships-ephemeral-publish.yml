@@ -1,0 +1,401 @@
+name: Publish organization .github fleet and repository relationships with an ephemeral owner credential
+run-name: Publish organization governance and relationship registries from an encrypted owner response
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/ops/publish_org_repository_relationships.py
+      - tests/ops/test_publish_org_repository_relationships.py
+      - .github/workflows/ops-org-dotgithub-relationships-ephemeral-publish.yml
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: org-dotgithub-relationships-ephemeral-${{ github.event.issue.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate organization relationship publisher
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compile the bounded publishers
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile \
+            scripts/ops/bootstrap_org_dotgithub_repositories.py \
+            scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py \
+            scripts/ops/publish_org_repository_relationships.py
+
+      - name: Run governance, relationship, privacy, and workflow contracts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m unittest discover \
+            -s tests/ops \
+            -p 'test_bootstrap_org_dotgithub_repositories*.py' \
+            -v
+          python3 tests/ops/test_publish_org_repository_relationships.py -v
+
+  publish:
+    name: Publish fixed 36-organization .github and relationship fleet
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.action == 'created' &&
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.event.issue.number == 615 &&
+      github.event.comment.user.login == 'ORESoftware' &&
+      github.actor == 'ORESoftware' &&
+      github.event.comment.body == 'ops-bootstrap-org-dotgithub-relationships-ephemeral:615:20260804-v1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      issues: write
+    env:
+      REPOSITORY: ORESoftware/k8s-cluster
+      ISSUE_NUMBER: '615'
+      EXACT_TRIGGER: ops-bootstrap-org-dotgithub-relationships-ephemeral:615:20260804-v1
+      OWNER_ORGANIZATIONS: |-
+        channelsiege
+        OmniBlitz
+        streamkore
+        hypeblitz
+        3FA-app
+        messaging-intel
+        akrion-sim
+        athlet-o
+        benefactor-cc
+        canonical-cloud
+        claritas-viz
+        cliptown
+        daedalus-fab
+        declarative-migrations
+        fiducia-cloud
+        anticaptrad
+        opto-sync
+        quaestor-ledger
+        sagitta-stack
+        shared-auth
+        scintilla-run
+        rust-ssr-demos
+        sonus-auris
+        usa-acc
+        voxletra
+        zed-pkg
+        zed-pkg-test
+        memebank
+        meta-agents-demo
+        networking-components
+        StreemPilot
+        unreal-unity-poc
+        file-tunnel
+        hypesiege
+        discrete-event-systems
+        drone-mngr
+
+    steps:
+      - name: Issue one-time challenge, validate owner authority, publish, and verify
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+
+          stage=trusted-trigger
+          workflow_token="$GH_TOKEN"
+          owner_token=''
+          work="$(mktemp -d "$RUNNER_TEMP/org-dotgithub-relationships-ephemeral.XXXXXX")"
+
+          cleanup_environment() {
+            unset owner_token GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+            unset workflow_token COMMENT_BODY
+          }
+
+          report_failure() {
+            status=$?
+            trap - ERR
+            unset owner_token GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+            GH_TOKEN="$workflow_token" gh api \
+              --method POST \
+              "repos/${REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+              -f body="Ephemeral organization relationship publication failed at bounded stage \`${stage}\`. No owner credential was written to Git, Actions outputs, artifacts, issue comments, or the environment file." \
+              >/dev/null || true
+            cleanup_environment
+            exit "$status"
+          }
+
+          trap cleanup_environment EXIT
+          trap report_failure ERR
+
+          test "$COMMENT_BODY" = "$EXACT_TRIGGER"
+          trusted_sha="$(
+            GH_TOKEN="$workflow_token" gh api \
+              "repos/${REPOSITORY}/git/ref/heads/main" \
+              --jq '.object.sha'
+          )"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          stage=challenge-bootstrap
+          private_key="$work/private.pem"
+          public_key="$work/public.pem"
+          ciphertext_file="$work/ciphertext.bin"
+          openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key"
+          chmod 600 "$private_key"
+          openssl pkey -in "$private_key" -pubout -out "$public_key"
+          nonce="$(openssl rand -hex 24)"
+          [[ "$nonce" =~ ^[0-9a-f]{48}$ ]]
+
+          challenge_body="$work/challenge.md"
+          {
+            printf '<!-- org-dotgithub-relationships-credential-challenge:%s -->\n' "$nonce"
+            printf 'One-time RSA-OAEP-SHA256 challenge for the fixed 36-organization public `.github` fleet and repository-relationship registries at trusted `main` `%s`. The private key exists only in this ephemeral runner and becomes unavailable when the job exits. Reply with the matching encrypted ciphertext marker; never paste a plaintext token into GitHub.\n\n' "$trusted_sha"
+            printf '```pem\n'
+            cat "$public_key"
+            printf '```\n'
+          } > "$challenge_body"
+
+          challenge_json="$(
+            jq -n --rawfile body "$challenge_body" '{body:$body}' |
+              GH_TOKEN="$workflow_token" gh api \
+                --method POST \
+                "repos/${REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+                --input -
+          )"
+          challenge_id="$(jq -er '.id | select(type == "number" and . > 0)' <<<"$challenge_json")"
+          response_marker="<!-- org-dotgithub-relationships-credential-response:${nonce} -->"
+
+          stage=await-encrypted-response
+          response_body=''
+          for _ in $(seq 1 240); do
+            comments="$(
+              GH_TOKEN="$workflow_token" gh api --paginate \
+                "repos/${REPOSITORY}/issues/${ISSUE_NUMBER}/comments?per_page=100" \
+                --slurp
+            )"
+            response_body="$(
+              jq -r \
+                --arg marker "$response_marker" \
+                --argjson challenge_id "$challenge_id" '
+                [
+                  .[][]
+                  | select(.id > $challenge_id)
+                  | select(.user.login == "ORESoftware")
+                  | select(.body | startswith($marker + "\n"))
+                ]
+                | sort_by(.id)
+                | last
+                | .body // empty
+              ' <<<"$comments"
+            )"
+            test -n "$response_body" && break
+            sleep 5
+          done
+          test -n "$response_body"
+          test "$(grep -c '^ciphertext-base64=' <<<"$response_body")" -eq 1
+          ciphertext="$(sed -n 's/^ciphertext-base64=//p' <<<"$response_body")"
+          [[ "$ciphertext" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#ciphertext}" -le 8192
+          printf '%s' "$ciphertext" | base64 --decode > "$ciphertext_file"
+          test -s "$ciphertext_file"
+
+          stage=decrypt-ciphertext
+          owner_token="$(
+            openssl pkeyutl -decrypt \
+              -inkey "$private_key" \
+              -in "$ciphertext_file" \
+              -pkeyopt rsa_padding_mode:oaep \
+              -pkeyopt rsa_oaep_md:sha256 \
+              -pkeyopt rsa_mgf1_md:sha256 \
+              2>/dev/null
+          )"
+          test -n "$owner_token"
+          [[ "$owner_token" != *$'\n'* ]]
+          [[ "$owner_token" != *$'\r'* ]]
+          [[ "$owner_token" != *$'\t'* ]]
+          [[ "$owner_token" != *' '* ]]
+          [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
+          echo "::add-mask::$owner_token"
+
+          stage=validate-owner-identity
+          owner_login="$(GH_TOKEN="$owner_token" gh api user --jq '.login' 2>/dev/null)"
+          test "$owner_login" = ORESoftware
+
+          stage=validate-owner-membership
+          membership_count=0
+          while IFS= read -r organization; do
+            test -n "$organization"
+            membership="$(
+              GH_TOKEN="$owner_token" gh api \
+                "/user/memberships/orgs/${organization}" \
+                --jq '.role + ":" + .state' \
+                2>/dev/null
+            )"
+            test "$membership" = admin:active
+            membership_count=$((membership_count + 1))
+          done <<<"$OWNER_ORGANIZATIONS"
+          test "$membership_count" -eq 36
+
+          stage=trusted-source
+          source_root="$work/source"
+          mkdir -p "$source_root"
+          git -C "$source_root" init --quiet
+          git -C "$source_root" remote add origin "https://github.com/${REPOSITORY}.git"
+          git -C "$source_root" -c protocol.version=2 fetch \
+            --quiet --depth=1 origin "$trusted_sha"
+          git -C "$source_root" switch --quiet --detach FETCH_HEAD
+          test "$(git -C "$source_root" rev-parse HEAD)" = "$trusted_sha"
+
+          required_paths=(
+            scripts/ops/bootstrap_org_dotgithub_repositories.py
+            scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py
+            scripts/ops/publish_org_repository_relationships.py
+            tests/ops/test_bootstrap_org_dotgithub_repositories.py
+            tests/ops/test_bootstrap_org_dotgithub_repositories_hardened.py
+            tests/ops/test_publish_org_repository_relationships.py
+          )
+          for path in "${required_paths[@]}"; do
+            test -f "$source_root/$path"
+          done
+
+          stage=publisher-validation
+          python3 -m py_compile \
+            "$source_root/scripts/ops/bootstrap_org_dotgithub_repositories.py" \
+            "$source_root/scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py" \
+            "$source_root/scripts/ops/publish_org_repository_relationships.py"
+          python3 -m unittest discover \
+            -s "$source_root/tests/ops" \
+            -p 'test_bootstrap_org_dotgithub_repositories*.py' \
+            -v
+          python3 "$source_root/tests/ops/test_publish_org_repository_relationships.py" -v
+
+          stage=publish-governance
+          governance_json="$work/org-dotgithub-governance.json"
+          governance_markdown="$work/org-dotgithub-governance.md"
+          GH_TOKEN="$owner_token" \
+            python3 "$source_root/scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py" \
+              --execute \
+              --json-report "$governance_json" \
+              --markdown-report "$governance_markdown"
+
+          stage=verify-governance
+          REPORT="$governance_json" python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(Path(os.environ["REPORT"]).read_text(encoding="utf-8"))
+          organizations = payload.get("organizations")
+          if payload.get("mode") != "execute" or not isinstance(organizations, list):
+              raise SystemExit("governance report is not an execute report")
+          if len(organizations) != 36:
+              raise SystemExit("governance report does not cover 36 organizations")
+          seen = set()
+          for item in organizations:
+              organization = item.get("organization")
+              repository = item.get("repository")
+              if not isinstance(organization, str) or repository != f"{organization}/.github":
+                  raise SystemExit("governance report has an invalid repository identity")
+              lowered = organization.lower()
+              if lowered in seen or item.get("verified") is not True:
+                  raise SystemExit("governance report contains duplicate or unverified state")
+              seen.add(lowered)
+          PY
+
+          stage=publish-relationships
+          relationships_json="$work/org-dotgithub-relationships.json"
+          relationships_markdown="$work/org-dotgithub-relationships.md"
+          GH_TOKEN="$owner_token" \
+            python3 "$source_root/scripts/ops/publish_org_repository_relationships.py" \
+              --execute \
+              --json-report "$relationships_json" \
+              --markdown-report "$relationships_markdown"
+
+          stage=verify-relationships
+          REPORT="$relationships_json" python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(Path(os.environ["REPORT"]).read_text(encoding="utf-8"))
+          organizations = payload.get("organizations")
+          if payload.get("mode") != "execute" or not isinstance(organizations, list):
+              raise SystemExit("relationship report is not an execute report")
+          if len(organizations) != 36:
+              raise SystemExit("relationship report does not cover 36 organizations")
+          seen = set()
+          for item in organizations:
+              organization = item.get("organization")
+              if not isinstance(organization, str):
+                  raise SystemExit("relationship report has an invalid organization")
+              lowered = organization.lower()
+              if lowered in seen or item.get("verified") is not True:
+                  raise SystemExit("relationship report contains duplicate or unverified state")
+              seen.add(lowered)
+          PY
+
+          stage=publish-result
+          summary="$work/summary.md"
+          GOVERNANCE_REPORT="$governance_json" \
+          RELATIONSHIP_REPORT="$relationships_json" \
+          TRUSTED_SHA="$trusted_sha" \
+          python3 - <<'PY' > "$summary"
+          import json
+          import os
+          from pathlib import Path
+
+          governance = json.loads(
+              Path(os.environ["GOVERNANCE_REPORT"]).read_text(encoding="utf-8")
+          )
+          relationships = json.loads(
+              Path(os.environ["RELATIONSHIP_REPORT"]).read_text(encoding="utf-8")
+          )
+          relationship_by_org = {
+              item["organization"].lower(): item for item in relationships["organizations"]
+          }
+          print("# Organization `.github` and repository relationship publication complete")
+          print()
+          print(f"Trusted source: `{os.environ['TRUSTED_SHA']}`")
+          print()
+          for item in governance["organizations"]:
+              relation = relationship_by_org[item["organization"].lower()]
+              created = "created" if item.get("created_repository") else "reconciled"
+              governance_changed = len(item.get("changed_files") or [])
+              relationship_changed = len(relation.get("changed_files") or [])
+              print(
+                  f"- `{item['repository']}` — {created}; "
+                  f"{governance_changed} governance file(s), "
+                  f"{relationship_changed} relationship file(s), "
+                  f"{relation.get('public_repository_count', 0)} public repo(s), "
+                  f"{relation.get('private_repository_count', 0)} private repo name(s) withheld, "
+                  f"{relation.get('relationship_count', 0)} edge(s); verified"
+              )
+          PY
+
+          unset owner_token GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+          jq -n --rawfile body "$summary" '{body:$body}' |
+            GH_TOKEN="$workflow_token" gh api \
+              --method POST \
+              "repos/${REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+              --input - \
+              >/dev/null
+
+          trap - ERR
+          cleanup_environment
