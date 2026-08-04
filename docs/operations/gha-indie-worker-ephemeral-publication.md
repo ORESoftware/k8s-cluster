@@ -29,8 +29,10 @@ admin membership before any mutation.
 The broker reads an exact source commit through GitHub's commit/tree/blob APIs,
 rejects truncated trees, submodules, symlinks, and nonstandard file modes, and
 verifies every source Git blob identity before recreating it. Each target receives
-a deterministic root commit containing all source bytes and executable modes plus
-one `SOURCE_PROVENANCE.md` file.
+a reviewed import commit containing all source bytes and executable modes plus
+one `SOURCE_PROVENANCE.md` file. A one-file bootstrap commit exists only because
+GitHub cannot create the first ref in a completely empty repository; the import
+commit immediately removes that bootstrap file through a no-force fast-forward.
 
 Publication is create-only and no-force. An existing `main` is accepted only when
 it already equals the deterministic import commit; divergent history fails closed.
