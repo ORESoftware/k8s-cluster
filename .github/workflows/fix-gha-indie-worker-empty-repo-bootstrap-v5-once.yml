@@ -1,0 +1,103 @@
+name: Finalize validated GHA indie-worker bootstrap publisher once
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize]
+    paths:
+      - .github/workflows/fix-gha-indie-worker-empty-repo-bootstrap-v5-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-validated-gha-indie-worker-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  validate-clean-and-commit:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/gha-indie-worker-empty-repo-bootstrap-fix-20260804'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact repair branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/gha-indie-worker-empty-repo-bootstrap-fix-20260804
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Apply the validated one-line repair
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('.github/workflows/ops-gha-indie-worker-ephemeral-publish.yml')
+          source = path.read_text(encoding='utf-8')
+          old = "'{body:$body}'"
+          new = '"{body:\\$body}"'
+          old_count = source.count(old)
+          new_count = source.count(new)
+          if old_count == 1:
+              source = source.replace(old, new, 1)
+          elif old_count == 0 and new_count == 1:
+              pass
+          else:
+              raise SystemExit(
+                  f'expected one old or one repaired jq literal; old={old_count}, new={new_count}'
+              )
+          path.write_text(source, encoding='utf-8')
+
+          match = re.search(r"          python3 - <<'PY'\n(.*?)\n          PY\n", source, re.S)
+          if not match:
+              raise SystemExit('embedded publisher heredoc not found')
+          code = '\n'.join(
+              line[10:] if line.startswith('          ') else line
+              for line in match.group(1).splitlines()
+          ) + '\n'
+          compile(code, 'embedded-gha-indie-publisher.py', 'exec')
+          required = (
+              'contents/.gha-indie-bootstrap',
+              '"force": False',
+              'existing main tree differs',
+              '"parents": [bootstrap_commit]',
+          )
+          missing = [fragment for fragment in required if fragment not in code]
+          if missing:
+              raise SystemExit(f'publisher contract incomplete: {missing}')
+          if '"parents": []' in code or 'f"{repo_path}/git/refs"' in code:
+              raise SystemExit('legacy empty-repository path remains')
+          PY
+          ruby -e "require 'yaml'; YAML.load_file('.github/workflows/ops-gha-indie-worker-ephemeral-publish.yml')"
+          git diff --check
+
+      - name: Validate product workflow expressions and shell syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/ops-gha-indie-worker-ephemeral-publish.yml
+
+      - name: Commit only the product and remove wrappers
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -f \
+            .github/workflows/fix-gha-indie-worker-empty-repo-bootstrap-v4-once.yml \
+            .github/workflows/fix-gha-indie-worker-empty-repo-bootstrap-v5-once.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          allowed='^(\.github/workflows/(fix-gha-indie-worker-empty-repo-bootstrap-v[45]-once|ops-gha-indie-worker-ephemeral-publish)\.yml|docs/operations/gha-indie-worker-ephemeral-publication\.md)$'
+          unexpected="$(git diff --cached --name-only | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected staged paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          git diff --cached --check
+          git commit -m 'fix(gha): bootstrap empty indie repositories safely'
+          git push origin HEAD:agent/gha-indie-worker-empty-repo-bootstrap-fix-20260804
