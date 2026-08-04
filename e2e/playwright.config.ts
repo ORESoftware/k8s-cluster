@@ -8,9 +8,9 @@ const bin = process.env.T2V_WEB_BIN ?? "../target/release/t2v-web";
 
 export default defineConfig({
   testDir: "./tests",
-  // The API-reference suite has its own isolated SQLite API fixture and
-  // `playwright.api.config.ts`. Do not discover it while booting t2v-web.
-  testIgnore: "api-docs.spec.ts",
+  // API-reference suites have their own isolated SQLite API fixture and
+  // `playwright.api.config.ts`. Do not discover them while booting t2v-web.
+  testIgnore: "api-docs*.spec.ts",
   timeout: 30_000,
   expect: { timeout: 5_000 },
   fullyParallel: false,
