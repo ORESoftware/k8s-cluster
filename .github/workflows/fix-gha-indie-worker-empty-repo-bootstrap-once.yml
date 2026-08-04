@@ -1,0 +1,243 @@
+name: Fix GHA indie-worker empty-repository bootstrap once
+
+on:
+  push:
+    branches:
+      - agent/gha-indie-worker-empty-repo-bootstrap-fix-20260804
+    paths:
+      - .github/workflows/fix-gha-indie-worker-empty-repo-bootstrap-once.yml
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/fix-gha-indie-worker-empty-repo-bootstrap-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-gha-indie-worker-empty-repo-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  patch-test-and-commit:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name == 'push' || github.head_ref == 'agent/gha-indie-worker-empty-repo-bootstrap-fix-20260804')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact repair branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/gha-indie-worker-empty-repo-bootstrap-fix-20260804
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Patch empty-repository bootstrap and idempotence
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow_path = Path('.github/workflows/ops-gha-indie-worker-ephemeral-publish.yml')
+          workflow = workflow_path.read_text()
+          old = '''              target_tree, _ = api(
+                  owner_token,
+                  "POST",
+                  f"{repo_path}/git/trees",
+                  {"tree": target_tree_entries},
+                  expected=(201,),
+              )
+              target_commit, _ = api(
+                  owner_token,
+                  "POST",
+                  f"{repo_path}/git/commits",
+                  {
+                      "message": f"Import {spec['role']} from {source_repository}@{source_sha}",
+                      "tree": target_tree["sha"],
+                      "parents": [],
+                      "author": identity,
+                      "committer": identity,
+                  },
+                  expected=(201,),
+              )
+              expected_commit = target_commit["sha"]
+
+              current_ref, ref_status = api(
+                  owner_token,
+                  "GET",
+                  f"{repo_path}/git/ref/heads/main",
+                  expected=(200,),
+                  allow=(404, 409),
+              )
+              if ref_status in (404, 409):
+                  api(
+                      owner_token,
+                      "POST",
+                      f"{repo_path}/git/refs",
+                      {"ref": "refs/heads/main", "sha": expected_commit},
+                      expected=(201,),
+                  )
+              elif current_ref.get("object", {}).get("sha") != expected_commit:
+                  raise RuntimeError(f"existing main differs for {target_org}/{repo_name}")
+          '''
+          new = '''              target_tree, _ = api(
+                  owner_token,
+                  "POST",
+                  f"{repo_path}/git/trees",
+                  {"tree": target_tree_entries},
+                  expected=(201,),
+              )
+
+              current_ref, ref_status = api(
+                  owner_token,
+                  "GET",
+                  f"{repo_path}/git/ref/heads/main",
+                  expected=(200,),
+                  allow=(404, 409),
+              )
+              if ref_status == 200:
+                  current_main = current_ref.get("object", {}).get("sha")
+                  if not isinstance(current_main, str) or len(current_main) != 40:
+                      raise RuntimeError(f"invalid existing main for {target_org}/{repo_name}")
+                  current_commit, _ = api(
+                      owner_token,
+                      "GET",
+                      f"{repo_path}/git/commits/{current_main}",
+                  )
+                  if current_commit.get("tree", {}).get("sha") != target_tree["sha"]:
+                      raise RuntimeError(f"existing main tree differs for {target_org}/{repo_name}")
+                  expected_commit = current_main
+              else:
+                  # GitHub's refs API cannot create the first branch in a truly
+                  # empty repository. Seed one bounded file through the Contents
+                  # API, then replace that tree with the reviewed import in a
+                  # non-force, fast-forward commit.
+                  bootstrap_content = (
+                      f"temporary bootstrap for {target_org}/{repo_name}; "
+                      "removed by the immediately following import commit\n"
+                  ).encode()
+                  bootstrap, _ = api(
+                      owner_token,
+                      "PUT",
+                      f"{repo_path}/contents/.gha-indie-bootstrap",
+                      {
+                          "message": "chore: bootstrap main for reviewed source import",
+                          "content": base64.b64encode(bootstrap_content).decode(),
+                          "committer": {
+                              "name": "ORESoftware",
+                              "email": "11139560+ORESoftware@users.noreply.github.com",
+                          },
+                          "author": {
+                              "name": "ORESoftware",
+                              "email": "11139560+ORESoftware@users.noreply.github.com",
+                          },
+                      },
+                      expected=(201,),
+                  )
+                  bootstrap_commit = bootstrap.get("commit", {}).get("sha")
+                  if not isinstance(bootstrap_commit, str) or len(bootstrap_commit) != 40:
+                      raise RuntimeError(f"bootstrap commit missing for {target_org}/{repo_name}")
+                  target_commit, _ = api(
+                      owner_token,
+                      "POST",
+                      f"{repo_path}/git/commits",
+                      {
+                          "message": f"Import {spec['role']} from {source_repository}@{source_sha}",
+                          "tree": target_tree["sha"],
+                          "parents": [bootstrap_commit],
+                          "author": identity,
+                          "committer": identity,
+                      },
+                      expected=(201,),
+                  )
+                  expected_commit = target_commit["sha"]
+                  api(
+                      owner_token,
+                      "PATCH",
+                      f"{repo_path}/git/refs/heads/main",
+                      {"sha": expected_commit, "force": False},
+                  )
+          '''
+          if workflow.count(old) != 1:
+              raise SystemExit('exact empty-repository block not found once')
+          workflow = workflow.replace(old, new, 1)
+          old_provenance = (
+              '"- History policy: this root commit preserves every source file byte and executable mode; "'
+          )
+          new_provenance = (
+              '"- History policy: this import commit preserves every source file byte and executable mode; "'
+          )
+          if workflow.count(old_provenance) != 1:
+              raise SystemExit('exact provenance sentence not found once')
+          workflow_path.write_text(workflow.replace(old_provenance, new_provenance, 1))
+
+          docs_path = Path('docs/operations/gha-indie-worker-ephemeral-publication.md')
+          docs = docs_path.read_text()
+          old_docs = '''a deterministic root commit containing all source bytes and executable modes plus
+          one `SOURCE_PROVENANCE.md` file.'''
+          new_docs = '''a reviewed import commit containing all source bytes and executable modes plus
+          one `SOURCE_PROVENANCE.md` file. A one-file bootstrap commit exists only because
+          GitHub cannot create the first ref in a completely empty repository; the import
+          commit immediately removes that bootstrap file through a no-force fast-forward.'''
+          if docs.count(old_docs) != 1:
+              raise SystemExit('exact publication runbook sentence not found once')
+          docs_path.write_text(docs.replace(old_docs, new_docs, 1))
+
+          Path('.github/workflows/fix-gha-indie-worker-empty-repo-bootstrap-once.yml').unlink()
+          PY
+
+      - name: Validate patched workflow and embedded publisher
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ruby -e "require 'yaml'; YAML.load_file('.github/workflows/ops-gha-indie-worker-ephemeral-publish.yml')"
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          text = Path('.github/workflows/ops-gha-indie-worker-ephemeral-publish.yml').read_text()
+          match = re.search(r"          python3 - <<'PY'\n(.*?)\n          PY\n", text, re.S)
+          if not match:
+              raise SystemExit('embedded publisher heredoc not found')
+          code = '\n'.join(
+              line[10:] if line.startswith('          ') else line
+              for line in match.group(1).splitlines()
+          ) + '\n'
+          compile(code, 'embedded-gha-indie-publisher.py', 'exec')
+          if 'contents/.gha-indie-bootstrap' not in code:
+              raise SystemExit('Contents API bootstrap absent')
+          if '"force": False' not in code:
+              raise SystemExit('non-force fast-forward absent')
+          if 'existing main tree differs' not in code:
+              raise SystemExit('tree-idempotence guard absent')
+          PY
+          git diff --check
+
+      - name: Validate workflow expressions and action syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/ops-gha-indie-worker-ephemeral-publish.yml
+
+      - name: Commit only the repaired publisher and runbook
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A -- \
+            .github/workflows/fix-gha-indie-worker-empty-repo-bootstrap-once.yml \
+            .github/workflows/ops-gha-indie-worker-ephemeral-publish.yml \
+            docs/operations/gha-indie-worker-ephemeral-publication.md
+          allowed='^(\.github/workflows/(fix-gha-indie-worker-empty-repo-bootstrap-once|ops-gha-indie-worker-ephemeral-publish)\.yml|docs/operations/gha-indie-worker-ephemeral-publication\.md)$'
+          unexpected="$(git diff --cached --name-only | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected staged paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          git diff --cached --check
+          git commit -m 'fix(gha): bootstrap empty indie repositories safely'
+          git push origin HEAD:agent/gha-indie-worker-empty-repo-bootstrap-fix-20260804
