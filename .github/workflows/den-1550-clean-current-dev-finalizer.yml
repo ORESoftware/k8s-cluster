@@ -163,7 +163,7 @@ jobs:
           cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all
           cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all -- --check
           git rm .github/workflows/den-1550-clean-current-dev-finalizer.yml
-          allowed='^(\.github/workflows/den-1550-clean-current-dev-finalizer\.yml|docs/gha-profile-repository-admission\.md|remote/deployments/gha-clone-server-rs/|remote/tests/general/gha-clone-server-config\.test\.ts)$'
+          allowed='^(\.github/workflows/den-1550-clean-current-dev-finalizer\.yml|docs/gha-profile-repository-admission\.md|remote/deployments/gha-clone-server-rs/.*|remote/tests/general/gha-clone-server-config\.test\.ts)$'
           unexpected="$(git status --porcelain | sed -E 's/^.. //' | grep -Ev "$allowed" || true)"
           if [[ -n "$unexpected" ]]; then
             echo 'unexpected files changed by the normalizer:' >&2
