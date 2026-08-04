@@ -84,7 +84,7 @@ jobs:
             scripts/ci/run-slack-command-e2e.sh
           grep -Fq "remote/tests/fixtures/slack-command-registry.json" \
             scripts/ci/run-slack-command-e2e.sh
-          grep -Fq "remote/tests/ui/slack-agent-command.playwright.test.mjs" \
+          grep -Fq "node --test ui/slack-agent-command.playwright.test.mjs" \
             scripts/ci/run-slack-command-e2e.sh
           git diff --check
 
