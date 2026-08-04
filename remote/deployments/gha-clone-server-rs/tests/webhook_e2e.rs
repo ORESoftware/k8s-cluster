@@ -339,7 +339,7 @@ fn execution_env(github: &MockGithub, build: &MockBuildServer) -> BTreeMap<&'sta
     );
     env.insert("GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS", "3600".to_string());
     env.insert("GHA_CLONE_MAX_WEBHOOK_DELIVERIES", "32".to_string());
-    env.insert("GHA_CLONE_BUILD_POLL_SECONDS", "0".to_string());
+    env.insert("GHA_CLONE_BUILD_POLL_SECONDS", "1".to_string());
     env.insert("GHA_CLONE_BUILD_TIMEOUT_SECONDS", "5".to_string());
     env.insert("GHA_CLONE_MAX_RUNS", "32".to_string());
     env
