@@ -1,3 +1,4 @@
+# One-shot workflow; removed after the validated source commit lands.
 name: Finalize GHA clone parent formatting
 
 on:
