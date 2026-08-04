@@ -27,8 +27,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     steps:
-      - name: Checkout exact writable branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: agent/den-1550-raw-profile-policy-bytes
           fetch-depth: 0
@@ -36,7 +35,7 @@ jobs:
           show-progress: false
           submodules: false
 
-      - name: Materialize the raw-byte correction and Clippy cleanup
+      - name: Materialize raw-byte admission and tests
         shell: bash
         run: |
           set -euo pipefail
@@ -128,11 +127,10 @@ jobs:
           )
           def collapse(match):
               indent = match.group('i')
-              body = match.group('body')
               return (
                   f'{indent}if exact_identity == identity '
                   '&& exact_profiles.replace(decoded).is_some() {\n'
-                  f'{body}{indent}}}'
+                  f"{match.group('body')}{indent}}}"
               )
           policy, count = nested.subn(collapse, policy, count=1)
           if count == 0 and 'if exact_identity == identity && exact_profiles.replace(decoded).is_some()' not in policy:
@@ -172,36 +170,37 @@ jobs:
           static_path = Path('remote/tests/general/build-server-profile-repository-policy.test.mjs')
           static = static_path.read_text(encoding='utf-8')
           env_marker = '  assert.match(config, /BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON/);'
-          if 'raw_env\\("BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON"\\)' not in static:
+          if 'raw_policy_env_preserves_original_bytes' not in static:
               if static.count(env_marker) != 1:
-                  raise SystemExit('static env contract is missing')
-              static = static.replace(env_marker, env_marker + '''
-            assert.match(config, /raw_env\\("BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON"\\)/);
-            assert.doesNotMatch(config, /first_env\\(&\\["BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON"\\]\\)/);''', 1)
+                  raise SystemExit('static environment contract is missing')
+              static = static.replace(env_marker, env_marker + r'''
+            // raw_policy_env_preserves_original_bytes
+            assert.match(config, /raw_env\(\s*"BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON"\s*\)/);
+            assert.doesNotMatch(
+              config,
+              /first_env\(\s*&\[\s*"BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON"\s*\]\s*\)/,
+            );''', 1)
           bytes_marker = '  assert.match(policy, /MAX_POLICY_BYTES/);'
           if 'raw_policy_byte_limit_is_checked_before_trimming' not in static:
               if static.count(bytes_marker) != 1:
-                  raise SystemExit('static byte contract is missing')
-              static = static.replace(bytes_marker, bytes_marker + '''
-            assert.match(policy, /configured\\.len\\(\\) > MAX_POLICY_BYTES/);
+                  raise SystemExit('static byte-bound contract is missing')
+              static = static.replace(bytes_marker, bytes_marker + r'''
+            assert.match(policy, /configured\.len\(\) > MAX_POLICY_BYTES/);
             assert.match(policy, /raw_policy_byte_limit_is_checked_before_trimming/);''', 1)
           static_path.write_text(static, encoding='utf-8')
           PY
 
-      - name: Checkout exact private remote/libs gitlink
-        uses: ./.github/actions/checkout-remote-libs
+      - uses: ./.github/actions/checkout-remote-libs
         with:
           ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
-      - name: Setup Rust 1.90.0
-        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           toolchain: '1.90.0'
           components: rustfmt, clippy
 
-      - name: Run complete build-server validation
+      - name: Validate every build-server target
         working-directory: remote/deployments/build-server-rs
-        shell: bash
         run: |
           set -euo pipefail
           cargo fmt --all
@@ -210,8 +209,7 @@ jobs:
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked --all-targets -- --nocapture
 
-      - name: Validate static contract and three-file scope
-        shell: bash
+      - name: Validate static contract and product scope
         run: |
           set -euo pipefail
           node --test remote/tests/general/build-server-profile-repository-policy.test.mjs
@@ -220,11 +218,11 @@ jobs:
           actual="$(git status --short | awk '{print $2}' | sort)"
           test "$actual" = "$expected"
 
-      - name: Remove carrier, commit, and push the bounded product
-        shell: bash
+      - name: Commit the three-file correction and remove this carrier
         run: |
           set -euo pipefail
           rm .github/workflows/apply-den-1550-raw-profile-policy-bytes.yml
+          rm -f .github/workflows/fix-den-1550-static-regex-once.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
