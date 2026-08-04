@@ -38,6 +38,7 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          from textwrap import dedent
 
           workflow = Path('.github/workflows/materialize-den-1606-direct-hardening-once.yml')
           lines = workflow.read_text(encoding='utf-8').splitlines()
@@ -55,16 +56,15 @@ jobs:
           if run_index >= next_index:
               raise SystemExit('reviewed materializer step has no literal run block')
 
-          block = lines[run_index + 1 : next_index]
-          prefix = '          '
-          if not block:
-              raise SystemExit('reviewed materializer run block is empty')
-          block = [line[len(prefix):] if line.startswith(prefix) else line for line in block]
-          if block[0] != "python3 - <<'PY'" or block[-1] != 'PY':
+          block = dedent('\n'.join(lines[run_index + 1 : next_index])).splitlines()
+          while block and not block[-1]:
+              block.pop()
+          if not block or block[0] != "python3 - <<'PY'" or block[-1] != 'PY':
               raise SystemExit('reviewed materializer run block has unexpected shell framing')
 
           script = '\n'.join(block[1:-1]) + '\n'
-          exec(compile(script, str(workflow), 'exec'), {'__name__': '__main__'})
+          compiled = compile(script, str(workflow), 'exec')
+          exec(compiled, {'__name__': '__main__'})
           for path in (
               Path('.github/workflows/run-den-1606-materializer-once.yml'),
               Path('.github/workflows/run-den-1606-materializer-pr-once.yml'),
