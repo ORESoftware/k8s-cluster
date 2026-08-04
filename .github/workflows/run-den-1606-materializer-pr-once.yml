@@ -75,6 +75,23 @@ jobs:
               for line in script_lines
           ]
           script = '\n'.join(script_lines) + '\n'
+
+          brittle = """if lib.count(old_path) != 1:
+              raise SystemExit('unexpected planner workflow-path validator')
+          lib = lib.replace(old_path, new_path, 1)
+          """
+          robust = """path_start = lib.find('fn valid_workflow_path(value: &str) -> bool {')
+          if path_start == -1:
+              raise SystemExit('could not locate planner workflow-path validator')
+          path_end = lib.find('\\n}\\n', path_start)
+          if path_end == -1:
+              raise SystemExit('could not locate planner workflow-path validator end')
+          lib = lib[:path_start] + new_path + lib[path_end + 3:]
+          """
+          if script.count(brittle) != 1:
+              raise SystemExit('reviewed materializer no longer has the expected workflow-path replacement')
+          script = script.replace(brittle, robust, 1)
+
           exec(compile(script, str(workflow), 'exec'), {'__name__': '__main__'})
           for path in (
               Path('.github/workflows/run-den-1606-materializer-once.yml'),
