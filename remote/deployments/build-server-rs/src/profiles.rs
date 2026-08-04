@@ -59,6 +59,23 @@ cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked --all-targets --all-features"#,
 }];
 
+const RUST_GENERATED_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
+    name: "Generated Rust interface formatting, Clippy, and tests",
+    image: RUST_IMAGE,
+    subdirectory: ".",
+    script: r#"set -euo pipefail
+manifest=generated/rust/Cargo.toml
+if [ ! -f "$manifest" ]; then
+  echo "rust-generated-verify requires generated/rust/Cargo.toml" >&2
+  exit 2
+fi
+cargo generate-lockfile --manifest-path "$manifest"
+rustup component add rustfmt clippy
+cargo fmt --manifest-path "$manifest" -- --check
+cargo clippy --locked --manifest-path "$manifest" --all-targets -- -D warnings
+cargo test --locked --manifest-path "$manifest" --all-targets"#,
+}];
+
 const NODE_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
     name: "Node dependency and test verification",
     image: NODE_IMAGE,
@@ -84,6 +101,34 @@ fi
 if node -e 'const p=require("./package.json"); process.exit(p.scripts && p.scripts[process.argv[1]] ? 0 : 1)' check:typescript; then
   "$package_manager" run check:typescript
 fi"#,
+}];
+
+const NODE_HARDENED_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
+    name: "Hardened Node operator configuration verification",
+    image: NODE_IMAGE,
+    subdirectory: ".",
+    script: r#"set -euo pipefail
+if [ ! -f package-lock.json ] && [ ! -f npm-shrinkwrap.json ]; then
+  echo "node-hardened-verify requires package-lock.json or npm-shrinkwrap.json" >&2
+  exit 2
+fi
+npm ci --ignore-scripts
+npm run check
+npm run test:operator-config
+npm audit --audit-level=high"#,
+}];
+
+const NODE_HARDENED_TEST_STEPS: &[ProfileStep] = &[ProfileStep {
+    name: "Lifecycle-script-free Node repository tests",
+    image: NODE_IMAGE,
+    subdirectory: ".",
+    script: r#"set -euo pipefail
+if [ ! -f package-lock.json ] && [ ! -f npm-shrinkwrap.json ]; then
+  echo "node-hardened-test requires package-lock.json or npm-shrinkwrap.json" >&2
+  exit 2
+fi
+npm ci --ignore-scripts
+npm test"#,
 }];
 
 const PYTHON_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
@@ -180,11 +225,33 @@ pub const SPECS: &[ProfileSpec] = &[
         artifact_paths: &[],
     },
     ProfileSpec {
+        name: "rust-generated-verify",
+        platform: "linux",
+        description: "Generated Rust interface lock, formatting, warnings-denied Clippy, and tests",
+        steps: RUST_GENERATED_VERIFY_STEPS,
+        artifact_paths: &[],
+    },
+    ProfileSpec {
         name: "node-verify",
         platform: "linux",
         description:
             "Lockfile-strict Node dependency installation, tests, and optional TypeScript contract checks",
         steps: NODE_VERIFY_STEPS,
+        artifact_paths: &[],
+    },
+    ProfileSpec {
+        name: "node-hardened-verify",
+        platform: "linux",
+        description:
+            "Lifecycle-script-free Node operator checks, focused tests, and high-severity audit",
+        steps: NODE_HARDENED_VERIFY_STEPS,
+        artifact_paths: &[],
+    },
+    ProfileSpec {
+        name: "node-hardened-test",
+        platform: "linux",
+        description: "Lifecycle-script-free lockfile install and complete Node repository tests",
+        steps: NODE_HARDENED_TEST_STEPS,
         artifact_paths: &[],
     },
     ProfileSpec {
@@ -301,9 +368,81 @@ mod tests {
 
     #[test]
     fn continuity_profiles_are_installed() {
-        for name in ["rust-verify", "node-verify", "python-verify"] {
+        for name in [
+            "rust-verify",
+            "rust-generated-verify",
+            "node-verify",
+            "node-hardened-verify",
+            "node-hardened-test",
+            "python-verify",
+        ] {
             assert!(find(name).is_some(), "{name} should be installed");
         }
+    }
+
+    #[test]
+    fn generated_rust_profile_is_locked_ordered_and_non_publishing() {
+        let profile = find("rust-generated-verify").expect("generated Rust profile");
+        let script = profile.steps[0].script;
+        let lock = script
+            .find("cargo generate-lockfile")
+            .expect("lock generation");
+        let format = script.find("cargo fmt").expect("formatting");
+        let clippy = script.find("cargo clippy").expect("Clippy");
+        let test = script.find("cargo test").expect("tests");
+        assert!(lock < format && format < clippy && clippy < test);
+        assert_eq!(profile.steps[0].subdirectory, ".");
+        assert!(script.contains("generated/rust/Cargo.toml"));
+        assert!(script.contains("--locked"));
+        assert!(script.contains("-D warnings"));
+        assert!(!script.contains("cargo publish"));
+        assert!(!script.contains("find "));
+        assert!(!script.contains("|| true"));
+        assert!(!script.contains("curl"));
+        assert!(!script.contains("wget"));
+    }
+
+    #[test]
+    fn hardened_node_profile_is_ordered_and_supply_chain_bounded() {
+        let profile = find("node-hardened-verify").expect("hardened Node profile");
+        let script = profile.steps[0].script;
+        let install = script
+            .find("npm ci --ignore-scripts")
+            .expect("install step");
+        let check = script.find("npm run check").expect("check step");
+        let focused = script
+            .find("npm run test:operator-config")
+            .expect("focused test step");
+        let audit = script
+            .find("npm audit --audit-level=high")
+            .expect("audit step");
+        assert!(install < check && check < focused && focused < audit);
+        assert_eq!(profile.steps[0].subdirectory, ".");
+        assert!(script.contains("package-lock.json"));
+        assert!(script.contains("npm-shrinkwrap.json"));
+        assert!(!script.contains("npm install"));
+        assert!(!script.contains("|| true"));
+        assert!(!script.contains("--force"));
+        assert!(!script.contains("curl"));
+        assert!(!script.contains("wget"));
+    }
+
+    #[test]
+    fn hardened_node_test_profile_disables_lifecycle_scripts() {
+        let profile = find("node-hardened-test").expect("hardened Node test profile");
+        let script = profile.steps[0].script;
+        let install = script
+            .find("npm ci --ignore-scripts")
+            .expect("install step");
+        let test = script.find("npm test").expect("test step");
+        assert!(install < test);
+        assert!(script.contains("package-lock.json"));
+        assert!(script.contains("npm-shrinkwrap.json"));
+        assert!(!script.contains("npm install"));
+        assert!(!script.contains("npm audit"));
+        assert!(!script.contains("|| true"));
+        assert!(!script.contains("curl"));
+        assert!(!script.contains("wget"));
     }
 
     #[test]

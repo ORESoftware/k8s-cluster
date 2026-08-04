@@ -38,6 +38,7 @@ jobs:
       NATS_URL: nats://127.0.0.1:4222
       PORT: '8152'
       DURABLE_WORKER_NATS_REPLICAS: '1'
+      DURABLE_WORKER_SCHEDULER_INTERVAL_MS: '100'
       DURABLE_WORKER_SHADOW_MODE: 'true'
       RUST_BACKTRACE: '1'
 
@@ -97,13 +98,16 @@ jobs:
       - name: Render dd-next-runtime manifests
         run: kustomize build remote/argocd/dd-next-runtime > /tmp/dd-next-runtime-rendered.yaml
 
-      - name: Start isolated JetStream
+      - name: Start isolated persistent JetStream
         shell: bash
         run: |
           set -euo pipefail
+          docker volume rm --force dd-durable-worker-nats-data >/dev/null 2>&1 || true
+          docker volume create dd-durable-worker-nats-data >/dev/null
           docker run --detach --name dd-durable-worker-nats \
             --publish 4222:4222 --publish 8222:8222 \
-            docker.io/library/nats:2.14.3-alpine -js -m 8222
+            --volume dd-durable-worker-nats-data:/data \
+            docker.io/library/nats:2.14.3-alpine -js -sd /data -m 8222
           for attempt in $(seq 1 60); do
             if curl --fail --silent http://127.0.0.1:8222/healthz > /dev/null; then
               exit 0
@@ -138,12 +142,86 @@ jobs:
           node remote/deployments/durable-worker-server-rs/tests/gha_smoke.mjs
           cat /tmp/dd-durable-worker-server.log
 
+      - name: Restart JetStream and server; prove redelivery fencing
+        shell: bash
+        run: |
+          set -euo pipefail
+          state_path="${RUNNER_TEMP}/durable-worker-restart-state.json"
+          first_log="${RUNNER_TEMP}/durable-worker-before-restart.log"
+          second_log="${RUNNER_TEMP}/durable-worker-after-restart.log"
+          server_pid=''
+
+          stop_server() {
+            if [[ -n "${server_pid:-}" ]]; then
+              kill "$server_pid" 2>/dev/null || true
+              wait "$server_pid" 2>/dev/null || true
+              server_pid=''
+            fi
+          }
+
+          start_server() {
+            local log_path="$1"
+            cargo run --locked --manifest-path "$MANIFEST" > "$log_path" 2>&1 &
+            server_pid=$!
+            for attempt in $(seq 1 120); do
+              if curl --fail --silent http://127.0.0.1:8152/readyz > /dev/null; then
+                return 0
+              fi
+              if ! kill -0 "$server_pid" 2>/dev/null; then
+                cat "$log_path"
+                return 1
+              fi
+              sleep 1
+            done
+            cat "$log_path"
+            return 1
+          }
+
+          wait_for_nats() {
+            for attempt in $(seq 1 60); do
+              if curl --fail --silent http://127.0.0.1:8222/healthz > /dev/null; then
+                return 0
+              fi
+              sleep 1
+            done
+            docker logs dd-durable-worker-nats
+            return 1
+          }
+
+          cleanup() {
+            stop_server
+            [[ -f "$first_log" ]] && cat "$first_log" || true
+            [[ -f "$second_log" ]] && cat "$second_log" || true
+          }
+          trap cleanup EXIT
+
+          start_server "$first_log"
+          node remote/deployments/durable-worker-server-rs/tests/restart_recovery.mjs \
+            prepare "$state_path"
+          stop_server
+
+          docker kill dd-durable-worker-nats >/dev/null
+          docker rm dd-durable-worker-nats >/dev/null
+          docker run --detach --name dd-durable-worker-nats \
+            --publish 4222:4222 --publish 8222:8222 \
+            --volume dd-durable-worker-nats-data:/data \
+            docker.io/library/nats:2.14.3-alpine -js -sd /data -m 8222
+          wait_for_nats
+
+          start_server "$second_log"
+          node remote/deployments/durable-worker-server-rs/tests/restart_recovery.mjs \
+            verify "$state_path"
+          stop_server
+
       - name: Build production container image
         run: docker build --file remote/deployments/durable-worker-server-rs/Dockerfile remote/deployments/durable-worker-server-rs
 
-      - name: Cleanup test containers
+      - name: Cleanup test containers and volumes
         if: always()
-        run: docker rm --force dd-durable-worker-nats >/dev/null 2>&1 || true
+        shell: bash
+        run: |
+          docker rm --force dd-durable-worker-nats >/dev/null 2>&1 || true
+          docker volume rm --force dd-durable-worker-nats-data >/dev/null 2>&1 || true
 
   publish-image:
     if: github.event_name == 'push'
