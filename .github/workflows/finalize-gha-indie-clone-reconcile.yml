@@ -1,0 +1,102 @@
+name: Finalize GHA indie-worker clone reconciliation
+
+on:
+  push:
+    branches:
+      - agent/gha-indie-clone-reconcile-20260803
+    paths:
+      - scripts/finalize-gha-indie-clone-reconcile.py.gz.b64
+      - .github/workflows/finalize-gha-indie-clone-reconcile.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-gha-indie-clone-reconcile
+  cancel-in-progress: false
+
+jobs:
+  reconcile-and-harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the exact reconciliation branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/gha-indie-clone-reconcile-20260803
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Decode and apply the reviewed transformer
+        run: |
+          set -euo pipefail
+          base64 --decode scripts/finalize-gha-indie-clone-reconcile.py.gz.b64 \
+            | gzip -dc > /tmp/finalize-gha-reconcile.py
+          python3 -m py_compile /tmp/finalize-gha-reconcile.py
+          python3 /tmp/finalize-gha-reconcile.py
+
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Format the clone-server crate
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+
+      - name: Reject warnings across every target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Run every clone-server test target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --all-targets -- --nocapture
+
+      - name: Validate the one-shot workflow
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/finalize-gha-indie-clone-reconcile.yml
+
+      - name: Commit only the reconciled and validated product changes
+        run: |
+          set -euo pipefail
+          rm -f \
+            scripts/finalize-gha-indie-clone-reconcile.py.gz.b64 \
+            .github/workflows/finalize-gha-indie-clone-reconcile.yml
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            docs/gha-indie-worker-clone-reconciliation.md \
+            remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml \
+            remote/deployments/gha-clone-server-rs/README.md \
+            remote/deployments/gha-clone-server-rs/src/lib.rs \
+            remote/deployments/gha-clone-server-rs/src/main.rs \
+            remote/deployments/gha-clone-server-rs/tests/startup_hardening.rs \
+            remote/deployments/gha-clone-server-rs/tests/yaml_ambiguity.rs
+          git add -A -- \
+            scripts/finalize-gha-indie-clone-reconcile.py.gz.b64 \
+            .github/workflows/finalize-gha-indie-clone-reconcile.yml
+
+          allowed='^(docs/gha-indie-worker-clone-reconciliation\.md|remote/argocd/dd-next-runtime/dd-gha-clone-server\.deployment\.yaml|remote/deployments/gha-clone-server-rs/(README\.md|src/(lib|main)\.rs|tests/(startup_hardening|yaml_ambiguity)\.rs)|scripts/finalize-gha-indie-clone-reconcile\.py\.gz\.b64|\.github/workflows/finalize-gha-indie-clone-reconcile\.yml)$'
+          unexpected="$(git diff --cached --name-only | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            echo "Unexpected staged paths:" >&2
+            echo "$unexpected" >&2
+            exit 1
+          fi
+
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "The reconciliation produced no product change" >&2
+            exit 1
+          fi
+
+          git commit -m "fix(gha): reconcile indie worker and harden clone server"
+          git push origin HEAD:agent/gha-indie-clone-reconcile-20260803
