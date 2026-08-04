@@ -91,13 +91,14 @@ jobs:
             remote/deployments/gha-clone-server-rs/src/lib.rs \
             remote/deployments/gha-clone-server-rs/src/main.rs \
             remote/deployments/gha-clone-server-rs/tests/http_api.rs \
+            remote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs \
             remote/deployments/gha-clone-server-rs/tests/startup_hardening.rs \
             remote/deployments/gha-clone-server-rs/tests/yaml_ambiguity.rs
           git add -A -- \
             scripts/finalize-gha-indie-clone-reconcile.py.gz.b64 \
             .github/workflows/finalize-gha-indie-clone-reconcile.yml
 
-          allowed='^(docs/gha-indie-worker-clone-reconciliation\.md|remote/argocd/dd-next-runtime/dd-gha-clone-server\.deployment\.yaml|remote/deployments/gha-clone-server-rs/(README\.md|src/(lib|main)\.rs|tests/(http_api|startup_hardening|yaml_ambiguity)\.rs)|scripts/finalize-gha-indie-clone-reconcile\.py\.gz\.b64|\.github/workflows/finalize-gha-indie-clone-reconcile\.yml)$'
+          allowed='^(docs/gha-indie-worker-clone-reconciliation\.md|remote/argocd/dd-next-runtime/dd-gha-clone-server\.deployment\.yaml|remote/deployments/gha-clone-server-rs/(README\.md|src/(lib|main)\.rs|tests/(http_api|webhook_e2e|startup_hardening|yaml_ambiguity)\.rs)|scripts/finalize-gha-indie-clone-reconcile\.py\.gz\.b64|\.github/workflows/finalize-gha-indie-clone-reconcile\.yml)$'
           unexpected="$(git diff --cached --name-only | grep -Ev "$allowed" || true)"
           if [[ -n "$unexpected" ]]; then
             echo "Unexpected staged paths:" >&2
