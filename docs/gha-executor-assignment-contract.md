@@ -34,6 +34,12 @@ No assignment is inserted when no executor is ready, so a later retry may safely
 
 The in-process assignment map is deliberately bounded and not evicted. When full, the router rejects new requests before submission rather than forgetting an assignment and risking duplicate work.
 
+## Security-baseline dependency
+
+The merge candidate is evaluated against `dev` after `f99c1118a432d55e76d5123240bc6dc8514f68a0`, which removed the redundant inline `GHA_EXECUTOR_ROUTER_SECRET_ROOT` value. The router continues to use the same fail-closed code default and the same mode-0400 projected credential directory; only the direct-child inbound-auth path remains explicit in GitOps.
+
+This assignment change must not reintroduce an inline secret-root value, alter the Secret projection, or make the router deployable. Repository contracts, secret scans, rendering, and the continuity workflow run against the latest merge candidate rather than an earlier branch head.
+
 ## Verification boundary
 
 Repository contracts read the split router implementation directly rather than relying on policy prose in the binary shim. They cover the service, assignment, authentication, and upstream modules plus both real-process suites.
