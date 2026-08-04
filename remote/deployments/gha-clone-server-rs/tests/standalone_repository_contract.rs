@@ -21,8 +21,18 @@ fn standalone_workflows_are_repository_local_and_immutable() {
             workflow.contains("dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30")
         );
         assert!(workflow.contains("toolchain: '1.90.0'"));
-        assert!(!workflow.contains("ubuntu-latest"));
     }
+
+    assert!(ci.contains("runs-on: ubuntu-24.04"));
+    assert!(!ci.contains("ubuntu-latest"));
+
+    // The bounded workflow compiler intentionally recognizes the reviewed
+    // `ubuntu-latest` meta subset and maps it to a fixed build-server profile.
+    // Native standalone CI remains pinned separately in `ci.yml`.
+    assert!(meta.contains("runs-on: ubuntu-latest"));
+    assert!(!meta.contains("permissions:"));
+    assert!(!meta.contains("timeout-minutes:"));
+    assert!(!meta.contains("show-progress:"));
 
     for command in [
         "cargo fmt --all -- --check",
