@@ -12,9 +12,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  contracts:
+  workflow-lint:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -23,10 +23,25 @@ jobs:
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
           args: ./.github/workflows/ci.yml
+
+  contracts:
+    needs: workflow-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['22', '24']
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '22'
-      - run: npm test
+          node-version: ${{ matrix.node-version }}
+      - name: Verify fleet manifest and compatibility contracts
+        run: npm test
+
   fleet-audit:
     if: github.event_name != 'pull_request'
     needs: contracts
@@ -68,7 +83,7 @@ jobs:
       - name: Build Daedalus Sync TypeScript package
         if: steps.token.outputs.present == 'true'
         run: |
-          npm --prefix apps/daedalus-sync/typescript ci
+          npm --prefix apps/daedalus-sync/typescript ci --ignore-scripts
           npm --prefix apps/daedalus-sync/typescript run build
       - name: Verify cross-repository sync compatibility
         if: steps.token.outputs.present == 'true'
