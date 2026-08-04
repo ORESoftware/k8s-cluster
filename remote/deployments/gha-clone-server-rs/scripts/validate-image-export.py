@@ -9,6 +9,12 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable
 
+ALLOWED_BINARIES = {
+    "gha-clone-server",
+    "gha-executor-router",
+    "gha-capacity-broker",
+}
+
 
 def walk_json(value: Any) -> Iterable[dict[str, Any]]:
     if isinstance(value, dict):
@@ -30,7 +36,7 @@ def main() -> None:
 
     root = Path(sys.argv[1]).resolve()
     expected_binary = sys.argv[2]
-    if expected_binary not in {"gha-clone-server", "gha-executor-router"}:
+    if expected_binary not in ALLOWED_BINARIES:
         fail(f"unexpected binary name {expected_binary!r}")
     if not root.is_dir():
         fail(f"export root does not exist: {root}")
@@ -39,13 +45,17 @@ def main() -> None:
     if not binary.is_file() or not os.access(binary, os.X_OK):
         fail(f"expected executable is missing: {binary}")
 
-    other = (
-        "gha-executor-router"
-        if expected_binary == "gha-clone-server"
-        else "gha-clone-server"
-    )
-    if (root / "usr" / "local" / "bin" / other).exists():
-        fail(f"runtime target unexpectedly contains {other}")
+    siblings = sorted(ALLOWED_BINARIES - {expected_binary})
+    leaked_siblings = [
+        sibling
+        for sibling in siblings
+        if (root / "usr" / "local" / "bin" / sibling).exists()
+    ]
+    if leaked_siblings:
+        fail(
+            "runtime target unexpectedly contains sibling binaries: "
+            + ", ".join(leaked_siblings)
+        )
 
     forbidden = [
         root / "usr" / "local" / "cargo",
@@ -110,6 +120,7 @@ def main() -> None:
                 "binary": expected_binary,
                 "attestations": parsed_files,
                 "runtimeToolingLeak": False,
+                "siblingBinaryLeak": False,
             },
             sort_keys=True,
         )
