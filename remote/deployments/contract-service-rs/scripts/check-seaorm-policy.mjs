@@ -15,28 +15,31 @@ function read(relativePath) {
   return readFileSync(path.join(serviceRoot, relativePath), "utf8");
 }
 
-function gitlinkCommit() {
-  const repositoryRoot = path.resolve(remoteRoot, "..");
-  const output = execFileSync(
-    "git",
-    ["-C", repositoryRoot, "rev-parse", "HEAD:remote/libs"],
-    {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: 10_000,
-      maxBuffer: 64 * 1024,
-      env: {
-        PATH: process.env.PATH,
-        HOME: process.env.HOME,
-        LANG: process.env.LANG ?? "C.UTF-8",
-        LC_ALL: process.env.LC_ALL ?? "C.UTF-8",
-        GIT_CONFIG_GLOBAL: "/dev/null",
-        GIT_CONFIG_NOSYSTEM: "1",
-        GIT_TERMINAL_PROMPT: "0",
-      },
+function git(args, cwd) {
+  return execFileSync("git", ["-C", cwd, ...args], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: 10_000,
+    maxBuffer: 64 * 1024,
+    env: {
+      PATH: process.env.PATH,
+      HOME: process.env.HOME,
+      LANG: process.env.LANG ?? "C.UTF-8",
+      LC_ALL: process.env.LC_ALL ?? "C.UTF-8",
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_TERMINAL_PROMPT: "0",
     },
-  );
-  return output.trim();
+  }).trim();
+}
+
+function sharedCommit() {
+  const commit = git(["rev-parse", "HEAD"], sharedRoot);
+  const expected = process.env.EXPECTED_SHARED_COMMIT?.trim();
+  if (expected && expected !== commit) {
+    throw new Error(`shared checkout mismatch: expected ${expected}, received ${commit}`);
+  }
+  return commit;
 }
 
 const summary = validateSeaOrmPolicy({
@@ -46,7 +49,7 @@ const summary = validateSeaOrmPolicy({
   sharedContract: JSON.parse(
     readFileSync(path.join(sharedRoot, "pg-defs", "rust-server-contract.json"), "utf8"),
   ),
-  sharedCommit: gitlinkCommit(),
+  sharedCommit: sharedCommit(),
 });
 
 console.log(JSON.stringify(summary));
