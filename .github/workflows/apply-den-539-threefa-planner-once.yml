@@ -1,0 +1,225 @@
+name: Apply DEN-539 3FA planner source patch
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/apply-den-539-threefa-planner-once.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    if: github.head_ref == 'agent/den-539-threefa-planner-20260804'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.head_ref }}
+          persist-credentials: true
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt
+
+      - name: Apply bounded planner changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/deployments/gha-clone-server-rs/src/lib.rs')
+          source = path.read_text(encoding='utf-8')
+
+          replacements = [
+              (
+                  '''            "rust-verify".to_string(),
+                      "node-verify".to_string(),''',
+                  '''            "rust-verify".to_string(),
+                      "rust-generated-verify".to_string(),
+                      "node-verify".to_string(),
+                      "node-hardened-verify".to_string(),
+                      "node-hardened-test".to_string(),''',
+                  'capability profiles',
+              ),
+              (
+                  '''    let mut combined = String::new();
+              let has_services = mapping_get(job, "services").is_some();''',
+                  '''    let mut combined = String::new();
+              let mut run_commands = Vec::<String>::new();
+              let has_services = mapping_get(job, "services").is_some();''',
+                  'run command accumulator',
+              ),
+              (
+                  '''        if let Some(run) = mapping_get(step, "run").and_then(Value::as_str) {
+                  combined.push_str(run);
+                  combined.push('\n');
+                  if run.contains("${{") {''',
+                  '''        if let Some(run) = mapping_get(step, "run").and_then(Value::as_str) {
+                  combined.push_str(run);
+                  combined.push('\n');
+                  run_commands.extend(
+                      run.lines()
+                          .map(str::trim)
+                          .filter(|command| !command.is_empty())
+                          .map(str::to_string),
+                  );
+                  if run.contains("${{") {''',
+                  'run command extraction',
+              ),
+              (
+                  '''    let lower = combined.to_ascii_lowercase();
+              let profile = classify_profile(&lower);
+              if profile.is_none() {
+                  reasons.push("no fixed build-server profile matches this job".into());
+              }''',
+                  '''    let lower = combined.to_ascii_lowercase();
+              let generated_rust = generated_rust_intent(&lower);
+              let hardened_node = hardened_node_intent(&lower);
+              let profile = if generated_rust {
+                  match generated_rust_profile(&run_commands) {
+                      Some(profile) => Some(profile.to_string()),
+                      None => {
+                          reasons.push(
+                              "generated Rust jobs must use one exact reviewed command sequence in the documented order with no extra commands"
+                                  .into(),
+                          );
+                          None
+                      }
+                  }
+              } else if hardened_node {
+                  match hardened_node_profile(&run_commands) {
+                      Some(profile) => Some(profile.to_string()),
+                      None => {
+                          reasons.push(
+                              "hardened Node jobs must use one exact reviewed command sequence in the documented order with no extra commands"
+                                  .into(),
+                          );
+                          None
+                      }
+                  }
+              } else {
+                  classify_profile(&lower)
+              };
+              if profile.is_none() && !generated_rust && !hardened_node {
+                  reasons.push("no fixed build-server profile matches this job".into());
+              }''',
+                  'exact profile classification',
+              ),
+              (
+                  '''fn classify_profile(text: &str) -> Option<String> {''',
+                  '''fn generated_rust_intent(text: &str) -> bool {
+              text.contains("generated/rust/cargo.toml")
+          }
+
+          fn generated_rust_profile(commands: &[String]) -> Option<&'static str> {
+              const EXACT: [&str; 4] = [
+                  "cargo generate-lockfile --manifest-path generated/rust/Cargo.toml",
+                  "cargo fmt --manifest-path generated/rust/Cargo.toml -- --check",
+                  "cargo clippy --locked --manifest-path generated/rust/Cargo.toml --all-targets -- -D warnings",
+                  "cargo test --locked --manifest-path generated/rust/Cargo.toml --all-targets",
+              ];
+              commands
+                  .iter()
+                  .map(String::as_str)
+                  .eq(EXACT)
+                  .then_some("rust-generated-verify")
+          }
+
+          fn hardened_node_intent(text: &str) -> bool {
+              text.contains("npm ci --ignore-scripts")
+                  || text.contains("npm run test:operator-config")
+          }
+
+          fn hardened_node_profile(commands: &[String]) -> Option<&'static str> {
+              const VERIFY: [&str; 4] = [
+                  "npm ci --ignore-scripts",
+                  "npm run check",
+                  "npm run test:operator-config",
+                  "npm audit --audit-level=high",
+              ];
+              const TEST: [&str; 2] = ["npm ci --ignore-scripts", "npm test"];
+              if commands.iter().map(String::as_str).eq(VERIFY) {
+                  Some("node-hardened-verify")
+              } else if commands.iter().map(String::as_str).eq(TEST) {
+                  Some("node-hardened-test")
+              } else {
+                  None
+              }
+          }
+
+          fn classify_profile(text: &str) -> Option<String> {''',
+                  'exact profile helpers',
+              ),
+              (
+                  '''    #[test]
+              fn verifies_github_hmac_sha256() {''',
+                  '''    #[test]
+              fn hardened_and_generated_command_sequences_are_exact() {
+                  let node_test = ["npm ci --ignore-scripts", "npm test"]
+                      .into_iter()
+                      .map(str::to_string)
+                      .collect::<Vec<_>>();
+                  assert_eq!(hardened_node_profile(&node_test), Some("node-hardened-test"));
+                  let mut extra_node = node_test.clone();
+                  extra_node.push("npm audit --audit-level=high".into());
+                  assert_eq!(hardened_node_profile(&extra_node), None);
+
+                  let generated = [
+                      "cargo generate-lockfile --manifest-path generated/rust/Cargo.toml",
+                      "cargo fmt --manifest-path generated/rust/Cargo.toml -- --check",
+                      "cargo clippy --locked --manifest-path generated/rust/Cargo.toml --all-targets -- -D warnings",
+                      "cargo test --locked --manifest-path generated/rust/Cargo.toml --all-targets",
+                  ]
+                  .into_iter()
+                  .map(str::to_string)
+                  .collect::<Vec<_>>();
+                  assert_eq!(
+                      generated_rust_profile(&generated),
+                      Some("rust-generated-verify")
+                  );
+                  let mut reordered = generated.clone();
+                  reordered.swap(2, 3);
+                  assert_eq!(generated_rust_profile(&reordered), None);
+              }
+
+              #[test]
+              fn verifies_github_hmac_sha256() {''',
+                  'exact profile unit tests',
+              ),
+          ]
+
+          for old, new, label in replacements:
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one marker, found {count}')
+              source = source.replace(old, new, 1)
+
+          path.write_text(source, encoding='utf-8')
+          Path('.github/workflows/apply-den-539-threefa-planner-once.yml').unlink()
+          PY
+
+          cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all
+          cargo test --locked --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --lib hardened_and_generated_command_sequences_are_exact
+          cargo test --locked --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --test threefa_planner
+          git diff --check
+
+      - name: Commit product-only planner change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A -- \
+            remote/deployments/gha-clone-server-rs/src/lib.rs \
+            .github/workflows/apply-den-539-threefa-planner-once.yml
+          git diff --cached --check
+          git commit -m 'DEN-539 compile exact 3FA hardened workflow profiles'
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
