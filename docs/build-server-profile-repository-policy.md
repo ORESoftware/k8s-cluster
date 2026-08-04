@@ -62,3 +62,5 @@ The Rust policy tests prove:
 - a manually malformed compiled rule does not grant access.
 
 The GitOps contract test verifies that the deployment binds `k8s-cluster` only to `rust-verify` and that the dedicated GHA workflow formats and executes the policy tests.
+
+Temporary formatter or branch-writing workflows are not part of the deployable policy. The reviewed pull-request diff must contain only the policy source, its GitOps configuration, documentation, and tests.
