@@ -1,0 +1,51 @@
+name: StreemPilot ARC scaffold
+
+on:
+  pull_request:
+    paths:
+      - 'remote/argocd/ci-runners/streempilot/**'
+      - 'remote/argocd/ci-runners/validate-streempilot-arc-scaffold.py'
+      - '.github/actionlint.yaml'
+      - '.github/workflows/streempilot-arc-scaffold.yml'
+  push:
+    branches: [main, dev]
+    paths:
+      - 'remote/argocd/ci-runners/streempilot/**'
+      - 'remote/argocd/ci-runners/validate-streempilot-arc-scaffold.py'
+      - '.github/actionlint.yaml'
+      - '.github/workflows/streempilot-arc-scaffold.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: streempilot-arc-scaffold-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compile the credential-free validator
+        run: python3 -m py_compile remote/argocd/ci-runners/validate-streempilot-arc-scaffold.py
+      - name: Validate ARC, capacity, and failover boundaries
+        run: python3 remote/argocd/ci-runners/validate-streempilot-arc-scaffold.py
+      - name: Validate the custom runner label registration
+        run: grep -qx '    - streempilot-ci' .github/actionlint.yaml
+      - name: Validate the manual smoke workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: remote/argocd/ci-runners/streempilot/streempilot-ci-smoke.workflow.template.yml
+      - name: Reject committed credential material
+        run: |
+          if grep -RIE \
+            'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|BEGIN (RSA |EC )?PRIVATE KEY' \
+            remote/argocd/ci-runners/streempilot; then
+            echo 'credential-like material found in StreemPilot runner scaffold' >&2
+            exit 1
+          fi
