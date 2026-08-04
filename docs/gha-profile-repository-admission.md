@@ -27,3 +27,7 @@ For Messaging Intel, the current reviewed rule is:
 ```
 
 The GHA continuity server independently allowlists the exact `messaging-intel/msgint-connectors` repository and `.github/workflows/gha-clone-operator-config.yml` workflow path, requires an immutable 40-hex revision for execution, and sends only the canonical HTTPS repository URL plus a fixed profile name to the build server.
+
+## Validation lanes
+
+Normal pull-request and push validation is credential free: it compiles the bounded workflow fixture, runs the exact repository-admission and fixed-profile tests, executes a dependency-free hardened Node fixture, and verifies the real Rust server dispatches only the reviewed profiles. The live private-repository smoke is manual and uses a short-lived GitHub App token restricted to `messaging-intel/msgint-connectors`; it is never a prerequisite for untrusted pull-request code.
