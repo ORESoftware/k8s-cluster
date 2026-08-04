@@ -1,0 +1,52 @@
+name: Requested MCP repository contract
+
+on:
+  pull_request:
+    paths:
+      - scripts/ops/publish_requested_mcp_servers.py
+      - scripts/ops/tests/test_publish_requested_mcp_servers.py
+      - .github/workflows/requested-mcp-repository-contract.yml
+      - .github/workflows/ops-publish-requested-mcp-servers-once.yml
+  push:
+    branches: [main]
+    paths:
+      - scripts/ops/publish_requested_mcp_servers.py
+      - scripts/ops/tests/test_publish_requested_mcp_servers.py
+      - .github/workflows/requested-mcp-repository-contract.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compile and test the bounded publisher
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ops/publish_requested_mcp_servers.py
+          python3 -m unittest -v scripts/ops/tests/test_publish_requested_mcp_servers.py
+          python3 scripts/ops/publish_requested_mcp_servers.py --check > /tmp/requested-mcp-check.json
+          test "$(jq '.repositories | length' /tmp/requested-mcp-check.json)" -eq 5
+
+      - name: Reject credential literals and destructive Git operations
+        run: |
+          set -euo pipefail
+          ! grep -R -E 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}' \
+            scripts/ops/publish_requested_mcp_servers.py \
+            scripts/ops/tests/test_publish_requested_mcp_servers.py \
+            .github/workflows/requested-mcp-repository-contract.yml \
+            .github/workflows/ops-publish-requested-mcp-servers-once.yml
+          ! grep -R -E 'git push[^\n]*(--force|-f([[:space:]]|$))' \
+            scripts/ops/publish_requested_mcp_servers.py
