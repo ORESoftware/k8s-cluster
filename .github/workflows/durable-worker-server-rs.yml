@@ -29,51 +29,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  repair-interrupted-idempotency:
-    if: ${{ github.event_name == 'pull_request' && github.actor != 'github-actions[bot]' }}
-    permissions:
-      contents: write
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - name: Checkout the pull-request branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: agent/durable-worker-server-rs-v2
-          persist-credentials: true
-          fetch-depth: 0
-
-      - name: Install Rust 1.90 with formatting support
-        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
-        with:
-          toolchain: '1.90.0'
-          components: rustfmt
-
-      - name: Apply and test interrupted-submission recovery
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 remote/deployments/durable-worker-server-rs/scripts/repair_idempotency_recovery.py
-          cargo fmt --manifest-path remote/deployments/durable-worker-server-rs/Cargo.toml --all
-          cargo test --locked --manifest-path remote/deployments/durable-worker-server-rs/Cargo.toml \
-            resumes_submission_after_idempotency_record_was_committed_first -- --nocapture
-
-      - name: Publish only the reviewed source and regression test
-        shell: bash
-        run: |
-          set -euo pipefail
-          git show 3544a2033722a1ae5b84d94b031ed2776a89da4d:.github/workflows/durable-worker-server-rs.yml \
-            > .github/workflows/durable-worker-server-rs.yml
-          rm -f .github/workflows/durable-worker-idempotency-recovery-fix.yml
-          rm -f remote/deployments/durable-worker-server-rs/scripts/repair_idempotency_recovery.py
-          rmdir remote/deployments/durable-worker-server-rs/scripts 2>/dev/null || true
-          git diff --check
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -A
-          git commit -m 'fix(workers): resume interrupted idempotent submissions'
-          git push origin HEAD:agent/durable-worker-server-rs-v2
-
   rust-contract-and-e2e:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
