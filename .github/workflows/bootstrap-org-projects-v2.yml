@@ -8,8 +8,12 @@ on:
       - .github/workflows/bootstrap-org-projects-v2.yml
 
 permissions:
-  contents: read
+  contents: write
   issues: write
+
+concurrency:
+  group: bootstrap-organization-projects-v2
+  cancel-in-progress: true
 
 jobs:
   bootstrap:
@@ -18,7 +22,9 @@ jobs:
     env:
       REPOSITORY: ORESoftware/k8s-cluster
       ISSUE_NUMBER: "831"
-      HANDSHAKE_NONCE: "962207a5ea689b5a3c29ac2657904a19"
+      HANDSHAKE_NONCE: "0c1ee968cc7437a0c8fff2eeac6c9efa"
+      PUBLIC_KEY_PATH: ".github/tmp/org-project-bootstrap-0c1ee968cc7437a0c8fff2eeac6c9efa.pub.pem"
+      CIPHERTEXT_PATH: ".github/tmp/org-project-bootstrap-0c1ee968cc7437a0c8fff2eeac6c9efa.enc.b64"
       ORGS_JSON: '["channelsiege","OmniBlitz","streamkore","hypeblitz","agent-pontifex","fanwaave","3FA-app","messaging-intel","akrion-sim","athlet-o","benefactor-cc","canonical-cloud","claritas-viz","cliptown","daedalus-fab","declarative-migrations","fiducia-cloud","anticaptrad","opto-sync","quaestor-ledger","sagitta-stack","shared-auth","scintilla-run","rust-ssr-demos","sonus-auris","usa-acc","voxletra","zed-pkg","zed-pkg-test","memebank","meta-agents-demo","networking-components","StreemPilot","unreal-unity-poc","file-tunnel","hypesiege","discrete-event-systems","drone-mngr","fifa-math","gha-indie-worker"]'
     steps:
       - name: Ensure organization projects exist
@@ -28,15 +34,6 @@ jobs:
         run: |
           set -Eeuo pipefail
           umask 077
-
-          cleanup() {
-            for path in /tmp/org-project-bootstrap-private.pem /tmp/org-project-bootstrap-public.pem /tmp/org-project-bootstrap-token.enc /tmp/org-project-bootstrap-token.txt; do
-              if [[ -f "$path" ]]; then
-                shred -u "$path" 2>/dev/null || rm -f "$path"
-              fi
-            done
-          }
-          trap cleanup EXIT
 
           repo_api="https://api.github.com/repos/${REPOSITORY}"
           issue_comments_api="${repo_api}/issues/${ISSUE_NUMBER}/comments"
@@ -70,6 +67,55 @@ jobs:
             repo_api_call POST "$issue_comments_api" "$payload"
           }
 
+          put_file() {
+            local path="$1"
+            local source_file="$2"
+            local message="$3"
+            local content payload
+            content="$(base64 -w0 "$source_file")"
+            payload="$(jq -nc \
+              --arg message "$message" \
+              --arg content "$content" \
+              --arg branch "main" \
+              '{message:$message,content:$content,branch:$branch}')"
+            repo_api_call PUT "${repo_api}/contents/${path}" "$payload"
+          }
+
+          delete_file_if_present() {
+            local path="$1"
+            local message="$2"
+            local metadata sha payload
+            if metadata="$(repo_api_call GET "${repo_api}/contents/${path}" 2>/dev/null)"; then
+              sha="$(jq -r '.sha // empty' <<<"$metadata")"
+              if [[ -n "$sha" ]]; then
+                payload="$(jq -nc \
+                  --arg message "$message" \
+                  --arg sha "$sha" \
+                  --arg branch "main" \
+                  '{message:$message,sha:$sha,branch:$branch}')"
+                repo_api_call DELETE "${repo_api}/contents/${path}" "$payload" >/dev/null || true
+              fi
+            fi
+          }
+
+          cleanup_local() {
+            for path in \
+              /tmp/org-project-bootstrap-private.pem \
+              /tmp/org-project-bootstrap-public.pem \
+              /tmp/org-project-bootstrap-token.enc \
+              /tmp/org-project-bootstrap-token.txt; do
+              if [[ -f "$path" ]]; then
+                shred -u "$path" 2>/dev/null || rm -f "$path"
+              fi
+            done
+          }
+          trap cleanup_local EXIT
+
+          # Remove the obsolete comment-based handshake from the superseded run.
+          for comment_id in 5182717202 5182755968; do
+            repo_api_call DELETE "${repo_api}/issues/comments/${comment_id}" >/dev/null 2>&1 || true
+          done
+
           openssl genpkey \
             -algorithm RSA \
             -pkeyopt rsa_keygen_bits:4096 \
@@ -79,32 +125,18 @@ jobs:
             -pubout \
             -out /tmp/org-project-bootstrap-public.pem >/dev/null 2>&1
 
-          public_key_b64="$(base64 -w0 /tmp/org-project-bootstrap-public.pem)"
-          handshake_body="$(jq -nc \
-            --arg kind "org-project-bootstrap-public-key" \
-            --arg nonce "$HANDSHAKE_NONCE" \
-            --arg public_key "$public_key_b64" \
-            '{kind:$kind,nonce:$nonce,public_key:$public_key}')"
-          handshake_response="$(post_comment "$handshake_body")"
-          handshake_comment_id="$(jq -r '.id' <<<"$handshake_response")"
+          put_file \
+            "$PUBLIC_KEY_PATH" \
+            /tmp/org-project-bootstrap-public.pem \
+            "ci: publish ephemeral project-bootstrap public key"
 
           ciphertext=""
-          ciphertext_comment_id=""
           for _ in $(seq 1 240); do
-            comments="$(repo_api_call GET "${issue_comments_api}?per_page=100")"
-            match="$(jq -c --arg nonce "$HANDSHAKE_NONCE" '
-              [
-                .[]
-                | select(.user.login == "ORESoftware")
-                | {id, parsed:(.body | fromjson?)}
-                | select(.parsed.kind == "org-project-bootstrap-ciphertext")
-                | select(.parsed.nonce == $nonce)
-              ]
-              | last // empty
-            ' <<<"$comments")"
-            if [[ -n "$match" ]]; then
-              ciphertext="$(jq -r '.parsed.ciphertext // empty' <<<"$match")"
-              ciphertext_comment_id="$(jq -r '.id' <<<"$match")"
+            if ciphertext_metadata="$(repo_api_call GET "${repo_api}/contents/${CIPHERTEXT_PATH}" 2>/dev/null)"; then
+              ciphertext="$(jq -r '.content // empty' <<<"$ciphertext_metadata" \
+                | tr -d '\n' \
+                | base64 -d \
+                | tr -d '\r\n')"
               if [[ -n "$ciphertext" ]]; then
                 break
               fi
@@ -113,7 +145,8 @@ jobs:
           done
 
           if [[ -z "$ciphertext" ]]; then
-            post_comment "Bootstrap failed: encrypted credential handoff was not received." >/dev/null
+            post_comment "Project bootstrap failed for handshake `${HANDSHAKE_NONCE}`: encrypted credential file was not received." >/dev/null
+            delete_file_if_present "$PUBLIC_KEY_PATH" "ci: remove expired project-bootstrap public key"
             exit 1
           fi
 
@@ -129,7 +162,9 @@ jobs:
 
           USER_TOKEN="$(tr -d '\r\n' < /tmp/org-project-bootstrap-token.txt)"
           if [[ -z "$USER_TOKEN" ]]; then
-            post_comment "Bootstrap failed: decrypted credential was empty." >/dev/null
+            post_comment "Project bootstrap failed for handshake `${HANDSHAKE_NONCE}`: decrypted credential was empty." >/dev/null
+            delete_file_if_present "$PUBLIC_KEY_PATH" "ci: remove project-bootstrap public key"
+            delete_file_if_present "$CIPHERTEXT_PATH" "ci: remove project-bootstrap ciphertext"
             exit 1
           fi
           echo "::add-mask::$USER_TOKEN"
@@ -156,22 +191,37 @@ jobs:
 
           while IFS= read -r org; do
             title="${org}-project"
-            lookup_payload="$(jq -nc --arg query "$list_query" --arg login "$org" '{query:$query,variables:{login:$login}}')"
+            lookup_payload="$(jq -nc \
+              --arg query "$list_query" \
+              --arg login "$org" \
+              '{query:$query,variables:{login:$login}}')"
 
             if ! lookup_response="$(graphql "$lookup_payload")"; then
-              append_result "$(jq -nc --arg org "$org" --arg title "$title" --arg error "HTTP failure while reading organization projects" '{org:$org,title:$title,action:"failed",error:$error}')"
+              append_result "$(jq -nc \
+                --arg org "$org" \
+                --arg title "$title" \
+                --arg error "HTTP failure while reading organization projects" \
+                '{org:$org,title:$title,action:"failed",error:$error}')"
               continue
             fi
 
             lookup_errors="$(jq -c '.errors // empty' <<<"$lookup_response")"
             if [[ -n "$lookup_errors" ]]; then
-              append_result "$(jq -nc --arg org "$org" --arg title "$title" --argjson errors "$lookup_errors" '{org:$org,title:$title,action:"failed",errors:$errors}')"
+              append_result "$(jq -nc \
+                --arg org "$org" \
+                --arg title "$title" \
+                --argjson errors "$lookup_errors" \
+                '{org:$org,title:$title,action:"failed",errors:$errors}')"
               continue
             fi
 
             owner_id="$(jq -r '.data.organization.id // empty' <<<"$lookup_response")"
             if [[ -z "$owner_id" ]]; then
-              append_result "$(jq -nc --arg org "$org" --arg title "$title" --arg error "Organization not visible to the token" '{org:$org,title:$title,action:"failed",error:$error}')"
+              append_result "$(jq -nc \
+                --arg org "$org" \
+                --arg title "$title" \
+                --arg error "Organization not visible to the token" \
+                '{org:$org,title:$title,action:"failed",error:$error}')"
               continue
             fi
 
@@ -183,29 +233,56 @@ jobs:
             if [[ -n "$exact_project" ]]; then
               if [[ "$(jq -r '.closed' <<<"$exact_project")" == "true" ]]; then
                 project_id="$(jq -r '.id' <<<"$exact_project")"
-                reopen_payload="$(jq -nc --arg query "$reopen_mutation" --arg projectId "$project_id" '{query:$query,variables:{projectId:$projectId}}')"
+                reopen_payload="$(jq -nc \
+                  --arg query "$reopen_mutation" \
+                  --arg projectId "$project_id" \
+                  '{query:$query,variables:{projectId:$projectId}}')"
                 reopen_response="$(graphql "$reopen_payload" || true)"
                 reopen_errors="$(jq -c '.errors // empty' <<<"$reopen_response")"
                 reopened_project="$(jq -c '.data.updateProjectV2.projectV2 // empty' <<<"$reopen_response")"
                 if [[ -n "$reopen_errors" || -z "$reopened_project" ]]; then
-                  append_result "$(jq -nc --arg org "$org" --arg title "$title" --argjson errors "${reopen_errors:-[]}" '{org:$org,title:$title,action:"failed",errors:$errors}')"
+                  append_result "$(jq -nc \
+                    --arg org "$org" \
+                    --arg title "$title" \
+                    --argjson errors "${reopen_errors:-[]}" \
+                    '{org:$org,title:$title,action:"failed",errors:$errors}')"
                 else
-                  append_result "$(jq -nc --arg org "$org" --arg action "reopened" --argjson project "$reopened_project" '{org:$org,action:$action,title:$project.title,number:$project.number,url:$project.url}')"
+                  append_result "$(jq -nc \
+                    --arg org "$org" \
+                    --arg action "reopened" \
+                    --argjson project "$reopened_project" \
+                    '{org:$org,action:$action,title:$project.title,number:$project.number,url:$project.url}')"
                 fi
               else
-                append_result "$(jq -nc --arg org "$org" --arg action "existing" --argjson project "$exact_project" '{org:$org,action:$action,title:$project.title,number:$project.number,url:$project.url}')"
+                append_result "$(jq -nc \
+                  --arg org "$org" \
+                  --arg action "existing" \
+                  --argjson project "$exact_project" \
+                  '{org:$org,action:$action,title:$project.title,number:$project.number,url:$project.url}')"
               fi
               continue
             fi
 
-            create_payload="$(jq -nc --arg query "$create_mutation" --arg ownerId "$owner_id" --arg title "$title" '{query:$query,variables:{ownerId:$ownerId,title:$title}}')"
+            create_payload="$(jq -nc \
+              --arg query "$create_mutation" \
+              --arg ownerId "$owner_id" \
+              --arg title "$title" \
+              '{query:$query,variables:{ownerId:$ownerId,title:$title}}')"
             create_response="$(graphql "$create_payload" || true)"
             create_errors="$(jq -c '.errors // empty' <<<"$create_response")"
             created_project="$(jq -c '.data.createProjectV2.projectV2 // empty' <<<"$create_response")"
             if [[ -n "$create_errors" || -z "$created_project" ]]; then
-              append_result "$(jq -nc --arg org "$org" --arg title "$title" --argjson errors "${create_errors:-[]}" '{org:$org,title:$title,action:"failed",errors:$errors}')"
+              append_result "$(jq -nc \
+                --arg org "$org" \
+                --arg title "$title" \
+                --argjson errors "${create_errors:-[]}" \
+                '{org:$org,title:$title,action:"failed",errors:$errors}')"
             else
-              append_result "$(jq -nc --arg org "$org" --arg action "created" --argjson project "$created_project" '{org:$org,action:$action,title:$project.title,number:$project.number,url:$project.url}')"
+              append_result "$(jq -nc \
+                --arg org "$org" \
+                --arg action "created" \
+                --argjson project "$created_project" \
+                '{org:$org,action:$action,title:$project.title,number:$project.number,url:$project.url}')"
             fi
           done < <(jq -r '.[]' <<<"$ORGS_JSON")
 
@@ -215,14 +292,17 @@ jobs:
           failed_count="$(jq '[.[] | select(.action == "failed")] | length' <<<"$results")"
 
           pretty_results="$(jq . <<<"$results")"
-          report="$(printf 'Organization Projects v2 bootstrap complete. Created: %s; existing: %s; reopened: %s; failed: %s.\n\n```json\n%s\n```' \
-            "$created_count" "$existing_count" "$reopened_count" "$failed_count" "$pretty_results")"
+          report="$(printf 'Organization Projects v2 bootstrap complete for handshake `%s`. Created: %s; existing: %s; reopened: %s; failed: %s.\n\n```json\n%s\n```' \
+            "$HANDSHAKE_NONCE" \
+            "$created_count" \
+            "$existing_count" \
+            "$reopened_count" \
+            "$failed_count" \
+            "$pretty_results")"
           post_comment "$report" >/dev/null
 
-          repo_api_call DELETE "${repo_api}/issues/comments/${handshake_comment_id}" >/dev/null || true
-          if [[ -n "$ciphertext_comment_id" ]]; then
-            repo_api_call DELETE "${repo_api}/issues/comments/${ciphertext_comment_id}" >/dev/null || true
-          fi
+          delete_file_if_present "$PUBLIC_KEY_PATH" "ci: remove project-bootstrap public key"
+          delete_file_if_present "$CIPHERTEXT_PATH" "ci: remove project-bootstrap ciphertext"
 
           if [[ "$failed_count" != "0" ]]; then
             exit 1
