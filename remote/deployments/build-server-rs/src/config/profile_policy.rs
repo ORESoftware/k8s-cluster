@@ -455,7 +455,7 @@ mod tests {
         .to_string();
         assert!(compile_rules(Vec::new(), Some(&raw), &globally_allowed()).is_err());
 
-        let oversized = " ".repeat(MAX_POLICY_BYTES + 1);
+        let oversized = "x".repeat(MAX_POLICY_BYTES + 1);
         assert!(compile_rules(Vec::new(), Some(&oversized), &globally_allowed()).is_err());
     }
 
