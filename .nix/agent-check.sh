@@ -31,6 +31,7 @@ root_checks() {
 	shellcheck .nix/agent-check.sh
 	shfmt -d .nix/agent-check.sh
 	actionlint \
+		.github/workflows/daily-project-link-sync.yml \
 		.github/workflows/nix.yml \
 		.github/workflows/nix-agent-profiles.yml \
 		.github/workflows/nix-fleet-audit.yml \
@@ -42,19 +43,29 @@ catalog_static_checks() {
 	ruff check \
 		tools/application_catalog.py \
 		tools/channel_catalog.py \
+		tools/project_links.py \
+		tools/project_sync.py \
 		tools/repository_catalog.py \
 		tools/test_application_catalog.py \
 		tools/test_channel_catalog.py \
+		tools/test_project_links.py \
+		tools/test_project_sync.py \
 		tools/test_repository_catalog.py
 	ruff format --check \
 		tools/application_catalog.py \
 		tools/channel_catalog.py \
+		tools/project_links.py \
+		tools/project_sync.py \
 		tools/repository_catalog.py \
 		tools/test_application_catalog.py \
 		tools/test_channel_catalog.py \
+		tools/test_project_links.py \
+		tools/test_project_sync.py \
 		tools/test_repository_catalog.py
 	nixfmt --check flake.nix .nix/dev-shell.nix
-	actionlint .github/workflows/repository-catalog.yml
+	actionlint \
+		.github/workflows/daily-project-link-sync.yml \
+		.github/workflows/repository-catalog.yml
 }
 
 unit_tests() {
@@ -63,6 +74,8 @@ unit_tests() {
 		python -m unittest -v \
 			test_application_catalog.py \
 			test_channel_catalog.py \
+			test_project_links.py \
+			test_project_sync.py \
 			test_repository_catalog.py
 	)
 }
@@ -96,6 +109,11 @@ validate_fixture() {
 		--allow-unregistered-owner memebank \
 		--allow-unregistered-owner hypesiege \
 		--allow-unregistered-owner streempilot
+	check-jsonschema \
+		--schemafile catalog/project-links.schema.json \
+		catalog/project-links.json
+	python tools/project_links.py validate \
+		catalog/project-links.json
 }
 
 build_artifacts() {
@@ -103,6 +121,9 @@ build_artifacts() {
 	python tools/application_catalog.py report \
 		catalog/applications.json \
 		--output artifacts/application-catalog.md
+	python tools/project_links.py report \
+		catalog/project-links.json \
+		--output artifacts/project-links.md
 	python tools/repository_catalog.py diff \
 		catalog/repositories.json \
 		catalog/repositories.json \
