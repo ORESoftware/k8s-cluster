@@ -13,6 +13,7 @@ on:
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
       - 'docs/gha-continuity-architecture.md'
+      - 'docs/gha-profile-repository-admission.md'
       - '.github/actionlint.yaml'
       - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/gha-clone-server.yml'
@@ -30,6 +31,7 @@ on:
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
       - 'docs/gha-continuity-architecture.md'
+      - 'docs/gha-profile-repository-admission.md'
       - '.github/actionlint.yaml'
       - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/gha-clone-server.yml'
@@ -100,6 +102,15 @@ jobs:
       - name: Test fixed profiles and repository admission rules
         working-directory: remote/deployments/build-server-rs
         run: cargo test --locked --lib -- --nocapture
+      - name: Execute the credential-free hardened Node fixture
+        working-directory: remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm run check
+          npm run test:operator-config
+          npm audit --audit-level=high
+          npm test
 
   msgint-profile-smoke:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_msgint_profile_smoke }}
@@ -153,7 +164,7 @@ jobs:
           output_dir = Path(os.environ["RUNNER_TEMP"])
           for profile, constant in (
               ("node-hardened-verify", "NODE_HARDENED_VERIFY_STEPS"),
-              ("node-verify", "NODE_VERIFY_STEPS"),
+              ("node-hardened-test", "NODE_HARDENED_TEST_STEPS"),
           ):
               pattern = rf'const {constant}:.*?script: r#"(.*?)"#,\n\}}\];'
               match = re.search(pattern, source, flags=re.DOTALL)
@@ -181,7 +192,7 @@ jobs:
             *) echo "Node profile image did not resolve to an immutable digest" >&2; exit 1 ;;
           esac
           printf 'resolved_node_profile_image=%s\n' "$resolved_image"
-          for profile in node-hardened-verify node-verify; do
+          for profile in node-hardened-verify node-hardened-test; do
             script="$RUNNER_TEMP/${profile}.sh"
             test -s "$script"
             docker run --rm \
@@ -242,7 +253,8 @@ jobs:
             'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|BEGIN (RSA |EC )?PRIVATE KEY' \
             remote/deployments/gha-clone-server-rs \
             remote/argocd/dd-next-runtime/dd-gha-clone-server* \
-            docs/gha-continuity-architecture.md; then
+            docs/gha-continuity-architecture.md \
+            docs/gha-profile-repository-admission.md; then
             echo 'credential-like material found in GHA continuity files' >&2
             exit 1
           fi
