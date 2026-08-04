@@ -59,6 +59,23 @@ cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked --all-targets --all-features"#,
 }];
 
+const RUST_GENERATED_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
+    name: "Generated Rust interface formatting, Clippy, and tests",
+    image: RUST_IMAGE,
+    subdirectory: ".",
+    script: r#"set -euo pipefail
+manifest=generated/rust/Cargo.toml
+if [ ! -f "$manifest" ]; then
+  echo "rust-generated-verify requires generated/rust/Cargo.toml" >&2
+  exit 2
+fi
+cargo generate-lockfile --manifest-path "$manifest"
+rustup component add rustfmt clippy
+cargo fmt --manifest-path "$manifest" -- --check
+cargo clippy --locked --manifest-path "$manifest" --all-targets -- -D warnings
+cargo test --locked --manifest-path "$manifest" --all-targets"#,
+}];
+
 const NODE_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
     name: "Node dependency and test verification",
     image: NODE_IMAGE,
@@ -208,6 +225,13 @@ pub const SPECS: &[ProfileSpec] = &[
         artifact_paths: &[],
     },
     ProfileSpec {
+        name: "rust-generated-verify",
+        platform: "linux",
+        description: "Generated Rust interface lock, formatting, warnings-denied Clippy, and tests",
+        steps: RUST_GENERATED_VERIFY_STEPS,
+        artifact_paths: &[],
+    },
+    ProfileSpec {
         name: "node-verify",
         platform: "linux",
         description:
@@ -346,6 +370,7 @@ mod tests {
     fn continuity_profiles_are_installed() {
         for name in [
             "rust-verify",
+            "rust-generated-verify",
             "node-verify",
             "node-hardened-verify",
             "node-hardened-test",
@@ -353,6 +378,28 @@ mod tests {
         ] {
             assert!(find(name).is_some(), "{name} should be installed");
         }
+    }
+
+    #[test]
+    fn generated_rust_profile_is_locked_ordered_and_non_publishing() {
+        let profile = find("rust-generated-verify").expect("generated Rust profile");
+        let script = profile.steps[0].script;
+        let lock = script
+            .find("cargo generate-lockfile")
+            .expect("lock generation");
+        let format = script.find("cargo fmt").expect("formatting");
+        let clippy = script.find("cargo clippy").expect("Clippy");
+        let test = script.find("cargo test").expect("tests");
+        assert!(lock < format && format < clippy && clippy < test);
+        assert_eq!(profile.steps[0].subdirectory, ".");
+        assert!(script.contains("generated/rust/Cargo.toml"));
+        assert!(script.contains("--locked"));
+        assert!(script.contains("-D warnings"));
+        assert!(!script.contains("cargo publish"));
+        assert!(!script.contains("find "));
+        assert!(!script.contains("|| true"));
+        assert!(!script.contains("curl"));
+        assert!(!script.contains("wget"));
     }
 
     #[test]

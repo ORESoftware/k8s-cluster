@@ -92,10 +92,28 @@ test('GitOps binds each reviewed repository to only its fixed profiles', () => {
       repository: 'https://github.com/messaging-intel/msgint-connectors.git',
       profiles: ['node-hardened-verify', 'node-hardened-test'],
     },
+    {
+      repository: 'https://github.com/3FA-app/3fa-interfaces.git',
+      profiles: ['node-hardened-test', 'rust-generated-verify'],
+    },
   ]);
   assert.doesNotMatch(patch, /msgint-connectors[^\n]*node-verify/);
   assert.doesNotMatch(patch, /msgint-connectors[^\n]*(playwright|python-verify|rust-verify)/);
-  assert.doesNotMatch(patch, /messaging-intel\/\*|messaging-intel\/$/m);
+  assert.doesNotMatch(patch, /3fa-interfaces[^\n]*"rust-verify"/);
+  assert.doesNotMatch(patch, /3fa-interfaces[^\n]*(playwright|python-verify|node-verify)/);
+  assert.doesNotMatch(patch, /messaging-intel\/\*|3FA-app\/\*/);
+});
+
+test('generated Rust profile is fixed, ordered, locked, and non-publishing', () => {
+  const generated = profileConstantBody('RUST_GENERATED_VERIFY_STEPS');
+  assert.match(profiles, /name: "rust-generated-verify"/);
+  assert.match(generated, /generated\/rust\/Cargo\.toml/);
+  assert.match(generated, /cargo generate-lockfile --manifest-path/);
+  assert.match(generated, /cargo fmt --manifest-path/);
+  assert.match(generated, /cargo clippy --locked --manifest-path/);
+  assert.match(generated, /cargo test --locked --manifest-path/);
+  assert.match(generated, /-D warnings/);
+  assert.doesNotMatch(generated, /cargo publish|find |curl|wget|\|\| true/);
 });
 
 test('hardened Node profiles disable lifecycle scripts and preserve reviewed order', () => {
@@ -143,6 +161,8 @@ test('documentation states exact precedence, alias handling, and repository-spec
   assert.match(documentation, /SSH, case, optional `\.git`, or trailing-slash alias/);
   assert.match(documentation, /k8s-cluster\.git -> rust-verify/);
   assert.match(documentation, /msgint-connectors\.git -> node-hardened-verify, node-hardened-test/);
+  assert.match(documentation, /3fa-interfaces\.git -> node-hardened-test, rust-generated-verify/);
+  assert.match(documentation, /generated Rust crate/);
   assert.match(documentation, /lifecycle scripts disabled/);
   assert.match(documentation, /rejecting a downgrade of the same repository identity/);
 });
