@@ -2,9 +2,9 @@ name: durable-worker-dev-sync
 
 # Final reconciliation after durable deadline hardening.
 on:
-  push:
+  pull_request:
     branches:
-      - agent/durable-worker-runtime
+      - dev
     paths:
       - '.github/workflows/durable-worker-dev-sync.yml'
   workflow_dispatch:
