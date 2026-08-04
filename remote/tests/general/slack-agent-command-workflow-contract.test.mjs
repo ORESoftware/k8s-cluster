@@ -7,7 +7,21 @@ const workflowPath = path.resolve(
   process.cwd(),
   '.github/workflows/slack-agent-command-browser-e2e.yml',
 );
+const browserTestPath = path.resolve(
+  process.cwd(),
+  'remote/tests/ui/slack-agent-command.playwright.test.mjs',
+);
 const workflow = readFileSync(workflowPath, 'utf8');
+const browserTest = readFileSync(browserTestPath, 'utf8');
+
+const expectedAliases = [
+  '/ores-claude',
+  '/x-claude',
+  '/my-claude',
+  '/ores-chatgpt',
+  '/x-chatgpt',
+  '/my-chatgpt',
+];
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -49,7 +63,10 @@ test('recorded revisions are verified against the checked-out commits before evi
   );
   assert.match(workflow, /test "\$bridge_commit" = "\$BRIDGE_REF"/);
   assert.match(workflow, /test "\$coordinator_commit" = "\$COORDINATOR_REF"/);
-  assert.match(workflow, /schema_version:\s*3/);
+  assert.match(workflow, /schema_version:\s*5/);
+  assert.match(workflow, /alias_contract:\s*"six_manifest_commands_to_two_canonical_endpoints"/);
+  assert.match(workflow, /idempotency_contract:\s*"header_equals_payload_run_id"/);
+  assert.match(workflow, /observable_event_contract:\s*"validated_sanitized_task_created_v1"/);
 });
 
 test('the immutable-ref contract participates in pull-request and push path filters', () => {
@@ -61,4 +78,33 @@ test('the immutable-ref contract participates in pull-request and push path filt
     occurrences.length >= 3,
     `expected the contract in pull-request, push, and execution blocks; found ${occurrences.length}`,
   );
+});
+
+test('browser coverage declares exactly the six installed slash-command aliases', () => {
+  const matrix = /const aliasMatrix = Object\.freeze\(\[([\s\S]*?)\]\);/.exec(browserTest);
+  assert.ok(matrix, 'browser test must declare one explicit alias matrix');
+  const declaredAliases = [...matrix[1].matchAll(/command:\s*'([^']+)'/g)].map(
+    (match) => match[1],
+  );
+  assert.deepEqual(declaredAliases.sort(), [...expectedAliases].sort());
+  assert.match(
+    browserTest,
+    /all six Slack slash-command aliases traverse browser, modal, bridge, coordinator, PostgreSQL, and Slack contracts/,
+  );
+  assert.match(browserTest, /const modalAlias = alias\('\/my-claude'\)/);
+  assert.match(browserTest, /payload\.observable_event/);
+  assert.match(browserTest, /'idempotency-key': ids\.run/);
+  assert.match(browserTest, /'idempotency-key': `slack-command:\$\{ids\.run\}`/);
+});
+
+test('workflow validates alias routing, observable events, and exact run idempotency in checked-out source', () => {
+  assert.match(
+    workflow,
+    /Verify Slack alias, observable-event, and idempotency source contracts/,
+  );
+  for (const command of expectedAliases) {
+    assert.match(workflow, new RegExp(escapeRegExp(command)));
+  }
+  assert.match(workflow, /observable_event/);
+  assert.match(workflow, /Idempotency-Key must equal payload\.run_id/);
 });
