@@ -92,13 +92,42 @@ jobs:
           cd "$SERVICE_DIR"
           cargo generate-lockfile
           cargo fix --locked --all-targets --allow-dirty --allow-staged --broken-code
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("src/blockchain/mod.rs")
+          text = path.read_text(encoding="utf-8")
+          replacements = [
+              (
+                  """/// Rejects a request with `503` when a feature flag is off, recording the metric.\npub(super) fn require_enabled(""",
+                  """/// Rejects a request with `503` when a feature flag is off, recording the metric.\n#[expect(\n    clippy::result_large_err,\n    reason = \"Axum Response is returned immediately at this terminal HTTP boundary\"\n)]\npub(super) fn require_enabled(""",
+              ),
+              (
+                  """/// Constant-time check of the shared blockchain execute/broadcast auth header.\npub(super) fn authorize_execute(""",
+                  """/// Constant-time check of the shared blockchain execute/broadcast auth header.\n#[expect(\n    clippy::result_large_err,\n    reason = \"Axum Response is returned immediately at this terminal HTTP boundary\"\n)]\npub(super) fn authorize_execute(""",
+              ),
+          ]
+          for before, after in replacements:
+              if after in text:
+                  continue
+              if before not in text:
+                  raise SystemExit("expected blockchain response helper was not found")
+              text = text.replace(before, after, 1)
+          path.write_text(text, encoding="utf-8")
+          PY
           cargo clippy --fix --locked --all-targets --allow-dirty --allow-staged --broken-code -- -D warnings || true
           cargo fmt --all
       - name: Reject repairs outside service Rust and lock outputs
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t changed < <(git status --short --untracked-files=all | awk '{print $2}')
+          # The nested checkout has already been verified against both its HEAD
+          # and the parent gitlink. Ignore only its worktree dirtiness while
+          # auditing compiler-produced changes in the superproject.
+          mapfile -t changed < <(
+            git status --short --untracked-files=all --ignore-submodules=dirty \
+              | awk '{print $2}'
+          )
           for path in "${changed[@]}"; do
             case "$path" in
               remote/deployments/contract-service-rs/Cargo.lock|remote/deployments/contract-service-rs/src/*.rs|remote/deployments/contract-service-rs/src/**/*.rs)
