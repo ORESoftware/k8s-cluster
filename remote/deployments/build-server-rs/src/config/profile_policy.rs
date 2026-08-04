@@ -498,9 +498,7 @@ mod tests {
 
     #[test]
     fn exact_profile_names_use_equality_not_substrings() {
-        let rules = vec![
-            "exact-id:oresoftware/k8s-cluster#rust-verify-extra".to_string(),
-        ];
+        let rules = vec!["exact-id:oresoftware/k8s-cluster#rust-verify-extra".to_string()];
         assert!(ensure_repository_profile_allowed(
             "https://github.com/ORESoftware/k8s-cluster.git",
             "rust-verify",
@@ -527,12 +525,7 @@ mod tests {
             "https://github.com/ORESoftware/?x=1",
             "exact-id:reserved",
         ] {
-            assert!(compile_rules(
-                vec![prefix.to_string()],
-                None,
-                &globally_allowed(),
-            )
-            .is_err());
+            assert!(compile_rules(vec![prefix.to_string()], None, &globally_allowed(),).is_err());
         }
         assert!(compile_rules(
             vec![
