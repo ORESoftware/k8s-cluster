@@ -155,7 +155,7 @@ case "${1:-all}" in
     run_stage "$1"
     ;;
   *)
-    printf 'usage: %s [all|preflight|fmt|check|clippy|test|audit-prepare|audit-json]\n' "$0" >&2
+    printf 'usage: %s [all|preflight|fmt|check|clippy|test|audit-prepare|audit|audit-json]\n' "$0" >&2
     exit 64
     ;;
 esac
