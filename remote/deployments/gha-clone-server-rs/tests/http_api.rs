@@ -10,7 +10,7 @@ use std::{
 
 use axum::{
     extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -33,6 +33,7 @@ const WEBHOOK_DELIVERY: &str = "4f5f1f6e-68a6-4d95-90b4-c0a892938f0f";
 const BUILD_AUTH: &str = "test-build-auth";
 const REPOSITORY: &str = "owner/repo";
 const REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
+const UPSTREAM_RESPONSE_BYTES_FOR_TEST: usize = 64 * 1024;
 
 const SERVER_ENV_VARS: &[&str] = &[
     "HOST",
@@ -327,6 +328,37 @@ async fn planning_enforces_auth_allowlists_and_structural_rejection() {
     .await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
+    let response = client
+        .post(format!("{}/v1/plans", server.base_url))
+        .header("x-gha-clone-auth", AUTH_SECRET)
+        .json(&plan_request(REPOSITORY, rust_workflow()))
+        .send()
+        .await
+        .expect("alias auth request");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = client
+        .post(format!("{}/v1/plans", server.base_url))
+        .header("x-server-auth", AUTH_SECRET)
+        .header("x-gha-clone-auth", AUTH_SECRET)
+        .json(&plan_request(REPOSITORY, rust_workflow()))
+        .send()
+        .await
+        .expect("ambiguous auth request");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    let mut duplicate_headers = HeaderMap::new();
+    duplicate_headers.append("x-server-auth", HeaderValue::from_static(AUTH_SECRET));
+    duplicate_headers.append("x-server-auth", HeaderValue::from_static(AUTH_SECRET));
+    let response = client
+        .post(format!("{}/v1/plans", server.base_url))
+        .headers(duplicate_headers)
+        .json(&plan_request(REPOSITORY, rust_workflow()))
+        .send()
+        .await
+        .expect("duplicate auth request");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
     let response = post_plan(
         &client,
         &server,
@@ -537,14 +569,37 @@ async fn webhook_guards_reject_bad_inputs_before_any_github_fetch() {
         .contains("no workflow mirror rules"));
 }
 
+#[tokio::test]
+async fn inbound_json_is_rejected_before_unbounded_allocation() {
+    let mut env = dormant_env();
+    env.insert("GHA_CLONE_MAX_WORKFLOW_BYTES", "64".to_string());
+    let server = spawn_server(env).await;
+    let client = Client::new();
+    let oversized = "x".repeat(70 * 1024);
+
+    let response = client
+        .post(format!("{}/v1/plans", server.base_url))
+        .header("x-server-auth", AUTH_SECRET)
+        .json(&plan_request(REPOSITORY, &oversized))
+        .send()
+        .await
+        .expect("oversized plan request");
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+}
+
 #[derive(Clone, Copy, Debug)]
 enum MockMode {
     Succeed,
     RejectSubmission,
     InvalidSubmissionJson,
+    InvalidSubmissionId,
+    UnknownSubmissionStatus,
+    OversizedSubmissionBody,
     FailBuild,
     UnknownStatus,
     InvalidStatusJson,
+    MismatchedStatusId,
+    OversizedStatusBody,
     KeepRunning,
 }
 
@@ -613,6 +668,21 @@ async fn mock_submit(
             (StatusCode::INTERNAL_SERVER_ERROR, "simulated rejection").into_response()
         }
         MockMode::InvalidSubmissionJson => (StatusCode::ACCEPTED, "not-json").into_response(),
+        MockMode::InvalidSubmissionId => (
+            StatusCode::ACCEPTED,
+            Json(json!({ "id": "..", "status": "queued", "error": null })),
+        )
+            .into_response(),
+        MockMode::UnknownSubmissionStatus => (
+            StatusCode::ACCEPTED,
+            Json(json!({ "id": "build-unknown", "status": "mystery", "error": null })),
+        )
+            .into_response(),
+        MockMode::OversizedSubmissionBody => (
+            StatusCode::ACCEPTED,
+            "x".repeat(UPSTREAM_RESPONSE_BYTES_FOR_TEST + 1),
+        )
+            .into_response(),
         _ => {
             let index = state.next_id.fetch_add(1, Ordering::SeqCst) + 1;
             (
@@ -645,6 +715,20 @@ async fn mock_status(State(state): State<MockBuildState>, Path(id): Path<String>
         )
             .into_response(),
         MockMode::InvalidStatusJson => (StatusCode::OK, "not-json").into_response(),
+        MockMode::MismatchedStatusId => (
+            StatusCode::OK,
+            Json(json!({
+                "id": format!("{id}-other"),
+                "status": "succeeded",
+                "error": null
+            })),
+        )
+            .into_response(),
+        MockMode::OversizedStatusBody => (
+            StatusCode::OK,
+            "x".repeat(UPSTREAM_RESPONSE_BYTES_FOR_TEST + 1),
+        )
+            .into_response(),
         MockMode::KeepRunning => (
             StatusCode::OK,
             Json(json!({ "id": id, "status": "running", "error": null })),
@@ -733,12 +817,29 @@ async fn asynchronous_execution_failures_are_persisted_and_observable() {
             2,
             "build server returned invalid job JSON",
         ),
+        (MockMode::InvalidSubmissionId, 2, "invalid job ID"),
+        (
+            MockMode::UnknownSubmissionStatus,
+            2,
+            "invalid accepted status",
+        ),
+        (
+            MockMode::OversizedSubmissionBody,
+            2,
+            "submission response exceeds 65536-byte limit",
+        ),
         (MockMode::FailBuild, 2, "ended as failed: simulated failure"),
         (MockMode::UnknownStatus, 2, "unknown status"),
         (
             MockMode::InvalidStatusJson,
             2,
             "build status JSON is invalid",
+        ),
+        (MockMode::MismatchedStatusId, 2, "mismatched job ID"),
+        (
+            MockMode::OversizedStatusBody,
+            2,
+            "status response exceeds 65536-byte limit",
         ),
         (MockMode::KeepRunning, 1, "exceeded 1 seconds"),
     ];

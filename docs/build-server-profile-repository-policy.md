@@ -20,6 +20,10 @@ The value is a JSON array:
   {
     "repository": "https://github.com/ORESoftware/k8s-cluster.git",
     "profiles": ["rust-verify"]
+  },
+  {
+    "repository": "https://github.com/messaging-intel/msgint-connectors.git",
+    "profiles": ["node-hardened-verify", "node-hardened-test"]
   }
 ]
 ```
@@ -54,15 +58,28 @@ This prevents an SSH, case, optional `.git`, or trailing-slash alias from escapi
 
 A genuinely different repository in an organization remains governed by the reviewed prefix fallback until it receives its own exact rule. Exact identity binding is not a glob or sibling-repository denylist. Branch or revision selection is validated separately and is never included in the repository-to-profile identity, so a mutable ref cannot widen the fixed-profile policy.
 
-## Initial binding
+## Reviewed bindings
 
-The first exact rule binds:
+The initial dogfood rule binds:
 
 ```text
 https://github.com/ORESoftware/k8s-cluster.git -> rust-verify
 ```
 
-That permits the GHA continuity server to dogfood its Rust verification profile while rejecting a downgrade of the same repository identity to `node-verify`, `python-verify`, browser profiles, or Flutter profiles.
+That permits the GHA continuity server to verify its Rust implementation while rejecting a downgrade of the same repository identity to `node-verify`, `python-verify`, browser profiles, or Flutter profiles.
+
+The first private product rule binds:
+
+```text
+https://github.com/messaging-intel/msgint-connectors.git -> node-hardened-verify, node-hardened-test
+```
+
+Both Node profiles require `package-lock.json` or `npm-shrinkwrap.json` and install with lifecycle scripts disabled through `npm ci --ignore-scripts`.
+
+- `node-hardened-verify` runs the reviewed operator checks, focused operator-config tests, and a high-severity npm audit in that order.
+- `node-hardened-test` runs the complete repository test script after the lifecycle-script-free locked install.
+
+The exact rule does not admit the `messaging-intel` organization, sibling repositories, `node-verify`, browser profiles, Python profiles, or Rust profiles. Workflow parsing and immutable revision admission remain separate clone-server responsibilities and are added only in a subsequent reviewed change.
 
 Repositories without an exact rule continue to use the reviewed prefix fallback. Adding a sensitive repository should normally include an exact rule in the same pull request as its fixed profile and workflow contract.
 
@@ -74,7 +91,7 @@ A rollout must start with one exact repository, keep the broader prefix fallback
 
 ## Test contract
 
-The Rust policy tests prove:
+The Rust policy and profile tests prove:
 
 - exact allow and deny decisions across HTTPS, SSH, case, optional `.git`, and trailing-slash aliases;
 - exact identity rules override broad HTTPS and SSH prefixes;
@@ -82,8 +99,10 @@ The Rust policy tests prove:
 - query, fragment, nested-path, unsupported-transport, whitespace, control-character, and separator-injection inputs fail closed;
 - malformed, duplicate, unknown, globally disabled, empty, and oversized policies fail closed;
 - encoded identities are lower-case and profile sets are deterministic;
-- malformed compiled state does not grant access.
+- malformed compiled state does not grant access;
+- hardened Node installs disable lifecycle scripts and preserve the reviewed command order;
+- no hardened profile contains `npm install`, force flags, download-pipe execution, or ignored failures.
 
-The GitOps contract test verifies that the deployment binds `k8s-cluster` only to `rust-verify` and that the dedicated GHA workflow formats and executes the policy tests.
+The GitOps contract test parses the complete JSON policy and verifies that `k8s-cluster` receives only `rust-verify`, while `msgint-connectors` receives only `node-hardened-verify` and `node-hardened-test`.
 
-Temporary formatter or branch-writing workflows are not part of the deployable policy. The reviewed pull-request diff must contain only the policy source, its GitOps configuration, documentation, and tests.
+Temporary formatter or branch-writing workflows are not part of the deployable policy. The reviewed pull-request diff must contain only the profile registry, GitOps configuration, documentation, and tests.
