@@ -25,6 +25,10 @@ const routerTests = [
   'remote/deployments/gha-clone-server-rs/tests/executor_router_http.rs',
   'remote/deployments/gha-clone-server-rs/tests/executor_router_assignment.rs',
 ];
+const profilesPath = 'remote/deployments/build-server-rs/src/profiles.rs';
+const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';
+const metaWorkflowPath = '.github/workflows/gha-clone-server-meta.yml';
+const continuityWorkflowPath = '.github/workflows/gha-clone-server.yml';
 
 test('resource exporter inventories retain both continuity services', () => {
   for (const path of observabilityInventories) {
@@ -58,6 +62,14 @@ test('current-dev assignment and authentication hardening survives the inert Git
     assert.match(source, expression);
   }
 
+  assert.match(
+    source,
+    /const DEFAULT_SECRET_ROOT: &str = "\/var\/run\/secrets\/gha-executor-router";/,
+  );
+  assert.match(
+    source,
+    /env_optional\("GHA_EXECUTOR_ROUTER_SECRET_ROOT"\)[\s\S]{0,180}DEFAULT_SECRET_ROOT\.to_string\(\)/,
+  );
   assert.match(library, /disabled executors must omit url and authPath/);
   assert.match(library, /authPath must be a direct child/);
   assert.match(library, /lowercase 40-hex commit SHA/);
@@ -72,4 +84,43 @@ test('current-dev assignment and authentication hardening survives the inert Git
   ]) {
     assert.match(tests, expression);
   }
+});
+
+test('fixed-profile, planner, and meta-workflow ratchets survive the inert GitOps port', () => {
+  const profiles = read(profilesPath);
+  assert.match(
+    profiles,
+    /remote\/deployments\/gha-clone-server-rs\/Cargo\.toml/,
+    'rust-verify must retain the reviewed monorepo crate fallback',
+  );
+
+  const imageAssignments = [
+    ...profiles.matchAll(/const\s+[A-Z_]+_IMAGE:\s*&str\s*=\s*"([^"]+)";/g),
+  ];
+  assert.ok(
+    imageAssignments.length >= 5,
+    'expected the complete fixed-profile runner image inventory',
+  );
+  for (const [, image] of imageAssignments) {
+    assert.ok(!image.endsWith(':latest'), `runner image must be pinned: ${image}`);
+  }
+
+  const planner = read(plannerPath);
+  assert.match(
+    planner,
+    /unsupported by the fixed-profile executor/,
+    'planner must keep its explicit fixed-profile rejection boundary',
+  );
+
+  const metaWorkflow = read(metaWorkflowPath);
+  assert.doesNotMatch(
+    metaWorkflow,
+    /working-directory:|timeout-minutes:|permissions:/,
+    'the bounded meta workflow must stay inside the independently supported subset',
+  );
+
+  const continuityWorkflow = read(continuityWorkflowPath);
+  assert.match(continuityWorkflow, /dd-gha-executor-router\*/);
+  assert.match(continuityWorkflow, /gha-clone-server-meta\.yml/);
+  assert.match(continuityWorkflow, /persist-credentials:\s*false/);
 });
