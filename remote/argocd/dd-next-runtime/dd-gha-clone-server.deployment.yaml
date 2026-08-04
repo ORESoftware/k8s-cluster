@@ -54,6 +54,8 @@ spec:
               value: https://github.com/ORESoftware/k8s-cluster.git
             - name: GHA_CLONE_SOURCE_REF
               value: main
+            - name: GHA_CLONE_GITHUB_API_BASE_URL
+              value: https://api.github.com
             - name: GHA_CLONE_EXECUTION_ENABLED
               value: "false"
             - name: GHA_CLONE_WEBHOOK_EXECUTION_ENABLED
