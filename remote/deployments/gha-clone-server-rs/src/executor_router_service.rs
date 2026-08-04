@@ -36,8 +36,11 @@ const DEFAULT_PORT: u16 = 8126;
 const DEFAULT_SECRET_ROOT: &str = "/var/run/secrets/gha-executor-router";
 const DEFAULT_MAX_ASSIGNMENTS: usize = 4096;
 
+#[path = "executor_router_service/assignment.rs"]
 mod assignment;
+#[path = "executor_router_service/security.rs"]
 mod security;
+#[path = "executor_router_service/upstream.rs"]
 mod upstream;
 
 use assignment::submit_build;
