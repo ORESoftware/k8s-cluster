@@ -6,9 +6,8 @@ metadata:
   labels:
     app: dd-gha-executor-router
 spec:
-  # Source-complete but intentionally inactive. Provision/verify the
-  # ExternalSecret, replace source compilation with a digest-pinned image, then
-  # scale to one while execution remains false for readiness and plan smokes.
+  # Deliberately non-runnable until an immutable reviewed image replaces the
+  # all-zero digest. Merge must not change the live execution path.
   replicas: 0
   strategy:
     type: Recreate
@@ -29,21 +28,12 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-        - name: executor-router
-          image: docker.io/library/rust:1.90-bookworm
+        - name: gha-executor-router
+          # Activation gate: replace this sentinel with a signed, scanned,
+          # SBOM-attested image digest built from the exact merged router commit.
+          image: ghcr.io/oresoftware/gha-executor-router@sha256:0000000000000000000000000000000000000000000000000000000000000000
           imagePullPolicy: IfNotPresent
-          command: ["/bin/bash", "-lc"]
-          args:
-            - |
-              set -euo pipefail
-              export CARGO_HOME=/tmp/cargo
-              export CARGO_TARGET_DIR=/tmp/gha-executor-router-target
-              source_root="$(mktemp -d /tmp/gha-executor-router-source.XXXXXX)"
-              git -c protocol.ext.allow=never -c protocol.file.allow=never \
-                clone --depth 1 --no-tags --branch "${GHA_EXECUTOR_ROUTER_SOURCE_REF}" -- \
-                "${GHA_EXECUTOR_ROUTER_SOURCE_URL}" "$source_root"
-              cd "$source_root/remote/deployments/gha-clone-server-rs"
-              exec cargo run --release --bin gha-executor-router
+          command: ["/usr/local/bin/gha-executor-router"]
           env:
             - name: HOST
               value: 0.0.0.0
@@ -51,10 +41,6 @@ spec:
               value: "8126"
             - name: RUST_LOG
               value: gha_executor_router=info
-            - name: GHA_EXECUTOR_ROUTER_SOURCE_URL
-              value: https://github.com/ORESoftware/k8s-cluster.git
-            - name: GHA_EXECUTOR_ROUTER_SOURCE_REF
-              value: main
             - name: GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED
               value: "false"
             - name: GHA_EXECUTOR_ROUTER_SECRET_ROOT
@@ -85,16 +71,14 @@ spec:
             requests:
               cpu: 50m
               memory: 128Mi
-              ephemeral-storage: 1Gi
             limits:
               cpu: "1"
               memory: 1Gi
-              ephemeral-storage: 6Gi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
-            readOnlyRootFilesystem: false
+            readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 1000
             seccompProfile:
@@ -104,7 +88,7 @@ spec:
               path: /healthz
               port: http
             periodSeconds: 5
-            failureThreshold: 120
+            failureThreshold: 12
           readinessProbe:
             httpGet:
               path: /readyz
@@ -120,21 +104,26 @@ spec:
             timeoutSeconds: 3
             failureThreshold: 3
           volumeMounts:
-            - name: executor-auth
+            - name: executor-secrets
               mountPath: /var/run/secrets/gha-executor-router
               readOnly: true
             - name: tmp
               mountPath: /tmp
       volumes:
-        - name: executor-auth
-          secret:
-            secretName: dd-gha-executor-router-secrets
+        - name: executor-secrets
+          projected:
             defaultMode: 0400
-            items:
-              - key: inbound_auth
-                path: inbound-auth
-              - key: aws_build_server_auth
-                path: aws-build-server-auth
+            sources:
+              - secret:
+                  name: dd-gha-executor-router-secrets
+                  items:
+                    - key: inbound_auth
+                      path: inbound-auth
+              - secret:
+                  name: dd-agent-secrets
+                  items:
+                    - key: SERVER_AUTH_SECRET
+                      path: aws-build-server-auth
         - name: tmp
           emptyDir:
-            sizeLimit: 6Gi
+            sizeLimit: 256Mi
