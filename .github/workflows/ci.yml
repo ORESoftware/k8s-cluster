@@ -12,10 +12,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: No build artifacts or env files tracked
         run: |
-          bad=$(git ls-files | grep -E '(^|/)(target/|\.direnv/|\.env$|result$)' || true)
+          bad=$(git ls-files | grep -E '(^|/)(target/|\.direnv/|__pycache__/|\.env$|result$)|\.pyc$' || true)
           if [ -n "$bad" ]; then echo "forbidden tracked files:"; echo "$bad"; exit 1; fi
       - name: Cargo manifest parses
         run: cargo metadata --no-deps --format-version 1 > /dev/null
+      - name: Validate named turning model integration
+        run: python3 scripts/ci/check_turning_model_integration.py
   fmt:
     # Informational: full builds require the k8s-cluster superproject (path deps).
     runs-on: ubuntu-latest
