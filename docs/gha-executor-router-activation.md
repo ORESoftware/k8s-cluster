@@ -7,6 +7,9 @@ This runbook activates the bounded independent CI lane. It does not claim full
 GitHub Actions parity. Native workflow parity remains GitHub Actions plus the
 official Actions Runner Controller (ARC) scale sets on AWS and Hetzner.
 
+Activation requires digest-pinned images, SBOM and provenance evidence, and a
+separately reviewed change before either Deployment may leave `replicas: 0`.
+
 ## Merge-safe state
 
 The committed GitOps state is intentionally incapable of starting:
