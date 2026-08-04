@@ -34,7 +34,7 @@ test('submission retries are bound to explicit idempotency and credentials are h
   assert.doesNotMatch(source, /console\.(?:log|info|debug).*authSecret/);
   assert.doesNotMatch(source, /authorization.*Bearer/i);
   assert.match(sdkTests, /assert\.equal\(attempts\.get\('unbound'\), 1\)/);
-  assert.match(readme, /will not turn an ambiguous network failure into a duplicate run/i);
+  assert.match(readme, /will not turn\s+an ambiguous network failure into a duplicate run/i);
 });
 
 test('worker execution owns heartbeats, progress, bounded admission, drain, and fencing', () => {
