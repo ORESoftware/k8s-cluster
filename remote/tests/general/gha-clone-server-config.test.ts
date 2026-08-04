@@ -24,6 +24,8 @@ const observabilityDeploymentPath =
 const profilesPath = 'remote/deployments/build-server-rs/src/profiles.rs';
 const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';
 const serverPath = 'remote/deployments/gha-clone-server-rs/src/main.rs';
+const executorRouterPath =
+  'remote/deployments/gha-clone-server-rs/src/bin/executor_router.rs';
 const workflowPath = '.github/workflows/gha-clone-server.yml';
 
 test('GHA continuity service is installed fail-closed with no cluster identity', () => {
@@ -38,7 +40,7 @@ test('GHA continuity service is installed fail-closed with no cluster identity',
     deployment,
     /name:\s*GHA_CLONE_WEBHOOK_EXECUTION_ENABLED\s+value:\s*"false"/,
   );
-  assert.match(deployment, /capabilities:\s+drop:\s*\["ALL"\]/);
+  assert.match(deployment, /capabilities:\s+drop:\s*\["ALL"\]/g);
   assert.doesNotMatch(deployment, /hostPath:/);
   assert.doesNotMatch(deployment, /docker\.sock|containerd\.sock|buildkitd\.sock/);
   assert.match(deployment, /name:\s*dd-gha-clone-server-secrets/);
@@ -79,16 +81,20 @@ test('secret mapping names values without committing credential material', () =>
     'github_webhook_secret',
     'github_app_installation_token',
     'build_server_auth',
+    'executor_routing_secret',
+    'executor_routes_json',
+    'hetzner_build_server_auth',
   ]) {
     assert.match(secret, new RegExp(`property: ${property}`));
   }
+  assert.match(secret, /credential-free HTTP\(S\) origins/);
   assert.doesNotMatch(
     secret,
     /ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|BEGIN (?:RSA |EC )?PRIVATE KEY/,
   );
 });
 
-test('network boundary permits only DNS, GitHub HTTPS, and build-server dispatch', () => {
+test('network boundary permits only DNS, approved HTTPS, and local AWS build-server dispatch', () => {
   const policy = read(networkPath);
   assert.match(policy, /port:\s*53/);
   assert.match(policy, /app:\s*dd-build-server/);
@@ -140,11 +146,39 @@ test('planner and dispatcher preserve the fail-closed command boundary', () => {
   assert.doesNotMatch(server, /command:\s*&|script:\s*&|runner_image/);
 });
 
+test('executor router is a signed fixed-profile boundary with bounded failover', () => {
+  const deployment = read(deploymentPath);
+  const router = read(executorRouterPath);
+
+  assert.match(deployment, /name:\s*executor-router/);
+  assert.match(
+    deployment,
+    /name:\s*GHA_CLONE_BUILD_SERVER_URL\s+value:\s*http:\/\/127\.0\.0\.1:8126/,
+  );
+  assert.match(deployment, /cargo run --release --bin executor_router/);
+  assert.match(deployment, /name:\s*GHA_EXECUTOR_ROUTES_JSON/);
+  assert.match(deployment, /key:\s*executor_routes_json/);
+  assert.match(deployment, /name:\s*GHA_EXECUTOR_AWS_AUTH/);
+  assert.match(deployment, /name:\s*GHA_EXECUTOR_HETZNER_AUTH/);
+
+  assert.match(router, /jobKind=run-profile/);
+  assert.match(router, /gitRef must be an immutable 40-hex commit SHA/);
+  assert.match(router, /requestId is required for cross-executor routing/);
+  assert.match(router, /type HmacSha256 = Hmac<Sha256>/);
+  assert.match(router, /signed route id failed authentication/);
+  assert.match(router, /error\.is_connect\(\)/);
+  assert.match(router, /StatusCode::TOO_MANY_REQUESTS/);
+  assert.match(router, /StatusCode::SERVICE_UNAVAILABLE/);
+  assert.match(router, /request was not retried/);
+  assert.doesNotMatch(router, /Authorization:\s*Bearer|ghp_[A-Za-z0-9]+/);
+});
+
 test('dedicated GitHub Actions workflow checks Rust and deployment contracts', () => {
   const workflow = read(workflowPath);
   assert.match(workflow, /cargo fmt --all -- --check/);
   assert.match(workflow, /cargo clippy --locked --all-targets -- -D warnings/);
   assert.match(workflow, /cargo test --locked --all-targets/);
+  assert.match(workflow, /cargo test --locked --bin executor_router/);
   assert.match(workflow, /gha-clone-server-config\.test\.ts/);
   assert.match(workflow, /actionlint@sha256:/);
   assert.match(workflow, /persist-credentials:\s*false/);
