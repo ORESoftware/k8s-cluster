@@ -15,7 +15,8 @@ data:
     sonus-auris/sonus-auris-monorepo,
     StreemPilot/streempilot-api-server.rs,
     StreemPilot/streempilot-web-server.rs,
-    StreemPilot/streempilot-interfaces
+    StreemPilot/streempilot-interfaces,
+    3FA-app/3fa-interfaces
   GHA_CLONE_WORKFLOW_RULES_JSON: |
     {
       "ORESoftware/k8s-cluster": [".github/workflows/gha-clone-server-meta.yml"],
@@ -23,5 +24,6 @@ data:
       "sonus-auris/sonus-auris-ui.dart": [".github/workflows/ci.yml", ".github/workflows/android-emulator-test.yml"],
       "StreemPilot/streempilot-api-server.rs": [".github/workflows/ci-mirror.yml"],
       "StreemPilot/streempilot-web-server.rs": [".github/workflows/ci-mirror.yml"],
-      "StreemPilot/streempilot-interfaces": [".github/workflows/ci-mirror.yml"]
+      "StreemPilot/streempilot-interfaces": [".github/workflows/ci-mirror.yml"],
+      "3FA-app/3fa-interfaces": [".github/workflows/gha-clone-contracts.yml"]
     }
