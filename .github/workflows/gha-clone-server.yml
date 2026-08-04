@@ -11,7 +11,9 @@ on:
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
       - 'remote/tests/general/gha-clone-webhook-config.test.ts'
+      - 'remote/tests/general/gha-clone-streempilot-config.test.ts'
       - 'docs/gha-continuity-architecture.md'
+      - 'docs/streempilot-ci-continuity.md'
       - '.github/actionlint.yaml'
       - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/gha-clone-server.yml'
@@ -27,7 +29,9 @@ on:
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
       - 'remote/tests/general/gha-clone-webhook-config.test.ts'
+      - 'remote/tests/general/gha-clone-streempilot-config.test.ts'
       - 'docs/gha-continuity-architecture.md'
+      - 'docs/streempilot-ci-continuity.md'
       - '.github/actionlint.yaml'
       - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/gha-clone-server.yml'
@@ -65,7 +69,7 @@ jobs:
       - name: Run Clippy
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo clippy --locked --all-targets -- -D warnings
-      - name: Run unit and meta integration tests
+      - name: Run unit, integration, meta, and mirror tests
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo test --locked --all-targets
 
@@ -90,7 +94,7 @@ jobs:
       - name: Compile the build server against the exact private library gitlink
         working-directory: remote/deployments/build-server-rs
         run: cargo check --locked --all-targets
-      - name: Test the fixed-profile registry and meta fallback
+      - name: Test the fixed-profile registry and reviewed fallbacks
         working-directory: remote/deployments/build-server-rs
         run: cargo test --locked profiles::tests -- --nocapture
 
@@ -106,7 +110,7 @@ jobs:
         with:
           args: .github/workflows/gha-clone-server.yml
       - name: Validate bounded meta workflow syntax
-        uses: docker://rhysd/actionlint@sha256:b1934ee5aac5ba805825da76410c181273ba90b1
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
           args: .github/workflows/gha-clone-server-meta.yml
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
@@ -119,12 +123,13 @@ jobs:
           cache-dependency-path: remote/tests/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: remote/tests
-      - name: Validate deployment, execution, and webhook boundaries
+      - name: Validate deployment, execution, webhook, and StreemPilot boundaries
         working-directory: remote/tests
         run: |
           pnpm exec tsx --test \
             general/gha-clone-server-config.test.ts \
-            general/gha-clone-webhook-config.test.ts
+            general/gha-clone-webhook-config.test.ts \
+            general/gha-clone-streempilot-config.test.ts
       - name: Validate webhook registration shell syntax
         run: bash -n remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh
       - name: Reject committed credentials
@@ -134,7 +139,8 @@ jobs:
             'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|BEGIN (RSA |EC )?PRIVATE KEY' \
             remote/deployments/gha-clone-server-rs \
             remote/argocd/dd-next-runtime/dd-gha-clone-server* \
-            docs/gha-continuity-architecture.md; then
+            docs/gha-continuity-architecture.md \
+            docs/streempilot-ci-continuity.md; then
             echo 'credential-like material found in GHA continuity files' >&2
             exit 1
           fi
