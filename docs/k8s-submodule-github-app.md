@@ -69,9 +69,9 @@ token output file. Validation requires:
 - no duplicate requested or returned repository names.
 
 Missing repository proof, substituted repositories, duplicate repositories, or
-any broader permission fail closed. The token is written to a mode-`0600`
-temporary file only after those checks pass and is revoked after the corresponding
-owner batch. Tokens also expire automatically.
+any broader permission fail closed. The token is written to a mode-`0600` temporary file
+only after those checks pass and is revoked after the corresponding owner batch.
+Tokens also expire automatically.
 
 ## Trusted pull-request boundary
 
