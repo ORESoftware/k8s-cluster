@@ -342,12 +342,33 @@ test('Slack slash commands traverse browser, modal, bridge, coordinator, Postgre
       expectedAction: 'implement',
     });
 
+    const claudeBody = encodedCommand({
+      command: '/ores-claude',
+      text: 'Implement DEN-1231 with tests',
+      trigger: 'trigger-claude-direct',
+    });
+    const claudeResponse = await postSigned(request, '/slack/commands/ores-claude', claudeBody);
+    assert.equal(claudeResponse.status(), 200, await claudeResponse.text());
+    assert.match((await claudeResponse.json()).text, /Accepted Claude run/);
+    state = await waitFor(
+      request,
+      (candidate) => candidate.messages.length === 3,
+      'Direct Claude dispatch status was not posted',
+    );
+    await verifyDispatch(request, state.messages[2].text, {
+      expectedProvider: 'claude',
+      expectedAgent: 'claude-fable-5',
+      expectedRepository: 'ORESoftware/ai-agent-bridge.rs',
+      expectedIssue: 'DEN-1231',
+      expectedAction: 'implement',
+    });
+
     const duplicateResponse = await postSigned(request, '/slack/commands/ores-chatgpt', chatgptBody);
     assert.equal(duplicateResponse.status(), 200, await duplicateResponse.text());
     assert.match((await duplicateResponse.json()).text, /already accepted/);
     await new Promise((resolve) => setTimeout(resolve, 250));
     state = await mockState(request);
-    assert.equal(state.messages.length, 2, 'duplicate Slack request posted a second status');
+    assert.equal(state.messages.length, 3, 'duplicate Slack request posted a second status');
 
     const unauthorizedBody = encodedCommand({
       command: '/ores-chatgpt',
@@ -372,12 +393,12 @@ test('Slack slash commands traverse browser, modal, bridge, coordinator, Postgre
     assert.equal(stale.status(), 401, await stale.text());
 
     state = await mockState(request);
-    assert.equal(state.messages.length, 2);
+    assert.equal(state.messages.length, 3);
     assert.equal(state.views.length, 1);
-    assert.equal(state.historyCalls, 2, 'one bounded history read is performed per live dispatch');
+    assert.equal(state.historyCalls, 3, 'one bounded history read is performed per live dispatch');
 
     await page.goto(`${slackMockBase}/`);
-    assert.equal(await page.getByTestId('message-count').innerText(), '2');
+    assert.equal(await page.getByTestId('message-count').innerText(), '3');
     await page.screenshot({
       path: path.join(outputDir, 'slack-agent-command-dashboard.png'),
       fullPage: true,
