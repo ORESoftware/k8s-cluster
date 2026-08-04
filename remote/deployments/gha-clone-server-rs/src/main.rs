@@ -200,7 +200,7 @@ struct BuildJobResponse {
 }
 
 fn valid_build_job_id(value: &str) -> bool {
-    !value.is_empty()
+    !matches!(value, "" | "." | "..")
         && value.len() <= 128
         && value
             .bytes()
@@ -1171,12 +1171,27 @@ fn build_server_url_from_env() -> Result<Option<String>, String> {
         .transpose()
 }
 
-fn is_kubernetes_service_dns(host: &str) -> bool {
-    let labels = host.split('.').collect::<Vec<_>>();
-    let Some(index) = labels.iter().position(|label| *label == "svc") else {
+fn valid_dns_label(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let (Some(first), Some(last)) = (bytes.first(), bytes.last()) else {
         return false;
     };
-    index >= 2 && (index + 1 == labels.len() || labels[index + 1..] == ["cluster", "local"])
+    bytes.len() <= 63
+        && first.is_ascii_alphanumeric()
+        && last.is_ascii_alphanumeric()
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
+}
+
+fn is_kubernetes_service_dns(host: &str) -> bool {
+    let labels = host.split('.').collect::<Vec<_>>();
+    match labels.as_slice() {
+        [service, namespace, "svc"] | [service, namespace, "svc", "cluster", "local"] => {
+            valid_dns_label(service) && valid_dns_label(namespace)
+        }
+        _ => false,
+    }
 }
 
 fn normalize_build_server_url(value: &str) -> Result<String, String> {
@@ -1202,7 +1217,7 @@ fn normalize_build_server_url(value: &str) -> Result<String, String> {
         .host_str()
         .ok_or_else(|| "GHA_CLONE_BUILD_SERVER_URL must contain a host".to_string())?;
     let loopback_http =
-        parsed.scheme() == "http" && matches!(host, "127.0.0.1" | "localhost" | "::1");
+        parsed.scheme() == "http" && matches!(host, "127.0.0.1" | "localhost" | "::1" | "[::1]");
     let kubernetes_http = parsed.scheme() == "http" && is_kubernetes_service_dns(host);
     if parsed.scheme() != "https" && !loopback_http && !kubernetes_http {
         return Err(
@@ -1586,6 +1601,12 @@ mod tests {
                 .is_ok()
         );
         assert!(normalize_build_server_url("http://dd-build-server.remote.svc:8123").is_ok());
+        assert!(normalize_build_server_url("http://[::1]:8123").is_ok());
+        assert!(
+            normalize_build_server_url("http://extra.dd-build-server.remote.svc:8123").is_err()
+        );
+        assert!(normalize_build_server_url("http://dd_build.remote.svc:8123").is_err());
+        assert!(normalize_build_server_url("http://-build.remote.svc:8123").is_err());
         assert!(normalize_build_server_url("http://10.0.0.10:8123").is_err());
         assert!(normalize_build_server_url("http://build.example.com").is_err());
         assert!(normalize_build_server_url("http://service.svc.evil.example").is_err());
@@ -1605,12 +1626,20 @@ mod tests {
         assert!(validate_build_job_response_id(&valid, Some(&valid.id)).is_ok());
         assert!(validate_build_job_response_id(&valid, Some("different")).is_err());
 
-        let invalid = BuildJobResponse {
-            id: "../build?token=x".into(),
+        for id in ["", ".", "..", "../build?token=x", "build/child"] {
+            let invalid = BuildJobResponse {
+                id: id.into(),
+                status: "queued".into(),
+                error: None,
+            };
+            assert!(validate_build_job_response_id(&invalid, None).is_err());
+        }
+        let too_long = BuildJobResponse {
+            id: "a".repeat(129),
             status: "queued".into(),
             error: None,
         };
-        assert!(validate_build_job_response_id(&invalid, None).is_err());
+        assert!(validate_build_job_response_id(&too_long, None).is_err());
     }
 
     #[tokio::test]
