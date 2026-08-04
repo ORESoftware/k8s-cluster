@@ -6,11 +6,11 @@ This content-free ledger closes the gap after the prior June 5 reconciliation cu
 
 All **48** post-cutoff source messages have an explicit disposition:
 
-- **23** mapped directly to existing work;
+- **22** mapped directly to existing work;
 - **8** mapped as reference/evidence for existing work;
 - **4** identified as duplicates of an earlier delta record;
 - **2** routed into one newly created canonical issue, `DEN-1604`, with implementation PR `messaging-intel/msgint-chrome-extension-app#27`;
-- **3** mapped to work while quarantining credential-bearing content under `DEN-1230` and `DEN-27`;
+- **4** mapped to work while quarantining credential-bearing content under `DEN-1230` and `DEN-27`;
 - **8** quarantined as private contact records.
 
 The 48 messages do **not** represent 48 independent tickets. Repeated directives, pasted research/status, and follow-up context are attached to canonical issues rather than creating duplicates.
