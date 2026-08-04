@@ -104,14 +104,15 @@ jobs:
           contracts.write_text(source.replace(old_test, new_test))
           PY
 
-      - name: Format and validate every target
+      - name: Refresh the lock once, then validate every target locked
         working-directory: remote/deployments/gha-clone-server-rs
         shell: bash
         run: |
           set -euo pipefail
           cargo fmt --all
-          cargo clippy --locked --all-targets -- -D warnings
+          cargo clippy --all-targets -- -D warnings
           cargo test --locked --all-targets
+          cargo clippy --locked --all-targets -- -D warnings
 
       - name: Commit validated patch and remove this one-shot workflow
         shell: bash
@@ -121,7 +122,9 @@ jobs:
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add remote/deployments/gha-clone-server-rs/src/executor_router.rs
+          git add \
+            remote/deployments/gha-clone-server-rs/Cargo.lock \
+            remote/deployments/gha-clone-server-rs/src/executor_router.rs
           git add -f remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs
-          git commit -m 'fix(DEN-1597): fail closed on redirects and multiline secrets'
+          git commit -m 'fix(DEN-1597): lock and harden executor routing'
           git push origin HEAD:agent/den-1597-aws-hetzner-executor-router
