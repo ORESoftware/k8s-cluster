@@ -35,6 +35,7 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          from textwrap import dedent
 
           workflow = Path('.github/workflows/den-1606-transport-capacity-semantic-merge-once.yml')
           lines = workflow.read_text(encoding='utf-8').splitlines()
@@ -44,13 +45,9 @@ jobs:
               index for index in range(run_line + 1, len(lines))
               if lines[index].startswith('      - uses: dtolnay/rust-toolchain@')
           )
-          block = lines[run_line + 1:next_step]
-          prefix = '          '
-          if any(line.strip() and not line.startswith(prefix) for line in block):
-              raise SystemExit('reviewed semantic reconstruction indentation drifted')
-          script = '\n'.join(
-              line[len(prefix):] if line.startswith(prefix) else '' for line in block
-          ) + '\n'
+          script = dedent('\n'.join(lines[run_line + 1:next_step])).lstrip('\n') + '\n'
+          if not script.startswith('set -euo pipefail\n'):
+              raise SystemExit('reviewed semantic reconstruction boundary drifted')
           Path('/tmp/den-1606-semantic-merge.sh').write_text(script, encoding='utf-8')
           PY
           bash /tmp/den-1606-semantic-merge.sh
