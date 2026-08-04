@@ -1,4 +1,4 @@
-# One-shot workflow: validates, commits, and removes its own scaffolding.
+# One-shot workflow: validates and commits only the product source.
 name: Finalize immutable build-server checkout hardening
 
 on:
@@ -40,8 +40,10 @@ jobs:
           ref: agent/build-server-immutable-sha-clone-20260804
           fetch-depth: 0
 
-      - name: Apply the source and workflow patch
-        run: python3 scripts/apply-build-server-immutable-sha-clone.py
+      - name: Apply the source patch without staging workflow changes
+        run: |
+          python3 scripts/apply-build-server-immutable-sha-clone.py
+          git checkout -- .github/workflows/gha-clone-server.yml
 
       - name: Check out the exact private remote/libs gitlink
         uses: ./.github/actions/checkout-remote-libs
@@ -54,9 +56,9 @@ jobs:
           toolchain: '1.90.0'
           components: rustfmt, clippy
 
-      - name: Format the build server
+      - name: Format only the changed Rust source
         working-directory: remote/deployments/build-server-rs
-        run: cargo fmt --all
+        run: rustfmt --edition 2021 src/jobs.rs
 
       - name: Reject build-server warnings
         working-directory: remote/deployments/build-server-rs
@@ -66,24 +68,21 @@ jobs:
         working-directory: remote/deployments/build-server-rs
         run: cargo test --locked --all-targets -- --nocapture
 
-      - name: Validate the modified continuity workflow
+      - name: Validate the unchanged continuity workflow
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
           args: .github/workflows/gha-clone-server.yml
 
-      - name: Remove one-shot patch scaffolding
-        run: |
-          rm scripts/apply-build-server-immutable-sha-clone.py
-          rm .github/workflows/finalize-build-server-immutable-sha-clone.yml
-
-      - name: Commit the validated source
+      - name: Commit only the validated product source
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add \
+            remote/deployments/build-server-rs/src/jobs.rs \
+            remote/deployments/build-server-rs/readme.md
           git diff --cached --check
           if git diff --cached --quiet; then
-            echo "The immutable checkout patch produced no source change" >&2
+            echo "The immutable checkout patch produced no product source change" >&2
             exit 1
           fi
           git commit -m "fix(build-server): fetch immutable commit SHAs exactly"
