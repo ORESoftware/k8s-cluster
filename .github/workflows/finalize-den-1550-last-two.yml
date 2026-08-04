@@ -78,15 +78,11 @@ jobs:
           )
           source = planner_tests.read_text(encoding='utf-8')
           immutable = '0123456789abcdef0123456789abcdef01234567'
-          replacements = [
-              ('actions/setup-node@abc', f'actions/setup-node@{immutable}', 2),
-              ('ACTIONS/CHECKOUT@abc', f'ACTIONS/CHECKOUT@{immutable}', 1),
-              ('Actions/Setup-Node@abc', f'Actions/Setup-Node@{immutable}', 1),
-          ]
-          for old, new, minimum in replacements:
-              count = source.count(old)
-              if count < minimum:
-                  raise SystemExit(f'expected at least {minimum} {old!r}, found {count}')
+          for old, new in (
+              ('actions/setup-node@abc', f'actions/setup-node@{immutable}'),
+              ('ACTIONS/CHECKOUT@abc', f'ACTIONS/CHECKOUT@{immutable}'),
+              ('Actions/Setup-Node@abc', f'Actions/Setup-Node@{immutable}'),
+          ):
               source = source.replace(old, new)
 
           old_reason = '        "secret-bearing env/with values are unsupported",\n'
@@ -94,18 +90,15 @@ jobs:
               '        "secret-bearing step environments are unsupported",\n'
               '        "secret-bearing setup inputs are unsupported",\n'
           )
-          if source.count(old_reason) != 1:
+          if old_reason in source:
+              source = source.replace(old_reason, new_reasons, 1)
+          elif not all(reason.strip() in source for reason in new_reasons.splitlines()):
               raise SystemExit('unexpected unsupported-step reason inventory')
-          source = source.replace(old_reason, new_reasons, 1)
 
-          old_loop = '''    for id in ["compact_secret", "github_token", "oidc"] {
-              assert!(job(&plan, id)
-                  .independent_reasons
-                  .iter()
-                  .any(|reason| reason.contains("secret-bearing env/with")));
-          }
-          assert!(!plan.independent_executable);'''
-          new_loop = '''    assert!(job(&plan, "compact_secret")
+          function_anchor = 'fn secret_github_token_and_oidc_contexts_fail_closed()'
+          start_marker = '    for id in ["compact_secret", "github_token", "oidc"] {'
+          end_marker = '    assert!(!plan.independent_executable);'
+          replacement = '''    assert!(job(&plan, "compact_secret")
               .independent_reasons
               .iter()
               .any(|reason| reason.contains("secret-bearing setup inputs")));
@@ -116,9 +109,15 @@ jobs:
                   .any(|reason| reason.contains("secret-bearing step environments")));
           }
           assert!(!plan.independent_executable);'''
-          if source.count(old_loop) != 1:
-              raise SystemExit('unexpected secret-context assertion block')
-          planner_tests.write_text(source.replace(old_loop, new_loop, 1), encoding='utf-8')
+          function_start = source.index(function_anchor)
+          if start_marker in source[function_start:]:
+              start = source.index(start_marker, function_start)
+              end = source.index(end_marker, start) + len(end_marker)
+              source = source[:start] + replacement + source[end:]
+          elif replacement not in source[function_start:]:
+              raise SystemExit('unexpected secret-context assertion state')
+
+          planner_tests.write_text(source, encoding='utf-8')
           PY
 
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
