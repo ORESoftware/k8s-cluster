@@ -3,7 +3,9 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { readFile } from 'node:fs/promises';
 import net from 'node:net';
+import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { chromium, request as playwrightRequest } from 'playwright';
 
@@ -11,8 +13,13 @@ const AUTH_SECRET = 'browser-test-server-auth';
 const REPOSITORY = 'ORESoftware/k8s-cluster';
 const REVISION = '0123456789abcdef0123456789abcdef01234567';
 const WORKFLOW_PATH = '.github/workflows/gha-continuity-parity.yml';
-const FIXTURE_PATH =
-  'remote/deployments/gha-clone-server-rs/tests/fixtures/parity-rust-node.yml';
+const REPOSITORY_ROOT =
+  process.env.GHA_CONTINUITY_REPOSITORY_ROOT ??
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const FIXTURE_PATH = path.join(
+  REPOSITORY_ROOT,
+  'remote/deployments/gha-clone-server-rs/tests/fixtures/parity-rust-node.yml',
+);
 
 async function unusedPort() {
   const server = net.createServer();
