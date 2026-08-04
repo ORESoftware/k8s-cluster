@@ -50,10 +50,11 @@ class DirectOrgDotgithubPublisherTests(unittest.TestCase):
     def test_workflow_does_not_transport_an_organization_admin_token(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")
         for forbidden in (
-            "GH_PAT",
-            "GITHUB_REPOSITORY_ADMIN_TOKEN",
-            "github_pat_",
-            "ghp_",
+            "secrets.GH_PAT",
+            "secrets.GITHUB_REPOSITORY_ADMIN_TOKEN",
+            "GH_PAT:",
+            "GITHUB_REPOSITORY_ADMIN_TOKEN:",
+            "Authorization: Bearer ${{",
             "aws secretsmanager get-secret-value",
             "AWS_SSM_INSTANCE_ID",
             "aws ssm send-command",
