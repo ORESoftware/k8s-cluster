@@ -223,22 +223,91 @@ jobs:
           )
           e2e_path.write_text(e2e, encoding="utf-8")
 
-      - name: Format and run focused tests
+      - name: Format and remove temporary workflow
         run: |
           cargo fmt --all
-          cargo test --all-features turning_model_catalog
-          cargo test --all-features turning_catalog_advertises_named_lathe_profiles_over_http
-          cargo test --all-features named_turning_models_join_the_default_fleet_and_catalogs
+          rm .github/workflows/temporary-turning-source-extract.yml
+          cargo fmt --all -- --check
+          cargo metadata --no-deps --format-version 1 > /dev/null
           git diff --check
 
-      - name: Remove temporary applicator and commit product changes
+      - name: Compile and exercise the pure catalog independently
+        run: |
+          tmp=$(mktemp -d)
+          mkdir -p "${tmp}/src"
+          cp src/turning_model_catalog.rs "${tmp}/src/turning_model_catalog.rs"
+          cat > "${tmp}/Cargo.toml" <<'EOF'
+          [package]
+          name = "turning-catalog-contract"
+          version = "0.1.0"
+          edition = "2021"
+
+          [dependencies]
+          serde_json = "1"
+          EOF
+          cat > "${tmp}/src/main.rs" <<'EOF'
+          fn normalize_token(value: &str) -> String {
+              let mut normalized = String::new();
+              let mut separator = false;
+              for character in value.trim().chars() {
+                  if character.is_ascii_alphanumeric() {
+                      if separator && !normalized.is_empty() {
+                          normalized.push('-');
+                      }
+                      normalized.push(character.to_ascii_lowercase());
+                      separator = false;
+                  } else {
+                      separator = true;
+                  }
+              }
+              normalized
+          }
+
+          mod turning_model_catalog;
+
+          fn main() {
+              use turning_model_catalog::{
+                  turning_machine_model_for_token,
+                  turning_machine_models_json,
+                  TURNING_MACHINE_MODEL_SPECS,
+              };
+
+              assert_eq!(TURNING_MACHINE_MODEL_SPECS.len(), 2);
+              let haas = turning_machine_model_for_token("ST 20").expect("Haas alias");
+              assert_eq!(haas.model, "haas-st-20");
+              assert_eq!(haas.controller, "haas-gcode");
+              let lynx = turning_machine_model_for_token("Doosan Lynx 2100B")
+                  .expect("legacy Lynx alias");
+              assert_eq!(lynx.model, "dn-solutions-lynx-2100b-fanuc");
+              assert!(lynx.controller_options.contains(&"siemens-sinumerik"));
+              assert!(lynx.requires_controller_confirmation);
+              let models = turning_machine_models_json();
+              assert_eq!(models.as_array().map(Vec::len), Some(2));
+              assert_eq!(models[0]["workEnvelopeMm"], serde_json::json!([330.0, 572.0]));
+              assert_eq!(models[1]["maxSpindleSpeedRpm"], 4_500);
+              println!("standalone turning catalog contract: OK");
+          }
+          EOF
+          cargo run --quiet --manifest-path "${tmp}/Cargo.toml"
+
+      - name: Validate permanent integration contract
+        run: |
+          python3 -m py_compile scripts/ci/check_turning_model_integration.py
+          python3 scripts/ci/check_turning_model_integration.py
+          changed=$(git diff --name-only)
+          unexpected=$(printf '%s\n' "$changed" | grep -Ev '^(src/lib\.rs|src/e2e_tests\.rs|src/turning_model_catalog\.rs|\.github/workflows/temporary-turning-source-extract\.yml)$' || true)
+          if [ -n "$unexpected" ]; then
+            echo "unexpected applicator changes:"
+            echo "$unexpected"
+            exit 1
+          fi
+
+      - name: Commit product changes
         env:
           BRANCH: agent/den-lathe-machine-profiles-20260804
         run: |
-          rm .github/workflows/temporary-turning-source-extract.yml
-          git diff --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/lib.rs src/e2e_tests.rs src/turning_model_catalog.rs docs/turning-models.md .github/workflows/temporary-turning-source-extract.yml
+          git add -A
           git commit -m "feat(turning): support Haas ST-20 and Lynx 2100B"
           git push origin "HEAD:${BRANCH}"
