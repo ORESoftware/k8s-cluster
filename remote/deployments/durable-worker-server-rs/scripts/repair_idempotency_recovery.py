@@ -1,22 +1,28 @@
 #!/usr/bin/env python3
 from pathlib import Path
-from textwrap import dedent
+from textwrap import dedent, indent
 
 engine_path = Path("remote/deployments/durable-worker-server-rs/src/engine/mod.rs")
 engine = engine_path.read_text()
-start_marker = dedent(
-    """\
+start_marker = indent(
+    dedent(
+        """\
         let (run_id, idempotent_replay) = if let Some(idempotency_key) =
             request.idempotency_key.as_deref()
         {
-    """
+        """
+    ),
+    "        ",
 )
-end_marker = dedent(
-    """\
+end_marker = indent(
+    dedent(
+        """\
         } else {
             (Uuid::new_v4().to_string(), false)
         };
-    """
+        """
+    ),
+    "        ",
 )
 start = engine.find(start_marker)
 if start < 0:
@@ -25,8 +31,9 @@ end_start = engine.find(end_marker, start)
 if end_start < 0:
     raise SystemExit("submit_run idempotency block end was not found")
 end = end_start + len(end_marker)
-replacement = dedent(
-    """\
+replacement = indent(
+    dedent(
+        """\
         let (run_id, idempotent_replay) = if let Some(idempotency_key) =
             request.idempotency_key.as_deref()
         {
@@ -93,7 +100,9 @@ replacement = dedent(
         } else {
             (Uuid::new_v4().to_string(), false)
         };
-    """
+        """
+    ),
+    "        ",
 )
 engine_path.write_text(engine[:start] + replacement + engine[end:])
 
