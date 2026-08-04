@@ -1,3 +1,5 @@
+# Owner-triggered, self-removing validation carrier. The resulting branch is
+# required to contain only the permanent seven-file policy surface.
 name: Apply DEN-1550 exact repository profile policy on current dev
 
 on:
