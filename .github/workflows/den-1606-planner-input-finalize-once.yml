@@ -25,15 +25,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: agent/den-1606-planner-input-hardening-20260804
-          fetch-depth: 2
+          fetch-depth: 1
           persist-credentials: true
           show-progress: false
 
-      - name: Apply the reviewed parent patch after proving product identity
+      - name: Apply the reviewed patch after proving product identity
         run: |
           set -euo pipefail
           base='0a5449ded9b1e71621400a8f4c0ca205f7e52970'
+          reviewed='dfd565d2c177578662bdcb8dc2ebf3db2cd0c69b'
           workflow='.github/workflows/den-1606-planner-input-finalize-once.yml'
+          git fetch --no-tags --depth=1 origin "$base" "$reviewed"
           git diff --quiet "$base"..HEAD -- \
             remote/deployments/gha-clone-server-rs/src/lib.rs \
             docs/gha-clone-planner-input-boundary.md
@@ -42,13 +44,15 @@ jobs:
             printf 'unexpected pre-finalization paths:\n%s\n' "$unexpected" >&2
             exit 1
           fi
-          python3 - <<'PY'
+          REVIEWED_SHA="$reviewed" python3 - <<'PY'
           from pathlib import Path
+          import os
           import subprocess
 
           workflow = '.github/workflows/den-1606-planner-input-finalize-once.yml'
+          reviewed = os.environ['REVIEWED_SHA']
           text = subprocess.check_output(
-              ['git', 'show', f'HEAD^:{workflow}'],
+              ['git', 'show', f'{reviewed}:{workflow}'],
               text=True,
           )
           lines = text.splitlines()
@@ -61,7 +65,7 @@ jobs:
           prefix = '          '
           block = lines[run_index + 1 : next_step]
           if any(line.strip() and not line.startswith(prefix) for line in block):
-              raise SystemExit('reviewed parent run block has unexpected indentation')
+              raise SystemExit('reviewed run block has unexpected indentation')
           script = '\n'.join(
               line[len(prefix):] if line.startswith(prefix) else ''
               for line in block
@@ -71,7 +75,7 @@ jobs:
               "'0a5449ded9b1e71621400a8f4c0ca205f7e52970'\n"
           )
           if script.count(obsolete_guard) != 1:
-              raise SystemExit('reviewed parent identity guard drifted')
+              raise SystemExit('reviewed identity guard drifted')
           script = script.replace(obsolete_guard, '', 1)
           Path('/tmp/den-1606-planner-finalize.sh').write_text(script, encoding='utf-8')
           PY
