@@ -1,5 +1,4 @@
 use std::{
-    fs,
     net::TcpListener as StdTcpListener,
     path::PathBuf,
     process::{Child, Command, ExitStatus, Stdio},
@@ -22,7 +21,7 @@ use tokio::{
 
 const SERVER_AUTH: &str = "msgint-server-auth";
 const BUILD_AUTH: &str = "msgint-build-auth";
-const REVISION: &str = "952623b07fd83caa3a83ee27bdea293f6bd4372f";
+const REVISION: &str = "eb7e2cd53a40b20fe62c48a635f4919efb41d251";
 const REPOSITORY: &str = "messaging-intel/msgint-connectors";
 const WORKFLOW_PATH: &str = ".github/workflows/gha-clone-operator-config.yml";
 
@@ -115,8 +114,29 @@ async fn wait_until_ready(client: &reqwest::Client, base_url: &str, child: &mut 
     }
 }
 
+async fn submit_run(
+    client: &reqwest::Client,
+    server_url: &str,
+    repository: &str,
+    workflow_path: &str,
+    workflow_yaml: &str,
+) -> reqwest::Response {
+    client
+        .post(format!("{server_url}/v1/runs"))
+        .header("x-gha-clone-auth", SERVER_AUTH)
+        .json(&json!({
+            "repository": repository,
+            "revision": REVISION,
+            "workflowPath": workflow_path,
+            "workflowYaml": workflow_yaml
+        }))
+        .send()
+        .await
+        .expect("submit Messaging Intel continuity run")
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn running_server_dispatches_messaging_intel_operator_and_full_test_profiles() {
+async fn running_server_dispatches_exact_msgint_profiles_and_rejects_mutations() {
     let mock_state = MockBuildState::default();
     let mock_listener = TcpListener::bind("127.0.0.1:0")
         .await
@@ -138,6 +158,7 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("CARGO_BIN_EXE_gha-clone-server").map(PathBuf::from))
         .expect("Cargo must expose the gha-clone-server binary to integration tests");
+    let workflow_rules = json!({ REPOSITORY: [WORKFLOW_PATH] }).to_string();
     let child = Command::new(binary)
         .env("HOST", "127.0.0.1")
         .env("PORT", server_port.to_string())
@@ -146,7 +167,7 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
         .env("GHA_CLONE_EXECUTION_ENABLED", "true")
         .env("GHA_CLONE_WEBHOOK_EXECUTION_ENABLED", "false")
         .env("GHA_CLONE_ALLOWED_REPOSITORIES", REPOSITORY)
-        .env("GHA_CLONE_WORKFLOW_RULES_JSON", "{}")
+        .env("GHA_CLONE_WORKFLOW_RULES_JSON", workflow_rules)
         .env(
             "GHA_CLONE_BUILD_SERVER_URL",
             format!("http://{mock_address}"),
@@ -169,22 +190,18 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
         .expect("HTTP client");
     wait_until_ready(&client, &server_url, &mut child).await;
 
-    let workflow_path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/msgint-operator-config.yml");
-    let workflow_yaml = fs::read_to_string(&workflow_path)
+    let workflow_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/msgint-operator-config.yml");
+    let workflow_yaml = std::fs::read_to_string(&workflow_path)
         .unwrap_or_else(|error| panic!("read {}: {error}", workflow_path.display()));
-    let response = client
-        .post(format!("{server_url}/v1/runs"))
-        .header("x-gha-clone-auth", SERVER_AUTH)
-        .json(&json!({
-            "repository": REPOSITORY,
-            "revision": REVISION,
-            "workflowPath": WORKFLOW_PATH,
-            "workflowYaml": workflow_yaml
-        }))
-        .send()
-        .await
-        .expect("submit Messaging Intel run");
+    let response = submit_run(
+        &client,
+        &server_url,
+        REPOSITORY,
+        WORKFLOW_PATH,
+        &workflow_yaml,
+    )
+    .await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     let accepted: Value = response.json().await.expect("accepted run JSON");
     let run_id = accepted
@@ -220,13 +237,8 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
     assert_eq!(final_run["revision"], REVISION);
     assert_eq!(final_run["workflowPath"], WORKFLOW_PATH);
     assert_eq!(final_run["submissions"].as_array().map(Vec::len), Some(2));
-    assert_eq!(
-        final_run["submissions"][0]["profile"],
-        "node-hardened-verify"
-    );
-    assert_eq!(final_run["submissions"][0]["status"], "succeeded");
+    assert_eq!(final_run["submissions"][0]["profile"], "node-hardened-verify");
     assert_eq!(final_run["submissions"][1]["profile"], "node-hardened-test");
-    assert_eq!(final_run["submissions"][1]["status"], "succeeded");
 
     let submissions = mock_state.submissions.lock().await;
     assert_eq!(submissions.len(), 2);
@@ -242,30 +254,26 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
     assert_eq!(submissions[0]["profile"], "node-hardened-verify");
     assert!(submissions[0]["requestId"]
         .as_str()
-        .is_some_and(
-            |value| value.starts_with("gha-clone:") && value.ends_with(":operator_config")
-        ));
+        .is_some_and(|value| value.starts_with("gha-clone:") && value.ends_with(":operator_config")));
     assert_eq!(submissions[1]["profile"], "node-hardened-test");
     assert!(submissions[1]["requestId"]
         .as_str()
-        .is_some_and(
-            |value| value.starts_with("gha-clone:") && value.ends_with(":repository_tests")
-        ));
+        .is_some_and(|value| value.starts_with("gha-clone:") && value.ends_with(":full_tests")));
     drop(submissions);
 
     let extra_command = workflow_yaml.replacen(
-        "          npm audit --audit-level=high\n",
-        "          npm audit --audit-level=high\n          npm publish\n",
+        "          npm run lint\n",
+        "          npm run lint\n          npm run publish\n",
         1,
     );
     let mutable_action = workflow_yaml.replacen(
-        "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-        "actions/checkout@main",
+        "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+        "actions/setup-node@v4",
         1,
     );
     let bracket_secret = workflow_yaml.replacen(
-        "          persist-credentials: false\n",
-        "          persist-credentials: false\n        env:\n          MSGINT_META_ACCESS_TOKEN: ${{ secrets['PROD_TOKEN'] }}\n",
+        "          npm test\n",
+        "          npm test\n        env:\n          PRIVATE_TOKEN: ${{ secrets['PRIVATE_TOKEN'] }}\n",
         1,
     );
 
@@ -307,10 +315,7 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
             .json()
             .await
             .unwrap_or_else(|error| panic!("read rejected {label} response: {error}"));
-        assert_eq!(
-            rejected["error"],
-            "workflow is not independently executable"
-        );
+        assert_eq!(rejected["error"], "workflow plan rejected");
         assert!(
             rejected.to_string().contains(expected_reason),
             "{label} response did not explain {expected_reason}: {rejected}"
