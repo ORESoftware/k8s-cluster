@@ -80,23 +80,24 @@ jobs:
               '      - name: Validate deployment, routing, execution, webhook, '
               'activation, and Messaging Intel boundaries\n'
           )
-          contract_body = '''            general/gha-clone-webhook-config.test.ts __CONTINUE__
-            general/gha-clone-msgint-config.test.ts
-          node --test general/gha-executor-router-activation.test.mjs
-      - name: Install pinned kubectl renderer
-        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
-        with:
-          version: v1.32.2
-      - name: Render the complete continuity overlay
-        run: |
-          set -euo pipefail
-          rendered="${RUNNER_TEMP}/dd-next-runtime.yaml"
-          kubectl kustomize remote/argocd/dd-next-runtime >"$rendered"
-          test -s "$rendered"
-          grep -F 'name: dd-gha-clone-server' "$rendered"
-          grep -F 'name: dd-gha-executor-router' "$rendered"
-          test "$(grep -c 'replicas: 0' "$rendered")" -ge 2
-'''.replace('__CONTINUE__', chr(92))
+          contract_body = '\n'.join([
+              '            general/gha-clone-webhook-config.test.ts ' + chr(92),
+              '            general/gha-clone-msgint-config.test.ts',
+              '          node --test general/gha-executor-router-activation.test.mjs',
+              '      - name: Install pinned kubectl renderer',
+              '        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5',
+              '        with:',
+              '          version: v1.32.2',
+              '      - name: Render the complete continuity overlay',
+              '        run: |',
+              '          set -euo pipefail',
+              '          rendered="${RUNNER_TEMP}/dd-next-runtime.yaml"',
+              '          kubectl kustomize remote/argocd/dd-next-runtime >"$rendered"',
+              '          test -s "$rendered"',
+              "          grep -F 'name: dd-gha-clone-server' \"$rendered\"",
+              "          grep -F 'name: dd-gha-executor-router' \"$rendered\"",
+              '          test "$(grep -c \'replicas: 0\' "$rendered")" -ge 2',
+          ]) + '\n'
 
           def workflow_replacement(match: re.Match[str]) -> str:
               current = workflow_replacement.index
