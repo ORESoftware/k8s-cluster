@@ -1,0 +1,136 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-gha-executor-router
+  namespace: default
+  labels:
+    app: dd-gha-executor-router
+  annotations:
+    dd.dev/activation-state: disabled-until-provider-parity
+    dd.dev/linear-issue: DEN-1597
+spec:
+  # Merge-safe activation boundary. This manifest is rendered and policy-tested,
+  # but no pod exists until the image evidence, secrets, and provider drills pass.
+  replicas: 0
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-gha-executor-router
+  template:
+    metadata:
+      labels:
+        app: dd-gha-executor-router
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gha-executor-router
+          # Syntactically valid but intentionally nonexistent digest. Activation
+          # must replace it with the reviewed image digest and evidence bundle.
+          image: ghcr.io/oresoftware/gha-executor-router@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          command: ["/usr/local/bin/gha-executor-router"]
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: "8126"
+            - name: RUST_LOG
+              value: gha_executor_router=info
+            - name: GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED
+              value: "false"
+            - name: GHA_EXECUTOR_ROUTER_SECRET_ROOT
+              value: /var/run/secrets/gha-executor-router
+            - name: GHA_EXECUTOR_ROUTER_AUTH_PATH
+              value: /var/run/secrets/gha-executor-router/router-auth
+            - name: GHA_EXECUTOR_ROUTER_EXECUTORS_JSON
+              valueFrom:
+                configMapKeyRef:
+                  name: dd-gha-executor-router
+                  key: GHA_EXECUTOR_ROUTER_EXECUTORS_JSON
+            - name: GHA_EXECUTOR_ROUTER_MAX_EXECUTORS
+              value: "8"
+            - name: GHA_EXECUTOR_ROUTER_MAX_REQUEST_BYTES
+              value: "65536"
+            - name: GHA_EXECUTOR_ROUTER_MAX_UPSTREAM_BODY_BYTES
+              value: "65536"
+            - name: GHA_EXECUTOR_ROUTER_MAX_ERROR_CHARS
+              value: "512"
+            - name: GHA_EXECUTOR_ROUTER_PROBE_TIMEOUT_MS
+              value: "2000"
+            - name: GHA_EXECUTOR_ROUTER_UPSTREAM_TIMEOUT_SECONDS
+              value: "60"
+          ports:
+            - name: http
+              containerPort: 8126
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+              ephemeral-storage: 32Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+              ephemeral-storage: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: executor-secrets
+              mountPath: /var/run/secrets/gha-executor-router
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: executor-secrets
+          projected:
+            defaultMode: 0400
+            sources:
+              - secret:
+                  name: dd-gha-executor-router-secrets
+                  items:
+                    - key: router_auth
+                      path: router-auth
+              - secret:
+                  name: dd-agent-secrets
+                  items:
+                    - key: SERVER_AUTH_SECRET
+                      path: aws-build-server-auth
