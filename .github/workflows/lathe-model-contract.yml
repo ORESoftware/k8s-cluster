@@ -1,0 +1,48 @@
+name: Named lathe model contract
+
+on:
+  pull_request:
+    paths:
+      - "src/lathe_model_catalog.rs"
+      - "src/lib.rs"
+      - "src/tests.rs"
+      - "src/e2e_tests.rs"
+      - "docs/lathe-models.md"
+      - "readme.md"
+      - "scripts/test_lathe_model_contract.py"
+      - ".github/workflows/lathe-model-contract.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/lathe_model_catalog.rs"
+      - "src/lib.rs"
+      - "src/tests.rs"
+      - "src/e2e_tests.rs"
+      - "docs/lathe-models.md"
+      - "readme.md"
+      - "scripts/test_lathe_model_contract.py"
+      - ".github/workflows/lathe-model-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: named-lathe-model-contract-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Compile contract
+        run: python3 -m py_compile scripts/test_lathe_model_contract.py
+      - name: Validate named lathe integration
+        run: python3 scripts/test_lathe_model_contract.py
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
