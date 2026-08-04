@@ -1,0 +1,128 @@
+name: seaorm-migration-inventory
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/seaorm-migration-inventory.yml"
+      - "seaorm-migration.json"
+      - "seaorm-migration.schema.json"
+      - "scripts/audit-seaorm-migration.mjs"
+      - "scripts/audit-seaorm-migration.test.mjs"
+      - "docs/seaorm-shared-schema.md"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "src/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: seaorm-migration-inventory-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mip_solver
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mip_solver"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/mip_solver
+      EXPECTED_SHARED_COMMIT: 3c84cab532b27d328378f09fba5841f02644ae3b
+      DPM_VERSION: 1.4.2
+      DPM_SHA256: 42dd9d638a57edbde6c931d776a4ba295bcb2614e498203968c321d84ad90bdb
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+      - uses: actions/setup-node@1e60f620b9541d7c2434ff48847e58a8b12002b1 # v4.0.4
+        with:
+          node-version: "22"
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: "1.97.0"
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Validate migration contract and inventory direct drivers
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 test-results
+          node --test scripts/audit-seaorm-migration.test.mjs
+          node scripts/audit-seaorm-migration.mjs \
+            --report test-results/seaorm-migration-inventory.json \
+            > test-results/seaorm-migration-inventory.stdout.json
+      - name: Materialize immutable shared schema authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init -q test-results/shared-authority
+          git -C test-results/shared-authority remote add origin \
+            https://github.com/ORESoftware/k8s-libs-and-shared-defs.git
+          GIT_TERMINAL_PROMPT=0 git -C test-results/shared-authority fetch \
+            --no-tags --depth=1 origin "$EXPECTED_SHARED_COMMIT"
+          git -C test-results/shared-authority checkout -q --detach FETCH_HEAD
+          test "$(git -C test-results/shared-authority rev-parse HEAD)" = "$EXPECTED_SHARED_COMMIT"
+          printf '%s\n' "$EXPECTED_SHARED_COMMIT" \
+            > test-results/shared-schema-commit.txt
+      - name: Install pinned declarative-migrations release
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/dpm.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/declarative-migrations/declarative-migrations/releases/download/v${DPM_VERSION}/declarative-postgres-migrate-linux-x86_64.tar.gz" \
+            --output "$archive"
+          printf '%s  %s\n' "$DPM_SHA256" "$archive" | sha256sum --check -
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          install -m 0755 "$RUNNER_TEMP/declarative-postgres-migrate" \
+            "$RUNNER_TEMP/dpm"
+          printf '%s\n' "$DPM_VERSION" > test-results/dpm-version.txt
+      - name: Apply and converge the canonical schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          schema=test-results/shared-authority/pg-defs/schema/schema.sql
+          "$RUNNER_TEMP/dpm" apply \
+            --database-url "$DATABASE_URL" \
+            --schema-file "$schema" \
+            > test-results/dpm-first-apply.txt
+          "$RUNNER_TEMP/dpm" apply \
+            --database-url "$DATABASE_URL" \
+            --schema-file "$schema" \
+            > test-results/dpm-second-apply.txt
+      - name: Capture current Cargo graph and baseline tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo metadata --locked --format-version 1 \
+            > test-results/cargo-metadata.json
+          cargo fmt --all -- --check
+          cargo test --locked --all-targets
+      - name: Remove materialized authority before artifact upload
+        if: always()
+        shell: bash
+        run: rm -rf test-results/shared-authority
+      - name: Upload non-secret migration evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: seaorm-migration-inventory-${{ github.run_id }}
+          path: test-results/
+          if-no-files-found: error
+          retention-days: 14
