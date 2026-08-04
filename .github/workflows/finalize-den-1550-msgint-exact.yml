@@ -1,11 +1,10 @@
-name: Finalize exact Messaging Intel continuity on current dev
+name: Validate exact Messaging Intel continuity on current dev
 
 on:
-  push:
-    branches:
-      - agent/den-1550-msgint-current-dev-final
+  pull_request:
+    types: [opened, synchronize, reopened]
     paths:
-      - .github/workflows/finalize-den-1550-msgint-exact.yml
+      - '.github/workflows/finalize-den-1550-msgint-exact.yml'
 
 permissions:
   contents: write
@@ -32,18 +31,16 @@ jobs:
           toolchain: '1.90.0'
           components: rustfmt, clippy
 
-      - name: Apply the reviewed revision and expectation reconciliation
+      - name: Reconcile reviewed expectations without changing product semantics
         shell: bash
         run: |
           set -euo pipefail
           python3 <<'PY'
           from pathlib import Path
           import re
-          import subprocess
 
           OLD_REVISION = '952623b07fd83caa3a83ee27bdea293f6bd4372f'
           NEW_REVISION = 'a9cc977d78347ec0efdbe8e6766967f80d425882'
-          FINALIZER = Path('.github/workflows/finalize-den-1550-msgint-exact.yml')
           IMMUTABLE_TEST_SHA = '0123456789abcdef0123456789abcdef01234567'
 
           def replace_once(path: Path, old: str, new: str, label: str) -> None:
@@ -55,147 +52,116 @@ jobs:
                   )
               path.write_text(text.replace(old, new, 1), encoding='utf-8')
 
-          grep = subprocess.run(
-              ['git', 'grep', '-l', OLD_REVISION],
-              check=False,
-              text=True,
-              capture_output=True,
+          # Pin the process-level proof to the byte-exact Messaging Intel head.
+          process_test = Path(
+              'remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs'
           )
-          if grep.returncode not in (0, 1):
-              raise SystemExit(grep.stderr)
-          revision_paths = [
-              Path(line)
-              for line in grep.stdout.splitlines()
-              if line and Path(line) != FINALIZER
-          ]
-          required_revision_paths = {
-              Path('.github/workflows/gha-clone-server.yml'),
-              Path('remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs'),
-              Path('remote/tests/general/gha-clone-msgint-config.test.ts'),
-          }
-          if not required_revision_paths.issubset(set(revision_paths)):
-              raise SystemExit(
-                  'required revision pins missing: '
-                  + ', '.join(str(path) for path in revision_paths)
+          process_source = process_test.read_text(encoding='utf-8')
+          if process_source.count(OLD_REVISION) == 1:
+              process_test.write_text(
+                  process_source.replace(OLD_REVISION, NEW_REVISION, 1),
+                  encoding='utf-8',
               )
-          for path in revision_paths:
-              text = path.read_text(encoding='utf-8')
-              path.write_text(text.replace(OLD_REVISION, NEW_REVISION), encoding='utf-8')
+          elif process_source.count(NEW_REVISION) != 1:
+              raise SystemExit('unexpected process-test revision state')
 
+          # Update only stale adversarial expectations. The stricter planner
+          # behavior is already correct and remains unchanged.
           adversarial = Path(
               'remote/deployments/gha-clone-server-rs/tests/planner_adversarial.rs'
           )
-          text = adversarial.read_text(encoding='utf-8')
+          source = adversarial.read_text(encoding='utf-8')
           known_action = re.compile(
               r'(?i)(actions/(?:checkout|setup-node|setup-python|setup-java)'
               r'|dtolnay/rust-toolchain|pnpm/action-setup|subosito/flutter-action)@abc'
           )
-          text, action_count = known_action.subn(
+          source, action_count = known_action.subn(
               lambda match: f'{match.group(1)}@{IMMUTABLE_TEST_SHA}',
-              text,
+              source,
           )
           if action_count < 3:
               raise SystemExit(
-                  f'expected at least three stale known-action fixtures, found {action_count}'
+                  f'expected at least three stale known-action refs, found {action_count}'
               )
           old_reason = '        "secret-bearing env/with values are unsupported",\n'
           new_reasons = (
               '        "secret-bearing step environments are unsupported",\n'
               '        "secret-bearing setup inputs are unsupported",\n'
           )
-          if text.count(old_reason) != 1:
-              raise SystemExit('unexpected unsupported-step reason state')
-          text = text.replace(old_reason, new_reasons, 1)
-          old_secret_block = '''    for id in ["compact_secret", "github_token", "oidc"] {
-                  assert!(job(&plan, id)
-                      .independent_reasons
-                      .iter()
-                      .any(|reason| reason.contains("secret-bearing env/with")));
-              }
-              assert!(!plan.independent_executable);'''
-          new_secret_block = '''    assert!(job(&plan, "compact_secret")
+          if source.count(old_reason) != 1:
+              raise SystemExit('unexpected rejection-reason inventory state')
+          source = source.replace(old_reason, new_reasons, 1)
+          secret_pattern = re.compile(
+              r'''    for id in \["compact_secret", "github_token", "oidc"\] \{\n'''
+              r'''        assert!\(job\(&plan, id\)\n'''
+              r'''            \.independent_reasons\n'''
+              r'''            \.iter\(\)\n'''
+              r'''            \.any\(\|reason\| reason\.contains\("secret-bearing env/with"\)\)\);\n'''
+              r'''    \}\n'''
+              r'''    assert!\(!plan\.independent_executable\);'''
+          )
+          secret_replacement = '''    assert!(job(&plan, "compact_secret")
+              .independent_reasons
+              .iter()
+              .any(|reason| reason.contains("secret-bearing setup inputs")));
+          for id in ["github_token", "oidc"] {
+              assert!(job(&plan, id)
                   .independent_reasons
                   .iter()
-                  .any(|reason| reason.contains("secret-bearing setup inputs")));
-              for id in ["github_token", "oidc"] {
-                  assert!(job(&plan, id)
-                      .independent_reasons
-                      .iter()
-                      .any(|reason| reason.contains("secret-bearing step environments")));
-              }
-              assert!(!plan.independent_executable);'''
-          if text.count(old_secret_block) != 1:
+                  .any(|reason| reason.contains("secret-bearing step environments")));
+          }
+          assert!(!plan.independent_executable);'''
+          source, secret_count = secret_pattern.subn(secret_replacement, source, count=1)
+          if secret_count != 1:
               raise SystemExit('unexpected secret-context assertion state')
-          adversarial.write_text(
-              text.replace(old_secret_block, new_secret_block, 1),
-              encoding='utf-8',
-          )
+          adversarial.write_text(source, encoding='utf-8')
 
-          contract = Path('remote/tests/general/gha-clone-msgint-config.test.ts')
-          text = contract.read_text(encoding='utf-8')
+          # Static generic-planner assertions now read the preserved original
+          # implementation, while the Messaging Intel test reads the wrapper.
+          server_contract = Path(
+              'remote/tests/general/gha-clone-server-config.test.ts'
+          )
+          source = server_contract.read_text(encoding='utf-8')
           planner_decl = (
-              "const planner = read('remote/deployments/gha-clone-server-rs/src/lib.rs');\n"
+              "const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';\n"
           )
-          contract_decl = (
+          generic_decl = (
               planner_decl
-              + "const msgintContract = read(\n"
-              + "  'remote/deployments/gha-clone-server-rs/src/msgint_contract.rs',\n"
-              + ");\n"
+              + "const genericPlannerPath =\n"
+              + "  'remote/deployments/gha-clone-server-rs/src/lib_original.rs';\n"
           )
-          if text.count(planner_decl) != 1 or 'const msgintContract =' in text:
-              raise SystemExit('unexpected exact-contract declaration state')
-          text = text.replace(planner_decl, contract_decl, 1)
-          old_validation = '''  assert.match(validation, /Exact\(/);
-              assert.match(validation, /suffix-appended/);'''
-          new_validation = '''  assert.match(validation, /ensure_allowed_prefix_or_exact/);
-              assert.match(validation, /strip_prefix\('='\)/);
-              assert.match(admissionDoc, /suffix-appended/);'''
-          if text.count(old_validation) != 1:
-              raise SystemExit('unexpected exact repository-admission assertion state')
-          text = text.replace(old_validation, new_validation, 1)
-          old_planner = '''  assert.match(planner, /node-hardened-verify/);
-              assert.match(planner, /node-hardened-test/);
-              assert.match(planner, /exact reviewed command sequence/);
-              assert.match(planner, /exact 40-hex commit SHA/);
-              assert.match(planner, /fixed profiles do not forward caller-selected variables/);'''
-          new_planner = '''  assert.match(planner, /classify_msgint_workflow/);
-              assert.match(planner, /ContractMatch::Reject/);
-              assert.match(msgintContract, /node-hardened-verify/);
-              assert.match(msgintContract, /node-hardened-test/);
-              assert.match(msgintContract, /exact reviewed command sequence/);
-              assert.match(msgintContract, /exact 40-hex commit SHA/);
-              assert.match(
-                msgintContract,
-                /reserved Messaging Intel repository\/workflow identity mismatch/,
-              );
-              assert.match(msgintContract, new RegExp(revision));'''
-          if text.count(old_planner) != 1:
-              raise SystemExit('unexpected planner assertion state')
-          text = text.replace(old_planner, new_planner, 1)
-          text = text.replace(
-              '  assert.doesNotMatch(profiles, /npm ci(?! --ignore-scripts)/);\n',
-              '''  const hardenedVerify = profiles.match(
-                /const NODE_HARDENED_VERIFY_STEPS:[\\s\\S]*?script: r#"([\\s\\S]*?)"#/,
-              );
-              const hardenedTest = profiles.match(
-                /const NODE_HARDENED_TEST_STEPS:[\\s\\S]*?script: r#"([\\s\\S]*?)"#/,
-              );
-              assert.ok(hardenedVerify);
-              assert.ok(hardenedTest);
-              assert.match(hardenedVerify[1], /npm ci --ignore-scripts/);
-              assert.match(hardenedTest[1], /npm ci --ignore-scripts/);
-              assert.doesNotMatch(hardenedVerify[1], /^npm ci$/m);
-              assert.doesNotMatch(hardenedTest[1], /^npm ci$/m);
-              ''',
-              1,
+          if 'const genericPlannerPath =' not in source:
+              if source.count(planner_decl) != 1:
+                  raise SystemExit('unexpected planner path declaration state')
+              source = source.replace(planner_decl, generic_decl, 1)
+          test_anchor = (
+              "test('planner and dispatcher preserve the fail-closed command boundary', () => {\n"
+              "  const planner = read(plannerPath);\n"
           )
-          old_process = '  assert.match(processTest, /HTTP 422|UNPROCESSABLE_ENTITY/);\n'
-          new_process = (
-              '  assert.match(processTest, /StatusCode::UNPROCESSABLE_ENTITY/);\n'
+          new_anchor = (
+              "test('planner and dispatcher preserve the fail-closed command boundary', () => {\n"
+              "  const planner = read(genericPlannerPath);\n"
           )
-          if text.count(old_process) != 1:
-              raise SystemExit('unexpected process-test HTTP assertion state')
-          contract.write_text(text.replace(old_process, new_process, 1), encoding='utf-8')
+          if test_anchor in source:
+              source = source.replace(test_anchor, new_anchor, 1)
+          elif new_anchor not in source:
+              raise SystemExit('unexpected generic planner read state')
+          old_secret_assertion = (
+              '  assert.match(planner, /secret-bearing env\\/with values are unsupported/);\n'
+          )
+          new_secret_assertions = (
+              '  assert.match(planner, /secret-bearing setup inputs are unsupported/);\n'
+              '  assert.match(planner, /secret-bearing step environments are unsupported/);\n'
+          )
+          if old_secret_assertion in source:
+              source = source.replace(
+                  old_secret_assertion,
+                  new_secret_assertions,
+                  1,
+              )
+          elif new_secret_assertions not in source:
+              raise SystemExit('unexpected generic secret assertion state')
+          server_contract.write_text(source, encoding='utf-8')
 
           admission = Path('docs/gha-profile-repository-admission.md')
           old_admission = (
@@ -217,7 +183,14 @@ jobs:
               'build server. A reserved identity mismatch is terminal and cannot '
               'fall back to `node-verify`.'
           )
-          replace_once(admission, old_admission, new_admission, 'admission documentation')
+          admission_source = admission.read_text(encoding='utf-8')
+          if old_admission in admission_source:
+              admission.write_text(
+                  admission_source.replace(old_admission, new_admission, 1),
+                  encoding='utf-8',
+              )
+          elif new_admission not in admission_source:
+              raise SystemExit('unexpected admission documentation state')
           PY
 
       - name: Format all changed Rust source
@@ -292,13 +265,19 @@ jobs:
       - name: Validate webhook registration shell syntax
         run: bash -n remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh
 
-      - name: Remove this one-shot validator and commit only validated source
+      - name: Commit the validated non-workflow source changes
         run: |
           set -euo pipefail
-          git rm .github/workflows/finalize-den-1550-msgint-exact.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
+          git add \
+            docs/gha-profile-repository-admission.md \
+            remote/deployments/gha-clone-server-rs/src/lib.rs \
+            remote/deployments/gha-clone-server-rs/src/msgint_contract.rs \
+            remote/deployments/gha-clone-server-rs/tests/msgint_exact_contract.rs \
+            remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs \
+            remote/deployments/gha-clone-server-rs/tests/planner_adversarial.rs \
+            remote/tests/general/gha-clone-server-config.test.ts
           git diff --cached --check
           git commit -m 'test(DEN-1550): validate exact Messaging Intel continuity contract'
           git push origin HEAD:agent/den-1550-msgint-current-dev-final
