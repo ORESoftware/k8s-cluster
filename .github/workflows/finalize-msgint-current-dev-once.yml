@@ -1,0 +1,198 @@
+name: Finalize Messaging Intel on current dev once
+
+on:
+  pull_request:
+    branches:
+      - dev
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - '.github/workflows/finalize-msgint-current-dev-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-msgint-current-dev-once
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: ${{ github.head_ref == 'agent/msgint-gha-clone-hardened-current-dev-20260804' && github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      FEATURE_BRANCH: agent/msgint-gha-clone-hardened-current-dev-20260804
+      REVIEW_SOURCE: 273a4d24256e18af98e04350e3d35d0f6b275f06
+      OLD_MSGINT_REVISION: 7d905806b2000479bdacb9b206f33b26a707ba5e
+      NEW_MSGINT_REVISION: 952623b07fd83caa3a83ee27bdea293f6bd4372f
+    steps:
+      - name: Check out the exact current-dev feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/msgint-gha-clone-hardened-current-dev-20260804
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Transplant the reviewed permanent non-workflow files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$REVIEW_SOURCE"
+          test "$(git rev-parse FETCH_HEAD)" = "$REVIEW_SOURCE"
+          files=(
+            docs/gha-profile-repository-admission.md
+            remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml
+            remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml
+            remote/deployments/build-server-rs/readme.md
+            remote/deployments/build-server-rs/src/profiles.rs
+            remote/deployments/build-server-rs/src/validation.rs
+            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/package-lock.json
+            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/package.json
+            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/src/operator-config.mjs
+            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/test/operator-config.test.mjs
+            remote/deployments/gha-clone-server-rs/README.md
+            remote/deployments/gha-clone-server-rs/src/lib.rs
+            remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml
+            remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs
+            remote/tests/general/gha-clone-server-config.test.ts
+          )
+          for path in "${files[@]}"; do
+            mkdir -p -- "$(dirname -- "$path")"
+            git show "$REVIEW_SOURCE:$path" >"$path"
+          done
+
+          python3 <<'PY'
+          import os
+          from pathlib import Path
+
+          integration = Path('remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs')
+          source = integration.read_text(encoding='utf-8')
+          old = os.environ['OLD_MSGINT_REVISION']
+          new = os.environ['NEW_MSGINT_REVISION']
+          if source.count(old) != 1 or new in source:
+              raise SystemExit('unexpected Messaging Intel integration revision state')
+          integration.write_text(source.replace(old, new, 1), encoding='utf-8')
+
+          planner = Path('remote/deployments/gha-clone-server-rs/tests/planner_adversarial.rs')
+          tests = planner.read_text(encoding='utf-8')
+
+          old_reason = '        "secret-bearing env/with values are unsupported",\n'
+          new_reasons = (
+              '        "secret-bearing step environments are unsupported",\n'
+              '        "secret-bearing setup inputs are unsupported",\n'
+              '        "must use an exact 40-hex commit SHA",\n'
+          )
+          if tests.count(old_reason) != 1:
+              raise SystemExit('expected one stale combined secret-reason assertion')
+          tests = tests.replace(old_reason, new_reasons, 1)
+
+          start_anchor = '    for id in ["compact_secret", "github_token", "oidc"] {\n'
+          end_anchor = '    assert!(!plan.independent_executable);\n'
+          if tests.count(start_anchor) != 1:
+              raise SystemExit(
+                  f'expected one stale secret-context loop start, found {tests.count(start_anchor)}'
+              )
+          start = tests.find(start_anchor)
+          end = tests.find(end_anchor, start)
+          if end < 0:
+              raise SystemExit('secret-context loop end anchor was not found')
+          new_secret_checks = (
+              '    assert!(job(&plan, "compact_secret")\n'
+              '        .independent_reasons\n'
+              '        .iter()\n'
+              '        .any(|reason| reason.contains("secret-bearing setup inputs")));\n'
+              '    for id in ["github_token", "oidc"] {\n'
+              '        assert!(job(&plan, id)\n'
+              '            .independent_reasons\n'
+              '            .iter()\n'
+              '            .any(|reason| reason.contains("secret-bearing step environments")));\n'
+              '    }\n'
+          )
+          tests = tests[:start] + new_secret_checks + tests[end:]
+
+          exact_sha = '0123456789abcdef0123456789abcdef01234567'
+          for action in ['ACTIONS/CHECKOUT', 'Actions/Setup-Node']:
+              stale = f'{action}@abc'
+              pinned = f'{action}@{exact_sha}'
+              if tests.count(stale) != 1 or pinned in tests:
+                  raise SystemExit(f'unexpected action-ref state for {action}')
+              tests = tests.replace(stale, pinned, 1)
+
+          planner.write_text(tests, encoding='utf-8')
+          PY
+
+          git diff --check
+          unexpected="$(git diff --name-only | grep '^\.github/workflows/' || true)"
+          if [ -n "$unexpected" ]; then
+            printf 'non-workflow transplant modified workflow files:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate the complete clone-server crate
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Validate build-server profiles and exact admission
+        working-directory: remote/deployments/build-server-rs
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 --check src/profiles.rs src/validation.rs
+          cargo check --locked --all-targets
+          cargo test --locked --bin dd-build-server -- --nocapture
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+
+      - name: Execute the credential-free hardened Node fixture
+        working-directory: remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm run check
+          npm run test:operator-config
+          npm audit --audit-level=high
+          npm test
+
+      - name: Commit only the validated permanent non-workflow files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            docs/gha-profile-repository-admission.md \
+            remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml \
+            remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml \
+            remote/deployments/build-server-rs/readme.md \
+            remote/deployments/build-server-rs/src/profiles.rs \
+            remote/deployments/build-server-rs/src/validation.rs \
+            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile \
+            remote/deployments/gha-clone-server-rs/README.md \
+            remote/deployments/gha-clone-server-rs/src/lib.rs \
+            remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml \
+            remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs \
+            remote/deployments/gha-clone-server-rs/tests/planner_adversarial.rs \
+            remote/tests/general/gha-clone-server-config.test.ts
+          git diff --cached --check
+          test -z "$(git diff --cached --name-only | grep '^\.github/workflows/' || true)"
+          git commit -m 'test(gha-clone): transplant Messaging Intel hardening onto current dev'
+          git push origin "HEAD:$FEATURE_BRANCH"
