@@ -1,0 +1,103 @@
+name: Messaging Intel private source canary
+
+on:
+  push:
+    branches:
+      - agent/msgint-private-source-canary-20260804
+    paths:
+      - scripts/preflight-msgint-github-app-access.py
+      - scripts/tests/test_preflight_msgint_github_app_access.py
+      - .github/workflows/msgint-private-source-canary.yml
+  pull_request:
+    branches:
+      - agent/msgint-private-immutable-composition-20260804
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - scripts/preflight-msgint-github-app-access.py
+      - scripts/tests/test_preflight_msgint_github_app_access.py
+      - .github/workflows/msgint-private-source-canary.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: msgint-private-source-canary-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run the redaction and identity unit suite
+        run: python3 -m unittest -v scripts/tests/test_preflight_msgint_github_app_access.py
+      - name: Validate this workflow with pinned actionlint
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/msgint-private-source-canary.yml
+
+  private-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      MSGINT_REVISION: 952623b07fd83caa3a83ee27bdea293f6bd4372f
+    steps:
+      - name: Check out the canary source without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Mint a short-lived token scoped to the exact private repository
+        id: msgint-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          private-key: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+          owner: messaging-intel
+          repositories: msgint-connectors
+          permission-contents: read
+
+      - name: Verify API access to the private repository and immutable commit
+        env:
+          MSGINT_GITHUB_TOKEN: ${{ steps.msgint-token.outputs.token }}
+        run: python3 scripts/preflight-msgint-github-app-access.py
+
+      - name: Check out only the reviewed immutable source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: messaging-intel/msgint-connectors
+          ref: ${{ env.MSGINT_REVISION }}
+          token: ${{ steps.msgint-token.outputs.token }}
+          path: .tmp/msgint-connectors
+          persist-credentials: false
+          fetch-depth: 1
+          fetch-tags: false
+          lfs: false
+          submodules: false
+
+      - name: Prove detached identity without executing repository code
+        run: |
+          set -euo pipefail
+          repo=.tmp/msgint-connectors
+          test "$(git -C "$repo" rev-parse HEAD)" = "$MSGINT_REVISION"
+          git -C "$repo" cat-file -e "$MSGINT_REVISION^{commit}"
+          test -z "$(git -C "$repo" status --porcelain)"
+          remote="$(git -C "$repo" remote get-url origin)"
+          case "$remote" in
+            https://github.com/messaging-intel/msgint-connectors|https://github.com/messaging-intel/msgint-connectors.git) ;;
+            *) echo "unexpected Messaging Intel remote identity" >&2; exit 1 ;;
+          esac
+          if git -C "$repo" config --local --get-regexp 'credential|extraheader' >/tmp/msgint-git-auth 2>/dev/null; then
+            echo "checkout persisted a Git credential configuration" >&2
+            sed 's/=.*/=<redacted>/' /tmp/msgint-git-auth >&2
+            exit 1
+          fi
+          test -z "$(git -C "$repo" submodule status 2>/dev/null || true)"
+          printf 'private_source_canary=ok repository=%s revision=%s\n' \
+            messaging-intel/msgint-connectors "$MSGINT_REVISION"
