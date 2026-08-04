@@ -77,6 +77,17 @@ jobs:
           if script.count(obsolete_guard) != 1:
               raise SystemExit('reviewed identity guard drifted')
           script = script.replace(obsolete_guard, '', 1)
+          newer_message = (
+              'workflowPath must be one direct ASCII '
+              '.github/workflows/<file>.yml or .yaml file'
+          )
+          compatible_message = (
+              'workflowPath must stay under .github/workflows as one direct '
+              'ASCII <file>.yml or .yaml file'
+          )
+          if script.count(newer_message) != 1:
+              raise SystemExit('reviewed workflow-path message drifted')
+          script = script.replace(newer_message, compatible_message, 1)
           Path('/tmp/den-1606-planner-finalize.sh').write_text(script, encoding='utf-8')
           PY
           bash -euo pipefail /tmp/den-1606-planner-finalize.sh
