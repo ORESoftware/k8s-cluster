@@ -67,7 +67,8 @@ jobs:
       - name: Materialize hardening changes
         run: |
           set -euo pipefail
-          python3 /tmp/materialize.py
+          cp /tmp/materialize.py .github/materialize/materialize.py
+          python3 .github/materialize/materialize.py
           python3 - <<'PY'
           from pathlib import Path
 
@@ -163,6 +164,8 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf .github/materialize/nats-hardening
+          rm -f .github/materialize/materialize.py
+          rmdir .github/materialize 2>/dev/null || true
           rm -f .github/workflows/agent-nats-messaging-hardening-materialize.yml
           git add -A
           git diff --cached --check
