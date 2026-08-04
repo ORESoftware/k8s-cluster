@@ -463,8 +463,7 @@ async fn webhook_guards_reject_bad_inputs_before_any_github_fetch() {
     }))
     .unwrap();
     let signature = webhook_signature(&short_revision);
-    let response =
-        post_webhook(&client, &server, "push", &short_revision, Some(&signature)).await;
+    let response = post_webhook(&client, &server, "push", &short_revision, Some(&signature)).await;
     let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(value["error"], "webhook revision is not a full commit SHA");
