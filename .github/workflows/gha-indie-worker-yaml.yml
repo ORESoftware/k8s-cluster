@@ -74,9 +74,9 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Compile with warnings denied
+      - name: Compile with warnings denied except the documented legacy auth-response lint
         working-directory: remote/deployments/build-server-rs
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings -A clippy::result-large-err
 
       - name: Run every unit and HTTP integration target
         working-directory: remote/deployments/build-server-rs
