@@ -1,0 +1,26 @@
+# Opt-in activation for the certificate and least-privilege phone account.
+# Nothing references this Application automatically. Read the runbook under
+# remote/argocd/vpn/argocd-mobile-prereqs before applying it.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-argocd-mobile-prereqs
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/argocd/vpn/argocd-mobile-prereqs
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vpn
+  syncPolicy:
+    automated:
+      # Do not let deletion or a transient render error prune certificate or
+      # foundational Argo CD configuration automatically.
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
