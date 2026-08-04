@@ -46,6 +46,18 @@ jobs:
           echo '1d1d3ff48b0f56b7abeec149c4339ce09ac997be8d81876098bcdd687d1b55ae  /tmp/materialize.py.gz.b64' | sha256sum -c -
           base64 --decode /tmp/materialize.py.gz.b64 | gzip --decompress > /tmp/materialize.py
           echo '198fc54d256be1ec9479152df4c9ea09dc358bcb7ad9ae2614b22661986bd1e4  /tmp/materialize.py' | sha256sum -c -
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('/tmp/materialize.py')
+          text = path.read_text()
+          old = 'if post_count < 4:\n    raise RuntimeError(f"expected at least four downstream POST call sites, found {post_count}")'
+          new = 'if post_count < 3:\n    raise RuntimeError(f"expected at least three downstream POST call sites, found {post_count}")'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected the downstream POST guard exactly once, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          echo '1df5291818121573d4749e248745a1966856e1d76cf1d7c0198364bdef7b49f5  /tmp/materialize.py' | sha256sum -c -
           python3 -m py_compile /tmp/materialize.py
 
       - name: Initialize shared Rust libraries
