@@ -1,0 +1,59 @@
+name: Messaging Intel YAML ambiguity
+
+on:
+  push:
+    branches:
+      - agent/msgint-yaml-ambiguity-tests-20260804
+    paths:
+      - remote/deployments/gha-clone-server-rs/tests/msgint_yaml_ambiguity.rs
+      - .github/workflows/msgint-yaml-ambiguity.yml
+  pull_request:
+    branches:
+      - agent/msgint-gha-clone-hardened-clean-20260804
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - remote/deployments/gha-clone-server-rs/tests/msgint_yaml_ambiguity.rs
+      - .github/workflows/msgint-yaml-ambiguity.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: msgint-yaml-ambiguity-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  parser-boundary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+      - name: Check only the new adversarial test formatting
+        run: rustfmt --edition 2021 --check remote/deployments/gha-clone-server-rs/tests/msgint_yaml_ambiguity.rs
+      - name: Reject warnings in the ambiguity target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo clippy --locked --test msgint_yaml_ambiguity -- -D warnings
+      - name: Execute the ambiguity target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --test msgint_yaml_ambiguity -- --nocapture
+
+  workflow-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate this workflow with pinned actionlint
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/msgint-yaml-ambiguity.yml
