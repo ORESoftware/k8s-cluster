@@ -18,6 +18,7 @@ pub const REQUEST_ID_HEADER: &str = "x-request-id";
 pub const LEDGER_POST_OPERATION: &str = "ledger.post_transaction";
 pub const LEDGER_TRANSACTION_RESOURCE: &str = "ledger_transaction";
 pub const BILLING_WRITE_SCOPE: &str = "billing:write";
+pub const LEGACY_SERVICE_SCOPE: &str = "legacy:service";
 
 const IDEMPOTENCY_KEY_MAX_BYTES: usize = 1024;
 const IDEMPOTENCY_FINGERPRINT_DOMAIN: &[u8] =
@@ -52,7 +53,7 @@ impl FinancialOperationContext {
                 actor_kind: "legacy_service",
                 shared_user_id: None,
                 shared_session_id: None,
-                authorization_scope,
+                authorization_scope: LEGACY_SERVICE_SCOPE,
                 aal: 0,
                 acr: None,
                 auth_time_unix: None,
@@ -115,6 +116,13 @@ pub struct FinancialOperationReceipt {
     pub event_id: Option<Uuid>,
     pub operation_correlation_id: Option<Uuid>,
     pub status: FinancialAuditStatus,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AuditedLedgerPost {
+    pub transaction_id: Uuid,
+    pub audit: FinancialOperationReceipt,
+    pub replayed: bool,
 }
 
 impl FinancialOperationReceipt {
@@ -294,11 +302,12 @@ fn validate_canonical_identifier(value: &str, field: &str) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::http::{HeaderValue, header::HeaderName};
+    use chrono::Utc;
+
     use crate::api::auth::{AuthorizedUser, Principal};
     use crate::memberships::TenantGrant;
     use crate::shared_auth::{Aal, SharedAuthIdentity};
-    use chrono::Utc;
-    use axum::http::{HeaderValue, header::HeaderName};
 
     fn principal(aal: Aal, session_id: Option<&str>) -> Principal {
         let tenant_id = Uuid::from_u128(1);
@@ -318,12 +327,14 @@ mod tests {
                 } else {
                     vec!["pwd".to_owned()]
                 },
-                acr: Some(if aal.is_aal2() {
-                    "urn:oresoftware:loa:2"
-                } else {
-                    "urn:oresoftware:loa:1"
-                }
-                .to_owned()),
+                acr: Some(
+                    if aal.is_aal2() {
+                        "urn:oresoftware:loa:2"
+                    } else {
+                        "urn:oresoftware:loa:1"
+                    }
+                    .to_owned(),
+                ),
                 issued_at: 1_700_000_000,
                 expires_at: 1_700_003_600,
             },
@@ -368,19 +379,36 @@ mod tests {
     }
 
     #[test]
+    fn service_actor_uses_the_explicit_legacy_scope() {
+        let context = FinancialOperationContext::from_request(
+            &Principal::Service,
+            &HeaderMap::new(),
+            BILLING_WRITE_SCOPE,
+        )
+        .unwrap();
+        assert_eq!(context.actor_kind, "legacy_service");
+        assert_eq!(context.authorization_scope, LEGACY_SERVICE_SCOPE);
+        assert_eq!(context.aal, 0);
+    }
+
+    #[test]
     fn shared_auth_actor_requires_a_canonical_session() {
-        assert!(FinancialOperationContext::from_request(
-            &principal(Aal::Aal2, None),
-            &HeaderMap::new(),
-            BILLING_WRITE_SCOPE,
-        )
-        .is_err());
-        assert!(FinancialOperationContext::from_request(
-            &principal(Aal::Aal2, Some(" session-1")),
-            &HeaderMap::new(),
-            BILLING_WRITE_SCOPE,
-        )
-        .is_err());
+        assert!(
+            FinancialOperationContext::from_request(
+                &principal(Aal::Aal2, None),
+                &HeaderMap::new(),
+                BILLING_WRITE_SCOPE,
+            )
+            .is_err()
+        );
+        assert!(
+            FinancialOperationContext::from_request(
+                &principal(Aal::Aal2, Some(" session-1")),
+                &HeaderMap::new(),
+                BILLING_WRITE_SCOPE,
+            )
+            .is_err()
+        );
     }
 
     #[test]
