@@ -84,12 +84,13 @@ test('unsupported GitHub Actions semantics fail closed instead of being approxim
     'remote/deployments/build-server-rs/src/gha_workflow.rs',
   );
 
+  for (const jobKey of ['strategy', 'services', 'container', 'env']) {
+    assert.match(source, new RegExp(`"${jobKey}"`));
+  }
+  assert.match(source, /job-level \{key\} is unsupported by the independent worker/);
+
   for (const rejected of [
-    'job-level strategy is unsupported',
-    'job-level services is unsupported',
-    'job-level container is unsupported',
-    'job-level env is unsupported',
-    'working-directory is unsupported',
+    'working-directory',
     'expressions inside run commands are unsupported',
     'must use an exact 40-hex commit SHA',
     'secret-bearing setup-action inputs are unsupported',
