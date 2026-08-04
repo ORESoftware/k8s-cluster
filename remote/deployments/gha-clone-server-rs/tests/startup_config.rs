@@ -67,10 +67,7 @@ fn invalid_boolean_flags_fail_before_network_startup() {
 #[test]
 fn invalid_port_values_fail_before_network_startup() {
     for value in ["not-a-port", "70000", "-1"] {
-        assert_configuration_error(
-            BTreeMap::from([("PORT", value)]),
-            "PORT is invalid:",
-        );
+        assert_configuration_error(BTreeMap::from([("PORT", value)]), "PORT is invalid:");
     }
 }
 
