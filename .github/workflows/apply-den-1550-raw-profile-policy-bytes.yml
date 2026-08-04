@@ -1,3 +1,4 @@
+# Owner-triggered one-shot carrier; it deletes itself after exact-head validation.
 name: Apply DEN-1550 raw profile-policy byte bound
 
 on:
