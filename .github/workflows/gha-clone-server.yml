@@ -41,8 +41,8 @@ on:
         type: boolean
         required: true
         default: false
-      run_msgint_profile_smoke:
-        description: Run the private Messaging Intel fixed-profile smoke with the repository GitHub App
+      run_msgint_private_smoke:
+        description: Run the exact private Messaging Intel smoke with a repository-scoped GitHub App token
         type: boolean
         required: true
         default: false
@@ -100,32 +100,105 @@ jobs:
       - name: Test idempotency, fixed profiles, and exact repository admission
         working-directory: remote/deployments/build-server-rs
         run: cargo test --locked --bin dd-build-server -- --nocapture
-      - name: Execute the credential-free hardened Node fixture
+      - name: Execute the credential-free hardened Node fixture directly
         working-directory: remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile
         run: |
           set -euo pipefail
-          npm ci --ignore-scripts
+          export npm_config_ignore_scripts=true
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run check
           npm run test:operator-config
           npm audit --audit-level=high
           npm test
 
-  msgint-profile-smoke:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_msgint_profile_smoke }}
+  node-profile-hermetic-smoke:
     needs: [rust, build-server-profile]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout continuity source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Execute both fixed profiles against the credential-free lifecycle-trap fixture
+        run: |
+          set -euo pipefail
+          fixture_source="$GITHUB_WORKSPACE/remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile"
+          python3 <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          source = Path("remote/deployments/build-server-rs/src/profiles.rs").read_text(encoding="utf-8")
+          image_match = re.search(r'const NODE_IMAGE: &str = "([^"]+)";', source)
+          if image_match is None or "@sha256:" not in image_match.group(1):
+              raise SystemExit("NODE_IMAGE must be digest-pinned")
+          output_dir = Path(os.environ["RUNNER_TEMP"])
+          (output_dir / "node-profile-image").write_text(image_match.group(1), encoding="utf-8")
+          for profile, constant in (
+              ("node-hardened-verify", "NODE_HARDENED_VERIFY_STEPS"),
+              ("node-hardened-test", "NODE_HARDENED_TEST_STEPS"),
+          ):
+              match = re.search(
+                  rf'const {constant}:.*?script: r#"(.*?)"#,\n\}}\];',
+                  source,
+                  flags=re.DOTALL,
+              )
+              if match is None:
+                  raise SystemExit(f"{constant} script was not found")
+              script_path = output_dir / f"{profile}.sh"
+              script_path.write_text(match.group(1) + "\n", encoding="utf-8")
+              script_path.chmod(0o500)
+          PY
+          profile_image="$(cat "$RUNNER_TEMP/node-profile-image")"
+          docker pull "$profile_image"
+          for profile in node-hardened-verify node-hardened-test; do
+            worktree="$(mktemp -d "$RUNNER_TEMP/${profile}-fixture.XXXXXX")"
+            cp -R "$fixture_source/." "$worktree/"
+            docker run --rm \
+              --pull=never \
+              --cap-drop=ALL \
+              --security-opt=no-new-privileges \
+              --pids-limit=256 \
+              --memory=2g \
+              --cpus=2 \
+              --read-only \
+              --tmpfs /tmp:rw,nosuid,nodev,noexec,size=512m \
+              --network=bridge \
+              -e CI=true \
+              -e HOME=/tmp/home \
+              -v "$worktree:/workspace:rw" \
+              -v "$RUNNER_TEMP/${profile}.sh:/profile.sh:ro" \
+              -w /workspace \
+              "$profile_image" \
+              bash /profile.sh
+          done
+
+  msgint-private-profile-smoke:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_msgint_private_smoke }}
+    needs: [rust, build-server-profile, node-profile-hermetic-smoke]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      MSGINT_REVISION: 952623b07fd83caa3a83ee27bdea293f6bd4372f
+      MSGINT_REVISION: 2ef2e4a1a5762b5289474f3da85ddf838b41bf3f
     steps:
       - name: Checkout continuity source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
+      - name: Require repository-scoped GitHub App credentials
+        env:
+          APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$APP_ID" || { echo "K8S_SUBMODULE_APP_ID is not configured" >&2; exit 1; }
+          test -n "$APP_PRIVATE_KEY" || { echo "K8S_SUBMODULE_APP_PRIVATE_KEY is not configured" >&2; exit 1; }
+
       - name: Mint a short-lived token for the exact private repository
         id: msgint-token
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.K8S_SUBMODULE_APP_ID }}
           private-key: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
@@ -157,48 +230,45 @@ jobs:
 
           source = Path("remote/deployments/build-server-rs/src/profiles.rs").read_text(encoding="utf-8")
           image_match = re.search(r'const NODE_IMAGE: &str = "([^"]+)";', source)
-          if image_match is None:
-              raise SystemExit("NODE_IMAGE was not found")
-
+          if image_match is None or "@sha256:" not in image_match.group(1):
+              raise SystemExit("NODE_IMAGE must be digest-pinned")
           output_dir = Path(os.environ["RUNNER_TEMP"])
           for profile, constant in (
               ("node-hardened-verify", "NODE_HARDENED_VERIFY_STEPS"),
               ("node-hardened-test", "NODE_HARDENED_TEST_STEPS"),
           ):
-              pattern = rf'const {constant}:.*?script: r#"(.*?)"#,\n\}}\];'
-              match = re.search(pattern, source, flags=re.DOTALL)
+              match = re.search(
+                  rf'const {constant}:.*?script: r#"(.*?)"#,\n\}}\];',
+                  source,
+                  flags=re.DOTALL,
+              )
               if match is None:
                   raise SystemExit(f"{constant} script was not found")
               script_path = output_dir / f"{profile}.sh"
               script_path.write_text(match.group(1) + "\n", encoding="utf-8")
               script_path.chmod(0o500)
-
           with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
               output.write(f"image={image_match.group(1)}\n")
               output.write(f"repo_dir={Path(os.environ['GITHUB_WORKSPACE']) / '.tmp/msgint-connectors'}\n")
           PY
 
-      - name: Execute both fixed profiles in the reviewed Node image
+      - name: Execute both fixed profiles in isolated worktrees
         env:
           PROFILE_IMAGE: ${{ steps.prepare-msgint.outputs.image }}
           MSGINT_REPO_DIR: ${{ steps.prepare-msgint.outputs.repo_dir }}
         run: |
           set -euo pipefail
           docker pull "$PROFILE_IMAGE"
-          resolved_image="$(docker image inspect --format='{{index .RepoDigests 0}}' "$PROFILE_IMAGE")"
-          case "$resolved_image" in
-            *@sha256:*) ;;
-            *) echo "Node profile image did not resolve to an immutable digest" >&2; exit 1 ;;
-          esac
-          printf 'resolved_node_profile_image=%s\n' "$resolved_image"
           for profile in node-hardened-verify node-hardened-test; do
             script="$RUNNER_TEMP/${profile}.sh"
             test -s "$script"
+            worktree="$(mktemp -d "$RUNNER_TEMP/${profile}.XXXXXX")"
+            cp -R "$MSGINT_REPO_DIR/." "$worktree/"
             docker run --rm \
               --pull=never \
               --cap-drop=ALL \
               --security-opt=no-new-privileges \
-              --pids-limit=512 \
+              --pids-limit=256 \
               --memory=4g \
               --cpus=2 \
               --read-only \
@@ -206,10 +276,10 @@ jobs:
               --network=bridge \
               -e CI=true \
               -e HOME=/tmp/home \
-              -v "$MSGINT_REPO_DIR:/workspace:rw" \
+              -v "$worktree:/workspace:rw" \
               -v "$script:/profile.sh:ro" \
               -w /workspace \
-              "$resolved_image" \
+              "$PROFILE_IMAGE" \
               bash /profile.sh
           done
 
@@ -237,7 +307,7 @@ jobs:
           version: 10.33.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: '22'
+          node-version: '22.23.1'
           cache: pnpm
           cache-dependency-path: remote/tests/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
@@ -262,74 +332,6 @@ jobs:
             echo 'credential-like material found in GHA continuity files' >&2
             exit 1
           fi
-
-  parent-format:
-    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'agent/msgint-gha-clone-operator-verify-20260804' }}
-    permissions:
-      contents: write
-    runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    steps:
-      - name: Check out the live parent branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: agent/msgint-gha-clone-operator-verify-20260804
-          fetch-depth: 0
-          persist-credentials: true
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
-        with:
-          toolchain: '1.90.0'
-          components: rustfmt, clippy
-      - name: Pin the tested Messaging Intel revision and format the crate
-        env:
-          OLD_MSGINT_REVISION: 7d905806b2000479bdacb9b206f33b26a707ba5e
-          NEW_MSGINT_REVISION: 952623b07fd83caa3a83ee27bdea293f6bd4372f
-        run: |
-          set -euo pipefail
-          python3 <<'PY'
-          import os
-          from pathlib import Path
-
-          path = Path('remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs')
-          text = path.read_text(encoding='utf-8')
-          old = os.environ['OLD_MSGINT_REVISION']
-          new = os.environ['NEW_MSGINT_REVISION']
-          if text.count(old) != 1:
-              raise SystemExit('expected exactly one old Messaging Intel revision pin')
-          if new in text:
-              raise SystemExit('new Messaging Intel revision already exists beside old pin')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
-          PY
-          cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all
-      - name: Keep the generated change inside the audited two-file boundary
-        run: |
-          set -euo pipefail
-          actual="$(git diff --name-only | sort)"
-          expected="$(printf '%s\n' \
-            remote/deployments/gha-clone-server-rs/src/lib.rs \
-            remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs \
-            | sort)"
-          if [ "$actual" != "$expected" ]; then
-            printf 'unexpected parent-format drift:\n%s\n' "$actual" >&2
-            exit 1
-          fi
-      - name: Recheck formatting, reject warnings, and run every target
-        working-directory: remote/deployments/gha-clone-server-rs
-        run: |
-          cargo fmt --all -- --check
-          cargo clippy --locked --all-targets -- -D warnings
-          cargo test --locked --all-targets -- --nocapture
-      - name: Commit the validated Rust baseline
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            remote/deployments/gha-clone-server-rs/src/lib.rs \
-            remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs
-          git diff --cached --check
-          git commit -m "test(gha-clone): validate current Messaging Intel review head"
-          git push origin HEAD:agent/msgint-gha-clone-operator-verify-20260804
 
   arc-parity-smoke:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_arc_smoke }}
