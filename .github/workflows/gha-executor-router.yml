@@ -104,6 +104,55 @@ jobs:
           retention-days: 7
           include-hidden-files: false
 
+  manifests:
+    name: GitOps, workflow syntax, and secret boundary
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/gha-executor-router.yml
+
+      - name: Install the pinned TypeScript contract toolchain
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install remote test dependencies
+        working-directory: remote/tests
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate GitOps and authority contracts
+        working-directory: remote/tests
+        run: pnpm exec tsx --test general/gha-executor-router-config.test.ts
+
+      - name: Reject committed credentials
+        run: |
+          set -euo pipefail
+          if grep -RIE \
+            'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|BEGIN (RSA |EC )?PRIVATE KEY|AWS_SECRET_ACCESS_KEY|HCLOUD_TOKEN' \
+            remote/deployments/gha-executor-router-rs \
+            remote/argocd/dd-next-runtime/dd-gha-executor-router* \
+            docs/operations/gha-executor-router-aws-hetzner.md; then
+            echo 'credential-like material found in executor-router files' >&2
+            exit 1
+          fi
+
   arc-parity:
     name: Optional sonus-ci ARC parity
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_arc_smoke }}
