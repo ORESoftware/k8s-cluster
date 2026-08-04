@@ -5,6 +5,7 @@
 pub mod audio_io;
 pub mod auth;
 pub mod db;
+pub mod docs_headers;
 pub mod error;
 pub mod handlers_speech;
 pub mod handlers_vapi;
@@ -16,7 +17,7 @@ pub mod state;
 pub mod vapi_client;
 
 use axum::extract::DefaultBodyLimit;
-use axum::middleware::from_fn_with_state;
+use axum::middleware::{from_fn, from_fn_with_state};
 use axum::{Extension, Router};
 use openapi::{ApiDocs, ApiDocuments};
 use state::AppState;
@@ -120,6 +121,7 @@ pub fn app(state: AppState) -> Router {
     public
         .merge(internal_unprotected)
         .merge(operator)
+        .layer(from_fn(docs_headers::apply))
         .layer(TimeoutLayer::with_status_code(
             axum::http::StatusCode::REQUEST_TIMEOUT,
             request_timeout(),
