@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'scripts/ops/remaining_mcp_fleet.py'
+      - 'scripts/ops/remaining_mcp_fleet_data.py'
+      - 'scripts/ops/remaining_mcp_fleet_templates.py'
       - 'scripts/ops/publish_remaining_mcp_fleet.py'
       - 'scripts/ops/test_remaining_mcp_fleet.py'
       - 'requests/remaining-mcp-fleet-2026-08-04.json'
@@ -13,6 +15,8 @@ on:
     branches: [main]
     paths:
       - 'scripts/ops/remaining_mcp_fleet.py'
+      - 'scripts/ops/remaining_mcp_fleet_data.py'
+      - 'scripts/ops/remaining_mcp_fleet_templates.py'
       - 'scripts/ops/publish_remaining_mcp_fleet.py'
       - 'scripts/ops/test_remaining_mcp_fleet.py'
       - 'requests/remaining-mcp-fleet-2026-08-04.json'
@@ -46,6 +50,8 @@ jobs:
         run: >-
           python3 -m py_compile
           scripts/ops/remaining_mcp_fleet.py
+          scripts/ops/remaining_mcp_fleet_data.py
+          scripts/ops/remaining_mcp_fleet_templates.py
           scripts/ops/publish_remaining_mcp_fleet.py
           scripts/ops/test_remaining_mcp_fleet.py
       - name: Run deterministic and adversarial fixtures
