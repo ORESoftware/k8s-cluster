@@ -17,11 +17,18 @@ if [[ ! "$owner" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$ ]]; then
   exit 64
 fi
 
+declare -A seen_repositories=()
 for repository in "${repositories[@]}"; do
   if [[ ! "$repository" =~ ^[A-Za-z0-9_.-]{1,100}$ ]] || [[ "$repository" == "." || "$repository" == ".." ]]; then
     echo "::error title=Invalid GitHub repository::${repository} is not a safe repository name"
     exit 64
   fi
+  normalized_repository="${repository,,}"
+  if [[ -n "${seen_repositories[$normalized_repository]:-}" ]]; then
+    echo "::error title=Duplicate GitHub repository::${repository} was requested more than once"
+    exit 64
+  fi
+  seen_repositories["$normalized_repository"]=1
 done
 
 app_id="${K8S_SUBMODULE_APP_ID:-}"
@@ -48,6 +55,7 @@ private_key_file="${work_dir}/app-private-key.pem"
 installation_response="${work_dir}/installation.json"
 token_request="${work_dir}/token-request.json"
 token_response="${work_dir}/token-response.json"
+token_fields_file="${work_dir}/token-fields"
 
 cleanup() {
   if [[ -d "$work_dir" ]]; then
@@ -164,26 +172,78 @@ if [[ "$token_status" != "201" ]]; then
   exit 1
 fi
 
-readarray -t token_fields < <(python3 - "$token_response" <<'PY'
+if ! python3 - "$token_response" "$owner" "${repositories[@]}" >"$token_fields_file" <<'PY'
 import json
 import pathlib
 import sys
 
-payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+payload_path = pathlib.Path(sys.argv[1])
+owner = sys.argv[2]
+requested_names = sys.argv[3:]
+payload = json.loads(payload_path.read_text(encoding="utf-8"))
+if not isinstance(payload, dict):
+    raise SystemExit("token response was not an object")
+
 token = payload.get("token")
 expires_at = payload.get("expires_at")
-permissions = payload.get("permissions", {})
-if not isinstance(token, str) or not token:
-    raise SystemExit("token response did not contain a token")
+permissions = payload.get("permissions")
+repository_records = payload.get("repositories")
+
+if (
+    not isinstance(token, str)
+    or not 20 <= len(token) <= 4096
+    or any(not character.isprintable() for character in token)
+    or "\n" in token
+    or "\r" in token
+):
+    raise SystemExit("token response did not contain a bounded printable single-line token")
+if not isinstance(expires_at, str) or not expires_at.strip():
+    raise SystemExit("token response did not contain an expiration time")
+if not isinstance(permissions, dict):
+    raise SystemExit("token response did not contain a permissions object")
 if permissions.get("contents") != "read":
     raise SystemExit("token did not receive contents:read")
-print(token)
-print(expires_at or "unknown")
-PY
-) || {
-  echo "::error title=Invalid GitHub App token response::GitHub did not return a contents-read installation token for ${owner}"
-  exit 1
+
+allowed_permissions = {"contents": "read", "metadata": "read"}
+unexpected_permissions = {
+    name: access
+    for name, access in permissions.items()
+    if allowed_permissions.get(name) != access
 }
+if unexpected_permissions:
+    raise SystemExit("token response contained permissions beyond contents:read and metadata:read")
+
+if not isinstance(repository_records, list):
+    raise SystemExit("token response did not identify its repository scope")
+
+actual = []
+for record in repository_records:
+    if not isinstance(record, dict):
+        raise SystemExit("token response contained an invalid repository record")
+    full_name = record.get("full_name")
+    if not isinstance(full_name, str) or "/" not in full_name:
+        raise SystemExit("token response repository record lacked full_name")
+    actual.append(full_name.casefold())
+
+expected = [f"{owner}/{name}".casefold() for name in requested_names]
+if len(actual) != len(set(actual)):
+    raise SystemExit("token response repeated a repository")
+if set(actual) != set(expected) or len(actual) != len(expected):
+    raise SystemExit("token response repository scope did not exactly match the request")
+
+print(token)
+print(expires_at)
+PY
+then
+  echo "::error title=Invalid GitHub App token response::GitHub did not return an exact repository-scoped contents-read installation token for ${owner}"
+  exit 1
+fi
+
+mapfile -t token_fields <"$token_fields_file"
+if (( ${#token_fields[@]} != 2 )); then
+  echo "::error title=Invalid GitHub App token response::validated token fields were incomplete for ${owner}"
+  exit 1
+fi
 
 installation_token="${token_fields[0]}"
 expires_at="${token_fields[1]}"
@@ -195,5 +255,5 @@ printf '%s' "$installation_token" >"$token_output"
 chmod 600 "$token_output"
 
 unset app_jwt installation_token private_key
-printf 'Minted a contents-read installation token for %s covering %d repository/repositories; expires %s.\n' \
+printf 'Minted an exact repository-scoped contents-read installation token for %s covering %d repository/repositories; expires %s.\n' \
   "$owner" "${#repositories[@]}" "$expires_at"
