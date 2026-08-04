@@ -126,7 +126,8 @@ jobs:
 
           doc_path = Path('docs/gha-executor-router-gitops.md')
           doc = doc_path.read_text()
-          doc = doc.replace('Core router: pull request #645', 'Core router: pull request #665', 1)
+          doc = doc.replace('Core router: pull request #645  ', 'Core router: pull request #665', 1)
+          doc = doc.replace('Core router: pull request #665  ', 'Core router: pull request #665', 1)
           secret_marker = """The route inventory contains paths, not secret values. The router rejects
           traversal, indirect children, duplicate paths, missing files, short values,
           symlink escapes, and oversized credential data.
