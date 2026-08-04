@@ -1,188 +1,262 @@
 # GitHub Actions continuity: ARC parity plus an independent mirror
 
-Linear: DEN-1550  
-Last reviewed: 2026-08-03
+Linear: DEN-1550, DEN-1549, DEN-1597  
+Last reviewed: 2026-08-04
 
-## Confirmed incident state
+## Current capacity evidence
 
-The Sonus Auris organization exhausted its July 2026 included GitHub-hosted
-Actions allowance. On August 3, after the expected monthly reset, failed
-workflow run `30642692260` was explicitly rerun. The new jobs
-`91768871098`, `91768871113`, `91768871116`, and `91768871157` again failed
-before runner setup and exposed neither steps nor logs.
+Fresh August 4, 2026 workflows in `ORESoftware/k8s-cluster` acquired real
+GitHub-hosted Ubuntu workers and executed setup, Rust, Node, and repository
+contract steps. Hosted Actions are therefore allocating for this repository at
+the time of review.
 
-This confirms a continuing organization-level runner allocation problem. It
-does not prove whether the current cause is included-minute exhaustion, a zero
-spending limit, payment policy, disabled Actions, or another billing/control
-restriction. Organization billing and Actions budget settings remain the
-authoritative administrative source.
+That evidence does **not** reveal the exact organization included-minute balance,
+spending limit, or billing-period usage. Numeric usage remains the responsibility
+of the dedicated billing-read GitHub App and its `/usage/summary` contract from
+DEN-1549. A job reaching a hosted runner proves allocation, not an exact balance.
 
-## Architecture
+## Honest parity boundary
 
-A custom service cannot honestly reproduce every proprietary GitHub Actions
-feature. Continuity is therefore split into two lanes.
+A custom server cannot truthfully reproduce every proprietary GitHub Actions
+feature. Continuity is split into two lanes with different authorities.
 
 ### Lane A: native parity through ARC
 
-Actions Runner Controller provides ephemeral self-hosted runners while GitHub
-continues to own workflow parsing, expressions, matrices, marketplace actions,
-checks, artifacts, caches, environments, OIDC, and branch-protection identity.
+Official Actions Runner Controller keeps GitHub's workflow parser, expressions,
+matrices, marketplace actions, checks, caches, artifacts, environments, OIDC,
+reusable workflows, and branch-protection identity. It places ephemeral trusted
+Linux workers in AWS and Hetzner.
 
 Planned labels:
 
 | Label | Capability | Isolation |
 | --- | --- | --- |
-| `sonus-ci` | Rust, Node, Python, Dart/Flutter analysis/tests/web/Linux | non-privileged ephemeral pod |
-| `sonus-browser` | Chromium Playwright/Puppeteer | non-privileged browser pod |
-| `sonus-ci-dind` | trusted service containers and image builds | separate privileged DinD sidecar, never host Docker socket |
-| `sonus-android-kvm` | Android emulator | dedicated KVM node pool and admission policy |
+| `sonus-ci` | Rust, Node, Python, Dart/Flutter analysis, tests, web and Linux | non-privileged one-job pod |
+| `sonus-browser` | Chromium Playwright/Puppeteer | non-privileged browser image |
+| `sonus-ci-dind` | trusted service containers and image builds | separately reviewed DinD sidecar; no host socket |
+| `sonus-android-kvm` | Android emulator | dedicated KVM node pool, taints, quota and admission policy |
 
-macOS/iOS and Windows native builds remain on GitHub-hosted runners or future
-dedicated native machines.
-
-The existing reviewed scaffold is under
-`remote/argocd/ci-runners/sonus-auris/`. Activation still requires an
-immutable runner image digest and a least-privilege GitHub App reconciled
-through External Secrets.
+macOS/iOS and Windows native builds remain GitHub-hosted or use future dedicated
+native machines. ARC registration uses a narrowly scoped GitHub App through
+External Secrets, never a pasted classic PAT.
 
 ### Lane B: independent workflow compatibility
 
-`remote/deployments/gha-clone-server-rs` parses a bounded static workflow
-subset and compiles supported jobs to fixed profiles on the existing
-`dd-build-server`.
+`gha-clone-server-rs` compiles a deliberately bounded static workflow subset to
+reviewed fixed profiles on `dd-build-server`. It exists for periods when hosted
+allocation, organization budget, or the GitHub runner path is constrained.
 
-The service never sends caller-selected shell or images to the executor. It
-submits only:
+The independent lane accepts only:
 
-- exact allowlisted `owner/repo`;
-- immutable 40-hex commit SHA;
-- fixed profile name;
-- deterministic idempotency identity.
+- exact allowlisted repositories and workflow paths;
+- immutable lowercase 40-hex commits;
+- static acyclic `needs` graphs;
+- supported Linux runner evidence;
+- fixed operator-reviewed build profiles; and
+- bounded requests, plans, logs, polling, runtime, and retained state.
 
-Supported profile classes initially cover Rust, Node, Python, Flutter,
-Playwright and Puppeteer. Static `needs` edges are validated and executed in
-deterministic topological order.
+It rejects dynamic matrices, reusable workflows, conditions, secret/OIDC
+expressions, arbitrary marketplace actions, service/job containers, mutable
+refs, non-Linux native execution, environments, deployments, caller-selected
+commands, images, Dockerfiles, contexts, manifests, headers, URLs, or Kubernetes
+objects.
 
-The planner returns separate fields for:
+A job may be ARC-compatible while independently unsupported. That distinction is
+preserved in every plan rather than approximated.
 
-- native ARC compatibility and required lane;
-- independent-lane support;
-- fixed profile, when supported;
-- exact reasons for every rejected independent behavior.
+## Component authorities
 
-## Fail-closed boundary
+| Component | Authority |
+| --- | --- |
+| GitHub Actions | native workflow orchestration and hosted runner allocation |
+| ARC | ephemeral self-hosted runner placement while retaining native semantics |
+| `gha-capacity-broker-rs` | hosted-versus-ARC policy and billing/capacity evidence |
+| `gha-clone-server-rs` | bounded workflow parsing, planning, run state and fixed-profile dispatch |
+| `gha-executor-router` | ordered independent executor readiness selection and provider-pinned status routing |
+| `dd-build-server` | fixed command/profile execution, jobs, artifacts, Postgres/NATS and Fiducia integration |
 
-The independent lane rejects dynamic matrices, reusable workflows, conditions,
-secret/OIDC expressions, arbitrary marketplace actions, service/job containers,
-macOS/Windows execution, environments, deployments, caller-selected commands,
-and mutable branch/tag execution.
+The clone server does not choose a cloud. The executor router does not parse
+workflow YAML. The build server does not accept arbitrary commands from either
+service.
 
-A job can be supported by ARC while rejected by the independent mirror. This is
-a normal and preserved distinction, not a failure to report.
+## Independent AWS/Hetzner routing
 
-## Failure webhook contract
+The router preserves the existing authenticated build-server API:
 
-The webhook is a fallback trigger, not a second unconstrained workflow runner.
-For `workflow_run`, it accepts work only after all of these conditions hold:
+```text
+POST /builds
+GET /builds/{id}
+x-build-server-auth
+build-server.v1 / run-profile
+```
 
-- the raw body has a valid `X-Hub-Signature-256` HMAC;
-- `X-GitHub-Delivery` is a UUID;
-- the repository is exactly allowlisted;
-- `workflow_run.head_sha` is a full immutable commit SHA;
-- `action` is `completed`;
-- the conclusion is in the configured failure set;
-- the workflow name is outside the exact recursion-exclusion set;
-- `workflow_run.path` exactly matches a reviewed repository rule;
-- the workflow fetched at that SHA passes the bounded compiler;
-- every planned job maps to an operator-reviewed fixed profile;
+AWS is the first independent executor because the reviewed build server and its
+supporting persistence already exist in the cluster. Hetzner is a separately
+identified secondary provider and remains disabled until its fixed-profile
+endpoint, TLS identity, credential, artifact policy, and provider-loss evidence
+exist.
+
+### No-duplicate rule
+
+Automatic AWS-to-Hetzner selection is allowed only at the **pre-submit**
+readiness boundary.
+
+1. The router probes reviewed executors in configured order.
+2. It may skip an executor whose bounded `/readyz` probe is already unavailable.
+3. It submits the immutable fixed-profile request to the first ready executor.
+4. After any `POST /builds` attempt, automatic cross-provider submission stops.
+
+A connection reset, timeout, HTTP 429, HTTP 5xx, redirect, oversized body,
+malformed acceptance response, or other uncertain result after POST is ambiguous:
+the first executor may already have persisted or started the deterministic
+request. The router fails closed rather than risking duplicate execution.
+
+An explicit HTTP 4xx contract rejection also fails closed. HTTP 202 acceptance
+produces a namespaced `<executor>~<upstream-id>` route. Every status read remains
+pinned to that executor; polling failure never creates a second job.
+
+Cross-provider resumption after an attempted POST requires a shared durable job
+and artifact model plus one Fiducia-fenced authoritative assignment. Version 1
+does not pretend readiness probing provides that transaction.
+
+## Idempotency boundary
+
+Merged PR #643 made `dd-build-server` deterministic-request handling safe inside
+one process:
+
+- identical request IDs and immutable payloads reattach to one retained job;
+- the same ID with changed execution inputs returns a conflict;
+- queue-full rejection does not consume the identity;
+- concurrent duplicate admission creates one job; and
+- pruning a terminal job releases its retained identity.
+
+Restart-durable and cross-replica identity remains a Postgres/Fiducia follow-up.
+The router forwards the deterministic request ID unchanged; it does not claim
+that forwarding alone creates durable idempotency.
+
+## Webhook fallback boundary
+
+The `workflow_run` fallback is not an unconstrained second runner. It dispatches
+only when all of these hold:
+
+- raw-body `X-Hub-Signature-256` HMAC is valid;
+- `X-GitHub-Delivery` is a valid UUID;
+- repository and workflow path are exactly allowlisted;
+- action is `completed` and conclusion is in the reviewed failure set;
+- the immutable workflow at `head_sha` passes the bounded compiler;
+- every job maps to a fixed profile;
+- recursion exclusions pass; and
 - the delivery has not already claimed an independent dispatch.
 
-The service records a delivery claim only after workflow retrieval, planning,
-and execution readiness succeed. Transient GitHub/API failures therefore remain
-retryable using the original delivery ID. A write lock serializes concurrent
-copies inside one process so only one copy can dispatch.
+Single-process delivery retention is bounded by TTL and entry count. Horizontal
+webhook execution requires a shared durable or Fiducia-fenced claim before more
+than one replica is allowed.
 
-Delivery retention is bounded by a nonzero TTL and entry cap. It is initially an
-in-memory map, which is sufficient only while the deployment uses one replica
-and the `Recreate` strategy. Horizontal webhook execution requires a shared
-durable claim store or a Fiducia-fenced authoritative claim. Scaling replicas
-without that shared claim would weaken the duplicate-delivery guarantee and is
-therefore outside the activation contract.
+## Security contract
 
-The GitHub workflow-read origin defaults to `https://api.github.com` and is
-explicitly declared in GitOps. Configuration rejects credentials, query strings,
-fragments, and non-HTTPS origins; plain HTTP is accepted only for loopback test
-servers so the complete fetch path can be exercised hermetically.
+- credentials are mounted from direct-child files under one absolute secret root;
+- mounted secrets are bounded single-line values without NUL, CR, or LF;
+- inbound router auth is distinct from executor auth;
+- the AWS router mount reuses the existing `dd-agent-secrets.SERVER_AUTH_SECRET`
+  authority instead of copying it into another backing secret;
+- Hetzner receives a separate credential only when enabled;
+- URL credentials, query strings, fragments, arbitrary paths and redirects are
+  rejected;
+- cross-cloud endpoints require HTTPS; plain HTTP is limited to loopback and
+  exact Kubernetes Service DNS;
+- the HTTP client follows no redirects;
+- error bodies and metrics are source-redacted and bounded;
+- pods have no service-account token, host socket, host path, kubeconfig, or
+  cloud execution credential; and
+- execution is disabled by default.
 
-## Existing build server integration
+## Inert GitOps state
 
-`dd-build-server` remains the executor and owns its existing containerd,
-BuildKit, ECR, artifact, NATS, Postgres, and Fiducia boundaries. DEN-1550 adds
-fixed `rust-verify`, `node-verify`, and `python-verify` profiles beside the
-existing Flutter and browser profiles.
+PR #650 stages the router in `dd-next-runtime` while keeping both continuity
+services at `replicas: 0` and both execution flags false.
 
-`gha-clone-server-rs` has no Kubernetes service-account token, hostPath, Docker
-socket, containerd socket, BuildKit socket, cloud credentials, or production
-kubeconfig.
+The review scaffold pins clone-server and router source to tested commit
+`6146668400441de15a8d8e9f513786096db9a730`, fetches that exact SHA without a
+branch, checks out detached `FETCH_HEAD`, verifies `rev-parse HEAD`, uses the
+committed Cargo lock, and names each binary explicitly.
 
-## AWS and Hetzner
+The router NetworkPolicy admits only:
 
-The GitOps resources are part of the shared `dd-next-runtime` render and
-therefore can exist in AWS and Hetzner. The deployment begins at zero replicas.
+- clone-server ingress on 8126;
+- cluster DNS; and
+- the in-cluster AWS `dd-build-server` on 8100.
 
-- AWS is the initial independent execution authority because `dd-build-server`,
-  BuildKit/containerd, ECR and its persistence already exist there.
-- Hetzner can host non-privileged ARC scale sets immediately.
-- A second independent executor in Hetzner requires shared artifact storage and
-  Fiducia-fenced authoritative claims before activation.
+There is no dormant public 443 or `0.0.0.0/0` egress while Hetzner is disabled.
+A later Hetzner activation must add one exact reviewed TLS/private-network
+route, not generic Internet access.
 
-## Secret contract
+The temporary Rust source-build containers are acceptable only because replicas
+remain zero. Activation requires immutable digest-pinned runtime images with
+SBOM, provenance, and vulnerability evidence.
 
-Backing secret: `dd/remote-dev/gha-clone-server-secrets`
+## Test evidence
 
-Required properties:
+The router suite uses the real compiled process plus two local Axum build-server
+doubles. It covers:
 
-- `auth_secret`
-- `github_webhook_secret`
-- `github_app_installation_token`
-- `build_server_auth`
+- AWS-first acceptance without a Hetzner POST;
+- failed AWS readiness selecting Hetzner before submission;
+- HTTP 4xx rejection without fallback;
+- ambiguous post-attempt HTTP 5xx without fallback or response-body leakage;
+- accepted AWS status remaining pinned after polling failure;
+- exact request-ID and provider-auth forwarding;
+- disabled execution, authentication, immutable request, and unknown-field
+  boundaries;
+- malformed duplicate configuration exiting before bind;
+- redirect refusal;
+- multiline inbound and executor secret rejection before bind; and
+- no secret values in startup errors, health, capabilities, metrics, or API
+  responses.
 
-`github_app_installation_token` must be produced by the approved GitHub App
-broker and rotated before expiry. Do not store a classic PAT in the backing
-secret.
+The pinned Rust 1.90 validation runs formatting, `cargo check --all-targets`,
+locked warnings-as-errors Clippy, and every unit, binary, HTTP, webhook, meta,
+adversarial, startup, and dual-provider process target. GitOps tests render the
+complete Kustomize overlay and verify source pins, projected secrets, zero
+replicas, disabled execution, exact network paths, Argo inclusion, and absence of
+credential markers.
 
-## Activation
+## Activation sequence
 
-1. Merge source, profiles, tests, workflow and GitOps resources.
-2. Provision and validate the ExternalSecret without displaying values.
-3. Build and digest-pin the ARC runner image.
-4. Register `sonus-ci` with `minRunners: 0` and a bounded maximum.
-5. Run the opt-in `arc-parity-smoke` workflow.
-6. Scale `dd-gha-clone-server` from zero to one with execution still disabled.
-7. Submit plan-only fixtures and compare classifications to the original GHA
-   workflows.
-8. Enable API execution only for trusted immutable commits and prove the meta
-   self-test through the real `dd-build-server`.
-9. Register only the `workflow_run` failure webhook through the secret-safe
-   registration script.
-10. Prove HMAC rejection, exact-path filtering, recursion exclusion, retry after
-    transient retrieval failure, concurrent duplicate suppression, and
-    build-server idempotency.
-11. Enable webhook execution only while the deployment remains single-replica,
-    until shared delivery persistence or Fiducia fencing is implemented.
-12. Keep positive GitHub-hosted budget for native platforms and emergency use.
+1. Merge the webhook hardening and exact router code after their permanent
+   read-only checks are terminal-successful.
+2. Merge the inert GitOps child; keep replicas zero and execution false.
+3. Revoke exposed classic PATs and provision separate least-privilege GitHub Apps
+   for ARC registration, billing read, workflow read, and approved mutations.
+4. Build and digest-pin ARC runner, clone server, executor router, build server,
+   and capacity broker images with SBOM and provenance.
+5. Register bounded AWS and Hetzner ARC scale sets with zero warm runners and run
+   provider-specific read-only smokes.
+6. Compare representative Rust, Node, browser, Flutter and artifact/check results
+   across hosted and ARC lanes.
+7. Scale clone server and router to one for plan-only and readiness tests while
+   execution remains false.
+8. Enable one exact AWS fixed-profile smoke and prove deterministic reattachment.
+9. Provision the Hetzner fixed-profile executor, certificate, credential, shared
+   artifact policy, and provider-addressable observability.
+10. Prove AWS-unready-before-submit selects Hetzner and AWS-accepted-then-
+    partitioned remains pinned to AWS without duplicate submission.
+11. Enable webhook execution only after HMAC, redelivery, recursion, idempotency,
+    rollback, and single-replica claim evidence.
+12. Keep positive hosted budget for native platforms and emergency fallback.
 
 ## Rollback
 
-- Set ARC scale-set maximum to zero or remove routing labels.
-- Set `dd-gha-clone-server` replicas to zero and disable webhook rules.
-- Do not bypass required checks. Restore hosted capacity or execute a reviewed
-  equivalent with retained evidence.
+- set ARC maxima to zero or restore hosted routing labels;
+- set clone-server and router execution flags false and replicas to zero;
+- restore clone-server routing directly to the reviewed AWS build server before
+  removing router configuration;
+- disable Hetzner and remove its egress before retiring its credential;
+- retain `dd-build-server` independently for approved fixed profiles; and
+- never bypass a required check because a continuity lane is unavailable.
 
 ## Repository boundary
 
-No standalone `ORESoftware/gha-clone-server.rs` repository currently exists.
-The first implementation remains in `ORESoftware/k8s-cluster` so source,
-executor profiles, manifests and policy contracts are reviewed atomically.
-Extraction is tracked through the protected repository-bootstrap workflow after
-the API and golden fixtures stabilize.
+The implementation remains in `ORESoftware/k8s-cluster` while parser, router,
+profiles, manifests, policy contracts, and rollback are reviewed together.
+Extraction to separate protected repositories is a later bootstrap operation,
+not a prerequisite for the inert or ARC lanes.
