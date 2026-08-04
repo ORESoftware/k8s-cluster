@@ -1,0 +1,121 @@
+name: durable-worker-sdk-namespace-migration
+
+on:
+  push:
+    branches:
+      - agent/durable-worker-typescript-sdk
+    paths:
+      - '.github/workflows/durable-worker-sdk-namespace.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: durable-worker-sdk-namespace-migration
+  cancel-in-progress: false
+
+jobs:
+  relocate-test-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout SDK branch with full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/durable-worker-typescript-sdk
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Move the hand-authored worker SDK out of generated API output
+        shell: bash
+        run: |
+          set -euo pipefail
+          old='remote/api-sdks/typescript/durable-worker'
+          new='remote/worker-sdks/typescript/durable-worker'
+          test -d "$old"
+          test ! -e "$new"
+          mkdir -p "$(dirname "$new")"
+          git mv "$old" "$new"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          old = 'remote/api-sdks/typescript/durable-worker'
+          new = 'remote/worker-sdks/typescript/durable-worker'
+          paths = subprocess.run(
+              ['git', 'grep', '-Il', old, '--', '.'],
+              check=False,
+              text=True,
+              capture_output=True,
+          ).stdout.splitlines()
+          for raw_path in paths:
+              path = Path(raw_path)
+              text = path.read_text(encoding='utf-8')
+              if old not in text:
+                  continue
+              path.write_text(text.replace(old, new), encoding='utf-8')
+
+          readme = Path('remote/worker-sdks/README.md')
+          readme.write_text(
+              '''# Worker SDKs\n\n'''
+              '''This tree contains hand-authored durable-worker clients and worker loops.\n'''
+              '''It is intentionally separate from `remote/api-sdks`, which is deterministic\n'''
+              '''generated output governed by `remote/tools/generate-api-sdks.mjs`.\n\n'''
+              '''Worker SDKs must preserve at-least-once delivery, idempotent submission,\n'''
+              '''renewable leases, monotonic fencing, and stale-result suppression.\n''',
+              encoding='utf-8',
+          )
+          PY
+
+      - name: Verify SDK and generated-code boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk='remote/worker-sdks/typescript/durable-worker'
+          npm --prefix "$sdk" run check
+          npm --prefix "$sdk" test
+          node --test remote/tests/general/durable-worker-typescript-sdk.test.mjs
+          node remote/tools/generate-api-sdks.mjs --check
+          (
+            cd "$sdk"
+            npm pack --dry-run --json
+          ) > "${RUNNER_TEMP}/durable-worker-sdk-pack.json"
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          const report = JSON.parse(await readFile(process.env.RUNNER_TEMP + '/durable-worker-sdk-pack.json', 'utf8'));
+          const files = new Set(report[0].files.map((entry) => entry.path));
+          for (const expected of ['README.md', 'index.d.ts', 'index.mjs', 'package.json']) {
+            if (!files.has(expected)) throw new Error(`package payload is missing ${expected}`);
+          }
+          if (files.has('test/client.test.mjs')) throw new Error('package payload leaked tests');
+          NODE
+          test ! -e remote/api-sdks/typescript/durable-worker
+          if git grep -n 'remote/api-sdks/typescript/durable-worker' -- .; then
+            echo 'stale generated-namespace reference remains' >&2
+            exit 1
+          fi
+          git diff --check
+
+      - name: Commit verified namespace migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            .github/workflows/durable-worker-typescript-sdk.yml \
+            .github/workflows/durable-worker-typescript-sdk-repair.yml \
+            remote/api-sdks/typescript/durable-worker \
+            remote/worker-sdks \
+            remote/tests/general/durable-worker-typescript-sdk.test.mjs
+          git commit -m 'refactor(workers): separate hand-authored worker SDKs from generated APIs'
+          git push origin HEAD:agent/durable-worker-typescript-sdk
