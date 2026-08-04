@@ -1,0 +1,685 @@
+# One-shot product builder for DEN-1635. It validates the exact atomic-admission
+# change, commits only source/tests/docs, and removes itself before review.
+name: Apply DEN-1635 atomic run admission once
+
+on:
+  pull_request:
+    branches:
+      - agent/den-1606-build-transport-hardening-current-dev
+    types:
+      - opened
+      - synchronize
+    paths:
+      - .github/workflows/apply-den-1635-atomic-run-admission-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1635-atomic-run-admission
+  cancel-in-progress: false
+
+jobs:
+  build-product:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-1635-atomic-run-admission'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1635-atomic-run-admission
+          fetch-depth: 1
+          persist-credentials: true
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Apply the reviewed atomic-admission transform
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          main_path = Path('remote/deployments/gha-clone-server-rs/src/main.rs')
+          source = main_path.read_text(encoding='utf-8')
+
+          replacements = [
+              (
+                  '#[derive(Clone, Debug, Serialize)]\n#[serde(rename_all = "camelCase")]\nstruct RunRecord {',
+                  '#[derive(Clone, Debug, PartialEq, Eq, Serialize)]\n#[serde(rename_all = "camelCase")]\nstruct RunRecord {',
+                  'RunRecord equality',
+              ),
+              (
+                  '#[derive(Clone, Debug, Serialize)]\n#[serde(rename_all = "camelCase")]\nenum RunStatus {',
+                  '#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]\n#[serde(rename_all = "camelCase")]\nenum RunStatus {',
+                  'RunStatus equality',
+              ),
+              (
+                  '#[derive(Clone, Debug, Serialize)]\n#[serde(rename_all = "camelCase")]\nstruct BuildSubmission {',
+                  '#[derive(Clone, Debug, PartialEq, Eq, Serialize)]\n#[serde(rename_all = "camelCase")]\nstruct BuildSubmission {',
+                  'BuildSubmission equality',
+              ),
+          ]
+          for old, new, label in replacements:
+              if source.count(old) != 1:
+                  raise SystemExit(f'expected one {label} anchor, found {source.count(old)}')
+              source = source.replace(old, new, 1)
+
+          create_run_anchor = 'async fn create_run(\n'
+          helper = '''fn queued_run_record(plan: &WorkflowPlan) -> RunRecord {
+              let now = now_ms();
+              RunRecord {
+                  id: Uuid::new_v4(),
+                  plan_id: plan.plan_id.clone(),
+                  repository: plan.repository.clone(),
+                  revision: plan.revision.clone(),
+                  workflow_path: plan.workflow_path.clone(),
+                  status: RunStatus::Queued,
+                  current_job: None,
+                  submissions: Vec::new(),
+                  error: None,
+                  created_at_ms: now,
+                  updated_at_ms: now,
+              }
+          }
+
+          '''.replace('          ', '')
+          if source.count(create_run_anchor) != 1:
+              raise SystemExit('create_run anchor is not unique')
+          source = source.replace(create_run_anchor, helper + create_run_anchor, 1)
+
+          old_create = '''    let now = now_ms();
+              let record = RunRecord {
+                  id: Uuid::new_v4(),
+                  plan_id: plan.plan_id.clone(),
+                  repository: plan.repository.clone(),
+                  revision: plan.revision.clone(),
+                  workflow_path: plan.workflow_path.clone(),
+                  status: RunStatus::Queued,
+                  current_job: None,
+                  submissions: Vec::new(),
+                  error: None,
+                  created_at_ms: now,
+                  updated_at_ms: now,
+              };
+              {
+                  let mut runs = state.runs.write().await;
+                  runs.insert(record.id, record.clone());
+                  prune_runs(&mut runs, state.config.max_runs);
+              }
+              let run_id = record.id;
+              tokio::spawn(async move {
+                  if let Err(error) = execute_plan(&state, run_id, plan).await {
+                      error!(%run_id, %error, "independent workflow run failed");
+                      update_run(&state, run_id, |run| {
+                          run.status = RunStatus::Failed;
+                          run.error = Some(error);
+                          run.current_job = None;
+                      })
+                      .await;
+                  }
+              });
+          '''.replace('      ', '')
+          new_create = '''    let record = queued_run_record(&plan);
+              let run_id = record.id;
+              let reservation_error = {
+                  let mut runs = state.runs.write().await;
+                  reserve_run_records(&mut runs, vec![record.clone()], state.config.max_runs).err()
+              };
+              if let Some(reason) = reservation_error {
+                  return (
+                      StatusCode::TOO_MANY_REQUESTS,
+                      Json(json!({
+                          "error": "run retention capacity is exhausted",
+                          "reason": reason
+                      })),
+                  )
+                      .into_response();
+              }
+
+              let runtime = match tokio::runtime::Handle::try_current() {
+                  Ok(runtime) => runtime,
+                  Err(error) => {
+                      rollback_reserved_runs(&mut state.runs.write().await, &[run_id]);
+                      return (
+                          StatusCode::SERVICE_UNAVAILABLE,
+                          Json(json!({
+                              "error": "run dispatch is unavailable",
+                              "reason": error.to_string()
+                          })),
+                      )
+                          .into_response();
+                  }
+              };
+              let task_state = state.clone();
+              runtime.spawn(async move {
+                  if let Err(error) = execute_plan(&task_state, run_id, plan).await {
+                      error!(%run_id, %error, "independent workflow run failed");
+                      update_run(&task_state, run_id, |run| {
+                          run.status = RunStatus::Failed;
+                          run.error = Some(error);
+                          run.current_job = None;
+                      })
+                      .await;
+                  }
+              });
+          '''.replace('      ', '')
+          if source.count(old_create) != 1:
+              raise SystemExit(f'expected one create_run insertion block, found {source.count(old_create)}')
+          source = source.replace(old_create, new_create, 1)
+
+          webhook_start = source.index('        if !remember_webhook_delivery(&state, &delivery).await {')
+          webhook_end = source.index(
+              '        return (\n            StatusCode::ACCEPTED,',
+              webhook_start,
+          )
+          old_webhook = source[webhook_start:webhook_end]
+          new_webhook = '''        if !remember_webhook_delivery(&state, &delivery).await {
+              return (
+                  StatusCode::ACCEPTED,
+                  Json(json!({
+                      "accepted": false,
+                      "event": event,
+                      "delivery": delivery,
+                      "repository": repository,
+                      "revision": revision,
+                      "reason": "duplicate GitHub delivery was already dispatched"
+                  })),
+              )
+                  .into_response();
+          }
+
+          let records = plans.iter().map(queued_run_record).collect::<Vec<_>>();
+          let run_ids = records.iter().map(|record| record.id).collect::<Vec<_>>();
+          let reservation_error = {
+              let mut runs = state.runs.write().await;
+              reserve_run_records(&mut runs, records, state.config.max_runs).err()
+          };
+          if let Some(reason) = reservation_error {
+              forget_webhook_delivery(&state, &delivery).await;
+              return (
+                  StatusCode::TOO_MANY_REQUESTS,
+                  Json(json!({
+                      "error": "run retention capacity is exhausted",
+                      "delivery": delivery,
+                      "reason": reason
+                  })),
+              )
+                  .into_response();
+          }
+
+          let runtime = match tokio::runtime::Handle::try_current() {
+              Ok(runtime) => runtime,
+              Err(error) => {
+                  rollback_reserved_runs(&mut state.runs.write().await, &run_ids);
+                  forget_webhook_delivery(&state, &delivery).await;
+                  return (
+                      StatusCode::SERVICE_UNAVAILABLE,
+                      Json(json!({
+                          "error": "webhook run dispatch is unavailable",
+                          "delivery": delivery,
+                          "reason": error.to_string()
+                      })),
+                  )
+                      .into_response();
+              }
+          };
+
+          for (run_id, plan) in run_ids.iter().copied().zip(plans.clone()) {
+              let task_state = state.clone();
+              runtime.spawn(async move {
+                  if let Err(error) = execute_plan(&task_state, run_id, plan).await {
+                      update_run(&task_state, run_id, |run| {
+                          run.status = RunStatus::Failed;
+                          run.error = Some(error);
+                          run.current_job = None;
+                      })
+                      .await;
+                  }
+              });
+          }
+          '''
+          source = source[:webhook_start] + new_webhook + source[webhook_end:]
+
+          remember_end = '''    true
+          }
+
+          fn prune_webhook_deliveries(
+          '''.replace('          ', '')
+          remember_replacement = '''    true
+          }
+
+          async fn forget_webhook_delivery(state: &AppState, delivery: &str) {
+              state.webhook_deliveries.write().await.remove(delivery);
+          }
+
+          fn prune_webhook_deliveries(
+          '''.replace('          ', '')
+          if source.count(remember_end) != 1:
+              raise SystemExit('remember_webhook_delivery tail is not unique')
+          source = source.replace(remember_end, remember_replacement, 1)
+
+          prune_start = source.index('fn prune_runs(runs: &mut BTreeMap<Uuid, RunRecord>, max_runs: usize) {')
+          prune_end = source.index('\n}\n\nfn validate_workflow_configuration(', prune_start) + 3
+          reservation_functions = '''fn run_is_terminal(run: &RunRecord) -> bool {
+              matches!(run.status, RunStatus::Succeeded | RunStatus::Failed)
+          }
+
+          fn reserve_run_records(
+              runs: &mut BTreeMap<Uuid, RunRecord>,
+              candidates: Vec<RunRecord>,
+              max_runs: usize,
+          ) -> Result<Vec<Uuid>, String> {
+              if max_runs == 0 {
+                  return Err("GHA_CLONE_MAX_RUNS must be greater than zero".into());
+              }
+              if candidates.len() > max_runs {
+                  return Err(format!(
+                      "candidate set contains {} runs but capacity is {max_runs}",
+                      candidates.len()
+                  ));
+              }
+
+              let mut candidate_ids = BTreeSet::new();
+              for candidate in &candidates {
+                  if !candidate_ids.insert(candidate.id) {
+                      return Err("candidate run IDs must be unique".into());
+                  }
+                  if runs.contains_key(&candidate.id) {
+                      return Err("candidate run ID already exists".into());
+                  }
+              }
+
+              let overflow = runs
+                  .len()
+                  .saturating_add(candidates.len())
+                  .saturating_sub(max_runs);
+              let mut evictable = runs
+                  .values()
+                  .filter(|run| run_is_terminal(run))
+                  .map(|run| (run.updated_at_ms, run.id))
+                  .collect::<Vec<_>>();
+              evictable.sort_by_key(|(updated_at_ms, id)| (*updated_at_ms, *id));
+              if evictable.len() < overflow {
+                  return Err(format!(
+                      "active runs consume capacity: retained={}, requested={}, max={max_runs}",
+                      runs.len(),
+                      candidates.len()
+                  ));
+              }
+
+              for (_, id) in evictable.into_iter().take(overflow) {
+                  runs.remove(&id);
+              }
+              let ids = candidates.iter().map(|record| record.id).collect::<Vec<_>>();
+              for record in candidates {
+                  runs.insert(record.id, record);
+              }
+              Ok(ids)
+          }
+
+          fn rollback_reserved_runs(runs: &mut BTreeMap<Uuid, RunRecord>, ids: &[Uuid]) {
+              for id in ids {
+                  runs.remove(id);
+              }
+          }
+          '''.replace('          ', '')
+          source = source[:prune_start] + reservation_functions + source[prune_end:]
+
+          unit_tests = '''
+              fn test_run(id: u128, status: RunStatus, updated_at_ms: u128) -> RunRecord {
+                  RunRecord {
+                      id: Uuid::from_u128(id),
+                      plan_id: format!("plan-{id}"),
+                      repository: "owner/repo".into(),
+                      revision: "0".repeat(40),
+                      workflow_path: ".github/workflows/ci.yml".into(),
+                      status,
+                      current_job: None,
+                      submissions: Vec::new(),
+                      error: None,
+                      created_at_ms: updated_at_ms,
+                      updated_at_ms,
+                  }
+              }
+
+              #[test]
+              fn active_capacity_rejection_is_atomic() {
+                  let mut runs = BTreeMap::from([
+                      (Uuid::from_u128(1), test_run(1, RunStatus::Running, 1)),
+                      (Uuid::from_u128(2), test_run(2, RunStatus::Queued, 2)),
+                  ]);
+                  let before = runs.clone();
+                  let error = reserve_run_records(
+                      &mut runs,
+                      vec![test_run(3, RunStatus::Queued, 3)],
+                      2,
+                  )
+                  .unwrap_err();
+                  assert!(error.contains("active runs consume capacity"));
+                  assert_eq!(runs, before);
+              }
+
+              #[test]
+              fn terminal_overflow_evicts_oldest_terminal_records_only() {
+                  let mut runs = BTreeMap::from([
+                      (Uuid::from_u128(1), test_run(1, RunStatus::Running, 1)),
+                      (Uuid::from_u128(2), test_run(2, RunStatus::Succeeded, 2)),
+                      (Uuid::from_u128(3), test_run(3, RunStatus::Failed, 3)),
+                      (Uuid::from_u128(4), test_run(4, RunStatus::Succeeded, 4)),
+                  ]);
+                  let ids = reserve_run_records(
+                      &mut runs,
+                      vec![
+                          test_run(5, RunStatus::Queued, 5),
+                          test_run(6, RunStatus::Queued, 6),
+                      ],
+                      4,
+                  )
+                  .unwrap();
+                  assert_eq!(ids, [Uuid::from_u128(5), Uuid::from_u128(6)]);
+                  assert!(runs.contains_key(&Uuid::from_u128(1)));
+                  assert!(!runs.contains_key(&Uuid::from_u128(2)));
+                  assert!(!runs.contains_key(&Uuid::from_u128(3)));
+                  assert!(runs.contains_key(&Uuid::from_u128(4)));
+                  assert_eq!(runs.len(), 4);
+              }
+
+              #[test]
+              fn multi_record_reservation_is_all_or_none() {
+                  let mut runs = BTreeMap::from([
+                      (Uuid::from_u128(1), test_run(1, RunStatus::Running, 1)),
+                      (Uuid::from_u128(2), test_run(2, RunStatus::Queued, 2)),
+                  ]);
+                  let before = runs.clone();
+                  assert!(reserve_run_records(
+                      &mut runs,
+                      vec![
+                          test_run(3, RunStatus::Queued, 3),
+                          test_run(4, RunStatus::Queued, 4),
+                      ],
+                      3,
+                  )
+                  .is_err());
+                  assert_eq!(runs, before);
+              }
+
+              #[test]
+              fn duplicate_candidate_and_existing_ids_fail_without_mutation() {
+                  let existing = test_run(1, RunStatus::Succeeded, 1);
+                  let mut runs = BTreeMap::from([(existing.id, existing)]);
+                  let before = runs.clone();
+                  assert!(reserve_run_records(
+                      &mut runs,
+                      vec![
+                          test_run(2, RunStatus::Queued, 2),
+                          test_run(2, RunStatus::Queued, 2),
+                      ],
+                      4,
+                  )
+                  .unwrap_err()
+                  .contains("unique"));
+                  assert_eq!(runs, before);
+                  assert!(reserve_run_records(
+                      &mut runs,
+                      vec![test_run(1, RunStatus::Queued, 2)],
+                      4,
+                  )
+                  .unwrap_err()
+                  .contains("already exists"));
+                  assert_eq!(runs, before);
+              }
+
+              #[test]
+              fn reserved_records_can_be_rolled_back_before_dispatch() {
+                  let mut runs = BTreeMap::new();
+                  let ids = reserve_run_records(
+                      &mut runs,
+                      vec![
+                          test_run(7, RunStatus::Queued, 7),
+                          test_run(8, RunStatus::Queued, 8),
+                      ],
+                      4,
+                  )
+                  .unwrap();
+                  rollback_reserved_runs(&mut runs, &ids);
+                  assert!(runs.is_empty());
+              }
+          '''.replace('          ', '')
+          final = source.rfind('\n}')
+          if final < 0:
+              raise SystemExit('could not locate final test-module brace')
+          source = source[:final] + unit_tests + source[final:]
+          main_path.write_text(source, encoding='utf-8')
+
+          retention_path = Path('remote/deployments/gha-clone-server-rs/tests/webhook_retention.rs')
+          retention = retention_path.read_text(encoding='utf-8')
+          retention = retention.replace(
+              '    net::TcpListener,\n    task::JoinHandle,',
+              '    net::TcpListener,\n    sync::RwLock,\n    task::JoinHandle,',
+              1,
+          )
+          old_spawn = '''async fn spawn_server(
+              github_url: &str,
+              build_url: &str,
+              delivery_ttl_seconds: u64,
+              max_deliveries: usize,
+          ) -> ServerProcess {
+          '''.replace('          ', '')
+          new_spawn = '''async fn spawn_server(
+              github_url: &str,
+              build_url: &str,
+              delivery_ttl_seconds: u64,
+              max_deliveries: usize,
+          ) -> ServerProcess {
+              spawn_server_with_max_runs(
+                  github_url,
+                  build_url,
+                  delivery_ttl_seconds,
+                  max_deliveries,
+                  32,
+              )
+              .await
+          }
+
+          async fn spawn_server_with_max_runs(
+              github_url: &str,
+              build_url: &str,
+              delivery_ttl_seconds: u64,
+              max_deliveries: usize,
+              max_runs: usize,
+          ) -> ServerProcess {
+          '''.replace('          ', '')
+          if retention.count(old_spawn) != 1:
+              raise SystemExit('webhook retention spawn helper anchor changed')
+          retention = retention.replace(old_spawn, new_spawn, 1)
+          retention = retention.replace(
+              '.env("GHA_CLONE_MAX_RUNS", "32")',
+              '.env("GHA_CLONE_MAX_RUNS", max_runs.to_string())',
+              1,
+          )
+          retention = retention.replace(
+              '    next_id: Arc<AtomicUsize>,\n}',
+              '    next_id: Arc<AtomicUsize>,\n    status: Arc<RwLock<String>>,\n}',
+              1,
+          )
+          impl_start = retention.index('impl MockBuildServer {')
+          impl_end = retention.index('\n}\n\nasync fn mock_build_submit', impl_start) + 3
+          new_impl = '''impl MockBuildServer {
+              async fn start() -> Self {
+                  Self::start_with_status("succeeded").await
+              }
+
+              async fn start_with_status(status: &str) -> Self {
+                  let state = MockBuildState {
+                      submissions: Arc::new(AtomicUsize::new(0)),
+                      next_id: Arc::new(AtomicUsize::new(0)),
+                      status: Arc::new(RwLock::new(status.to_string())),
+                  };
+                  let app = Router::new()
+                      .route("/builds", post(mock_build_submit))
+                      .route("/builds/:id", get(mock_build_status))
+                      .with_state(state.clone());
+                  let listener = TcpListener::bind(("127.0.0.1", 0))
+                      .await
+                      .expect("bind mock build server");
+                  let address = listener.local_addr().expect("build mock address");
+                  let task = tokio::spawn(async move {
+                      axum::serve(listener, app).await.expect("mock build server");
+                  });
+                  Self {
+                      base_url: format!("http://{address}"),
+                      state,
+                      task,
+                  }
+              }
+
+              async fn set_status(&self, status: &str) {
+                  *self.state.status.write().await = status.to_string();
+              }
+          }
+          '''.replace('          ', '')
+          retention = retention[:impl_start] + new_impl + retention[impl_end:]
+          old_status = '''async fn mock_build_status(Path(id): Path<String>) -> Json<Value> {
+              Json(json!({
+                  "id": id,
+                  "status": "succeeded",
+                  "error": null
+              }))
+          }
+          '''.replace('          ', '')
+          new_status = '''async fn mock_build_status(
+              State(state): State<MockBuildState>,
+              Path(id): Path<String>,
+          ) -> Json<Value> {
+              let status = state.status.read().await.clone();
+              Json(json!({
+                  "id": id,
+                  "status": status,
+                  "error": null
+              }))
+          }
+          '''.replace('          ', '')
+          if retention.count(old_status) != 1:
+              raise SystemExit('mock build status anchor changed')
+          retention = retention.replace(old_status, new_status, 1)
+
+          integration_test = '''
+
+          #[tokio::test]
+          async fn capacity_rejection_rolls_back_delivery_claim_for_signed_retry() {
+              let github = MockGithub::start().await;
+              let build = MockBuildServer::start_with_status("running").await;
+              let server = spawn_server_with_max_runs(
+                  &github.base_url,
+                  &build.base_url,
+                  3_600,
+                  8,
+                  1,
+              )
+              .await;
+              let client = Client::new();
+              let first_delivery = "71111111-1111-4111-8111-111111111111";
+              let retry_delivery = "72222222-2222-4222-8222-222222222222";
+
+              let (status, first) = post_workflow_run(&client, &server, first_delivery).await;
+              assert_eq!(status, StatusCode::ACCEPTED);
+              assert_eq!(first["accepted"], true);
+              wait_for_submissions(&build, 1).await;
+
+              let (status, rejected) = post_workflow_run(&client, &server, retry_delivery).await;
+              assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+              assert_eq!(rejected["error"], "run retention capacity is exhausted");
+              assert_eq!(retained_deliveries(&client, &server).await, 1);
+
+              let (status, retried_while_full) =
+                  post_workflow_run(&client, &server, retry_delivery).await;
+              assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+              assert_eq!(
+                  retried_while_full["error"],
+                  "run retention capacity is exhausted"
+              );
+              assert_eq!(retained_deliveries(&client, &server).await, 1);
+              assert_eq!(build.state.submissions.load(Ordering::SeqCst), 1);
+
+              build.set_status("succeeded").await;
+              sleep(Duration::from_millis(1_200)).await;
+
+              let (status, accepted_retry) =
+                  post_workflow_run(&client, &server, retry_delivery).await;
+              assert_eq!(status, StatusCode::ACCEPTED);
+              assert_eq!(accepted_retry["accepted"], true);
+              wait_for_submissions(&build, 2).await;
+              assert_eq!(retained_deliveries(&client, &server).await, 2);
+
+              let (status, duplicate) = post_workflow_run(&client, &server, retry_delivery).await;
+              assert_eq!(status, StatusCode::ACCEPTED);
+              assert_eq!(duplicate["accepted"], false);
+              assert_eq!(
+                  duplicate["reason"],
+                  "duplicate GitHub delivery was already dispatched"
+              );
+              assert_eq!(build.state.submissions.load(Ordering::SeqCst), 2);
+          }
+          '''.replace('          ', '')
+          retention = retention.rstrip() + integration_test + '\n'
+          retention_path.write_text(retention, encoding='utf-8')
+
+          docs = Path('docs/gha-clone-run-admission-boundary.md')
+          docs.write_text('''# GHA clone run-admission and durability boundary
+
+          The independent clone server reserves its complete run set atomically before starting any executor task. An API request reserves one run; an executing webhook reserves every planned workflow run as one all-or-none candidate set.
+
+          ## Capacity and retention
+
+          `GHA_CLONE_MAX_RUNS` is a strictly positive bound. Admission may evict only the oldest terminal (`succeeded` or `failed`) records. Queued and running records are never evicted to make room. Duplicate candidate IDs, collisions with retained IDs, and over-capacity sets fail without mutating the run map.
+
+          A webhook delivery claim is retained only after successful admission. If capacity or pre-dispatch runtime validation fails, the newly reserved run IDs and delivery claim are rolled back so a legitimate signed retry is not suppressed. A successfully admitted delivery remains a stable duplicate no-op.
+
+          ## Durability and scaling
+
+          Run records and delivery claims are process-local. This contract is safe for one active clone-server replica only. Restart-transparent retry, horizontal replicas, or takeover require a shared durable assignment and delivery ledger with Fiducia-fenced ownership plus durable build and artifact identity. GitOps remains inert for horizontal activation until that separate certification exists.
+
+          This service remains a bounded fixed-profile fallback. GitHub-hosted Actions and official Actions Runner Controller retain native GitHub Actions orchestration semantics.
+          '''.replace('          ', ''), encoding='utf-8')
+
+          Path('.github/workflows/apply-den-1635-atomic-run-admission-once.yml').unlink()
+          PY
+
+      - name: Validate every clone-server target and continuity contract
+        run: |
+          set -euo pipefail
+          cd remote/deployments/gha-clone-server-rs
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+          cd ../../..
+          corepack enable
+          cd remote/tests
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts
+
+      - name: Commit only the validated product diff
+        run: |
+          set -euo pipefail
+          git diff --check
+          test ! -e .github/workflows/apply-den-1635-atomic-run-admission-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          allowed='^(\.github/workflows/apply-den-1635-atomic-run-admission-once\.yml|docs/gha-clone-run-admission-boundary\.md|remote/deployments/gha-clone-server-rs/(src/main\.rs|tests/webhook_retention\.rs))$'
+          unexpected="$(git diff --cached --name-only | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected staged paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          git commit -m 'fix(DEN-1635): reserve clone runs atomically'
+          git push origin HEAD:agent/den-1635-atomic-run-admission
