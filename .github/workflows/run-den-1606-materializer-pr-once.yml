@@ -76,21 +76,61 @@ jobs:
           ]
           script = '\n'.join(script_lines) + '\n'
 
-          brittle = """if lib.count(old_path) != 1:
+          replacements = [
+              (
+                  """if lib.count(old_path) != 1:
               raise SystemExit('unexpected planner workflow-path validator')
           lib = lib.replace(old_path, new_path, 1)
-          """
-          robust = """path_start = lib.find('fn valid_workflow_path(value: &str) -> bool {')
+          """,
+                  """path_start = lib.find('fn valid_workflow_path(value: &str) -> bool {')
           if path_start == -1:
               raise SystemExit('could not locate planner workflow-path validator')
           path_end = lib.find('\\n}\\n', path_start)
           if path_end == -1:
               raise SystemExit('could not locate planner workflow-path validator end')
           lib = lib[:path_start] + new_path + lib[path_end + 3:]
-          """
-          if script.count(brittle) != 1:
-              raise SystemExit('reviewed materializer no longer has the expected workflow-path replacement')
-          script = script.replace(brittle, robust, 1)
+          """,
+                  'workflow-path validator replacement',
+              ),
+              (
+                  """if lib.count(path_test_marker) != 1:
+              raise SystemExit('unexpected workflow path test')
+          lib = lib.replace(path_test_marker, path_test_replacement, 1)
+          """,
+                  """path_test_anchor = '        assert!(errors.contains(\"workflowPath\"));\\n\\n        let limits = PlannerLimits {'
+          path_test_insert = '''        assert!(errors.contains("workflowPath"));
+
+                  let mut nested_path_request = request("jobs: {}");
+                  nested_path_request.workflow_path = ".github/workflows/nested/ci.yml".into();
+                  assert!(build_plan(&nested_path_request, &PlannerLimits::default())
+                      .unwrap_err()
+                      .join("\\n")
+                      .contains("workflowPath"));
+
+                  let limits = PlannerLimits {'''.replace('          ', '')
+          if lib.count(path_test_anchor) != 1:
+              raise SystemExit('could not locate workflow path test anchor')
+          lib = lib.replace(path_test_anchor, path_test_insert, 1)
+          """,
+                  'workflow-path test insertion',
+              ),
+              (
+                  """if lib.count(ambiguity_marker) != 1:
+              raise SystemExit('unexpected workflow semantics test marker')
+          lib = lib.replace(ambiguity_marker, ambiguity_test + ambiguity_marker, 1)
+          """,
+                  """ambiguity_anchor = '    #[test]\\n    fn workflow_and_working_directory_semantics_are_not_silently_ignored() {'
+          if lib.count(ambiguity_anchor) != 1:
+              raise SystemExit('could not locate workflow semantics test anchor')
+          lib = lib.replace(ambiguity_anchor, ambiguity_test + ambiguity_anchor, 1)
+          """,
+                  'YAML ambiguity test insertion',
+              ),
+          ]
+          for brittle, robust, label in replacements:
+              if script.count(brittle) != 1:
+                  raise SystemExit(f'reviewed materializer no longer has expected {label}')
+              script = script.replace(brittle, robust, 1)
 
           exec(compile(script, str(workflow), 'exec'), {'__name__': '__main__'})
           for path in (
