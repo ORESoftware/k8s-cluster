@@ -38,7 +38,10 @@ fn exact_threefa_fixture_compiles_to_node_then_generated_rust() {
 
     let node = job(&plan, "node_contracts");
     assert_eq!(node.arc_lane, "sonus-ci");
-    assert_eq!(node.independent_profile.as_deref(), Some("node-hardened-test"));
+    assert_eq!(
+        node.independent_profile.as_deref(),
+        Some("node-hardened-test")
+    );
     assert!(node.independent_reasons.is_empty());
 
     let rust = job(&plan, "generated_rust");
@@ -66,7 +69,10 @@ fn generated_rust_sequence_is_exact_ordered_and_non_extensible() {
 
     for (label, workflow) in [("reordered", reordered), ("extra", extra)] {
         let plan = compile(&workflow);
-        assert!(!plan.independent_executable, "{label} workflow was executable");
+        assert!(
+            !plan.independent_executable,
+            "{label} workflow was executable"
+        );
         let rust = job(&plan, "generated_rust");
         assert!(!rust.independent_supported);
         assert_eq!(rust.independent_profile, None);
@@ -131,7 +137,10 @@ fn fixture_is_static_secret_free_and_uses_only_pinned_setup_actions() {
         "cargo publish",
         "npm install",
     ] {
-        assert!(!WORKFLOW.contains(forbidden), "fixture contains {forbidden:?}");
+        assert!(
+            !WORKFLOW.contains(forbidden),
+            "fixture contains {forbidden:?}"
+        );
     }
     assert!(WORKFLOW.contains("npm ci --ignore-scripts"));
     assert!(WORKFLOW.contains("generated/rust/Cargo.toml"));
