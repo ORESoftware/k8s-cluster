@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import importlib.util
 import json
 from pathlib import Path
-import re
 import subprocess
 import sys
 import tempfile
@@ -11,11 +9,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 MODULE_PATH = ROOT / "scripts/ops/publish_requested_mcp_servers.py"
-SPEC = importlib.util.spec_from_file_location("requested_mcp_publisher", MODULE_PATH)
-assert SPEC is not None and SPEC.loader is not None
-MODULE = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = MODULE
-SPEC.loader.exec_module(MODULE)
+sys.path.insert(0, str(MODULE_PATH.parent))
+import requested_mcp_publisher as MODULE
 
 
 class ManifestTests(unittest.TestCase):
@@ -76,8 +71,15 @@ class ManifestTests(unittest.TestCase):
 
 
 class SourceSafetyTests(unittest.TestCase):
+    @staticmethod
+    def publisher_source() -> str:
+        return "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted((MODULE_PATH.parent / "requested_mcp_publisher").glob("*.py"))
+        )
+
     def test_source_has_no_force_push_or_token_bearing_remote(self) -> None:
-        source = MODULE_PATH.read_text(encoding="utf-8")
+        source = self.publisher_source()
         self.assertNotIn("--force", source)
         self.assertNotRegex(source, r"https://[^\s\"']*@github\.com")
         self.assertIn("GIT_ASKPASS_REQUIRE", source)
@@ -85,11 +87,11 @@ class SourceSafetyTests(unittest.TestCase):
         self.assertIn("bootstrap_is_ancestor", source)
 
     def test_api_paths_are_bounded_and_redirect_free_by_construction(self) -> None:
-        source = MODULE_PATH.read_text(encoding="utf-8")
+        source = self.publisher_source()
         self.assertIn("MAX_API_RESPONSE_BYTES", source)
         self.assertIn("timeout=30", source)
         self.assertIn("X-GitHub-Api-Version", source)
-        self.assertNotIn("allow_redirects", source)
+        self.assertIn("_NoRedirect", source)
 
     def test_script_compiles_and_check_mode_runs(self) -> None:
         subprocess.run([sys.executable, "-m", "py_compile", str(MODULE_PATH)], check=True)
