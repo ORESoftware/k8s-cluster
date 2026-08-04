@@ -34,16 +34,24 @@ def resolve_workflow() -> None:
     path = Path(".github/workflows/gha-clone-server.yml")
     source = path.read_text(encoding="utf-8")
     blocks = list(CONFLICT.finditer(source))
-    if len(blocks) != 5:
-        raise SystemExit(f"expected five workflow conflicts, found {len(blocks)}")
+    if len(blocks) != 7:
+        raise SystemExit(f"expected seven workflow conflicts, found {len(blocks)}")
 
+    rust_test_name = (
+        "      - name: Run unit, process, webhook, meta, StreemPilot mirror, "
+        "and Messaging Intel integration tests\n"
+    )
+    profile_test_name = (
+        "      - name: Test fixed-profile registry, reviewed fallbacks, and "
+        "Messaging Intel hardened profiles\n"
+    )
     contract_name = (
         "      - name: Validate deployment, routing, execution, webhook, "
-        "activation, and Messaging Intel boundaries\n"
+        "activation, StreemPilot, and Messaging Intel boundaries\n"
     )
     contract_body = "\n".join(
         [
-            "            general/gha-clone-webhook-config.test.ts \\",
+            "            general/gha-clone-streempilot-config.test.ts \\",
             "            general/gha-clone-msgint-config.test.ts",
             "          node --test general/gha-executor-router-activation.test.mjs",
             "      - name: Install pinned kubectl renderer",
@@ -61,10 +69,13 @@ def resolve_workflow() -> None:
             "          test \"$(grep -c 'replicas: 0' \"$rendered\")\" -ge 2",
         ]
     ) + "\n"
-    credential_scan = (
-        "            docs/gha-executor-router-activation.md \\\n"
-        "            docs/gha-profile-repository-admission.md; then\n"
-    )
+    credential_scan = "\n".join(
+        [
+            "            docs/gha-executor-router-activation.md \\",
+            "            docs/streempilot-ci-continuity.md \\",
+            "            docs/gha-profile-repository-admission.md; then",
+        ]
+    ) + "\n"
 
     def replacement(match: re.Match[str]) -> str:
         index = replacement.index
@@ -73,10 +84,14 @@ def resolve_workflow() -> None:
         if index in (0, 1):
             return union_lines(left, right)
         if index == 2:
-            return contract_name
+            return rust_test_name
         if index == 3:
-            return contract_body
+            return profile_test_name
         if index == 4:
+            return contract_name
+        if index == 5:
+            return contract_body
+        if index == 6:
             return credential_scan
         raise AssertionError(index)
 
@@ -86,8 +101,10 @@ def resolve_workflow() -> None:
         raise SystemExit("workflow conflict markers remain")
     for required in (
         "general/gha-executor-router-activation.test.mjs",
+        "general/gha-clone-streempilot-config.test.ts",
         "general/gha-clone-msgint-config.test.ts",
         "docs/gha-executor-router-activation.md",
+        "docs/streempilot-ci-continuity.md",
         "docs/gha-profile-repository-admission.md",
     ):
         if required not in resolved:
