@@ -205,9 +205,27 @@ jobs:
               '    );',
               '',
           ])
-          http = replace_once_or_already(
-              http, unsupported_old, unsupported_new, "unsupported event assertion"
+          unsupported_start = http.index(
+              '    let unsupported = serde_json::to_vec(&json!({\n'
           )
+          unsupported_end = http.index(
+              '    let short_revision = serde_json::to_vec(&json!({\n',
+              unsupported_start,
+          )
+          unsupported_block = http[unsupported_start:unsupported_end]
+          if unsupported_new not in unsupported_block:
+              if unsupported_block.count(unsupported_old) != 1:
+                  raise SystemExit(
+                      "unsupported event fixture did not contain one reviewed assertion block"
+                  )
+              unsupported_block = unsupported_block.replace(
+                  unsupported_old, unsupported_new, 1
+              )
+              http = (
+                  http[:unsupported_start]
+                  + unsupported_block
+                  + http[unsupported_end:]
+              )
 
           short_old = "\n".join([
               '    let short_revision = serde_json::to_vec(&json!({',
