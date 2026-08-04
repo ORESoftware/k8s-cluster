@@ -1,0 +1,128 @@
+# DIGEST-GATED AND INERT: intentionally excluded from active cluster overlays.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gha-executor-router
+  namespace: gha-continuity
+  labels:
+    app: gha-executor-router
+  annotations:
+    dd.dev/activation-state: disabled-until-provider-parity
+    dd.dev/linear-issue: DEN-1597
+spec:
+  replicas: 0
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: gha-executor-router
+  template:
+    metadata:
+      labels:
+        app: gha-executor-router
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: router
+          image: ghcr.io/oresoftware/gha-executor-router@sha256:REPLACE_GHA_EXECUTOR_ROUTER_IMAGE_DIGEST
+          imagePullPolicy: IfNotPresent
+          command: ["/usr/local/bin/gha-executor-router"]
+          envFrom:
+            - configMapRef:
+                name: gha-executor-router
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: "8126"
+            - name: RUST_LOG
+              value: gha_executor_router=info
+            - name: GHA_EXECUTOR_ROUTER_AUTH_PATH
+              value: /var/run/gha-executor-router/inbound/auth
+          ports:
+            - name: http
+              containerPort: 8126
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+              ephemeral-storage: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+              ephemeral-storage: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: inbound-auth
+              mountPath: /var/run/gha-executor-router/inbound
+              readOnly: true
+            - name: aws-auth
+              mountPath: /var/run/gha-executor-router/aws
+              readOnly: true
+            - name: hetzner-auth
+              mountPath: /var/run/gha-executor-router/hetzner
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: inbound-auth
+          secret:
+            secretName: gha-executor-router-inbound
+            items:
+              - key: auth
+                path: auth
+                mode: 0400
+        - name: aws-auth
+          secret:
+            secretName: gha-executor-router-aws
+            items:
+              - key: auth
+                path: auth
+                mode: 0400
+        - name: hetzner-auth
+          secret:
+            secretName: gha-executor-router-hetzner
+            items:
+              - key: auth
+                path: auth
+                mode: 0400
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
