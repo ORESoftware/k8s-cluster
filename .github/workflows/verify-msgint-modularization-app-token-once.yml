@@ -24,8 +24,8 @@ jobs:
       TARGET_REPOSITORY: msgint-api-server.rs
       TARGET_REF: ci/exact-modularization-16d2a6f5
       TARGET_SHA: 16d2a6f53460f0c34b8f4c1c2032447202b7df04
-      TOKEN_FILE: ${{ runner.temp }}/msgint-installation.token
-      SOURCE_DIR: ${{ runner.temp }}/msgint-api-server
+      TOKEN_FILE: /tmp/msgint-installation.token
+      SOURCE_DIR: /tmp/msgint-api-server
       MSGINT_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/msgint_test
       MSGINT_CONSENT_POLICY_VERSION: research-consent-v2
     services:
