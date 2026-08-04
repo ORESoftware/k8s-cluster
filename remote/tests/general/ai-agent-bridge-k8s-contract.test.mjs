@@ -26,16 +26,37 @@ function envBlock(name) {
   return deployment.slice(start, next === -1 ? deployment.length : next);
 }
 
-test('bridge deployment executes the current Rust binary', () => {
+test('bridge deployment builds and executes the current Rust binary through a checked path', () => {
   assert.match(
     deployment,
-    /\/release\/fiducia-ai-agent-bridge(?:["'\s]|$)/,
-    'the deployment must execute fiducia-ai-agent-bridge',
+    /bin_name="fiducia-ai-agent-bridge"/,
+    'the deployment must select fiducia-ai-agent-bridge as the runtime binary',
+  );
+  assert.match(deployment, /cargo build --release --locked/);
+  assert.match(
+    deployment,
+    /built="\$\{CARGO_TARGET_DIR:-target\}\/release\/\$\{bin_name\}"/,
+    'the executable path must be derived from the selected binary name',
+  );
+  assert.match(
+    deployment,
+    /if \[ ! -x "\$\{built\}" \]; then/,
+    'the derived executable must be verified before launch',
+  );
+  assert.match(
+    deployment,
+    /exec "\$\{built\}"/,
+    'the verified executable path must replace the shell process',
+  );
+  assert.doesNotMatch(
+    deployment,
+    /bin_name="ai-agent-bridge"/,
+    'the retired ai-agent-bridge binary name must not return',
   );
   assert.doesNotMatch(
     deployment,
     /\/release\/ai-agent-bridge(?:["'\s]|$)/,
-    'the retired ai-agent-bridge binary name must not return',
+    'the retired direct binary path must not return',
   );
 });
 
