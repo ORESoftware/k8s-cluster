@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Fail-closed three-way reconciliation for the reviewed Messaging Intel product."""
 
+# Synchronization trigger for the registered v2 workflow.
+
 from __future__ import annotations
 
 import pathlib
