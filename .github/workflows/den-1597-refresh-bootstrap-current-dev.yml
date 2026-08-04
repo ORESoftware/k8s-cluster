@@ -1,0 +1,77 @@
+# One-shot PR finalizer. Removes itself after merging current dev and proving the fallback contract.
+name: DEN-1597 refresh immutable bootstrap on current dev
+
+on:
+  pull_request:
+    branches:
+      - dev
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1597-refresh-bootstrap-current-dev
+  cancel-in-progress: false
+
+jobs:
+  refresh-and-verify:
+    if: github.head_ref == 'audit/immutable-gha-clone-bootstrap-20260804'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: audit/immutable-gha-clone-bootstrap-20260804
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Merge the current reviewed dev line
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git fetch origin dev
+          git merge --no-edit origin/dev
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # master 2026-07-26
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v4.4.0
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - name: Prove the immutable fallback and current continuity boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --dir remote/tests install --frozen-lockfile
+          pnpm --dir remote/tests exec tsx --test \
+            general/gha-clone-server-bootstrap-pin.test.ts \
+            general/gha-clone-server-config.test.ts \
+            general/security-hardening-contract.test.ts
+          node remote/tools/check-observability-coverage.mjs
+          cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all -- --check
+          cargo clippy --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --locked --all-targets -- -D warnings
+          cargo test --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --locked --all-targets
+          git diff --check
+      - name: Remove the finalizer and publish the verified refresh
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/den-1597-refresh-bootstrap-current-dev.yml
+          git add \
+            .github/workflows/gha-clone-bootstrap-contract.yml \
+            remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml \
+            remote/deployments/gha-clone-server-rs/IMMUTABLE_BOOTSTRAP.md \
+            remote/tests/general/gha-clone-server-bootstrap-pin.test.ts
+          git diff --cached --check
+          git commit -m 'chore(DEN-1597): refresh immutable bootstrap on current dev'
+          git push origin HEAD:audit/immutable-gha-clone-bootstrap-20260804

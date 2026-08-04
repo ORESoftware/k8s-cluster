@@ -1,0 +1,46 @@
+name: GHA clone bootstrap contract
+
+on:
+  pull_request:
+    paths:
+      - 'remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml'
+      - 'remote/deployments/gha-clone-server-rs/IMMUTABLE_BOOTSTRAP.md'
+      - 'remote/tests/general/gha-clone-server-bootstrap-pin.test.ts'
+      - '.github/workflows/gha-clone-bootstrap-contract.yml'
+  push:
+    branches: [main, dev]
+    paths:
+      - 'remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml'
+      - 'remote/deployments/gha-clone-server-rs/IMMUTABLE_BOOTSTRAP.md'
+      - 'remote/tests/general/gha-clone-server-bootstrap-pin.test.ts'
+      - '.github/workflows/gha-clone-bootstrap-contract.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gha-clone-bootstrap-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  immutable-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - name: Install locked contract dependencies
+        working-directory: remote/tests
+        run: pnpm install --frozen-lockfile
+      - name: Prove immutable detached source bootstrap
+        working-directory: remote/tests
+        run: pnpm exec tsx --test general/gha-clone-server-bootstrap-pin.test.ts
