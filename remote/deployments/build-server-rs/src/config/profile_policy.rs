@@ -29,16 +29,17 @@ pub(crate) fn compile_rules(
         compiled.push(prefix);
     }
 
-    let Some(raw) = exact_rules_json
-        .map(str::trim)
-        .filter(|raw| !raw.is_empty())
-    else {
+    let Some(raw_untrimmed) = exact_rules_json else {
         return Ok(compiled);
     };
-    if raw.len() > MAX_POLICY_BYTES {
+    if raw_untrimmed.len() > MAX_POLICY_BYTES {
         return Err(format!(
             "BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON exceeds {MAX_POLICY_BYTES} bytes"
         ));
+    }
+    let raw = raw_untrimmed.trim();
+    if raw.is_empty() {
+        return Ok(compiled);
     }
 
     let rules: Vec<ExactRepositoryRule> =
