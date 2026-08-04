@@ -80,7 +80,8 @@ jobs:
               '      - name: Validate deployment, routing, execution, webhook, '
               'activation, and Messaging Intel boundaries\n'
           )
-          contract_body = '''            general/gha-clone-server-webhook-config.test.ts
+          contract_body = '''            general/gha-clone-webhook-config.test.ts __CONTINUE__
+            general/gha-clone-msgint-config.test.ts
           node --test general/gha-executor-router-activation.test.mjs
       - name: Install pinned kubectl renderer
         uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
@@ -95,28 +96,19 @@ jobs:
           grep -F 'name: dd-gha-clone-server' "$rendered"
           grep -F 'name: dd-gha-executor-router' "$rendered"
           test "$(grep -c 'replicas: 0' "$rendered")" -ge 2
-'''
-          # The first line above is replaced below with the exact TypeScript union.
-          contract_body = contract_body.replace(
-              '            general/gha-clone-server-webhook-config.test.ts\n',
-              '            general/gha-clone-server-webhook-config.test.ts \\\n'
-              '            general/gha-clone-msgint-config.test.ts\n',
-          )
+'''.replace('__CONTINUE__', chr(92))
 
           def workflow_replacement(match: re.Match[str]) -> str:
               current = workflow_replacement.index
               workflow_replacement.index += 1
               left, right = match.group(1), match.group(2)
               if current in (0, 1):
-                  # Preserve current-dev activation paths and add the Messaging
-                  # Intel supplemental contract/document paths.
                   return union_lines(left, right)
               if current == 2:
                   return contract_name
               if current == 3:
                   return contract_body
               if current == 4:
-                  # Scan both activation and profile-admission documentation.
                   return union_lines(left, right)
               raise AssertionError(current)
 
@@ -137,8 +129,6 @@ jobs:
               contract_replacement.index += 1
               left, right = match.group(1), match.group(2)
               if current == 0:
-                  # Keep current dev's newer observability/router arrays and add
-                  # the generic-planner path used by the static contract.
                   anchor = (
                       "const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';\n"
                   )
@@ -151,8 +141,6 @@ jobs:
                       raise SystemExit('planner-path anchor missing from current-dev side')
                   return left.replace(anchor, addition, 1)
               if current == 1:
-                  # The generic static test must inspect planner.rs, not the
-                  # reserved Messaging Intel wrapper.
                   return right
               raise AssertionError(current)
 
@@ -234,7 +222,7 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm exec tsx --test \
             general/gha-clone-server-config.test.ts \
-            general/gha-clone-server-webhook-config.test.ts \
+            general/gha-clone-webhook-config.test.ts \
             general/gha-clone-msgint-config.test.ts
           node --test general/gha-executor-router-activation.test.mjs
 
