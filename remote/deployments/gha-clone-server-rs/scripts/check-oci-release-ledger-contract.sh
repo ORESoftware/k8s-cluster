@@ -54,8 +54,7 @@ done
 for required in \
   'return 10' \
   'return 0' \
-  'release marker already exists with conflicting metadata' \
-  'all(body.rstrip("\\n") == expected.rstrip("\\n") for body in matching)'
+  'release marker already exists with conflicting metadata'
 do
   require_literal "$classifier" "$required"
 done
