@@ -1,0 +1,288 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+import { resolve } from 'node:path';
+
+const root = resolve(import.meta.dirname, '../../..');
+const runtime = resolve(root, 'remote/argocd/dd-next-runtime');
+const crate = resolve(root, 'remote/deployments/gha-clone-server-rs');
+const read = (path) => readFileSync(resolve(root, path), 'utf8');
+
+const paths = {
+  configMap: 'remote/argocd/dd-next-runtime/dd-gha-executor-router.configmap.yaml',
+  externalSecret:
+    'remote/argocd/dd-next-runtime/dd-gha-executor-router.externalsecret.yaml',
+  deployment:
+    'remote/argocd/dd-next-runtime/dd-gha-executor-router.deployment.yaml',
+  service: 'remote/argocd/dd-next-runtime/dd-gha-executor-router.service.yaml',
+  networkPolicy:
+    'remote/argocd/dd-next-runtime/dd-gha-executor-router.networkpolicy.yaml',
+  cloneDeployment:
+    'remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml',
+  cloneExternalSecret:
+    'remote/argocd/dd-next-runtime/dd-gha-clone-server.externalsecret.yaml',
+  cloneNetworkPolicy:
+    'remote/argocd/dd-next-runtime/dd-gha-clone-server.networkpolicy.yaml',
+  kustomization: 'remote/argocd/dd-next-runtime/kustomization.yaml',
+  routerSource:
+    'remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs',
+  routerContracts:
+    'remote/deployments/gha-clone-server-rs/src/executor_router.rs',
+  routerTests:
+    'remote/deployments/gha-clone-server-rs/tests/executor_router_http.rs',
+};
+
+function extractLiteralBlock(text, key) {
+  const marker = `  ${key}: |\n`;
+  const start = text.indexOf(marker);
+  assert.notEqual(start, -1, `missing literal block ${key}`);
+  const lines = text.slice(start + marker.length).split('\n');
+  const block = [];
+  for (const line of lines) {
+    if (line.length === 0) {
+      block.push('');
+      continue;
+    }
+    if (!line.startsWith('    ')) break;
+    block.push(line.slice(4));
+  }
+  return block.join('\n').trim();
+}
+
+function requireContains(text, values, label) {
+  for (const value of values) {
+    assert.ok(text.includes(value), `${label} missing ${value}`);
+  }
+}
+
+function envValue(text, name) {
+  const pattern = new RegExp(
+    `- name: ${name}\\n\\s+value: (?:(?:"([^"\\n]*)")|([^\\n#]+))`,
+  );
+  const match = text.match(pattern);
+  assert.ok(match, `missing literal environment value ${name}`);
+  return (match[1] ?? match[2]).trim();
+}
+
+test('executor inventory is ordered, exact, and carries no dormant Hetzner endpoint', () => {
+  const configMap = read(paths.configMap);
+  const executors = JSON.parse(
+    extractLiteralBlock(configMap, 'GHA_EXECUTOR_ROUTER_EXECUTORS_JSON'),
+  );
+  assert.equal(executors.length, 2);
+  assert.deepEqual(executors[0], {
+    id: 'aws-primary',
+    provider: 'aws',
+    enabled: true,
+    url: 'http://dd-build-server.default.svc.cluster.local:8100',
+    authPath:
+      '/var/run/secrets/gha-executor-router/aws-build-server-auth',
+  });
+  assert.deepEqual(executors[1], {
+    id: 'hetzner-secondary',
+    provider: 'hetzner',
+    enabled: false,
+  });
+  assert.equal('url' in executors[1], false);
+  assert.equal('authPath' in executors[1], false);
+  assert.equal(new Set(executors.map(({ id }) => id)).size, executors.length);
+});
+
+test('router deployment remains absent and execution-disabled with file-mounted authority', () => {
+  const deployment = read(paths.deployment);
+  requireContains(
+    deployment,
+    [
+      'name: dd-gha-executor-router',
+      'replicas: 0',
+      'type: Recreate',
+      'automountServiceAccountToken: false',
+      'exec cargo run --release --bin gha-executor-router',
+      'name: GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED',
+      'value: "false"',
+      'name: GHA_EXECUTOR_ROUTER_AUTH_PATH',
+      'value: /var/run/secrets/gha-executor-router/router-auth',
+      'mountPath: /var/run/secrets/gha-executor-router',
+      'readOnly: true',
+      'secretName: dd-gha-executor-router-secrets',
+      'key: router_auth',
+      'key: aws_build_server_auth',
+      'path: /readyz',
+      'path: /healthz',
+      'drop: ["ALL"]',
+    ],
+    'router deployment',
+  );
+  assert.equal(
+    envValue(deployment, 'GHA_EXECUTOR_ROUTER_SOURCE_REF'),
+    'main',
+  );
+  assert.equal(
+    envValue(deployment, 'GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED'),
+    'false',
+  );
+  assert.doesNotMatch(deployment, /value:\s*(?:ghp_|github_pat_)/i);
+  assert.doesNotMatch(
+    deployment,
+    /name:\s+(?:GHA_EXECUTOR_ROUTER_AUTH|AWS_BUILD_SERVER_AUTH|HETZNER_BUILD_SERVER_AUTH)\s*\n\s*value:/,
+  );
+});
+
+test('ExternalSecret separates inbound router and AWS executor credentials', () => {
+  const externalSecret = read(paths.externalSecret);
+  requireContains(
+    externalSecret,
+    [
+      'key: dd/remote-dev/gha-executor-router-secrets',
+      'secretKey: router_auth',
+      'property: router_auth',
+      'secretKey: aws_build_server_auth',
+      'property: aws_build_server_auth',
+    ],
+    'router ExternalSecret',
+  );
+  assert.equal(
+    (externalSecret.match(/secretKey:/g) ?? []).length,
+    2,
+    'unexpected router secret authority added',
+  );
+  assert.doesNotMatch(externalSecret, /ghp_|github_pat_|stringData:|data:\s*\n\s+[^-]/i);
+});
+
+test('clone server routes only to the internal router and uses distinct authority', () => {
+  const deployment = read(paths.cloneDeployment);
+  requireContains(
+    deployment,
+    [
+      'replicas: 0',
+      'name: GHA_CLONE_EXECUTION_ENABLED',
+      'name: GHA_CLONE_WEBHOOK_EXECUTION_ENABLED',
+      'name: GHA_CLONE_BUILD_SERVER_URL',
+      'value: http://dd-gha-executor-router.default.svc.cluster.local:8126',
+      'name: GHA_CLONE_BUILD_SERVER_AUTH',
+      'key: executor_router_auth',
+    ],
+    'clone server deployment',
+  );
+  assert.equal(envValue(deployment, 'GHA_CLONE_EXECUTION_ENABLED'), 'false');
+  assert.equal(
+    envValue(deployment, 'GHA_CLONE_WEBHOOK_EXECUTION_ENABLED'),
+    'false',
+  );
+  assert.ok(
+    !deployment.includes(
+      'value: http://dd-build-server.default.svc.cluster.local:8100',
+    ),
+    'clone server still bypasses provider router',
+  );
+
+  const externalSecret = read(paths.cloneExternalSecret);
+  requireContains(
+    externalSecret,
+    [
+      'secretKey: executor_router_auth',
+      'key: dd/remote-dev/gha-executor-router-secrets',
+      'property: router_auth',
+    ],
+    'clone server ExternalSecret',
+  );
+});
+
+test('network policies permit only clone-to-router and router-to-executor paths', () => {
+  const routerPolicy = read(paths.networkPolicy);
+  requireContains(
+    routerPolicy,
+    [
+      'app: dd-gha-executor-router',
+      'app: dd-gha-clone-server',
+      'port: 8126',
+      'app: dd-build-server',
+      'port: 8100',
+      'port: 443',
+      '169.254.0.0/16',
+    ],
+    'router NetworkPolicy',
+  );
+
+  const clonePolicy = read(paths.cloneNetworkPolicy);
+  requireContains(
+    clonePolicy,
+    ['app: dd-gha-executor-router', 'port: 8126'],
+    'clone server NetworkPolicy',
+  );
+  const egress = clonePolicy.split('  egress:\n')[1] ?? '';
+  assert.ok(!egress.includes('port: 8100'), 'clone server retains direct build egress');
+});
+
+test('service and kustomization make the zero-replica router Argo-trackable', () => {
+  const service = read(paths.service);
+  requireContains(
+    service,
+    [
+      'name: dd-gha-executor-router',
+      'app: dd-gha-executor-router',
+      'port: 8126',
+      'targetPort: http',
+    ],
+    'router Service',
+  );
+  const kustomization = read(paths.kustomization);
+  for (const filename of [
+    'dd-gha-executor-router.configmap.yaml',
+    'dd-gha-executor-router.externalsecret.yaml',
+    'dd-gha-executor-router.deployment.yaml',
+    'dd-gha-executor-router.service.yaml',
+    'dd-gha-executor-router.networkpolicy.yaml',
+  ]) {
+    assert.ok(kustomization.includes(`  - ${filename}`), `kustomization missing ${filename}`);
+  }
+});
+
+test('router code and live tests retain the no-duplicate failover boundary', () => {
+  const source = read(paths.routerSource);
+  const contracts = read(paths.routerContracts);
+  const tests = read(paths.routerTests);
+  requireContains(
+    source,
+    [
+      'automatic provider failover is blocked to prevent duplicate work',
+      'first_ready_executor',
+      'namespace_build_id',
+      'parse_namespaced_build_id',
+      'requestIdForwardedUnchanged',
+      'postSubmissionFailover',
+      'shared Fiducia-fenced claim',
+    ],
+    'router source',
+  );
+  requireContains(
+    contracts,
+    [
+      'jobKind must be run-profile',
+      'gitRef must be a lowercase 40-hex commit SHA',
+      'disabled executors must omit url and authPath',
+      'plain HTTP is allowed only for loopback or in-cluster',
+    ],
+    'router contracts',
+  );
+  requireContains(
+    tests,
+    [
+      'readiness_failure_routes_to_hetzner_before_any_submission',
+      'ambiguous_submission_never_fails_over_or_leaks_upstream_body',
+      'accepted_build_status_failure_remains_pinned_without_resubmission',
+      'explicit_rejection_does_not_submit_to_the_second_provider',
+    ],
+    'router live tests',
+  );
+});
+
+test('changed router surface contains no committed credential markers', () => {
+  const combined = Object.values(paths)
+    .map((path) => read(path))
+    .join('\n')
+    .toLowerCase();
+  for (const marker of ['ghp_', 'github_pat_', 'bearer ey', 'private_key-----']) {
+    assert.ok(!combined.includes(marker), `credential marker found: ${marker}`);
+  }
+});
