@@ -103,113 +103,26 @@ jobs:
           )
           replace_once(
               '''async fn mock_status(State(state): State<MockBuildState>, Path(id): Path<String>) -> Response {
-                  match state.mode {
+              match state.mode {
           ''',
               '''async fn mock_status(State(state): State<MockBuildState>, Path(id): Path<String>) -> Response {
-                  state.status_requests.fetch_add(1, Ordering::SeqCst);
-                  match state.mode {
+              state.status_requests.fetch_add(1, Ordering::SeqCst);
+              match state.mode {
           ''',
               'status request accounting',
           )
-
-          old_cases = '''    let cases = [
-                  (
-                      MockMode::RejectSubmission,
-                      2,
-                      "build server rejected rust with HTTP 500",
-                  ),
-                  (
-                      MockMode::InvalidSubmissionJson,
-                      2,
-                      "build server returned invalid job JSON",
-                  ),
-                  (MockMode::InvalidSubmissionId, 2, "invalid job ID"),
-                  (
-                      MockMode::UnknownSubmissionStatus,
-                      2,
-                      "invalid accepted status",
-                  ),
-                  (
-                      MockMode::OversizedSubmissionBody,
-                      2,
-                      "submission response exceeds 65536-byte limit",
-                  ),
-                  (MockMode::FailBuild, 2, "ended as failed: simulated failure"),
-                  (MockMode::UnknownStatus, 2, "unknown status"),
-                  (
-                      MockMode::InvalidStatusJson,
-                      2,
-                      "build status JSON is invalid",
-                  ),
-                  (MockMode::MismatchedStatusId, 2, "mismatched job ID"),
-                  (
-                      MockMode::OversizedStatusBody,
-                      2,
-                      "status response exceeds 65536-byte limit",
-                  ),
-                  (MockMode::KeepRunning, 1, "exceeded 1 seconds"),
-              ];
-
-              for (mode, timeout, expected) in cases {
-          '''
-          new_cases = '''    let cases = [
-                  (
-                      MockMode::RejectSubmission,
-                      2,
-                      "build server rejected rust with HTTP 500",
-                      false,
-                  ),
-                  (
-                      MockMode::InvalidSubmissionJson,
-                      2,
-                      "build server returned invalid job JSON",
-                      false,
-                  ),
-                  (MockMode::InvalidSubmissionId, 2, "invalid job ID", false),
+          replace_once(
+              '''        (MockMode::InvalidSubmissionId, 2, "invalid job ID"),
+          ''',
+              '''        (MockMode::InvalidSubmissionId, 2, "invalid job ID"),
                   (
                       MockMode::RedirectSubmission,
                       2,
                       "build server rejected rust with HTTP 307",
-                      false,
                   ),
-                  (
-                      MockMode::UnknownSubmissionStatus,
-                      2,
-                      "invalid accepted status",
-                      false,
-                  ),
-                  (
-                      MockMode::OversizedSubmissionBody,
-                      2,
-                      "submission response exceeds 65536-byte limit",
-                      false,
-                  ),
-                  (
-                      MockMode::FailBuild,
-                      2,
-                      "ended as failed: simulated failure",
-                      true,
-                  ),
-                  (MockMode::UnknownStatus, 2, "unknown status", true),
-                  (
-                      MockMode::InvalidStatusJson,
-                      2,
-                      "build status JSON is invalid",
-                      true,
-                  ),
-                  (MockMode::MismatchedStatusId, 2, "mismatched job ID", true),
-                  (
-                      MockMode::OversizedStatusBody,
-                      2,
-                      "status response exceeds 65536-byte limit",
-                      true,
-                  ),
-                  (MockMode::KeepRunning, 1, "exceeded 1 seconds", true),
-              ];
-
-              for (mode, timeout, expected, should_poll) in cases {
-          '''
-          replace_once(old_cases, new_cases, 'failure-mode case table')
+          ''',
+              'redirect process case',
+          )
           replace_once(
               '''        assert!(
                       run["error"].as_str().unwrap().contains(expected),
@@ -224,6 +137,15 @@ jobs:
               '''        assert!(
                       run["error"].as_str().unwrap().contains(expected),
                       "mode {mode:?} expected {expected:?}: {run}"
+                  );
+                  let should_poll = matches!(
+                      mode,
+                      MockMode::FailBuild
+                          | MockMode::UnknownStatus
+                          | MockMode::InvalidStatusJson
+                          | MockMode::MismatchedStatusId
+                          | MockMode::OversizedStatusBody
+                          | MockMode::KeepRunning
                   );
                   let status_requests = mock.state.status_requests.load(Ordering::SeqCst);
                   if should_poll {
