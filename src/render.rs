@@ -40,7 +40,7 @@ pub struct RenderRequest {
     pub width: Option<u32>,
     #[serde(default)]
     pub height: Option<u32>,
-    /// Field bound to the x axis (categorical for bar, numeric otherwise).
+    /// Field bound to the x axis (categorical for bar/boxplot, numeric otherwise).
     #[serde(default)]
     pub x: Option<String>,
     /// Field bound to the y axis (numeric measure).
@@ -123,10 +123,12 @@ pub fn render(request: RenderRequest) -> Result<RenderResponse, String> {
     let body = match mark.as_str() {
         "bar" => render_bar(&request, &area)?,
         "line" | "scatter" | "stem" => render_xy(&request, &area, &mark)?,
+        "area" => render_area(&request, &area)?,
         "histogram" => render_histogram(&request, &area)?,
+        "boxplot" => render_boxplot(&request, &area)?,
         other => {
             return Err(format!(
-                "server-side render does not support mark `{other}` (supported: bar, line, scatter, stem, histogram)"
+                "server-side render does not support mark `{other}` (supported: area, bar, boxplot, histogram, line, scatter, stem)"
             ))
         }
     };
@@ -146,27 +148,29 @@ pub fn render(request: RenderRequest) -> Result<RenderResponse, String> {
 
 fn render_bar(request: &RenderRequest, area: &Area) -> Result<String, String> {
     let values = numeric_column(request, request.y.as_deref())
-        .ok_or("bar render requires a numeric `y` field")?;
+        .ok_or("bar render requires a finite numeric `y` field")?;
     // Downsample labels and values with the same stride so they stay aligned.
     let labels = downsample(&category_column(request, area_len(request)), MAX_RENDER_POINTS);
     let values = downsample(&values, MAX_RENDER_POINTS);
-    let max = values.iter().copied().fold(0.0_f64, f64::max).max(1.0);
+    let (y_min, y_max) = bounds(&values, true);
+    let baseline = area.sy(0.0_f64.clamp(y_min, y_max), y_min, y_max);
 
     let count = values.len().max(1);
     let slot = (area.x1 - area.x0) / count as f64;
     let bar_width = slot * 0.7;
-    let mut body = axes(area, 0.0, max);
+    let mut body = axes(area, y_min, y_max);
     for (index, value) in values.iter().enumerate() {
         let cx = area.x0 + slot * (index as f64 + 0.5);
-        let top = area.sy(*value, 0.0, max);
-        let bar_height = area.y1 - top;
+        let value_y = area.sy(*value, y_min, y_max);
+        let top = value_y.min(baseline);
+        let bottom = value_y.max(baseline);
         let _ = write!(
             body,
             r##"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="#4f72d8" />"##,
             cx - bar_width / 2.0,
             top,
             bar_width,
-            bar_height.max(0.0)
+            (bottom - top).max(0.0)
         );
         if let Some(label) = labels.get(index) {
             let _ = write!(
@@ -183,7 +187,7 @@ fn render_bar(request: &RenderRequest, area: &Area) -> Result<String, String> {
 
 fn render_xy(request: &RenderRequest, area: &Area, mark: &str) -> Result<String, String> {
     let ys = numeric_column(request, request.y.as_deref())
-        .ok_or("line/scatter/stem render requires a numeric `y` field")?;
+        .ok_or("line/scatter/stem render requires a finite numeric `y` field")?;
     // x is numeric when available and parseable, otherwise the row index.
     let xs = numeric_column(request, request.x.as_deref())
         .filter(|values| values.len() == ys.len())
@@ -203,7 +207,13 @@ fn render_xy(request: &RenderRequest, area: &Area, mark: &str) -> Result<String,
         let points = xs
             .iter()
             .zip(&ys)
-            .map(|(x, y)| format!("{:.1},{:.1}", area.sx(*x, x_min, x_max), area.sy(*y, y_min, y_max)))
+            .map(|(x, y)| {
+                format!(
+                    "{:.1},{:.1}",
+                    area.sx(*x, x_min, x_max),
+                    area.sy(*y, y_min, y_max)
+                )
+            })
             .collect::<Vec<_>>()
             .join(" ");
         let _ = write!(
@@ -230,10 +240,50 @@ fn render_xy(request: &RenderRequest, area: &Area, mark: &str) -> Result<String,
     Ok(body)
 }
 
+fn render_area(request: &RenderRequest, area: &Area) -> Result<String, String> {
+    let ys = numeric_column(request, request.y.as_deref())
+        .ok_or("area render requires a finite numeric `y` field")?;
+    let xs = numeric_column(request, request.x.as_deref())
+        .filter(|values| values.len() == ys.len())
+        .unwrap_or_else(|| (0..ys.len()).map(|index| index as f64).collect());
+    let xs = downsample(&xs, MAX_RENDER_POINTS);
+    let ys = downsample(&ys, MAX_RENDER_POINTS);
+    let (x_min, x_max) = bounds(&xs, false);
+    let (y_min, y_max) = bounds(&ys, true);
+    let baseline = area.sy(0.0_f64.clamp(y_min, y_max), y_min, y_max);
+
+    let points = xs
+        .iter()
+        .zip(&ys)
+        .map(|(x, y)| {
+            format!(
+                "{:.1},{:.1}",
+                area.sx(*x, x_min, x_max),
+                area.sy(*y, y_min, y_max)
+            )
+        })
+        .collect::<Vec<_>>();
+    let first_x = area.sx(xs[0], x_min, x_max);
+    let last_x = area.sx(*xs.last().unwrap_or(&xs[0]), x_min, x_max);
+    let polygon = std::iter::once(format!("{first_x:.1},{baseline:.1}"))
+        .chain(points.iter().cloned())
+        .chain(std::iter::once(format!("{last_x:.1},{baseline:.1}")))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let polyline = points.join(" ");
+
+    let mut body = axes(area, y_min, y_max);
+    let _ = write!(
+        body,
+        r##"<polygon points="{polygon}" fill="#4f72d8" fill-opacity="0.24" stroke="none" /><polyline points="{polyline}" fill="none" stroke="#4f72d8" stroke-width="2" />"##
+    );
+    Ok(body)
+}
+
 fn render_histogram(request: &RenderRequest, area: &Area) -> Result<String, String> {
     let field = request.x.as_deref().or(request.y.as_deref());
     let values = numeric_column(request, field)
-        .ok_or("histogram render requires a numeric `x` (or `y`) field")?;
+        .ok_or("histogram render requires a finite numeric `x` (or `y`) field")?;
     let (min, max) = bounds(&values, false);
     let span = (max - min).max(f64::EPSILON);
     let mut counts = [0_usize; HIST_BINS];
@@ -259,6 +309,93 @@ fn render_histogram(request: &RenderRequest, area: &Area) -> Result<String, Stri
         );
     }
     Ok(body)
+}
+
+fn render_boxplot(request: &RenderRequest, area: &Area) -> Result<String, String> {
+    let y_field = request
+        .y
+        .as_deref()
+        .ok_or("boxplot render requires a finite numeric `y` field")?;
+    let mut grouped: BTreeMap<String, Vec<f64>> = BTreeMap::new();
+    for row in &request.rows {
+        let value = row
+            .get(y_field)
+            .and_then(as_f64)
+            .ok_or_else(|| format!("boxplot field `{y_field}` must be finite and numeric in every row"))?;
+        let label = request
+            .x
+            .as_deref()
+            .map(|field| match row.get(field) {
+                Some(Value::String(text)) => text.clone(),
+                Some(value) => value.to_string(),
+                None => "(missing)".to_string(),
+            })
+            .unwrap_or_else(|| "all".to_string());
+        grouped.entry(label).or_default().push(value);
+    }
+
+    let mut groups = grouped.into_iter().collect::<Vec<_>>();
+    groups = downsample(&groups, MAX_RENDER_POINTS);
+    let all_values = groups
+        .iter()
+        .flat_map(|(_, values)| values.iter().copied())
+        .collect::<Vec<_>>();
+    let (y_min, y_max) = bounds(&all_values, false);
+    let mut body = axes(area, y_min, y_max);
+    let slot = (area.x1 - area.x0) / groups.len().max(1) as f64;
+    let box_width = (slot * 0.54).max(2.0);
+    let cap_width = box_width * 0.62;
+
+    for (index, (label, values)) in groups.iter_mut().enumerate() {
+        values.sort_by(f64::total_cmp);
+        let minimum = values[0];
+        let q1 = percentile(values, 0.25);
+        let median = percentile(values, 0.5);
+        let q3 = percentile(values, 0.75);
+        let maximum = *values.last().unwrap_or(&minimum);
+        let center = area.x0 + slot * (index as f64 + 0.5);
+        let minimum_y = area.sy(minimum, y_min, y_max);
+        let q1_y = area.sy(q1, y_min, y_max);
+        let median_y = area.sy(median, y_min, y_max);
+        let q3_y = area.sy(q3, y_min, y_max);
+        let maximum_y = area.sy(maximum, y_min, y_max);
+        let box_top = q3_y.min(q1_y);
+        let box_height = (q1_y - q3_y).abs().max(1.0);
+
+        let _ = write!(
+            body,
+            r##"<line x1="{center:.1}" y1="{maximum_y:.1}" x2="{center:.1}" y2="{minimum_y:.1}" stroke="#4f72d8" stroke-width="1.5" /><line x1="{:.1}" y1="{maximum_y:.1}" x2="{:.1}" y2="{maximum_y:.1}" stroke="#4f72d8" stroke-width="1.5" /><line x1="{:.1}" y1="{minimum_y:.1}" x2="{:.1}" y2="{minimum_y:.1}" stroke="#4f72d8" stroke-width="1.5" /><rect x="{:.1}" y="{box_top:.1}" width="{box_width:.1}" height="{box_height:.1}" fill="#dfe6fb" stroke="#4f72d8" stroke-width="1.5" /><line x1="{:.1}" y1="{median_y:.1}" x2="{:.1}" y2="{median_y:.1}" stroke="#263c7a" stroke-width="2" />"##,
+            center - cap_width / 2.0,
+            center + cap_width / 2.0,
+            center - cap_width / 2.0,
+            center + cap_width / 2.0,
+            center - box_width / 2.0,
+            center - box_width / 2.0,
+            center + box_width / 2.0,
+        );
+        let _ = write!(
+            body,
+            r##"<text x="{center:.1}" y="{:.1}" font-size="10" text-anchor="middle" fill="#444">{}</text>"##,
+            area.y1 + 14.0,
+            escape_xml(label)
+        );
+    }
+    Ok(body)
+}
+
+fn percentile(sorted: &[f64], fraction: f64) -> f64 {
+    if sorted.len() == 1 {
+        return sorted[0];
+    }
+    let position = (sorted.len() - 1) as f64 * fraction.clamp(0.0, 1.0);
+    let lower = position.floor() as usize;
+    let upper = position.ceil() as usize;
+    if lower == upper {
+        sorted[lower]
+    } else {
+        let weight = position - lower as f64;
+        sorted[lower] * (1.0 - weight) + sorted[upper] * weight
+    }
 }
 
 /// Draw the plot frame: axes and a handful of y gridlines with value labels.
@@ -339,7 +476,7 @@ fn numeric_column(request: &RenderRequest, field: Option<&str>) -> Option<Vec<f6
 }
 
 /// Numeric bounds; when `include_zero` is set the baseline is pulled to 0 so
-/// bar/stem marks rest on a sensible axis.
+/// bar/stem/area marks rest on a sensible axis.
 fn bounds(values: &[f64], include_zero: bool) -> (f64, f64) {
     let mut min = values.iter().copied().fold(f64::INFINITY, f64::min);
     let mut max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
@@ -368,12 +505,13 @@ fn downsample<T: Clone>(values: &[T], cap: usize) -> Vec<T> {
 }
 
 fn as_f64(value: &Value) -> Option<f64> {
-    match value {
+    let parsed = match value {
         Value::Number(number) => number.as_f64(),
         Value::String(text) => text.trim().parse::<f64>().ok(),
         Value::Bool(flag) => Some(if *flag { 1.0 } else { 0.0 }),
         _ => None,
-    }
+    }?;
+    parsed.is_finite().then_some(parsed)
 }
 
 fn format_tick(value: f64) -> String {
@@ -398,9 +536,9 @@ pub fn descriptor() -> Value {
         "schemaVersion": "data-viz.render.v1",
         "format": "svg",
         "contentType": "image/svg+xml",
-        "marks": ["bar", "line", "scatter", "stem", "histogram"],
+        "marks": ["area", "bar", "boxplot", "histogram", "line", "scatter", "stem"],
         "notes": "Server-side SVG rendering with no browser or headless dependency. SVG embeds directly in HTML/PDF; PNG rasterization is intentionally not bundled.",
-        "limits": { "maxRows": MAX_ROWS, "maxWidth": MAX_WIDTH, "maxHeight": MAX_HEIGHT }
+        "limits": { "maxRows": MAX_ROWS, "maxWidth": MAX_WIDTH, "maxHeight": MAX_HEIGHT, "maxRenderPoints": MAX_RENDER_POINTS }
     })
 }
 
@@ -413,6 +551,18 @@ mod tests {
         values
             .iter()
             .map(|value| BTreeMap::from([(field.to_string(), json!(value))]))
+            .collect()
+    }
+
+    fn grouped_rows(groups: &[(&str, i64)]) -> Vec<BTreeMap<String, Value>> {
+        groups
+            .iter()
+            .map(|(group, value)| {
+                BTreeMap::from([
+                    ("group".to_string(), json!(group)),
+                    ("value".to_string(), json!(value)),
+                ])
+            })
             .collect()
     }
 
@@ -452,6 +602,23 @@ mod tests {
     }
 
     #[test]
+    fn negative_bars_render_from_zero_without_negative_heights() {
+        let request = RenderRequest {
+            mark: "bar".to_string(),
+            format: None,
+            title: None,
+            width: None,
+            height: None,
+            x: None,
+            y: Some("v".to_string()),
+            rows: rows("v", &[-10, 20, -5]),
+        };
+        let response = render(request).expect("diverging bars render");
+        assert!(!response.svg.contains("height=\"-"));
+        assert_eq!(response.svg.matches("<rect").count(), 4);
+    }
+
+    #[test]
     fn renders_line_and_scatter_and_stem() {
         for mark in ["line", "scatter", "stem"] {
             let request = RenderRequest {
@@ -476,6 +643,24 @@ mod tests {
     }
 
     #[test]
+    fn renders_area_chart_with_closed_fill_and_outline() {
+        let request = RenderRequest {
+            mark: "area".to_string(),
+            format: None,
+            title: Some("Traffic".to_string()),
+            width: None,
+            height: None,
+            x: None,
+            y: Some("v".to_string()),
+            rows: rows("v", &[2, 6, 4, -1, 3]),
+        };
+        let response = render(request).expect("area renders");
+        assert!(response.svg.contains("<polygon"));
+        assert!(response.svg.contains("fill-opacity=\"0.24\""));
+        assert!(response.svg.contains("<polyline"));
+    }
+
+    #[test]
     fn renders_histogram_bins() {
         let request = RenderRequest {
             mark: "histogram".to_string(),
@@ -489,6 +674,51 @@ mod tests {
         };
         let response = render(request).expect("histogram renders");
         assert!(response.svg.matches("<rect").count() > 1);
+    }
+
+    #[test]
+    fn renders_grouped_boxplots_with_quartiles_and_labels() {
+        let request = RenderRequest {
+            mark: "boxplot".to_string(),
+            format: None,
+            title: Some("Latency".to_string()),
+            width: None,
+            height: None,
+            x: Some("group".to_string()),
+            y: Some("value".to_string()),
+            rows: grouped_rows(&[
+                ("api", 10),
+                ("api", 20),
+                ("api", 30),
+                ("web", 5),
+                ("web", 15),
+                ("web", 40),
+            ]),
+        };
+        let response = render(request).expect("boxplot renders");
+        assert!(response.svg.matches("<rect").count() >= 3);
+        assert!(response.svg.contains(">api</text>"));
+        assert!(response.svg.contains(">web</text>"));
+        assert!(response.svg.contains("stroke-width=\"2\""));
+    }
+
+    #[test]
+    fn boxplot_rejects_non_finite_or_missing_values() {
+        let request = RenderRequest {
+            mark: "boxplot".to_string(),
+            format: None,
+            title: None,
+            width: None,
+            height: None,
+            x: Some("group".to_string()),
+            y: Some("value".to_string()),
+            rows: vec![BTreeMap::from([
+                ("group".to_string(), json!("api")),
+                ("value".to_string(), json!("NaN")),
+            ])],
+        };
+        let error = render(request).expect_err("NaN must fail closed");
+        assert!(error.contains("finite and numeric"));
     }
 
     #[test]
@@ -508,6 +738,18 @@ mod tests {
         // Marks are capped well below the row count so the SVG stays bounded.
         let circles = response.svg.matches("<circle").count();
         assert!(circles > 0 && circles <= MAX_RENDER_POINTS, "circles={circles}");
+    }
+
+    #[test]
+    fn descriptor_advertises_new_marks_and_limits() {
+        let descriptor = descriptor();
+        assert!(descriptor["marks"].as_array().is_some_and(|marks| {
+            marks.contains(&json!("area")) && marks.contains(&json!("boxplot"))
+        }));
+        assert_eq!(
+            descriptor["limits"]["maxRenderPoints"],
+            json!(MAX_RENDER_POINTS)
+        );
     }
 
     #[test]
