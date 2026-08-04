@@ -1,3 +1,4 @@
+# Activated after registration on the default branch.
 name: Sync portfolio GitHub Project metadata once
 run-name: Sync canonical Project links @ ${{ github.sha }}
 
