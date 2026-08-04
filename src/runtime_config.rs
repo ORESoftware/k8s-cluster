@@ -835,6 +835,8 @@ type = "integer"
         let packaged = tree.path().join(
             "install/share/dd-in-house-mip-solver-node/.cli-flags.toml",
         );
+        fs::create_dir_all(executable.parent().expect("executable parent"))
+            .expect("create executable parent");
         write_contract(&attacker_contract);
         write_contract(&packaged);
 
