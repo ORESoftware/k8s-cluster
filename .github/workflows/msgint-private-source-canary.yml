@@ -53,6 +53,34 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Validate required GitHub App secret inputs
+        env:
+          K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$K8S_SUBMODULE_APP_ID" ]; then
+            echo '::error title=Missing GitHub App ID::Configure repository secret K8S_SUBMODULE_APP_ID with the numeric App ID.'
+            exit 1
+          fi
+          case "$K8S_SUBMODULE_APP_ID" in
+            *[!0-9]*)
+              echo '::error title=Invalid GitHub App ID::K8S_SUBMODULE_APP_ID must contain only decimal digits.'
+              exit 1
+              ;;
+          esac
+          if [ -z "$K8S_SUBMODULE_APP_PRIVATE_KEY" ]; then
+            echo '::error title=Missing GitHub App private key::Configure repository secret K8S_SUBMODULE_APP_PRIVATE_KEY with the complete PEM private key.'
+            exit 1
+          fi
+          case "$K8S_SUBMODULE_APP_PRIVATE_KEY" in
+            *'-----BEGIN '*PRIVATE' KEY-----'*'-----END '*PRIVATE' KEY-----'*) ;;
+            *)
+              echo '::error title=Invalid GitHub App private key::K8S_SUBMODULE_APP_PRIVATE_KEY must contain a complete PEM private key.'
+              exit 1
+              ;;
+          esac
+
       - name: Mint a short-lived token scoped to the exact private repository
         id: msgint-token
         uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
