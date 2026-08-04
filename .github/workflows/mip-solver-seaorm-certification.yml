@@ -39,6 +39,7 @@ jobs:
       CONSUMER_BRANCH: agent/seaorm-shared-schema-20260804
       SHARED_REPOSITORY: k8s-libs-and-shared-defs
       EXPECTED_SHARED_COMMIT: 3c84cab532b27d328378f09fba5841f02644ae3b
+      DES_ENGINE_COMMIT: 894e86fb188b88b0e2c734b5cf7caa27c6b18e00
       DPM_VERSION: 1.4.2
       DPM_SHA256: 42dd9d638a57edbde6c931d776a4ba295bcb2614e498203968c321d84ad90bdb
     steps:
@@ -74,7 +75,7 @@ jobs:
             "$SHARED_REPOSITORY"
           test -s "$token_file"
           echo "token_file=$token_file" >> "$GITHUB_OUTPUT"
-      - name: Resolve and materialize the exact consumer PR and shared authority
+      - name: Resolve and materialize exact consumer, schema, and sibling sources
         id: source
         env:
           INSTALLATION_TOKEN_FILE: ${{ steps.token.outputs.token_file }}
@@ -128,7 +129,7 @@ jobs:
           PY
           )"
 
-          checkout_exact() {
+          checkout_private_exact() {
             local repository="$1"
             local commit="$2"
             local destination="$3"
@@ -142,12 +143,33 @@ jobs:
             git -C "$destination" remote remove origin
           }
 
-          checkout_exact "$CONSUMER_REPOSITORY" "$consumer_sha" "$work/consumer"
-          checkout_exact "$SHARED_REPOSITORY" "$EXPECTED_SHARED_COMMIT" "$work/shared"
+          checkout_public_exact() {
+            local repository="$1"
+            local commit="$2"
+            local destination="$3"
+            rm -rf "$destination"
+            mkdir -p "$(dirname "$destination")"
+            git init -q "$destination"
+            git -C "$destination" remote add origin "https://github.com/ORESoftware/${repository}.git"
+            env -u GIT_ASKPASS GIT_TERMINAL_PROMPT=0 \
+              git -C "$destination" fetch --no-tags --depth=1 origin "$commit"
+            git -C "$destination" checkout -q --detach FETCH_HEAD
+            test "$(git -C "$destination" rev-parse HEAD)" = "$commit"
+            test -z "$(git -C "$destination" status --porcelain=v1 --untracked-files=all)"
+            git -C "$destination" remote remove origin
+          }
+
+          checkout_private_exact "$CONSUMER_REPOSITORY" "$consumer_sha" "$work/consumer"
+          checkout_private_exact "$SHARED_REPOSITORY" "$EXPECTED_SHARED_COMMIT" "$work/shared"
+          checkout_public_exact \
+            discrete-event-system.rs \
+            "$DES_ENGINE_COMMIT" \
+            "$RUNNER_TEMP/submodules/discrete-event-system.rs"
           test -f "$work/shared/pg-defs/schema/schema.sql"
           test -d "$work/shared/pg-defs/rust/sea-orm"
           printf '%s\n' "$consumer_sha" > test-results/mip-solver-head.txt
           printf '%s\n' "$EXPECTED_SHARED_COMMIT" > test-results/shared-schema-commit.txt
+          printf '%s\n' "$DES_ENGINE_COMMIT" > test-results/des-engine-commit.txt
           echo "consumer_sha=$consumer_sha" >> "$GITHUB_OUTPUT"
           unset token
       - name: Validate the exact consumer inventory and locked Rust baseline
@@ -208,6 +230,7 @@ jobs:
               "consumerCommit": os.environ["CONSUMER_SHA"],
               "sharedRepository": "ORESoftware/k8s-libs-and-shared-defs",
               "sharedCommit": "3c84cab532b27d328378f09fba5841f02644ae3b",
+              "desEngineCommit": "894e86fb188b88b0e2c734b5cf7caa27c6b18e00",
               "dpmVersion": "1.4.2",
               "postgresMajor": 17,
               "inventoryStatus": inventory["status"],
@@ -225,7 +248,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf "$RUNNER_TEMP/mip-solver-certification"
+          rm -rf \
+            "$RUNNER_TEMP/mip-solver-certification" \
+            "$RUNNER_TEMP/submodules/discrete-event-system.rs"
       - name: Upload non-secret centralized certification evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
