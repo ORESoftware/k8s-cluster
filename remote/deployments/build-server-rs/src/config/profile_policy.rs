@@ -29,7 +29,10 @@ pub(crate) fn compile_rules(
         compiled.push(prefix);
     }
 
-    let Some(raw) = exact_rules_json.map(str::trim).filter(|raw| !raw.is_empty()) else {
+    let Some(raw) = exact_rules_json
+        .map(str::trim)
+        .filter(|raw| !raw.is_empty())
+    else {
         return Ok(compiled);
     };
     if raw.len() > MAX_POLICY_BYTES {
@@ -38,8 +41,8 @@ pub(crate) fn compile_rules(
         ));
     }
 
-    let rules: Vec<ExactRepositoryRule> = serde_json::from_str(raw)
-        .map_err(|error| format!("invalid JSON: {error}"))?;
+    let rules: Vec<ExactRepositoryRule> =
+        serde_json::from_str(raw).map_err(|error| format!("invalid JSON: {error}"))?;
     if rules.len() > MAX_EXACT_REPOSITORIES {
         return Err(format!(
             "at most {MAX_EXACT_REPOSITORIES} exact profile repository rules are allowed"
@@ -119,9 +122,9 @@ pub(crate) fn ensure_repository_profile_allowed(
     let mut exact_profiles = None::<BTreeSet<&str>>;
     for rule in compiled_rules {
         if let Some(encoded) = rule.strip_prefix(EXACT_RULE_PREFIX) {
-            let (exact_repository, profiles) = encoded.split_once(EXACT_RULE_SEPARATOR).ok_or_else(
-                || "compiled exact profile repository rule is malformed".to_string(),
-            )?;
+            let (exact_repository, profiles) = encoded
+                .split_once(EXACT_RULE_SEPARATOR)
+                .ok_or_else(|| "compiled exact profile repository rule is malformed".to_string())?;
             if exact_repository == repository {
                 if exact_profiles.is_some() {
                     return Err(format!(
@@ -189,9 +192,7 @@ fn validate_prefix_rule(prefix: &str) -> Result<(), String> {
 }
 
 fn validate_exact_repository_url(repository: &str) -> Result<(), String> {
-    if repository.chars().any(char::is_whitespace)
-        || repository.chars().any(char::is_control)
-    {
+    if repository.chars().any(char::is_whitespace) || repository.chars().any(char::is_control) {
         return Err(format!(
             "exact profile repository URL {repository:?} contains whitespace or control characters"
         ));
@@ -381,12 +382,7 @@ mod tests {
         )
         .is_ok());
         for prefix in ["", "http://github.com/ORESoftware/", "exact:reserved"] {
-            assert!(compile_rules(
-                vec![prefix.to_string()],
-                None,
-                &globally_allowed(),
-            )
-            .is_err());
+            assert!(compile_rules(vec![prefix.to_string()], None, &globally_allowed(),).is_err());
         }
     }
 
@@ -442,9 +438,8 @@ mod tests {
 
     #[test]
     fn exact_policy_uses_canonical_case_sensitive_url_identity() {
-        let rules = vec![
-            "exact:https://github.com/ORESoftware/k8s-cluster.git#rust-verify".to_string(),
-        ];
+        let rules =
+            vec!["exact:https://github.com/ORESoftware/k8s-cluster.git#rust-verify".to_string()];
         assert!(ensure_repository_profile_allowed(
             "https://github.com/oresoftware/k8s-cluster.git",
             "rust-verify",
@@ -533,7 +528,8 @@ mod tests {
 
     #[test]
     fn profile_repository_policy_has_no_wildcard_syntax() {
-        let raw = r#"[{"repository":"https://github.com/ORESoftware/*.git","profiles":["rust-verify"]}]"#;
+        let raw =
+            r#"[{"repository":"https://github.com/ORESoftware/*.git","profiles":["rust-verify"]}]"#;
         assert!(compile_rules(Vec::new(), Some(raw), &globally_allowed()).is_err());
     }
 
@@ -585,9 +581,8 @@ mod tests {
 
     #[test]
     fn exact_policy_error_names_the_policy_source() {
-        let rules = vec![
-            "exact:https://github.com/ORESoftware/k8s-cluster.git#rust-verify".to_string(),
-        ];
+        let rules =
+            vec!["exact:https://github.com/ORESoftware/k8s-cluster.git#rust-verify".to_string()];
         let error = ensure_repository_profile_allowed(
             "https://github.com/ORESoftware/k8s-cluster.git",
             "node-verify",
@@ -662,7 +657,8 @@ mod tests {
 
     #[test]
     fn exact_rule_compile_rejects_empty_profile() {
-        let raw = r#"[{"repository":"https://github.com/ORESoftware/k8s-cluster.git","profiles":[""]}]"#;
+        let raw =
+            r#"[{"repository":"https://github.com/ORESoftware/k8s-cluster.git","profiles":[""]}]"#;
         assert!(compile_rules(Vec::new(), Some(raw), &globally_allowed()).is_err());
     }
 
@@ -693,9 +689,7 @@ mod tests {
 
     #[test]
     fn exact_policy_rejects_empty_encoded_profile_set() {
-        let rules = vec![
-            "exact:https://github.com/ORESoftware/k8s-cluster.git#".to_string(),
-        ];
+        let rules = vec!["exact:https://github.com/ORESoftware/k8s-cluster.git#".to_string()];
         assert!(ensure_repository_profile_allowed(
             "https://github.com/ORESoftware/k8s-cluster.git",
             "rust-verify",
