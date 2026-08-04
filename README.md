@@ -2,7 +2,16 @@
 
 Dedicated Rust notification delivery service for Firebase Cloud Messaging HTTP v1, Apple Push Notification service, Expo Push, browser Web Push/VAPID, and optional SendGrid email and Twilio SMS fallback lanes.
 
+> Google Play and Apple App Store distribute and sign applications; they do not deliver notifications. Android push is delivered through FCM, Apple push through APNs, and Expo-managed push through Expo's service backed by the configured FCM/APNs credentials.
+
 Push remains the primary, isolated contract. The service uses a versioned provider-neutral `PushJob`/`PushOutcome` contract, target fingerprinting, bounded errors, strict validation, permanent CI/security checks, and a non-root container. Email and SMS use a separate `ContactJob`/`ContactOutcome` contract so adding fallback channels cannot weaken push-target validation or allow producer-controlled provider credentials and sender identities. Supabase/Postgres may store installation registrations and transactional outbox jobs, but it is not a delivery provider.
+
+## Documentation
+
+Start with:
+
+- [`docs/README.md`](docs/README.md) — documentation index.
+- [`docs/provider-interop.md`](docs/provider-interop.md) — end-to-end Android/FCM/Play, Apple/APNs/TestFlight/App Store, Expo, SendGrid, Twilio, shared-auth, Postgres, testing, and troubleshooting guide.
 
 Push provider adapters:
 
@@ -106,4 +115,4 @@ GitHub Actions additionally validates process-level HTTP, live NATS compatibilit
 
 Linear project: `github.com/ORESoftware/push-notification-server.rs`
 
-DEN-324 established the push contracts and safety boundary. DEN-325 through DEN-328 implement the four push adapters. DEN-329 adds authenticated HTTP and durable push NATS ingestion. DEN-331 established the first fully green integration-tested source SHA. SendGrid/Twilio hardening is tracked under the production conformance and migration program without reopening the old mixed-service push implementation.
+DEN-324 established the push contracts and safety boundary. DEN-325 through DEN-328 implement the four push adapters. DEN-329 adds authenticated HTTP and durable push NATS ingestion. DEN-331 established the first fully green integration-tested source SHA. DEN-1211 owns the end-to-end interoperability documentation. SendGrid/Twilio hardening is tracked under the production conformance and migration program without reopening the old mixed-service push implementation.
