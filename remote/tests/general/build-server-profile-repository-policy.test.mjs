@@ -42,19 +42,23 @@ test('request validation performs an exact profile decision after global admissi
   );
 });
 
-test('exact policy overrides broad prefix fallback and rejects lookalikes', () => {
+test('exact policy canonicalizes aliases before broad prefix fallback', () => {
+  assert.match(policy, /const EXACT_RULE_PREFIX: &str = "exact-id:"/);
+  assert.match(policy, /github_repository_identity/);
+  assert.match(policy, /to_ascii_lowercase/);
   assert.match(policy, /if let Some\(allowed_profiles\) = exact_profiles/);
-  assert.match(policy, /not allowed for exact repository/);
-  assert.match(policy, /exact_repository_rule_overrides_broad_prefix_fallback/);
+  assert.match(policy, /not allowed for exact repository identity/);
   for (const evidence of [
-    'k8s-cluster.git-evil',
-    'k8s-cluster-extra.git',
+    'exact_repository_rule_overrides_every_supported_alias',
+    'exact_match_never_falls_back_to_a_broad_prefix',
+    'unsafe_query_fragment_and_nested_paths_fail_before_prefix_fallback',
+    'exact_policy_keys_require_canonical_https_git_urls',
+    'duplicate_repository_identities_are_case_insensitive',
     'git@github.com:ORESoftware/k8s-cluster.git',
-    'exact_repository_validation_rejects_query_injection',
-    'exact_repository_validation_rejects_fragment_injection',
-    'profile_name_validation_rejects_separator_injection',
+    'ssh://git@github.com/ORESoftware/k8s-cluster.git',
+    'https://github.com/oresoftware/K8S-CLUSTER.git/',
   ]) {
-    assert.ok(policy.includes(evidence), `missing negative-policy evidence: ${evidence}`);
+    assert.ok(policy.includes(evidence), `missing canonical-identity evidence: ${evidence}`);
   }
 });
 
@@ -77,9 +81,11 @@ test('dedicated GHA workflow formats and runs policy tests and static contracts'
   assert.match(workflow, /docs\/build-server-profile-repository-policy\.md/);
 });
 
-test('documentation states exact-match precedence and startup failure behavior', () => {
+test('documentation states exact precedence, alias handling, and startup failure', () => {
   assert.match(documentation, /Exact rules override prefix fallback/);
   assert.match(documentation, /Invalid policy is a startup error/);
+  assert.match(documentation, /lower-case `owner\/repository` identity/);
+  assert.match(documentation, /SSH, case, optional `\.git`, or trailing-slash alias/);
   assert.match(documentation, /k8s-cluster\.git -> rust-verify/);
-  assert.match(documentation, /rejecting a downgrade to `node-verify`/);
+  assert.match(documentation, /rejecting a downgrade of the same repository identity/);
 });
