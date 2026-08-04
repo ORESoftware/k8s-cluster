@@ -1,0 +1,115 @@
+name: Integrate DEN-1606 transport after capacity once
+
+on:
+  push:
+    branches:
+      - agent/den-1606-transport-after-capacity-v3
+    paths:
+      - .github/workflows/den-1606-transport-after-capacity-v3-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1606-transport-after-capacity-v3
+  cancel-in-progress: false
+
+jobs:
+  integrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1606-transport-after-capacity-v3
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Reconstruct reviewed transport commits with three-way ancestry
+        run: |
+          set -euo pipefail
+          base='a14072064f25d7b49807656d4231f93d335a6d55'
+          workflow='.github/workflows/den-1606-transport-after-capacity-v3-once.yml'
+          actual="$(git diff --name-only "$base"...HEAD | sort)"
+          if [[ "$actual" != "$workflow" ]]; then
+            printf 'unexpected pre-integration paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+
+          paths=(
+            docs/gha-clone-build-server-boundary.md
+            remote/deployments/gha-clone-server-rs/src/main.rs
+            remote/deployments/gha-clone-server-rs/tests/http_api.rs
+            remote/deployments/gha-clone-server-rs/tests/streempilot_http.rs
+            remote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs
+            remote/deployments/gha-clone-server-rs/tests/webhook_retention.rs
+          )
+
+          git show --format= --binary \
+            6d050a5c516c0dcc1c13646fe8742dfed477346c -- "${paths[@]}" \
+            > /tmp/transport.patch
+          if ! git apply --3way /tmp/transport.patch; then
+            echo 'initial transport commit did not merge cleanly' >&2
+            git status --short >&2
+            git diff --cc >&2 || true
+            exit 1
+          fi
+
+          git show --format= --binary \
+            4f5d033cff24325e3c5b7e0f09eee65c36d0f4e6 -- "${paths[@]}" \
+            > /tmp/path-hardening.patch
+          if ! git apply --3way /tmp/path-hardening.patch; then
+            echo 'path-identity hardening did not merge cleanly' >&2
+            git status --short >&2
+            git diff --cc >&2 || true
+            exit 1
+          fi
+
+          rm "$workflow"
+          git diff --check
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate every clone-server target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Publish the product-only commit
+        run: |
+          set -euo pipefail
+          base='a14072064f25d7b49807656d4231f93d335a6d55'
+          workflow='.github/workflows/den-1606-transport-after-capacity-v3-once.yml'
+          test ! -e "$workflow"
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          workflow_non_deletions="$(git diff --cached --name-only --diff-filter=ACMRTUXB -- .github/workflows || true)"
+          if [[ -n "$workflow_non_deletions" ]]; then
+            printf 'temporary workflow must be deletion-only:\n%s\n' "$workflow_non_deletions" >&2
+            exit 1
+          fi
+          allowed='^(\.github/workflows/den-1606-transport-after-capacity-v3-once\.yml|docs/gha-clone-build-server-boundary\.md|remote/deployments/gha-clone-server-rs/(src/main\.rs|tests/(http_api|streempilot_http|webhook_e2e|webhook_retention)\.rs))$'
+          unexpected="$(git diff --cached --name-only | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected staged paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          git commit -m 'fix(DEN-1606): bind clone transport after atomic capacity'
+          expected=$'docs/gha-clone-build-server-boundary.md\nremote/deployments/gha-clone-server-rs/src/main.rs\nremote/deployments/gha-clone-server-rs/tests/http_api.rs\nremote/deployments/gha-clone-server-rs/tests/streempilot_http.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_retention.rs'
+          actual="$(git diff --name-only "$base"...HEAD | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'unexpected final product paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          git push origin HEAD:agent/den-1606-transport-after-capacity-v3
