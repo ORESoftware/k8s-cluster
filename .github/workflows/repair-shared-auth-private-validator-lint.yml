@@ -60,16 +60,24 @@ jobs:
               ),
               (
                   r'''            echo '- `cargo fmt --all --check`' ''',
-                  r'''            echo "- \`cargo fmt --all --check\`" ''',
+                  r'''            echo "- \`cargo fmt --all --check\`"''',
               ),
               (
                   r'''            echo '- `cargo clippy --all-targets --locked -- -D warnings`' ''',
-                  r'''            echo "- \`cargo clippy --all-targets --locked -- -D warnings\`" ''',
+                  r'''            echo "- \`cargo clippy --all-targets --locked -- -D warnings\`"''',
               ),
               (
                   r'''            echo '- `cargo test --all-targets --locked`' ''',
-                  r'''            echo "- \`cargo test --all-targets --locked\`" ''',
+                  r'''            echo "- \`cargo test --all-targets --locked\`"''',
               ),
+          ]
+
+          # The three old echo patterns above deliberately omit any newline but
+          # must not include a trailing space. Normalize their accidental raw-
+          # string suffix before matching the actual workflow lines.
+          workflow_replacements[4:] = [
+              (old[:-1] if old.endswith(' ') else old, new)
+              for old, new in workflow_replacements[4:]
           ]
 
           text = workflow.read_text()
