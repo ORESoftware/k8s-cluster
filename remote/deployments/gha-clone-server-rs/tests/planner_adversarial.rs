@@ -1,8 +1,7 @@
 use std::collections::BTreeSet;
 
 use gha_clone_server::{
-    build_plan, capabilities, is_full_commit_sha, JobPlan, PlanRequest, PlannerLimits,
-    WorkflowPlan,
+    build_plan, capabilities, is_full_commit_sha, JobPlan, PlanRequest, PlannerLimits, WorkflowPlan,
 };
 
 const IMMUTABLE_SHA: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -51,21 +50,26 @@ fn capability_contract_is_unique_bounded_and_fail_closed() {
     let profiles = capabilities
         .independent_profiles
         .iter()
+        .map(String::as_str)
         .collect::<BTreeSet<_>>();
     assert_eq!(profiles.len(), capabilities.independent_profiles.len());
-    assert!(profiles.contains(&"rust-verify".to_string()));
-    assert!(profiles.contains(&"node-verify".to_string()));
-    assert!(profiles.contains(&"python-verify".to_string()));
+    assert!(profiles.contains("rust-verify"));
+    assert!(profiles.contains("node-verify"));
+    assert!(profiles.contains("python-verify"));
 
     let labels = capabilities
         .architecture
         .native_arc_labels
         .iter()
+        .map(String::as_str)
         .collect::<BTreeSet<_>>();
-    assert_eq!(labels.len(), capabilities.architecture.native_arc_labels.len());
-    assert!(labels.contains(&"sonus-ci".to_string()));
-    assert!(labels.contains(&"sonus-ci-dind".to_string()));
-    assert!(labels.contains(&"sonus-android-kvm".to_string()));
+    assert_eq!(
+        labels.len(),
+        capabilities.architecture.native_arc_labels.len()
+    );
+    assert!(labels.contains("sonus-ci"));
+    assert!(labels.contains("sonus-ci-dind"));
+    assert!(labels.contains("sonus-android-kvm"));
     assert!(!capabilities.explicitly_unsupported.is_empty());
 }
 
@@ -91,7 +95,9 @@ jobs:
             1 => variant.repository = "sonus-auris/another-repository".to_string(),
             2 => variant.revision = "f".repeat(40),
             3 => variant.workflow_path = ".github/workflows/other.yml".to_string(),
-            4 => variant.workflow_yaml.push_str("\n# distinct source bytes\n"),
+            4 => variant
+                .workflow_yaml
+                .push_str("\n# distinct source bytes\n"),
             _ => unreachable!(),
         }
         let variant_plan = build_plan(&variant, &PlannerLimits::default()).unwrap();
@@ -312,7 +318,11 @@ jobs:
         ("puppeteer", "puppeteer"),
     ] {
         let job = job(&plan, id);
-        assert!(job.independent_supported, "{id} was rejected: {:?}", job.independent_reasons);
+        assert!(
+            job.independent_supported,
+            "{id} was rejected: {:?}",
+            job.independent_reasons
+        );
         assert_eq!(job.independent_profile.as_deref(), Some(profile));
     }
     assert!(plan.independent_executable);
@@ -422,7 +432,10 @@ jobs:
         "dynamic strategy/matrix",
         "job-level if condition",
     ] {
-        assert!(reasons.contains(expected), "missing reason {expected:?}: {reasons}");
+        assert!(
+            reasons.contains(expected),
+            "missing reason {expected:?}: {reasons}"
+        );
     }
 }
 
@@ -458,7 +471,10 @@ jobs:
         "shell is unsupported",
         "secret-bearing env/with values are unsupported",
     ] {
-        assert!(reasons.contains(expected), "missing reason {expected:?}: {reasons}");
+        assert!(
+            reasons.contains(expected),
+            "missing reason {expected:?}: {reasons}"
+        );
     }
     assert!(!job(&plan, "test").independent_supported);
 }
@@ -553,7 +569,11 @@ jobs:
     );
 
     let job = job(&plan, "node");
-    assert!(job.independent_supported, "unexpected rejection: {:?}", job.independent_reasons);
+    assert!(
+        job.independent_supported,
+        "unexpected rejection: {:?}",
+        job.independent_reasons
+    );
     assert_eq!(job.independent_profile.as_deref(), Some("node-verify"));
     assert!(job
         .independent_notes
