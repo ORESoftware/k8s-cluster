@@ -129,9 +129,10 @@ fn setup_action_sequence_is_exact_pinned_and_non_extensible() {
         let planned_job = job(&plan, job_id);
         assert!(!planned_job.independent_supported);
         assert_eq!(planned_job.independent_profile, None);
-        assert!(planned_job.independent_reasons.iter().any(|reason| {
-            reason.contains("exact reviewed pinned action sequence")
-        }));
+        assert!(planned_job
+            .independent_reasons
+            .iter()
+            .any(|reason| { reason.contains("exact reviewed pinned action sequence") }));
     }
 }
 
