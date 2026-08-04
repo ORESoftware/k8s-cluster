@@ -18,7 +18,7 @@ concurrency:
 jobs:
   finalize:
     if: github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - name: Check out the exact feature branch
@@ -33,12 +33,13 @@ jobs:
           python3 -m py_compile scripts/ci/apply-msgint-gha-clone-hardening.py
           python3 scripts/ci/apply-msgint-gha-clone-hardening.py
 
-      - name: Format the changed Rust sources
+      - name: Format every changed Rust source
         run: |
           set -euo pipefail
-          rustfmt --edition 2021 remote/deployments/build-server-rs/src/profiles.rs
-          cargo fmt --all
-        working-directory: remote/deployments/gha-clone-server-rs
+          rustfmt --edition 2021 \
+            remote/deployments/build-server-rs/src/profiles.rs \
+            remote/deployments/build-server-rs/src/validation.rs
+          cargo fmt --all --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml
 
       - name: Run GHA clone Clippy and every Rust target
         run: |
