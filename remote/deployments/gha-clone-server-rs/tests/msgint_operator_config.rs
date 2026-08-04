@@ -22,7 +22,7 @@ use tokio::{
 
 const SERVER_AUTH: &str = "msgint-server-auth";
 const BUILD_AUTH: &str = "msgint-build-auth";
-const REVISION: &str = "7d905806b2000479bdacb9b206f33b26a707ba5e";
+const REVISION: &str = "952623b07fd83caa3a83ee27bdea293f6bd4372f";
 const REPOSITORY: &str = "messaging-intel/msgint-connectors";
 const WORKFLOW_PATH: &str = ".github/workflows/gha-clone-operator-config.yml";
 
