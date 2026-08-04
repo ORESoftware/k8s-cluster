@@ -1,0 +1,651 @@
+name: Publish GHA clone and indie-worker repositories with an ephemeral owner credential
+run-name: Publish gha-indie-worker repositories from an encrypted operator response
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+    paths:
+      - .github/gha-indie-worker-ephemeral-publish-trigger
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: gha-indie-worker-ephemeral-owner-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    if: >-
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.user.login == 'ORESoftware' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'agent/gha-indie-worker-ephemeral-publish-') &&
+      github.event.pull_request.title == 'DO NOT MERGE: publish GHA clone and indie worker repositories with encrypted credential'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      REPOSITORY: ${{ github.repository }}
+      MARKER_PATH: .github/gha-indie-worker-ephemeral-publish-trigger
+      SOURCE_REPOSITORY: ORESoftware/k8s-cluster
+      SOURCE_SHA: 5cfac43c6900898f36f588d044ca34083da1c726
+      TARGET_ORG: gha-indie-worker
+      CLONE_REPOSITORY: gha-clone-server.rs
+      CLONE_PREFIX: remote/deployments/gha-clone-server-rs
+      WORKER_REPOSITORY: gha-indie-worker.rs
+      WORKER_PREFIX: remote/deployments/build-server-rs
+
+    steps:
+      - name: Validate the metadata-only carrier against current main
+        id: carrier
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          pull="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+          head_sha="$(jq -er '.head.sha' <<<"$pull")"
+          main_sha="$(gh api "repos/${REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          jq -e '
+            .draft == true and
+            .user.login == "ORESoftware" and
+            .base.ref == "main" and
+            .head.repo.full_name == "ORESoftware/k8s-cluster" and
+            (.head.ref | startswith("agent/gha-indie-worker-ephemeral-publish-")) and
+            .title == "DO NOT MERGE: publish GHA clone and indie worker repositories with encrypted credential" and
+            .commits == 1 and
+            .changed_files == 1 and
+            .additions == 7 and
+            .deletions == 0
+          ' <<<"$pull" >/dev/null
+
+          commits="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/commits?per_page=100")"
+          test "$(jq 'length' <<<"$commits")" -eq 1
+          parent_sha="$(jq -er '.[0].parents[0].sha' <<<"$commits")"
+          [[ "$parent_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          files="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100")"
+          jq -e --arg path "$MARKER_PATH" '
+            length == 1 and
+            .[0].filename == $path and
+            .[0].status == "added" and
+            .[0].changes == 7
+          ' <<<"$files" >/dev/null
+
+          encoded="$(
+            gh api \
+              "repos/${REPOSITORY}/contents/${MARKER_PATH}?ref=${head_sha}" \
+              --jq '.content'
+          )"
+          marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
+          test "$(wc -l <<<"$marker" | tr -d ' ')" -eq 7
+          test "$(sed -n 's/^target-org=//p' <<<"$marker")" = "$TARGET_ORG"
+          test "$(sed -n 's/^source-repository=//p' <<<"$marker")" = "$SOURCE_REPOSITORY"
+          test "$(sed -n 's/^source-sha=//p' <<<"$marker")" = "$SOURCE_SHA"
+          test "$(sed -n 's/^clone-repository=//p' <<<"$marker")" = "$CLONE_REPOSITORY"
+          test "$(sed -n 's/^worker-repository=//p' <<<"$marker")" = "$WORKER_REPOSITORY"
+          test "$(sed -n 's/^trusted-main=//p' <<<"$marker")" = "$parent_sha"
+          test "$(sed -n 's/^protocol=//p' <<<"$marker")" = rsa-oaep-sha256-v1
+
+          comparison="$(gh api "repos/${REPOSITORY}/compare/${parent_sha}...${main_sha}")"
+          jq -e '(.status == "ahead" or .status == "identical") and .behind_by == 0' \
+            <<<"$comparison" >/dev/null
+
+          printf 'head_sha=%s\n' "$head_sha" >> "$GITHUB_OUTPUT"
+          printf 'trusted_sha=%s\n' "$main_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Issue one-time challenge, decrypt in memory, publish, and verify
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CARRIER_HEAD_SHA: ${{ steps.carrier.outputs.head_sha }}
+          TRUSTED_SHA: ${{ steps.carrier.outputs.trusted_sha }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          stage=challenge-bootstrap
+          workflow_token="$GH_TOKEN"
+          work="$(mktemp -d "$RUNNER_TEMP/gha-indie-worker-credential-broker.XXXXXX")"
+          owner_token=''
+
+          cleanup() {
+            unset owner_token GHA_OWNER_TOKEN WORKFLOW_READ_TOKEN
+            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+            rm -rf "$work"
+          }
+          report_failure() {
+            status=$?
+            trap - ERR
+            GH_TOKEN="$workflow_token" gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" \
+              --body "Ephemeral GHA repository publication failed at bounded stage \`${stage}\`. No credential was written to Git, Actions outputs, artifacts, or the environment file." >/dev/null || true
+            exit "$status"
+          }
+          trap cleanup EXIT
+          trap report_failure ERR
+
+          private_key="$work/private.pem"
+          public_key="$work/public.pem"
+          ciphertext_file="$work/ciphertext.bin"
+          openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key"
+          chmod 600 "$private_key"
+          openssl pkey -in "$private_key" -pubout -out "$public_key"
+          nonce="$(openssl rand -hex 24)"
+          [[ "$nonce" =~ ^[0-9a-f]{48}$ ]]
+
+          challenge_body="$work/challenge.md"
+          {
+            printf '<!-- gha-indie-worker-credential-challenge:%s -->\n' "$nonce"
+            printf 'One-time RSA-OAEP-SHA256 challenge for `%s/%s` and `%s/%s`. The private key exists only in this runner and is destroyed on exit. Reply with the matching encrypted ciphertext marker.\n\n' \
+              "$TARGET_ORG" "$CLONE_REPOSITORY" "$TARGET_ORG" "$WORKER_REPOSITORY"
+            printf '```pem\n'
+            cat "$public_key"
+            printf '```\n'
+          } > "$challenge_body"
+          challenge_json="$(
+            jq -n --rawfile body "$challenge_body" '{body:$body}' \
+              | gh api --method POST "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" --input -
+          )"
+          challenge_id="$(jq -er '.id | select(type == "number" and . > 0)' <<<"$challenge_json")"
+          response_marker="<!-- gha-indie-worker-credential-response:${nonce} -->"
+
+          stage=await-encrypted-response
+          response_body=''
+          for _ in $(seq 1 180); do
+            comments="$(gh api --paginate "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" --slurp)"
+            response_body="$(
+              jq -r \
+                --arg marker "$response_marker" \
+                --argjson challenge_id "$challenge_id" '
+                [
+                  .[][]
+                  | select(.id > $challenge_id)
+                  | select(.user.login == "ORESoftware")
+                  | select(.body | startswith($marker + "\n"))
+                ]
+                | sort_by(.id)
+                | last
+                | .body // empty
+              ' <<<"$comments"
+            )"
+            test -n "$response_body" && break
+            sleep 5
+          done
+          test -n "$response_body"
+          test "$(grep -c '^ciphertext-base64=' <<<"$response_body")" -eq 1
+          ciphertext="$(sed -n 's/^ciphertext-base64=//p' <<<"$response_body")"
+          [[ "$ciphertext" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#ciphertext}" -le 8192
+          printf '%s' "$ciphertext" | base64 --decode > "$ciphertext_file"
+          test -s "$ciphertext_file"
+
+          stage=decrypt-ciphertext
+          if ! owner_token="$(
+            openssl pkeyutl -decrypt \
+              -inkey "$private_key" \
+              -in "$ciphertext_file" \
+              -pkeyopt rsa_padding_mode:oaep \
+              -pkeyopt rsa_oaep_md:sha256 \
+              -pkeyopt rsa_mgf1_md:sha256 \
+              2>/dev/null
+          )"; then
+            false
+          fi
+
+          stage=validate-owner-token-shape
+          test -n "$owner_token"
+          [[ "$owner_token" != *$'\n'* && "$owner_token" != *$'\r'* && "$owner_token" != *$'\t'* && "$owner_token" != *' '* ]]
+          [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
+          echo "::add-mask::$owner_token"
+
+          stage=validate-owner-identity
+          if ! owner_login="$(GH_TOKEN="$owner_token" gh api user --jq '.login' 2>/dev/null)"; then
+            false
+          fi
+          test "$owner_login" = ORESoftware
+
+          stage=validate-owner-membership
+          if ! membership="$(
+            GH_TOKEN="$owner_token" gh api "/user/memberships/orgs/${TARGET_ORG}" \
+              --jq '.role + ":" + .state' \
+              2>/dev/null
+          )"; then
+            false
+          fi
+          test "$membership" = admin:active
+
+          stage=publish-reviewed-source
+          export GHA_OWNER_TOKEN="$owner_token"
+          export WORKFLOW_READ_TOKEN="$workflow_token"
+          export PUBLICATION_REPORT="$work/publication.json"
+          python3 - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          API_ROOT = "https://api.github.com"
+          API_VERSION = "2022-11-28"
+
+          class ApiError(RuntimeError):
+              def __init__(self, method: str, path: str, status: int):
+                  super().__init__(f"GitHub API {method} {path} returned HTTP {status}")
+                  self.status = status
+                  self.method = method
+                  self.path = path
+
+          def api(token, method, path, payload=None, expected=(200,), allow=()):
+              data = None
+              headers = {
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {token}",
+                  "X-GitHub-Api-Version": API_VERSION,
+                  "User-Agent": "gha-indie-worker-ephemeral-publisher",
+              }
+              if payload is not None:
+                  data = json.dumps(payload, separators=(",", ":")).encode()
+                  headers["Content-Type"] = "application/json"
+              request = urllib.request.Request(
+                  API_ROOT + path, data=data, headers=headers, method=method
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=45) as response:
+                      body = response.read()
+                      status = response.status
+              except urllib.error.HTTPError as error:
+                  status = error.code
+                  error.read()
+                  if status in allow:
+                      return None, status
+                  raise ApiError(method, path, status) from None
+              if status not in expected:
+                  if status in allow:
+                      return None, status
+                  raise ApiError(method, path, status)
+              if not body:
+                  return None, status
+              return json.loads(body), status
+
+          def git_blob_sha(content: bytes) -> str:
+              header = f"blob {len(content)}\0".encode()
+              return hashlib.sha1(header + content).hexdigest()
+
+          owner_token = os.environ["GHA_OWNER_TOKEN"]
+          read_token = os.environ["WORKFLOW_READ_TOKEN"]
+          source_repository = os.environ["SOURCE_REPOSITORY"]
+          source_sha = os.environ["SOURCE_SHA"]
+          target_org = os.environ["TARGET_ORG"]
+          report_path = os.environ["PUBLICATION_REPORT"]
+
+          source_commit, _ = api(
+              read_token, "GET", f"/repos/{source_repository}/git/commits/{source_sha}"
+          )
+          if source_commit.get("sha") != source_sha:
+              raise RuntimeError("source commit identity mismatch")
+          source_tree_sha = source_commit.get("tree", {}).get("sha")
+          if not isinstance(source_tree_sha, str) or len(source_tree_sha) != 40:
+              raise RuntimeError("source tree identity is missing")
+          source_tree, _ = api(
+              read_token,
+              "GET",
+              f"/repos/{source_repository}/git/trees/{source_tree_sha}?recursive=1",
+          )
+          if source_tree.get("truncated") is not False:
+              raise RuntimeError("source tree response is truncated")
+          tree_entries = source_tree.get("tree")
+          if not isinstance(tree_entries, list):
+              raise RuntimeError("source tree entries are missing")
+
+          source_date = (
+              source_commit.get("committer", {}).get("date")
+              or source_commit.get("author", {}).get("date")
+              or "2026-08-04T00:00:00Z"
+          )
+          identity = {
+              "name": "ORESoftware",
+              "email": "11139560+ORESoftware@users.noreply.github.com",
+              "date": source_date,
+          }
+
+          specs = [
+              {
+                  "name": os.environ["CLONE_REPOSITORY"],
+                  "prefix": os.environ["CLONE_PREFIX"],
+                  "description": "Bounded fail-closed GitHub Actions continuity planner and executor router in Rust.",
+                  "role": "planner, workflow-subset compiler, run coordinator, and pre-submit executor router",
+                  "topics": [
+                      "github-actions",
+                      "ci",
+                      "rust",
+                      "continuity",
+                      "arc",
+                      "fail-closed",
+                  ],
+              },
+              {
+                  "name": os.environ["WORKER_REPOSITORY"],
+                  "prefix": os.environ["WORKER_PREFIX"],
+                  "description": "Fixed-profile immutable-SHA worker for the independent GHA continuity lane.",
+                  "role": "fixed-profile build worker, sandbox boundary, logs, artifacts, and terminal status",
+                  "topics": [
+                      "github-actions",
+                      "ci",
+                      "rust",
+                      "worker",
+                      "sandbox",
+                      "immutable-sha",
+                  ],
+              },
+          ]
+
+          results = []
+          blob_cache = {}
+
+          for spec in specs:
+              repo_name = spec["name"]
+              repo_path = f"/repos/{target_org}/{repo_name}"
+              existing, existing_status = api(
+                  owner_token, "GET", repo_path, expected=(200,), allow=(404,)
+              )
+              created = False
+              if existing_status == 404:
+                  existing, _ = api(
+                      owner_token,
+                      "POST",
+                      f"/orgs/{target_org}/repos",
+                      {
+                          "name": repo_name,
+                          "description": spec["description"],
+                          "private": False,
+                          "has_issues": True,
+                          "has_projects": False,
+                          "has_wiki": False,
+                          "is_template": False,
+                          "auto_init": False,
+                          "allow_squash_merge": True,
+                          "allow_merge_commit": False,
+                          "allow_rebase_merge": True,
+                          "allow_auto_merge": True,
+                          "delete_branch_on_merge": True,
+                      },
+                      expected=(201,),
+                  )
+                  created = True
+              if existing.get("owner", {}).get("login", "").lower() != target_org.lower():
+                  raise RuntimeError(f"unexpected owner for {repo_name}")
+              if existing.get("private") is not False or existing.get("archived") or existing.get("disabled"):
+                  raise RuntimeError(f"unsafe repository state for {repo_name}")
+
+              prefix = spec["prefix"].rstrip("/") + "/"
+              selected = []
+              forbidden = []
+              for entry in tree_entries:
+                  path = entry.get("path", "")
+                  if not isinstance(path, str) or not path.startswith(prefix):
+                      continue
+                  entry_type = entry.get("type")
+                  mode = entry.get("mode")
+                  if entry_type == "tree":
+                      continue
+                  if entry_type != "blob" or mode not in ("100644", "100755"):
+                      forbidden.append((path, entry_type, mode))
+                      continue
+                  relative = path[len(prefix):]
+                  parts = relative.split("/")
+                  if not relative or relative.startswith("/") or ".." in parts or "" in parts:
+                      raise RuntimeError(f"unsafe source path under {spec['prefix']}")
+                  selected.append((relative, mode, entry.get("sha")))
+              if forbidden:
+                  raise RuntimeError(f"unsupported source entries under {spec['prefix']}")
+              selected.sort(key=lambda item: item[0])
+              if not selected or not any(path == "Cargo.toml" for path, _, _ in selected):
+                  raise RuntimeError(f"source crate is incomplete for {repo_name}")
+              if len({path for path, _, _ in selected}) != len(selected):
+                  raise RuntimeError(f"duplicate source path for {repo_name}")
+
+              target_tree_entries = []
+              for relative, mode, source_blob_sha in selected:
+                  if not isinstance(source_blob_sha, str) or len(source_blob_sha) != 40:
+                      raise RuntimeError(f"invalid source blob identity for {relative}")
+                  content = blob_cache.get(source_blob_sha)
+                  if content is None:
+                      source_blob, _ = api(
+                          read_token,
+                          "GET",
+                          f"/repos/{source_repository}/git/blobs/{source_blob_sha}",
+                      )
+                      if source_blob.get("encoding") != "base64":
+                          raise RuntimeError(f"unsupported source blob encoding for {relative}")
+                      content = base64.b64decode(
+                          source_blob.get("content", "").replace("\n", ""), validate=True
+                      )
+                      if git_blob_sha(content) != source_blob_sha:
+                          raise RuntimeError(f"source blob digest mismatch for {relative}")
+                      blob_cache[source_blob_sha] = content
+                  target_blob, _ = api(
+                      owner_token,
+                      "POST",
+                      f"{repo_path}/git/blobs",
+                      {
+                          "content": base64.b64encode(content).decode(),
+                          "encoding": "base64",
+                      },
+                      expected=(201,),
+                  )
+                  if target_blob.get("sha") != source_blob_sha:
+                      raise RuntimeError(f"target blob identity mismatch for {relative}")
+                  target_tree_entries.append(
+                      {
+                          "path": relative,
+                          "mode": mode,
+                          "type": "blob",
+                          "sha": source_blob_sha,
+                      }
+                  )
+
+              provenance = (
+                  "# Source provenance\n\n"
+                  f"This repository was split from `{source_repository}` at immutable commit "
+                  f"`{source_sha}`.\n\n"
+                  f"- Source path: `{spec['prefix']}`\n"
+                  f"- Imported role: {spec['role']}\n"
+                  "- Import date: 2026-08-04\n"
+                  "- History policy: this root commit preserves every source file byte and executable mode; "
+                  "this provenance file is the only added file.\n\n"
+                  "This code is an independent continuity lane, not a claim to reproduce GitHub's "
+                  "proprietary Actions control plane. Native workflow semantics remain GitHub-hosted "
+                  "Actions and Actions Runner Controller (ARC).\n"
+              ).encode()
+              provenance_blob, _ = api(
+                  owner_token,
+                  "POST",
+                  f"{repo_path}/git/blobs",
+                  {
+                      "content": base64.b64encode(provenance).decode(),
+                      "encoding": "base64",
+                  },
+                  expected=(201,),
+              )
+              target_tree_entries.append(
+                  {
+                      "path": "SOURCE_PROVENANCE.md",
+                      "mode": "100644",
+                      "type": "blob",
+                      "sha": provenance_blob["sha"],
+                  }
+              )
+
+              target_tree, _ = api(
+                  owner_token,
+                  "POST",
+                  f"{repo_path}/git/trees",
+                  {"tree": target_tree_entries},
+                  expected=(201,),
+              )
+              target_commit, _ = api(
+                  owner_token,
+                  "POST",
+                  f"{repo_path}/git/commits",
+                  {
+                      "message": f"Import {spec['role']} from {source_repository}@{source_sha}",
+                      "tree": target_tree["sha"],
+                      "parents": [],
+                      "author": identity,
+                      "committer": identity,
+                  },
+                  expected=(201,),
+              )
+              expected_commit = target_commit["sha"]
+
+              current_ref, ref_status = api(
+                  owner_token,
+                  "GET",
+                  f"{repo_path}/git/ref/heads/main",
+                  expected=(200,),
+                  allow=(404, 409),
+              )
+              if ref_status in (404, 409):
+                  api(
+                      owner_token,
+                      "POST",
+                      f"{repo_path}/git/refs",
+                      {"ref": "refs/heads/main", "sha": expected_commit},
+                      expected=(201,),
+                  )
+              elif current_ref.get("object", {}).get("sha") != expected_commit:
+                  raise RuntimeError(f"existing main differs for {target_org}/{repo_name}")
+
+              api(
+                  owner_token,
+                  "PATCH",
+                  repo_path,
+                  {
+                      "description": spec["description"],
+                      "default_branch": "main",
+                      "has_issues": True,
+                      "has_projects": False,
+                      "has_wiki": False,
+                      "allow_squash_merge": True,
+                      "allow_merge_commit": False,
+                      "allow_rebase_merge": True,
+                      "allow_auto_merge": True,
+                      "delete_branch_on_merge": True,
+                  },
+              )
+
+              topics_state = "configured"
+              try:
+                  api(
+                      owner_token,
+                      "PUT",
+                      f"{repo_path}/topics",
+                      {"names": spec["topics"]},
+                  )
+              except ApiError as error:
+                  topics_state = f"not-configured-http-{error.status}"
+
+              protection_state = "enabled"
+              try:
+                  api(
+                      owner_token,
+                      "PUT",
+                      f"{repo_path}/branches/main/protection",
+                      {
+                          "required_status_checks": None,
+                          "enforce_admins": True,
+                          "required_pull_request_reviews": {
+                              "dismiss_stale_reviews": True,
+                              "require_code_owner_reviews": False,
+                              "required_approving_review_count": 1,
+                          },
+                          "restrictions": None,
+                          "required_conversation_resolution": True,
+                          "allow_force_pushes": False,
+                          "allow_deletions": False,
+                      },
+                  )
+              except ApiError as error:
+                  protection_state = f"not-enabled-http-{error.status}"
+
+              verified_repo, _ = api(owner_token, "GET", repo_path)
+              verified_ref, _ = api(
+                  owner_token, "GET", f"{repo_path}/git/ref/heads/main"
+              )
+              api(
+                  owner_token,
+                  "GET",
+                  f"{repo_path}/contents/SOURCE_PROVENANCE.md?ref=main",
+              )
+              if verified_repo.get("default_branch") != "main":
+                  raise RuntimeError(f"default branch verification failed for {repo_name}")
+              if verified_ref.get("object", {}).get("sha") != expected_commit:
+                  raise RuntimeError(f"main verification failed for {repo_name}")
+
+              results.append(
+                  {
+                      "repository": f"{target_org}/{repo_name}",
+                      "html_url": verified_repo.get("html_url"),
+                      "commit": expected_commit,
+                      "tree": target_tree["sha"],
+                      "source_file_count": len(selected),
+                      "created": created,
+                      "topics": topics_state,
+                      "branch_protection": protection_state,
+                  }
+              )
+
+          with open(report_path, "w", encoding="utf-8") as report_file:
+              json.dump(
+                  {
+                      "source_repository": source_repository,
+                      "source_sha": source_sha,
+                      "repositories": results,
+                  },
+                  report_file,
+                  indent=2,
+                  sort_keys=True,
+              )
+          PY
+
+          unset owner_token GHA_OWNER_TOKEN
+          export GH_TOKEN="$workflow_token"
+
+          stage=publish-bounded-success-evidence
+          jq -e '
+            .source_repository == "ORESoftware/k8s-cluster" and
+            .source_sha == "5cfac43c6900898f36f588d044ca34083da1c726" and
+            (.repositories | length == 2) and
+            ([.repositories[].repository] | sort) ==
+              (["gha-indie-worker/gha-clone-server.rs", "gha-indie-worker/gha-indie-worker.rs"] | sort) and
+            all(.repositories[];
+              (.commit | test("^[0-9a-f]{40}$")) and
+              (.tree | test("^[0-9a-f]{40}$")) and
+              (.source_file_count | type == "number" and . > 0)
+            )
+          ' "$PUBLICATION_REPORT" >/dev/null
+
+          report="$work/success.md"
+          {
+            echo '## GHA indie-worker repository publication complete'
+            echo
+            echo "Pinned source: \`${SOURCE_REPOSITORY}@${SOURCE_SHA}\`"
+            echo
+            echo '| Repository | Main commit | Imported files | Created | Topics | Main protection |'
+            echo '|---|---|---:|---:|---|---|'
+            jq -r '.repositories[] | "| [`\(.repository)`](\(.html_url)) | `\(.commit)` | \(.source_file_count) | \(if .created then "yes" else "already exact" end) | \(.topics) | \(.branch_protection) |"' \
+              "$PUBLICATION_REPORT"
+            echo
+            echo 'The decrypted credential existed only in this runner and has been removed from process state. Rotate the disclosed credential now that live repository verification has succeeded.'
+          } > "$report"
+          gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" --body-file "$report" >/dev/null
+
+          stage=close-execution-carrier
+          gh api --method PATCH "repos/${REPOSITORY}/pulls/${PR_NUMBER}" -f state=closed >/dev/null
