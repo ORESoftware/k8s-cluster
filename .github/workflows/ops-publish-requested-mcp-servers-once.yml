@@ -8,6 +8,7 @@ on:
       - scripts/ops/requested_mcp_publisher/**
       - scripts/ops/tests/test_publish_requested_mcp_servers.py
       - .github/workflows/ops-publish-requested-mcp-servers-once.yml
+      - .github/requested-mcp-publisher.activate
   workflow_dispatch:
 
 permissions:
@@ -37,6 +38,7 @@ jobs:
           python3 -m unittest -v scripts/ops/tests/test_publish_requested_mcp_servers.py
           python3 scripts/ops/publish_requested_mcp_servers.py --check > /tmp/requested-mcp-check.json
           test "$(jq '.repositories | length' /tmp/requested-mcp-check.json)" -eq 5
+          test "$(cat .github/requested-mcp-publisher.activate)" = "publish-five-mcp-repositories-v1"
 
       - name: Configure AWS OIDC credentials
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
