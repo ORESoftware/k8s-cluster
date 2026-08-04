@@ -1,9 +1,7 @@
 name: DEN-1597 one-shot rustfmt
 
 on:
-  push:
-    branches:
-      - agent/den-1597-aws-hetzner-executor-router
+  pull_request:
     paths:
       - .github/workflows/den-1597-one-shot-rustfmt.yml
 
@@ -16,6 +14,7 @@ concurrency:
 
 jobs:
   format-and-remove-workflow:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
