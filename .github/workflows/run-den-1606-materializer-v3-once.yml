@@ -1,7 +1,6 @@
 # Thin wrapper over the reviewed primary carrier. It preserves Rust escape
-# literals for both path validators, fixes the generated reservation guard,
-# validates the product, and self-deletes.
-# Re-triggered after the transform reached Rust compilation.
+# literals, fixes generated capacity/configuration call sites, validates the
+# product, and self-deletes.
 name: Run DEN-1606 direct hardening materializer v3 once
 
 on:
@@ -33,7 +32,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: true
 
-      - name: Execute the reviewed transform with raw Rust escape literals
+      - name: Execute the reviewed transform with bounded Rust corrections
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -83,6 +82,7 @@ jobs:
 
           main_path = Path('remote/deployments/gha-clone-server-rs/src/main.rs')
           main = main_path.read_text(encoding='utf-8')
+
           reserve_start = main.find(
               'async fn reserve_runs(state: &AppState, records: &[RunRecord]) -> bool {'
           )
@@ -95,6 +95,21 @@ jobs:
           }
           '''.replace('          ', '')
           main = main[:reserve_start] + reserve + main[reserve_end + 1:]
+
+          config_old = '''            build_server_url: env_optional("GHA_CLONE_BUILD_SERVER_URL")
+                          .map(|value| value.trim_end_matches('/').to_string()),
+          '''.replace('          ', '')
+          config_new = '''            build_server_url: build_server_url_from_env()?,
+          '''.replace('          ', '')
+          if main.count(config_old) != 1:
+              raise SystemExit('generated build-server configuration site drifted')
+          main = main.replace(config_old, config_new, 1)
+
+          clone_old = 'reserve_runs(&state, &[record.clone()]).await'
+          clone_new = 'reserve_runs(&state, std::slice::from_ref(&record)).await'
+          if main.count(clone_old) != 1:
+              raise SystemExit('generated single-run reservation site drifted')
+          main = main.replace(clone_old, clone_new, 1)
           main_path.write_text(main, encoding='utf-8')
 
           for path in (
