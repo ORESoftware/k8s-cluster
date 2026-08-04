@@ -9,6 +9,7 @@ on:
       - scripts/ops/run_protected_requested_mcp_publisher.sh
       - scripts/ops/run_requested_mcp_publisher_remote.sh
       - scripts/ops/tests/test_publish_requested_mcp_servers.py
+      - .github/requested-mcp-token.envelope
       - .github/workflows/ops-publish-requested-mcp-servers-once.yml
       - .github/requested-mcp-publisher.activate
   workflow_dispatch:
@@ -47,7 +48,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Validate the exact trusted publisher
+      - name: Validate exact publisher and encrypted envelope
         shell: bash
         run: |
           set -euo pipefail
@@ -58,6 +59,16 @@ jobs:
           test "$(cat .github/requested-mcp-publisher.activate)" = "publish-five-mcp-repositories-v1"
           bash -n scripts/ops/run_protected_requested_mcp_publisher.sh
           bash -n scripts/ops/run_requested_mcp_publisher_remote.sh
+
+          envelope='.github/requested-mcp-token.envelope'
+          test "$(wc -l < "$envelope")" -eq 1
+          grep -qxE 'MCP_TOKEN_ENVELOPE_V1 fingerprint=6a747f9387283fcf4a2eeba3cb433a3c9cfc1105a533d5dd315ccc912975b704 ciphertext=[A-Za-z0-9+/=]+' "$envelope"
+          test "$(sha256sum "$envelope" | awk '{print $1}')" = '6d8599173b0a18e6fc73f712af86b43dd95d5b9c4d73b22b7895fcd67fabb186'
+          ciphertext="$(sed -E 's/^.* ciphertext=//' "$envelope")"
+          printf '%s' "$ciphertext" | base64 --decode > "$RUNNER_TEMP/requested-mcp-token.enc"
+          test "$(stat -c '%s' "$RUNNER_TEMP/requested-mcp-token.enc")" -eq 512
+          rm -f "$RUNNER_TEMP/requested-mcp-token.enc"
+          unset ciphertext
           printf '%s\n' aws-oidc > "$RUNNER_TEMP/requested-mcp-stage"
 
       - name: Configure AWS OIDC credentials
@@ -82,9 +93,12 @@ jobs:
 
           broker='scripts/ops/run_protected_requested_mcp_publisher.sh'
           child='scripts/ops/run_requested_mcp_publisher_remote.sh'
+          envelope='.github/requested-mcp-token.envelope'
           encoded_broker="$(base64 --wrap=0 "$broker")"
           encoded_child="$(base64 --wrap=0 "$child")"
-          remote_command="broker=/tmp/run-protected-requested-mcp-publisher.sh; child=/tmp/publish-requested-mcp-repositories.sh; log=/tmp/publish-requested-mcp-repositories.log; printf '%s' '$encoded_broker' | base64 --decode > \"\$broker\"; printf '%s' '$encoded_child' | base64 --decode > \"\$child\"; chmod 700 \"\$broker\" \"\$child\"; status=0; bash \"\$broker\" '$trusted_sha' \"\$child\" >\"\$log\" 2>&1 || status=\$?; tail -c 20000 \"\$log\" 2>/dev/null || true; rm -f \"\$broker\" \"\$child\" \"\$log\"; exit \$status"
+          encoded_envelope="$(base64 --wrap=0 "$envelope")"
+          remote_command="broker=/tmp/run-protected-requested-mcp-publisher.sh; child=/tmp/publish-requested-mcp-repositories.sh; log=/tmp/publish-requested-mcp-repositories.log; printf '%s' '$encoded_broker' | base64 --decode > \"\$broker\"; printf '%s' '$encoded_child' | base64 --decode > \"\$child\"; chmod 700 \"\$broker\" \"\$child\"; status=0; printf '%s' '$encoded_envelope' | base64 --decode | bash \"\$broker\" '$trusted_sha' \"\$child\" >\"\$log\" 2>&1 || status=\$?; tail -c 20000 \"\$log\" 2>/dev/null || true; rm -f \"\$broker\" \"\$child\" \"\$log\"; exit \$status"
+          unset encoded_envelope
           parameters="$RUNNER_TEMP/ssm-requested-mcp-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
 
@@ -166,7 +180,7 @@ jobs:
               echo '```'
             else
               echo
-              echo "No credentials, raw provider response bodies, Kubernetes secret values, or unsanitized SSM output are included."
+              echo "No credential plaintext, raw provider response bodies, Kubernetes secret values, or unsanitized SSM output are included."
             fi
           } > "$body"
           gh issue comment 800 --repo ORESoftware/k8s-cluster --body-file "$body"
