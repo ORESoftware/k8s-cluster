@@ -11,9 +11,11 @@ on:
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
       - 'remote/tests/general/gha-clone-webhook-config.test.ts'
+      - 'remote/tests/general/gha-executor-router-activation.test.mjs'
       - 'docs/gha-continuity-architecture.md'
       - 'docs/gha-independent-executor-routing.md'
       - 'docs/gha-executor-router-gitops.md'
+      - 'docs/gha-executor-router-activation.md'
       - '.github/actionlint.yaml'
       - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/gha-clone-server.yml'
@@ -29,9 +31,11 @@ on:
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
       - 'remote/tests/general/gha-clone-webhook-config.test.ts'
+      - 'remote/tests/general/gha-executor-router-activation.test.mjs'
       - 'docs/gha-continuity-architecture.md'
       - 'docs/gha-independent-executor-routing.md'
       - 'docs/gha-executor-router-gitops.md'
+      - 'docs/gha-executor-router-activation.md'
       - '.github/actionlint.yaml'
       - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/gha-clone-server.yml'
@@ -135,12 +139,26 @@ jobs:
           cache-dependency-path: remote/tests/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: remote/tests
-      - name: Validate deployment, routing, execution, and webhook boundaries
+      - name: Validate deployment, routing, execution, webhook, and activation boundaries
         working-directory: remote/tests
         run: |
           pnpm exec tsx --test \
             general/gha-clone-server-config.test.ts \
             general/gha-clone-webhook-config.test.ts
+          node --test general/gha-executor-router-activation.test.mjs
+      - name: Install pinned kubectl renderer
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
+        with:
+          version: v1.32.2
+      - name: Render the complete continuity overlay
+        run: |
+          set -euo pipefail
+          rendered="${RUNNER_TEMP}/dd-next-runtime.yaml"
+          kubectl kustomize remote/argocd/dd-next-runtime >"$rendered"
+          test -s "$rendered"
+          grep -F 'name: dd-gha-clone-server' "$rendered"
+          grep -F 'name: dd-gha-executor-router' "$rendered"
+          test "$(grep -c 'replicas: 0' "$rendered")" -ge 2
       - name: Validate webhook registration shell syntax
         run: bash -n remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh
       - name: Reject committed credentials
@@ -153,7 +171,8 @@ jobs:
             remote/argocd/dd-next-runtime/dd-gha-executor-router* \
             docs/gha-continuity-architecture.md \
             docs/gha-independent-executor-routing.md \
-            docs/gha-executor-router-gitops.md; then
+            docs/gha-executor-router-gitops.md \
+            docs/gha-executor-router-activation.md; then
             echo 'credential-like material found in GHA continuity files' >&2
             exit 1
           fi
