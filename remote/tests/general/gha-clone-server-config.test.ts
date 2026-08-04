@@ -22,10 +22,16 @@ const observabilityConfigPath =
 const observabilityDeploymentPath =
   'remote/argocd/observability/k8s-resource-exporter.deployment.yaml';
 const profilesPath = 'remote/deployments/build-server-rs/src/profiles.rs';
+const continuityPatchPath =
+  'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml';
 const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';
 const serverPath = 'remote/deployments/gha-clone-server-rs/src/main.rs';
 const metaIntegrationTestPath =
   'remote/deployments/gha-clone-server-rs/tests/meta_self_test.rs';
+const msgintIntegrationTestPath =
+  'remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs';
+const msgintFixturePath =
+  'remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml';
 const workflowPath = '.github/workflows/gha-clone-server.yml';
 const metaWorkflowPath = '.github/workflows/gha-clone-server-meta.yml';
 
@@ -104,6 +110,7 @@ test('network boundary permits only DNS, GitHub HTTPS, and build-server dispatch
 test('config allowlists exact trusted repositories and the bounded meta workflow', () => {
   const config = read(configMapPath);
   assert.match(config, /ORESoftware\/k8s-cluster/);
+  assert.match(config, /messaging-intel\/msgint-connectors/);
   assert.match(config, /sonus-auris\/sonus-auris-interfaces/);
   assert.match(config, /\.github\/workflows\/ci\.yml/);
   assert.match(
@@ -114,12 +121,21 @@ test('config allowlists exact trusted repositories and the bounded meta workflow
     config,
     /"ORESoftware\/k8s-cluster": \["\.github\/workflows\/gha-clone-server\.yml"\]/,
   );
+  assert.match(
+    config,
+    /"messaging-intel\/msgint-connectors": \["\.github\/workflows\/gha-clone-operator-config\.yml"\]/,
+  );
   assert.doesNotMatch(config, /https?:\/\/[^/\s]+\/\*|owner\/\*/);
 });
 
 test('build server exposes fixed Rust, Node, and Python continuity profiles', () => {
   const profiles = read(profilesPath);
-  for (const profile of ['rust-verify', 'node-verify', 'python-verify']) {
+  for (const profile of [
+    'rust-verify',
+    'node-verify',
+    'node-hardened-verify',
+    'python-verify',
+  ]) {
     assert.match(profiles, new RegExp(`name: "${profile}"`));
   }
   assert.match(
@@ -131,7 +147,17 @@ test('build server exposes fixed Rust, Node, and Python continuity profiles', ()
     /remote\/deployments\/gha-clone-server-rs\/Cargo\.toml/,
   );
   assert.match(profiles, /pnpm install --frozen-lockfile/);
+  assert.match(profiles, /npm ci --ignore-scripts/);
+  assert.match(profiles, /npm run test:operator-config/);
+  assert.match(profiles, /npm audit --audit-level=high/);
   assert.match(profiles, /python -m pytest/);
+
+  const continuityPatch = read(continuityPatchPath);
+  assert.match(continuityPatch, /node-hardened-verify/);
+  assert.match(
+    continuityPatch,
+    /https:\/\/github\.com\/messaging-intel\/msgint-connectors\.git/,
+  );
   assert.doesNotMatch(profiles, /find .*Cargo\.toml|for crate in/);
 
   const imageAssignments = [
@@ -154,6 +180,7 @@ test('planner and dispatcher preserve the fail-closed command boundary', () => {
   assert.match(planner, /"working-directory"/);
   assert.match(planner, /unsupported by the fixed-profile executor/);
   assert.match(planner, /non-Linux native execution is unavailable/);
+  assert.match(planner, /node-hardened-verify/);
   assert.match(server, /job_kind: "run-profile"/);
   assert.match(server, /profile,/);
   assert.doesNotMatch(server, /command:\s*&|script:\s*&|runner_image/);
@@ -168,6 +195,36 @@ test('meta integration test starts the real server and submits its own workflow'
   assert.match(integration, /"profile"\], "rust-verify"/);
   assert.match(integration, /GHA_CLONE_EXECUTION_ENABLED", "true"/);
   assert.match(integration, /env_remove\("GHA_CLONE_GITHUB_TOKEN"\)/);
+});
+
+test('Messaging Intel integration starts the real server and dispatches both fixed profiles', () => {
+  const integration = read(msgintIntegrationTestPath);
+  assert.match(integration, /CARGO_BIN_EXE_gha-clone-server/);
+  assert.match(integration, /messaging-intel\/msgint-connectors/);
+  assert.match(integration, /gha-clone-operator-config\.yml/);
+  assert.match(integration, /node-hardened-verify/);
+  assert.match(integration, /node-verify/);
+  assert.match(integration, /submissions\.len\(\), 2/);
+  assert.match(integration, /env_remove\("GHA_CLONE_GITHUB_TOKEN"\)/);
+});
+
+test('Messaging Intel mirror remains independently compilable and non-secret', () => {
+  const workflow = read(msgintFixturePath);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /operator_config:/);
+  assert.match(workflow, /repository_tests:/);
+  assert.match(workflow, /needs: operator_config/);
+  assert.match(workflow, /npm ci --ignore-scripts/);
+  assert.match(workflow, /npm run check/);
+  assert.match(workflow, /npm run test:operator-config/);
+  assert.match(workflow, /npm audit --audit-level=high/);
+  assert.match(workflow, /npm test/);
+  assert.equal((workflow.match(/persist-credentials:\s*false/g) ?? []).length, 2);
+  assert.doesNotMatch(
+    workflow,
+    /\$\{\{|secrets\.|working-directory:|timeout-minutes:|permissions:|concurrency:/,
+  );
+  assert.doesNotMatch(workflow, /services:|container:|strategy:|\bcurl\b|\bwget\b/);
 });
 
 test('bounded meta workflow remains independently compilable', () => {
@@ -191,6 +248,8 @@ test('dedicated GitHub Actions workflow checks Rust and deployment contracts', (
   assert.match(workflow, /cargo test --locked --all-targets/);
   assert.match(workflow, /gha-clone-server-config\.test\.ts/);
   assert.match(workflow, /gha-clone-server-meta\.yml/);
+  assert.match(workflow, /msgint-operator-config\.yml/);
+  assert.match(workflow, /dd-build-server-gha-continuity\.patch\.yaml/);
   assert.match(workflow, /actionlint@sha256:/);
   assert.match(workflow, /persist-credentials:\s*false/);
 });

@@ -18,7 +18,9 @@ fail-closed fallback when the GitHub runner/allocation path is unavailable.
 
 The independent lane never forwards caller-selected shell, action code, runner
 images, or Kubernetes manifests. It submits only a trusted repository, immutable
-commit SHA, and operator-reviewed profile name to `dd-build-server`.
+commit SHA, and operator-reviewed profile name to `dd-build-server`. Messaging
+Intel uses a dedicated two-job mirror: `node-hardened-verify` for the non-secret
+operator contract and `node-verify` for the complete repository test suite.
 
 ## API
 
@@ -52,6 +54,7 @@ Example plan:
 | Cargo/rustfmt/Clippy/tests | `rust-verify` |
 | This repository's bounded GHA-clone meta workflow | `rust-verify`, with an exact reviewed fallback to `remote/deployments/gha-clone-server-rs` when the repository root is not a Cargo crate |
 | npm/pnpm/yarn/Node tests | `node-verify` |
+| npm install-script suppression + operator checks + high-severity audit | `node-hardened-verify` |
 | Python compile/pytest | `python-verify` |
 | Flutter analyze/tests | `flutter-verify` |
 | Flutter Android APK/App Bundle | `flutter-android-debug` |
