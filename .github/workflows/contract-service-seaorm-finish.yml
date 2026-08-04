@@ -1,0 +1,205 @@
+name: contract-service-seaorm-finish
+
+on:
+  push:
+    branches:
+      - agent/contract-service-seaorm-20260804
+    paths:
+      - ".github/workflows/contract-service-seaorm-finish.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: contract-service-seaorm-finish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  repair-verify-cleanup-merge:
+    if: github.repository == 'ORESoftware/k8s-cluster'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      EXPECTED_SHARED_COMMIT: 3c84cab532b27d328378f09fba5841f02644ae3b
+      SERVICE_DIR: remote/deployments/contract-service-rs
+      FEATURE_BRANCH: agent/contract-service-seaorm-20260804
+      PR_NUMBER: "812"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+          submodules: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: "1.97.0"
+          components: rustfmt, clippy
+      - name: Require exact feature branch and current main ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "$FEATURE_BRANCH"
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor origin/main HEAD
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Materialize exact public shared schema and SeaORM adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          git init -q remote/libs
+          git -C remote/libs remote add origin \
+            https://github.com/ORESoftware/k8s-libs-and-shared-defs.git
+          GIT_TERMINAL_PROMPT=0 git -C remote/libs fetch \
+            --no-tags --depth=1 origin "$EXPECTED_SHARED_COMMIT"
+          git -C remote/libs checkout -q --detach FETCH_HEAD
+          test "$(git -C remote/libs rev-parse HEAD)" = "$EXPECTED_SHARED_COMMIT"
+      - name: Apply bounded compiler suggestions and generate the lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$SERVICE_DIR"
+          cargo generate-lockfile
+          cargo fix --locked --all-targets --allow-dirty --allow-staged --broken-code
+          cargo fmt --all
+      - name: Reject compiler changes outside service Rust and lock outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git status --short --untracked-files=all | awk '{print $2}')
+          for path in "${changed[@]}"; do
+            case "$path" in
+              remote/deployments/contract-service-rs/Cargo.lock|remote/deployments/contract-service-rs/src/*.rs|remote/deployments/contract-service-rs/src/**/*.rs)
+                ;;
+              *)
+                echo "::error title=Compiler repair escaped reviewed scope::${path} is outside service Rust sources and Cargo.lock"
+                exit 1
+                ;;
+            esac
+          done
+      - name: Execute complete policy and exact Rust suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test "$SERVICE_DIR/scripts/seaorm-policy.test.mjs"
+          EXPECTED_SHARED_COMMIT="$EXPECTED_SHARED_COMMIT" \
+            node "$SERVICE_DIR/scripts/check-seaorm-policy.mjs"
+          cd "$SERVICE_DIR"
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets
+          cargo check --locked --all-targets
+          ! grep -RInE \
+            '(^|[^A-Za-z0-9_])sqlx::(query|query_as|query_scalar|migrate!)|\bPgPool(Options)?\b|^sqlx[[:space:]]*=' \
+            Cargo.toml src
+      - name: Stage verified source, lockfile, and migration-workflow cleanup
+        id: cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          tested_sha="$(git rev-parse HEAD)"
+          git add "$SERVICE_DIR/Cargo.lock" "$SERVICE_DIR/src"
+          git rm -f \
+            .github/workflows/contract-service-seaorm-autofix.yml \
+            .github/workflows/contract-service-seaorm-diagnostics.yml \
+            .github/workflows/contract-service-seaorm-pr-diagnostics.yml \
+            .github/workflows/contract-service-seaorm-rustfix.yml \
+            .github/workflows/contract-service-seaorm-finish.yml
+          mapfile -t changed < <(git diff --cached --name-only)
+          for path in "${changed[@]}"; do
+            case "$path" in
+              remote/deployments/contract-service-rs/Cargo.lock|remote/deployments/contract-service-rs/src/*.rs|remote/deployments/contract-service-rs/src/**/*.rs|.github/workflows/contract-service-seaorm-autofix.yml|.github/workflows/contract-service-seaorm-diagnostics.yml|.github/workflows/contract-service-seaorm-pr-diagnostics.yml|.github/workflows/contract-service-seaorm-rustfix.yml|.github/workflows/contract-service-seaorm-finish.yml)
+                ;;
+              *)
+                echo "::error title=Final cleanup escaped reviewed scope::${path} is not an allowed verified output"
+                exit 1
+                ;;
+            esac
+          done
+          git diff --cached --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "fix(contract-service): finalize verified SeaORM migration and lockfile [skip ci]"
+          cleanup_sha="$(git rev-parse HEAD)"
+          git push origin "HEAD:$FEATURE_BRANCH"
+          echo "tested_sha=$tested_sha" >> "$GITHUB_OUTPUT"
+          echo "cleanup_sha=$cleanup_sha" >> "$GITHUB_OUTPUT"
+      - name: Verify exact cleanup, review threads, and guarded squash merge
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          TESTED_SHA: ${{ steps.cleanup.outputs.tested_sha }}
+          CLEANUP_SHA: ${{ steps.cleanup.outputs.cleanup_sha }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pullNumber = Number(process.env.PR_NUMBER);
+            const testedSha = process.env.TESTED_SHA;
+            const cleanupSha = process.env.CLEANUP_SHA;
+
+            const { data: pull } = await github.rest.pulls.get({ owner, repo, pull_number: pullNumber });
+            if (pull.head.ref !== process.env.FEATURE_BRANCH || pull.base.ref !== 'main') {
+              throw new Error(`unexpected PR refs: ${pull.head.ref} -> ${pull.base.ref}`);
+            }
+            if (pull.head.sha !== cleanupSha) {
+              throw new Error(`PR head ${pull.head.sha} does not match cleanup SHA ${cleanupSha}`);
+            }
+
+            const comparison = await github.rest.repos.compareCommits({
+              owner,
+              repo,
+              base: testedSha,
+              head: cleanupSha,
+            });
+            const allowed = new Set([
+              '.github/workflows/contract-service-seaorm-autofix.yml',
+              '.github/workflows/contract-service-seaorm-diagnostics.yml',
+              '.github/workflows/contract-service-seaorm-pr-diagnostics.yml',
+              '.github/workflows/contract-service-seaorm-rustfix.yml',
+              '.github/workflows/contract-service-seaorm-finish.yml',
+              'remote/deployments/contract-service-rs/Cargo.lock',
+            ]);
+            for (const file of comparison.data.files || []) {
+              const name = file.filename;
+              if (!allowed.has(name) && !name.startsWith('remote/deployments/contract-service-rs/src/')) {
+                throw new Error(`cleanup commit changed unexpected file: ${name}`);
+              }
+            }
+
+            const query = `query($owner:String!, $repo:String!, $number:Int!) {
+              repository(owner:$owner, name:$repo) {
+                pullRequest(number:$number) {
+                  id
+                  isDraft
+                  reviewThreads(first:100) { nodes { isResolved } }
+                }
+              }
+            }`;
+            const result = await github.graphql(query, { owner, repo, number: pullNumber });
+            const pr = result.repository.pullRequest;
+            const unresolved = pr.reviewThreads.nodes.filter(thread => !thread.isResolved).length;
+            if (unresolved !== 0) {
+              throw new Error(`${unresolved} unresolved review thread(s) remain`);
+            }
+            if (pr.isDraft) {
+              await github.graphql(
+                `mutation($id:ID!) { markPullRequestReadyForReview(input:{pullRequestId:$id}) { pullRequest { id } } }`,
+                { id: pr.id },
+              );
+            }
+
+            const merge = await github.rest.pulls.merge({
+              owner,
+              repo,
+              pull_number: pullNumber,
+              sha: cleanupSha,
+              merge_method: 'squash',
+              commit_title: 'feat(contract-service): finish shared-schema SeaORM migration (#812)',
+              commit_message:
+                'Replace direct SQLx persistence with SeaORM over the immutable shared k8s schema adapter; preserve lazy optional coordination and transaction-lifetime advisory fencing; commit the generated lockfile; and retain read-only exact validation.\n\nSchema changes remain owned by declarative-migrations outside service startup.',
+            });
+            if (!merge.data.merged) {
+              throw new Error(`merge was not completed: ${merge.data.message}`);
+            }
