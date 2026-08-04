@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "bindings": [
+    {
+      "workspace_id": "T01B3C83PMK",
+      "channel_id": "C0BKP2N3LG7",
+      "linear_team_id": "team-uuid",
+      "linear_team_key": "DEN",
+      "linear_project_id": "project-uuid",
+      "default_repository": "ORESoftware/ai-agent-bridge.rs",
+      "repository_allowlist": [
+        "ORESoftware/ai-agent-bridge.rs",
+        "ORESoftware/ai-agent-coordinator.rs"
+      ],
+      "default_agent_mode": "chatgpt",
+      "allowed_agent_modes": [
+        "claude",
+        "chatgpt"
+      ],
+      "allowed_user_ids": [
+        "U01AZNU2LJ2"
+      ],
+      "allowed_user_group_ids": [],
+      "write_policy": "draft_pull_request",
+      "budget_policy": {
+        "max_concurrent_runs": 2,
+        "max_runtime_secs": 600,
+        "max_tokens": 100000,
+        "max_spend_cents": 500,
+        "max_retries": 2
+      },
+      "updated_by": "U01AZNU2LJ2",
+      "updated_at": "2026-08-01T12:00:00Z"
+    }
+  ]
+}
