@@ -8,16 +8,19 @@ on:
       - 'remote/argocd/dd-next-runtime/dd-gha-clone-server*'
       - 'remote/argocd/dd-next-runtime/dd-gha-executor-router*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml'
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
       - 'remote/tests/general/gha-clone-webhook-config.test.ts'
       - 'remote/tests/general/gha-clone-streempilot-config.test.ts'
       - 'remote/tests/general/gha-executor-router-activation.test.mjs'
+      - 'remote/tests/general/build-server-profile-repository-policy.test.mjs'
       - 'docs/gha-continuity-architecture.md'
       - 'docs/gha-independent-executor-routing.md'
       - 'docs/gha-executor-router-gitops.md'
       - 'docs/gha-executor-router-activation.md'
       - 'docs/streempilot-ci-continuity.md'
+      - 'docs/build-server-profile-repository-policy.md'
       - '.github/actionlint.yaml'
       - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/gha-clone-server.yml'
@@ -30,16 +33,19 @@ on:
       - 'remote/argocd/dd-next-runtime/dd-gha-clone-server*'
       - 'remote/argocd/dd-next-runtime/dd-gha-executor-router*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml'
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
       - 'remote/tests/general/gha-clone-webhook-config.test.ts'
       - 'remote/tests/general/gha-clone-streempilot-config.test.ts'
       - 'remote/tests/general/gha-executor-router-activation.test.mjs'
+      - 'remote/tests/general/build-server-profile-repository-policy.test.mjs'
       - 'docs/gha-continuity-architecture.md'
       - 'docs/gha-independent-executor-routing.md'
       - 'docs/gha-executor-router-gitops.md'
       - 'docs/gha-executor-router-activation.md'
       - 'docs/streempilot-ci-continuity.md'
+      - 'docs/build-server-profile-repository-policy.md'
       - '.github/actionlint.yaml'
       - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/gha-clone-server.yml'
@@ -99,18 +105,24 @@ jobs:
         with:
           toolchain: '1.90.0'
           components: rustfmt
-      - name: Check the modified idempotency leaf modules formatting
+      - name: Check the modified build-server policy and idempotency modules formatting
         working-directory: remote/deployments/build-server-rs
         run: >-
           rustfmt --edition 2021 --check
+          src/config.rs
+          src/config/profile_policy.rs
           src/jobs.rs
           src/nats_submit.rs
+          src/validation.rs
       - name: Compile the complete build server against the exact private library gitlink
         working-directory: remote/deployments/build-server-rs
         run: cargo check --locked --all-targets
       - name: Test the fixed-profile registry and reviewed fallbacks
         working-directory: remote/deployments/build-server-rs
         run: cargo test --locked profiles::tests -- --nocapture
+      - name: Test exact repository-to-profile admission and downgrade rejection
+        working-directory: remote/deployments/build-server-rs
+        run: cargo test --locked config::profile_policy::tests -- --nocapture
       - name: Test build request idempotency and retry semantics
         working-directory: remote/deployments/build-server-rs
         run: cargo test --locked idempotency_tests -- --nocapture
@@ -150,7 +162,9 @@ jobs:
             general/gha-clone-server-config.test.ts \
             general/gha-clone-webhook-config.test.ts \
             general/gha-clone-streempilot-config.test.ts
-          node --test general/gha-executor-router-activation.test.mjs
+          node --test \
+            general/gha-executor-router-activation.test.mjs \
+            general/build-server-profile-repository-policy.test.mjs
       - name: Install pinned kubectl renderer
         uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
         with:
@@ -178,7 +192,8 @@ jobs:
             docs/gha-independent-executor-routing.md \
             docs/gha-executor-router-gitops.md \
             docs/gha-executor-router-activation.md \
-            docs/streempilot-ci-continuity.md; then
+            docs/streempilot-ci-continuity.md \
+            docs/build-server-profile-repository-policy.md; then
             echo 'credential-like material found in GHA continuity files' >&2
             exit 1
           fi
