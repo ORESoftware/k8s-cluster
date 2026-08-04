@@ -44,7 +44,7 @@ jobs:
             remote/tests/general/gha-clone-server-config.test.ts \
             | sort)"
           if [ "$merge_status" -eq 0 ]; then
-            echo 'Expected the previously diagnosed semantic conflicts, but merge was clean' >&2
+            echo 'Expected the diagnosed semantic conflicts, but merge was clean' >&2
             exit 1
           fi
           if [ "$conflicts" != "$expected" ]; then
@@ -73,44 +73,53 @@ jobs:
           workflow_path = Path('.github/workflows/gha-clone-server.yml')
           workflow = workflow_path.read_text(encoding='utf-8')
           blocks = list(conflict.finditer(workflow))
-          if len(blocks) != 4:
-              raise SystemExit(f'expected four workflow conflicts, found {len(blocks)}')
+          if len(blocks) != 5:
+              raise SystemExit(f'expected five workflow conflicts, found {len(blocks)}')
 
-          contracts = '''      - name: Validate deployment, routing, execution, webhook, activation, and Messaging Intel boundaries
-              working-directory: remote/tests
-              run: |
-                pnpm exec tsx --test \\
-                  general/gha-clone-server-config.test.ts \\
-                  general/gha-clone-webhook-config.test.ts \\
-                  general/gha-clone-msgint-config.test.ts
-                node --test general/gha-executor-router-activation.test.mjs
-            - name: Install pinned kubectl renderer
-              uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
-              with:
-                version: v1.32.2
-            - name: Render the complete continuity overlay
-              run: |
-                set -euo pipefail
-                rendered="${RUNNER_TEMP}/dd-next-runtime.yaml"
-                kubectl kustomize remote/argocd/dd-next-runtime >"$rendered"
-                test -s "$rendered"
-                grep -F 'name: dd-gha-clone-server' "$rendered"
-                grep -F 'name: dd-gha-executor-router' "$rendered"
-                test "$(grep -c 'replicas: 0' "$rendered")" -ge 2
-          '''
+          contract_name = (
+              '      - name: Validate deployment, routing, execution, webhook, '
+              'activation, and Messaging Intel boundaries\n'
+          )
+          contract_body = '''            general/gha-clone-server-webhook-config.test.ts
+          node --test general/gha-executor-router-activation.test.mjs
+      - name: Install pinned kubectl renderer
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
+        with:
+          version: v1.32.2
+      - name: Render the complete continuity overlay
+        run: |
+          set -euo pipefail
+          rendered="${RUNNER_TEMP}/dd-next-runtime.yaml"
+          kubectl kustomize remote/argocd/dd-next-runtime >"$rendered"
+          test -s "$rendered"
+          grep -F 'name: dd-gha-clone-server' "$rendered"
+          grep -F 'name: dd-gha-executor-router' "$rendered"
+          test "$(grep -c 'replicas: 0' "$rendered")" -ge 2
+'''
+          # The first line above is replaced below with the exact TypeScript union.
+          contract_body = contract_body.replace(
+              '            general/gha-clone-server-webhook-config.test.ts\n',
+              '            general/gha-clone-server-webhook-config.test.ts \\\n'
+              '            general/gha-clone-msgint-config.test.ts\n',
+          )
 
-          index = 0
           def workflow_replacement(match: re.Match[str]) -> str:
-              nonlocal_index = workflow_replacement.index
+              current = workflow_replacement.index
               workflow_replacement.index += 1
               left, right = match.group(1), match.group(2)
-              if nonlocal_index in (0, 1):
+              if current in (0, 1):
+                  # Preserve current-dev activation paths and add the Messaging
+                  # Intel supplemental contract/document paths.
                   return union_lines(left, right)
-              if nonlocal_index == 2:
-                  return contracts
-              if nonlocal_index == 3:
+              if current == 2:
+                  return contract_name
+              if current == 3:
+                  return contract_body
+              if current == 4:
+                  # Scan both activation and profile-admission documentation.
                   return union_lines(left, right)
-              raise AssertionError(nonlocal_index)
+              raise AssertionError(current)
+
           workflow_replacement.index = 0
           workflow = conflict.sub(workflow_replacement, workflow)
           if any(marker in workflow for marker in ('<<<<<<<', '=======', '>>>>>>>')):
@@ -128,6 +137,8 @@ jobs:
               contract_replacement.index += 1
               left, right = match.group(1), match.group(2)
               if current == 0:
+                  # Keep current dev's newer observability/router arrays and add
+                  # the generic-planner path used by the static contract.
                   anchor = (
                       "const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';\n"
                   )
@@ -140,8 +151,11 @@ jobs:
                       raise SystemExit('planner-path anchor missing from current-dev side')
                   return left.replace(anchor, addition, 1)
               if current == 1:
+                  # The generic static test must inspect planner.rs, not the
+                  # reserved Messaging Intel wrapper.
                   return right
               raise AssertionError(current)
+
           contract_replacement.index = 0
           contract = conflict.sub(contract_replacement, contract)
           if any(marker in contract for marker in ('<<<<<<<', '=======', '>>>>>>>')):
@@ -220,7 +234,7 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm exec tsx --test \
             general/gha-clone-server-config.test.ts \
-            general/gha-clone-webhook-config.test.ts \
+            general/gha-clone-server-webhook-config.test.ts \
             general/gha-clone-msgint-config.test.ts
           node --test general/gha-executor-router-activation.test.mjs
 
