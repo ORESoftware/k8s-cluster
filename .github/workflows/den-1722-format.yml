@@ -1,10 +1,10 @@
 name: Finalize DEN-1722 formatting
 
 on:
-  push:
-    branches:
-      - agent/den-1722-trusted-contract-path
+  pull_request:
+    branches: [main]
     paths:
+      - src/flags.rs
       - .github/workflows/den-1722-format.yml
 
 permissions:
@@ -12,13 +12,15 @@ permissions:
 
 jobs:
   format:
-    if: github.actor != 'github-actions[bot]'
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: agent/den-1722-trusted-contract-path
+          ref: ${{ github.head_ref }}
           fetch-depth: 0
           persist-credentials: true
       - uses: dtolnay/rust-toolchain@stable
@@ -33,10 +35,12 @@ jobs:
           changed="$(git diff --name-only | sort)"
           test "$changed" = 'src/flags.rs'
       - name: Commit formatted source
+        env:
+          HEAD_BRANCH: ${{ github.head_ref }}
         run: |
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add src/flags.rs
           git commit -m 'style(DEN-1722): apply rustfmt to flags hardening'
-          git push origin HEAD:agent/den-1722-trusted-contract-path
+          git push origin "HEAD:$HEAD_BRANCH"
