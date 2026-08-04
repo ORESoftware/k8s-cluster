@@ -1,0 +1,824 @@
+name: DEN-1550 final webhook hardening once
+
+on:
+  push:
+    branches:
+      - agent/den-1550-webhook-hardening-rebased-20260804
+    paths:
+      - .github/workflows/den-1550-final-hardening-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1550-final-hardening-once
+  cancel-in-progress: false
+
+jobs:
+  harden-test-and-remove-carrier:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out the exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: agent/den-1550-webhook-hardening-rebased-20260804
+          fetch-depth: 0
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.90.0
+          components: rustfmt, clippy
+      - name: Install pinned pnpm and Node
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - name: Apply bounded failure-only webhook hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              return text.replace(old, new, 1)
+
+          source_path = Path('remote/deployments/gha-clone-server-rs/src/main.rs')
+          source = source_path.read_text(encoding='utf-8')
+          source = replace_once(
+              source,
+              '    extract::{Path, State},\n',
+              '    extract::{DefaultBodyLimit, Path, State},\n',
+              'DefaultBodyLimit import',
+          )
+          source = replace_once(
+              source,
+              'use uuid::Uuid;\n\n#[derive(Clone)]\n',
+              'use uuid::Uuid;\n\nconst MAX_HTTP_BODY_BYTES: usize = 1024 * 1024;\n\n#[derive(Clone)]\n',
+              'HTTP body limit constant',
+          )
+          source = replace_once(
+              source,
+              '            .timeout(Duration::from_secs(60))\n            .user_agent("gha-clone-server/0.1")\n',
+              '            .timeout(Duration::from_secs(60))\n            .redirect(reqwest::redirect::Policy::none())\n            .user_agent("gha-clone-server/0.1")\n',
+              'redirect policy',
+          )
+          source = replace_once(
+              source,
+              '        .route("/webhooks/github", post(github_webhook))\n        .with_state(state)\n',
+              '        .route("/webhooks/github", post(github_webhook))\n        .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))\n        .with_state(state)\n',
+              'router body limit',
+          )
+          source = replace_once(
+              source,
+              '''    let payload: Value = match serde_json::from_slice(&body) {
+                  Ok(payload) => payload,
+                  Err(error) => {
+                      return (
+                          StatusCode::BAD_REQUEST,
+                          Json(json!({ "error": format!("invalid webhook JSON: {error}") })),
+                      )
+                          .into_response()
+                  }
+              };
+              let Some(repository) = payload
+          ''',
+              '''    let payload: Value = match serde_json::from_slice(&body) {
+                  Ok(payload) => payload,
+                  Err(error) => {
+                      return (
+                          StatusCode::BAD_REQUEST,
+                          Json(json!({ "error": format!("invalid webhook JSON: {error}") })),
+                      )
+                          .into_response()
+                  }
+              };
+              if event != "workflow_run" {
+                  return (
+                      StatusCode::ACCEPTED,
+                      Json(json!({
+                          "accepted": false,
+                          "event": event,
+                          "delivery": delivery,
+                          "reason": "only workflow_run events are accepted"
+                      })),
+                  )
+                      .into_response();
+              }
+              let Some(repository) = payload
+          ''',
+              'workflow_run event gate',
+          )
+          source = replace_once(
+              source,
+              '                "reason": "event does not identify an immutable push, pull-request, or workflow-run revision"\n',
+              '                "reason": "workflow_run does not identify an immutable head revision"\n',
+              'immutable revision reason',
+          )
+          source = replace_once(
+              source,
+              '''    if event != "workflow_run" {
+                  return Ok(configured_paths.to_vec());
+              }
+          ''',
+              '''    if event != "workflow_run" {
+                  return Err("only workflow_run events are accepted".to_string());
+              }
+          ''',
+              'workflow path event gate',
+          )
+          source = replace_once(
+              source,
+              '''async fn remember_webhook_delivery(state: &AppState, delivery: &str) -> bool {
+              let now = Instant::now();
+              let ttl = Duration::from_secs(state.config.webhook_delivery_ttl_seconds);
+              let mut deliveries = state.webhook_deliveries.write().await;
+              prune_webhook_deliveries(
+                  &mut deliveries,
+                  now,
+                  ttl,
+                  state.config.max_webhook_deliveries,
+              );
+              if deliveries.contains_key(delivery) {
+                  return false;
+              }
+              deliveries.insert(delivery.to_string(), now);
+              prune_webhook_deliveries(
+                  &mut deliveries,
+                  now,
+                  ttl,
+                  state.config.max_webhook_deliveries,
+              );
+              true
+          }
+
+          fn prune_webhook_deliveries(
+              deliveries: &mut BTreeMap<String, Instant>,
+              now: Instant,
+              ttl: Duration,
+              max_deliveries: usize,
+          ) {
+              deliveries.retain(|_, seen_at| now.saturating_duration_since(*seen_at) < ttl);
+              let remove = deliveries.len().saturating_sub(max_deliveries);
+              if remove == 0 {
+                  return;
+              }
+              let mut oldest = deliveries
+                  .iter()
+                  .map(|(delivery, seen_at)| (*seen_at, delivery.clone()))
+                  .collect::<Vec<_>>();
+              oldest.sort_by_key(|(seen_at, _)| *seen_at);
+              for (_, delivery) in oldest.into_iter().take(remove) {
+                  deliveries.remove(&delivery);
+              }
+          }
+
+          fn webhook_revision(event: &str, payload: &Value) -> Option<String> {
+              match event {
+                  "push" => payload.get("after").and_then(Value::as_str),
+                  "pull_request" => payload
+                      .pointer("/pull_request/head/sha")
+                      .and_then(Value::as_str),
+                  "workflow_run" => payload
+                      .pointer("/workflow_run/head_sha")
+                      .and_then(Value::as_str),
+                  _ => None,
+              }
+              .map(str::to_string)
+          }
+          ''',
+              '''async fn remember_webhook_delivery(state: &AppState, delivery: &str) -> bool {
+              let now = Instant::now();
+              let ttl = Duration::from_secs(state.config.webhook_delivery_ttl_seconds);
+              let mut deliveries = state.webhook_deliveries.write().await;
+              claim_webhook_delivery(
+                  &mut deliveries,
+                  delivery,
+                  now,
+                  ttl,
+                  state.config.max_webhook_deliveries,
+              )
+          }
+
+          fn claim_webhook_delivery(
+              deliveries: &mut BTreeMap<String, Instant>,
+              delivery: &str,
+              now: Instant,
+              ttl: Duration,
+              max_deliveries: usize,
+          ) -> bool {
+              deliveries.retain(|_, seen_at| now.saturating_duration_since(*seen_at) < ttl);
+              if deliveries.contains_key(delivery) {
+                  return false;
+              }
+              let remove = deliveries
+                  .len()
+                  .saturating_add(1)
+                  .saturating_sub(max_deliveries);
+              remove_oldest_webhook_deliveries(deliveries, remove);
+              deliveries.insert(delivery.to_string(), now);
+              true
+          }
+
+          fn prune_webhook_deliveries(
+              deliveries: &mut BTreeMap<String, Instant>,
+              now: Instant,
+              ttl: Duration,
+              max_deliveries: usize,
+          ) {
+              deliveries.retain(|_, seen_at| now.saturating_duration_since(*seen_at) < ttl);
+              let remove = deliveries.len().saturating_sub(max_deliveries);
+              remove_oldest_webhook_deliveries(deliveries, remove);
+          }
+
+          fn remove_oldest_webhook_deliveries(
+              deliveries: &mut BTreeMap<String, Instant>,
+              remove: usize,
+          ) {
+              if remove == 0 {
+                  return;
+              }
+              let mut oldest = deliveries
+                  .iter()
+                  .map(|(delivery, seen_at)| (*seen_at, delivery.clone()))
+                  .collect::<Vec<_>>();
+              oldest.sort_by_key(|(seen_at, delivery)| (*seen_at, delivery.clone()));
+              for (_, delivery) in oldest.into_iter().take(remove) {
+                  deliveries.remove(&delivery);
+              }
+          }
+
+          fn webhook_revision(event: &str, payload: &Value) -> Option<String> {
+              if event != "workflow_run" {
+                  return None;
+              }
+              payload
+                  .pointer("/workflow_run/head_sha")
+                  .and_then(Value::as_str)
+                  .map(str::to_string)
+          }
+          ''',
+              'delivery claim and revision boundary',
+          )
+          source = replace_once(
+              source,
+              '''        && [owner, repository].into_iter().all(|component| {
+                  component
+                      .bytes()
+                      .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+              })
+          ''',
+              '''        && [owner, repository].into_iter().all(|component| {
+                  component != "."
+                      && component != ".."
+                      && component.bytes().all(|byte| {
+                          byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-')
+                      })
+              })
+          ''',
+              'repository dot-component rejection',
+          )
+          source = replace_once(
+              source,
+              '''    let loopback_http = parsed.scheme() == "http"
+                  && matches!(parsed.host_str(), Some("127.0.0.1" | "localhost" | "::1"));
+              if parsed.scheme() != "https" && !loopback_http {
+                  return Err(
+                      "GHA_CLONE_GITHUB_API_BASE_URL must use HTTPS; HTTP is allowed only for loopback tests"
+                          .to_string(),
+                  );
+              }
+          ''',
+              '''    let production_github = parsed.scheme() == "https"
+                  && parsed.host_str() == Some("api.github.com")
+                  && parsed.port().is_none()
+                  && parsed.path() == "/";
+              let loopback_http = parsed.scheme() == "http"
+                  && matches!(parsed.host_str(), Some("127.0.0.1" | "localhost" | "::1"));
+              if !production_github && !loopback_http {
+                  return Err(
+                      "GHA_CLONE_GITHUB_API_BASE_URL must be exactly https://api.github.com; HTTP is allowed only for loopback tests"
+                          .to_string(),
+                  );
+              }
+          ''',
+              'GitHub API origin restriction',
+          )
+          source = replace_once(
+              source,
+              '''    fn extracts_only_supported_webhook_revisions() {
+              let payload = json!({
+                  "after": "a".repeat(40),
+                  "pull_request": { "head": { "sha": "b".repeat(40) } },
+                  "workflow_run": { "head_sha": "c".repeat(40) }
+              });
+              assert_eq!(webhook_revision("push", &payload), Some("a".repeat(40)));
+              assert_eq!(
+                  webhook_revision("pull_request", &payload),
+                  Some("b".repeat(40))
+              );
+              assert_eq!(
+                  webhook_revision("workflow_run", &payload),
+                  Some("c".repeat(40))
+              );
+              assert_eq!(webhook_revision("issues", &payload), None);
+          }
+          ''',
+              '''    fn extracts_only_workflow_run_revisions() {
+              let payload = json!({
+                  "after": "a".repeat(40),
+                  "pull_request": { "head": { "sha": "b".repeat(40) } },
+                  "workflow_run": { "head_sha": "c".repeat(40) }
+              });
+              assert_eq!(webhook_revision("push", &payload), None);
+              assert_eq!(webhook_revision("pull_request", &payload), None);
+              assert_eq!(
+                  webhook_revision("workflow_run", &payload),
+                  Some("c".repeat(40))
+              );
+              assert_eq!(webhook_revision("issues", &payload), None);
+          }
+          ''',
+              'workflow revision unit test',
+          )
+          source = replace_once(
+              source,
+              '''        assert_eq!(deliveries.len(), 1);
+              assert!(deliveries.contains_key("newer"));
+          }
+
+          #[test]
+          fn workflow_configuration_is_exact_and_reviewable() {
+          ''',
+              '''        assert_eq!(deliveries.len(), 1);
+              assert!(deliveries.contains_key("newer"));
+          }
+
+          #[test]
+          fn a_new_delivery_survives_capacity_ties_and_remains_a_duplicate() {
+              let now = Instant::now();
+              let mut deliveries = BTreeMap::from([("z-existing".to_string(), now)]);
+              assert!(claim_webhook_delivery(
+                  &mut deliveries,
+                  "a-new",
+                  now,
+                  Duration::from_secs(60),
+                  1,
+              ));
+              assert_eq!(deliveries.len(), 1);
+              assert!(deliveries.contains_key("a-new"));
+              assert!(!claim_webhook_delivery(
+                  &mut deliveries,
+                  "a-new",
+                  now,
+                  Duration::from_secs(60),
+                  1,
+              ));
+          }
+
+          #[test]
+          fn workflow_configuration_is_exact_and_reviewable() {
+          ''',
+              'delivery tie unit test',
+          )
+          source = replace_once(
+              source,
+              '''        assert!(normalize_github_api_base_url("http://example.com").is_err());
+              assert!(normalize_github_api_base_url("https://user:pass@example.com").is_err());
+          ''',
+              '''        assert!(normalize_github_api_base_url("http://example.com").is_err());
+              assert!(normalize_github_api_base_url("https://example.com").is_err());
+              assert!(normalize_github_api_base_url("https://api.github.com/api/v3").is_err());
+              assert!(normalize_github_api_base_url("https://user:pass@example.com").is_err());
+          ''',
+              'GitHub origin unit tests',
+          )
+          source_path.write_text(source, encoding='utf-8')
+
+          http_path = Path('remote/deployments/gha-clone-server-rs/tests/http_api.rs')
+          http = http_path.read_text(encoding='utf-8')
+          http = replace_once(
+              http,
+              '''#[tokio::test]
+          async fn planning_enforces_auth_allowlists_and_structural_rejection() {
+          ''',
+              '''#[tokio::test]
+          async fn oversized_http_bodies_are_rejected_before_json_extraction() {
+              let server = spawn_server(dormant_env()).await;
+              let client = Client::new();
+              let response = client
+                  .post(format!("{}/v1/plans", server.base_url))
+                  .header("content-type", "application/json")
+                  .header("x-server-auth", AUTH_SECRET)
+                  .body(vec![b'x'; 1_048_577])
+                  .send()
+                  .await
+                  .expect("oversized request");
+              assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+          }
+
+          #[tokio::test]
+          async fn planning_enforces_auth_allowlists_and_structural_rejection() {
+          ''',
+              'oversized HTTP body test',
+          )
+          http = replace_once(
+              http,
+              'post_webhook(&client, &server, "issues", invalid_json, Some(&signature))',
+              'post_webhook(&client, &server, "workflow_run", invalid_json, Some(&signature))',
+              'invalid JSON event',
+          )
+          http = replace_once(
+              http,
+              '''    let missing_repository = serde_json::to_vec(&json!({ "after": REVISION })).unwrap();
+          ''',
+              '''    let missing_repository = serde_json::to_vec(&json!({
+              "workflow_run": { "head_sha": REVISION }
+          }))
+          .unwrap();
+          ''',
+              'missing repository payload',
+          )
+          http = replace_once(
+              http,
+              '''        "push",
+                  &missing_repository,
+          ''',
+              '''        "workflow_run",
+                  &missing_repository,
+          ''',
+              'missing repository event',
+          )
+          http = replace_once(
+              http,
+              '''    let forbidden = serde_json::to_vec(&json!({
+              "repository": { "full_name": "other/repo" },
+              "after": REVISION
+          }))
+          ''',
+              '''    let forbidden = serde_json::to_vec(&json!({
+              "repository": { "full_name": "other/repo" },
+              "workflow_run": { "head_sha": REVISION }
+          }))
+          ''',
+              'forbidden repository payload',
+          )
+          http = replace_once(
+              http,
+              'post_webhook(&client, &server, "push", &forbidden, Some(&signature))',
+              'post_webhook(&client, &server, "workflow_run", &forbidden, Some(&signature))',
+              'forbidden repository event',
+          )
+          http = replace_once(
+              http,
+              '''    assert_eq!(value["accepted"], false);
+
+              let short_revision = serde_json::to_vec(&json!({
+          ''',
+              '''    assert_eq!(value["accepted"], false);
+              assert!(value["reason"]
+                  .as_str()
+                  .unwrap()
+                  .contains("only workflow_run events are accepted"));
+
+              let short_revision = serde_json::to_vec(&json!({
+          ''',
+              'unsupported event reason',
+          )
+          http = replace_once(
+              http,
+              '''    let short_revision = serde_json::to_vec(&json!({
+              "repository": { "full_name": REPOSITORY },
+              "after": "abc123"
+          }))
+          ''',
+              '''    let short_revision = serde_json::to_vec(&json!({
+              "repository": { "full_name": REPOSITORY },
+              "workflow_run": { "head_sha": "abc123" }
+          }))
+          ''',
+              'short revision payload',
+          )
+          http = replace_once(
+              http,
+              'post_webhook(&client, &server, "push", &short_revision, Some(&signature))',
+              'post_webhook(&client, &server, "workflow_run", &short_revision, Some(&signature))',
+              'short revision event',
+          )
+          http = replace_once(
+              http,
+              '''    let no_rules = serde_json::to_vec(&json!({
+              "repository": { "full_name": REPOSITORY },
+              "after": REVISION
+          }))
+          ''',
+              '''    let no_rules = serde_json::to_vec(&json!({
+              "repository": { "full_name": REPOSITORY },
+              "workflow_run": { "head_sha": REVISION }
+          }))
+          ''',
+              'no-rules payload',
+          )
+          http = replace_once(
+              http,
+              'post_webhook(&client, &server, "push", &no_rules, Some(&signature))',
+              'post_webhook(&client, &server, "workflow_run", &no_rules, Some(&signature))',
+              'no-rules event',
+          )
+          http_path.write_text(http, encoding='utf-8')
+
+          startup_path = Path('remote/deployments/gha-clone-server-rs/tests/startup_config.rs')
+          startup = startup_path.read_text(encoding='utf-8')
+          startup = replace_once(
+              startup,
+              '''        "owner/",
+                  "owner/repo,also/valid,broken",
+          ''',
+              '''        "owner/",
+                  "./repo",
+                  "../repo",
+                  "owner/.",
+                  "owner/..",
+                  "owner/repo,also/valid,broken",
+          ''',
+              'repository dot-component startup tests',
+          )
+          startup = replace_once(
+              startup,
+              '''        (
+                  "http://example.com",
+                  "must use HTTPS; HTTP is allowed only for loopback tests",
+              ),
+          ''',
+              '''        (
+                  "http://example.com",
+                  "must be exactly https://api.github.com; HTTP is allowed only for loopback tests",
+              ),
+              (
+                  "https://example.com",
+                  "must be exactly https://api.github.com; HTTP is allowed only for loopback tests",
+              ),
+              (
+                  "https://api.github.com/api/v3",
+                  "must be exactly https://api.github.com; HTTP is allowed only for loopback tests",
+              ),
+          ''',
+              'GitHub API startup origin tests',
+          )
+          startup_path.write_text(startup, encoding='utf-8')
+
+          webhook_path = Path('remote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs')
+          webhook = webhook_path.read_text(encoding='utf-8')
+          webhook = replace_once(
+              webhook,
+              '''async fn post_workflow_run(
+              client: &Client,
+              server: &ServerProcess,
+              delivery: &str,
+              payload: &Value,
+          ) -> reqwest::Response {
+              let body = serde_json::to_vec(payload).expect("serialize webhook payload");
+              let signature = webhook_signature(&body);
+              client
+                  .post(format!("{}/webhooks/github", server.base_url))
+                  .header("content-type", "application/json")
+                  .header("x-github-event", "workflow_run")
+                  .header("x-github-delivery", delivery)
+                  .header("x-hub-signature-256", signature)
+                  .body(body)
+                  .send()
+                  .await
+                  .expect("workflow_run request")
+          }
+          ''',
+              '''async fn post_event(
+              client: &Client,
+              server: &ServerProcess,
+              event: &str,
+              delivery: &str,
+              payload: &Value,
+          ) -> reqwest::Response {
+              let body = serde_json::to_vec(payload).expect("serialize webhook payload");
+              let signature = webhook_signature(&body);
+              client
+                  .post(format!("{}/webhooks/github", server.base_url))
+                  .header("content-type", "application/json")
+                  .header("x-github-event", event)
+                  .header("x-github-delivery", delivery)
+                  .header("x-hub-signature-256", signature)
+                  .body(body)
+                  .send()
+                  .await
+                  .expect("GitHub webhook request")
+          }
+
+          async fn post_workflow_run(
+              client: &Client,
+              server: &ServerProcess,
+              delivery: &str,
+              payload: &Value,
+          ) -> reqwest::Response {
+              post_event(client, server, "workflow_run", delivery, payload).await
+          }
+          ''',
+              'generic webhook helper',
+          )
+          webhook = replace_once(
+              webhook,
+              '''#[tokio::test]
+          async fn workflow_run_policy_rejections_never_fetch_or_dispatch() {
+          ''',
+              '''#[tokio::test]
+          async fn signed_non_workflow_run_events_never_fetch_or_dispatch() {
+              let github = MockGithub::start(rust_workflow(), 0).await;
+              let build = MockBuildServer::start().await;
+              let server = spawn_server(execution_env(&github, &build)).await;
+              let client = Client::new();
+              let payload = json!({
+                  "repository": { "full_name": REPOSITORY },
+                  "after": REVISION
+              });
+              let response = post_event(
+                  &client,
+                  &server,
+                  "push",
+                  "19999999-9999-4999-8999-999999999999",
+                  &payload,
+              )
+              .await;
+              let (status, body) = response_json(response).await;
+              assert_eq!(status, StatusCode::ACCEPTED);
+              assert_eq!(body["accepted"], false);
+              assert!(body["reason"]
+                  .as_str()
+                  .unwrap()
+                  .contains("only workflow_run events are accepted"));
+              assert!(github.state.requests.lock().await.is_empty());
+              assert!(build.state.submissions.lock().await.is_empty());
+              assert_eq!(health(&client, &server).await["webhookDeliveriesRetained"], 0);
+          }
+
+          #[tokio::test]
+          async fn workflow_run_policy_rejections_never_fetch_or_dispatch() {
+          ''',
+              'non-workflow-run e2e test',
+          )
+          webhook_path.write_text(webhook, encoding='utf-8')
+
+          script_path = Path('remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh')
+          script = script_path.read_text(encoding='utf-8')
+          script = replace_once(
+              script,
+              '''command -v gh >/dev/null 2>&1 || { echo 'gh is required' >&2; exit 2; }
+          command -v jq >/dev/null 2>&1 || { echo 'jq is required' >&2; exit 2; }
+
+          scope=''
+          ''',
+              '''command -v gh >/dev/null 2>&1 || { echo 'gh is required' >&2; exit 2; }
+          command -v jq >/dev/null 2>&1 || { echo 'jq is required' >&2; exit 2; }
+
+          valid_component() {
+            local value="$1"
+            [[ -n "$value" && "$value" != '.' && "$value" != '..' && "$value" =~ ^[A-Za-z0-9._-]+$ ]]
+          }
+
+          scope=''
+          ''',
+              'registration component validator',
+          )
+          script = replace_once(
+              script,
+              '''case "$webhook_url" in
+            https://*) ;;
+            *) echo 'webhook URL must use HTTPS' >&2; exit 2 ;;
+          esac
+
+          if [[ "$scope" == repo ]]; then
+            [[ "$target" == */* ]] || { echo '--repo requires owner/repo' >&2; exit 2; }
+            endpoint="repos/${target}/hooks"
+          else
+            [[ "$target" != */* ]] || { echo '--org requires an organization login' >&2; exit 2; }
+            endpoint="orgs/${target}/hooks"
+          fi
+
+          existing_id="$(
+            gh api --paginate "$endpoint" |
+              jq -r --arg url "$webhook_url" '.[] | select(.config.url == $url) | .id' |
+              head -n 1
+          )"
+          ''',
+              '''case "$webhook_url" in
+            https://*) ;;
+            *) echo 'webhook URL must use HTTPS' >&2; exit 2 ;;
+          esac
+          case "$webhook_url" in
+            *'?'*|*'#'*|https://*@*)
+              echo 'webhook URL must not contain credentials, query, or fragment' >&2
+              exit 2
+              ;;
+          esac
+          [[ "$webhook_url" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?(/.*)?$ ]] || {
+            echo 'webhook URL has an invalid HTTPS origin' >&2
+            exit 2
+          }
+
+          if [[ "$scope" == repo ]]; then
+            IFS=/ read -r owner repository extra <<<"$target"
+            test -z "${extra:-}" && valid_component "$owner" && valid_component "$repository" || {
+              echo '--repo requires an exact GitHub-safe owner/repo' >&2
+              exit 2
+            }
+            endpoint="repos/${owner}/${repository}/hooks"
+          else
+            valid_component "$target" || {
+              echo '--org requires an exact GitHub-safe organization login' >&2
+              exit 2
+            }
+            endpoint="orgs/${target}/hooks"
+          fi
+
+          existing_id="$(
+            gh api --paginate --slurp "$endpoint" |
+              jq -r --arg url "$webhook_url" '[.[][] | select(.config.url == $url) | .id][0] // empty'
+          )"
+          ''',
+              'registration URL, target, and pagination validation',
+          )
+          script_path.write_text(script, encoding='utf-8')
+
+          contract_path = Path('remote/tests/general/gha-clone-webhook-config.test.ts')
+          contract = contract_path.read_text(encoding='utf-8')
+          contract = replace_once(
+              contract,
+              '''  assert.match(server, /GHA_CLONE_GITHUB_API_BASE_URL/);
+            assert.match(server, /HTTP is allowed only for loopback tests/);
+          ''',
+              '''  assert.match(server, /GHA_CLONE_GITHUB_API_BASE_URL/);
+            assert.match(server, /only workflow_run events are accepted/);
+            assert.match(server, /DefaultBodyLimit::max/);
+            assert.match(server, /redirect\(reqwest::redirect::Policy::none\(\)\)/);
+            assert.match(server, /must be exactly https:\/\/api\.github\.com/);
+          ''',
+              'Rust webhook static contracts',
+          )
+          contract = replace_once(
+              contract,
+              '''  assert.match(script, /method='POST'/);
+            assert.match(
+          ''',
+              '''  assert.match(script, /method='POST'/);
+            assert.match(script, /--paginate --slurp/);
+            assert.doesNotMatch(script, /head -n/);
+            assert.match(script, /valid_component/);
+            assert.match(script, /must not contain credentials, query, or fragment/);
+            assert.match(
+          ''',
+              'registration static contracts',
+          )
+          contract_path.write_text(contract, encoding='utf-8')
+          PY
+          cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all
+          git diff --check
+      - name: Run Rust tests and Clippy
+        working-directory: remote/deployments/gha-clone-server-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo test --locked --all-targets
+          cargo clippy --locked --all-targets -- -D warnings
+      - name: Run webhook and shell contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh
+          pnpm install --frozen-lockfile --dir remote/tests
+          pnpm --dir remote/tests exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts
+      - name: Commit validated hardening without the carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/den-1550-final-hardening-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            remote/deployments/gha-clone-server-rs/src/main.rs \
+            remote/deployments/gha-clone-server-rs/tests/http_api.rs \
+            remote/deployments/gha-clone-server-rs/tests/startup_config.rs \
+            remote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs \
+            remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh \
+            remote/tests/general/gha-clone-webhook-config.test.ts \
+            .github/workflows/den-1550-final-hardening-once.yml
+          git diff --cached --check
+          git commit -m 'fix(DEN-1550): make fallback strictly failure-only and bounded'
+          git push origin HEAD:agent/den-1550-webhook-hardening-rebased-20260804
