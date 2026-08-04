@@ -1,10 +1,13 @@
 name: Repair private Shared Auth validator lint
-# This second branch-local revision intentionally triggers the newly registered workflow.
 
 on:
   push:
     branches:
       - agent/shared-auth-introspection-private-validator
+    paths:
+      - .github/workflows/repair-shared-auth-private-validator-lint.yml
+  pull_request:
+    branches: [main]
     paths:
       - .github/workflows/repair-shared-auth-private-validator-lint.yml
 
@@ -13,7 +16,11 @@ permissions:
 
 jobs:
   repair:
-    if: github.repository == '3FA-app/3fa-backend.rs'
+    if: >-
+      github.repository == '3FA-app/3fa-backend.rs' &&
+      (github.event_name == 'push' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.head.ref == 'agent/shared-auth-introspection-private-validator'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
