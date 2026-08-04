@@ -5,11 +5,13 @@ umask 077
 remote_stage="bootstrap"
 on_error() {
   local status=$?
+  trap - ERR
   printf 'MCP_PUBLISHER_ERROR stage=%s code=%d\n' "$remote_stage" "$status"
   exit "$status"
 }
 cleanup() {
-  unset GH_TOKEN encoded_pat
+  unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN encoded_pat
+  unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
   rm -rf "${work:-}" /tmp/requested-mcp-publication.json
 }
 trap on_error ERR
@@ -19,24 +21,19 @@ trusted_sha="${1:?trusted SHA required}"
 [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
 work="$(mktemp -d /tmp/requested-mcp-publisher.XXXXXX)"
 
-remote_stage="host-prerequisites"
-command -v kubectl >/dev/null
-command -v git >/dev/null
-command -v python3 >/dev/null
-test -r /etc/kubernetes/admin.conf
-
-remote_stage="kubernetes-github-credential"
-encoded_pat="$(
-  KUBECONFIG=/etc/kubernetes/admin.conf \
-    kubectl -n default get secret dd-agent-secrets \
-    -o jsonpath='{.data.GH_PAT}'
-)"
+remote_stage="receive-protected-credential"
+IFS= read -r encoded_pat
 test -n "$encoded_pat"
 GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode)"
 unset encoded_pat
 test -n "$GH_TOKEN"
-[[ "$GH_TOKEN" != *$'\n'* && "$GH_TOKEN" != *$'\r'* ]]
+[[ "$GH_TOKEN" != *[[:space:]]* ]]
 export GH_TOKEN
+export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
+
+remote_stage="unprivileged-prerequisites"
+command -v git >/dev/null
+command -v python3 >/dev/null
 
 remote_stage="trusted-source-checkout"
 git init "$work/k8s-cluster" >/dev/null
