@@ -5,8 +5,13 @@
   "description": "Credential-free fixture for the GHA continuity Node profiles",
   "type": "module",
   "scripts": {
+    "preinstall": "node -e \"throw new Error('preinstall must be suppressed')\"",
+    "install": "node -e \"throw new Error('install must be suppressed')\"",
+    "postinstall": "node -e \"throw new Error('postinstall must be suppressed')\"",
+    "pretest": "node -e \"throw new Error('pretest must be suppressed')\"",
     "check": "node --check src/operator-config.mjs && node --check test/operator-config.test.mjs",
     "test:operator-config": "node --test test/operator-config.test.mjs",
-    "test": "node --test test/operator-config.test.mjs"
+    "test": "node --test test/operator-config.test.mjs",
+    "posttest": "node -e \"throw new Error('posttest must be suppressed')\""
   }
 }
