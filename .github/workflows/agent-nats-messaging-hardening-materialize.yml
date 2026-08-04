@@ -51,13 +51,90 @@ jobs:
 
           path = Path('/tmp/materialize.py')
           text = path.read_text()
-          old = 'if post_count < 4:\n    raise RuntimeError(f"expected at least four downstream POST call sites, found {post_count}")'
-          new = 'if post_count < 3:\n    raise RuntimeError(f"expected at least three downstream POST call sites, found {post_count}")'
-          if text.count(old) != 1:
-              raise SystemExit(f'expected the downstream POST guard exactly once, found {text.count(old)}')
-          path.write_text(text.replace(old, new, 1))
+
+          changes = [
+              (
+                  'downstream POST guard',
+                  'if post_count < 4:\n    raise RuntimeError(f"expected at least four downstream POST call sites, found {post_count}")',
+                  'if post_count < 3:\n    raise RuntimeError(f"expected at least three downstream POST call sites, found {post_count}")',
+              ),
+              (
+                  'HTTP timeout insertion anchor',
+                  """replace_once(
+              consumer_path,
+              '''    let http_timeout_seconds = env_u64("QUEUE_CONSUMER_HTTP_TIMEOUT_SECONDS", 420);
+              let http = reqwest::Client::builder()
+                  .timeout(Duration::from_secs(http_timeout_seconds))''',
+              '''    let http_timeout_seconds = env_u64("QUEUE_CONSUMER_HTTP_TIMEOUT_SECONDS", 420);
+              let handoff_timeout_seconds = env_u64(
+                  "QUEUE_CONSUMER_HANDOFF_TIMEOUT_SECONDS",
+                  http_timeout_seconds.saturating_mul(2).saturating_add(30),
+              );
+              let http = reqwest::Client::builder()
+                  .timeout(Duration::from_secs(http_timeout_seconds))''',
+          )""",
+                  """replace_once(
+              consumer_path,
+              '    let http_timeout_seconds = env_u64("QUEUE_CONSUMER_HTTP_TIMEOUT_SECONDS", 420);',
+              '''    let http_timeout_seconds = env_u64("QUEUE_CONSUMER_HTTP_TIMEOUT_SECONDS", 420);
+              let handoff_timeout_seconds = env_u64(
+                  "QUEUE_CONSUMER_HANDOFF_TIMEOUT_SECONDS",
+                  http_timeout_seconds.saturating_mul(2).saturating_add(30),
+              );''',
+          )""",
+              ),
+              (
+                  'NATS connection monitor anchor',
+                  """replace_once(
+              consumer_path,
+              '''    let nats_client = connect_nats(&nats_url).await?;
+              let metrics_addr = env_value("QUEUE_CONSUMER_METRICS_ADDR", "0.0.0.0:8120");''',
+              '''    let nats_client = connect_nats(&nats_url).await?;
+              NATS_CONNECTED.store(true, Ordering::Relaxed);
+              let connection_monitor = nats_client.clone();
+              tokio::spawn(async move {
+                  loop {
+                      NATS_CONNECTED.store(
+                          connection_monitor.connection_state()
+                              == async_nats::connection::State::Connected,
+                          Ordering::Relaxed,
+                      );
+                      tokio::time::sleep(Duration::from_secs(2)).await;
+                  }
+              });
+              let metrics_addr = env_value("QUEUE_CONSUMER_METRICS_ADDR", "0.0.0.0:8120");''',
+          )""",
+                  """replace_once(
+              consumer_path,
+              '''    let nats_client = connect_nats(&nats_url).await?;
+              ensure_dead_letter_stream(nats_client.clone(), &dlq_stream_name, &dlq_subject).await?;''',
+              '''    let nats_client = connect_nats(&nats_url).await?;
+              NATS_CONNECTED.store(true, Ordering::Relaxed);
+              let connection_monitor = nats_client.clone();
+              tokio::spawn(async move {
+                  loop {
+                      NATS_CONNECTED.store(
+                          connection_monitor.connection_state()
+                              == async_nats::connection::State::Connected,
+                          Ordering::Relaxed,
+                      );
+                      tokio::time::sleep(Duration::from_secs(2)).await;
+                  }
+              });
+              ensure_dead_letter_stream(nats_client.clone(), &dlq_stream_name, &dlq_subject).await?;''',
+          )""",
+              ),
+          ]
+
+          for label, old, new in changes:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected {label} exactly once, found {count}')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
           PY
-          echo '1df5291818121573d4749e248745a1966856e1d76cf1d7c0198364bdef7b49f5  /tmp/materialize.py' | sha256sum -c -
+          echo '6f3ec80629495acbdda6ebd702b9deed88154a73f32a46bd76b84c31f5080df8  /tmp/materialize.py' | sha256sum -c -
           python3 -m py_compile /tmp/materialize.py
 
       - name: Initialize shared Rust libraries
