@@ -1,17 +1,19 @@
-name: Publish HypeSiege hsg fleet from cluster GitHub Apps
-run-name: Publish HypeSiege hsg fleet from cluster GitHub Apps @ ${{ github.sha }}
+name: Publish HypeSiege hsg fleet from protected GitHub Apps
+run-name: Publish HypeSiege hsg fleet from protected GitHub Apps @ ${{ github.sha }}
 
 on:
   pull_request:
     branches: [main]
     paths:
       - .github/workflows/ops-publish-hsg-from-cluster-arc-apps.yml
-      - scripts/ops/publish_hypesiege_hsg_from_cluster_arc_apps.py
+      - scripts/ops/select_hypesiege_github_app_from_protected_sources.py
+      - scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh
   push:
     branches: [main]
     paths:
       - .github/workflows/ops-publish-hsg-from-cluster-arc-apps.yml
-      - scripts/ops/publish_hypesiege_hsg_from_cluster_arc_apps.py
+      - scripts/ops/select_hypesiege_github_app_from_protected_sources.py
+      - scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh
   workflow_dispatch:
 
 permissions:
@@ -19,7 +21,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: publish-hypesiege-hsg-from-cluster-arc-apps
+  group: publish-hypesiege-hsg-from-protected-apps
   cancel-in-progress: false
 
 jobs:
@@ -33,15 +35,20 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Validate the bounded cluster-App publisher
+      - name: Validate the selector and full App-only publisher
         shell: bash
         run: |
           set -euo pipefail
-          publisher=scripts/ops/publish_hypesiege_hsg_from_cluster_arc_apps.py
-          python3 -m py_compile "$publisher"
-          python3 "$publisher" \
-            --report "$RUNNER_TEMP/self-test-report.json" \
+          selector=scripts/ops/select_hypesiege_github_app_from_protected_sources.py
+          publisher=scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh
+          python3 -m py_compile "$selector"
+          python3 "$selector" \
+            --organization hypesiege \
+            --app-id-out "$RUNNER_TEMP/self-test-id" \
+            --private-key-out "$RUNNER_TEMP/self-test-key" \
+            --evidence-out "$RUNNER_TEMP/self-test-evidence" \
             --self-test
+          bash -n "$publisher"
           for target in \
             hsg-web-mash \
             hsg-web-leptos \
@@ -54,18 +61,19 @@ jobs:
           do
             grep -q "${target}" "$publisher"
           done
-          grep -q 'repository_selection.*all' "$publisher"
-          grep -q 'administration.*write' "$publisher"
-          grep -q 'pull_requests.*write' "$publisher"
-          grep -q 'pat_used.*False' "$publisher"
-          grep -q 'expected exactly one all-repositories repository-admin App' "$publisher"
+          grep -q 'repository_selection.*all' "$selector"
+          grep -q 'administration.*write' "$selector"
+          grep -q 'pull_requests.*write' "$selector"
+          grep -q 'pat_used.*False' "$selector"
+          grep -q 'GH_PAT must not be present' "$publisher"
+          grep -q 'github_app_installation_token' "$publisher"
           git diff --check
 
   publish:
     if: github.event_name != 'pull_request'
     needs: validate
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     env:
       INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
     steps:
@@ -81,11 +89,11 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
-          role-session-name: publish-hypesiege-hsg-from-cluster-apps
+          role-session-name: publish-hypesiege-hsg-from-protected-apps
           retry-max-attempts: 2
           mask-aws-account-id: true
 
-      - name: Execute the reviewed publisher on the protected cluster host
+      - name: Select a protected App and publish all repositories over SSM
         shell: bash
         env:
           TRUSTED_SHA: ${{ github.sha }}
@@ -94,15 +102,17 @@ jobs:
           test -n "${INSTANCE_ID:-}"
           [[ "$TRUSTED_SHA" =~ ^[0-9a-f]{40}$ ]]
 
-          remote_script="$RUNNER_TEMP/publish-hsg-from-cluster.sh"
+          remote_script="$RUNNER_TEMP/publish-hsg-from-protected-apps.sh"
           cat > "$remote_script" <<'REMOTE'
           #!/usr/bin/env bash
           set -Eeuo pipefail
           umask 077
           trusted_sha="${1:?trusted SHA required}"
+          region="${2:?AWS region required}"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
-          work="$(mktemp -d /tmp/hsg-cluster-app-publisher.XXXXXX)"
+          work="$(mktemp -d /tmp/hsg-protected-app-publisher.XXXXXX)"
           cleanup() {
+            unset K8S_SUBMODULE_APP_ID K8S_SUBMODULE_APP_PRIVATE_KEY GH_TOKEN
             python3 - "$work" <<'PY'
           import shutil
           import sys
@@ -114,7 +124,7 @@ jobs:
           }
           trap cleanup EXIT
 
-          for command in base64 git kubectl openssl python3; do
+          for command in aws base64 curl gh git jq kubectl openssl python3 sha256sum tar; do
             command -v "$command" >/dev/null
           done
 
@@ -124,19 +134,38 @@ jobs:
           git -C "$work/k8s-cluster" switch --quiet --detach FETCH_HEAD
           test "$(git -C "$work/k8s-cluster" rev-parse HEAD)" = "$trusted_sha"
 
-          report="$work/hsg-cluster-app-publication.json"
-          python3 "$work/k8s-cluster/scripts/ops/publish_hypesiege_hsg_from_cluster_arc_apps.py" \
+          app_id_file="$work/github-app-id"
+          private_key_file="$work/github-app-private-key.pem"
+          selector_evidence="$work/hsg-protected-app-selector.json"
+          python3 "$work/k8s-cluster/scripts/ops/select_hypesiege_github_app_from_protected_sources.py" \
             --organization hypesiege \
-            --report "$report"
+            --region "$region" \
+            --app-id-out "$app_id_file" \
+            --private-key-out "$private_key_file" \
+            --evidence-out "$selector_evidence"
+          test -s "$app_id_file"
+          test -s "$private_key_file"
+          test -s "$selector_evidence"
+
+          export K8S_SUBMODULE_APP_ID="$(tr -d '\r\n' < "$app_id_file")"
+          export K8S_SUBMODULE_APP_PRIVATE_KEY="$(cat "$private_key_file")"
+          export RUNNER_TEMP="$work"
+          chmod 700 "$work/k8s-cluster/scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh"
+          "$work/k8s-cluster/scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh"
+          unset K8S_SUBMODULE_APP_ID K8S_SUBMODULE_APP_PRIVATE_KEY GH_TOKEN
+
+          report="$work/hypesiege-hsg-publication.json"
           test -s "$report"
-          printf 'HSG_REPORT_BASE64='
+          printf 'HSG_SELECTOR_BASE64='
+          base64 --wrap=0 "$selector_evidence"
+          printf '\nHSG_REPORT_BASE64='
           base64 --wrap=0 "$report"
           printf '\n'
           REMOTE
           chmod 700 "$remote_script"
 
           encoded="$(base64 --wrap=0 "$remote_script")"
-          remote_command="remote_script=/tmp/publish-hsg-from-cluster.sh; printf '%s' '$encoded' | base64 --decode > \"\$remote_script\"; chmod 700 \"\$remote_script\"; status=0; bash \"\$remote_script\" '$TRUSTED_SHA' || status=\$?; exit \$status"
+          remote_command="remote_script=/tmp/publish-hsg-from-protected-apps.sh; printf '%s' '$encoded' | base64 --decode > \"\$remote_script\"; chmod 700 \"\$remote_script\"; status=0; bash \"\$remote_script\" '$TRUSTED_SHA' '$AWS_REGION' || status=\$?; exit \$status"
           parameters="$RUNNER_TEMP/ssm-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
 
@@ -144,7 +173,7 @@ jobs:
             aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
               --document-name AWS-RunShellScript \
-              --comment 'Publish HypeSiege hsg repositories through a validated cluster GitHub App' \
+              --comment 'Publish HypeSiege hsg repositories from protected GitHub App sources' \
               --parameters "file://$parameters" \
               --query 'Command.CommandId' \
               --output text
@@ -153,7 +182,7 @@ jobs:
           printf 'ssm_command_id=%s\n' "$command_id"
 
           status=Pending
-          for _ in $(seq 1 180); do
+          for _ in $(seq 1 360); do
             status="$(
               aws ssm get-command-invocation \
                 --command-id "$command_id" \
@@ -167,7 +196,7 @@ jobs:
             sleep 3
           done
 
-          invocation="$RUNNER_TEMP/hsg-cluster-app-invocation.json"
+          invocation="$RUNNER_TEMP/hsg-protected-app-invocation.json"
           aws ssm get-command-invocation \
             --command-id "$command_id" \
             --instance-id "$INSTANCE_ID" \
@@ -180,50 +209,65 @@ jobs:
             exit 1
           fi
 
-          encoded_report="$(
-            jq -r '.Stdout // ""' "$invocation" \
-              | sed -n 's/^HSG_REPORT_BASE64=//p' \
-              | tail -n 1
-          )"
-          test -n "$encoded_report"
-          report="$RUNNER_TEMP/hsg-cluster-app-publication.json"
-          printf '%s' "$encoded_report" | base64 --decode > "$report"
+          stdout="$(jq -r '.Stdout // ""' "$invocation")"
+          selector_encoded="$(printf '%s\n' "$stdout" | sed -n 's/^HSG_SELECTOR_BASE64=//p' | tail -n 1)"
+          report_encoded="$(printf '%s\n' "$stdout" | sed -n 's/^HSG_REPORT_BASE64=//p' | tail -n 1)"
+          test -n "$selector_encoded"
+          test -n "$report_encoded"
+
+          selector_report="$RUNNER_TEMP/hsg-protected-app-selector.json"
+          publication_report="$RUNNER_TEMP/hypesiege-hsg-publication.json"
+          printf '%s' "$selector_encoded" | base64 --decode > "$selector_report"
+          printf '%s' "$report_encoded" | base64 --decode > "$publication_report"
+
           jq -e '
             .schema_version == 1 and
             .organization == "hypesiege" and
-            .credential == "kubernetes_github_app_installation_token" and
-            .pat_used == false and
             .repository_selection == "all" and
             .permissions.administration == "write" and
             .permissions.contents == "write" and
             .permissions.pull_requests == "write" and
+            .pat_used == false
+          ' "$selector_report" >/dev/null
+          jq -e '
+            .schema_version == 1 and
+            .organization == "hypesiege" and
             (.repositories | length) == 8 and
-            all(.repositories[]; .private == true and .default_branch == "main")
-          ' "$report" >/dev/null
+            all(.repositories[];
+              .target | startswith("hypesiege/hsg-") and
+              .visibility == "private" and
+              .default_branch == "main" and
+              (.main_sha | test("^[0-9a-f]{40}$")) and
+              (.migration_sha | test("^[0-9a-f]{40}$")) and
+              ((.pull_request == "merged-on-main") or (.pull_request | startswith("https://github.com/hypesiege/hsg-")))
+            )
+          ' "$publication_report" >/dev/null
 
-      - name: Add the verified repository summary
+      - name: Add the verified publication summary
         if: success()
         shell: bash
         run: |
           set -euo pipefail
-          report="$RUNNER_TEMP/hsg-cluster-app-publication.json"
+          selector="$RUNNER_TEMP/hsg-protected-app-selector.json"
+          report="$RUNNER_TEMP/hypesiege-hsg-publication.json"
           {
-            echo '# HypeSiege hsg-* cluster-App publication'
+            echo '# HypeSiege hsg-* publication'
             echo
-            jq -r '"- GitHub App: `\(.app_slug)`"' "$report"
-            jq -r '"- Installation: `\(.installation_id)`"' "$report"
+            jq -r '"- GitHub App: `\(.app_slug)`"' "$selector"
+            jq -r '"- Installation: `\(.installation_id)`"' "$selector"
             echo '- PAT used: `false`'
             echo
-            jq -r '.repositories[] | "- `\(.full_name)` — created=`\(.created)`; main=`\(.default_branch)`"' "$report"
+            jq -r '.repositories[] | "- `\(.target)` — main `\(.main_sha)`; migration `\(.migration_sha)`; PR \(.pull_request)"' "$report"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload non-secret publication evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: hypesiege-hsg-cluster-app-publication
+          name: hypesiege-hsg-protected-app-publication
           path: |
-            ${{ runner.temp }}/hsg-cluster-app-publication.json
-            ${{ runner.temp }}/hsg-cluster-app-invocation.json
+            ${{ runner.temp }}/hsg-protected-app-selector.json
+            ${{ runner.temp }}/hypesiege-hsg-publication.json
+            ${{ runner.temp }}/hsg-protected-app-invocation.json
           if-no-files-found: warn
           retention-days: 14
