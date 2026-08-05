@@ -71,29 +71,51 @@ def selected_records(
     expected = EXPECTED_REPOSITORIES.get(organization)
     if expected is None:
         fail(f"organization is not in the exact allowlist: {organization}")
-    expected_set = set(expected)
-    by_name: dict[str, dict[str, object]] = {}
+
+    expected_by_identity = {full_name.casefold(): full_name for full_name in expected}
+    if len(expected_by_identity) != len(expected):
+        fail(f"exact allowlist contains case-insensitive duplicates: {organization}")
+
+    by_identity: dict[str, dict[str, object]] = {}
     for record in records:
         full_name = record.get("full_name")
-        if isinstance(full_name, str):
-            if full_name in by_name:
-                fail(f"duplicate repository identity in sealed manifest: {full_name}")
-            by_name[full_name] = record
-    missing = expected_set - set(by_name)
-    if missing:
-        fail(f"exact repository allowlist is missing from sealed manifest: {sorted(missing)}")
-    selected = [by_name[full_name] for full_name in expected]
-    for record, full_name in zip(selected, expected, strict=True):
-        if record.get("full_name") != full_name:
-            fail(f"selected record identity changed: {record.get('full_name')} != {full_name}")
-        owner, separator, _ = full_name.partition("/")
-        if separator != "/" or owner.casefold() != organization.casefold():
-            fail(f"repository escaped organization boundary: {full_name}")
+        if not isinstance(full_name, str):
+            continue
+        identity = full_name.casefold()
+        if identity in by_identity:
+            fail(f"duplicate repository identity in sealed manifest: {full_name}")
+        by_identity[identity] = record
+
+    missing_identities = set(expected_by_identity) - set(by_identity)
+    if missing_identities:
+        missing = sorted(expected_by_identity[identity] for identity in missing_identities)
+        fail(f"exact repository allowlist is missing from sealed manifest: {missing}")
+
+    selected = [by_identity[full_name.casefold()] for full_name in expected]
+    for record, expected_full_name in zip(selected, expected, strict=True):
+        actual_full_name = record.get("full_name")
+        if (
+            not isinstance(actual_full_name, str)
+            or actual_full_name.casefold() != expected_full_name.casefold()
+        ):
+            fail(
+                "selected record identity changed: "
+                f"{actual_full_name} != {expected_full_name}"
+            )
+        actual_owner, separator, _ = actual_full_name.partition("/")
+        expected_owner, expected_separator, _ = expected_full_name.partition("/")
+        if (
+            separator != "/"
+            or expected_separator != "/"
+            or actual_owner.casefold() != expected_owner.casefold()
+            or expected_owner.casefold() != organization.casefold()
+        ):
+            fail(f"repository escaped organization boundary: {actual_full_name}")
         if record.get("default_branch") != "main":
-            fail(f"reviewed repository must use main: {full_name}")
+            fail(f"reviewed repository must use main: {actual_full_name}")
         commit = record.get("commit")
         if not isinstance(commit, str) or len(commit) != 40 or commit.lower() != commit:
-            fail(f"reviewed repository has invalid commit identity: {full_name}")
+            fail(f"reviewed repository has invalid commit identity: {actual_full_name}")
     return selected
 
 
@@ -215,11 +237,17 @@ def publish_exact(organization: str, evidence_out: Path) -> None:
             fail(str(error))
 
         expected_names = set(EXPECTED_REPOSITORIES[organization])
-        observed_names = {str(record["full_name"]) for record in selected}
-        if observed_names != expected_names:
+        expected_by_identity = {
+            full_name.casefold(): full_name for full_name in expected_names
+        }
+        observed_identities = {
+            str(record["full_name"]).casefold() for record in selected
+        }
+        if observed_identities != set(expected_by_identity):
+            observed_names = sorted(str(record["full_name"]) for record in selected)
             fail(
                 "exact execution selection changed: "
-                f"{sorted(observed_names)} != {sorted(expected_names)}"
+                f"{observed_names} != {sorted(expected_names)}"
             )
         print(
             "VERIFIED_EXACT_PREFLIGHT "
@@ -231,7 +259,7 @@ def publish_exact(organization: str, evidence_out: Path) -> None:
         environment["GITHUB_REPOSITORY_ADMIN_TOKEN"] = MODULE.TOKEN
         for record in missing_records:
             full_name = str(record["full_name"])
-            if full_name not in expected_names:
+            if full_name.casefold() not in expected_by_identity:
                 fail(f"refusing to publish repository outside exact allowlist: {full_name}")
             MODULE.run(
                 [
@@ -265,36 +293,56 @@ def publish_exact(organization: str, evidence_out: Path) -> None:
             fail(str(error))
 
         evidence_records: list[dict[str, object]] = []
-        created_names = {str(record["full_name"]) for record in missing_records}
+        created_identities = {
+            str(record["full_name"]).casefold() for record in missing_records
+        }
         for record in selected:
             full_name = str(record["full_name"])
+            identity = full_name.casefold()
+            canonical_full_name = expected_by_identity.get(identity)
+            if canonical_full_name is None:
+                fail(f"postflight repository escaped exact allowlist: {full_name}")
             status, repository = repository_lookup(full_name)
             if status != 200 or not isinstance(repository, dict):
                 fail(f"postflight repository lookup failed for {full_name}: HTTP {status}")
+            repository_full_name = repository.get("full_name")
+            if (
+                not isinstance(repository_full_name, str)
+                or repository_full_name.casefold() != identity
+            ):
+                fail(
+                    "postflight repository identity changed: "
+                    f"{repository_full_name} != {canonical_full_name}"
+                )
             actual_sha = MODULE.main_ref(full_name)
             if repository.get("private") is not True:
-                fail(f"postflight repository is not private: {full_name}")
+                fail(f"postflight repository is not private: {canonical_full_name}")
             if repository.get("visibility") != "private":
-                fail(f"postflight repository visibility is not private: {full_name}")
-            if repository.get("default_branch") != "main":
-                fail(f"postflight default branch is not main: {full_name}")
-            if full_name in created_names and actual_sha != record.get("commit"):
                 fail(
-                    f"new repository head mismatch for {full_name}: "
+                    "postflight repository visibility is not private: "
+                    f"{canonical_full_name}"
+                )
+            if repository.get("default_branch") != "main":
+                fail(f"postflight default branch is not main: {canonical_full_name}")
+            if identity in created_identities and actual_sha != record.get("commit"):
+                fail(
+                    f"new repository head mismatch for {canonical_full_name}: "
                     f"{actual_sha} != {record.get('commit')}"
                 )
             preserved = existing_snapshot.get(full_name)
             if preserved is not None and actual_sha != preserved.get("head"):
-                fail(f"preserved repository head changed for {full_name}")
+                fail(f"preserved repository head changed for {canonical_full_name}")
             evidence_records.append(
                 {
-                    "full_name": full_name,
+                    "full_name": repository_full_name,
                     "repository_id": repository.get("id"),
                     "visibility": repository.get("visibility"),
                     "default_branch": repository.get("default_branch"),
                     "main_sha": actual_sha,
                     "expected_sealed_sha": record.get("commit"),
-                    "disposition": "created" if full_name in created_names else "preserved",
+                    "disposition": (
+                        "created" if identity in created_identities else "preserved"
+                    ),
                     "html_url": repository.get("html_url"),
                 }
             )
