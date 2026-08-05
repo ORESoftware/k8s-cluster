@@ -195,17 +195,15 @@ def publish_exact(organization: str, evidence_out: Path) -> None:
         if any(record.get("visibility") != "private" for record in selected):
             fail("exact execution selection contains a non-private repository")
 
-        exact_manifest = {
-            **execution_manifest,
-            "repository_count": len(selected),
-            "total_tracked_files": sum(int(record["files"]) for record in selected),
-            "total_gitlinks": sum(int(record["gitlinks"]) for record in selected),
-            "organizations": {organization.casefold(): len(selected)},
-            "repositories": selected,
-        }
-        exact_manifest_path = work / f"{organization.casefold()}-exact-private-gaps.json"
-        exact_manifest_path.write_text(
-            json.dumps(exact_manifest, indent=2, sort_keys=True) + "\n",
+        # The sealed publisher validates the complete 32-repository topology even
+        # when --repository selects exactly one mutation. Keep the projected
+        # private execution ledger complete; selected/missing_records below remain
+        # the sole mutation boundary.
+        full_private_manifest_path = (
+            work / f"{organization.casefold()}-full-private-fleet.json"
+        )
+        full_private_manifest_path.write_text(
+            json.dumps(execution_manifest, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
 
@@ -242,7 +240,7 @@ def publish_exact(organization: str, evidence_out: Path) -> None:
                     sys.executable,
                     str(publisher),
                     "--manifest",
-                    str(exact_manifest_path),
+                    str(full_private_manifest_path),
                     "--source-root",
                     str(source_root),
                     "--repository",
