@@ -7,16 +7,19 @@ async function read(path) {
 }
 
 const cloudNames = ['aws', 'hetzner'];
-const expectedInclude =
-  "{projects/zed.tenant.yaml,projects/zed.appproject.yaml,projects/zed.bootstrap-postgres.yaml,apps/zed.applications.yaml}";
+const apiRef = '3d2d4c98024e5bf718dc79c2648bd10d7759a31c';
+const webRef = '75f5ac4e35e121485af75588ce453f350e0cabbc';
 
 for (const cloud of cloudNames) {
-  test(`${cloud} bootstraps the shared Zed tenant and application bundle`, async () => {
+  test(`${cloud} bootstraps its pinned Zed overlays with the shared platform`, async () => {
     const kustomization = await read(`remote/argocd/clusters/${cloud}/kustomization.yaml`);
     const parent = await read(
       `remote/argocd/clusters/${cloud}/zed.bootstrap.application.yaml`,
     );
+    const apps = await read(`remote/argocd/apps/zed.${cloud}.applications.yaml`);
     const clusterApps = await read(`remote/argocd/clusters/${cloud}/applications.yaml`);
+    const expectedInclude =
+      `{projects/zed.tenant.yaml,projects/zed.appproject.yaml,projects/zed.bootstrap-postgres.yaml,apps/zed.${cloud}.applications.yaml}`;
 
     assert.match(kustomization, /- zed\.bootstrap\.application\.yaml/);
     assert.match(parent, new RegExp(`name:\\s*dd-zed-bootstrap-${cloud}`));
@@ -25,36 +28,61 @@ for (const cloud of cloudNames) {
     assert.match(parent, /path:\s*remote\/argocd/);
     assert.match(parent, /directory:[\s\S]*recurse:\s*true/);
     assert.ok(parent.includes(`include: '${expectedInclude}'`));
+    assert.doesNotMatch(parent, /apps\/zed\.applications\.yaml/);
     assert.match(parent, /automated:[\s\S]*prune:\s*true[\s\S]*selfHeal:\s*true/);
     assert.match(parent, /- ServerSideApply=true/);
     assert.doesNotMatch(parent, /CreateNamespace=true/);
 
-    // The Zed apps and the telemetry plane must be installed by the same
-    // cloud overlay. Defining either only under remote/argocd is insufficient.
+    // Each cluster must render its own overlay. The generic k8s root leaves
+    // PUBLIC_* URLs at registry.zpkg.tech and cannot select the right ingress.
+    assert.equal((apps.match(new RegExp(`path:\\s*k8s/overlays/${cloud}`, 'g')) ?? []).length, 2);
+    assert.doesNotMatch(apps, /path:\s*k8s\s*$/m);
+    assert.equal((apps.match(new RegExp(`targetRevision:\\s*${apiRef}`, 'g')) ?? []).length, 1);
+    assert.equal((apps.match(new RegExp(`targetRevision:\\s*${webRef}`, 'g')) ?? []).length, 1);
+    assert.doesNotMatch(apps, /targetRevision:\s*main/);
+    assert.match(
+      apps,
+      new RegExp(
+        `zed-api-server=ghcr\\.io/zed-pkg/zed-api-server:${apiRef}`,
+      ),
+    );
+    assert.match(
+      apps,
+      new RegExp(
+        `zed-web-server=ghcr\\.io/zed-pkg/zed-web-server:${webRef}`,
+      ),
+    );
+    assert.equal((apps.match(/argocd\.argoproj\.io\/sync-wave:\s*"0"/g) ?? []).length, 2);
+    assert.match(apps, /name:\s*dd-zed-api-server/);
+    assert.match(apps, /repoURL:\s*https:\/\/github\.com\/zed-pkg\/zed-api-server\.rs\.git/);
+    assert.match(apps, /name:\s*dd-zed-web-server/);
+    assert.match(apps, /repoURL:\s*https:\/\/github\.com\/zed-pkg\/zed-web-server\.rs\.git/);
+
+    // Zed and the telemetry plane must be installed by the same cloud overlay.
     assert.match(clusterApps, /name:\s*dd-observability/);
     assert.match(clusterApps, /path:\s*remote\/argocd\/observability/);
   });
 }
 
-test('Zed resources reconcile in dependency order without duplicating cloud manifests', async () => {
+test('Zed resources reconcile in dependency order without a mutable shared app bundle', async () => {
   const tenant = await read('remote/argocd/projects/zed.tenant.yaml');
   const project = await read('remote/argocd/projects/zed.appproject.yaml');
   const postgres = await read('remote/argocd/projects/zed.bootstrap-postgres.yaml');
-  const apps = await read('remote/argocd/apps/zed.applications.yaml');
 
   assert.match(tenant, /argocd\.argoproj\.io\/sync-wave:\s*"-20"/);
   assert.match(project, /argocd\.argoproj\.io\/sync-wave:\s*"-15"/);
   assert.match(postgres, /argocd\.argoproj\.io\/sync-wave:\s*"-10"/);
-  assert.equal((apps.match(/argocd\.argoproj\.io\/sync-wave:\s*"0"/g) ?? []).length, 2);
-
   assert.match(project, /clusterResourceWhitelist:\s*\[\]/);
   assert.match(project, /namespace:\s*zed/);
-  assert.match(apps, /name:\s*dd-zed-api-server/);
-  assert.match(apps, /repoURL:\s*https:\/\/github\.com\/zed-pkg\/zed-api-server\.rs\.git/);
-  assert.match(apps, /name:\s*dd-zed-web-server/);
-  assert.match(apps, /repoURL:\s*https:\/\/github\.com\/zed-pkg\/zed-web-server\.rs\.git/);
-  assert.equal((apps.match(/path:\s*k8s/g) ?? []).length, 2);
-  assert.equal((apps.match(/targetRevision:\s*main/g) ?? []).length, 2);
+
+  const [awsApps, hetznerApps] = await Promise.all(
+    cloudNames.map((cloud) => read(`remote/argocd/apps/zed.${cloud}.applications.yaml`)),
+  );
+  assert.notEqual(awsApps, hetznerApps);
+  assert.match(awsApps, /k8s\/overlays\/aws/);
+  assert.doesNotMatch(awsApps, /k8s\/overlays\/hetzner/);
+  assert.match(hetznerApps, /k8s\/overlays\/hetzner/);
+  assert.doesNotMatch(hetznerApps, /k8s\/overlays\/aws/);
 });
 
 test('the disposable Zed database satisfies the real registry migration contract', async () => {

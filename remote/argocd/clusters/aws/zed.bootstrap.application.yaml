@@ -13,7 +13,7 @@ spec:
     path: remote/argocd
     directory:
       recurse: true
-      include: '{projects/zed.tenant.yaml,projects/zed.appproject.yaml,projects/zed.bootstrap-postgres.yaml,apps/zed.applications.yaml}'
+      include: '{projects/zed.tenant.yaml,projects/zed.appproject.yaml,projects/zed.bootstrap-postgres.yaml,apps/zed.aws.applications.yaml}'
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
