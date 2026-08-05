@@ -59,8 +59,9 @@ class ProjectReconciliationWorkflowContractTests(unittest.TestCase):
         self.assertIn("IDENTITY_RETRY_INITIAL_SECONDS: 60", self.text)
         self.assertIn("IDENTITY_RETRY_MAX_SECONDS: 300", self.text)
 
-    def test_only_latest_one_time_reconciliation_can_continue(self) -> None:
-        self.assertIn("group: reconcile-organization-project-docs-once", self.text)
+    def test_only_latest_v2_reconciliation_can_continue(self) -> None:
+        self.assertIn("group: reconcile-organization-project-docs-once-v2", self.text)
+        self.assertNotIn("group: reconcile-organization-project-docs-once\n", self.text)
         self.assertIn("cancel-in-progress: true", self.text)
         self.assertNotIn("cancel-in-progress: false", self.text)
 
