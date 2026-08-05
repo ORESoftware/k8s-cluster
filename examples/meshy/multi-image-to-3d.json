@@ -1,0 +1,17 @@
+{
+  "image_urls": [
+    "https://example.com/object-front.png",
+    "https://example.com/object-right.png",
+    "https://example.com/object-back.png",
+    "https://example.com/object-left.png"
+  ],
+  "ai_model": "meshy-6",
+  "should_texture": true,
+  "enable_pbr": true,
+  "texture_resolution": "2k",
+  "should_remesh": true,
+  "topology": "triangle",
+  "target_polycount": 10000,
+  "moderation": true,
+  "target_formats": ["glb", "stl", "3mf"]
+}
