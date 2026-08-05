@@ -1,0 +1,99 @@
+name: Apply organization Project owner and evidence patch
+
+on:
+  push:
+    branches:
+      - fix/org-project-reconciler-owner-and-evidence-20260805
+    paths:
+      - .github/workflows/ops-patch-org-project-owner-evidence-pr.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/org-project-reconciler-owner-and-evidence-20260805
+      - name: Apply deterministic semantic patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/ops/sync_org_project_docs.sh')
+          text = path.read_text(encoding='utf-8')
+
+          mkdir_anchor = 'mkdir -p "$EVIDENCE_DIR"\n'
+          absolute_block = '''EVIDENCE_DIR="$(python3 - "$EVIDENCE_DIR" <<'PY_PATH'\nfrom pathlib import Path\nimport sys\nprint(Path(sys.argv[1]).resolve())\nPY_PATH\n)"\n\nmkdir -p "$EVIDENCE_DIR"\n'''
+          if 'EVIDENCE_DIR="$(python3 - "$EVIDENCE_DIR"' not in text:
+              if mkdir_anchor not in text:
+                  raise SystemExit('evidence directory anchor missing')
+              text = text.replace(mkdir_anchor, absolute_block, 1)
+
+          old_query = "lookup_query='query($login:String!){organization(login:$login){id login projectsV2(first:100){nodes{id number title url closed}}}}'"
+          new_query = "lookup_query='query($login:String!){organization(login:$login){id login projectsV2(first:100){nodes{id number title url closed owner{__typename ... on Organization{login} ... on User{login}}}}}}'"
+          if old_query in text:
+              text = text.replace(old_query, new_query, 1)
+          elif new_query not in text:
+              raise SystemExit('project lookup query anchor missing')
+
+          old_named = '''project_json="$(jq -c --arg title "$project_title" '[.data.organization.projectsV2.nodes[]? | select(.title == $title)] | sort_by(.number) | .[0] // empty' <<<"$lookup_response")"'''
+          new_named = '''project_json="$(jq -c --arg title "$project_title" --arg org "$canonical_org" '[.data.organization.projectsV2.nodes[]? | select(.title == $title and .owner.__typename == "Organization" and (.owner.login | ascii_downcase) == ($org | ascii_downcase))] | sort_by(.number) | .[0] // empty' <<<"$lookup_response")"'''
+          if old_named in text:
+              text = text.replace(old_named, new_named, 1)
+          elif new_named not in text:
+              raise SystemExit('named project selector anchor missing')
+
+          old_one = '''project_one="$(jq -c '[.data.organization.projectsV2.nodes[]? | select(.number == 1)] | .[0] // empty' <<<"$lookup_response")"'''
+          new_one = '''project_one="$(jq -c --arg org "$canonical_org" '[.data.organization.projectsV2.nodes[]? | select(.number == 1 and .owner.__typename == "Organization" and (.owner.login | ascii_downcase) == ($org | ascii_downcase))] | .[0] // empty' <<<"$lookup_response")"'''
+          if old_one in text:
+              text = text.replace(old_one, new_one, 1)
+          elif new_one not in text:
+              raise SystemExit('project one selector anchor missing')
+
+          old_return = 'projectV2{id number title url closed}'
+          new_return = 'projectV2{id number title url closed owner{__typename ... on Organization{login} ... on User{login}}}'
+          text = text.replace(old_return, new_return)
+
+          owner_validation_anchor = '''  [[ "$(jq -r '.closed // false' <<<"$project_json")" == "false" ]]\n'''
+          owner_validation = owner_validation_anchor + '''  [[ "$(jq -r '.owner.__typename' <<<"$project_json")" == "Organization" ]]\n  [[ "$(jq -r '.owner.login | ascii_downcase' <<<"$project_json")" == "${canonical_org,,}" ]]\n'''
+          if "'.owner.__typename' <<<\"$project_json\"" not in text:
+              if owner_validation_anchor not in text:
+                  raise SystemExit('owner validation anchor missing')
+              text = text.replace(owner_validation_anchor, owner_validation, 1)
+
+          success_anchor = '''  trap - ERR\n  record_result "ok"'''
+          success_checks = '''  [[ "$pr_number" =~ ^[1-9][0-9]*$ ]]\n  [[ "$pr_url" == "https://github.com/${canonical_org}/.github/pull/${pr_number}" ]]\n  [[ "$pr_state" == merged-* || "$pr_state" == "auto-merge-enabled" || "$pr_state" == "not-needed" ]]\n  [[ "$issue_number" =~ ^[1-9][0-9]*$ ]]\n  [[ "$issue_url" == "https://github.com/${canonical_org}/.github/issues/${issue_number}" ]]\n  [[ "$project_item_action" == "added" || "$project_item_action" == "existing" ]]\n\n  trap - ERR\n  record_result "ok"'''
+          if '[[ "$pr_number" =~ ^[1-9][0-9]*$ ]]' not in text:
+              if success_anchor not in text:
+                  raise SystemExit('success record anchor missing')
+              text = text.replace(success_anchor, success_checks, 1)
+
+          old_loop = '''  if reconcile_org "$organization" "$linear_url"; then\n    successes=$((successes + 1))\n  else\n    failures=$((failures + 1))\n  fi'''
+          new_loop = '''  reconcile_org "$organization" "$linear_url"\n  reconcile_rc=$?\n  if (( reconcile_rc == 0 )); then\n    successes=$((successes + 1))\n  else\n    failures=$((failures + 1))\n  fi'''
+          if old_loop in text:
+              text = text.replace(old_loop, new_loop, 1)
+          elif new_loop not in text:
+              raise SystemExit('reconcile loop anchor missing')
+
+          path.write_text(text, encoding='utf-8')
+          PY
+          bash -n scripts/ops/sync_org_project_docs.sh
+          python3 -m unittest \
+            tests/ops/test_audit_org_project_docs_evidence.py \
+            tests/ops/test_sync_org_project_docs_source.py
+      - name: Commit the durable patch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if git diff --quiet -- scripts/ops/sync_org_project_docs.sh; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- scripts/ops/sync_org_project_docs.sh
+          git commit -m 'fix: preserve organization Project and evidence semantics'
+          git push origin HEAD:fix/org-project-reconciler-owner-and-evidence-20260805
