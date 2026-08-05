@@ -11,6 +11,8 @@ github_token=''
 gateway_auth=''
 credential_source=''
 gateway_source=''
+app_work=''
+app_evidence=''
 
 fail() {
   printf 'des-browser-bootstrap stage=%s status=failed message=%s\n' "$stage" "$*" >&2
@@ -19,7 +21,10 @@ fail() {
 
 cleanup() {
   unset github_token gateway_auth raw_value encoded_value secret_json candidate profile_home
-  unset GH_TOKEN GITHUB_TOKEN DES_GATEWAY_AUTH
+  unset GH_TOKEN GITHUB_TOKEN DES_GATEWAY_AUTH DES_APP_SELECTOR DES_APP_TOKEN_HELPER
+  if [[ -n "$app_work" ]]; then
+    rm -rf "$app_work"
+  fi
 }
 trap cleanup EXIT INT TERM
 trap 'fail "unexpected command failure at line ${LINENO}"' ERR
@@ -167,6 +172,7 @@ command -v gh >/dev/null 2>&1 || fail 'gh is unavailable'
 command -v kubectl >/dev/null 2>&1 || fail 'kubectl is unavailable'
 command -v python3 >/dev/null 2>&1 || fail 'python3 is unavailable'
 command -v base64 >/dev/null 2>&1 || fail 'base64 is unavailable'
+command -v openssl >/dev/null 2>&1 || fail 'openssl is unavailable'
 printf 'des-browser-bootstrap stage=%s status=passed\n' "$stage"
 
 stage='github-credential'
@@ -200,6 +206,25 @@ if [[ -z "$github_token" ]]; then
   if valid_credential "$raw_value"; then
     github_token="$raw_value"
     credential_source='protected-gh-profile-file'
+  fi
+fi
+unset raw_value
+
+if [[ -z "$github_token" ]] && \
+   [[ -f "${DES_APP_SELECTOR:-}" ]] && \
+   [[ -f "${DES_APP_TOKEN_HELPER:-}" ]]; then
+  app_work="$(mktemp -d /tmp/des-browser-github-app.XXXXXX)"
+  app_evidence="$app_work/evidence.json"
+  python3 "$DES_APP_TOKEN_HELPER" \
+    --selector "$DES_APP_SELECTOR" \
+    --organization "$TARGET_ORG" \
+    --token-out "$app_work/installation-token" \
+    --evidence-out "$app_evidence" \
+    --region "${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
+  raw_value="$(cat "$app_work/installation-token")"
+  if valid_credential "$raw_value"; then
+    github_token="$raw_value"
+    credential_source='github-app-installation'
   fi
 fi
 unset raw_value
@@ -240,10 +265,31 @@ else
 fi
 
 stage='github-identity'
-[[ "$(gh api user --jq .login)" == "$EXPECTED_LOGIN" ]] || fail 'unexpected GitHub publisher identity'
-[[ "$(gh api "user/memberships/orgs/${TARGET_ORG}" --jq '.role + ":" + .state')" == 'admin:active' ]] \
-  || fail "publisher is not an active owner of ${TARGET_ORG}"
-printf 'des-browser-bootstrap stage=%s status=passed\n' "$stage"
+if [[ "$credential_source" == 'github-app-installation' ]]; then
+  python3 - "$app_evidence" "$TARGET_ORG" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+evidence = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+if evidence.get("organization") != sys.argv[2]:
+    raise SystemExit("GitHub App evidence targets the wrong organization")
+required = {
+    "administration": "write",
+    "contents": "write",
+    "pull_requests": "write",
+    "metadata": "read",
+}
+if evidence.get("token_permissions") != required:
+    raise SystemExit("GitHub App evidence has insufficient permissions")
+PY
+  gh api installation/repositories --jq '.total_count' >/dev/null
+else
+  [[ "$(gh api user --jq .login)" == "$EXPECTED_LOGIN" ]] || fail 'unexpected GitHub publisher identity'
+  [[ "$(gh api "user/memberships/orgs/${TARGET_ORG}" --jq '.role + ":" + .state')" == 'admin:active' ]] \
+    || fail "publisher is not an active owner of ${TARGET_ORG}"
+fi
+printf 'des-browser-bootstrap stage=%s status=passed source=%s\n' "$stage" "$credential_source"
 
 ensure_repo() {
   local name="$1"
@@ -258,7 +304,7 @@ ensure_repo() {
     -F has_projects=true \
     -F has_wiki=false \
     -F delete_branch_on_merge=true >/dev/null
-  if [[ "$name" != '.github' && -n "$gateway_auth" ]]; then
+  if [[ "$name" != '.github' && -n "$gateway_auth" && "$credential_source" != 'github-app-installation' ]]; then
     gh secret set DES_GATEWAY_AUTH --repo "$full" --body "$gateway_auth"
   fi
   printf 'des-browser-bootstrap stage=%s status=passed\n' "$stage"
@@ -268,6 +314,10 @@ ensure_project() {
   local owner="$1"
   local number=''
   stage="project:${owner}"
+  if [[ "$credential_source" == 'github-app-installation' ]]; then
+    printf 'des-browser-bootstrap stage=%s status=deferred reason=user-project-token-required\n' "$stage"
+    return 0
+  fi
   number="$(
     gh project list --owner "$owner" --format json \
       --jq ".projects[] | select(.title == \"${PROJECT_TITLE}\") | .number" \
@@ -297,4 +347,4 @@ ensure_project discrete-event-systems
 ensure_project discrete-event-systems-test
 
 stage='complete'
-printf 'des-browser-bootstrap stage=%s status=success\n' "$stage"
+printf 'des-browser-bootstrap stage=%s status=success credential_source=%s\n' "$stage" "$credential_source"
