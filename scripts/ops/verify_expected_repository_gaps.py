@@ -163,7 +163,8 @@ def fetch_manifest() -> list[dict[str, Any]]:
     if response.get("encoding") != "base64" or not isinstance(encoded, str):
         raise GapVerificationError("reviewed fleet manifest encoding changed")
     try:
-        raw = base64.b64decode(encoded, validate=True)
+        compact = "".join(encoded.split())
+        raw = base64.b64decode(compact, validate=True)
         payload = json.loads(raw)
     except (ValueError, json.JSONDecodeError) as error:
         raise GapVerificationError("reviewed fleet manifest is not valid JSON") from error
