@@ -1,0 +1,296 @@
+{
+  "fleet": {
+    "default_visibility": "public",
+    "production_org": "declarative-migrations",
+    "repositories": [
+      {
+        "kind": "database",
+        "languages": [
+          "rust",
+          "sql"
+        ],
+        "name": "postgres-forward-rollback",
+        "package_managers": [
+          "cargo",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Apply multi-step PostgreSQL migrations, validate schema/data invariants, roll them back, and prove the original state is restored.",
+        "services": [
+          "postgres"
+        ],
+        "source_refs": [
+          "migrator"
+        ],
+        "suites": [
+          "forward",
+          "rollback",
+          "data-preservation",
+          "idempotency"
+        ]
+      },
+      {
+        "kind": "database",
+        "languages": [
+          "rust",
+          "sql"
+        ],
+        "name": "cockroach-forward-rollback",
+        "package_managers": [
+          "cargo",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Apply and roll back CockroachDB migrations while validating transactional-DDL differences, retries, and schema convergence.",
+        "services": [
+          "cockroachdb"
+        ],
+        "source_refs": [
+          "migrator"
+        ],
+        "suites": [
+          "forward",
+          "rollback",
+          "retryable-errors",
+          "schema-convergence"
+        ]
+      },
+      {
+        "kind": "database",
+        "languages": [
+          "rust",
+          "sql"
+        ],
+        "name": "postgres-version-matrix",
+        "package_managers": [
+          "cargo",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Run forward and rollback fixtures against supported PostgreSQL major versions, common extensions, and upgrade boundaries.",
+        "services": [
+          "postgres-14",
+          "postgres-15",
+          "postgres-16",
+          "postgres-17"
+        ],
+        "source_refs": [
+          "migrator"
+        ],
+        "suites": [
+          "version-matrix",
+          "extensions",
+          "forward",
+          "rollback"
+        ]
+      },
+      {
+        "kind": "database",
+        "languages": [
+          "rust",
+          "sql"
+        ],
+        "name": "cockroach-version-matrix",
+        "package_managers": [
+          "cargo",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Run forward and rollback fixtures against supported CockroachDB releases and single-node/multi-node deployment modes.",
+        "services": [
+          "cockroachdb"
+        ],
+        "source_refs": [
+          "migrator"
+        ],
+        "suites": [
+          "version-matrix",
+          "single-node",
+          "multi-node",
+          "rollback"
+        ]
+      },
+      {
+        "kind": "concurrency",
+        "languages": [
+          "rust",
+          "python"
+        ],
+        "name": "migration-lock-concurrency",
+        "package_managers": [
+          "cargo",
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Launch competing migration runners and prove lock acquisition, lease expiry, exactly-once application, and safe recovery.",
+        "services": [
+          "postgres",
+          "cockroachdb"
+        ],
+        "source_refs": [
+          "migrator"
+        ],
+        "suites": [
+          "concurrent-runners",
+          "lock-timeout",
+          "lease-expiry",
+          "exactly-once"
+        ]
+      },
+      {
+        "kind": "contract",
+        "languages": [
+          "rust",
+          "sql"
+        ],
+        "name": "migration-drift-detection",
+        "package_managers": [
+          "cargo",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Detect schema drift, unmanaged objects, declaration reordering, extension differences, plan instability, and unsafe destructive changes.",
+        "source_refs": [
+          "migrator"
+        ],
+        "suites": [
+          "drift",
+          "unmanaged-objects",
+          "plan-stability",
+          "destructive-guard"
+        ]
+      },
+      {
+        "kind": "chaos",
+        "languages": [
+          "rust",
+          "python"
+        ],
+        "name": "migration-failure-recovery",
+        "package_managers": [
+          "cargo",
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Interrupt migrations at controlled points and validate resumability, rollback, audit records, and deterministic roll-forward repair.",
+        "services": [
+          "postgres",
+          "cockroachdb",
+          "toxiproxy"
+        ],
+        "source_refs": [
+          "migrator"
+        ],
+        "suites": [
+          "process-kill",
+          "network-fault",
+          "statement-failure",
+          "roll-forward-repair"
+        ]
+      },
+      {
+        "kind": "packaging",
+        "languages": [
+          "rust",
+          "shell"
+        ],
+        "name": "migration-cli-packaging",
+        "package_managers": [
+          "cargo",
+          "homebrew",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest",
+          "macos-latest"
+        ],
+        "purpose": "Install the migration CLI through Cargo, Homebrew-style artifacts, Zed, and pinned git source, then compare smoke-plan behavior.",
+        "source_refs": [
+          "migrator",
+          "homebrew"
+        ],
+        "suites": [
+          "install",
+          "help",
+          "plan",
+          "apply-dry-run"
+        ]
+      },
+      {
+        "kind": "api",
+        "languages": [
+          "python"
+        ],
+        "name": "migration-mcp-contract",
+        "package_managers": [
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Validate MCP tools, schemas, permissions, dry-run behavior, migration plans, error semantics, and parity with the CLI.",
+        "source_refs": [
+          "mcp",
+          "migrator"
+        ],
+        "suites": [
+          "mcp-tools",
+          "schema",
+          "dry-run",
+          "cli-parity"
+        ]
+      }
+    ],
+    "sources": {
+      "homebrew": {
+        "alias": "homebrew",
+        "repository": "declarative-migrations/homebrew-tap",
+        "required": true,
+        "role": "packaging",
+        "zed_dependency": false
+      },
+      "mcp": {
+        "alias": "mcp",
+        "repository": "declarative-migrations/declarative-migrations-mcp-server.rs",
+        "required": true,
+        "role": "api",
+        "zed_dependency": false
+      },
+      "migrator": {
+        "alias": "migrator",
+        "repository": "declarative-migrations/declarative-postgres-migrate.rs",
+        "required": true,
+        "role": "lib",
+        "zed_dependency": true
+      }
+    },
+    "summary": "Forward/rollback, versions, concurrency, drift, failure recovery, packaging, and MCP coverage."
+  },
+  "test_org": "declarative-migrations-test"
+}
