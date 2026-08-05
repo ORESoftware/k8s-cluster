@@ -55,9 +55,9 @@ text = source.read_text(encoding="utf-8")
 old_target = "bootstrap_org_dotgithub_repositories_hardened.py"
 new_target = "bootstrap_org_dotgithub_repositories_all.py"
 old_target_count = text.count(old_target)
-if old_target_count != 3:
+if old_target_count != 4:
     raise SystemExit(
-        f"protected runner target count changed: expected 3, observed {old_target_count}"
+        f"protected runner target count changed: expected 4, observed {old_target_count}"
     )
 
 old_count_guard = "len(organizations) != 36"
