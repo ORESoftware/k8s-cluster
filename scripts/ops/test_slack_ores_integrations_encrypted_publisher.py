@@ -71,13 +71,13 @@ class SlackOresEncryptedPublisherTests(unittest.TestCase):
         self.assertLess(validate, challenge)
         for snippet in (
             "SOURCE_SHA: 7d7b6f2a1018204eba8b727ffa069e6bef31b6a7",
-            "https://github.com/ORESoftware/devops-slack.git",
+            '"https://github.com/${SOURCE_REPOSITORY}.git"',
             'test "$(git -C "$source_root" rev-parse HEAD)" = "$SOURCE_SHA"',
-            "npm install --ignore-scripts --package-lock=false",
-            "npm run dependencies:check",
-            "npm run manifest:check",
-            "npm run check",
-            "npm test",
+            'npm --prefix "$source_root" install --ignore-scripts --package-lock=false',
+            'npm --prefix "$source_root" run dependencies:check',
+            'npm --prefix "$source_root" run manifest:check',
+            'npm --prefix "$source_root" run check',
+            'npm --prefix "$source_root" test',
         ):
             with self.subTest(snippet=snippet):
                 self.assertIn(snippet, self.workflow)
@@ -115,7 +115,7 @@ class SlackOresEncryptedPublisherTests(unittest.TestCase):
         for snippet in (
             "repos/${TARGET_REPOSITORY}",
             "gh api --method POST user/repos",
-            'git push target "$SOURCE_SHA:refs/heads/main"',
+            'git -C "$SOURCE_ROOT" push target "$SOURCE_SHA:refs/heads/main"',
             "gh auth setup-git --hostname github.com --force",
             'test "$remote_main" = "$SOURCE_SHA"',
             'gh api --method PATCH "repos/${TARGET_REPOSITORY}" -f default_branch=main',
@@ -134,9 +134,9 @@ class SlackOresEncryptedPublisherTests(unittest.TestCase):
             "03f38e876daec61eba587f6cb87393d3cc2a7dac",
             "/slack/commands/ores-claude",
             "/slack/commands/ores-chatgpt",
-            "npm run manifest:check",
-            "npm run check",
-            "npm test",
+            'npm --prefix "$SOURCE_ROOT" run manifest:check',
+            'npm --prefix "$SOURCE_ROOT" run check',
+            'npm --prefix "$SOURCE_ROOT" test',
         ):
             with self.subTest(snippet=snippet):
                 self.assertIn(snippet, self.workflow)
