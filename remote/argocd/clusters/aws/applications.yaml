@@ -39,7 +39,7 @@ spec:
     # (repo-server submodule checkout is disabled). Kept byte-identical to the
     # apps/dd-billing-server.application.yaml copy. Needs an ArgoCD repo cred for
     # quaestor-ledger/billing-server.rs before it can sync.
-    repoURL: git@github.com:quaestor-ledger/billing-server.rs.git
+    repoURL: https://github.com/quaestor-ledger/billing-server.rs.git
     targetRevision: main
     path: k8s/ec2
   destination:
