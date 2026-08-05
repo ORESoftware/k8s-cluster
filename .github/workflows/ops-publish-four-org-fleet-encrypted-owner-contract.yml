@@ -68,6 +68,15 @@ jobs:
             echo 'Plaintext GitHub credentials are forbidden.' >&2
             exit 1
           fi
-          ! grep -F 'upload-artifact' .github/workflows/ops-publish-four-org-fleet-encrypted-owner.yml
-          ! grep -F 'actions/cache' .github/workflows/ops-publish-four-org-fleet-encrypted-owner.yml
-          ! grep -F 'owner_token >>' .github/workflows/ops-publish-four-org-fleet-encrypted-owner.yml
+          if grep -F 'upload-artifact' .github/workflows/ops-publish-four-org-fleet-encrypted-owner.yml; then
+            echo 'Artifact upload is forbidden in the owner-credential workflow.' >&2
+            exit 1
+          fi
+          if grep -F 'actions/cache' .github/workflows/ops-publish-four-org-fleet-encrypted-owner.yml; then
+            echo 'Caching is forbidden in the owner-credential workflow.' >&2
+            exit 1
+          fi
+          if grep -F 'owner_token >>' .github/workflows/ops-publish-four-org-fleet-encrypted-owner.yml; then
+            echo 'Owner-token persistence is forbidden.' >&2
+            exit 1
+          fi
