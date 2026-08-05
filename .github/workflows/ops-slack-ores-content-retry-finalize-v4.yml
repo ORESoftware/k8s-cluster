@@ -1,0 +1,184 @@
+name: Finalize bounded Slack publisher content retries v4
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/ops-slack-ores-content-retry-finalize-v4.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: slack-ores-content-retry-finalize-v4
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/slack-ores-content-retry-20260805'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact retry branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/slack-ores-content-retry-20260805
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Apply bounded retry from unique line anchors
+        shell: python
+        run: |
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/ops-publish-slack-ores-integrations-encrypted-owner.yml')
+          source = workflow.read_text(encoding='utf-8')
+          private_key_line = '          private_key="$work/private.pem"\n'
+          if source.count(private_key_line) != 1:
+              raise SystemExit(f'expected one private-key anchor, found {source.count(private_key_line)}')
+
+          retry_lines = [
+              '          gh_api_content_retry() {',
+              '            local label="$1"',
+              '            shift',
+              '            local attempt=1',
+              '            local max_attempts=8',
+              '            local delay_seconds=15',
+              '            local exit_status=1',
+              '            local stdout_file="$work/${label}.stdout"',
+              '            local stderr_file="$work/${label}.stderr"',
+              '',
+              '            while (( attempt <= max_attempts )); do',
+              '              : > "$stdout_file"',
+              '              : > "$stderr_file"',
+              '              if gh api "$@" >"$stdout_file" 2>"$stderr_file"; then',
+              '                cat "$stdout_file"',
+              '                return 0',
+              '              else',
+              '                exit_status=$?',
+              '              fi',
+              '',
+              "              if ! grep -Eiq 'secondary rate limit|abuse detection|HTTP 429|status 429' \"$stderr_file\"; then",
+              "                printf 'GitHub API operation %s failed with a non-retryable response.\\n' \"$label\" >&2",
+              '                return "$exit_status"',
+              '              fi',
+              '              if (( attempt >= max_attempts )); then',
+              "                printf 'GitHub API operation %s exhausted %s bounded content-limit attempts.\\n' \"$label\" \"$max_attempts\" >&2",
+              '                return "$exit_status"',
+              '              fi',
+              '',
+              "              printf 'GitHub content creation is temporarily limited; retrying %s after %ss (attempt %s/%s).\\n' \\",
+              '                "$label" "$delay_seconds" "$attempt" "$max_attempts" >&2',
+              '              sleep "$delay_seconds"',
+              '              attempt=$((attempt + 1))',
+              '              delay_seconds=$((delay_seconds * 2))',
+              '              if (( delay_seconds > 120 )); then',
+              '                delay_seconds=120',
+              '              fi',
+              '            done',
+              '            return "$exit_status"',
+              '          }',
+              '',
+          ]
+          retry_block = '\n'.join(retry_lines) + '\n'
+          source = source.replace(private_key_line, retry_block + private_key_line, 1)
+
+          old_create = '          gh api --method POST user/repos \\\n'
+          new_create = '          gh_api_content_retry create-target-repository --method POST user/repos \\\n'
+          if source.count(old_create) != 1:
+              raise SystemExit(f'expected one repository-create anchor, found {source.count(old_create)}')
+          source = source.replace(old_create, new_create, 1)
+
+          old_pr = '            target_pr_json="$(gh api --method POST "repos/${TARGET_REPOSITORY}/pulls" \\\n'
+          new_pr = '            target_pr_json="$(gh_api_content_retry create-target-pull-request --method POST "repos/${TARGET_REPOSITORY}/pulls" \\\n'
+          if source.count(old_pr) != 1:
+              raise SystemExit(f'expected one PR-create anchor, found {source.count(old_pr)}')
+          source = source.replace(old_pr, new_pr, 1)
+          workflow.write_text(source, encoding='utf-8')
+
+          tests = Path('scripts/ops/test_slack_ores_integrations_encrypted_publisher.py')
+          test_source = tests.read_text(encoding='utf-8')
+          marker = "    def test_target_creation_and_push_are_idempotent_and_no_force(self) -> None:\n"
+          if test_source.count(marker) != 1:
+              raise SystemExit('target-creation test insertion marker is not unique')
+          if 'test_content_creation_retry_is_bounded_and_error_specific' in test_source:
+              raise SystemExit('retry regression test already exists')
+          test_lines = [
+              '    def test_content_creation_retry_is_bounded_and_error_specific(self) -> None:',
+              '        retry = self.workflow[',
+              '            self.workflow.index("gh_api_content_retry()") :',
+              '            self.workflow.index(\'private_key="$work/private.pem"\')',
+              '        ]',
+              '        for snippet in (',
+              '            "local max_attempts=8",',
+              '            "local delay_seconds=15",',
+              '            "while (( attempt <= max_attempts ))",',
+              '            "secondary rate limit|abuse detection|HTTP 429|status 429",',
+              '            "if (( attempt >= max_attempts ))",',
+              '            "if (( delay_seconds > 120 ))",',
+              '            "delay_seconds=120",',
+              '            "non-retryable response",',
+              '        ):',
+              '            with self.subTest(snippet=snippet):',
+              '                self.assertIn(snippet, retry)',
+              '        self.assertNotIn("while true", retry)',
+              '        self.assertNotIn("until false", retry)',
+              '        self.assertIn(',
+              '            "gh_api_content_retry create-target-repository --method POST user/repos",',
+              '            self.workflow,',
+              '        )',
+              '        self.assertIn(',
+              '            "gh_api_content_retry create-target-pull-request --method POST",',
+              '            self.workflow,',
+              '        )',
+              '        self.assertNotIn("gh_api_content_retry validate-owner-identity", self.workflow)',
+              '',
+              '',
+          ]
+          test_source = test_source.replace(marker, '\n'.join(test_lines) + marker, 1)
+          stale = '            "gh api --method POST user/repos",\n'
+          replacement = '            "gh_api_content_retry create-target-repository --method POST user/repos",\n'
+          if test_source.count(stale) != 1:
+              raise SystemExit(f'expected one stale repository-create assertion, found {test_source.count(stale)}')
+          test_source = test_source.replace(stale, replacement, 1)
+          tests.write_text(test_source, encoding='utf-8')
+
+          for helper in (
+              '.github/workflows/ops-slack-ores-content-retry-finalize.yml',
+              '.github/workflows/ops-slack-ores-content-retry-finalize-v2.yml',
+              '.github/workflows/ops-slack-ores-content-retry-finalize-v3.yml',
+              '.github/workflows/ops-slack-ores-content-retry-finalize-v4.yml',
+          ):
+              Path(helper).unlink(missing_ok=True)
+
+      - name: Validate permanent retry contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD:/repo" \
+            -w /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            -ignore 'SC2034' -ignore 'SC2006' -ignore 'SC2016' -ignore 'SC2086' \
+            .github/workflows/ops-publish-slack-ores-integrations-encrypted-owner.yml \
+            .github/workflows/ops-publish-slack-ores-integrations-encrypted-owner-contract.yml
+          python3 -m py_compile scripts/ops/test_slack_ores_integrations_encrypted_publisher.py
+          python3 -m unittest -v scripts/ops/test_slack_ores_integrations_encrypted_publisher.py
+          git diff --check
+          if git grep -nE '^(<{7}|={7}|>{7})' -- \
+            .github/workflows/ops-publish-slack-ores-integrations-encrypted-owner.yml \
+            scripts/ops/test_slack_ores_integrations_encrypted_publisher.py; then
+            echo 'Git conflict markers are forbidden.' >&2
+            exit 1
+          fi
+
+      - name: Commit and push permanent retry repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'fix(ops): bound Slack repository content-creation retries'
+          git push origin HEAD:agent/slack-ores-content-retry-20260805
