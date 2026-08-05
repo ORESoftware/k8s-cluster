@@ -39,6 +39,11 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Set up Node.js for fleet validation
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
       - name: Validate the selector, pinned CLI installer, and App-only publisher
         shell: bash
         run: |
@@ -73,6 +78,7 @@ jobs:
           grep -qF 'GH_PAT must not be present' "$publisher"
           grep -qF 'administration:write' "$publisher"
           grep -qF 'pull_requests:write' "$publisher"
+          grep -qF 'publish-all.sh' "$publisher"
           grep -qF 'verify-remote.sh' "$publisher"
 
           parts=(scripts/ops/streempilot-generator/generate_streempilot_sp_fleet.py.xz.b64.part*)
@@ -87,14 +93,14 @@ jobs:
             | sha256sum --check --strict
           python3 - "$encoded" "$generator" <<'PY'
           import base64
-          import lzma
+          import lma
           import sys
           from pathlib import Path
 
           encoded_path = Path(sys.argv[1])
           generator_path = Path(sys.argv[2])
           generator_path.write_bytes(
-              lzma.decompress(base64.b64decode(encoded_path.read_bytes(), validate=True))
+              lma.decompress(base64.b64decode(encoded_path.read_bytes(), validate=True))
           )
           PY
           printf '%s  %s\n' \
@@ -111,6 +117,15 @@ jobs:
             git -C "$repo" fsck --full >/dev/null
           done < <(find "$fleet_root/StreemPilot" -mindepth 1 -maxdepth 1 -type d | LC_ALL=C sort)
           python3 "$fleet_root/StreemPilot/sp-interfaces/scripts/validate_contracts.py"
+          npm test --prefix "$fleet_root/StreemPilot/sp-infra/cloudflare-worker"
+          npm run lint --prefix "$fleet_root/StreemPilot/sp-infra/cloudflare-worker"
+          grep -qF 'flags-2-env' "$fleet_root/StreemPilot/sp-cli/Cargo.toml"
+          grep -qF 'opto-sync' "$fleet_root/StreemPilot/sp-sync/Cargo.toml"
+          grep -qF 'maud' "$fleet_root/StreemPilot/sp-web-mash/Cargo.toml"
+          grep -qF 'sea-orm' "$fleet_root/StreemPilot/sp-web-mash/Cargo.toml"
+          grep -qF 'SUPABASE_URL' "$fleet_root/StreemPilot/sp-web-mash/src/main.rs"
+          grep -qF 'htmx.org' "$fleet_root/StreemPilot/sp-web-mash/src/main.rs"
+          grep -qF 'WebSocketUpgrade' "$fleet_root/StreemPilot/sp-api/src/main.rs"
           bash -n "$fleet_root/scripts/publish-all.sh"
           bash -n "$fleet_root/scripts/verify-remote.sh"
           git diff --check
