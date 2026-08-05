@@ -13,3 +13,4 @@ resources:
   # The root adopts the complete current overlay; retain newer child Application
   # declarations while adding drift detection and self-healing for the set.
   - root.application.yaml
+  - chatgpt-rate-limit-resumer
