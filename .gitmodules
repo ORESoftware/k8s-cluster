@@ -14,10 +14,6 @@
 	path = apps/shared-auth-clients
 	url = git@github.com:shared-auth/shared-auth-clients.git
 	branch = main
-[submodule "apps/shared-auth-infra"]
-	path = apps/shared-auth-infra
-	url = git@github.com:shared-auth/shared-auth-infra.git
-	branch = main
 [submodule "apps/shared-auth-mcp-server.rs"]
 	path = apps/shared-auth-mcp-server.rs
 	url = git@github.com:shared-auth/shared-auth-mcp-server.rs.git
