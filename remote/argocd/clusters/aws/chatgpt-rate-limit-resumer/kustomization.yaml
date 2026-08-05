@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: dd-chatgpt-rate-limit-resumer
+      app.kubernetes.io/component: scheduled-browser-recovery
+      app.kubernetes.io/part-of: dd-remote-runtime
+
+resources:
+  - pvc.yaml
+  - cronjob.yaml
+  - networkpolicy.yaml
+
+configMapGenerator:
+  - name: dd-chatgpt-rate-limit-resumer
+    files:
+      - policy.mjs
+      - runtime.mjs
+      - state.mjs
+      - chatgpt-ui.mjs
+      - resumer.mjs
+
+generatorOptions:
+  disableNameSuffixHash: true
