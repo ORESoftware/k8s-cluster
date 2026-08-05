@@ -1,0 +1,65 @@
+name: Meta Agent App publisher contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ops-meta-agent-app-publisher-contract.yml'
+      - 'scripts/ops/publish_meta_agent_control_plane_with_app.sh'
+      - 'scripts/ops/validate_meta_agent_app_publisher.py'
+      - 'scripts/ops/test_validate_meta_agent_app_publisher.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/ops-meta-agent-app-publisher-contract.yml
+
+      - name: Compile publisher and validators
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ops/publish_meta_agent_control_plane_with_app.sh
+          python3 -m py_compile \
+            scripts/ops/validate_meta_agent_app_publisher.py \
+            scripts/ops/test_validate_meta_agent_app_publisher.py
+
+      - name: Validate exact publisher contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/validate_meta_agent_app_publisher.py \
+            --report "$RUNNER_TEMP/meta-agent-app-publisher-contract.json"
+          python3 -m unittest -v scripts/ops/test_validate_meta_agent_app_publisher.py
+          git diff --check
+          if grep -RInE '^(<<<<<<<|=======|>>>>>>>)' \
+            scripts/ops/publish_meta_agent_control_plane_with_app.sh \
+            scripts/ops/validate_meta_agent_app_publisher.py \
+            scripts/ops/test_validate_meta_agent_app_publisher.py; then
+            echo 'Git conflict markers are forbidden.' >&2
+            exit 1
+          fi
+
+      - name: Upload deterministic contract report
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.2
+        with:
+          name: meta-agent-app-publisher-contract
+          path: ${{ runner.temp }}/meta-agent-app-publisher-contract.json
+          if-no-files-found: error
+          retention-days: 14
