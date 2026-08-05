@@ -19,8 +19,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: ops-bootstrap-nine-org-dotgithub-ephemeral-token
-  cancel-in-progress: false
+  group: ops-bootstrap-nine-org-dotgithub-ephemeral-token-${{ github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   validate:
@@ -209,7 +209,7 @@ jobs:
               --header 'X-GitHub-Api-Version: 2022-11-28' \
               'https://api.github.com/repos/ORESoftware/k8s-cluster/git/refs/heads/ops/ephemeral-nine-dotgithub-input-20260805'
           )"
-          if [[ "$status" != 204 && "$status" != 404 ]]; then
+          if [[ "$status" != 204 && "$status" != 404 && "$status" != 422 ]]; then
             cat "$RUNNER_TEMP/delete-input-branch.json" >&2
             exit 1
           fi
