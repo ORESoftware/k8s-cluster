@@ -1,0 +1,28 @@
+# App-of-apps root. Apply this one Application after the service-repository
+# PRs merge and Argo has credentials for the private Hypesiege repositories.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hypesiege-root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:ORESoftware/k8s-cluster.git
+    targetRevision: main
+    path: remote/argocd
+    directory:
+      recurse: true
+      include: >-
+        {projects/hypesiege.tenant.yaml,projects/hypesiege.appproject.yaml,apps/hypesiege.applications.yaml}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
