@@ -84,8 +84,7 @@ async fn run_claimed_job(mut lease: ClaimedJobLease) -> JobControlResult<()> {
                 lease.job().current_stage.as_str(),
                 "meshy_submission_prepared" | "meshy_submission_ambiguous"
             );
-            let retryable =
-                error.retryable && !error.submission_ambiguous && !create_unresolved;
+            let retryable = error.retryable && !error.submission_ambiguous && !create_unresolved;
             let code = error.code.clone();
             let message = error.message.clone();
             let failed = lease.fail(&code, &message, retryable).await?;
