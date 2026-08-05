@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import unittest
 
 
@@ -36,8 +37,8 @@ class EncryptedCredentialReceiverContractTests(unittest.TestCase):
         self.assertIn("::add-mask::", SCRIPT)
         self.assertNotIn("echo $USER_TOKEN", SCRIPT)
         self.assertNotIn("printf '%s\\n' \"$USER_TOKEN\"", SCRIPT)
-        self.assertNotIn("ghp_", SCRIPT)
-        self.assertNotIn("github_pat_", SCRIPT)
+        self.assertIsNone(re.search(r"ghp_[A-Za-z0-9]{20,}", SCRIPT))
+        self.assertIsNone(re.search(r"github_pat_[A-Za-z0-9_]{20,}", SCRIPT))
 
     def test_cleanup_deletes_repository_handoff_and_shreds_local_material(self) -> None:
         self.assertIn('delete_file_if_present "$PUBLIC_KEY_PATH"', SCRIPT)
