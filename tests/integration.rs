@@ -158,7 +158,7 @@ async fn jwks_exposes_our_signing_key() {
 // out, which then introspects as active.
 #[tokio::test]
 async fn exchange_then_introspect_roundtrip() {
-    let app = app().await;
+    let app = app_with_introspect_secret(INTROSPECT_SECRET).await;
     let supa = supabase_token("supa-user-1", "user@example.com");
 
     let resp = app
@@ -180,6 +180,7 @@ async fn exchange_then_introspect_roundtrip() {
         .oneshot(
             Request::post("/auth/introspect")
                 .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {INTROSPECT_SECRET}"))
                 .body(Body::from(serde_json::json!({ "token": ore }).to_string()))
                 .unwrap(),
         )
@@ -195,7 +196,7 @@ async fn exchange_then_introspect_roundtrip() {
 
 #[tokio::test]
 async fn exchange_preserves_supabase_aal2() {
-    let app = app().await;
+    let app = app_with_introspect_secret(INTROSPECT_SECRET).await;
     let supa = supabase_aal2_token("supa-mfa-user", "mfa@example.com");
 
     let resp = app
@@ -215,6 +216,7 @@ async fn exchange_preserves_supabase_aal2() {
         .oneshot(
             Request::post("/auth/introspect")
                 .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {INTROSPECT_SECRET}"))
                 .body(Body::from(
                     serde_json::json!({ "token": out["access_token"] }).to_string(),
                 ))
@@ -475,11 +477,12 @@ async fn verify_endpoint_rejects_missing_and_bad_tokens() {
 #[tokio::test]
 async fn introspect_non_ore_token_is_inactive() {
     let supa = supabase_token("x", "x@example.com");
-    let resp = app()
+    let resp = app_with_introspect_secret(INTROSPECT_SECRET)
         .await
         .oneshot(
             Request::post("/auth/introspect")
                 .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {INTROSPECT_SECRET}"))
                 .body(Body::from(serde_json::json!({ "token": supa }).to_string()))
                 .unwrap(),
         )
@@ -567,11 +570,12 @@ async fn introspect_authorized_caller_invalid_token_is_inactive() {
     assert_eq!(intro["active"], false);
 }
 
-// Backward compatibility: with no secret configured, introspection stays open.
+// Without the independent service credential configured, introspection is
+// disabled before the submitted token is parsed or verified.
 #[tokio::test]
-async fn introspect_open_when_secret_unset() {
+async fn introspect_fails_closed_when_secret_unset() {
     let app = app().await;
-    let ore = mint_ore_token(&app, "open-user").await;
+    let ore = mint_ore_token(&app, "closed-user").await;
     let resp = app
         .oneshot(
             Request::post("/auth/introspect")
@@ -581,9 +585,8 @@ async fn introspect_open_when_secret_unset() {
         )
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let intro: serde_json::Value = serde_json::from_str(&body_string(resp).await).unwrap();
-    assert_eq!(intro["active"], true);
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    assert!(!body_string(resp).await.contains("fiducia-cloud"));
 }
 
 // Exchange accepts the token in the JSON body too, not only the header.
