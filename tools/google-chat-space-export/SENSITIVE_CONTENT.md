@@ -25,6 +25,10 @@ The safety report contains only source keys, timestamps, classification names,
 and secret kinds. It never contains message bodies or matched values. Raw and
 sanitized exports are operational artifacts: do not commit either one.
 
+Input JSON files must have unique basenames. The sanitizer fails closed rather
+than silently overwriting one page with another when separate input directories
+contain the same filename.
+
 A finding does not prove abuse. Revoke the exposed credential, review provider
 audit logs from the first exposure timestamp, and replace it with a least-
 privilege credential. Contact-only messages are quarantined for privacy and are
