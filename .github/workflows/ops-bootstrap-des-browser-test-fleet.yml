@@ -51,16 +51,21 @@ jobs:
           #!/usr/bin/env bash
           set -Eeuo pipefail
           umask 077
+          stage=initialization
 
           cleanup() {
             unset GH_TOKEN GITHUB_TOKEN DES_GATEWAY_AUTH encoded_pat encoded_auth
           }
           trap cleanup EXIT
+          trap 'rc=$?; printf "bootstrap-stage=%s status=failed rc=%s\n" "$stage" "$rc" >&2; exit "$rc"' ERR
 
+          stage=tool-preflight
           command -v gh >/dev/null
           command -v kubectl >/dev/null
           test -r /etc/kubernetes/admin.conf
+          printf 'bootstrap-stage=%s status=passed\n' "$stage"
 
+          stage=protected-credentials
           encoded_pat="$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}')"
           encoded_auth="$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n default get secret dd-remote-auth-secrets -o jsonpath='{.data.DD_AUTH_COOKIE_VALUE}')"
           test -n "$encoded_pat"
@@ -71,14 +76,18 @@ jobs:
           test -n "$GH_TOKEN"
           test -n "$DES_GATEWAY_AUTH"
           export GH_TOKEN GITHUB_TOKEN="$GH_TOKEN"
+          printf 'bootstrap-stage=%s status=passed\n' "$stage"
 
+          stage=github-identity
           test "$(gh api user --jq .login)" = ORESoftware
           test "$(gh api user/memberships/orgs/discrete-event-systems-test --jq '.role + ":" + .state')" = admin:active
+          printf 'bootstrap-stage=%s status=passed\n' "$stage"
 
           ensure_repo() {
             local name="$1"
             local description="$2"
             local full="discrete-event-systems-test/$name"
+            stage="repository:$full"
             if ! gh repo view "$full" >/dev/null 2>&1; then
               gh repo create "$full" --public --description "$description" --add-readme
             fi
@@ -86,17 +95,18 @@ jobs:
             if [[ "$name" != .github ]]; then
               gh secret set DES_GATEWAY_AUTH --repo "$full" --body "$DES_GATEWAY_AUTH"
             fi
-            printf 'READY %s\n' "$full"
+            printf 'bootstrap-stage=%s status=passed\n' "$stage"
           }
 
           ensure_project() {
             local owner="$1"
             local number
+            stage="project:$owner"
             number="$(gh project list --owner "$owner" --format json --jq '.projects[] | select(.title == "DES Browser Automation") | .number' | head -1)"
             if [[ -z "$number" ]]; then
               number="$(gh project create --owner "$owner" --title 'DES Browser Automation' --format json --jq .number)"
             fi
-            printf 'PROJECT %s https://github.com/orgs/%s/projects/%s\n' "$owner" "$owner" "$number"
+            printf 'bootstrap-stage=%s status=passed url=https://github.com/orgs/%s/projects/%s\n' "$stage" "$owner" "$number"
           }
 
           ensure_repo des-web-playwright-e2e 'Playwright browser contracts for des-web across GitHub Actions and gha-indie-worker.'
@@ -104,11 +114,13 @@ jobs:
           ensure_repo .github 'Organization profile and DES browser-test fleet documentation.'
           ensure_project discrete-event-systems
           ensure_project discrete-event-systems-test
+          stage=complete
+          printf 'bootstrap-stage=%s status=success\n' "$stage"
           REMOTE_EOF
           chmod 700 "$remote_script"
 
           encoded_script="$(base64 --wrap=0 "$remote_script")"
-          remote_command="printf '%s' '$encoded_script' | base64 --decode > /tmp/bootstrap-des-browser-test-repositories.sh; chmod 700 /tmp/bootstrap-des-browser-test-repositories.sh; bash /tmp/bootstrap-des-browser-test-repositories.sh > /tmp/bootstrap-des-browser-test-repositories.log 2>&1; status=\$?; tail -c 20000 /tmp/bootstrap-des-browser-test-repositories.log 2>/dev/null || true; rm -f /tmp/bootstrap-des-browser-test-repositories.sh /tmp/bootstrap-des-browser-test-repositories.log; exit \$status"
+          remote_command="printf '%s' '$encoded_script' | base64 --decode > /tmp/bootstrap-des-browser-test-repositories.sh; chmod 700 /tmp/bootstrap-des-browser-test-repositories.sh; set +e; bash /tmp/bootstrap-des-browser-test-repositories.sh > /tmp/bootstrap-des-browser-test-repositories.log 2>&1; status=\$?; set -e; tail -c 20000 /tmp/bootstrap-des-browser-test-repositories.log 2>/dev/null || true; rm -f /tmp/bootstrap-des-browser-test-repositories.sh /tmp/bootstrap-des-browser-test-repositories.log; exit \$status"
           parameters="$RUNNER_TEMP/ssm-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
 
