@@ -12,6 +12,10 @@ WORKFLOW_PATH = (
 OBSERVER_PATH = ROOT / ".github/workflows/observe-private-fleet-publisher.yml"
 PUBLISHER_PATH = ROOT / "scripts/ops/publish_missing_org_repositories_current.py"
 REMOTE_STATE_PATH = ROOT / "scripts/ops/repository_fleet_remote_state.py"
+ALIAS_HELPER_PATH = ROOT / "scripts/ops/repository_fleet_aliases.py"
+ALIAS_LEDGER_PATH = (
+    ROOT / "ops/portfolio/hypesiege-streempilot-repository-aliases.json"
+)
 CREATION_HELPER_PATH = ROOT / "scripts/ops/private_repository_creation.py"
 
 
@@ -22,6 +26,8 @@ class PrivateFleetPublisherContractTests(unittest.TestCase):
         cls.observer = OBSERVER_PATH.read_text(encoding="utf-8")
         cls.publisher = PUBLISHER_PATH.read_text(encoding="utf-8")
         cls.remote_state = REMOTE_STATE_PATH.read_text(encoding="utf-8")
+        cls.alias_helper = ALIAS_HELPER_PATH.read_text(encoding="utf-8")
+        cls.alias_ledger = ALIAS_LEDGER_PATH.read_text(encoding="utf-8")
         cls.creation_helper = CREATION_HELPER_PATH.read_text(encoding="utf-8")
 
     def test_workflow_retriggers_when_publisher_contracts_change(self) -> None:
@@ -93,14 +99,23 @@ class PrivateFleetPublisherContractTests(unittest.TestCase):
         self.assertIn("GIT_TERMINAL_PROMPT=0", self.workflow)
         self.assertIn("GIT_CONFIG_KEY_0=credential.helper", self.workflow)
 
-    def test_sealed_public_ledger_is_checked_before_private_projection(self) -> None:
+    def test_sealed_public_ledger_and_reviewed_aliases_precede_private_projection(self) -> None:
         public_check = self.publisher.index(
             'record.get("visibility") != "public"'
         )
+        alias_load = self.publisher.index("load_repository_aliases(")
         projection = self.publisher.index(
             "execution_manifest = project_private_execution_manifest"
         )
-        self.assertLess(public_check, projection)
+        self.assertLess(public_check, alias_load)
+        self.assertLess(alias_load, projection)
+        self.assertIn("FLEET_SOURCE_REPOSITORY", self.publisher)
+        self.assertIn("FLEET_SOURCE_SHA", self.publisher)
+        self.assertIn("reviewed repository-alias count changed", self.publisher)
+        self.assertIn('"schema_version": 1', self.alias_ledger)
+        self.assertIn('"repository_id": 1318677943', self.alias_ledger)
+        self.assertIn("source repository changed", self.alias_helper)
+        self.assertIn("source commit changed", self.alias_helper)
 
     def test_private_projection_and_remote_partition_precede_execute(self) -> None:
         projection = self.publisher.index(
@@ -117,6 +132,7 @@ class PrivateFleetPublisherContractTests(unittest.TestCase):
             '"--manifest",\n                str(generated_manifest_path)',
             self.publisher,
         )
+        self.assertIn("repository_aliases=repository_aliases", self.publisher)
 
     def test_only_missing_records_reach_the_live_publisher(self) -> None:
         self.assertIn("for record in missing_records:", self.publisher)
@@ -125,13 +141,17 @@ class PrivateFleetPublisherContractTests(unittest.TestCase):
         self.assertNotIn("for record in execution_records:\n        full_name", self.publisher)
         self.assertNotIn("VERIFIED 32/32 private", self.publisher)
 
-    def test_existing_divergent_histories_are_explicitly_preserved(self) -> None:
+    def test_existing_divergent_and_renamed_histories_are_explicitly_preserved(self) -> None:
         self.assertIn('"DIVERGENT_REVIEWED"', self.publisher)
         self.assertIn('print(f"PRESERVE_{disposition}', self.publisher)
+        self.assertIn("PRESERVE_RENAMED", self.publisher)
+        self.assertIn("VERIFIED_PRESERVED_RENAMED", self.publisher)
         self.assertIn("VERIFIED_PRESERVED_PRIVATE", self.publisher)
         self.assertIn("existing repository", self.remote_state)
         self.assertIn("changed during gap publication", self.remote_state)
         self.assertIn("matches_sealed_commit", self.remote_state)
+        self.assertIn("unreviewed rename", self.remote_state)
+        self.assertIn("repository ID changed", self.remote_state)
 
     def test_publisher_uses_race_safe_private_creation_helper(self) -> None:
         self.assertIn(
