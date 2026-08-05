@@ -7,6 +7,9 @@ It is intentionally separate from `remote/api-sdks`, which is deterministic gene
 Available hand-authored worker SDKs:
 
 - `typescript/durable-worker` — dependency-free native ESM for Node.js 22+;
-- `python/durable-worker` — dependency-free Python 3.11+ client and threaded worker loop.
+- `python/durable-worker` — dependency-free Python 3.11+ client and threaded worker loop;
+- `go/durable-worker` — dependency-free Go 1.23+ client and goroutine-based worker loop.
+
+Shared lifecycle semantics are ratcheted in `fixtures/durable-worker-protocol-v1.json`. The fixture defines ambiguous operations that must not be retried without a protocol identity, lease-loss statuses, progress identity, and the common assignment envelope. Language-specific runtime tests remain authoritative for concurrency and cancellation behavior.
 
 All worker SDKs must preserve the runtime's at-least-once delivery contract. External side effects require an idempotency key or a downstream write guarded by the assignment fencing token.

@@ -46,6 +46,12 @@ function assertPositiveInteger(value, name) {
 
 function normalizeBaseUrl(value) {
   const url = new URL(assertNonEmpty(value, 'baseUrl'));
+  if (!['http:', 'https:'].includes(url.protocol)) {
+    throw new TypeError('baseUrl must use http or https');
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new TypeError('baseUrl must not contain credentials, query, or fragment');
+  }
   url.pathname = url.pathname.replace(/\/+$/, '');
   return url.toString().replace(/\/$/, '');
 }
@@ -209,7 +215,13 @@ export class DurableWorkerClient {
     }
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
     this.authSecret = assertNonEmpty(options.authSecret, 'authSecret');
+    if (/[\r\n]/u.test(this.authSecret)) {
+      throw new TypeError('authSecret must be a single-line value');
+    }
     this.authHeader = (options.authHeader ?? 'x-worker-auth').toLowerCase();
+    if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/u.test(this.authHeader)) {
+      throw new TypeError('authHeader must be a valid HTTP token');
+    }
     this.fetch = options.fetch ?? globalThis.fetch;
     if (typeof this.fetch !== 'function') {
       throw new TypeError('a Fetch-compatible implementation is required');
@@ -238,6 +250,7 @@ export class DurableWorkerClient {
       try {
         response = await this.fetch(url, {
           method,
+          redirect: 'manual',
           signal: attemptSignal.signal,
           headers: {
             accept: 'application/json',
@@ -315,7 +328,7 @@ export class DurableWorkerClient {
   signalRun(runId, signalName, payload = {}, options = {}) {
     return this.request(
       `/api/v1/runs/${encodeURIComponent(assertNonEmpty(runId, 'runId'))}/signals/${encodeURIComponent(assertNonEmpty(signalName, 'signalName'))}`,
-      { ...options, method: 'POST', body: { payload: normalizeObject(payload) }, idempotent: true },
+      { ...options, method: 'POST', body: { payload: normalizeObject(payload) }, idempotent: false },
     );
   }
 
@@ -365,7 +378,7 @@ export class DurableWorkerClient {
         ...options,
         method: 'POST',
         body: {},
-        idempotent: true,
+        idempotent: false,
         timeoutMs: Math.max(options.timeoutMs ?? this.requestTimeoutMs, waitMs + 5_000),
       },
     );
@@ -488,11 +501,9 @@ export class DurableWorkerClient {
           );
         } catch (error) {
           if (externalSignal?.aborted) break;
-          safeNotify(options?.onError, error, { phase: 'poll', workerId });
-          if (error instanceof DurableWorkerError && error.retryable) {
-            await sleep(Math.min(1_000, this.retry.initialDelayMs), externalSignal);
-            continue;
-          }
+          safeNotify(options?.onError, error, { phase: 'poll-ambiguous', workerId });
+          // A lost poll response may already contain a leased assignment. Repeating
+          // the poll can over-admit work, so stop and let the server expire/redeliver.
           throw error;
         }
 

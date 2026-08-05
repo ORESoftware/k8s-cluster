@@ -8,6 +8,8 @@ one-shot execution without embedding workflow code in the control plane.
 
 - The client never logs or serializes the worker authentication secret.
 - Submissions are retried automatically only when they carry an idempotency key.
+- Signals and worker polls are sent once; an ambiguous poll stops admission and relies on lease expiry/redelivery.
+- Redirects are handled manually so the worker credential is never forwarded to another origin.
 - Lease-scoped operations carry the opaque lease token and monotonic generation.
 - A fenced heartbeat aborts the handler and suppresses stale completion/failure.
 - Progress chunks have explicit stable IDs so replay is idempotent.
