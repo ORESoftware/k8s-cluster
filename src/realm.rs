@@ -165,9 +165,12 @@ impl RealmConfig {
         validate_database_url(&input.database_url, input.realm, input.allow_loopback)?;
         validate_project_ref(&input.supabase_project_ref)?;
 
+        let development_loopback = input.allow_loopback
+            && is_loopback_http_url(&input.issuer)
+            && is_loopback_database_url(&input.database_url);
         let provider_matches = provider_refs.len() == 1
             && provider_refs[0] == input.supabase_project_ref.as_str();
-        let loopback_without_provider = input.allow_loopback && provider_refs.is_empty();
+        let loopback_without_provider = development_loopback && provider_refs.is_empty();
         if !provider_matches && !loopback_without_provider {
             return Err(ConfigError::Invalid(
                 "AUTH_SUPABASE_PROJECTS must contain exactly the realm Supabase project",
@@ -183,7 +186,7 @@ impl RealmConfig {
             session_cookie_name: input.session_cookie_name,
             supabase_project_ref: Some(input.supabase_project_ref),
             development_dbless: false,
-            development_loopback: input.allow_loopback,
+            development_loopback,
         })
     }
 }
@@ -239,9 +242,7 @@ fn validate_issuer(value: &str, realm: Realm, allow_loopback: bool) -> Result<()
     let parsed = Url::parse(value).map_err(|_| ConfigError::Invalid("AUTH_ISSUER"))?;
     let loopback_http = allow_loopback
         && parsed.scheme() == "http"
-        && parsed
-            .host_str()
-            .is_some_and(|host| matches!(host, "localhost" | "127.0.0.1" | "::1"));
+        && parsed.host_str().is_some_and(is_loopback_host);
     if (parsed.scheme() != "https" && !loopback_http)
         || parsed.username() != ""
         || parsed.password().is_some()
@@ -277,7 +278,7 @@ fn validate_database_url(
 ) -> Result<(), ConfigError> {
     let parsed = Url::parse(value).map_err(|_| ConfigError::Invalid("AUTH_DATABASE_URL"))?;
     let host = parsed.host_str().unwrap_or_default();
-    let loopback = allow_loopback && matches!(host, "localhost" | "127.0.0.1" | "::1");
+    let loopback = allow_loopback && is_loopback_host(host);
     if !matches!(parsed.scheme(), "postgres" | "postgresql")
         || (!host.contains(realm.as_str()) && !loopback)
     {
@@ -286,6 +287,23 @@ fn validate_database_url(
         ));
     }
     Ok(())
+}
+
+fn is_loopback_http_url(value: &str) -> bool {
+    Url::parse(value).is_ok_and(|parsed| {
+        parsed.scheme() == "http" && parsed.host_str().is_some_and(is_loopback_host)
+    })
+}
+
+fn is_loopback_database_url(value: &str) -> bool {
+    Url::parse(value).is_ok_and(|parsed| {
+        matches!(parsed.scheme(), "postgres" | "postgresql")
+            && parsed.host_str().is_some_and(is_loopback_host)
+    })
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    matches!(host, "localhost" | "127.0.0.1" | "::1")
 }
 
 fn validate_project_ref(value: &str) -> Result<(), ConfigError> {
@@ -398,5 +416,12 @@ mod tests {
         candidate.allow_loopback = true;
         let profile = RealmConfig::validate(candidate, &[]).unwrap();
         assert!(profile.development_loopback);
+    }
+
+    #[test]
+    fn loopback_flag_does_not_relax_normal_provider_contracts() {
+        let mut candidate = input(Realm::Customer);
+        candidate.allow_loopback = true;
+        assert!(RealmConfig::validate(candidate, &[]).is_err());
     }
 }
