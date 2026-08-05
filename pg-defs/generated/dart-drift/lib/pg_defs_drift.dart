@@ -4403,6 +4403,70 @@ class FabLearningOutcomesTable extends Table {
   };
 }
 
+@DataClassName("FabricationJobExecutionsData")
+class FabricationJobExecutionsTable extends Table {
+  @override String get tableName => "fabrication_job_executions";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get jobId => text().named("job_id").customConstraint("UUID")();
+  TextColumn get tenantId => text().named("tenant_id")();
+  TextColumn get requestId => text().named("request_id")();
+  TextColumn get idempotencyKey => text().named("idempotency_key")();
+  TextColumn get kind => text().named("kind")();
+  TextColumn get state => text().named("state").clientDefault(() => 'queued')();
+  TextColumn get currentStage => text().named("current_stage").clientDefault(() => 'accepted')();
+  Int64Column get checkpointVersion => int64().named("checkpoint_version").clientDefault(() => 0)();
+  TextColumn get checkpoint => text().named("checkpoint").clientDefault(() => '{}').customConstraint("JSONB")();
+  TextColumn get requestPayload => text().named("request_payload").customConstraint("JSONB")();
+  TextColumn get resultPayload => text().named("result_payload").nullable().customConstraint("JSONB")();
+  IntColumn get attemptCount => integer().named("attempt_count").clientDefault(() => 0)();
+  IntColumn get maxAttempts => integer().named("max_attempts").clientDefault(() => 5)();
+  IntColumn get priority => integer().named("priority").clientDefault(() => 0)();
+  TextColumn get leaseOwner => text().named("lease_owner").nullable()();
+  DateTimeColumn get leaseExpiresAt => dateTime().named("lease_expires_at").nullable().customConstraint("TIMESTAMPTZ")();
+  Int64Column get fiduciaFencingToken => int64().named("fiducia_fencing_token").nullable()();
+  DateTimeColumn get nextAttemptAt => dateTime().named("next_attempt_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get lastErrorCode => text().named("last_error_code").nullable()();
+  TextColumn get lastErrorMessage => text().named("last_error_message").nullable()();
+  DateTimeColumn get startedAt => dateTime().named("started_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get completedAt => dateTime().named("completed_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        jobId,
+  };
+}
+
+@DataClassName("FabricationJobOutboxData")
+class FabricationJobOutboxTable extends Table {
+  @override String get tableName => "fabrication_job_outbox";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get eventId => text().named("event_id").customConstraint("UUID")();
+  TextColumn get jobId => text().named("job_id").customConstraint("UUID")();
+  TextColumn get subject => text().named("subject")();
+  TextColumn get eventType => text().named("event_type")();
+  TextColumn get messageId => text().named("message_id")();
+  TextColumn get payload => text().named("payload").customConstraint("JSONB")();
+  DateTimeColumn get availableAt => dateTime().named("available_at").customConstraint("TIMESTAMPTZ")();
+  IntColumn get publishAttempts => integer().named("publish_attempts").clientDefault(() => 0)();
+  TextColumn get claimOwner => text().named("claim_owner").nullable()();
+  DateTimeColumn get claimExpiresAt => dateTime().named("claim_expires_at").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get publishedAt => dateTime().named("published_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get lastError => text().named("last_error").nullable()();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        eventId,
+  };
+}
+
 // Drift annotation users should re-export the table classes via:
 // @DriftDatabase(tables: [...registeredDriftTables])
 const List<Type> registeredDriftTables = <Type>[
@@ -4575,4 +4639,6 @@ const List<Type> registeredDriftTables = <Type>[
   WebhookEventsTable,
   FabJobsTable,
   FabLearningOutcomesTable,
+  FabricationJobExecutionsTable,
+  FabricationJobOutboxTable,
 ];

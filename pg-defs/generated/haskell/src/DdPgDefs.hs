@@ -11696,3 +11696,119 @@ data FabLearningOutcomesRow = FabLearningOutcomesRow
 
 instance FromRow FabLearningOutcomesRow where
   fromRow = FabLearningOutcomesRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+fabricationJobExecutionsTable :: Text
+fabricationJobExecutionsTable = "daedalus.fabrication_job_executions"
+
+fabricationJobExecutionsColumns :: [Text]
+fabricationJobExecutionsColumns = ["job_id", "tenant_id", "request_id", "idempotency_key", "kind", "state", "current_stage", "checkpoint_version", "checkpoint", "request_payload", "result_payload", "attempt_count", "max_attempts", "priority", "lease_owner", "lease_expires_at", "fiducia_fencing_token", "next_attempt_at", "last_error_code", "last_error_message", "started_at", "completed_at", "created_at", "updated_at"]
+
+fabricationJobExecutionsSelectSql :: Text
+fabricationJobExecutionsSelectSql = "select\n      job_id::text as job_id,\n      tenant_id,\n      request_id,\n      idempotency_key,\n      kind,\n      state,\n      current_stage,\n      checkpoint_version,\n      checkpoint::text as checkpoint_json,\n      request_payload::text as request_payload_json,\n      result_payload::text as result_payload_json,\n      attempt_count,\n      max_attempts,\n      priority,\n      lease_owner,\n      to_char(lease_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_expires_at,\n      fiducia_fencing_token,\n      to_char(next_attempt_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as next_attempt_at,\n      last_error_code,\n      last_error_message,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as completed_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fabrication_job_executions"
+
+data FabricationJobExecutionsState = FabricationJobExecutionsStateQueued | FabricationJobExecutionsStateRunning | FabricationJobExecutionsStateRetryWait | FabricationJobExecutionsStateSucceeded | FabricationJobExecutionsStateFailed | FabricationJobExecutionsStateCancelled
+  deriving (Eq, Show)
+
+fabricationJobExecutionsStateToText :: FabricationJobExecutionsState -> Text
+fabricationJobExecutionsStateToText value = case value of
+  FabricationJobExecutionsStateQueued -> "queued"
+  FabricationJobExecutionsStateRunning -> "running"
+  FabricationJobExecutionsStateRetryWait -> "retry_wait"
+  FabricationJobExecutionsStateSucceeded -> "succeeded"
+  FabricationJobExecutionsStateFailed -> "failed"
+  FabricationJobExecutionsStateCancelled -> "cancelled"
+
+parseFabricationJobExecutionsState :: Text -> Either Text FabricationJobExecutionsState
+parseFabricationJobExecutionsState value = case value of
+  "queued" -> Right FabricationJobExecutionsStateQueued
+  "running" -> Right FabricationJobExecutionsStateRunning
+  "retry_wait" -> Right FabricationJobExecutionsStateRetryWait
+  "succeeded" -> Right FabricationJobExecutionsStateSucceeded
+  "failed" -> Right FabricationJobExecutionsStateFailed
+  "cancelled" -> Right FabricationJobExecutionsStateCancelled
+  _ -> Left (T.append "unsupported fabrication_job_executions.state: " value)
+
+data FabricationJobExecutionsRow = FabricationJobExecutionsRow
+  { fabricationJobExecutionsJobId :: Text
+  , fabricationJobExecutionsTenantId :: Text
+  , fabricationJobExecutionsRequestId :: Text
+  , fabricationJobExecutionsIdempotencyKey :: Text
+  , fabricationJobExecutionsKind :: Text
+  , fabricationJobExecutionsState :: Text
+  , fabricationJobExecutionsCurrentStage :: Text
+  , fabricationJobExecutionsCheckpointVersion :: Int
+  , fabricationJobExecutionsCheckpoint :: Text
+  , fabricationJobExecutionsRequestPayload :: Text
+  , fabricationJobExecutionsResultPayload :: (Maybe Text)
+  , fabricationJobExecutionsAttemptCount :: Int
+  , fabricationJobExecutionsMaxAttempts :: Int
+  , fabricationJobExecutionsPriority :: Int
+  , fabricationJobExecutionsLeaseOwner :: (Maybe Text)
+  , fabricationJobExecutionsLeaseExpiresAt :: (Maybe Text)
+  , fabricationJobExecutionsFiduciaFencingToken :: (Maybe Int)
+  , fabricationJobExecutionsNextAttemptAt :: Text
+  , fabricationJobExecutionsLastErrorCode :: (Maybe Text)
+  , fabricationJobExecutionsLastErrorMessage :: (Maybe Text)
+  , fabricationJobExecutionsStartedAt :: (Maybe Text)
+  , fabricationJobExecutionsCompletedAt :: (Maybe Text)
+  , fabricationJobExecutionsCreatedAt :: Text
+  , fabricationJobExecutionsUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow FabricationJobExecutionsRow where
+  fromRow = FabricationJobExecutionsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateFabricationJobExecutionsCheckpointVersion :: Int -> Either Text Int
+validateFabricationJobExecutionsCheckpointVersion value
+  | value < 0 = Left "fabrication_job_executions.checkpoint_version is below the minimum"
+  | otherwise = Right value
+
+validateFabricationJobExecutionsAttemptCount :: Int -> Either Text Int
+validateFabricationJobExecutionsAttemptCount value
+  | value < 0 = Left "fabrication_job_executions.attempt_count is below the minimum"
+  | otherwise = Right value
+
+validateFabricationJobExecutionsMaxAttempts :: Int -> Either Text Int
+validateFabricationJobExecutionsMaxAttempts value
+  | value < 1 = Left "fabrication_job_executions.max_attempts is below the minimum"
+  | value > 100 = Left "fabrication_job_executions.max_attempts is above the maximum"
+  | otherwise = Right value
+
+validateFabricationJobExecutionsFiduciaFencingToken :: Int -> Either Text Int
+validateFabricationJobExecutionsFiduciaFencingToken value
+  | value < 0 = Left "fabrication_job_executions.fiducia_fencing_token is below the minimum"
+  | otherwise = Right value
+
+fabricationJobOutboxTable :: Text
+fabricationJobOutboxTable = "daedalus.fabrication_job_outbox"
+
+fabricationJobOutboxColumns :: [Text]
+fabricationJobOutboxColumns = ["event_id", "job_id", "subject", "event_type", "message_id", "payload", "available_at", "publish_attempts", "claim_owner", "claim_expires_at", "published_at", "last_error", "created_at", "updated_at"]
+
+fabricationJobOutboxSelectSql :: Text
+fabricationJobOutboxSelectSql = "select\n      event_id::text as event_id,\n      job_id::text as job_id,\n      subject,\n      event_type,\n      message_id,\n      payload::text as payload_json,\n      to_char(available_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as available_at,\n      publish_attempts,\n      claim_owner,\n      to_char(claim_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as claim_expires_at,\n      to_char(published_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as published_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fabrication_job_outbox"
+
+data FabricationJobOutboxRow = FabricationJobOutboxRow
+  { fabricationJobOutboxEventId :: Text
+  , fabricationJobOutboxJobId :: Text
+  , fabricationJobOutboxSubject :: Text
+  , fabricationJobOutboxEventType :: Text
+  , fabricationJobOutboxMessageId :: Text
+  , fabricationJobOutboxPayload :: Text
+  , fabricationJobOutboxAvailableAt :: Text
+  , fabricationJobOutboxPublishAttempts :: Int
+  , fabricationJobOutboxClaimOwner :: (Maybe Text)
+  , fabricationJobOutboxClaimExpiresAt :: (Maybe Text)
+  , fabricationJobOutboxPublishedAt :: (Maybe Text)
+  , fabricationJobOutboxLastError :: (Maybe Text)
+  , fabricationJobOutboxCreatedAt :: Text
+  , fabricationJobOutboxUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow FabricationJobOutboxRow where
+  fromRow = FabricationJobOutboxRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateFabricationJobOutboxPublishAttempts :: Int -> Either Text Int
+validateFabricationJobOutboxPublishAttempts value
+  | value < 0 = Left "fabrication_job_outbox.publish_attempts is below the minimum"
+  | otherwise = Right value

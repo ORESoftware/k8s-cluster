@@ -180,6 +180,8 @@ defmodule DdPgDefs do
     DdPgDefs.WebhookEvents,
     DdPgDefs.FabJobs,
     DdPgDefs.FabLearningOutcomes,
+    DdPgDefs.FabricationJobExecutions,
+    DdPgDefs.FabricationJobOutbox,
   ]
 
   @spec tables() :: [module()]

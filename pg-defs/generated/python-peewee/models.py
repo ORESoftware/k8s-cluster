@@ -3322,3 +3322,55 @@ class FabLearningOutcomes(BaseModel):
     class Meta:
         table_name = "fab_learning_outcomes"
         schema = "daedalus"
+
+
+class FabricationJobExecutions(BaseModel):
+    job_id = UUIDField(primary_key=True)
+    tenant_id = TextField()
+    request_id = TextField()
+    idempotency_key = TextField()
+    kind = TextField()
+    state = TextField()
+    current_stage = TextField()
+    checkpoint_version = BigIntegerField()
+    checkpoint = BinaryJSONField()
+    request_payload = BinaryJSONField()
+    result_payload = BinaryJSONField(null=True)
+    attempt_count = IntegerField()
+    max_attempts = IntegerField()
+    priority = SmallIntegerField()
+    lease_owner = TextField(null=True)
+    lease_expires_at = DateTimeField(null=True)
+    fiducia_fencing_token = BigIntegerField(null=True)
+    next_attempt_at = DateTimeField()
+    last_error_code = TextField(null=True)
+    last_error_message = TextField(null=True)
+    started_at = DateTimeField(null=True)
+    completed_at = DateTimeField(null=True)
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "fabrication_job_executions"
+        schema = "daedalus"
+
+
+class FabricationJobOutbox(BaseModel):
+    event_id = UUIDField(primary_key=True)
+    job_id = UUIDField()
+    subject = TextField()
+    event_type = TextField()
+    message_id = TextField()
+    payload = BinaryJSONField()
+    available_at = DateTimeField()
+    publish_attempts = IntegerField()
+    claim_owner = TextField(null=True)
+    claim_expires_at = DateTimeField(null=True)
+    published_at = DateTimeField(null=True)
+    last_error = TextField(null=True)
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "fabrication_job_outbox"
+        schema = "daedalus"

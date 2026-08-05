@@ -2535,3 +2535,33 @@ update daedalus.fab_learning_outcomes set request_id = $2, job_id = $3, objectiv
 
 -- name: DeleteFabLearningOutcomes :exec
 delete from daedalus.fab_learning_outcomes where outcome_id = $1;
+
+-- name: ListFabricationJobExecutions :many
+select job_id, tenant_id, request_id, idempotency_key, kind, state, current_stage, checkpoint_version, checkpoint, request_payload, result_payload, attempt_count, max_attempts, priority, lease_owner, lease_expires_at, fiducia_fencing_token, next_attempt_at, last_error_code, last_error_message, started_at, completed_at, created_at, updated_at from daedalus.fabrication_job_executions;
+
+-- name: GetFabricationJobExecutions :one
+select job_id, tenant_id, request_id, idempotency_key, kind, state, current_stage, checkpoint_version, checkpoint, request_payload, result_payload, attempt_count, max_attempts, priority, lease_owner, lease_expires_at, fiducia_fencing_token, next_attempt_at, last_error_code, last_error_message, started_at, completed_at, created_at, updated_at from daedalus.fabrication_job_executions where job_id = $1 limit 1;
+
+-- name: CreateFabricationJobExecutions :one
+insert into daedalus.fabrication_job_executions (job_id, tenant_id, request_id, idempotency_key, kind, state, current_stage, checkpoint_version, checkpoint, request_payload, result_payload, attempt_count, max_attempts, priority, lease_owner, lease_expires_at, fiducia_fencing_token, next_attempt_at, last_error_code, last_error_message, started_at, completed_at, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) returning job_id, tenant_id, request_id, idempotency_key, kind, state, current_stage, checkpoint_version, checkpoint, request_payload, result_payload, attempt_count, max_attempts, priority, lease_owner, lease_expires_at, fiducia_fencing_token, next_attempt_at, last_error_code, last_error_message, started_at, completed_at, created_at, updated_at;
+
+-- name: UpdateFabricationJobExecutions :one
+update daedalus.fabrication_job_executions set tenant_id = $2, request_id = $3, idempotency_key = $4, kind = $5, state = $6, current_stage = $7, checkpoint_version = $8, checkpoint = $9, request_payload = $10, result_payload = $11, attempt_count = $12, max_attempts = $13, priority = $14, lease_owner = $15, lease_expires_at = $16, fiducia_fencing_token = $17, next_attempt_at = $18, last_error_code = $19, last_error_message = $20, started_at = $21, completed_at = $22, updated_at = $23 where job_id = $1 returning job_id, tenant_id, request_id, idempotency_key, kind, state, current_stage, checkpoint_version, checkpoint, request_payload, result_payload, attempt_count, max_attempts, priority, lease_owner, lease_expires_at, fiducia_fencing_token, next_attempt_at, last_error_code, last_error_message, started_at, completed_at, created_at, updated_at;
+
+-- name: DeleteFabricationJobExecutions :exec
+delete from daedalus.fabrication_job_executions where job_id = $1;
+
+-- name: ListFabricationJobOutbox :many
+select event_id, job_id, subject, event_type, message_id, payload, available_at, publish_attempts, claim_owner, claim_expires_at, published_at, last_error, created_at, updated_at from daedalus.fabrication_job_outbox;
+
+-- name: GetFabricationJobOutbox :one
+select event_id, job_id, subject, event_type, message_id, payload, available_at, publish_attempts, claim_owner, claim_expires_at, published_at, last_error, created_at, updated_at from daedalus.fabrication_job_outbox where event_id = $1 limit 1;
+
+-- name: CreateFabricationJobOutbox :one
+insert into daedalus.fabrication_job_outbox (event_id, job_id, subject, event_type, message_id, payload, available_at, publish_attempts, claim_owner, claim_expires_at, published_at, last_error, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning event_id, job_id, subject, event_type, message_id, payload, available_at, publish_attempts, claim_owner, claim_expires_at, published_at, last_error, created_at, updated_at;
+
+-- name: UpdateFabricationJobOutbox :one
+update daedalus.fabrication_job_outbox set job_id = $2, subject = $3, event_type = $4, message_id = $5, payload = $6, available_at = $7, publish_attempts = $8, claim_owner = $9, claim_expires_at = $10, published_at = $11, last_error = $12, updated_at = $13 where event_id = $1 returning event_id, job_id, subject, event_type, message_id, payload, available_at, publish_attempts, claim_owner, claim_expires_at, published_at, last_error, created_at, updated_at;
+
+-- name: DeleteFabricationJobOutbox :exec
+delete from daedalus.fabrication_job_outbox where event_id = $1;

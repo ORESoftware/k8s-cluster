@@ -8574,6 +8574,125 @@ func (value FabLearningOutcomesGorm) Validate() error {
 	return nil
 }
 
+const FabricationJobExecutionsTable = "daedalus.fabrication_job_executions"
+const FabricationJobExecutionsSelectSQL = `select
+      job_id::text as job_id,
+      tenant_id,
+      request_id,
+      idempotency_key,
+      kind,
+      state,
+      current_stage,
+      checkpoint_version,
+      checkpoint,
+      request_payload,
+      result_payload,
+      attempt_count,
+      max_attempts,
+      priority,
+      lease_owner,
+      to_char(lease_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as lease_expires_at,
+      fiducia_fencing_token,
+      to_char(next_attempt_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as next_attempt_at,
+      last_error_code,
+      last_error_message,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as completed_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from daedalus.fabrication_job_executions`
+
+var FabricationJobExecutionsStateValues = []string{"queued", "running", "retry_wait", "succeeded", "failed", "cancelled"}
+
+type FabricationJobExecutionsGorm struct {
+	JobId uuid.UUID `gorm:"column:job_id;type:uuid;primaryKey" json:"jobId"`
+	TenantId string `gorm:"column:tenant_id;type:text;not null" json:"tenantId"`
+	RequestId string `gorm:"column:request_id;type:text;not null" json:"requestId"`
+	IdempotencyKey string `gorm:"column:idempotency_key;type:text;not null" json:"idempotencyKey"`
+	Kind string `gorm:"column:kind;type:text;not null" json:"kind"`
+	State string `gorm:"column:state;type:text;default:'queued';not null" json:"state"`
+	CurrentStage string `gorm:"column:current_stage;type:text;default:'accepted';not null" json:"currentStage"`
+	CheckpointVersion int64 `gorm:"column:checkpoint_version;type:bigint;default:0;not null" json:"checkpointVersion"`
+	Checkpoint datatypes.JSON `gorm:"column:checkpoint;type:jsonb;default:'{}'::jsonb;not null" json:"checkpoint"`
+	RequestPayload datatypes.JSON `gorm:"column:request_payload;type:jsonb;not null" json:"requestPayload"`
+	ResultPayload *datatypes.JSON `gorm:"column:result_payload;type:jsonb" json:"resultPayload,omitempty"`
+	AttemptCount int32 `gorm:"column:attempt_count;type:integer;default:0;not null" json:"attemptCount"`
+	MaxAttempts int32 `gorm:"column:max_attempts;type:integer;default:5;not null" json:"maxAttempts"`
+	Priority int32 `gorm:"column:priority;type:smallint;default:0;not null" json:"priority"`
+	LeaseOwner *string `gorm:"column:lease_owner;type:text" json:"leaseOwner,omitempty"`
+	LeaseExpiresAt *time.Time `gorm:"column:lease_expires_at;type:timestamptz" json:"leaseExpiresAt,omitempty"`
+	FiduciaFencingToken *int64 `gorm:"column:fiducia_fencing_token;type:bigint" json:"fiduciaFencingToken,omitempty"`
+	NextAttemptAt time.Time `gorm:"column:next_attempt_at;type:timestamptz;default:now();not null" json:"nextAttemptAt"`
+	LastErrorCode *string `gorm:"column:last_error_code;type:text" json:"lastErrorCode,omitempty"`
+	LastErrorMessage *string `gorm:"column:last_error_message;type:text" json:"lastErrorMessage,omitempty"`
+	StartedAt *time.Time `gorm:"column:started_at;type:timestamptz" json:"startedAt,omitempty"`
+	CompletedAt *time.Time `gorm:"column:completed_at;type:timestamptz" json:"completedAt,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (FabricationJobExecutionsGorm) TableName() string { return FabricationJobExecutionsTable }
+
+func (value FabricationJobExecutionsGorm) Validate() error {
+	if !containsString(FabricationJobExecutionsStateValues, value.State) { return errors.New("unsupported fabrication_job_executions.state") }
+	if value.CheckpointVersion < 0 { return errors.New("fabrication_job_executions.checkpoint_version is below the minimum") }
+	if !validateJSONString(value.Checkpoint) { return errors.New("fabrication_job_executions.checkpoint must be valid JSON") }
+	if !validateJSONString(value.RequestPayload) { return errors.New("fabrication_job_executions.request_payload must be valid JSON") }
+	if value.ResultPayload != nil {
+		if !validateJSONString(*value.ResultPayload) { return errors.New("fabrication_job_executions.result_payload must be valid JSON") }
+	}
+	if value.AttemptCount < 0 { return errors.New("fabrication_job_executions.attempt_count is below the minimum") }
+	if value.MaxAttempts < 1 { return errors.New("fabrication_job_executions.max_attempts is below the minimum") }
+	if value.MaxAttempts > 100 { return errors.New("fabrication_job_executions.max_attempts is above the maximum") }
+	if value.FiduciaFencingToken != nil {
+		if *value.FiduciaFencingToken < 0 { return errors.New("fabrication_job_executions.fiducia_fencing_token is below the minimum") }
+	}
+	return nil
+}
+
+const FabricationJobOutboxTable = "daedalus.fabrication_job_outbox"
+const FabricationJobOutboxSelectSQL = `select
+      event_id::text as event_id,
+      job_id::text as job_id,
+      subject,
+      event_type,
+      message_id,
+      payload,
+      to_char(available_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as available_at,
+      publish_attempts,
+      claim_owner,
+      to_char(claim_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as claim_expires_at,
+      to_char(published_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as published_at,
+      last_error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from daedalus.fabrication_job_outbox`
+
+type FabricationJobOutboxGorm struct {
+	EventId uuid.UUID `gorm:"column:event_id;type:uuid;primaryKey" json:"eventId"`
+	JobId uuid.UUID `gorm:"column:job_id;type:uuid;not null" json:"jobId"`
+	Subject string `gorm:"column:subject;type:text;not null" json:"subject"`
+	EventType string `gorm:"column:event_type;type:text;not null" json:"eventType"`
+	MessageId string `gorm:"column:message_id;type:text;not null" json:"messageId"`
+	Payload datatypes.JSON `gorm:"column:payload;type:jsonb;not null" json:"payload"`
+	AvailableAt time.Time `gorm:"column:available_at;type:timestamptz;default:now();not null" json:"availableAt"`
+	PublishAttempts int32 `gorm:"column:publish_attempts;type:integer;default:0;not null" json:"publishAttempts"`
+	ClaimOwner *string `gorm:"column:claim_owner;type:text" json:"claimOwner,omitempty"`
+	ClaimExpiresAt *time.Time `gorm:"column:claim_expires_at;type:timestamptz" json:"claimExpiresAt,omitempty"`
+	PublishedAt *time.Time `gorm:"column:published_at;type:timestamptz" json:"publishedAt,omitempty"`
+	LastError *string `gorm:"column:last_error;type:text" json:"lastError,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (FabricationJobOutboxGorm) TableName() string { return FabricationJobOutboxTable }
+
+func (value FabricationJobOutboxGorm) Validate() error {
+	if !validateJSONString(value.Payload) { return errors.New("fabrication_job_outbox.payload must be valid JSON") }
+	if value.PublishAttempts < 0 { return errors.New("fabrication_job_outbox.publish_attempts is below the minimum") }
+	return nil
+}
+
 func validateJSONString(value datatypes.JSON) bool {
 	if len(value) == 0 {
 		return true

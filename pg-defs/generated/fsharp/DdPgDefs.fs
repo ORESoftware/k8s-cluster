@@ -13600,3 +13600,148 @@ let fabLearningOutcomesRowOfRow (get: int -> string) (isNullAt: int -> bool) : F
       FabLearningOutcomesPayload = get 8
       FabLearningOutcomesCreatedAt = get 9
     }
+
+let fabricationJobExecutionsTable = "daedalus.fabrication_job_executions"
+let fabricationJobExecutionsColumns = [ "job_id"; "tenant_id"; "request_id"; "idempotency_key"; "kind"; "state"; "current_stage"; "checkpoint_version"; "checkpoint"; "request_payload"; "result_payload"; "attempt_count"; "max_attempts"; "priority"; "lease_owner"; "lease_expires_at"; "fiducia_fencing_token"; "next_attempt_at"; "last_error_code"; "last_error_message"; "started_at"; "completed_at"; "created_at"; "updated_at" ]
+let fabricationJobExecutionsSelectSql = "select\n      job_id::text as job_id,\n      tenant_id,\n      request_id,\n      idempotency_key,\n      kind,\n      state,\n      current_stage,\n      checkpoint_version,\n      checkpoint::text as checkpoint_json,\n      request_payload::text as request_payload_json,\n      result_payload::text as result_payload_json,\n      attempt_count,\n      max_attempts,\n      priority,\n      lease_owner,\n      to_char(lease_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_expires_at,\n      fiducia_fencing_token,\n      to_char(next_attempt_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as next_attempt_at,\n      last_error_code,\n      last_error_message,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as completed_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fabrication_job_executions"
+
+[<RequireQualifiedAccess>]
+type FabricationJobExecutionsState =
+    | Queued
+    | Running
+    | RetryWait
+    | Succeeded
+    | Failed
+    | Cancelled
+
+let fabricationJobExecutionsStateToString (value: FabricationJobExecutionsState) : string =
+    match value with
+    | FabricationJobExecutionsState.Queued -> "queued"
+    | FabricationJobExecutionsState.Running -> "running"
+    | FabricationJobExecutionsState.RetryWait -> "retry_wait"
+    | FabricationJobExecutionsState.Succeeded -> "succeeded"
+    | FabricationJobExecutionsState.Failed -> "failed"
+    | FabricationJobExecutionsState.Cancelled -> "cancelled"
+
+let parseFabricationJobExecutionsState (value: string) : Result<FabricationJobExecutionsState, string> =
+    match value with
+    | "queued" -> Ok FabricationJobExecutionsState.Queued
+    | "running" -> Ok FabricationJobExecutionsState.Running
+    | "retry_wait" -> Ok FabricationJobExecutionsState.RetryWait
+    | "succeeded" -> Ok FabricationJobExecutionsState.Succeeded
+    | "failed" -> Ok FabricationJobExecutionsState.Failed
+    | "cancelled" -> Ok FabricationJobExecutionsState.Cancelled
+    | _ -> Error ("unsupported fabrication_job_executions.state: " + value)
+
+type FabricationJobExecutionsRow =
+    { FabricationJobExecutionsJobId: string
+      FabricationJobExecutionsTenantId: string
+      FabricationJobExecutionsRequestId: string
+      FabricationJobExecutionsIdempotencyKey: string
+      FabricationJobExecutionsKind: string
+      FabricationJobExecutionsState: string
+      FabricationJobExecutionsCurrentStage: string
+      FabricationJobExecutionsCheckpointVersion: int64
+      FabricationJobExecutionsCheckpoint: string
+      FabricationJobExecutionsRequestPayload: string
+      FabricationJobExecutionsResultPayload: string option
+      FabricationJobExecutionsAttemptCount: int
+      FabricationJobExecutionsMaxAttempts: int
+      FabricationJobExecutionsPriority: int
+      FabricationJobExecutionsLeaseOwner: string option
+      FabricationJobExecutionsLeaseExpiresAt: string option
+      FabricationJobExecutionsFiduciaFencingToken: int64 option
+      FabricationJobExecutionsNextAttemptAt: string
+      FabricationJobExecutionsLastErrorCode: string option
+      FabricationJobExecutionsLastErrorMessage: string option
+      FabricationJobExecutionsStartedAt: string option
+      FabricationJobExecutionsCompletedAt: string option
+      FabricationJobExecutionsCreatedAt: string
+      FabricationJobExecutionsUpdatedAt: string
+    }
+
+let fabricationJobExecutionsRowOfRow (get: int -> string) (isNullAt: int -> bool) : FabricationJobExecutionsRow =
+    { FabricationJobExecutionsJobId = get 0
+      FabricationJobExecutionsTenantId = get 1
+      FabricationJobExecutionsRequestId = get 2
+      FabricationJobExecutionsIdempotencyKey = get 3
+      FabricationJobExecutionsKind = get 4
+      FabricationJobExecutionsState = get 5
+      FabricationJobExecutionsCurrentStage = get 6
+      FabricationJobExecutionsCheckpointVersion = int64 (get 7)
+      FabricationJobExecutionsCheckpoint = get 8
+      FabricationJobExecutionsRequestPayload = get 9
+      FabricationJobExecutionsResultPayload = (if isNullAt 10 then None else Some (get 10))
+      FabricationJobExecutionsAttemptCount = int (get 11)
+      FabricationJobExecutionsMaxAttempts = int (get 12)
+      FabricationJobExecutionsPriority = int (get 13)
+      FabricationJobExecutionsLeaseOwner = (if isNullAt 14 then None else Some (get 14))
+      FabricationJobExecutionsLeaseExpiresAt = (if isNullAt 15 then None else Some (get 15))
+      FabricationJobExecutionsFiduciaFencingToken = (if isNullAt 16 then None else Some (int64 (get 16)))
+      FabricationJobExecutionsNextAttemptAt = get 17
+      FabricationJobExecutionsLastErrorCode = (if isNullAt 18 then None else Some (get 18))
+      FabricationJobExecutionsLastErrorMessage = (if isNullAt 19 then None else Some (get 19))
+      FabricationJobExecutionsStartedAt = (if isNullAt 20 then None else Some (get 20))
+      FabricationJobExecutionsCompletedAt = (if isNullAt 21 then None else Some (get 21))
+      FabricationJobExecutionsCreatedAt = get 22
+      FabricationJobExecutionsUpdatedAt = get 23
+    }
+
+let validateFabricationJobExecutionsCheckpointVersion (value: int64) : Result<int64, string> =
+    if value < 0L then Error "fabrication_job_executions.checkpoint_version is below the minimum"
+    else Ok value
+
+let validateFabricationJobExecutionsAttemptCount (value: int) : Result<int, string> =
+    if value < 0 then Error "fabrication_job_executions.attempt_count is below the minimum"
+    else Ok value
+
+let validateFabricationJobExecutionsMaxAttempts (value: int) : Result<int, string> =
+    if value < 1 then Error "fabrication_job_executions.max_attempts is below the minimum"
+    elif value > 100 then Error "fabrication_job_executions.max_attempts is above the maximum"
+    else Ok value
+
+let validateFabricationJobExecutionsFiduciaFencingToken (value: int64) : Result<int64, string> =
+    if value < 0L then Error "fabrication_job_executions.fiducia_fencing_token is below the minimum"
+    else Ok value
+
+let fabricationJobOutboxTable = "daedalus.fabrication_job_outbox"
+let fabricationJobOutboxColumns = [ "event_id"; "job_id"; "subject"; "event_type"; "message_id"; "payload"; "available_at"; "publish_attempts"; "claim_owner"; "claim_expires_at"; "published_at"; "last_error"; "created_at"; "updated_at" ]
+let fabricationJobOutboxSelectSql = "select\n      event_id::text as event_id,\n      job_id::text as job_id,\n      subject,\n      event_type,\n      message_id,\n      payload::text as payload_json,\n      to_char(available_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as available_at,\n      publish_attempts,\n      claim_owner,\n      to_char(claim_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as claim_expires_at,\n      to_char(published_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as published_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fabrication_job_outbox"
+
+type FabricationJobOutboxRow =
+    { FabricationJobOutboxEventId: string
+      FabricationJobOutboxJobId: string
+      FabricationJobOutboxSubject: string
+      FabricationJobOutboxEventType: string
+      FabricationJobOutboxMessageId: string
+      FabricationJobOutboxPayload: string
+      FabricationJobOutboxAvailableAt: string
+      FabricationJobOutboxPublishAttempts: int
+      FabricationJobOutboxClaimOwner: string option
+      FabricationJobOutboxClaimExpiresAt: string option
+      FabricationJobOutboxPublishedAt: string option
+      FabricationJobOutboxLastError: string option
+      FabricationJobOutboxCreatedAt: string
+      FabricationJobOutboxUpdatedAt: string
+    }
+
+let fabricationJobOutboxRowOfRow (get: int -> string) (isNullAt: int -> bool) : FabricationJobOutboxRow =
+    { FabricationJobOutboxEventId = get 0
+      FabricationJobOutboxJobId = get 1
+      FabricationJobOutboxSubject = get 2
+      FabricationJobOutboxEventType = get 3
+      FabricationJobOutboxMessageId = get 4
+      FabricationJobOutboxPayload = get 5
+      FabricationJobOutboxAvailableAt = get 6
+      FabricationJobOutboxPublishAttempts = int (get 7)
+      FabricationJobOutboxClaimOwner = (if isNullAt 8 then None else Some (get 8))
+      FabricationJobOutboxClaimExpiresAt = (if isNullAt 9 then None else Some (get 9))
+      FabricationJobOutboxPublishedAt = (if isNullAt 10 then None else Some (get 10))
+      FabricationJobOutboxLastError = (if isNullAt 11 then None else Some (get 11))
+      FabricationJobOutboxCreatedAt = get 12
+      FabricationJobOutboxUpdatedAt = get 13
+    }
+
+let validateFabricationJobOutboxPublishAttempts (value: int) : Result<int, string> =
+    if value < 0 then Error "fabrication_job_outbox.publish_attempts is below the minimum"
+    else Ok value

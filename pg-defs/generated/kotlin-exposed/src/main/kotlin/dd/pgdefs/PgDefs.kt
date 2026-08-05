@@ -3084,6 +3084,54 @@ object FabLearningOutcomes : Table("daedalus.fab_learning_outcomes") {
     override val primaryKey = PrimaryKey(outcomeId)
 }
 
+object FabricationJobExecutions : Table("daedalus.fabrication_job_executions") {
+    val jobId = uuid("job_id")
+    val tenantId = text("tenant_id")
+    val requestId = text("request_id")
+    val idempotencyKey = text("idempotency_key")
+    val kind = text("kind")
+    val state = text("state")
+    val currentStage = text("current_stage")
+    val checkpointVersion = long("checkpoint_version")
+    val checkpoint = jsonb<String>("checkpoint", { it }, { it })
+    val requestPayload = jsonb<String>("request_payload", { it }, { it })
+    val resultPayload = jsonb<String>("result_payload", { it }, { it }).nullable()
+    val attemptCount = integer("attempt_count")
+    val maxAttempts = integer("max_attempts")
+    val priority = short("priority")
+    val leaseOwner = text("lease_owner").nullable()
+    val leaseExpiresAt = timestampWithTimeZone("lease_expires_at").nullable()
+    val fiduciaFencingToken = long("fiducia_fencing_token").nullable()
+    val nextAttemptAt = timestampWithTimeZone("next_attempt_at")
+    val lastErrorCode = text("last_error_code").nullable()
+    val lastErrorMessage = text("last_error_message").nullable()
+    val startedAt = timestampWithTimeZone("started_at").nullable()
+    val completedAt = timestampWithTimeZone("completed_at").nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(jobId)
+}
+
+object FabricationJobOutbox : Table("daedalus.fabrication_job_outbox") {
+    val eventId = uuid("event_id")
+    val jobId = uuid("job_id")
+    val subject = text("subject")
+    val eventType = text("event_type")
+    val messageId = text("message_id")
+    val payload = jsonb<String>("payload", { it }, { it })
+    val availableAt = timestampWithTimeZone("available_at")
+    val publishAttempts = integer("publish_attempts")
+    val claimOwner = text("claim_owner").nullable()
+    val claimExpiresAt = timestampWithTimeZone("claim_expires_at").nullable()
+    val publishedAt = timestampWithTimeZone("published_at").nullable()
+    val lastError = text("last_error").nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(eventId)
+}
+
 data class AccountsRow(
     val id: UUID,
     val username: String,
@@ -8530,4 +8578,92 @@ fun toFabLearningOutcomesRow(row: ResultRow): FabLearningOutcomesRow = FabLearni
     row[FabLearningOutcomes.reward],
     row[FabLearningOutcomes.payload],
     row[FabLearningOutcomes.createdAt],
+)
+
+data class FabricationJobExecutionsRow(
+    val jobId: UUID,
+    val tenantId: String,
+    val requestId: String,
+    val idempotencyKey: String,
+    val kind: String,
+    val state: String,
+    val currentStage: String,
+    val checkpointVersion: Long,
+    val checkpoint: String,
+    val requestPayload: String,
+    val resultPayload: String?,
+    val attemptCount: Int,
+    val maxAttempts: Int,
+    val priority: Short,
+    val leaseOwner: String?,
+    val leaseExpiresAt: OffsetDateTime?,
+    val fiduciaFencingToken: Long?,
+    val nextAttemptAt: OffsetDateTime,
+    val lastErrorCode: String?,
+    val lastErrorMessage: String?,
+    val startedAt: OffsetDateTime?,
+    val completedAt: OffsetDateTime?,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toFabricationJobExecutionsRow(row: ResultRow): FabricationJobExecutionsRow = FabricationJobExecutionsRow(
+    row[FabricationJobExecutions.jobId],
+    row[FabricationJobExecutions.tenantId],
+    row[FabricationJobExecutions.requestId],
+    row[FabricationJobExecutions.idempotencyKey],
+    row[FabricationJobExecutions.kind],
+    row[FabricationJobExecutions.state],
+    row[FabricationJobExecutions.currentStage],
+    row[FabricationJobExecutions.checkpointVersion],
+    row[FabricationJobExecutions.checkpoint],
+    row[FabricationJobExecutions.requestPayload],
+    row[FabricationJobExecutions.resultPayload],
+    row[FabricationJobExecutions.attemptCount],
+    row[FabricationJobExecutions.maxAttempts],
+    row[FabricationJobExecutions.priority],
+    row[FabricationJobExecutions.leaseOwner],
+    row[FabricationJobExecutions.leaseExpiresAt],
+    row[FabricationJobExecutions.fiduciaFencingToken],
+    row[FabricationJobExecutions.nextAttemptAt],
+    row[FabricationJobExecutions.lastErrorCode],
+    row[FabricationJobExecutions.lastErrorMessage],
+    row[FabricationJobExecutions.startedAt],
+    row[FabricationJobExecutions.completedAt],
+    row[FabricationJobExecutions.createdAt],
+    row[FabricationJobExecutions.updatedAt],
+)
+
+data class FabricationJobOutboxRow(
+    val eventId: UUID,
+    val jobId: UUID,
+    val subject: String,
+    val eventType: String,
+    val messageId: String,
+    val payload: String,
+    val availableAt: OffsetDateTime,
+    val publishAttempts: Int,
+    val claimOwner: String?,
+    val claimExpiresAt: OffsetDateTime?,
+    val publishedAt: OffsetDateTime?,
+    val lastError: String?,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toFabricationJobOutboxRow(row: ResultRow): FabricationJobOutboxRow = FabricationJobOutboxRow(
+    row[FabricationJobOutbox.eventId],
+    row[FabricationJobOutbox.jobId],
+    row[FabricationJobOutbox.subject],
+    row[FabricationJobOutbox.eventType],
+    row[FabricationJobOutbox.messageId],
+    row[FabricationJobOutbox.payload],
+    row[FabricationJobOutbox.availableAt],
+    row[FabricationJobOutbox.publishAttempts],
+    row[FabricationJobOutbox.claimOwner],
+    row[FabricationJobOutbox.claimExpiresAt],
+    row[FabricationJobOutbox.publishedAt],
+    row[FabricationJobOutbox.lastError],
+    row[FabricationJobOutbox.createdAt],
+    row[FabricationJobOutbox.updatedAt],
 )

@@ -4806,3 +4806,71 @@ class FabLearningOutcomes extends Model
         ];
     }
 }
+
+class FabricationJobExecutions extends Model
+{
+    protected $table = 'daedalus.fabrication_job_executions';
+    protected $primaryKey = 'job_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['tenant_id', 'request_id', 'idempotency_key', 'kind', 'state', 'current_stage', 'checkpoint_version', 'checkpoint', 'request_payload', 'result_payload', 'attempt_count', 'max_attempts', 'priority', 'lease_owner', 'lease_expires_at', 'fiducia_fencing_token', 'next_attempt_at', 'last_error_code', 'last_error_message', 'started_at', 'completed_at', 'created_at', 'updated_at'];
+    protected $casts = ['checkpoint_version' => 'integer', 'checkpoint' => 'array', 'request_payload' => 'array', 'result_payload' => 'array', 'attempt_count' => 'integer', 'max_attempts' => 'integer', 'priority' => 'integer', 'lease_expires_at' => 'datetime', 'fiducia_fencing_token' => 'integer', 'next_attempt_at' => 'datetime', 'started_at' => 'datetime', 'completed_at' => 'datetime', 'created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'tenant_id' => ['required', 'string'],
+            'request_id' => ['required', 'string'],
+            'idempotency_key' => ['required', 'string'],
+            'kind' => ['required', 'string'],
+            'state' => ['nullable', 'string', 'in:queued,running,retry_wait,succeeded,failed,cancelled'],
+            'current_stage' => ['nullable', 'string'],
+            'checkpoint_version' => ['nullable', 'integer', 'min:0'],
+            'checkpoint' => ['nullable', 'array'],
+            'request_payload' => ['required', 'array'],
+            'result_payload' => ['nullable', 'array'],
+            'attempt_count' => ['nullable', 'integer', 'min:0'],
+            'max_attempts' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'priority' => ['nullable', 'integer'],
+            'lease_owner' => ['nullable', 'string'],
+            'lease_expires_at' => ['nullable', 'date'],
+            'fiducia_fencing_token' => ['nullable', 'integer', 'min:0'],
+            'next_attempt_at' => ['nullable', 'date'],
+            'last_error_code' => ['nullable', 'string'],
+            'last_error_message' => ['nullable', 'string'],
+            'started_at' => ['nullable', 'date'],
+            'completed_at' => ['nullable', 'date'],
+        ];
+    }
+}
+
+class FabricationJobOutbox extends Model
+{
+    protected $table = 'daedalus.fabrication_job_outbox';
+    protected $primaryKey = 'event_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['job_id', 'subject', 'event_type', 'message_id', 'payload', 'available_at', 'publish_attempts', 'claim_owner', 'claim_expires_at', 'published_at', 'last_error', 'created_at', 'updated_at'];
+    protected $casts = ['payload' => 'array', 'available_at' => 'datetime', 'publish_attempts' => 'integer', 'claim_expires_at' => 'datetime', 'published_at' => 'datetime', 'created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'job_id' => ['required', 'uuid'],
+            'subject' => ['required', 'string'],
+            'event_type' => ['required', 'string'],
+            'message_id' => ['required', 'string'],
+            'payload' => ['required', 'array'],
+            'available_at' => ['nullable', 'date'],
+            'publish_attempts' => ['nullable', 'integer', 'min:0'],
+            'claim_owner' => ['nullable', 'string'],
+            'claim_expires_at' => ['nullable', 'date'],
+            'published_at' => ['nullable', 'date'],
+            'last_error' => ['nullable', 'string'],
+        ];
+    }
+}

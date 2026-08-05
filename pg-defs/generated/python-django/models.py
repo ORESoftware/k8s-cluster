@@ -3588,3 +3588,57 @@ class FabLearningOutcomes(models.Model):
         managed = False
         app_label = "dd_pg_defs"
         db_table = "daedalus\".\"fab_learning_outcomes"
+
+
+class FabricationJobExecutions(models.Model):
+    job_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant_id = models.TextField()
+    request_id = models.TextField()
+    idempotency_key = models.TextField()
+    kind = models.TextField()
+    state = models.TextField(choices=[("queued", "queued"), ("running", "running"), ("retry_wait", "retry_wait"), ("succeeded", "succeeded"), ("failed", "failed"), ("cancelled", "cancelled")], default="queued")
+    current_stage = models.TextField(default="accepted")
+    checkpoint_version = models.BigIntegerField(default=0, validators=[MinValueValidator(0)])
+    checkpoint = models.JSONField(default=dict)
+    request_payload = models.JSONField()
+    result_payload = models.JSONField(null=True, blank=True)
+    attempt_count = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    max_attempts = models.IntegerField(default=5, validators=[MinValueValidator(1), MaxValueValidator(100)])
+    priority = models.SmallIntegerField(default=0)
+    lease_owner = models.TextField(null=True, blank=True)
+    lease_expires_at = models.DateTimeField(null=True, blank=True)
+    fiducia_fencing_token = models.BigIntegerField(null=True, blank=True, validators=[MinValueValidator(0)])
+    next_attempt_at = models.DateTimeField()
+    last_error_code = models.TextField(null=True, blank=True)
+    last_error_message = models.TextField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "daedalus\".\"fabrication_job_executions"
+
+
+class FabricationJobOutbox(models.Model):
+    event_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    job_id = models.UUIDField()
+    subject = models.TextField()
+    event_type = models.TextField()
+    message_id = models.TextField()
+    payload = models.JSONField()
+    available_at = models.DateTimeField()
+    publish_attempts = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    claim_owner = models.TextField(null=True, blank=True)
+    claim_expires_at = models.DateTimeField(null=True, blank=True)
+    published_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "daedalus\".\"fabrication_job_outbox"

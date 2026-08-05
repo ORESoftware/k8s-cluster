@@ -12250,6 +12250,115 @@ pub fn validate_fab_learning_outcomes_slug(value: String) -> Result(String, Stri
   }
 }
 
+pub const fabrication_job_executions_table = "daedalus.fabrication_job_executions"
+pub const fabrication_job_executions_select_sql = "select\n      job_id::text as job_id,\n      tenant_id,\n      request_id,\n      idempotency_key,\n      kind,\n      state,\n      current_stage,\n      checkpoint_version,\n      checkpoint::text as checkpoint_json,\n      request_payload::text as request_payload_json,\n      result_payload::text as result_payload_json,\n      attempt_count,\n      max_attempts,\n      priority,\n      lease_owner,\n      to_char(lease_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_expires_at,\n      fiducia_fencing_token,\n      to_char(next_attempt_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as next_attempt_at,\n      last_error_code,\n      last_error_message,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as completed_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fabrication_job_executions"
+
+pub type FabricationJobExecutionsState {
+  FabricationJobExecutionsStateQueued
+  FabricationJobExecutionsStateRunning
+  FabricationJobExecutionsStateRetryWait
+  FabricationJobExecutionsStateSucceeded
+  FabricationJobExecutionsStateFailed
+  FabricationJobExecutionsStateCancelled
+}
+
+pub fn fabrication_job_executions_state_to_string(value: FabricationJobExecutionsState) -> String {
+  case value {
+    FabricationJobExecutionsStateQueued -> "queued"
+    FabricationJobExecutionsStateRunning -> "running"
+    FabricationJobExecutionsStateRetryWait -> "retry_wait"
+    FabricationJobExecutionsStateSucceeded -> "succeeded"
+    FabricationJobExecutionsStateFailed -> "failed"
+    FabricationJobExecutionsStateCancelled -> "cancelled"
+  }
+}
+
+pub fn parse_fabrication_job_executions_state(value: String) -> Result(FabricationJobExecutionsState, String) {
+  case value {
+    "queued" -> Ok(FabricationJobExecutionsStateQueued)
+    "running" -> Ok(FabricationJobExecutionsStateRunning)
+    "retry_wait" -> Ok(FabricationJobExecutionsStateRetryWait)
+    "succeeded" -> Ok(FabricationJobExecutionsStateSucceeded)
+    "failed" -> Ok(FabricationJobExecutionsStateFailed)
+    "cancelled" -> Ok(FabricationJobExecutionsStateCancelled)
+    _ -> Error("unsupported fabrication_job_executions.state: " <> value)
+  }
+}
+
+pub type FabricationJobExecutionsRow {
+  FabricationJobExecutionsRow(
+    job_id: String,
+    tenant_id: String,
+    request_id: String,
+    idempotency_key: String,
+    kind: String,
+    state: String,
+    current_stage: String,
+    checkpoint_version: Int,
+    checkpoint_json: String,
+    request_payload_json: String,
+    result_payload_json: Option(String),
+    attempt_count: Int,
+    max_attempts: Int,
+    priority: Int,
+    lease_owner: Option(String),
+    lease_expires_at: Option(String),
+    fiducia_fencing_token: Option(Int),
+    next_attempt_at: String,
+    last_error_code: Option(String),
+    last_error_message: Option(String),
+    started_at: Option(String),
+    completed_at: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_fabrication_job_executions_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("fabrication_job_executions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_fabrication_job_executions_state(value: String) -> Result(String, String) {
+  case list.contains(["queued", "running", "retry_wait", "succeeded", "failed", "cancelled"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported fabrication_job_executions.state: " <> value)
+  }
+}
+
+pub const fabrication_job_outbox_table = "daedalus.fabrication_job_outbox"
+pub const fabrication_job_outbox_select_sql = "select\n      event_id::text as event_id,\n      job_id::text as job_id,\n      subject,\n      event_type,\n      message_id,\n      payload::text as payload_json,\n      to_char(available_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as available_at,\n      publish_attempts,\n      claim_owner,\n      to_char(claim_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as claim_expires_at,\n      to_char(published_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as published_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fabrication_job_outbox"
+
+pub type FabricationJobOutboxRow {
+  FabricationJobOutboxRow(
+    event_id: String,
+    job_id: String,
+    subject: String,
+    event_type: String,
+    message_id: String,
+    payload_json: String,
+    available_at: String,
+    publish_attempts: Int,
+    claim_owner: Option(String),
+    claim_expires_at: Option(String),
+    published_at: Option(String),
+    last_error: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_fabrication_job_outbox_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("fabrication_job_outbox.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
 fn is_slug_text(value: String) -> Bool {
   let chars = string.to_graphemes(value)
   case chars {

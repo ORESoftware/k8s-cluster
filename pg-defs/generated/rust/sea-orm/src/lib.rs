@@ -7003,3 +7003,109 @@ impl ActiveModelBehavior for ActiveModel {}
 
 pub use fab_learning_outcomes::Entity as FabLearningOutcomesEntity;
 pub use fab_learning_outcomes::Model as FabLearningOutcomesModel;
+
+pub mod fabrication_job_executions {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "daedalus", table_name = "fabrication_job_executions")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false, column_name = "job_id")]
+    pub job_id: Uuid,
+    #[sea_orm(column_name = "tenant_id")]
+    pub tenant_id: String,
+    #[sea_orm(column_name = "request_id")]
+    pub request_id: String,
+    #[sea_orm(column_name = "idempotency_key")]
+    pub idempotency_key: String,
+    pub kind: String,
+    pub state: String,
+    #[sea_orm(column_name = "current_stage")]
+    pub current_stage: String,
+    #[sea_orm(column_name = "checkpoint_version")]
+    pub checkpoint_version: i64,
+    pub checkpoint: Json,
+    #[sea_orm(column_name = "request_payload")]
+    pub request_payload: Json,
+    #[sea_orm(column_name = "result_payload")]
+    pub result_payload: Option<Json>,
+    #[sea_orm(column_name = "attempt_count")]
+    pub attempt_count: i32,
+    #[sea_orm(column_name = "max_attempts")]
+    pub max_attempts: i32,
+    pub priority: i16,
+    #[sea_orm(column_name = "lease_owner")]
+    pub lease_owner: Option<String>,
+    #[sea_orm(column_name = "lease_expires_at")]
+    pub lease_expires_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "fiducia_fencing_token")]
+    pub fiducia_fencing_token: Option<i64>,
+    #[sea_orm(column_name = "next_attempt_at")]
+    pub next_attempt_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "last_error_code")]
+    pub last_error_code: Option<String>,
+    #[sea_orm(column_name = "last_error_message")]
+    pub last_error_message: Option<String>,
+    #[sea_orm(column_name = "started_at")]
+    pub started_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "completed_at")]
+    pub completed_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use fabrication_job_executions::Entity as FabricationJobExecutionsEntity;
+pub use fabrication_job_executions::Model as FabricationJobExecutionsModel;
+
+pub mod fabrication_job_outbox {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "daedalus", table_name = "fabrication_job_outbox")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false, column_name = "event_id")]
+    pub event_id: Uuid,
+    #[sea_orm(column_name = "job_id")]
+    pub job_id: Uuid,
+    pub subject: String,
+    #[sea_orm(column_name = "event_type")]
+    pub event_type: String,
+    #[sea_orm(column_name = "message_id")]
+    pub message_id: String,
+    pub payload: Json,
+    #[sea_orm(column_name = "available_at")]
+    pub available_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "publish_attempts")]
+    pub publish_attempts: i32,
+    #[sea_orm(column_name = "claim_owner")]
+    pub claim_owner: Option<String>,
+    #[sea_orm(column_name = "claim_expires_at")]
+    pub claim_expires_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "published_at")]
+    pub published_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_error")]
+    pub last_error: Option<String>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use fabrication_job_outbox::Entity as FabricationJobOutboxEntity;
+pub use fabrication_job_outbox::Model as FabricationJobOutboxModel;

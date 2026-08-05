@@ -12797,3 +12797,147 @@ let fab_learning_outcomes_row_of_row ~(get : int -> string) ~(is_null : int -> b
     fab_learning_outcomes_payload = get 8;
     fab_learning_outcomes_created_at = get 9;
   }
+
+let fabrication_job_executions_table = "daedalus.fabrication_job_executions"
+
+let fabrication_job_executions_columns = ["job_id"; "tenant_id"; "request_id"; "idempotency_key"; "kind"; "state"; "current_stage"; "checkpoint_version"; "checkpoint"; "request_payload"; "result_payload"; "attempt_count"; "max_attempts"; "priority"; "lease_owner"; "lease_expires_at"; "fiducia_fencing_token"; "next_attempt_at"; "last_error_code"; "last_error_message"; "started_at"; "completed_at"; "created_at"; "updated_at"]
+
+let fabrication_job_executions_select_sql = "select\n      job_id::text as job_id,\n      tenant_id,\n      request_id,\n      idempotency_key,\n      kind,\n      state,\n      current_stage,\n      checkpoint_version,\n      checkpoint::text as checkpoint_json,\n      request_payload::text as request_payload_json,\n      result_payload::text as result_payload_json,\n      attempt_count,\n      max_attempts,\n      priority,\n      lease_owner,\n      to_char(lease_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_expires_at,\n      fiducia_fencing_token,\n      to_char(next_attempt_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as next_attempt_at,\n      last_error_code,\n      last_error_message,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as completed_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fabrication_job_executions"
+
+type fabrication_job_executions_state = [ `Queued | `Running | `RetryWait | `Succeeded | `Failed | `Cancelled ]
+
+let fabrication_job_executions_state_to_string (value : fabrication_job_executions_state) : string =
+  match value with
+  | `Queued -> "queued"
+  | `Running -> "running"
+  | `RetryWait -> "retry_wait"
+  | `Succeeded -> "succeeded"
+  | `Failed -> "failed"
+  | `Cancelled -> "cancelled"
+
+let parse_fabrication_job_executions_state (value : string) : (fabrication_job_executions_state, string) result =
+  match value with
+  | "queued" -> Ok `Queued
+  | "running" -> Ok `Running
+  | "retry_wait" -> Ok `RetryWait
+  | "succeeded" -> Ok `Succeeded
+  | "failed" -> Ok `Failed
+  | "cancelled" -> Ok `Cancelled
+  | _ -> Error ("unsupported fabrication_job_executions.state: " ^ value)
+
+type fabrication_job_executions_row = {
+  fabrication_job_executions_job_id : string;
+  fabrication_job_executions_tenant_id : string;
+  fabrication_job_executions_request_id : string;
+  fabrication_job_executions_idempotency_key : string;
+  fabrication_job_executions_kind : string;
+  fabrication_job_executions_state : string;
+  fabrication_job_executions_current_stage : string;
+  fabrication_job_executions_checkpoint_version : int64;
+  fabrication_job_executions_checkpoint : string;
+  fabrication_job_executions_request_payload : string;
+  fabrication_job_executions_result_payload : string option;
+  fabrication_job_executions_attempt_count : int;
+  fabrication_job_executions_max_attempts : int;
+  fabrication_job_executions_priority : int;
+  fabrication_job_executions_lease_owner : string option;
+  fabrication_job_executions_lease_expires_at : string option;
+  fabrication_job_executions_fiducia_fencing_token : int64 option;
+  fabrication_job_executions_next_attempt_at : string;
+  fabrication_job_executions_last_error_code : string option;
+  fabrication_job_executions_last_error_message : string option;
+  fabrication_job_executions_started_at : string option;
+  fabrication_job_executions_completed_at : string option;
+  fabrication_job_executions_created_at : string;
+  fabrication_job_executions_updated_at : string;
+}
+
+let fabrication_job_executions_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : fabrication_job_executions_row =
+  {
+    fabrication_job_executions_job_id = get 0;
+    fabrication_job_executions_tenant_id = get 1;
+    fabrication_job_executions_request_id = get 2;
+    fabrication_job_executions_idempotency_key = get 3;
+    fabrication_job_executions_kind = get 4;
+    fabrication_job_executions_state = get 5;
+    fabrication_job_executions_current_stage = get 6;
+    fabrication_job_executions_checkpoint_version = Int64.of_string (get 7);
+    fabrication_job_executions_checkpoint = get 8;
+    fabrication_job_executions_request_payload = get 9;
+    fabrication_job_executions_result_payload = (if is_null 10 then None else Some (get 10));
+    fabrication_job_executions_attempt_count = int_of_string (get 11);
+    fabrication_job_executions_max_attempts = int_of_string (get 12);
+    fabrication_job_executions_priority = int_of_string (get 13);
+    fabrication_job_executions_lease_owner = (if is_null 14 then None else Some (get 14));
+    fabrication_job_executions_lease_expires_at = (if is_null 15 then None else Some (get 15));
+    fabrication_job_executions_fiducia_fencing_token = (if is_null 16 then None else Some (Int64.of_string (get 16)));
+    fabrication_job_executions_next_attempt_at = get 17;
+    fabrication_job_executions_last_error_code = (if is_null 18 then None else Some (get 18));
+    fabrication_job_executions_last_error_message = (if is_null 19 then None else Some (get 19));
+    fabrication_job_executions_started_at = (if is_null 20 then None else Some (get 20));
+    fabrication_job_executions_completed_at = (if is_null 21 then None else Some (get 21));
+    fabrication_job_executions_created_at = get 22;
+    fabrication_job_executions_updated_at = get 23;
+  }
+
+let validate_fabrication_job_executions_checkpoint_version (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "fabrication_job_executions.checkpoint_version is below the minimum"
+  else Ok value
+
+let validate_fabrication_job_executions_attempt_count (value : int) : (int, string) result =
+  if value < 0 then Error "fabrication_job_executions.attempt_count is below the minimum"
+  else Ok value
+
+let validate_fabrication_job_executions_max_attempts (value : int) : (int, string) result =
+  if value < 1 then Error "fabrication_job_executions.max_attempts is below the minimum"
+  else if value > 100 then Error "fabrication_job_executions.max_attempts is above the maximum"
+  else Ok value
+
+let validate_fabrication_job_executions_fiducia_fencing_token (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "fabrication_job_executions.fiducia_fencing_token is below the minimum"
+  else Ok value
+
+let fabrication_job_outbox_table = "daedalus.fabrication_job_outbox"
+
+let fabrication_job_outbox_columns = ["event_id"; "job_id"; "subject"; "event_type"; "message_id"; "payload"; "available_at"; "publish_attempts"; "claim_owner"; "claim_expires_at"; "published_at"; "last_error"; "created_at"; "updated_at"]
+
+let fabrication_job_outbox_select_sql = "select\n      event_id::text as event_id,\n      job_id::text as job_id,\n      subject,\n      event_type,\n      message_id,\n      payload::text as payload_json,\n      to_char(available_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as available_at,\n      publish_attempts,\n      claim_owner,\n      to_char(claim_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as claim_expires_at,\n      to_char(published_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as published_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fabrication_job_outbox"
+
+type fabrication_job_outbox_row = {
+  fabrication_job_outbox_event_id : string;
+  fabrication_job_outbox_job_id : string;
+  fabrication_job_outbox_subject : string;
+  fabrication_job_outbox_event_type : string;
+  fabrication_job_outbox_message_id : string;
+  fabrication_job_outbox_payload : string;
+  fabrication_job_outbox_available_at : string;
+  fabrication_job_outbox_publish_attempts : int;
+  fabrication_job_outbox_claim_owner : string option;
+  fabrication_job_outbox_claim_expires_at : string option;
+  fabrication_job_outbox_published_at : string option;
+  fabrication_job_outbox_last_error : string option;
+  fabrication_job_outbox_created_at : string;
+  fabrication_job_outbox_updated_at : string;
+}
+
+let fabrication_job_outbox_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : fabrication_job_outbox_row =
+  {
+    fabrication_job_outbox_event_id = get 0;
+    fabrication_job_outbox_job_id = get 1;
+    fabrication_job_outbox_subject = get 2;
+    fabrication_job_outbox_event_type = get 3;
+    fabrication_job_outbox_message_id = get 4;
+    fabrication_job_outbox_payload = get 5;
+    fabrication_job_outbox_available_at = get 6;
+    fabrication_job_outbox_publish_attempts = int_of_string (get 7);
+    fabrication_job_outbox_claim_owner = (if is_null 8 then None else Some (get 8));
+    fabrication_job_outbox_claim_expires_at = (if is_null 9 then None else Some (get 9));
+    fabrication_job_outbox_published_at = (if is_null 10 then None else Some (get 10));
+    fabrication_job_outbox_last_error = (if is_null 11 then None else Some (get 11));
+    fabrication_job_outbox_created_at = get 12;
+    fabrication_job_outbox_updated_at = get 13;
+  }
+
+let validate_fabrication_job_outbox_publish_attempts (value : int) : (int, string) result =
+  if value < 0 then Error "fabrication_job_outbox.publish_attempts is below the minimum"
+  else Ok value

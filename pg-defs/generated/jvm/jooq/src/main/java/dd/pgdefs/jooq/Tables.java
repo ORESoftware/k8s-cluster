@@ -2748,4 +2748,48 @@ public final class Tables {
     public static final Field<JSONB> FAB_LEARNING_OUTCOMES_PAYLOAD = DSL.field(DSL.name("daedalus", "fab_learning_outcomes", "payload"), SQLDataType.JSONB);
     public static final Field<OffsetDateTime> FAB_LEARNING_OUTCOMES_CREATED_AT = DSL.field(DSL.name("daedalus", "fab_learning_outcomes", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
 
+    public static final Name FABRICATION_JOB_EXECUTIONS_NAME = DSL.name("daedalus", "fabrication_job_executions");
+    public static final Table<org.jooq.Record> FABRICATION_JOB_EXECUTIONS = DSL.table(FABRICATION_JOB_EXECUTIONS_NAME);
+    public static final Field<UUID> FABRICATION_JOB_EXECUTIONS_JOB_ID = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "job_id"), SQLDataType.UUID);
+    public static final Field<String> FABRICATION_JOB_EXECUTIONS_TENANT_ID = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "tenant_id"), SQLDataType.CLOB);
+    public static final Field<String> FABRICATION_JOB_EXECUTIONS_REQUEST_ID = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "request_id"), SQLDataType.CLOB);
+    public static final Field<String> FABRICATION_JOB_EXECUTIONS_IDEMPOTENCY_KEY = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "idempotency_key"), SQLDataType.CLOB);
+    public static final Field<String> FABRICATION_JOB_EXECUTIONS_KIND = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "kind"), SQLDataType.CLOB);
+    public static final Field<String> FABRICATION_JOB_EXECUTIONS_STATE = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "state"), SQLDataType.CLOB);
+    public static final Field<String> FABRICATION_JOB_EXECUTIONS_CURRENT_STAGE = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "current_stage"), SQLDataType.CLOB);
+    public static final Field<Long> FABRICATION_JOB_EXECUTIONS_CHECKPOINT_VERSION = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "checkpoint_version"), SQLDataType.BIGINT);
+    public static final Field<JSONB> FABRICATION_JOB_EXECUTIONS_CHECKPOINT = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "checkpoint"), SQLDataType.JSONB);
+    public static final Field<JSONB> FABRICATION_JOB_EXECUTIONS_REQUEST_PAYLOAD = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "request_payload"), SQLDataType.JSONB);
+    public static final Field<JSONB> FABRICATION_JOB_EXECUTIONS_RESULT_PAYLOAD = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "result_payload"), SQLDataType.JSONB);
+    public static final Field<Integer> FABRICATION_JOB_EXECUTIONS_ATTEMPT_COUNT = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "attempt_count"), SQLDataType.INTEGER);
+    public static final Field<Integer> FABRICATION_JOB_EXECUTIONS_MAX_ATTEMPTS = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "max_attempts"), SQLDataType.INTEGER);
+    public static final Field<Integer> FABRICATION_JOB_EXECUTIONS_PRIORITY = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "priority"), SQLDataType.INTEGER);
+    public static final Field<String> FABRICATION_JOB_EXECUTIONS_LEASE_OWNER = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "lease_owner"), SQLDataType.CLOB);
+    public static final Field<OffsetDateTime> FABRICATION_JOB_EXECUTIONS_LEASE_EXPIRES_AT = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "lease_expires_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<Long> FABRICATION_JOB_EXECUTIONS_FIDUCIA_FENCING_TOKEN = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "fiducia_fencing_token"), SQLDataType.BIGINT);
+    public static final Field<OffsetDateTime> FABRICATION_JOB_EXECUTIONS_NEXT_ATTEMPT_AT = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "next_attempt_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<String> FABRICATION_JOB_EXECUTIONS_LAST_ERROR_CODE = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "last_error_code"), SQLDataType.CLOB);
+    public static final Field<String> FABRICATION_JOB_EXECUTIONS_LAST_ERROR_MESSAGE = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "last_error_message"), SQLDataType.CLOB);
+    public static final Field<OffsetDateTime> FABRICATION_JOB_EXECUTIONS_STARTED_AT = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "started_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> FABRICATION_JOB_EXECUTIONS_COMPLETED_AT = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "completed_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> FABRICATION_JOB_EXECUTIONS_CREATED_AT = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> FABRICATION_JOB_EXECUTIONS_UPDATED_AT = DSL.field(DSL.name("daedalus", "fabrication_job_executions", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name FABRICATION_JOB_OUTBOX_NAME = DSL.name("daedalus", "fabrication_job_outbox");
+    public static final Table<org.jooq.Record> FABRICATION_JOB_OUTBOX = DSL.table(FABRICATION_JOB_OUTBOX_NAME);
+    public static final Field<UUID> FABRICATION_JOB_OUTBOX_EVENT_ID = DSL.field(DSL.name("daedalus", "fabrication_job_outbox", "event_id"), SQLDataType.UUID);
+    public static final Field<UUID> FABRICATION_JOB_OUTBOX_JOB_ID = DSL.field(DSL.name("daedalus", "fabrication_job_outbox", "job_id"), SQLDataType.UUID);
+    public static final Field<String> FABRICATION_JOB_OUTBOX_SUBJECT = DSL.field(DSL.name("daedalus", "fabrication_job_outbox", "subject"), SQLDataType.CLOB);
+    public static final Field<String> FABRICATION_JOB_OUTBOX_EVENT_TYPE = DSL.field(DSL.name("daedalus", "fabrication_job_outbox", "event_type"), SQLDataType.CLOB);
+    public static final Field<String> FABRICATION_JOB_OUTBOX_MESSAGE_ID = DSL.field(DSL.name("daedalus", "fabrication_job_outbox", "message_id"), SQLDataType.CLOB);
+    public static final Field<JSONB> FABRICATION_JOB_OUTBOX_PAYLOAD = DSL.field(DSL.name("daedalus", "fabrication_job_outbox", "payload"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> FABRICATION_JOB_OUTBOX_AVAILABLE_AT = DSL.field(DSL.name("daedalus", "fabrication_job_outbox", "available_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<Integer> FABRICATION_JOB_OUTBOX_PUBLISH_ATTEMPTS = DSL.field(DSL.name("daedalus", "fabrication_job_outbox", "publish_attempts"), SQLDataType.INTEGER);
+    public static final Field<String> FABRICATION_JOB_OUTBOX_CLAIM_OWNER = DSL.field(DSL.name("daedalus", "fabrication_job_outbox", "claim_owner"), SQLDataType.CLOB);
+    public static final Field<OffsetDateTime> FABRICATION_JOB_OUTBOX_CLAIM_EXPIRES_AT = DSL.field(DSL.name("daedalus", "fabrication_job_outbox", "claim_expires_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> FABRICATION_JOB_OUTBOX_PUBLISHED_AT = DSL.field(DSL.name("daedalus", "fabrication_job_outbox", "published_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<String> FABRICATION_JOB_OUTBOX_LAST_ERROR = DSL.field(DSL.name("daedalus", "fabrication_job_outbox", "last_error"), SQLDataType.CLOB);
+    public static final Field<OffsetDateTime> FABRICATION_JOB_OUTBOX_CREATED_AT = DSL.field(DSL.name("daedalus", "fabrication_job_outbox", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> FABRICATION_JOB_OUTBOX_UPDATED_AT = DSL.field(DSL.name("daedalus", "fabrication_job_outbox", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
 }

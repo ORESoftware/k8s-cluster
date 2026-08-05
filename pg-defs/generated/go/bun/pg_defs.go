@@ -8405,6 +8405,123 @@ func (value FabLearningOutcomesBun) Validate() error {
 	return nil
 }
 
+const FabricationJobExecutionsTable = "daedalus.fabrication_job_executions"
+const FabricationJobExecutionsSelectSQL = `select
+      job_id::text as job_id,
+      tenant_id,
+      request_id,
+      idempotency_key,
+      kind,
+      state,
+      current_stage,
+      checkpoint_version,
+      checkpoint,
+      request_payload,
+      result_payload,
+      attempt_count,
+      max_attempts,
+      priority,
+      lease_owner,
+      to_char(lease_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as lease_expires_at,
+      fiducia_fencing_token,
+      to_char(next_attempt_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as next_attempt_at,
+      last_error_code,
+      last_error_message,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as completed_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from daedalus.fabrication_job_executions`
+
+var FabricationJobExecutionsStateValues = []string{"queued", "running", "retry_wait", "succeeded", "failed", "cancelled"}
+
+type FabricationJobExecutionsBun struct {
+	bun.BaseModel `bun:"table:daedalus.fabrication_job_executions"`
+	JobId uuid.UUID `bun:"job_id,type:uuid,pk" json:"jobId"`
+	TenantId string `bun:"tenant_id,type:text" json:"tenantId"`
+	RequestId string `bun:"request_id,type:text" json:"requestId"`
+	IdempotencyKey string `bun:"idempotency_key,type:text" json:"idempotencyKey"`
+	Kind string `bun:"kind,type:text" json:"kind"`
+	State string `bun:"state,type:text,default:'queued'" json:"state"`
+	CurrentStage string `bun:"current_stage,type:text,default:'accepted'" json:"currentStage"`
+	CheckpointVersion int64 `bun:"checkpoint_version,type:bigint,default:0" json:"checkpointVersion"`
+	Checkpoint json.RawMessage `bun:"checkpoint,type:jsonb,default:'{}'::jsonb" json:"checkpoint"`
+	RequestPayload json.RawMessage `bun:"request_payload,type:jsonb" json:"requestPayload"`
+	ResultPayload *json.RawMessage `bun:"result_payload,type:jsonb,nullzero" json:"resultPayload,omitempty"`
+	AttemptCount int32 `bun:"attempt_count,type:integer,default:0" json:"attemptCount"`
+	MaxAttempts int32 `bun:"max_attempts,type:integer,default:5" json:"maxAttempts"`
+	Priority int32 `bun:"priority,type:smallint,default:0" json:"priority"`
+	LeaseOwner *string `bun:"lease_owner,type:text,nullzero" json:"leaseOwner,omitempty"`
+	LeaseExpiresAt *time.Time `bun:"lease_expires_at,type:timestamptz,nullzero" json:"leaseExpiresAt,omitempty"`
+	FiduciaFencingToken *int64 `bun:"fiducia_fencing_token,type:bigint,nullzero" json:"fiduciaFencingToken,omitempty"`
+	NextAttemptAt time.Time `bun:"next_attempt_at,type:timestamptz,default:now()" json:"nextAttemptAt"`
+	LastErrorCode *string `bun:"last_error_code,type:text,nullzero" json:"lastErrorCode,omitempty"`
+	LastErrorMessage *string `bun:"last_error_message,type:text,nullzero" json:"lastErrorMessage,omitempty"`
+	StartedAt *time.Time `bun:"started_at,type:timestamptz,nullzero" json:"startedAt,omitempty"`
+	CompletedAt *time.Time `bun:"completed_at,type:timestamptz,nullzero" json:"completedAt,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value FabricationJobExecutionsBun) Validate() error {
+	if !containsString(FabricationJobExecutionsStateValues, value.State) { return errors.New("unsupported fabrication_job_executions.state") }
+	if value.CheckpointVersion < 0 { return errors.New("fabrication_job_executions.checkpoint_version is below the minimum") }
+	if !validateRawJSON(value.Checkpoint) { return errors.New("fabrication_job_executions.checkpoint must be valid JSON") }
+	if !validateRawJSON(value.RequestPayload) { return errors.New("fabrication_job_executions.request_payload must be valid JSON") }
+	if value.ResultPayload != nil {
+		if !validateRawJSON(*value.ResultPayload) { return errors.New("fabrication_job_executions.result_payload must be valid JSON") }
+	}
+	if value.AttemptCount < 0 { return errors.New("fabrication_job_executions.attempt_count is below the minimum") }
+	if value.MaxAttempts < 1 { return errors.New("fabrication_job_executions.max_attempts is below the minimum") }
+	if value.MaxAttempts > 100 { return errors.New("fabrication_job_executions.max_attempts is above the maximum") }
+	if value.FiduciaFencingToken != nil {
+		if *value.FiduciaFencingToken < 0 { return errors.New("fabrication_job_executions.fiducia_fencing_token is below the minimum") }
+	}
+	return nil
+}
+
+const FabricationJobOutboxTable = "daedalus.fabrication_job_outbox"
+const FabricationJobOutboxSelectSQL = `select
+      event_id::text as event_id,
+      job_id::text as job_id,
+      subject,
+      event_type,
+      message_id,
+      payload,
+      to_char(available_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as available_at,
+      publish_attempts,
+      claim_owner,
+      to_char(claim_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as claim_expires_at,
+      to_char(published_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as published_at,
+      last_error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from daedalus.fabrication_job_outbox`
+
+type FabricationJobOutboxBun struct {
+	bun.BaseModel `bun:"table:daedalus.fabrication_job_outbox"`
+	EventId uuid.UUID `bun:"event_id,type:uuid,pk" json:"eventId"`
+	JobId uuid.UUID `bun:"job_id,type:uuid" json:"jobId"`
+	Subject string `bun:"subject,type:text" json:"subject"`
+	EventType string `bun:"event_type,type:text" json:"eventType"`
+	MessageId string `bun:"message_id,type:text" json:"messageId"`
+	Payload json.RawMessage `bun:"payload,type:jsonb" json:"payload"`
+	AvailableAt time.Time `bun:"available_at,type:timestamptz,default:now()" json:"availableAt"`
+	PublishAttempts int32 `bun:"publish_attempts,type:integer,default:0" json:"publishAttempts"`
+	ClaimOwner *string `bun:"claim_owner,type:text,nullzero" json:"claimOwner,omitempty"`
+	ClaimExpiresAt *time.Time `bun:"claim_expires_at,type:timestamptz,nullzero" json:"claimExpiresAt,omitempty"`
+	PublishedAt *time.Time `bun:"published_at,type:timestamptz,nullzero" json:"publishedAt,omitempty"`
+	LastError *string `bun:"last_error,type:text,nullzero" json:"lastError,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value FabricationJobOutboxBun) Validate() error {
+	if !validateRawJSON(value.Payload) { return errors.New("fabrication_job_outbox.payload must be valid JSON") }
+	if value.PublishAttempts < 0 { return errors.New("fabrication_job_outbox.publish_attempts is below the minimum") }
+	return nil
+}
+
 func validateRawJSON(value json.RawMessage) bool {
 	if len(value) == 0 {
 		return true

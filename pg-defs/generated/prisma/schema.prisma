@@ -3475,3 +3475,56 @@ model FabLearningOutcomes {
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("fab_learning_outcomes")
 }
+
+model FabricationJobExecutions {
+  jobId String @map("job_id") @id @db.Uuid
+  tenantId String @map("tenant_id") @db.Text
+  requestId String @map("request_id") @db.Text
+  idempotencyKey String @map("idempotency_key") @db.Text
+  kind String @db.Text
+  state String @default("queued") @db.Text
+  currentStage String @map("current_stage") @default("accepted") @db.Text
+  checkpointVersion BigInt @map("checkpoint_version") @default(0) @db.BigInt
+  checkpoint Json @default("{}")
+  requestPayload Json @map("request_payload")
+  resultPayload Json? @map("result_payload")
+  attemptCount Int @map("attempt_count") @default(0)
+  maxAttempts Int @map("max_attempts") @default(5)
+  priority Int @default(0)
+  leaseOwner String? @map("lease_owner") @db.Text
+  leaseExpiresAt DateTime? @map("lease_expires_at") @db.Timestamptz(6)
+  fiduciaFencingToken BigInt? @map("fiducia_fencing_token") @db.BigInt
+  nextAttemptAt DateTime @map("next_attempt_at") @default(now()) @db.Timestamptz(6)
+  lastErrorCode String? @map("last_error_code") @db.Text
+  lastErrorMessage String? @map("last_error_message") @db.Text
+  startedAt DateTime? @map("started_at") @db.Timestamptz(6)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  // fabrication_job_executions_dispatch_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // fabrication_job_executions_expired_lease_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  @@index([tenantId, requestId], map: "fabrication_job_executions_request_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("fabrication_job_executions")
+}
+
+model FabricationJobOutbox {
+  eventId String @map("event_id") @id @db.Uuid
+  jobId String @map("job_id") @db.Uuid
+  subject String @db.Text
+  eventType String @map("event_type") @db.Text
+  messageId String @map("message_id") @db.Text
+  payload Json
+  availableAt DateTime @map("available_at") @default(now()) @db.Timestamptz(6)
+  publishAttempts Int @map("publish_attempts") @default(0)
+  claimOwner String? @map("claim_owner") @db.Text
+  claimExpiresAt DateTime? @map("claim_expires_at") @db.Timestamptz(6)
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(6)
+  lastError String? @map("last_error") @db.Text
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  // fabrication_job_outbox_ready_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  @@index([jobId, createdAt], map: "fabrication_job_outbox_job_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("fabrication_job_outbox")
+}

@@ -7738,3 +7738,130 @@ export class FabLearningOutcomesEntity {
   createdAt!: Date;
 
 }
+
+// fabrication_job_executions_dispatch_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Index("fabrication_job_executions_expired_lease_idx", ["leaseExpiresAt", "createdAt"], { where: "state = 'running'" })
+@Index("fabrication_job_executions_request_idx", ["tenantId", "requestId"])
+@Entity({ schema: "daedalus", name: "fabrication_job_executions" })
+export class FabricationJobExecutionsEntity {
+  @PrimaryColumn({ name: "job_id", type: "uuid" })
+  jobId!: string;
+
+  @Column({ name: "tenant_id", type: "text" })
+  tenantId!: string;
+
+  @Column({ name: "request_id", type: "text" })
+  requestId!: string;
+
+  @Column({ name: "idempotency_key", type: "text" })
+  idempotencyKey!: string;
+
+  @Column({ name: "kind", type: "text" })
+  kind!: string;
+
+  @Column({ name: "state", type: "text", default: () => "'queued'" })
+  state!: string;
+
+  @Column({ name: "current_stage", type: "text", default: () => "'accepted'" })
+  currentStage!: string;
+
+  @Column({ name: "checkpoint_version", type: "bigint", default: () => "0" })
+  checkpointVersion!: number;
+
+  @Column({ name: "checkpoint", type: "jsonb", default: () => "'{}'::jsonb" })
+  checkpoint!: Record<string, unknown>;
+
+  @Column({ name: "request_payload", type: "jsonb" })
+  requestPayload!: Record<string, unknown>;
+
+  @Column({ name: "result_payload", type: "jsonb", nullable: true })
+  resultPayload!: Record<string, unknown> | null;
+
+  @Column({ name: "attempt_count", type: "integer", default: () => "0" })
+  attemptCount!: number;
+
+  @Column({ name: "max_attempts", type: "integer", default: () => "5" })
+  maxAttempts!: number;
+
+  @Column({ name: "priority", type: "smallint", default: () => "0" })
+  priority!: number;
+
+  @Column({ name: "lease_owner", type: "text", nullable: true })
+  leaseOwner!: string | null;
+
+  @Column({ name: "lease_expires_at", type: "timestamptz", nullable: true })
+  leaseExpiresAt!: Date | null;
+
+  @Column({ name: "fiducia_fencing_token", type: "bigint", nullable: true })
+  fiduciaFencingToken!: number | null;
+
+  @Column({ name: "next_attempt_at", type: "timestamptz", default: () => "now()" })
+  nextAttemptAt!: Date;
+
+  @Column({ name: "last_error_code", type: "text", nullable: true })
+  lastErrorCode!: string | null;
+
+  @Column({ name: "last_error_message", type: "text", nullable: true })
+  lastErrorMessage!: string | null;
+
+  @Column({ name: "started_at", type: "timestamptz", nullable: true })
+  startedAt!: Date | null;
+
+  @Column({ name: "completed_at", type: "timestamptz", nullable: true })
+  completedAt!: Date | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("fabrication_job_outbox_ready_idx", ["availableAt", "createdAt", "eventId"], { where: "published_at is null" })
+@Index("fabrication_job_outbox_job_idx", ["jobId", "createdAt"])
+@Entity({ schema: "daedalus", name: "fabrication_job_outbox" })
+export class FabricationJobOutboxEntity {
+  @PrimaryColumn({ name: "event_id", type: "uuid" })
+  eventId!: string;
+
+  @Column({ name: "job_id", type: "uuid" })
+  jobId!: string;
+
+  @Column({ name: "subject", type: "text" })
+  subject!: string;
+
+  @Column({ name: "event_type", type: "text" })
+  eventType!: string;
+
+  @Column({ name: "message_id", type: "text" })
+  messageId!: string;
+
+  @Column({ name: "payload", type: "jsonb" })
+  payload!: Record<string, unknown>;
+
+  @Column({ name: "available_at", type: "timestamptz", default: () => "now()" })
+  availableAt!: Date;
+
+  @Column({ name: "publish_attempts", type: "integer", default: () => "0" })
+  publishAttempts!: number;
+
+  @Column({ name: "claim_owner", type: "text", nullable: true })
+  claimOwner!: string | null;
+
+  @Column({ name: "claim_expires_at", type: "timestamptz", nullable: true })
+  claimExpiresAt!: Date | null;
+
+  @Column({ name: "published_at", type: "timestamptz", nullable: true })
+  publishedAt!: Date | null;
+
+  @Column({ name: "last_error", type: "text", nullable: true })
+  lastError!: string | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}

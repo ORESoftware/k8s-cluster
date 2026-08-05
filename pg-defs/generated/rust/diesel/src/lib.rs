@@ -9353,3 +9353,149 @@ pub struct FabLearningOutcomesDieselInsert {
     pub payload: Option<Value>,
     pub created_at: Option<DateTime<Utc>>,
 }
+
+diesel::table! {
+    use diesel::sql_types::*;
+    fabrication_job_executions (job_id) {
+        job_id -> Uuid,
+        tenant_id -> Text,
+        request_id -> Text,
+        idempotency_key -> Text,
+        kind -> Text,
+        state -> Text,
+        current_stage -> Text,
+        checkpoint_version -> Int8,
+        checkpoint -> Jsonb,
+        request_payload -> Jsonb,
+        result_payload -> Nullable<Jsonb>,
+        attempt_count -> Int4,
+        max_attempts -> Int4,
+        priority -> Int2,
+        lease_owner -> Nullable<Text>,
+        lease_expires_at -> Nullable<Timestamptz>,
+        fiducia_fencing_token -> Nullable<Int8>,
+        next_attempt_at -> Timestamptz,
+        last_error_code -> Nullable<Text>,
+        last_error_message -> Nullable<Text>,
+        started_at -> Nullable<Timestamptz>,
+        completed_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = fabrication_job_executions)]
+pub struct FabricationJobExecutionsDieselRow {
+    pub job_id: Uuid,
+    pub tenant_id: String,
+    pub request_id: String,
+    pub idempotency_key: String,
+    pub kind: String,
+    pub state: String,
+    pub current_stage: String,
+    pub checkpoint_version: i64,
+    pub checkpoint: Value,
+    pub request_payload: Value,
+    pub result_payload: Option<Value>,
+    pub attempt_count: i32,
+    pub max_attempts: i32,
+    pub priority: i16,
+    pub lease_owner: Option<String>,
+    pub lease_expires_at: Option<DateTime<Utc>>,
+    pub fiducia_fencing_token: Option<i64>,
+    pub next_attempt_at: DateTime<Utc>,
+    pub last_error_code: Option<String>,
+    pub last_error_message: Option<String>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = fabrication_job_executions)]
+pub struct FabricationJobExecutionsDieselInsert {
+    pub job_id: Option<Uuid>,
+    pub tenant_id: Option<String>,
+    pub request_id: Option<String>,
+    pub idempotency_key: Option<String>,
+    pub kind: Option<String>,
+    pub state: Option<String>,
+    pub current_stage: Option<String>,
+    pub checkpoint_version: Option<i64>,
+    pub checkpoint: Option<Value>,
+    pub request_payload: Option<Value>,
+    pub result_payload: Option<Value>,
+    pub attempt_count: Option<i32>,
+    pub max_attempts: Option<i32>,
+    pub priority: Option<i16>,
+    pub lease_owner: Option<String>,
+    pub lease_expires_at: Option<DateTime<Utc>>,
+    pub fiducia_fencing_token: Option<i64>,
+    pub next_attempt_at: Option<DateTime<Utc>>,
+    pub last_error_code: Option<String>,
+    pub last_error_message: Option<String>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    fabrication_job_outbox (event_id) {
+        event_id -> Uuid,
+        job_id -> Uuid,
+        subject -> Text,
+        event_type -> Text,
+        message_id -> Text,
+        payload -> Jsonb,
+        available_at -> Timestamptz,
+        publish_attempts -> Int4,
+        claim_owner -> Nullable<Text>,
+        claim_expires_at -> Nullable<Timestamptz>,
+        published_at -> Nullable<Timestamptz>,
+        last_error -> Nullable<Text>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = fabrication_job_outbox)]
+pub struct FabricationJobOutboxDieselRow {
+    pub event_id: Uuid,
+    pub job_id: Uuid,
+    pub subject: String,
+    pub event_type: String,
+    pub message_id: String,
+    pub payload: Value,
+    pub available_at: DateTime<Utc>,
+    pub publish_attempts: i32,
+    pub claim_owner: Option<String>,
+    pub claim_expires_at: Option<DateTime<Utc>>,
+    pub published_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = fabrication_job_outbox)]
+pub struct FabricationJobOutboxDieselInsert {
+    pub event_id: Option<Uuid>,
+    pub job_id: Option<Uuid>,
+    pub subject: Option<String>,
+    pub event_type: Option<String>,
+    pub message_id: Option<String>,
+    pub payload: Option<Value>,
+    pub available_at: Option<DateTime<Utc>>,
+    pub publish_attempts: Option<i32>,
+    pub claim_owner: Option<String>,
+    pub claim_expires_at: Option<DateTime<Utc>>,
+    pub published_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}

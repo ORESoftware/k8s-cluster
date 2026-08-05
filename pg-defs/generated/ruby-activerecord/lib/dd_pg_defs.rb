@@ -2547,4 +2547,33 @@ module DdPgDefs
     validates :success, presence: true
     validates :reward, numericality: true
   end
+
+  class FabricationJobExecutions < ActiveRecord::Base
+    self.table_name = "daedalus.fabrication_job_executions"
+    self.primary_key = "job_id"
+
+    validates :tenant_id, presence: true
+    validates :request_id, presence: true
+    validates :idempotency_key, presence: true
+    validates :kind, presence: true
+    validates :state, inclusion: { in: ["queued", "running", "retry_wait", "succeeded", "failed", "cancelled"] }
+    validates :checkpoint_version, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :request_payload, presence: true
+    validates :attempt_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :max_attempts, numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
+    validates :priority, numericality: { only_integer: true }
+    validates :fiducia_fencing_token, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
+  end
+
+  class FabricationJobOutbox < ActiveRecord::Base
+    self.table_name = "daedalus.fabrication_job_outbox"
+    self.primary_key = "event_id"
+
+    validates :job_id, presence: true
+    validates :subject, presence: true
+    validates :event_type, presence: true
+    validates :message_id, presence: true
+    validates :payload, presence: true
+    validates :publish_attempts, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  end
 end

@@ -15611,6 +15611,219 @@ class FabLearningOutcomesRow {
   }
 }
 
+const fabricationJobExecutionsTable = "daedalus.fabrication_job_executions";
+const fabricationJobExecutionsSelectSql = "select\n      job_id::text as job_id,\n      tenant_id,\n      request_id,\n      idempotency_key,\n      kind,\n      state,\n      current_stage,\n      checkpoint_version,\n      checkpoint::text as checkpoint_json,\n      request_payload::text as request_payload_json,\n      result_payload::text as result_payload_json,\n      attempt_count,\n      max_attempts,\n      priority,\n      lease_owner,\n      to_char(lease_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_expires_at,\n      fiducia_fencing_token,\n      to_char(next_attempt_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as next_attempt_at,\n      last_error_code,\n      last_error_message,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as completed_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fabrication_job_executions";
+
+const fabricationJobExecutionsStateValues = <String>["queued", "running", "retry_wait", "succeeded", "failed", "cancelled"];
+
+class FabricationJobExecutionsRow {
+  const FabricationJobExecutionsRow({
+    required this.jobId,
+    required this.tenantId,
+    required this.requestId,
+    required this.idempotencyKey,
+    required this.kind,
+    required this.state,
+    required this.currentStage,
+    required this.checkpointVersion,
+    required this.checkpoint,
+    required this.requestPayload,
+    this.resultPayload,
+    required this.attemptCount,
+    required this.maxAttempts,
+    required this.priority,
+    this.leaseOwner,
+    this.leaseExpiresAt,
+    this.fiduciaFencingToken,
+    required this.nextAttemptAt,
+    this.lastErrorCode,
+    this.lastErrorMessage,
+    this.startedAt,
+    this.completedAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String jobId;
+  final String tenantId;
+  final String requestId;
+  final String idempotencyKey;
+  final String kind;
+  final String state;
+  final String currentStage;
+  final int checkpointVersion;
+  final Map<String, Object?> checkpoint;
+  final Map<String, Object?> requestPayload;
+  final Map<String, Object?>? resultPayload;
+  final int attemptCount;
+  final int maxAttempts;
+  final int priority;
+  final String? leaseOwner;
+  final String? leaseExpiresAt;
+  final int? fiduciaFencingToken;
+  final String nextAttemptAt;
+  final String? lastErrorCode;
+  final String? lastErrorMessage;
+  final String? startedAt;
+  final String? completedAt;
+  final String createdAt;
+  final String updatedAt;
+
+  factory FabricationJobExecutionsRow.fromJson(Map<String, Object?> json) {
+    return FabricationJobExecutionsRow(
+      jobId: _readRequiredString(json, "jobId"),
+      tenantId: _readRequiredString(json, "tenantId"),
+      requestId: _readRequiredString(json, "requestId"),
+      idempotencyKey: _readRequiredString(json, "idempotencyKey"),
+      kind: _readRequiredString(json, "kind"),
+      state: _readRequiredString(json, "state"),
+      currentStage: _readRequiredString(json, "currentStage"),
+      checkpointVersion: _readRequiredInt(json, "checkpointVersion"),
+      checkpoint: _readRequiredObject(json, "checkpoint"),
+      requestPayload: _readRequiredObject(json, "requestPayload"),
+      resultPayload: _readRequiredObject(json, "resultPayload"),
+      attemptCount: _readRequiredInt(json, "attemptCount"),
+      maxAttempts: _readRequiredInt(json, "maxAttempts"),
+      priority: _readRequiredInt(json, "priority"),
+      leaseOwner: _readOptionalString(json, "leaseOwner"),
+      leaseExpiresAt: _readOptionalString(json, "leaseExpiresAt"),
+      fiduciaFencingToken: _readOptionalInt(json, "fiduciaFencingToken"),
+      nextAttemptAt: _readRequiredString(json, "nextAttemptAt"),
+      lastErrorCode: _readOptionalString(json, "lastErrorCode"),
+      lastErrorMessage: _readOptionalString(json, "lastErrorMessage"),
+      startedAt: _readOptionalString(json, "startedAt"),
+      completedAt: _readOptionalString(json, "completedAt"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "jobId": jobId,
+    "tenantId": tenantId,
+    "requestId": requestId,
+    "idempotencyKey": idempotencyKey,
+    "kind": kind,
+    "state": state,
+    "currentStage": currentStage,
+    "checkpointVersion": checkpointVersion,
+    "checkpoint": checkpoint,
+    "requestPayload": requestPayload,
+    "resultPayload": resultPayload,
+    "attemptCount": attemptCount,
+    "maxAttempts": maxAttempts,
+    "priority": priority,
+    "leaseOwner": leaseOwner,
+    "leaseExpiresAt": leaseExpiresAt,
+    "fiduciaFencingToken": fiduciaFencingToken,
+    "nextAttemptAt": nextAttemptAt,
+    "lastErrorCode": lastErrorCode,
+    "lastErrorMessage": lastErrorMessage,
+    "startedAt": startedAt,
+    "completedAt": completedAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!fabricationJobExecutionsStateValues.contains(state)) {
+      errors.add("unsupported fabrication_job_executions.state");
+    }
+    if (attemptCount < 0) {
+      errors.add("fabrication_job_executions.attempt_count is below the minimum");
+    }
+    if (maxAttempts < 1) {
+      errors.add("fabrication_job_executions.max_attempts is below the minimum");
+    }
+    if (maxAttempts > 100) {
+      errors.add("fabrication_job_executions.max_attempts is above the maximum");
+    }
+    return errors;
+  }
+}
+
+const fabricationJobOutboxTable = "daedalus.fabrication_job_outbox";
+const fabricationJobOutboxSelectSql = "select\n      event_id::text as event_id,\n      job_id::text as job_id,\n      subject,\n      event_type,\n      message_id,\n      payload::text as payload_json,\n      to_char(available_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as available_at,\n      publish_attempts,\n      claim_owner,\n      to_char(claim_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as claim_expires_at,\n      to_char(published_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as published_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fabrication_job_outbox";
+
+class FabricationJobOutboxRow {
+  const FabricationJobOutboxRow({
+    required this.eventId,
+    required this.jobId,
+    required this.subject,
+    required this.eventType,
+    required this.messageId,
+    required this.payload,
+    required this.availableAt,
+    required this.publishAttempts,
+    this.claimOwner,
+    this.claimExpiresAt,
+    this.publishedAt,
+    this.lastError,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String eventId;
+  final String jobId;
+  final String subject;
+  final String eventType;
+  final String messageId;
+  final Map<String, Object?> payload;
+  final String availableAt;
+  final int publishAttempts;
+  final String? claimOwner;
+  final String? claimExpiresAt;
+  final String? publishedAt;
+  final String? lastError;
+  final String createdAt;
+  final String updatedAt;
+
+  factory FabricationJobOutboxRow.fromJson(Map<String, Object?> json) {
+    return FabricationJobOutboxRow(
+      eventId: _readRequiredString(json, "eventId"),
+      jobId: _readRequiredString(json, "jobId"),
+      subject: _readRequiredString(json, "subject"),
+      eventType: _readRequiredString(json, "eventType"),
+      messageId: _readRequiredString(json, "messageId"),
+      payload: _readRequiredObject(json, "payload"),
+      availableAt: _readRequiredString(json, "availableAt"),
+      publishAttempts: _readRequiredInt(json, "publishAttempts"),
+      claimOwner: _readOptionalString(json, "claimOwner"),
+      claimExpiresAt: _readOptionalString(json, "claimExpiresAt"),
+      publishedAt: _readOptionalString(json, "publishedAt"),
+      lastError: _readOptionalString(json, "lastError"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "eventId": eventId,
+    "jobId": jobId,
+    "subject": subject,
+    "eventType": eventType,
+    "messageId": messageId,
+    "payload": payload,
+    "availableAt": availableAt,
+    "publishAttempts": publishAttempts,
+    "claimOwner": claimOwner,
+    "claimExpiresAt": claimExpiresAt,
+    "publishedAt": publishedAt,
+    "lastError": lastError,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (publishAttempts < 0) {
+      errors.add("fabrication_job_outbox.publish_attempts is below the minimum");
+    }
+    return errors;
+  }
+}
+
 String _readRequiredString(Map<String, Object?> json, String key) {
   final value = json[key];
   if (value is String) return value;

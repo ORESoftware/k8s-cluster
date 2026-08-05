@@ -9439,6 +9439,150 @@ public class FabLearningOutcomes
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+[Table("fabrication_job_executions", Schema = "daedalus")]
+public class FabricationJobExecutions
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("job_id")]
+    public Guid JobId { get; set; }
+
+    [Required]
+    [Column("tenant_id")]
+    public string TenantId { get; set; } = null!;
+
+    [Required]
+    [Column("request_id")]
+    public string RequestId { get; set; } = null!;
+
+    [Required]
+    [Column("idempotency_key")]
+    public string IdempotencyKey { get; set; } = null!;
+
+    [Required]
+    [Column("kind")]
+    public string Kind { get; set; } = null!;
+
+    [Required]
+    [Column("state")]
+    [RegularExpression(@"^(queued|running|retry_wait|succeeded|failed|cancelled)$")]
+    public string State { get; set; } = null!;
+
+    [Required]
+    [Column("current_stage")]
+    public string CurrentStage { get; set; } = null!;
+
+    [Column("checkpoint_version")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long CheckpointVersion { get; set; }
+
+    [Required]
+    [Column("checkpoint", TypeName = "jsonb")]
+    public string Checkpoint { get; set; } = null!;
+
+    [Required]
+    [Column("request_payload", TypeName = "jsonb")]
+    public string RequestPayload { get; set; } = null!;
+
+    [Column("result_payload", TypeName = "jsonb")]
+    public string? ResultPayload { get; set; }
+
+    [Column("attempt_count")]
+    [Range(0, 2147483647)]
+    public int AttemptCount { get; set; }
+
+    [Column("max_attempts")]
+    [Range(1, 100)]
+    public int MaxAttempts { get; set; }
+
+    [Column("priority")]
+    public short Priority { get; set; }
+
+    [Column("lease_owner")]
+    public string? LeaseOwner { get; set; }
+
+    [Column("lease_expires_at")]
+    public DateTimeOffset? LeaseExpiresAt { get; set; }
+
+    [Column("fiducia_fencing_token")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long? FiduciaFencingToken { get; set; }
+
+    [Column("next_attempt_at")]
+    public DateTimeOffset NextAttemptAt { get; set; }
+
+    [Column("last_error_code")]
+    public string? LastErrorCode { get; set; }
+
+    [Column("last_error_message")]
+    public string? LastErrorMessage { get; set; }
+
+    [Column("started_at")]
+    public DateTimeOffset? StartedAt { get; set; }
+
+    [Column("completed_at")]
+    public DateTimeOffset? CompletedAt { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+[Table("fabrication_job_outbox", Schema = "daedalus")]
+public class FabricationJobOutbox
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("event_id")]
+    public Guid EventId { get; set; }
+
+    [Column("job_id")]
+    public Guid JobId { get; set; }
+
+    [Required]
+    [Column("subject")]
+    public string Subject { get; set; } = null!;
+
+    [Required]
+    [Column("event_type")]
+    public string EventType { get; set; } = null!;
+
+    [Required]
+    [Column("message_id")]
+    public string MessageId { get; set; } = null!;
+
+    [Required]
+    [Column("payload", TypeName = "jsonb")]
+    public string Payload { get; set; } = null!;
+
+    [Column("available_at")]
+    public DateTimeOffset AvailableAt { get; set; }
+
+    [Column("publish_attempts")]
+    [Range(0, 2147483647)]
+    public int PublishAttempts { get; set; }
+
+    [Column("claim_owner")]
+    public string? ClaimOwner { get; set; }
+
+    [Column("claim_expires_at")]
+    public DateTimeOffset? ClaimExpiresAt { get; set; }
+
+    [Column("published_at")]
+    public DateTimeOffset? PublishedAt { get; set; }
+
+    [Column("last_error")]
+    public string? LastError { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 public class DdPgDefsContext : DbContext
 {
     public DdPgDefsContext(DbContextOptions<DdPgDefsContext> options) : base(options)
@@ -9782,4 +9926,8 @@ public class DdPgDefsContext : DbContext
     public DbSet<FabJobs> FabJobsSet => Set<FabJobs>();
 
     public DbSet<FabLearningOutcomes> FabLearningOutcomesSet => Set<FabLearningOutcomes>();
+
+    public DbSet<FabricationJobExecutions> FabricationJobExecutionsSet => Set<FabricationJobExecutions>();
+
+    public DbSet<FabricationJobOutbox> FabricationJobOutboxSet => Set<FabricationJobOutbox>();
 }

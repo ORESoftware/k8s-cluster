@@ -14822,3 +14822,159 @@ pub const FabLearningOutcomesRow = struct {
         };
     }
 };
+
+pub const fabrication_job_executions_table: []const u8 = "daedalus.fabrication_job_executions";
+pub const fabrication_job_executions_columns = [_][]const u8{ "job_id", "tenant_id", "request_id", "idempotency_key", "kind", "state", "current_stage", "checkpoint_version", "checkpoint", "request_payload", "result_payload", "attempt_count", "max_attempts", "priority", "lease_owner", "lease_expires_at", "fiducia_fencing_token", "next_attempt_at", "last_error_code", "last_error_message", "started_at", "completed_at", "created_at", "updated_at" };
+pub const fabrication_job_executions_select_sql: []const u8 = "select\n      job_id::text as job_id,\n      tenant_id,\n      request_id,\n      idempotency_key,\n      kind,\n      state,\n      current_stage,\n      checkpoint_version,\n      checkpoint::text as checkpoint_json,\n      request_payload::text as request_payload_json,\n      result_payload::text as result_payload_json,\n      attempt_count,\n      max_attempts,\n      priority,\n      lease_owner,\n      to_char(lease_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_expires_at,\n      fiducia_fencing_token,\n      to_char(next_attempt_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as next_attempt_at,\n      last_error_code,\n      last_error_message,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as completed_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fabrication_job_executions";
+
+pub const FabricationJobExecutionsState = enum {
+    queued,
+    running,
+    retry_wait,
+    succeeded,
+    failed,
+    cancelled,
+
+    pub fn toString(self: FabricationJobExecutionsState) []const u8 {
+        return switch (self) {
+            .queued => "queued",
+            .running => "running",
+            .retry_wait => "retry_wait",
+            .succeeded => "succeeded",
+            .failed => "failed",
+            .cancelled => "cancelled",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?FabricationJobExecutionsState {
+        if (std.mem.eql(u8, value, "queued")) return .queued;
+        if (std.mem.eql(u8, value, "running")) return .running;
+        if (std.mem.eql(u8, value, "retry_wait")) return .retry_wait;
+        if (std.mem.eql(u8, value, "succeeded")) return .succeeded;
+        if (std.mem.eql(u8, value, "failed")) return .failed;
+        if (std.mem.eql(u8, value, "cancelled")) return .cancelled;
+        return null;
+    }
+};
+
+pub const FabricationJobExecutionsRow = struct {
+    job_id: []const u8,
+    tenant_id: []const u8,
+    request_id: []const u8,
+    idempotency_key: []const u8,
+    kind: []const u8,
+    state: []const u8,
+    current_stage: []const u8,
+    checkpoint_version: i64,
+    checkpoint: []const u8,
+    request_payload: []const u8,
+    result_payload: ?[]const u8,
+    attempt_count: i32,
+    max_attempts: i32,
+    priority: i32,
+    lease_owner: ?[]const u8,
+    lease_expires_at: ?[]const u8,
+    fiducia_fencing_token: ?i64,
+    next_attempt_at: []const u8,
+    last_error_code: ?[]const u8,
+    last_error_message: ?[]const u8,
+    started_at: ?[]const u8,
+    completed_at: ?[]const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) FabricationJobExecutionsRow {
+        return FabricationJobExecutionsRow{
+            .job_id = reader.text(0),
+            .tenant_id = reader.text(1),
+            .request_id = reader.text(2),
+            .idempotency_key = reader.text(3),
+            .kind = reader.text(4),
+            .state = reader.text(5),
+            .current_stage = reader.text(6),
+            .checkpoint_version = reader.int(7),
+            .checkpoint = reader.text(8),
+            .request_payload = reader.text(9),
+            .result_payload = if (reader.is_null(10)) null else reader.text(10),
+            .attempt_count = @as(i32, @intCast(reader.int(11))),
+            .max_attempts = @as(i32, @intCast(reader.int(12))),
+            .priority = @as(i32, @intCast(reader.int(13))),
+            .lease_owner = if (reader.is_null(14)) null else reader.text(14),
+            .lease_expires_at = if (reader.is_null(15)) null else reader.text(15),
+            .fiducia_fencing_token = if (reader.is_null(16)) null else reader.int(16),
+            .next_attempt_at = reader.text(17),
+            .last_error_code = if (reader.is_null(18)) null else reader.text(18),
+            .last_error_message = if (reader.is_null(19)) null else reader.text(19),
+            .started_at = if (reader.is_null(20)) null else reader.text(20),
+            .completed_at = if (reader.is_null(21)) null else reader.text(21),
+            .created_at = reader.text(22),
+            .updated_at = reader.text(23),
+        };
+    }
+};
+
+pub fn validateFabricationJobExecutionsCheckpointVersion(value: i64) ?[]const u8 {
+    if (value < 0) return "fabrication_job_executions.checkpoint_version is below the minimum";
+    return null;
+}
+
+pub fn validateFabricationJobExecutionsAttemptCount(value: i32) ?[]const u8 {
+    if (value < 0) return "fabrication_job_executions.attempt_count is below the minimum";
+    return null;
+}
+
+pub fn validateFabricationJobExecutionsMaxAttempts(value: i32) ?[]const u8 {
+    if (value < 1) return "fabrication_job_executions.max_attempts is below the minimum";
+    if (value > 100) return "fabrication_job_executions.max_attempts is above the maximum";
+    return null;
+}
+
+pub fn validateFabricationJobExecutionsFiduciaFencingToken(value: i64) ?[]const u8 {
+    if (value < 0) return "fabrication_job_executions.fiducia_fencing_token is below the minimum";
+    return null;
+}
+
+pub const fabrication_job_outbox_table: []const u8 = "daedalus.fabrication_job_outbox";
+pub const fabrication_job_outbox_columns = [_][]const u8{ "event_id", "job_id", "subject", "event_type", "message_id", "payload", "available_at", "publish_attempts", "claim_owner", "claim_expires_at", "published_at", "last_error", "created_at", "updated_at" };
+pub const fabrication_job_outbox_select_sql: []const u8 = "select\n      event_id::text as event_id,\n      job_id::text as job_id,\n      subject,\n      event_type,\n      message_id,\n      payload::text as payload_json,\n      to_char(available_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as available_at,\n      publish_attempts,\n      claim_owner,\n      to_char(claim_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as claim_expires_at,\n      to_char(published_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as published_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fabrication_job_outbox";
+
+pub const FabricationJobOutboxRow = struct {
+    event_id: []const u8,
+    job_id: []const u8,
+    subject: []const u8,
+    event_type: []const u8,
+    message_id: []const u8,
+    payload: []const u8,
+    available_at: []const u8,
+    publish_attempts: i32,
+    claim_owner: ?[]const u8,
+    claim_expires_at: ?[]const u8,
+    published_at: ?[]const u8,
+    last_error: ?[]const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) FabricationJobOutboxRow {
+        return FabricationJobOutboxRow{
+            .event_id = reader.text(0),
+            .job_id = reader.text(1),
+            .subject = reader.text(2),
+            .event_type = reader.text(3),
+            .message_id = reader.text(4),
+            .payload = reader.text(5),
+            .available_at = reader.text(6),
+            .publish_attempts = @as(i32, @intCast(reader.int(7))),
+            .claim_owner = if (reader.is_null(8)) null else reader.text(8),
+            .claim_expires_at = if (reader.is_null(9)) null else reader.text(9),
+            .published_at = if (reader.is_null(10)) null else reader.text(10),
+            .last_error = if (reader.is_null(11)) null else reader.text(11),
+            .created_at = reader.text(12),
+            .updated_at = reader.text(13),
+        };
+    }
+};
+
+pub fn validateFabricationJobOutboxPublishAttempts(value: i32) ?[]const u8 {
+    if (value < 0) return "fabrication_job_outbox.publish_attempts is below the minimum";
+    return null;
+}

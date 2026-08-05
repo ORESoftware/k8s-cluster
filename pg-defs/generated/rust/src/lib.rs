@@ -23808,6 +23808,256 @@ pub fn validate_fab_learning_outcomes_insert(value: &FabLearningOutcomesInsert) 
     Ok(())
 }
 
+pub const FABRICATION_JOB_EXECUTIONS_TABLE: &str = "daedalus.fabrication_job_executions";
+pub const FABRICATION_JOB_EXECUTIONS_COLUMNS: &[&str] = &["job_id", "tenant_id", "request_id", "idempotency_key", "kind", "state", "current_stage", "checkpoint_version", "checkpoint", "request_payload", "result_payload", "attempt_count", "max_attempts", "priority", "lease_owner", "lease_expires_at", "fiducia_fencing_token", "next_attempt_at", "last_error_code", "last_error_message", "started_at", "completed_at", "created_at", "updated_at"];
+pub const FABRICATION_JOB_EXECUTIONS_SELECT_SQL: &str = r###"select
+      job_id::text as job_id,
+      tenant_id,
+      request_id,
+      idempotency_key,
+      kind,
+      state,
+      current_stage,
+      checkpoint_version,
+      checkpoint,
+      request_payload,
+      result_payload,
+      attempt_count,
+      max_attempts,
+      priority,
+      lease_owner,
+      to_char(lease_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as lease_expires_at,
+      fiducia_fencing_token,
+      to_char(next_attempt_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as next_attempt_at,
+      last_error_code,
+      last_error_message,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as completed_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from daedalus.fabrication_job_executions"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FabricationJobExecutionsState {
+    Queued,
+    Running,
+    RetryWait,
+    Succeeded,
+    Failed,
+    Cancelled,
+}
+
+impl FabricationJobExecutionsState {
+    pub const VALUES: &'static [&'static str] = &["queued", "running", "retry_wait", "succeeded", "failed", "cancelled"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::RetryWait => "retry_wait",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+impl TryFrom<&str> for FabricationJobExecutionsState {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "queued" => Ok(Self::Queued),
+            "running" => Ok(Self::Running),
+            "retry_wait" => Ok(Self::RetryWait),
+            "succeeded" => Ok(Self::Succeeded),
+            "failed" => Ok(Self::Failed),
+            "cancelled" => Ok(Self::Cancelled),
+            _ => Err(format!("unsupported state: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct FabricationJobExecutionsRow {
+    pub job_id: String,
+    pub tenant_id: String,
+    pub request_id: String,
+    pub idempotency_key: String,
+    pub kind: String,
+    pub state: String,
+    pub current_stage: String,
+    pub checkpoint_version: i64,
+    pub checkpoint: Value,
+    pub request_payload: Value,
+    pub result_payload: Option<Value>,
+    pub attempt_count: i32,
+    pub max_attempts: i32,
+    pub priority: i16,
+    pub lease_owner: Option<String>,
+    pub lease_expires_at: Option<String>,
+    pub fiducia_fencing_token: Option<i64>,
+    pub next_attempt_at: String,
+    pub last_error_code: Option<String>,
+    pub last_error_message: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FabricationJobExecutionsInsert {
+    pub job_id: Option<String>,
+    pub tenant_id: Option<String>,
+    pub request_id: Option<String>,
+    pub idempotency_key: Option<String>,
+    pub kind: Option<String>,
+    pub state: Option<String>,
+    pub current_stage: Option<String>,
+    pub checkpoint_version: Option<i64>,
+    pub checkpoint: Option<Value>,
+    pub request_payload: Option<Value>,
+    pub result_payload: Option<Value>,
+    pub attempt_count: Option<i32>,
+    pub max_attempts: Option<i32>,
+    pub priority: Option<i16>,
+    pub lease_owner: Option<String>,
+    pub lease_expires_at: Option<String>,
+    pub fiducia_fencing_token: Option<i64>,
+    pub next_attempt_at: Option<String>,
+    pub last_error_code: Option<String>,
+    pub last_error_message: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_fabrication_job_executions_row(value: &FabricationJobExecutionsRow) -> Result<(), String> {
+    if !["queued", "running", "retry_wait", "succeeded", "failed", "cancelled"].contains(&(&value.state).as_str()) { return Err(format!("unsupported fabrication_job_executions.state: {}", &value.state)); }
+    if *(&value.checkpoint_version) < 0 { return Err("fabrication_job_executions.checkpoint_version is below the minimum".to_string()); }
+    if !(&value.checkpoint).is_object() { return Err("fabrication_job_executions.checkpoint must be a JSON object".to_string()); }
+    if !(&value.request_payload).is_object() { return Err("fabrication_job_executions.request_payload must be a JSON object".to_string()); }
+    if let Some(value) = &value.result_payload {
+        if !(value).is_object() { return Err("fabrication_job_executions.result_payload must be a JSON object".to_string()); }
+    }
+    if *(&value.attempt_count) < 0 { return Err("fabrication_job_executions.attempt_count is below the minimum".to_string()); }
+    if *(&value.max_attempts) < 1 { return Err("fabrication_job_executions.max_attempts is below the minimum".to_string()); }
+    if *(&value.max_attempts) > 100 { return Err("fabrication_job_executions.max_attempts is above the maximum".to_string()); }
+    if let Some(value) = &value.fiducia_fencing_token {
+        if *(value) < 0 { return Err("fabrication_job_executions.fiducia_fencing_token is below the minimum".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_fabrication_job_executions_insert(value: &FabricationJobExecutionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.state {
+        if !["queued", "running", "retry_wait", "succeeded", "failed", "cancelled"].contains(&(value).as_str()) { return Err(format!("unsupported fabrication_job_executions.state: {}", value)); }
+    }
+    if let Some(value) = &value.checkpoint_version {
+        if *(value) < 0 { return Err("fabrication_job_executions.checkpoint_version is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.checkpoint {
+        if !(value).is_object() { return Err("fabrication_job_executions.checkpoint must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.request_payload {
+        if !(value).is_object() { return Err("fabrication_job_executions.request_payload must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.result_payload {
+        if !(value).is_object() { return Err("fabrication_job_executions.result_payload must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.attempt_count {
+        if *(value) < 0 { return Err("fabrication_job_executions.attempt_count is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.max_attempts {
+        if *(value) < 1 { return Err("fabrication_job_executions.max_attempts is below the minimum".to_string()); }
+        if *(value) > 100 { return Err("fabrication_job_executions.max_attempts is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.fiducia_fencing_token {
+        if *(value) < 0 { return Err("fabrication_job_executions.fiducia_fencing_token is below the minimum".to_string()); }
+    }
+    Ok(())
+}
+
+pub const FABRICATION_JOB_OUTBOX_TABLE: &str = "daedalus.fabrication_job_outbox";
+pub const FABRICATION_JOB_OUTBOX_COLUMNS: &[&str] = &["event_id", "job_id", "subject", "event_type", "message_id", "payload", "available_at", "publish_attempts", "claim_owner", "claim_expires_at", "published_at", "last_error", "created_at", "updated_at"];
+pub const FABRICATION_JOB_OUTBOX_SELECT_SQL: &str = r###"select
+      event_id::text as event_id,
+      job_id::text as job_id,
+      subject,
+      event_type,
+      message_id,
+      payload,
+      to_char(available_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as available_at,
+      publish_attempts,
+      claim_owner,
+      to_char(claim_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as claim_expires_at,
+      to_char(published_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as published_at,
+      last_error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from daedalus.fabrication_job_outbox"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct FabricationJobOutboxRow {
+    pub event_id: String,
+    pub job_id: String,
+    pub subject: String,
+    pub event_type: String,
+    pub message_id: String,
+    pub payload: Value,
+    pub available_at: String,
+    pub publish_attempts: i32,
+    pub claim_owner: Option<String>,
+    pub claim_expires_at: Option<String>,
+    pub published_at: Option<String>,
+    pub last_error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FabricationJobOutboxInsert {
+    pub event_id: Option<String>,
+    pub job_id: Option<String>,
+    pub subject: Option<String>,
+    pub event_type: Option<String>,
+    pub message_id: Option<String>,
+    pub payload: Option<Value>,
+    pub available_at: Option<String>,
+    pub publish_attempts: Option<i32>,
+    pub claim_owner: Option<String>,
+    pub claim_expires_at: Option<String>,
+    pub published_at: Option<String>,
+    pub last_error: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_fabrication_job_outbox_row(value: &FabricationJobOutboxRow) -> Result<(), String> {
+    if !(&value.payload).is_object() { return Err("fabrication_job_outbox.payload must be a JSON object".to_string()); }
+    if *(&value.publish_attempts) < 0 { return Err("fabrication_job_outbox.publish_attempts is below the minimum".to_string()); }
+    Ok(())
+}
+
+pub fn validate_fabrication_job_outbox_insert(value: &FabricationJobOutboxInsert) -> Result<(), String> {
+    if let Some(value) = &value.payload {
+        if !(value).is_object() { return Err("fabrication_job_outbox.payload must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.publish_attempts {
+        if *(value) < 0 { return Err("fabrication_job_outbox.publish_attempts is below the minimum".to_string()); }
+    }
+    Ok(())
+}
+
 fn validate_string_length(field: &str, value: &str, min: Option<usize>, max: Option<usize>) -> Result<(), String> {
     let count = value.chars().count();
     if let Some(min) = min {

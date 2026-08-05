@@ -15527,4 +15527,189 @@ inline FabLearningOutcomesRow fab_learning_outcomes_row_of_row(const std::functi
     return row;
 }
 
+inline const char* fabrication_job_executions_table = "daedalus.fabrication_job_executions";
+inline const std::vector<std::string> fabrication_job_executions_columns = { "job_id", "tenant_id", "request_id", "idempotency_key", "kind", "state", "current_stage", "checkpoint_version", "checkpoint", "request_payload", "result_payload", "attempt_count", "max_attempts", "priority", "lease_owner", "lease_expires_at", "fiducia_fencing_token", "next_attempt_at", "last_error_code", "last_error_message", "started_at", "completed_at", "created_at", "updated_at" };
+inline const char* fabrication_job_executions_select_sql = R"SQL(select
+      job_id::text as job_id,
+      tenant_id,
+      request_id,
+      idempotency_key,
+      kind,
+      state,
+      current_stage,
+      checkpoint_version,
+      checkpoint::text as checkpoint_json,
+      request_payload::text as request_payload_json,
+      result_payload::text as result_payload_json,
+      attempt_count,
+      max_attempts,
+      priority,
+      lease_owner,
+      to_char(lease_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as lease_expires_at,
+      fiducia_fencing_token,
+      to_char(next_attempt_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as next_attempt_at,
+      last_error_code,
+      last_error_message,
+      to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as started_at,
+      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as completed_at,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from daedalus.fabrication_job_executions)SQL";
+
+enum class FabricationJobExecutionsState { Queued, Running, RetryWait, Succeeded, Failed, Cancelled };
+inline std::string fabrication_job_executions_state_to_string(FabricationJobExecutionsState value) {
+    switch (value) {
+        case FabricationJobExecutionsState::Queued: return "queued";
+        case FabricationJobExecutionsState::Running: return "running";
+        case FabricationJobExecutionsState::RetryWait: return "retry_wait";
+        case FabricationJobExecutionsState::Succeeded: return "succeeded";
+        case FabricationJobExecutionsState::Failed: return "failed";
+        case FabricationJobExecutionsState::Cancelled: return "cancelled";
+    }
+    return "";
+}
+inline std::optional<FabricationJobExecutionsState> parse_fabrication_job_executions_state(const std::string& value) {
+    if (value == "queued") return FabricationJobExecutionsState::Queued;
+    if (value == "running") return FabricationJobExecutionsState::Running;
+    if (value == "retry_wait") return FabricationJobExecutionsState::RetryWait;
+    if (value == "succeeded") return FabricationJobExecutionsState::Succeeded;
+    if (value == "failed") return FabricationJobExecutionsState::Failed;
+    if (value == "cancelled") return FabricationJobExecutionsState::Cancelled;
+    return std::nullopt;
+}
+
+struct FabricationJobExecutionsRow {
+    std::string job_id;
+    std::string tenant_id;
+    std::string request_id;
+    std::string idempotency_key;
+    std::string kind;
+    std::string state;
+    std::string current_stage;
+    int64_t checkpoint_version;
+    std::string checkpoint;
+    std::string request_payload;
+    std::optional<std::string> result_payload;
+    int32_t attempt_count;
+    int32_t max_attempts;
+    int32_t priority;
+    std::optional<std::string> lease_owner;
+    std::optional<std::string> lease_expires_at;
+    std::optional<int64_t> fiducia_fencing_token;
+    std::string next_attempt_at;
+    std::optional<std::string> last_error_code;
+    std::optional<std::string> last_error_message;
+    std::optional<std::string> started_at;
+    std::optional<std::string> completed_at;
+    std::string created_at;
+    std::string updated_at;
+};
+
+inline FabricationJobExecutionsRow fabrication_job_executions_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    FabricationJobExecutionsRow row;
+    (void)is_null;
+    row.job_id = get(0);
+    row.tenant_id = get(1);
+    row.request_id = get(2);
+    row.idempotency_key = get(3);
+    row.kind = get(4);
+    row.state = get(5);
+    row.current_stage = get(6);
+    row.checkpoint_version = std::stoll(get(7));
+    row.checkpoint = get(8);
+    row.request_payload = get(9);
+    row.result_payload = is_null(10) ? std::nullopt : std::optional<std::string>(get(10));
+    row.attempt_count = std::stoi(get(11));
+    row.max_attempts = std::stoi(get(12));
+    row.priority = std::stoi(get(13));
+    row.lease_owner = is_null(14) ? std::nullopt : std::optional<std::string>(get(14));
+    row.lease_expires_at = is_null(15) ? std::nullopt : std::optional<std::string>(get(15));
+    row.fiducia_fencing_token = is_null(16) ? std::nullopt : std::optional<int64_t>(std::stoll(get(16)));
+    row.next_attempt_at = get(17);
+    row.last_error_code = is_null(18) ? std::nullopt : std::optional<std::string>(get(18));
+    row.last_error_message = is_null(19) ? std::nullopt : std::optional<std::string>(get(19));
+    row.started_at = is_null(20) ? std::nullopt : std::optional<std::string>(get(20));
+    row.completed_at = is_null(21) ? std::nullopt : std::optional<std::string>(get(21));
+    row.created_at = get(22);
+    row.updated_at = get(23);
+    return row;
+}
+inline std::optional<std::string> validate_fabrication_job_executions_checkpoint_version(int64_t value) {
+    if (value < 0) return std::string("fabrication_job_executions.checkpoint_version is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_fabrication_job_executions_attempt_count(int32_t value) {
+    if (value < 0) return std::string("fabrication_job_executions.attempt_count is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_fabrication_job_executions_max_attempts(int32_t value) {
+    if (value < 1) return std::string("fabrication_job_executions.max_attempts is below the minimum");
+    if (value > 100) return std::string("fabrication_job_executions.max_attempts is above the maximum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_fabrication_job_executions_fiducia_fencing_token(int64_t value) {
+    if (value < 0) return std::string("fabrication_job_executions.fiducia_fencing_token is below the minimum");
+    return std::nullopt;
+}
+
+inline const char* fabrication_job_outbox_table = "daedalus.fabrication_job_outbox";
+inline const std::vector<std::string> fabrication_job_outbox_columns = { "event_id", "job_id", "subject", "event_type", "message_id", "payload", "available_at", "publish_attempts", "claim_owner", "claim_expires_at", "published_at", "last_error", "created_at", "updated_at" };
+inline const char* fabrication_job_outbox_select_sql = R"SQL(select
+      event_id::text as event_id,
+      job_id::text as job_id,
+      subject,
+      event_type,
+      message_id,
+      payload::text as payload_json,
+      to_char(available_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as available_at,
+      publish_attempts,
+      claim_owner,
+      to_char(claim_expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as claim_expires_at,
+      to_char(published_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as published_at,
+      last_error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from daedalus.fabrication_job_outbox)SQL";
+
+struct FabricationJobOutboxRow {
+    std::string event_id;
+    std::string job_id;
+    std::string subject;
+    std::string event_type;
+    std::string message_id;
+    std::string payload;
+    std::string available_at;
+    int32_t publish_attempts;
+    std::optional<std::string> claim_owner;
+    std::optional<std::string> claim_expires_at;
+    std::optional<std::string> published_at;
+    std::optional<std::string> last_error;
+    std::string created_at;
+    std::string updated_at;
+};
+
+inline FabricationJobOutboxRow fabrication_job_outbox_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    FabricationJobOutboxRow row;
+    (void)is_null;
+    row.event_id = get(0);
+    row.job_id = get(1);
+    row.subject = get(2);
+    row.event_type = get(3);
+    row.message_id = get(4);
+    row.payload = get(5);
+    row.available_at = get(6);
+    row.publish_attempts = std::stoi(get(7));
+    row.claim_owner = is_null(8) ? std::nullopt : std::optional<std::string>(get(8));
+    row.claim_expires_at = is_null(9) ? std::nullopt : std::optional<std::string>(get(9));
+    row.published_at = is_null(10) ? std::nullopt : std::optional<std::string>(get(10));
+    row.last_error = is_null(11) ? std::nullopt : std::optional<std::string>(get(11));
+    row.created_at = get(12);
+    row.updated_at = get(13);
+    return row;
+}
+inline std::optional<std::string> validate_fabrication_job_outbox_publish_attempts(int32_t value) {
+    if (value < 0) return std::string("fabrication_job_outbox.publish_attempts is below the minimum");
+    return std::nullopt;
+}
+
 }  // namespace dd_pg_defs

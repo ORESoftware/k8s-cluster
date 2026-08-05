@@ -14208,3 +14208,173 @@ class FabLearningOutcomesInsert(BaseModel):
         if value is not None and len(value.encode("utf-8")) > 200:
             raise ValueError("fab_learning_outcomes.outcome_id exceeds 200 bytes")
         return value
+
+FabricationJobExecutionsState = Literal["queued", "running", "retry_wait", "succeeded", "failed", "cancelled"]
+
+class FabricationJobExecutions(Base):
+    __tablename__ = "fabrication_job_executions"
+    __table_args__ = (
+        CheckConstraint("btrim(tenant_id) <> ''", name="fabrication_job_executions_tenant_id_nonempty"),
+        CheckConstraint("btrim(request_id) <> ''", name="fabrication_job_executions_request_id_nonempty"),
+        CheckConstraint("btrim(idempotency_key) <> ''", name="fabrication_job_executions_idempotency_key_nonempty"),
+        CheckConstraint("btrim(kind) <> ''", name="fabrication_job_executions_kind_nonempty"),
+        CheckConstraint("btrim(current_stage) <> ''", name="fabrication_job_executions_stage_nonempty"),
+        CheckConstraint("state in ('queued', 'running', 'retry_wait', 'succeeded', 'failed', 'cancelled')", name="fabrication_job_executions_state_valid"),
+        CheckConstraint("jsonb_typeof(checkpoint) = 'object'", name="fabrication_job_executions_checkpoint_object"),
+        CheckConstraint("checkpoint_version >= 0", name="fabrication_job_executions_checkpoint_version_nonnegative"),
+        CheckConstraint("attempt_count >= 0\n      and max_attempts between 1 and 100\n      and attempt_count <= max_attempts", name="fabrication_job_executions_attempts_valid"),
+        CheckConstraint("fiducia_fencing_token is null or fiducia_fencing_token >= 0", name="fabrication_job_executions_fencing_token_nonnegative"),
+        CheckConstraint("(state = 'running') = (\n        lease_owner is not null\n        and btrim(lease_owner) <> ''\n        and lease_expires_at is not null\n        and fiducia_fencing_token is not null\n      )", name="fabrication_job_executions_running_lease_complete"),
+        CheckConstraint("state not in ('succeeded', 'failed', 'cancelled')\n      or completed_at is not null", name="fabrication_job_executions_terminal_completed_at"),
+        Index("fabrication_job_executions_dispatch_idx", text("priority desc"), "next_attempt_at", "created_at", postgresql_where=text("state in ('queued', 'retry_wait')")),
+        Index("fabrication_job_executions_expired_lease_idx", "lease_expires_at", "created_at", postgresql_where=text("state = 'running'")),
+        Index("fabrication_job_executions_request_idx", "tenant_id", "request_id"),
+        {"schema": "daedalus"},
+    )
+
+    job_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(Text(), nullable=False)
+    request_id: Mapped[str] = mapped_column(Text(), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(Text(), nullable=False)
+    kind: Mapped[str] = mapped_column(Text(), nullable=False)
+    state: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'queued'"))
+    current_stage: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'accepted'"))
+    checkpoint_version: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    checkpoint: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    request_payload: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False)
+    result_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB(), nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    max_attempts: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("5"))
+    priority: Mapped[int] = mapped_column(SmallInteger(), nullable=False, server_default=text("0"))
+    lease_owner: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fiducia_fencing_token: Mapped[int | None] = mapped_column(BigInteger(), nullable=True)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    last_error_code: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    last_error_message: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class FabricationJobExecutionsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    jobId: UUID
+    tenantId: str
+    requestId: str
+    idempotencyKey: str
+    kind: str
+    state: FabricationJobExecutionsState
+    currentStage: str
+    checkpointVersion: int
+    checkpoint: dict[str, Any]
+    requestPayload: dict[str, Any]
+    resultPayload: dict[str, Any] | None = None
+    attemptCount: int = Field(..., ge=0)
+    maxAttempts: int = Field(..., ge=1, le=100)
+    priority: int
+    leaseOwner: str | None = None
+    leaseExpiresAt: datetime | None = None
+    fiduciaFencingToken: int | None = None
+    nextAttemptAt: datetime
+    lastErrorCode: str | None = None
+    lastErrorMessage: str | None = None
+    startedAt: datetime | None = None
+    completedAt: datetime | None = None
+    createdAt: datetime
+    updatedAt: datetime
+
+class FabricationJobExecutionsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    jobId: UUID
+    tenantId: str
+    requestId: str
+    idempotencyKey: str
+    kind: str
+    state: FabricationJobExecutionsState | None = "queued"
+    currentStage: str | None = "accepted"
+    checkpointVersion: int | None = 0
+    checkpoint: dict[str, Any] | None = Field(default_factory=dict)
+    requestPayload: dict[str, Any]
+    resultPayload: dict[str, Any] | None = None
+    attemptCount: int | None = Field(0, ge=0)
+    maxAttempts: int | None = Field(5, ge=1, le=100)
+    priority: int | None = 0
+    leaseOwner: str | None = None
+    leaseExpiresAt: datetime | None = None
+    fiduciaFencingToken: int | None = None
+    nextAttemptAt: datetime | None = None
+    lastErrorCode: str | None = None
+    lastErrorMessage: str | None = None
+    startedAt: datetime | None = None
+    completedAt: datetime | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+class FabricationJobOutbox(Base):
+    __tablename__ = "fabrication_job_outbox"
+    __table_args__ = (
+        CheckConstraint("btrim(subject) <> ''", name="fabrication_job_outbox_subject_nonempty"),
+        CheckConstraint("subject like 'dd.remote.fabrication.%'", name="fabrication_job_outbox_subject_owned"),
+        CheckConstraint("btrim(event_type) <> ''", name="fabrication_job_outbox_event_type_nonempty"),
+        CheckConstraint("btrim(message_id) <> ''", name="fabrication_job_outbox_message_id_nonempty"),
+        CheckConstraint("publish_attempts >= 0", name="fabrication_job_outbox_publish_attempts_nonnegative"),
+        CheckConstraint("(claim_owner is null and claim_expires_at is null)\n      or (\n        claim_owner is not null\n        and btrim(claim_owner) <> ''\n        and claim_expires_at is not null\n      )", name="fabrication_job_outbox_claim_complete"),
+        CheckConstraint("published_at is null\n      or (claim_owner is null and claim_expires_at is null)", name="fabrication_job_outbox_published_not_claimed"),
+        Index("fabrication_job_outbox_ready_idx", "available_at", "created_at", "event_id", postgresql_where=text("published_at is null")),
+        Index("fabrication_job_outbox_job_idx", "job_id", "created_at"),
+        {"schema": "daedalus"},
+    )
+
+    event_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    job_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    subject: Mapped[str] = mapped_column(Text(), nullable=False)
+    event_type: Mapped[str] = mapped_column(Text(), nullable=False)
+    message_id: Mapped[str] = mapped_column(Text(), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    publish_attempts: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    claim_owner: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    claim_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class FabricationJobOutboxRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    eventId: UUID
+    jobId: UUID
+    subject: str
+    eventType: str
+    messageId: str
+    payload: dict[str, Any]
+    availableAt: datetime
+    publishAttempts: int = Field(..., ge=0)
+    claimOwner: str | None = None
+    claimExpiresAt: datetime | None = None
+    publishedAt: datetime | None = None
+    lastError: str | None = None
+    createdAt: datetime
+    updatedAt: datetime
+
+class FabricationJobOutboxInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    eventId: UUID
+    jobId: UUID
+    subject: str
+    eventType: str
+    messageId: str
+    payload: dict[str, Any]
+    availableAt: datetime | None = None
+    publishAttempts: int | None = Field(0, ge=0)
+    claimOwner: str | None = None
+    claimExpiresAt: datetime | None = None
+    publishedAt: datetime | None = None
+    lastError: str | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None

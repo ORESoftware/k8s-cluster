@@ -14500,3 +14500,235 @@ class FabLearningOutcomesObjectBox {
     );
   }
 }
+
+@Entity()
+class FabricationJobExecutionsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String jobId;
+
+  String tenantId;
+
+  String requestId;
+
+  String idempotencyKey;
+
+  String kind;
+
+  String state;
+
+  String currentStage;
+
+  int checkpointVersion;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String checkpoint;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String requestPayload;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String? resultPayload;
+
+  int attemptCount;
+
+  int maxAttempts;
+
+  int priority;
+
+  String? leaseOwner;
+
+  String? leaseExpiresAt;
+
+  int? fiduciaFencingToken;
+
+  String nextAttemptAt;
+
+  String? lastErrorCode;
+
+  String? lastErrorMessage;
+
+  String? startedAt;
+
+  String? completedAt;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  FabricationJobExecutionsObjectBox({
+    required this.jobId,
+    required this.tenantId,
+    required this.requestId,
+    required this.idempotencyKey,
+    required this.kind,
+    required this.state,
+    required this.currentStage,
+    required this.checkpointVersion,
+    required this.checkpoint,
+    required this.requestPayload,
+    this.resultPayload,
+    required this.attemptCount,
+    required this.maxAttempts,
+    required this.priority,
+    this.leaseOwner,
+    this.leaseExpiresAt,
+    this.fiduciaFencingToken,
+    required this.nextAttemptAt,
+    this.lastErrorCode,
+    this.lastErrorMessage,
+    this.startedAt,
+    this.completedAt,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "jobId": jobId,
+    "tenantId": tenantId,
+    "requestId": requestId,
+    "idempotencyKey": idempotencyKey,
+    "kind": kind,
+    "state": state,
+    "currentStage": currentStage,
+    "checkpointVersion": checkpointVersion,
+    "checkpoint": jsonDecode(checkpoint),
+    "requestPayload": jsonDecode(requestPayload),
+    "resultPayload": jsonDecode(resultPayload),
+    "attemptCount": attemptCount,
+    "maxAttempts": maxAttempts,
+    "priority": priority,
+    "leaseOwner": leaseOwner,
+    "leaseExpiresAt": leaseExpiresAt,
+    "fiduciaFencingToken": fiduciaFencingToken,
+    "nextAttemptAt": nextAttemptAt,
+    "lastErrorCode": lastErrorCode,
+    "lastErrorMessage": lastErrorMessage,
+    "startedAt": startedAt,
+    "completedAt": completedAt,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static FabricationJobExecutionsObjectBox fromJson(Map<String, Object?> json) {
+    return FabricationJobExecutionsObjectBox(
+      jobId: json["jobId"] as String,
+      tenantId: json["tenantId"] as String,
+      requestId: json["requestId"] as String,
+      idempotencyKey: json["idempotencyKey"] as String,
+      kind: json["kind"] as String,
+      state: json["state"] as String,
+      currentStage: json["currentStage"] as String,
+      checkpointVersion: (json["checkpointVersion"] as num).toInt(),
+      checkpoint: json["checkpoint"] is String ? json["checkpoint"] as String : jsonEncode(json["checkpoint"]),
+      requestPayload: json["requestPayload"] is String ? json["requestPayload"] as String : jsonEncode(json["requestPayload"]),
+      resultPayload: json["resultPayload"] is String ? json["resultPayload"] as String : jsonEncode(json["resultPayload"]),
+      attemptCount: (json["attemptCount"] as num).toInt(),
+      maxAttempts: (json["maxAttempts"] as num).toInt(),
+      priority: (json["priority"] as num).toInt(),
+      leaseOwner: json["leaseOwner"] as String?,
+      leaseExpiresAt: json["leaseExpiresAt"] as String?,
+      fiduciaFencingToken: json["fiduciaFencingToken"] == null ? null : (json["fiduciaFencingToken"] as num).toInt(),
+      nextAttemptAt: json["nextAttemptAt"] as String,
+      lastErrorCode: json["lastErrorCode"] as String?,
+      lastErrorMessage: json["lastErrorMessage"] as String?,
+      startedAt: json["startedAt"] as String?,
+      completedAt: json["completedAt"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class FabricationJobOutboxObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String eventId;
+
+  String jobId;
+
+  String subject;
+
+  String eventType;
+
+  String messageId;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String payload;
+
+  String availableAt;
+
+  int publishAttempts;
+
+  String? claimOwner;
+
+  String? claimExpiresAt;
+
+  String? publishedAt;
+
+  String? lastError;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  FabricationJobOutboxObjectBox({
+    required this.eventId,
+    required this.jobId,
+    required this.subject,
+    required this.eventType,
+    required this.messageId,
+    required this.payload,
+    required this.availableAt,
+    required this.publishAttempts,
+    this.claimOwner,
+    this.claimExpiresAt,
+    this.publishedAt,
+    this.lastError,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "eventId": eventId,
+    "jobId": jobId,
+    "subject": subject,
+    "eventType": eventType,
+    "messageId": messageId,
+    "payload": jsonDecode(payload),
+    "availableAt": availableAt,
+    "publishAttempts": publishAttempts,
+    "claimOwner": claimOwner,
+    "claimExpiresAt": claimExpiresAt,
+    "publishedAt": publishedAt,
+    "lastError": lastError,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static FabricationJobOutboxObjectBox fromJson(Map<String, Object?> json) {
+    return FabricationJobOutboxObjectBox(
+      eventId: json["eventId"] as String,
+      jobId: json["jobId"] as String,
+      subject: json["subject"] as String,
+      eventType: json["eventType"] as String,
+      messageId: json["messageId"] as String,
+      payload: json["payload"] is String ? json["payload"] as String : jsonEncode(json["payload"]),
+      availableAt: json["availableAt"] as String,
+      publishAttempts: (json["publishAttempts"] as num).toInt(),
+      claimOwner: json["claimOwner"] as String?,
+      claimExpiresAt: json["claimExpiresAt"] as String?,
+      publishedAt: json["publishedAt"] as String?,
+      lastError: json["lastError"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}

@@ -12047,3 +12047,183 @@ export const fabLearningOutcomesUpdateSchema = fabLearningOutcomesInsertSchema.p
 export type FabLearningOutcomesRow = z.infer<typeof fabLearningOutcomesRowSchema>;
 export type FabLearningOutcomesInsert = z.infer<typeof fabLearningOutcomesInsertSchema>;
 export type FabLearningOutcomesUpdate = z.infer<typeof fabLearningOutcomesUpdateSchema>;
+
+export const fabricationJobExecutionsStateValues = ["queued","running","retry_wait","succeeded","failed","cancelled"] as const;
+export const fabricationJobExecutionsStateSchema = z.enum(fabricationJobExecutionsStateValues);
+export type FabricationJobExecutionsState = z.infer<typeof fabricationJobExecutionsStateSchema>;
+
+export const fabricationJobExecutions = daedalusSchema.table(
+  "fabrication_job_executions",
+  {
+    jobId: uuid("job_id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    requestId: text("request_id").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    kind: text("kind").notNull(),
+    state: text("state").default(sql`'queued'`).notNull(),
+    currentStage: text("current_stage").default(sql`'accepted'`).notNull(),
+    checkpointVersion: bigint("checkpoint_version", { mode: "number" }).default(sql`0`).notNull(),
+    checkpoint: jsonb("checkpoint").default(sql`'{}'::jsonb`).notNull(),
+    requestPayload: jsonb("request_payload").notNull(),
+    resultPayload: jsonb("result_payload"),
+    attemptCount: integer("attempt_count").default(sql`0`).notNull(),
+    maxAttempts: integer("max_attempts").default(sql`5`).notNull(),
+    priority: smallint("priority").default(sql`0`).notNull(),
+    leaseOwner: text("lease_owner"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true, mode: "string" }),
+    fiduciaFencingToken: bigint("fiducia_fencing_token", { mode: "number" }),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    lastErrorCode: text("last_error_code"),
+    lastErrorMessage: text("last_error_message"),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "string" }),
+    completedAt: timestamp("completed_at", { withTimezone: true, mode: "string" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fabricationJobExecutionsTenantIdNonempty: check("fabrication_job_executions_tenant_id_nonempty", sql.raw("btrim(tenant_id) <> ''")),
+    fabricationJobExecutionsRequestIdNonempty: check("fabrication_job_executions_request_id_nonempty", sql.raw("btrim(request_id) <> ''")),
+    fabricationJobExecutionsIdempotencyKeyNonempty: check("fabrication_job_executions_idempotency_key_nonempty", sql.raw("btrim(idempotency_key) <> ''")),
+    fabricationJobExecutionsKindNonempty: check("fabrication_job_executions_kind_nonempty", sql.raw("btrim(kind) <> ''")),
+    fabricationJobExecutionsStageNonempty: check("fabrication_job_executions_stage_nonempty", sql.raw("btrim(current_stage) <> ''")),
+    fabricationJobExecutionsStateValid: check("fabrication_job_executions_state_valid", sql.raw("state in ('queued', 'running', 'retry_wait', 'succeeded', 'failed', 'cancelled')")),
+    fabricationJobExecutionsCheckpointObject: check("fabrication_job_executions_checkpoint_object", sql.raw("jsonb_typeof(checkpoint) = 'object'")),
+    fabricationJobExecutionsCheckpointVersionNonnegative: check("fabrication_job_executions_checkpoint_version_nonnegative", sql.raw("checkpoint_version >= 0")),
+    fabricationJobExecutionsAttemptsValid: check("fabrication_job_executions_attempts_valid", sql.raw("attempt_count >= 0\n      and max_attempts between 1 and 100\n      and attempt_count <= max_attempts")),
+    fabricationJobExecutionsFencingTokenNonnegative: check("fabrication_job_executions_fencing_token_nonnegative", sql.raw("fiducia_fencing_token is null or fiducia_fencing_token >= 0")),
+    fabricationJobExecutionsRunningLeaseComplete: check("fabrication_job_executions_running_lease_complete", sql.raw("(state = 'running') = (\n        lease_owner is not null\n        and btrim(lease_owner) <> ''\n        and lease_expires_at is not null\n        and fiducia_fencing_token is not null\n      )")),
+    fabricationJobExecutionsTerminalCompletedAt: check("fabrication_job_executions_terminal_completed_at", sql.raw("state not in ('succeeded', 'failed', 'cancelled')\n      or completed_at is not null")),
+    fabricationJobExecutionsDispatchIdx: index("fabrication_job_executions_dispatch_idx").on(table.priority.desc(), table.nextAttemptAt, table.createdAt).where(sql.raw("state in ('queued', 'retry_wait')")),
+    fabricationJobExecutionsExpiredLeaseIdx: index("fabrication_job_executions_expired_lease_idx").on(table.leaseExpiresAt, table.createdAt).where(sql.raw("state = 'running'")),
+    fabricationJobExecutionsRequestIdx: index("fabrication_job_executions_request_idx").on(table.tenantId, table.requestId),
+  }),
+);
+
+export const fabricationJobExecutionsRowSchema = z.object({
+  jobId: z.string().uuid(),
+  tenantId: z.string(),
+  requestId: z.string(),
+  idempotencyKey: z.string(),
+  kind: z.string(),
+  state: fabricationJobExecutionsStateSchema,
+  currentStage: z.string(),
+  checkpointVersion: z.number().int().min(0),
+  checkpoint: jsonObjectSchema,
+  requestPayload: jsonObjectSchema,
+  resultPayload: jsonObjectSchema.nullable(),
+  attemptCount: z.number().int().min(0),
+  maxAttempts: z.number().int().min(1).max(100),
+  priority: z.number().int(),
+  leaseOwner: z.string().nullable(),
+  leaseExpiresAt: z.string().datetime().nullable(),
+  fiduciaFencingToken: z.number().int().min(0).nullable(),
+  nextAttemptAt: z.string().datetime(),
+  lastErrorCode: z.string().nullable(),
+  lastErrorMessage: z.string().nullable(),
+  startedAt: z.string().datetime().nullable(),
+  completedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const fabricationJobExecutionsInsertSchema = z.object({
+  jobId: z.string().uuid(),
+  tenantId: z.string(),
+  requestId: z.string(),
+  idempotencyKey: z.string(),
+  kind: z.string(),
+  state: fabricationJobExecutionsStateSchema.optional().default("queued"),
+  currentStage: z.string().optional().default("accepted"),
+  checkpointVersion: z.number().int().min(0).optional().default(0),
+  checkpoint: jsonObjectSchema.optional().default({}),
+  requestPayload: jsonObjectSchema,
+  resultPayload: jsonObjectSchema.nullable().optional(),
+  attemptCount: z.number().int().min(0).optional().default(0),
+  maxAttempts: z.number().int().min(1).max(100).optional().default(5),
+  priority: z.number().int().optional().default(0),
+  leaseOwner: z.string().nullable().optional(),
+  leaseExpiresAt: z.string().datetime().nullable().optional(),
+  fiduciaFencingToken: z.number().int().min(0).nullable().optional(),
+  nextAttemptAt: z.string().datetime().optional(),
+  lastErrorCode: z.string().nullable().optional(),
+  lastErrorMessage: z.string().nullable().optional(),
+  startedAt: z.string().datetime().nullable().optional(),
+  completedAt: z.string().datetime().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const fabricationJobExecutionsUpdateSchema = fabricationJobExecutionsInsertSchema.partial();
+export type FabricationJobExecutionsRow = z.infer<typeof fabricationJobExecutionsRowSchema>;
+export type FabricationJobExecutionsInsert = z.infer<typeof fabricationJobExecutionsInsertSchema>;
+export type FabricationJobExecutionsUpdate = z.infer<typeof fabricationJobExecutionsUpdateSchema>;
+
+export const fabricationJobOutbox = daedalusSchema.table(
+  "fabrication_job_outbox",
+  {
+    eventId: uuid("event_id").primaryKey(),
+    jobId: uuid("job_id").notNull(),
+    subject: text("subject").notNull(),
+    eventType: text("event_type").notNull(),
+    messageId: text("message_id").notNull(),
+    payload: jsonb("payload").notNull(),
+    availableAt: timestamp("available_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    publishAttempts: integer("publish_attempts").default(sql`0`).notNull(),
+    claimOwner: text("claim_owner"),
+    claimExpiresAt: timestamp("claim_expires_at", { withTimezone: true, mode: "string" }),
+    publishedAt: timestamp("published_at", { withTimezone: true, mode: "string" }),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fabricationJobOutboxSubjectNonempty: check("fabrication_job_outbox_subject_nonempty", sql.raw("btrim(subject) <> ''")),
+    fabricationJobOutboxSubjectOwned: check("fabrication_job_outbox_subject_owned", sql.raw("subject like 'dd.remote.fabrication.%'")),
+    fabricationJobOutboxEventTypeNonempty: check("fabrication_job_outbox_event_type_nonempty", sql.raw("btrim(event_type) <> ''")),
+    fabricationJobOutboxMessageIdNonempty: check("fabrication_job_outbox_message_id_nonempty", sql.raw("btrim(message_id) <> ''")),
+    fabricationJobOutboxPublishAttemptsNonnegative: check("fabrication_job_outbox_publish_attempts_nonnegative", sql.raw("publish_attempts >= 0")),
+    fabricationJobOutboxClaimComplete: check("fabrication_job_outbox_claim_complete", sql.raw("(claim_owner is null and claim_expires_at is null)\n      or (\n        claim_owner is not null\n        and btrim(claim_owner) <> ''\n        and claim_expires_at is not null\n      )")),
+    fabricationJobOutboxPublishedNotClaimed: check("fabrication_job_outbox_published_not_claimed", sql.raw("published_at is null\n      or (claim_owner is null and claim_expires_at is null)")),
+    fabricationJobOutboxReadyIdx: index("fabrication_job_outbox_ready_idx").on(table.availableAt, table.createdAt, table.eventId).where(sql.raw("published_at is null")),
+    fabricationJobOutboxJobIdx: index("fabrication_job_outbox_job_idx").on(table.jobId, table.createdAt),
+  }),
+);
+
+export const fabricationJobOutboxRowSchema = z.object({
+  eventId: z.string().uuid(),
+  jobId: z.string().uuid(),
+  subject: z.string(),
+  eventType: z.string(),
+  messageId: z.string(),
+  payload: jsonObjectSchema,
+  availableAt: z.string().datetime(),
+  publishAttempts: z.number().int().min(0),
+  claimOwner: z.string().nullable(),
+  claimExpiresAt: z.string().datetime().nullable(),
+  publishedAt: z.string().datetime().nullable(),
+  lastError: z.string().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const fabricationJobOutboxInsertSchema = z.object({
+  eventId: z.string().uuid(),
+  jobId: z.string().uuid(),
+  subject: z.string(),
+  eventType: z.string(),
+  messageId: z.string(),
+  payload: jsonObjectSchema,
+  availableAt: z.string().datetime().optional(),
+  publishAttempts: z.number().int().min(0).optional().default(0),
+  claimOwner: z.string().nullable().optional(),
+  claimExpiresAt: z.string().datetime().nullable().optional(),
+  publishedAt: z.string().datetime().nullable().optional(),
+  lastError: z.string().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const fabricationJobOutboxUpdateSchema = fabricationJobOutboxInsertSchema.partial();
+export type FabricationJobOutboxRow = z.infer<typeof fabricationJobOutboxRowSchema>;
+export type FabricationJobOutboxInsert = z.infer<typeof fabricationJobOutboxInsertSchema>;
+export type FabricationJobOutboxUpdate = z.infer<typeof fabricationJobOutboxUpdateSchema>;

@@ -7948,3 +7948,161 @@ create index if not exists fab_learning_outcomes_created_idx
 
 create index if not exists fab_learning_outcomes_job_idx
   on daedalus.fab_learning_outcomes (job_id);
+
+-- daedalus durable fabrication job execution (DEN-2526)
+-- PostgreSQL/RDS is the canonical execution and checkpoint store.
+-- NATS JetStream is transport only. Fiducia provides the coarse lease;
+-- every write is fenced by the persisted token and a short transaction-
+-- scoped PostgreSQL advisory lock in the application.
+create table if not exists daedalus.fabrication_job_executions (
+  job_id uuid primary key,
+  tenant_id text not null,
+  request_id text not null,
+  idempotency_key text not null,
+  kind text not null,
+  state text default 'queued' not null,
+  current_stage text default 'accepted' not null,
+  checkpoint_version bigint default 0 not null,
+  checkpoint jsonb default '{}'::jsonb not null,
+  request_payload jsonb not null,
+  result_payload jsonb,
+  attempt_count integer default 0 not null,
+  max_attempts integer default 5 not null,
+  priority smallint default 0 not null,
+  lease_owner text,
+  lease_expires_at timestamptz,
+  fiducia_fencing_token bigint,
+  next_attempt_at timestamptz default now() not null,
+  last_error_code text,
+  last_error_message text,
+  started_at timestamptz,
+  completed_at timestamptz,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint fabrication_job_executions_tenant_id_nonempty
+    check (btrim(tenant_id) <> ''),
+  constraint fabrication_job_executions_request_id_nonempty
+    check (btrim(request_id) <> ''),
+  constraint fabrication_job_executions_idempotency_key_nonempty
+    check (btrim(idempotency_key) <> ''),
+  constraint fabrication_job_executions_kind_nonempty
+    check (btrim(kind) <> ''),
+  constraint fabrication_job_executions_stage_nonempty
+    check (btrim(current_stage) <> ''),
+  constraint fabrication_job_executions_state_valid
+    check (state in ('queued', 'running', 'retry_wait', 'succeeded', 'failed', 'cancelled')),
+  constraint fabrication_job_executions_checkpoint_object
+    check (jsonb_typeof(checkpoint) = 'object'),
+  constraint fabrication_job_executions_checkpoint_version_nonnegative
+    check (checkpoint_version >= 0),
+  constraint fabrication_job_executions_attempts_valid
+    check (
+      attempt_count >= 0
+      and max_attempts between 1 and 100
+      and attempt_count <= max_attempts
+    ),
+  constraint fabrication_job_executions_fencing_token_nonnegative
+    check (fiducia_fencing_token is null or fiducia_fencing_token >= 0),
+  constraint fabrication_job_executions_running_lease_complete
+    check (
+      (state = 'running') = (
+        lease_owner is not null
+        and btrim(lease_owner) <> ''
+        and lease_expires_at is not null
+        and fiducia_fencing_token is not null
+      )
+    ),
+  constraint fabrication_job_executions_terminal_completed_at
+    check (
+      state not in ('succeeded', 'failed', 'cancelled')
+      or completed_at is not null
+    ),
+  constraint fabrication_job_executions_tenant_idempotency_unique
+    unique (tenant_id, idempotency_key)
+);
+
+create index if not exists fabrication_job_executions_dispatch_idx
+  on daedalus.fabrication_job_executions (
+    priority desc,
+    next_attempt_at,
+    created_at
+  )
+  where state in ('queued', 'retry_wait');
+
+create index if not exists fabrication_job_executions_expired_lease_idx
+  on daedalus.fabrication_job_executions (
+    lease_expires_at,
+    created_at
+  )
+  where state = 'running';
+
+create index if not exists fabrication_job_executions_request_idx
+  on daedalus.fabrication_job_executions (tenant_id, request_id);
+
+create table if not exists daedalus.fabrication_job_outbox (
+  event_id uuid primary key,
+  job_id uuid not null
+    references daedalus.fabrication_job_executions (job_id)
+    on delete cascade,
+  subject text not null,
+  event_type text not null,
+  message_id text not null,
+  payload jsonb not null,
+  available_at timestamptz default now() not null,
+  publish_attempts integer default 0 not null,
+  claim_owner text,
+  claim_expires_at timestamptz,
+  published_at timestamptz,
+  last_error text,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint fabrication_job_outbox_subject_nonempty
+    check (btrim(subject) <> ''),
+  constraint fabrication_job_outbox_subject_owned
+    check (subject like 'dd.remote.fabrication.%'),
+  constraint fabrication_job_outbox_event_type_nonempty
+    check (btrim(event_type) <> ''),
+  constraint fabrication_job_outbox_message_id_nonempty
+    check (btrim(message_id) <> ''),
+  constraint fabrication_job_outbox_message_id_unique
+    unique (message_id),
+  constraint fabrication_job_outbox_publish_attempts_nonnegative
+    check (publish_attempts >= 0),
+  constraint fabrication_job_outbox_claim_complete
+    check (
+      (claim_owner is null and claim_expires_at is null)
+      or (
+        claim_owner is not null
+        and btrim(claim_owner) <> ''
+        and claim_expires_at is not null
+      )
+    ),
+  constraint fabrication_job_outbox_published_not_claimed
+    check (
+      published_at is null
+      or (claim_owner is null and claim_expires_at is null)
+    )
+);
+
+create index if not exists fabrication_job_outbox_ready_idx
+  on daedalus.fabrication_job_outbox (
+    available_at,
+    created_at,
+    event_id
+  )
+  where published_at is null;
+
+create index if not exists fabrication_job_outbox_job_idx
+  on daedalus.fabrication_job_outbox (job_id, created_at);
+
+comment on table daedalus.fabrication_job_executions is
+  'Canonical resumable state machine for fabrication work. NATS is transport, not ownership or recovery state.';
+
+comment on column daedalus.fabrication_job_executions.checkpoint is
+  'Last fully committed idempotent recovery point. Never records an in-progress external side effect.';
+
+comment on column daedalus.fabrication_job_executions.fiducia_fencing_token is
+  'Highest accepted Fiducia fencing token. A lower token may never mutate the job.';
+
+comment on table daedalus.fabrication_job_outbox is
+  'Transactional outbox for deterministic JetStream wakeups and terminal events.';
