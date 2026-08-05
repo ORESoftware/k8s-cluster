@@ -51,9 +51,17 @@ def _private_repository_metadata(
     exact_identity = remote_full_name.casefold() == full_name.casefold()
     if not exact_identity:
         remote_owner, _ = remote_full_name.split("/", 1)
+        has_redirect_identity = (
+            isinstance(payload.get("id"), int)
+            and int(payload["id"]) > 0
+            and payload.get("default_branch") == "main"
+            and payload.get("archived") is not True
+            and payload.get("disabled") is not True
+        )
         if (
             not allow_same_owner_redirect
             or remote_owner.casefold() != owner.casefold()
+            or not has_redirect_identity
         ):
             raise RuntimeError(
                 f"repository identity mismatch for {full_name}: {remote_full_name!r}"
