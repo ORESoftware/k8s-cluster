@@ -54,7 +54,8 @@ jobs:
           grep -qF 'install_pinned_github_cli.sh' "$script"
           grep -qF 'candidate-personal-access-token-rejected' "$script"
           grep -qF 'chown -R ec2-user:ec2-user' "$script"
-          grep -qF '"$gh_binary" auth token' "$script"
+          pinned_gh_auth='"$''gh_binary" auth token'
+          grep -qF "$pinned_gh_auth" "$script"
           grep -qF "membership" "$script"
           grep -qF "admin" "$script"
           grep -qF -- '--private' "$script"
