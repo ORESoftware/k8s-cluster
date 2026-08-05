@@ -1,0 +1,17 @@
+{
+  "name": "benefactor-contact-orchestrator",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "check": "node --check pipeline-lib.mjs && node --check providers/serper.mjs && node --check providers/brave.mjs && node --check providers/index.mjs && node --check orchestrate.mjs && node --check contact-batch-lib.mjs && node --check contact-batch.mjs && node --check hubspot-sync-lib.mjs && node --check hubspot-sync.mjs",
+    "test": "node --test orchestrate.test.mjs contact-batch.test.mjs hubspot-sync.test.mjs"
+  },
+  "dependencies": {
+    "cheerio": "1.2.0",
+    "pg": "8.13.1"
+  }
+}
