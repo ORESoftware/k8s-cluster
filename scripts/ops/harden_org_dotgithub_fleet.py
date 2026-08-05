@@ -123,6 +123,8 @@ def load_registry(path: str, expected_count: int) -> list[tuple[str, str]]:
         if len(parts) != 2:
             raise HardeningError(f"registry line {line_number} must have exactly two tab-separated fields")
         org, linear_url = (part.strip() for part in parts)
+        if line_number == 1 and (org, linear_url) == ("organization", "linear_url"):
+            continue
         if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?", org):
             raise HardeningError(f"registry line {line_number} has invalid organization login: {org!r}")
         if not linear_url.startswith("https://linear.app/"):
