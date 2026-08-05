@@ -1,0 +1,25 @@
+[package]
+org = "scintilla-run"
+name = "gleam-lambda-runner"
+version = "0.1.0"
+description = "Private Gleam/OTP lambda, actor, event, and workflow runner source package"
+license = "UNLICENSED"
+keywords = ["gleam", "erlang", "lambda", "workflows", "source-package"]
+language = "gleam"
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/scintilla-run/gleam-lambda-runner"
+
+[publish]
+include_readme = true
+tag_format = "v{version}"
+smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/gleam.toml\" && test -d \"$ZED_PKG_TEST_TARGET/src\" && test -f \"$ZED_PKG_TEST_TARGET/docs/serverless-capability-matrix.md\""
+exclude = [".env", ".env.*", ".direnv/**", ".zed/**", ".zed-pack/**", "tmp/**", "**/*.log", ".DS_Store", "_build/**", "build/**", "deps/**"]
+
+# The current gleam.toml intentionally reaches into the complete k8s-cluster
+# checkout for generated NATS, Postgres, runtime-config, CLI-config, and OTel
+# libraries. This Zed release therefore versions the standalone source and
+# service contract without claiming a self-contained Hex/native package.
+[install]
+adapter = "none"
