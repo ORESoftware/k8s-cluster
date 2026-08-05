@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - ".gitmodules"
+      - ".zpkg.toml"
+      - ".zpkg.lock"
       - ".github/workflows/portfolio-inventory.yml"
       - "README.md"
       - "scripts/check-portfolio-inventory.py"
@@ -11,6 +13,8 @@ on:
     branches: [main]
     paths:
       - ".gitmodules"
+      - ".zpkg.toml"
+      - ".zpkg.lock"
       - ".github/workflows/portfolio-inventory.yml"
       - "README.md"
       - "scripts/check-portfolio-inventory.py"
@@ -26,7 +30,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  gitlink-contract:
+  package-boundary:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -34,5 +38,5 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Compare the README inventory with .gitmodules
+      - name: Verify Zed package and gitlink ownership
         run: python3 scripts/check-portfolio-inventory.py

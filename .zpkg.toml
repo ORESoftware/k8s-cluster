@@ -1,0 +1,30 @@
+[package]
+org = "zed-pkg"
+name = "zed-monorepo"
+version = "0.1.0"
+description = "Pinned integration workspace for the Zed package ecosystem"
+license = "MIT"
+keywords = ["monorepo", "git-submodules", "zed", "integration"]
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/zed-pkg/zed-monorepo"
+
+# The root manifest is a package envelope only. Repositories listed in
+# .gitmodules are intentionally not repeated as Zed dependencies.
+[install]
+adapter = "none"
+dir = ".vendor/.zed"
+
+[publish]
+include_readme = true
+tag_format = "v{version}"
+exclude = [".vendor/.zed/**"]
+
+[targets.repository]
+dir = "."
+
+[scripts]
+validate = "python3 scripts/check-portfolio-inventory.py"
+submodules-init = "git submodule sync --recursive && git submodule update --init --recursive"
+submodules-status = "git submodule status --recursive"
