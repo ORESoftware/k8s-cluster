@@ -173,9 +173,10 @@ jobs:
             "$stage_root/.github/workflows/ops-publish-four-org-fleet-encrypted-owner-contract.yml"
           cp scripts/ops/.staged-test-four-org-encrypted-publisher.py \
             "$stage_root/scripts/ops/test_four_org_encrypted_publisher.py"
+          chmod -R a+rX "$stage_root"
 
           docker run --rm \
-            -v "$stage_root:/repo" \
+            -v "$stage_root:/repo:ro" \
             -w /repo \
             rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
             -ignore 'SC2016' \
