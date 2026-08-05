@@ -16,6 +16,7 @@ on:
       - scripts/ops/repository_fleet_remote_state.py
       - scripts/ops/test_repository_fleet_visibility.py
       - scripts/ops/test_repository_fleet_remote_state.py
+      - scripts/ops/test_repository_redirect_aliases.py
       - scripts/ops/test_private_fleet_publisher_contract.py
       - scripts/ops/test_private_repository_creation.py
       - scripts/ops/test_private_fleet_gap_dispatch_contract.py
@@ -36,6 +37,7 @@ on:
       - scripts/ops/repository_fleet_remote_state.py
       - scripts/ops/test_repository_fleet_visibility.py
       - scripts/ops/test_repository_fleet_remote_state.py
+      - scripts/ops/test_repository_redirect_aliases.py
       - scripts/ops/test_private_fleet_publisher_contract.py
       - scripts/ops/test_private_repository_creation.py
       - scripts/ops/test_private_fleet_gap_dispatch_contract.py
@@ -71,6 +73,7 @@ jobs:
             scripts/ops/test_private_repository_creation.py \
             scripts/ops/test_repository_fleet_visibility.py \
             scripts/ops/test_repository_fleet_remote_state.py \
+            scripts/ops/test_repository_redirect_aliases.py \
             scripts/ops/test_private_fleet_publisher_contract.py \
             scripts/ops/test_private_fleet_gap_dispatch_contract.py \
             scripts/ops/test_encrypted_repository_gap_workflow.py \
@@ -87,6 +90,12 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/ops/test_repository_fleet_remote_state.py -v
+
+      - name: Run rename redirect preservation fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/test_repository_redirect_aliases.py -v
 
       - name: Run private repository creation race fixtures
         shell: bash
@@ -130,6 +139,7 @@ jobs:
             scripts/ops/test_private_repository_creation.py \
             scripts/ops/test_repository_fleet_visibility.py \
             scripts/ops/test_repository_fleet_remote_state.py \
+            scripts/ops/test_repository_redirect_aliases.py \
             scripts/ops/test_private_fleet_publisher_contract.py \
             scripts/ops/test_private_fleet_gap_dispatch_contract.py \
             scripts/ops/test_encrypted_repository_gap_workflow.py \
