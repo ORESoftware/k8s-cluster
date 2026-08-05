@@ -135,6 +135,7 @@ installation_status="$(
 [[ "$installation_status" == 200 ]] || fail "GitHub App installation lookup returned HTTP $installation_status"
 installation_id="$(jq -er '.id | select(type == "number" and . > 0)' "$installation_json")"
 repository_selection="$(jq -er '.repository_selection' "$installation_json")"
+app_slug="$(jq -er '.app_slug | select(type == "string" and length > 0)' "$installation_json")"
 [[ "$repository_selection" == all ]] || fail "App installation must select all repositories, observed: $repository_selection"
 
 stage='mint-installation-token'
@@ -182,13 +183,12 @@ export GIT_ASKPASS="$askpass"
 export GIT_TERMINAL_PROMPT=0
 export GIT_CONFIG_NOSYSTEM=1
 
-actor="$(gh api app --jq .slug)"
 printf 'hsg-publisher-app=%s installation=%s repository-selection=%s\n' \
-  "$actor" "$installation_id" "$repository_selection"
+  "$app_slug" "$installation_id" "$repository_selection"
 
 jq -n \
   --arg organization "$ORG" \
-  --arg app "$actor" \
+  --arg app "$app_slug" \
   --argjson installation_id "$installation_id" \
   '{schema_version:1, organization:$organization, app:$app, installation_id:$installation_id, repositories:[]}' \
   > "$REPORT_JSON"
@@ -450,7 +450,7 @@ jq -e --argjson expected "${#TARGETS[@]}" '
     .default_branch == "main" and
     (.main_sha | test("^[0-9a-f]{40}$")) and
     (.migration_sha | test("^[0-9a-f]{40}$")) and
-    (.pull_request | startswith("https://github.com/hypesiege/hsg-"))
+    ((.pull_request == "merged-on-main") or (.pull_request | startswith("https://github.com/hypesiege/hsg-")))
   )
 ' "$REPORT_JSON" >/dev/null
 
@@ -460,7 +460,7 @@ jq -e --argjson expected "${#TARGETS[@]}" '
   echo 'Overall result: **SUCCESS**'
   echo
   printf -- '- Organization: `%s`\n' "$ORG"
-  printf -- '- GitHub App: `%s`\n' "$actor"
+  printf -- '- GitHub App: `%s`\n' "$app_slug"
   printf -- '- Repositories: `%s/%s`\n' "$(jq '.repositories | length' "$REPORT_JSON")" "${#TARGETS[@]}"
   echo '- Credential: short-lived GitHub App installation token'
   echo '- PAT used: `false`'
