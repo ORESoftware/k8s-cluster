@@ -16,13 +16,43 @@ cleanup() {
 }
 trap cleanup EXIT
 
-command -v gh >/dev/null
-command -v sudo >/dev/null
-command -v getent >/dev/null
-command -v install >/dev/null
-command -v stat >/dev/null
-command -v chown >/dev/null
-command -v python3 >/dev/null
+for command in bash chown curl getent git install python3 sha256sum stat sudo tar uname; do
+  command -v "$command" >/dev/null || {
+    printf 'benefactor-gas-publisher=failed reason=missing-command command=%s\n' "$command" >&2
+    exit 70
+  }
+done
+
+# Fetch the exact reviewed k8s-cluster revision and install the repository's
+# checksum-pinned GitHub CLI. The protected host intentionally has no ambient
+# gh binary, so profile validation must use this exact executable path.
+git init "$work/k8s-cluster" >/dev/null
+git -C "$work/k8s-cluster" remote add origin https://github.com/ORESoftware/k8s-cluster.git
+git -C "$work/k8s-cluster" fetch --quiet --depth=1 origin "$trusted_sha"
+git -C "$work/k8s-cluster" switch --quiet --detach FETCH_HEAD
+actual_sha="$(git -C "$work/k8s-cluster" rev-parse HEAD)"
+if test "$actual_sha" != "$trusted_sha"; then
+  printf 'benefactor-gas-publisher=failed reason=trusted-checkout-mismatch\n' >&2
+  exit 71
+fi
+
+installer="$work/k8s-cluster/scripts/ops/install_pinned_github_cli.sh"
+test -f "$installer" || {
+  printf 'benefactor-gas-publisher=failed reason=missing-pinned-gh-installer\n' >&2
+  exit 71
+}
+gh_binary="$(bash "$installer" --install-dir "$work/pinned-gh")"
+if test ! -x "$gh_binary"; then
+  printf 'benefactor-gas-publisher=failed reason=pinned-gh-not-executable\n' >&2
+  exit 71
+fi
+case "$gh_binary" in
+  "$work"/*/gh) ;;
+  *)
+    printf 'benefactor-gas-publisher=failed reason=pinned-gh-path-escaped\n' >&2
+    exit 71
+    ;;
+esac
 
 profile_home="$(getent passwd ec2-user | awk -F: '$1 == "ec2-user" { print $6 }')"
 profile_uid="$(id -u ec2-user)"
@@ -31,10 +61,10 @@ case "$profile_home" in
   *) echo 'benefactor-gas-profile=failed reason=missing-ec2-user' >&2; exit 65 ;;
 esac
 
-# The delegated gh process must be able to traverse the temporary profile
-# hierarchy. Keep the entire workspace private to ec2-user (and root) rather
-# than creating an ec2-user child beneath an untraversable root-owned parent.
-chown ec2-user:ec2-user "$work"
+# The delegated gh process must be able to traverse both the checksum-pinned
+# binary and the copied profile. Keep the complete workspace private to
+# ec2-user (and root) rather than exposing it through permissive modes.
+chown -R ec2-user:ec2-user "$work"
 chmod 700 "$work"
 
 selected_dir=''
@@ -68,7 +98,7 @@ while IFS= read -r candidate; do
       -u GH_TOKEN -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN \
       -u GITHUB_REPOSITORY_ADMIN_TOKEN \
       GH_CONFIG_DIR="$candidate_dir" \
-      gh auth token --hostname github.com 2>/dev/null || true
+      "$gh_binary" auth token --hostname github.com 2>/dev/null || true
   )"
   if test -z "$token" || \
      [[ "$token" == *$'\n'* || "$token" == *$'\r'* || \
@@ -100,14 +130,14 @@ while IFS= read -r candidate; do
       -u GH_TOKEN -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN \
       -u GITHUB_REPOSITORY_ADMIN_TOKEN \
       GH_CONFIG_DIR="$candidate_dir" \
-      gh api user --jq .login 2>/dev/null || true
+      "$gh_binary" api user --jq .login 2>/dev/null || true
   )"
   membership="$(
     sudo -u ec2-user -H env \
       -u GH_TOKEN -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN \
       -u GITHUB_REPOSITORY_ADMIN_TOKEN \
       GH_CONFIG_DIR="$candidate_dir" \
-      gh api user/memberships/orgs/benefactor-cc \
+      "$gh_binary" api user/memberships/orgs/benefactor-cc \
         --jq '[.role,.state] | @tsv' 2>/dev/null || true
   )"
   if test "$identity" != 'ORESoftware' || test "$membership" != $'admin\tactive'; then
@@ -135,7 +165,7 @@ gh_as_admin() {
     -u GH_TOKEN -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN \
     -u GITHUB_REPOSITORY_ADMIN_TOKEN \
     GH_CONFIG_DIR="$selected_dir" \
-    gh "$@"
+    "$gh_binary" "$@"
 }
 
 created=false
