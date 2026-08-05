@@ -1,10 +1,11 @@
-name: Harden organization .github governance fleet once
+name: Publish and harden organization .github governance fleet once
 
 on:
   push:
     branches: [main]
     paths:
       - .github/workflows/ops-harden-org-dotgithub-fleet-once.yml
+      - scripts/ops/ensure_org_dotgithub_repositories.py
       - scripts/ops/harden_org_dotgithub_fleet.py
       - scripts/ops/test_harden_org_dotgithub_fleet.py
       - scripts/ops/bootstrap_current_org_dotgithub_repositories.py
@@ -18,7 +19,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: harden-organization-dotgithub-fleet-once
+  group: publish-and-harden-organization-dotgithub-fleet-once
   cancel-in-progress: false
 
 jobs:
@@ -33,9 +34,9 @@ jobs:
       REPOSITORY: ${{ github.repository }}
       DEFAULT_BRANCH: main
       EXPECTED_COUNT: '64'
-      HANDSHAKE_NONCE: 36f2b8b5c6d447c49bdedba340207fb6
-      PUBLIC_KEY_PATH: .github/tmp/org-dotgithub-hardening-36f2b8b5c6d447c49bdedba340207fb6.pub.pem
-      CIPHERTEXT_PATH: .github/tmp/org-dotgithub-hardening-36f2b8b5c6d447c49bdedba340207fb6.enc.b64
+      HANDSHAKE_NONCE: 8bb2ced1ea4f43be858cb9a267af2914
+      PUBLIC_KEY_PATH: .github/tmp/org-dotgithub-hardening-8bb2ced1ea4f43be858cb9a267af2914.pub.pem
+      CIPHERTEXT_PATH: .github/tmp/org-dotgithub-hardening-8bb2ced1ea4f43be858cb9a267af2914.enc.b64
       EVIDENCE_DIR: ops/evidence/org-dotgithub-hardening
 
     steps:
@@ -57,10 +58,15 @@ jobs:
           bash -n scripts/ops/receive_encrypted_github_credential.sh
           python3 -m py_compile \
             scripts/ops/bootstrap_current_org_dotgithub_repositories.py \
+            scripts/ops/ensure_org_dotgithub_repositories.py \
             scripts/ops/harden_org_dotgithub_fleet.py \
             scripts/ops/test_harden_org_dotgithub_fleet.py \
             scripts/ops/test_receive_encrypted_github_credential.py
           PYTHONPATH=scripts/ops python3 scripts/ops/test_harden_org_dotgithub_fleet.py -v
+          python3 scripts/ops/ensure_org_dotgithub_repositories.py \
+            --expected-count "$EXPECTED_COUNT" \
+            --json-report "$RUNNER_TEMP/org-dotgithub-repositories-dry-run.json" \
+            --markdown-report "$RUNNER_TEMP/org-dotgithub-repositories-dry-run.md"
           python3 scripts/ops/harden_org_dotgithub_fleet.py \
             --expected-count "$EXPECTED_COUNT" \
             --json-report "$RUNNER_TEMP/org-dotgithub-hardening-dry-run.json" \
@@ -75,25 +81,36 @@ jobs:
           MAX_RATE_WAIT_SECONDS: '10800'
         run: bash scripts/ops/receive_encrypted_github_credential.sh
 
-      - name: Add missing defaults through pull requests and verify
+      - name: Create missing repositories, add missing defaults through pull requests, and verify
         shell: bash
         run: |
           set -Eeuo pipefail
           rm -rf "$EVIDENCE_DIR"
           mkdir -p "$EVIDENCE_DIR"
+          python3 scripts/ops/ensure_org_dotgithub_repositories.py \
+            --execute \
+            --expected-count "$EXPECTED_COUNT" \
+            --json-report "$EVIDENCE_DIR/repositories.json" \
+            --markdown-report "$EVIDENCE_DIR/repositories.md"
+          jq -e --argjson count "$EXPECTED_COUNT" '
+            .mode == "execute" and
+            .expected_count == $count and
+            (.organizations | length) == $count and
+            ([.organizations[].verified] | all)
+          ' "$EVIDENCE_DIR/repositories.json" >/dev/null
           python3 scripts/ops/harden_org_dotgithub_fleet.py \
             --execute \
             --expected-count "$EXPECTED_COUNT" \
-            --json-report "$EVIDENCE_DIR/results.json" \
+            --json-report "$EVIDENCE_DIR/hardening.json" \
             --markdown-report "$EVIDENCE_DIR/README.md"
           jq -e --argjson count "$EXPECTED_COUNT" '
             .mode == "execute" and
             .expected_count == $count and
             (.organizations | length) == $count and
             ([.organizations[].verified] | all)
-          ' "$EVIDENCE_DIR/results.json" >/dev/null
+          ' "$EVIDENCE_DIR/hardening.json" >/dev/null
 
-      - name: Upload validated hardening evidence
+      - name: Upload validated publication and hardening evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

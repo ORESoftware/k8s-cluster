@@ -9,6 +9,19 @@ import harden_org_dotgithub_fleet as target
 
 
 class RegistryTests(unittest.TestCase):
+    def test_load_registry_accepts_canonical_header(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "registry.tsv"
+            path.write_text(
+                "organization\tlinear_url\n"
+                "alpha\thttps://linear.app/example/project/alpha\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                [("alpha", "https://linear.app/example/project/alpha")],
+                target.load_registry(str(path), 1),
+            )
+
     def test_load_registry_rejects_duplicates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "registry.tsv"
