@@ -5,7 +5,6 @@ on:
     branches: [dev]
     paths:
       - .github/networking-components-publish-trigger
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -16,15 +15,11 @@ concurrency:
 
 jobs:
   publish:
-    if: github.repository == 'ORESoftware/k8s-cluster'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      GITHUB_REPOSITORY_ADMIN_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
-      REPORT_PATH: ${{ runner.temp }}/networking-components-fleet-2026-08-05.json
       PUBLISHER_SHA256: 3d1679596dfd85d045afd54790db88b63f061d3450156ac81a112c8d031c2120
       PUBLISHER_B64_SHA256: 8312403e998808e7aa00f7a5ad78e87cc02cf0352d562c726eb3fa133c2017af
-      PUBLISHER_PATH: ${{ runner.temp }}/networking-components-publish.py
       PYTHONHASHSEED: '0'
     steps:
       - name: Check out exact trigger commit
@@ -42,6 +37,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          publisher_path="$RUNNER_TEMP/networking-components-publish.py"
+          report_path="$RUNNER_TEMP/networking-components-fleet-2026-08-05.json"
           printf '%s  %s\n' \
             "$PUBLISHER_B64_SHA256" \
             scripts/networking-components-fleet/publish.py.gz.b64 \
@@ -49,31 +46,40 @@ jobs:
           base64 --decode \
             < scripts/networking-components-fleet/publish.py.gz.b64 \
             | gzip --decompress \
-            > "$PUBLISHER_PATH"
+            > "$publisher_path"
           printf '%s  %s\n' \
             "$PUBLISHER_SHA256" \
-            "$PUBLISHER_PATH" \
+            "$publisher_path" \
             | sha256sum --check --strict
-          python3 -m py_compile "$PUBLISHER_PATH"
+          python3 -m py_compile "$publisher_path"
           ! git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- \
             .github/workflows/networking-components-fleet-publish.yml
+          printf 'PUBLISHER_PATH=%s\nREPORT_PATH=%s\n' \
+            "$publisher_path" \
+            "$report_path" \
+            >> "$GITHUB_ENV"
 
-      - name: Fail closed unless a protected repository-administration credential exists
+      - name: Select and validate the protected repository credential
         shell: bash
+        env:
+          PRIMARY_REPOSITORY_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN }}
+          FALLBACK_REPOSITORY_TOKEN: ${{ secrets.ORG_GITOPS_TOKEN }}
         run: |
           set -euo pipefail
-          test -n "$GITHUB_REPOSITORY_ADMIN_TOKEN" || {
-            echo 'Neither GITHUB_REPOSITORY_ADMIN_TOKEN nor ORG_GITOPS_TOKEN is configured.' >&2
+          token="${PRIMARY_REPOSITORY_TOKEN:-$FALLBACK_REPOSITORY_TOKEN}"
+          test -n "$token" || {
+            echo 'No protected repository-administration credential is configured.' >&2
             exit 1
           }
-          printf '::add-mask::%s\n' "$GITHUB_REPOSITORY_ADMIN_TOKEN"
+          printf '::add-mask::%s\n' "$token"
           response="$(curl --fail --silent --show-error \
             -H 'Accept: application/vnd.github+json' \
-            -H "Authorization: Bearer $GITHUB_REPOSITORY_ADMIN_TOKEN" \
+            -H "Authorization: Bearer $token" \
             -H 'X-GitHub-Api-Version: 2022-11-28' \
             https://api.github.com/user)"
           python3 -c 'import json,sys; value=json.load(sys.stdin); assert value.get("login")' <<<"$response"
-          unset response
+          printf 'GITHUB_REPOSITORY_ADMIN_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+          unset response token
 
       - name: Validate, create, seed, and verify the exact repository fleet
         shell: bash
@@ -82,14 +88,16 @@ jobs:
           python3 "$PUBLISHER_PATH" \
             --execute \
             --output "$REPORT_PATH" \
-            > "${RUNNER_TEMP}/networking-components-fleet.stdout.json"
+            > "$RUNNER_TEMP/networking-components-fleet.stdout.json"
 
       - name: Cross-check non-secret publication evidence
-        shell: python
+        shell: bash
         env:
           TRIGGER_SHA: ${{ github.sha }}
           RUN_ID: ${{ github.run_id }}
         run: |
+          set -euo pipefail
+          python3 - <<'PY'
           import hashlib
           import json
           import os
@@ -133,20 +141,14 @@ jobs:
               json.dumps(report, indent=2, sort_keys=True) + "\n",
               encoding="utf-8",
           )
-          print(
-              json.dumps(
-                  {
-                      "verified": len(records),
-                      "evidence_sha256": report["evidence_sha256"],
-                  }
-              )
-          )
+          print(json.dumps({"verified": len(records), "evidence_sha256": report["evidence_sha256"]}))
+          PY
 
       - name: Upload non-secret publication evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: networking-components-fleet-2026-08-05
-          path: ${{ env.REPORT_PATH }}
+          path: ${{ runner.temp }}/networking-components-fleet-2026-08-05.json
           if-no-files-found: error
           retention-days: 14
 
