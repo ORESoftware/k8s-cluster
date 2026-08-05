@@ -27,7 +27,7 @@ permissions:
 
 concurrency:
   group: reconcile-organization-project-docs-once
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   reconcile:
