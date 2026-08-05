@@ -7,6 +7,7 @@ on:
       - remote/argocd/fiducia/fiducia-backend.deployment.yaml
       - remote/argocd/fiducia/fiducia-admin.deployment.yaml
       - scripts/check-fiducia-auth-boundaries.py
+      - scripts/test_check_fiducia_auth_boundaries.py
       - .github/workflows/fiducia-auth-boundaries.yml
   push:
     branches: [main]
@@ -15,6 +16,7 @@ on:
       - remote/argocd/fiducia/fiducia-backend.deployment.yaml
       - remote/argocd/fiducia/fiducia-admin.deployment.yaml
       - scripts/check-fiducia-auth-boundaries.py
+      - scripts/test_check_fiducia_auth_boundaries.py
       - .github/workflows/fiducia-auth-boundaries.yml
 
 permissions:
@@ -23,7 +25,14 @@ permissions:
 jobs:
   boundary-contract:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Exercise parser and negative boundary fixtures
+        run: >-
+          python3 -m unittest discover -s scripts
+          -p 'test_check_fiducia_auth_boundaries.py'
       - name: Verify separate customer and admin identity planes
         run: python3 scripts/check-fiducia-auth-boundaries.py
