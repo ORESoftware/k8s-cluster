@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - .github/workflows/ops-sync-org-project-docs-once.yml
-      - scripts/ops/sync_org_project_docs.sh
+      - scripts/ops/sync_org_project_docs_graphql.sh
       - ops/portfolio/github-linear-project-registry.tsv
       - docs/portfolio/github-linear-project-registry.md
 
@@ -27,9 +27,9 @@ jobs:
     env:
       REPOSITORY: ${{ github.repository }}
       DEFAULT_BRANCH: main
-      HANDSHAKE_NONCE: fa3b61c9a2d74e3ea0f8aa26f112c682
-      PUBLIC_KEY_PATH: .github/tmp/org-project-docs-fa3b61c9a2d74e3ea0f8aa26f112c682.pub.pem
-      CIPHERTEXT_PATH: .github/tmp/org-project-docs-fa3b61c9a2d74e3ea0f8aa26f112c682.enc.b64
+      HANDSHAKE_NONCE: 875173f86aae88087b5f6791491e60c2
+      PUBLIC_KEY_PATH: .github/tmp/org-project-docs-875173f86aae88087b5f6791491e60c2.pub.pem
+      CIPHERTEXT_PATH: .github/tmp/org-project-docs-875173f86aae88087b5f6791491e60c2.enc.b64
       RUN_STAMP: 20260805-${{ github.run_id }}
       EVIDENCE_DIR: ops/evidence/org-project-docs
     steps:
@@ -42,7 +42,17 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          bash -n scripts/ops/sync_org_project_docs.sh
+          bash -n scripts/ops/sync_org_project_docs_graphql.sh
+          reconstructed="$(mktemp)"
+          trap 'rm -f "$reconstructed"' EXIT
+          cat scripts/ops/.org-project-docs-graphql/part-*.b64 \
+            | tr -d '\r\n' \
+            | base64 -d > "$reconstructed"
+          bash -n "$reconstructed"
+          if grep -Eq 'gh (repo|issue)|gh api [^g]|api.github.com/(orgs|repos)' "$reconstructed"; then
+            echo 'The reconciler must remain GraphQL- and Git-transport-only.' >&2
+            exit 1
+          fi
           python3 - <<'PY'
           from pathlib import Path
 
@@ -175,14 +185,13 @@ jobs:
           fi
           echo "::add-mask::${USER_TOKEN}"
           export GH_TOKEN="$USER_TOKEN"
-          gh auth status >/dev/null
           gh auth setup-git >/dev/null
 
           set +e
           REGISTRY_FILE=ops/portfolio/github-linear-project-registry.tsv \
           EVIDENCE_DIR="$EVIDENCE_DIR" \
           RUN_STAMP="$RUN_STAMP" \
-            bash scripts/ops/sync_org_project_docs.sh
+            bash scripts/ops/sync_org_project_docs_graphql.sh
           reconcile_rc=$?
           set -e
 
@@ -192,6 +201,9 @@ jobs:
           cleanup_credentials
           trap - EXIT
 
+          # Keep the user-scoped token for the evidence PR; the REST-only
+          # credential cleanup above continues to use GITHUB_TOKEN_VALUE.
+          gh auth setup-git >/dev/null
           rm -rf "$EVIDENCE_DIR"
           for _ in $(seq 1 30); do
             git fetch origin "$DEFAULT_BRANCH" >/dev/null 2>&1 || true
@@ -211,14 +223,14 @@ jobs:
           if git diff --cached --quiet; then
             printf 'evidence already matches main\n'
           else
-            git commit -m "ops: record organization Project reconciliation evidence"
+            git commit -m "ops: record verified organization Project reconciliation evidence"
             git push --force-with-lease -u origin "$evidence_branch"
             evidence_pr_url="$(gh pr create \
               --repo "$REPOSITORY" \
               --base "$DEFAULT_BRANCH" \
               --head "$evidence_branch" \
-              --title "ops: record organization Project reconciliation evidence" \
-              --body "Records the per-organization GitHub Project, Linear, repository, documentation PR, merge, and governance-issue results produced by run ${RUN_STAMP}.")"
+              --title "ops: record verified organization Project reconciliation evidence" \
+              --body "Replaces the rate-limit-corrupted first-pass evidence with strict, per-organization verification from run ${RUN_STAMP}.")"
             evidence_pr_number="$(gh pr view "$evidence_pr_url" --repo "$REPOSITORY" --json number --jq '.number')"
             if ! gh pr merge "$evidence_pr_number" --repo "$REPOSITORY" --squash --delete-branch --admin; then
               gh pr merge "$evidence_pr_number" --repo "$REPOSITORY" --squash --delete-branch
