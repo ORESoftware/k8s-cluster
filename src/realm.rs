@@ -14,6 +14,7 @@ use crate::{config::AppConfig, error::ConfigError};
 
 const MAX_REFERENCE_BYTES: usize = 256;
 const MAX_COOKIE_NAME_BYTES: usize = 128;
+const MAX_DATABASE_HOST_BYTES: usize = 253;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Realm {
@@ -50,6 +51,7 @@ impl fmt::Display for Realm {
 pub struct RealmConfig {
     pub realm: Realm,
     pub deployment: String,
+    pub database_endpoint_host: String,
     pub database_resource_ref: String,
     pub database_secret_ref: String,
     pub signing_key_ref: String,
@@ -64,6 +66,7 @@ struct RealmInput {
     deployment: String,
     issuer: String,
     database_url: String,
+    database_endpoint_host: String,
     database_resource_ref: String,
     database_secret_ref: String,
     signing_key_ref: String,
@@ -93,6 +96,7 @@ impl RealmConfig {
             return Ok(Self {
                 realm,
                 deployment: format!("shared-auth-{}-dbless", realm.as_str()),
+                database_endpoint_host: "development-dbless".to_owned(),
                 database_resource_ref: "development:dbless".to_owned(),
                 database_secret_ref: "development:dbless".to_owned(),
                 signing_key_ref: "development:ephemeral".to_owned(),
@@ -111,6 +115,7 @@ impl RealmConfig {
             deployment: required_env("AUTH_REALM_DEPLOYMENT")?,
             issuer: config.signing.issuer.clone(),
             database_url: db.url.clone(),
+            database_endpoint_host: required_env("AUTH_DATABASE_ENDPOINT_HOST")?,
             database_resource_ref: required_env("AUTH_DATABASE_RESOURCE_REF")?,
             database_secret_ref: required_env("AUTH_DATABASE_SECRET_REF")?,
             signing_key_ref: required_env("AUTH_SIGNING_KEY_REF")?,
@@ -161,13 +166,16 @@ impl RealmConfig {
         }
 
         validate_cookie_name(&input.session_cookie_name, input.realm)?;
-        validate_issuer(&input.issuer, input.realm, input.allow_loopback)?;
-        validate_database_url(&input.database_url, input.realm, input.allow_loopback)?;
+        let issuer_loopback = validate_issuer(&input.issuer, input.realm, input.allow_loopback)?;
+        let database_loopback = validate_database_url(
+            &input.database_url,
+            &input.database_endpoint_host,
+            input.realm,
+            input.allow_loopback,
+        )?;
         validate_project_ref(&input.supabase_project_ref)?;
 
-        let development_loopback = input.allow_loopback
-            && is_loopback_http_url(&input.issuer)
-            && is_loopback_database_url(&input.database_url);
+        let development_loopback = input.allow_loopback && issuer_loopback && database_loopback;
         let provider_matches = provider_refs.len() == 1
             && provider_refs[0] == input.supabase_project_ref.as_str();
         let loopback_without_provider = development_loopback && provider_refs.is_empty();
@@ -180,6 +188,7 @@ impl RealmConfig {
         Ok(Self {
             realm: input.realm,
             deployment: input.deployment,
+            database_endpoint_host: input.database_endpoint_host,
             database_resource_ref: input.database_resource_ref,
             database_secret_ref: input.database_secret_ref,
             signing_key_ref: input.signing_key_ref,
@@ -238,7 +247,11 @@ fn validate_cookie_name(value: &str, realm: Realm) -> Result<(), ConfigError> {
     Ok(())
 }
 
-fn validate_issuer(value: &str, realm: Realm, allow_loopback: bool) -> Result<(), ConfigError> {
+fn validate_issuer(
+    value: &str,
+    realm: Realm,
+    allow_loopback: bool,
+) -> Result<bool, ConfigError> {
     let parsed = Url::parse(value).map_err(|_| ConfigError::Invalid("AUTH_ISSUER"))?;
     let loopback_http = allow_loopback
         && parsed.scheme() == "http"
@@ -254,7 +267,7 @@ fn validate_issuer(value: &str, realm: Realm, allow_loopback: bool) -> Result<()
         ));
     }
     if loopback_http {
-        return Ok(());
+        return Ok(true);
     }
     let first_label = parsed
         .host_str()
@@ -267,39 +280,44 @@ fn validate_issuer(value: &str, realm: Realm, allow_loopback: bool) -> Result<()
         Realm::Customer if first_label.contains("admin-auth") => Err(ConfigError::Invalid(
             "customer AUTH_ISSUER must not use an admin-auth host",
         )),
-        _ => Ok(()),
+        _ => Ok(false),
     }
 }
 
 fn validate_database_url(
     value: &str,
+    expected_host: &str,
     realm: Realm,
     allow_loopback: bool,
-) -> Result<(), ConfigError> {
+) -> Result<bool, ConfigError> {
+    validate_database_host(expected_host)?;
     let parsed = Url::parse(value).map_err(|_| ConfigError::Invalid("AUTH_DATABASE_URL"))?;
-    let host = parsed.host_str().unwrap_or_default();
-    let loopback = allow_loopback && is_loopback_host(host);
+    let actual_host = parsed.host_str().ok_or(ConfigError::Invalid(
+        "AUTH_DATABASE_URL must contain a PostgreSQL host",
+    ))?;
+    let loopback = is_loopback_host(actual_host);
     if !matches!(parsed.scheme(), "postgres" | "postgresql")
-        || (!host.contains(realm.as_str()) && !loopback)
+        || !actual_host.eq_ignore_ascii_case(expected_host)
+        || (loopback && !allow_loopback)
+        || (!loopback && !expected_host.contains(realm.as_str()))
     {
         return Err(ConfigError::Invalid(
-            "AUTH_DATABASE_URL must target the selected realm PostgreSQL endpoint",
+            "AUTH_DATABASE_URL host must exactly match the selected realm endpoint",
         ));
     }
+    Ok(loopback)
+}
+
+fn validate_database_host(value: &str) -> Result<(), ConfigError> {
+    if value.is_empty()
+        || value.len() > MAX_DATABASE_HOST_BYTES
+        || !value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b':')
+        })
+    {
+        return Err(ConfigError::Invalid("AUTH_DATABASE_ENDPOINT_HOST"));
+    }
     Ok(())
-}
-
-fn is_loopback_http_url(value: &str) -> bool {
-    Url::parse(value).is_ok_and(|parsed| {
-        parsed.scheme() == "http" && parsed.host_str().is_some_and(is_loopback_host)
-    })
-}
-
-fn is_loopback_database_url(value: &str) -> bool {
-    Url::parse(value).is_ok_and(|parsed| {
-        matches!(parsed.scheme(), "postgres" | "postgresql")
-            && parsed.host_str().is_some_and(is_loopback_host)
-    })
 }
 
 fn is_loopback_host(host: &str) -> bool {
@@ -323,6 +341,8 @@ mod tests {
 
     fn input(realm: Realm) -> RealmInput {
         let name = realm.as_str();
+        let database_endpoint_host =
+            format!("shared-auth-{name}-prod.abc.us-east-1.rds.amazonaws.com");
         RealmInput {
             realm,
             deployment: format!("shared-auth-{name}"),
@@ -331,8 +351,9 @@ mod tests {
                 Realm::Customer => "https://auth.example.test".to_owned(),
             },
             database_url: format!(
-                "postgres://runtime:secret@shared-auth-{name}-prod.abc.us-east-1.rds.amazonaws.com/shared_auth?sslmode=require"
+                "postgres://runtime:secret@{database_endpoint_host}/shared_auth?sslmode=require"
             ),
+            database_endpoint_host,
             database_resource_ref: format!("aws:rds:shared-auth-{name}-prod"),
             database_secret_ref: format!("dd/shared-auth/{name}/database-url"),
             signing_key_ref: format!("dd/shared-auth/{name}/signing-key"),
@@ -359,6 +380,14 @@ mod tests {
         let mut candidate = input(Realm::Customer);
         candidate.database_url =
             "postgres://runtime:secret@app-prod.abc.rds.amazonaws.com/application".to_owned();
+        assert!(RealmConfig::validate(candidate, &["customerprojectref01"]).is_err());
+    }
+
+    #[test]
+    fn rejects_a_similar_but_not_exact_database_host() {
+        let mut candidate = input(Realm::Customer);
+        candidate.database_url =
+            "postgres://runtime:secret@shared-auth-customer-shadow.abc.us-east-1.rds.amazonaws.com/shared_auth".to_owned();
         assert!(RealmConfig::validate(candidate, &["customerprojectref01"]).is_err());
     }
 
@@ -407,12 +436,14 @@ mod tests {
         candidate.issuer = "http://localhost:8120".to_owned();
         candidate.database_url =
             "postgres://runtime:secret@127.0.0.1:5432/shared_auth".to_owned();
+        candidate.database_endpoint_host = "127.0.0.1".to_owned();
         assert!(RealmConfig::validate(candidate, &[]).is_err());
 
         let mut candidate = input(Realm::Customer);
         candidate.issuer = "http://localhost:8120".to_owned();
         candidate.database_url =
             "postgres://runtime:secret@127.0.0.1:5432/shared_auth".to_owned();
+        candidate.database_endpoint_host = "127.0.0.1".to_owned();
         candidate.allow_loopback = true;
         let profile = RealmConfig::validate(candidate, &[]).unwrap();
         assert!(profile.development_loopback);
