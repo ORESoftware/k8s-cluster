@@ -76,7 +76,7 @@ test('project operating model maps GitHub, Linear, artifacts, and exact-head del
 
 test('project docs track the private-backend CI blocker without recommending a PAT', () => {
   assert.match(roadmap, /DEN-2332/);
-  assert.match(roadmap, /issue #886/);
+  assert.match(roadmap, /https:\/\/github\.com\/ORESoftware\/k8s-cluster\/issues\/886/);
   assert.match(operatingModel, /DEN-2332/);
   assert.match(operatingModel, /issue #886/);
   assert.match(operatingModel, /repository-scoped GitHub App/);
