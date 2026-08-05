@@ -90,41 +90,17 @@ jobs:
               raise SystemExit(f'expected one retry insertion point, found {source.count(insertion_point)}')
           source = source.replace(insertion_point, replacement, 1)
 
-          old_create = '''            gh api --method POST user/repos \\
-                      -f name=slack-ores-integrations \\
-                      -f description='Reviewed Slack app manifests, local development, and compatibility contracts for alex-main-agent.' \\
-                      -f visibility=public \\
-                      -F has_issues=true \\
-                      -F has_projects=false \\
-                      -F has_wiki=false >/dev/null
-          '''
-          new_create = '''            gh_api_content_retry create-target-repository --method POST user/repos \\
-                      -f name=slack-ores-integrations \\
-                      -f description='Reviewed Slack app manifests, local development, and compatibility contracts for alex-main-agent.' \\
-                      -f visibility=public \\
-                      -F has_issues=true \\
-                      -F has_projects=false \\
-                      -F has_wiki=false >/dev/null
-          '''
-          if source.count(old_create) != 1:
-              raise SystemExit(f'expected one repository creation call, found {source.count(old_create)}')
-          source = source.replace(old_create, new_create, 1)
+          old_create_line = "            gh api --method POST user/repos \\\n"
+          new_create_line = "            gh_api_content_retry create-target-repository --method POST user/repos \\\n"
+          if source.count(old_create_line) != 1:
+              raise SystemExit(f'expected one repository creation line, found {source.count(old_create_line)}')
+          source = source.replace(old_create_line, new_create_line, 1)
 
-          old_pr = '''            target_pr_json="$(gh api --method POST "repos/${TARGET_REPOSITORY}/pulls" \\
-                      -f title='docs(DEN-1602): canonicalize Slack integration runtime ownership' \\
-                      -f head="$FEATURE_REF" \\
-                      -f base=main \\
-                      -f body='Pin the Rust production-runtime owner, lock all six aliases to the two signed ingress endpoints, distinguish local Slack CLI from Kubernetes production, and add compatibility tests.')"
-          '''
-          new_pr = '''            target_pr_json="$(gh_api_content_retry create-target-pull-request --method POST "repos/${TARGET_REPOSITORY}/pulls" \\
-                      -f title='docs(DEN-1602): canonicalize Slack integration runtime ownership' \\
-                      -f head="$FEATURE_REF" \\
-                      -f base=main \\
-                      -f body='Pin the Rust production-runtime owner, lock all six aliases to the two signed ingress endpoints, distinguish local Slack CLI from Kubernetes production, and add compatibility tests.')"
-          '''
-          if source.count(old_pr) != 1:
-              raise SystemExit(f'expected one target PR creation call, found {source.count(old_pr)}')
-          source = source.replace(old_pr, new_pr, 1)
+          old_pr_line = '            target_pr_json="$(gh api --method POST "repos/${TARGET_REPOSITORY}/pulls" \\\n'
+          new_pr_line = '            target_pr_json="$(gh_api_content_retry create-target-pull-request --method POST "repos/${TARGET_REPOSITORY}/pulls" \\\n'
+          if source.count(old_pr_line) != 1:
+              raise SystemExit(f'expected one target PR creation line, found {source.count(old_pr_line)}')
+          source = source.replace(old_pr_line, new_pr_line, 1)
           workflow.write_text(source, encoding='utf-8')
 
           tests = Path('scripts/ops/test_slack_ores_integrations_encrypted_publisher.py')
