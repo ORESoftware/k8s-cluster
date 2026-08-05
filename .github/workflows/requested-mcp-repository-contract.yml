@@ -64,30 +64,45 @@ jobs:
           grep -qF 'MCP_REPOSITORY_VERIFIED ' scripts/ops/run_requested_mcp_publisher_remote.sh
           grep -qF '/tmp/publish-requested-mcp-repositories.sh' scripts/ops/run_protected_requested_mcp_publisher.sh
 
+          # The private trusted-source fetch must use a temporary askpass helper;
+          # exporting GH_TOKEN alone does not authenticate Git over HTTPS.
+          grep -qF 'github-askpass.sh' scripts/ops/run_requested_mcp_publisher_remote.sh
+          grep -qF 'GIT_ASKPASS_REQUIRE=force' scripts/ops/run_requested_mcp_publisher_remote.sh
+          grep -qF 'GIT_TERMINAL_PROMPT=0' scripts/ops/run_requested_mcp_publisher_remote.sh
+          grep -qF 'x-access-token' scripts/ops/run_requested_mcp_publisher_remote.sh
+          ! grep -E "https://[^[:space:]\"']+@github\\.com" scripts/ops/run_requested_mcp_publisher_remote.sh
+
+          # The one-time envelope is intentionally absent between attempts.
+          # Whenever present, it must remain one bounded RSA-4096 ciphertext.
           envelope='.github/requested-mcp-token.envelope'
-          test "$(wc -l < "$envelope")" -eq 1
-          grep -qxE 'MCP_TOKEN_ENVELOPE_V1 fingerprint=6a747f9387283fcf4a2eeba3cb433a3c9cfc1105a533d5dd315ccc912975b704 ciphertext=[A-Za-z0-9+/=]+' "$envelope"
-          test "$(sha256sum "$envelope" | awk '{print $1}')" = '6d8599173b0a18e6fc73f712af86b43dd95d5b9c4d73b22b7895fcd67fabb186'
-          ciphertext="$(sed -E 's/^.* ciphertext=//' "$envelope")"
-          printf '%s' "$ciphertext" | base64 --decode > /tmp/requested-mcp-token.enc
-          test "$(stat -c '%s' /tmp/requested-mcp-token.enc)" -eq 512
-          rm -f /tmp/requested-mcp-token.enc
-          unset ciphertext
+          if test -f "$envelope"; then
+            test "$(wc -l < "$envelope")" -eq 1
+            grep -qxE 'MCP_TOKEN_ENVELOPE_V1 fingerprint=[0-9a-f]{64} ciphertext=[A-Za-z0-9+/=]+' "$envelope"
+            ciphertext="$(sed -E 's/^.* ciphertext=//' "$envelope")"
+            printf '%s' "$ciphertext" | base64 --decode > /tmp/requested-mcp-token.enc
+            test "$(stat -c '%s' /tmp/requested-mcp-token.enc)" -eq 512
+            rm -f /tmp/requested-mcp-token.enc
+            unset ciphertext
+          fi
 
       - name: Reject credential literals and destructive Git operations
         run: |
           set -euo pipefail
-          ! grep -R -E 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}' \
-            scripts/ops/publish_requested_mcp_servers.py \
-            scripts/ops/requested_mcp_publisher \
-            scripts/ops/prepare_requested_mcp_token_envelope.sh \
-            scripts/ops/run_protected_requested_mcp_publisher.sh \
-            scripts/ops/run_requested_mcp_publisher_remote.sh \
-            scripts/ops/tests/test_publish_requested_mcp_servers.py \
-            .github/requested-mcp-token.envelope \
-            .github/workflows/requested-mcp-repository-contract.yml \
-            .github/workflows/ops-prepare-requested-mcp-token-envelope.yml \
+          scan_paths=(
+            scripts/ops/publish_requested_mcp_servers.py
+            scripts/ops/requested_mcp_publisher
+            scripts/ops/prepare_requested_mcp_token_envelope.sh
+            scripts/ops/run_protected_requested_mcp_publisher.sh
+            scripts/ops/run_requested_mcp_publisher_remote.sh
+            scripts/ops/tests/test_publish_requested_mcp_servers.py
+            .github/workflows/requested-mcp-repository-contract.yml
+            .github/workflows/ops-prepare-requested-mcp-token-envelope.yml
             .github/workflows/ops-publish-requested-mcp-servers-once.yml
+          )
+          if test -f .github/requested-mcp-token.envelope; then
+            scan_paths+=(.github/requested-mcp-token.envelope)
+          fi
+          ! grep -R -E 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}' "${scan_paths[@]}"
           ! grep -R -E 'git push[^\n]*(--force|-f([[:space:]]|$))' \
             scripts/ops/requested_mcp_publisher \
             scripts/ops/prepare_requested_mcp_token_envelope.sh \

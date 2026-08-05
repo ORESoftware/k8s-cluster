@@ -3,6 +3,8 @@ set -Eeuo pipefail
 umask 077
 
 remote_stage="bootstrap"
+work=""
+askpass=""
 on_error() {
   local status=$?
   trap - ERR
@@ -12,7 +14,13 @@ on_error() {
 cleanup() {
   unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN encoded_pat
   unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
-  rm -rf "${work:-}" /tmp/requested-mcp-publication.json
+  if test -n "$askpass"; then
+    rm -f "$askpass"
+  fi
+  if test -n "$work"; then
+    rm -rf "$work"
+  fi
+  rm -f /tmp/requested-mcp-publication.json
 }
 trap on_error ERR
 trap cleanup EXIT
@@ -35,12 +43,34 @@ remote_stage="unprivileged-prerequisites"
 command -v git >/dev/null
 command -v python3 >/dev/null
 
+# The trusted source repository is private. GH_TOKEN is not automatically used
+# by Git, so install an exact, temporary askpass helper before fetching the
+# pinned k8s-cluster commit. The credential remains in the environment; it is
+# never embedded in the remote URL, argv, config, or command output.
+remote_stage="trusted-source-auth"
+askpass="$work/github-askpass.sh"
+cat > "$askpass" <<'ASKPASS'
+#!/usr/bin/env sh
+case "${1:-}" in
+  *Username*) printf '%s\n' x-access-token ;;
+  *Password*) printf '%s\n' "${GH_TOKEN:?GH_TOKEN required}" ;;
+  *) exit 1 ;;
+esac
+ASKPASS
+chmod 0700 "$askpass"
+export GIT_ASKPASS="$askpass"
+export GIT_ASKPASS_REQUIRE=force
+export GIT_TERMINAL_PROMPT=0
+
 remote_stage="trusted-source-checkout"
 git init "$work/k8s-cluster" >/dev/null
 git -C "$work/k8s-cluster" remote add origin https://github.com/ORESoftware/k8s-cluster.git
 git -C "$work/k8s-cluster" fetch --quiet --depth=1 origin "$trusted_sha"
 git -C "$work/k8s-cluster" checkout --quiet --detach FETCH_HEAD
 test "$(git -C "$work/k8s-cluster" rev-parse HEAD)" = "$trusted_sha"
+rm -f "$askpass"
+askpass=""
+unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
 
 remote_stage="publisher-contract-tests"
 cd "$work/k8s-cluster"
