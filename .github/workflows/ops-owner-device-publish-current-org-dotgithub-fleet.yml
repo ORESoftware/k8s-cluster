@@ -1,0 +1,340 @@
+name: Publish current organization .github governance fleet
+run-name: Publish current 62-organization .github governance fleet from issue 615
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/ops-owner-device-publish-current-org-dotgithub-fleet.yml
+      - scripts/ops/bootstrap_current_org_dotgithub_repositories.py
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: owner-device-publish-current-organization-dotgithub-fleet
+  cancel-in-progress: false
+
+jobs:
+  validate-pr:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Check out the exact pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind validation to the exact head and run focused checks
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$EXPECTED_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          python3 -m py_compile scripts/ops/bootstrap_current_org_dotgithub_repositories.py
+          python3 scripts/ops/bootstrap_current_org_dotgithub_repositories.py \
+            --expected-count 62 \
+            --json-report "$RUNNER_TEMP/current-org-dotgithub.json" \
+            --markdown-report "$RUNNER_TEMP/current-org-dotgithub.md"
+          REPORT="$RUNNER_TEMP/current-org-dotgithub.json" python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report = json.loads(Path(os.environ["REPORT"]).read_text(encoding="utf-8"))
+          organizations = report.get("organizations")
+          if report.get("mode") != "dry-run":
+              raise SystemExit("dry-run report has the wrong mode")
+          if report.get("fleet_id") != "current-org-dotgithub-20260804-v1":
+              raise SystemExit("dry-run report has the wrong fleet id")
+          if not isinstance(organizations, list) or len(organizations) != 62:
+              raise SystemExit("dry-run report has the wrong organization count")
+          if len({item.get("organization", "").lower() for item in organizations}) != 62:
+              raise SystemExit("dry-run report has duplicate organizations")
+          PY
+
+  publish:
+    if: >-
+      !github.event.issue.pull_request &&
+      github.event.issue.number == 615 &&
+      github.actor == 'ORESoftware' &&
+      github.event.comment.body == 'ops-owner-device-current-org-dotgithub:615:20260804-v1'
+    permissions:
+      contents: read
+      issues: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      TRACKING_ISSUE: '615'
+      OAUTH_CLIENT_ID: 178c6fc778ccc68e1d6a
+      EXPECTED_LOGIN: ORESoftware
+      FLEET_ID: current-org-dotgithub-20260804-v1
+      EXPECTED_COUNT: '62'
+
+    steps:
+      - name: Check out the exact trusted default-branch revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind publication to exact trusted source and validate it
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -m py_compile scripts/ops/bootstrap_current_org_dotgithub_repositories.py
+          python3 scripts/ops/bootstrap_current_org_dotgithub_repositories.py \
+            --expected-count "$EXPECTED_COUNT" \
+            --json-report "$RUNNER_TEMP/current-org-dotgithub-dry-run.json" \
+            --markdown-report "$RUNNER_TEMP/current-org-dotgithub-dry-run.md"
+
+      - name: Authorize owner, publish the exact fleet, and verify
+        id: publish
+        continue-on-error: true
+        shell: bash
+        env:
+          COMMENT_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          stage=initialize
+          workflow_token="$COMMENT_TOKEN"
+          access_token=''
+          failure_report="$RUNNER_TEMP/current-org-dotgithub-failure.md"
+          success_report="$RUNNER_TEMP/current-org-dotgithub-governance.md"
+          json_report="$RUNNER_TEMP/current-org-dotgithub-governance.json"
+          publisher_log="$RUNNER_TEMP/current-org-dotgithub-governance.log"
+
+          clear_sensitive_state() {
+            unset access_token device_code token_json token_response token_response_body
+            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN COMMENT_TOKEN workflow_token
+          }
+          report_failure() {
+            status=$?
+            trap - ERR
+            clear_sensitive_state
+            {
+              echo '# Current organization `.github` device-authorized publication failed'
+              echo
+              echo "- Bounded stage: \`${stage}\`"
+              echo "- Exact fleet: \`${FLEET_ID}\` (\`${EXPECTED_COUNT}\` organizations)"
+              echo '- No OAuth access token was written to Git, Actions outputs, artifacts, issue comments, or `GITHUB_ENV`.'
+              echo '- No destructive recovery command was used.'
+              echo
+              echo "Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            } > "$failure_report"
+            exit "$status"
+          }
+          trap clear_sensitive_state EXIT
+          trap report_failure ERR
+
+          stage=request-device-code
+          device_response="$(
+            curl --silent --show-error \
+              --request POST \
+              --header 'Accept: application/json' \
+              --data-urlencode "client_id=${OAUTH_CLIENT_ID}" \
+              --data-urlencode 'scope=public_repo read:org' \
+              --write-out $'\n%{http_code}' \
+              https://github.com/login/device/code
+          )"
+          device_status="${device_response##*$'\n'}"
+          device_json="${device_response%$'\n'*}"
+          test "$device_status" = 200
+          device_code="$(jq -er '.device_code | select(type == "string" and length > 0)' <<<"$device_json")"
+          user_code="$(jq -er '.user_code | select(type == "string" and length > 0)' <<<"$device_json")"
+          verification_uri="$(jq -er '.verification_uri | select(type == "string" and . == "https://github.com/login/device")' <<<"$device_json")"
+          expires_in="$(jq -er '.expires_in | select(type == "number" and . > 0 and . <= 900)' <<<"$device_json")"
+          interval="$(jq -er '.interval | select(type == "number" and . > 0)' <<<"$device_json")"
+          [[ "$user_code" =~ ^[A-Z0-9]{4}-[A-Z0-9]{4}$ ]]
+          unset device_response device_json device_status
+
+          authorization_body="$RUNNER_TEMP/current-org-dotgithub-device-authorization.md"
+          AUTHORIZATION_BODY="$authorization_body" \
+          VERIFICATION_URI="$verification_uri" \
+          USER_CODE="$user_code" \
+          EXPIRES_MINUTES="$((expires_in / 60))" \
+          EXPECTED_AUTH_LOGIN="$EXPECTED_LOGIN" \
+          AUTH_REPOSITORY="$GITHUB_REPOSITORY" \
+          AUTH_RUN_ID="$GITHUB_RUN_ID" \
+          AUTH_FLEET_ID="$FLEET_ID" \
+          AUTH_EXPECTED_COUNT="$EXPECTED_COUNT" \
+            python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          body = f"""## Authorize the current organization `.github` governance publication
+
+          Open {os.environ['VERIFICATION_URI']} and enter **`{os.environ['USER_CODE']}`**.
+
+          - Code lifetime: about {os.environ['EXPIRES_MINUTES']} minutes
+          - Requested OAuth scopes: `public_repo` and `read:org`
+          - Accepted account: `{os.environ['EXPECTED_AUTH_LOGIN']}` only
+          - Exact fleet: `{os.environ['AUTH_FLEET_ID']}` ({os.environ['AUTH_EXPECTED_COUNT']} organizations)
+          - Mutation starts only after active owner/admin membership is verified for every organization
+          - Existing `.github` repositories are validated and left untouched
+          - Missing repositories receive 15 general governance, profile, support, security, issue, pull-request, agent, and boundary files
+          - The token remains memory-only and is never persisted; the runner cannot recover it after exit
+
+          Run: https://github.com/{os.environ['AUTH_REPOSITORY']}/actions/runs/{os.environ['AUTH_RUN_ID']}
+          """
+          Path(os.environ['AUTHORIZATION_BODY']).write_text(body, encoding="utf-8")
+          PY
+          GH_TOKEN="$workflow_token" gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_ISSUE}/comments" \
+            -F "body=@${authorization_body}" >/dev/null
+          echo "::notice title=GitHub owner authorization::Open ${verification_uri} and enter ${user_code}"
+          unset authorization_body user_code verification_uri
+
+          stage=await-device-authorization
+          elapsed=0
+          access_token=''
+          granted_scope=''
+          while (( elapsed < expires_in )); do
+            sleep "$interval"
+            elapsed=$((elapsed + interval))
+            token_response="$(
+              curl --silent --show-error \
+                --request POST \
+                --header 'Accept: application/json' \
+                --data-urlencode "client_id=${OAUTH_CLIENT_ID}" \
+                --data-urlencode "device_code=${device_code}" \
+                --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:device_code' \
+                --write-out $'\n%{http_code}' \
+                https://github.com/login/oauth/access_token
+            )"
+            token_status="${token_response##*$'\n'}"
+            token_json="${token_response%$'\n'*}"
+            test "$token_status" = 200
+            error="$(jq -r '.error // empty' <<<"$token_json")"
+            case "$error" in
+              '')
+                access_token="$(jq -er '.access_token | select(type == "string" and length > 0)' <<<"$token_json")"
+                granted_scope="$(jq -er '.scope | select(type == "string")' <<<"$token_json")"
+                break
+                ;;
+              authorization_pending) ;;
+              slow_down) interval=$((interval + 5)) ;;
+              access_denied|expired_token|incorrect_device_code|incorrect_client_credentials)
+                echo "GitHub device authorization stopped with bounded error: ${error}" >&2
+                false
+                ;;
+              *)
+                echo 'GitHub device authorization returned an unexpected bounded error.' >&2
+                false
+                ;;
+            esac
+          done
+          test -n "$access_token"
+          [[ "$access_token" != *$'\n'* && "$access_token" != *$'\r'* && "$access_token" != *$'\t'* && "$access_token" != *' '* ]]
+          echo "::add-mask::$access_token"
+          normalized_scope="$(tr -d ' ' <<<"$granted_scope")"
+          case ",${normalized_scope}," in
+            *,public_repo,*|*,repo,*) ;;
+            *) echo 'Authorized token lacks public repository write scope.' >&2; false ;;
+          esac
+          case ",${normalized_scope}," in
+            *,read:org,*|*,admin:org,*) ;;
+            *) echo 'Authorized token lacks organization membership read scope.' >&2; false ;;
+          esac
+          unset token_response token_status token_json error device_code granted_scope normalized_scope
+
+          stage=execute-current-fleet-publisher
+          export GH_TOKEN="$access_token"
+          export GITHUB_REPOSITORY_ADMIN_TOKEN="$access_token"
+          set +e
+          python3 scripts/ops/bootstrap_current_org_dotgithub_repositories.py \
+            --execute \
+            --fleet-id "$FLEET_ID" \
+            --expected-count "$EXPECTED_COUNT" \
+            --json-report "$json_report" \
+            --markdown-report "$success_report" \
+            >"$publisher_log" 2>&1
+          publisher_status=$?
+          set -e
+          clear_sensitive_state
+          if test "$publisher_status" -ne 0; then
+            LOG="$publisher_log" python3 - <<'PY' >&2
+          import os
+          import re
+          from pathlib import Path
+
+          path = Path(os.environ["LOG"])
+          text = path.read_text(errors="replace") if path.exists() else "publisher log was not created"
+          patterns = [
+              (r"https://x-access-token:[^@\s]+@github\.com/", "https://x-access-token:***@github.com/"),
+              (r"github_pat_[A-Za-z0-9_]{20,}", "github_pat_***"),
+              (r"gh[a-z]_[A-Za-z0-9_]{20,}", "gh*_***"),
+              (r"(Authorization:\s*(?:Bearer|token)\s+)[A-Za-z0-9._-]{20,}", r"\1***"),
+          ]
+          for pattern, replacement in patterns:
+              text = re.sub(pattern, replacement, text, flags=re.I)
+          print("\n".join(text.splitlines()[-220:])[-24000:])
+          PY
+            false
+          fi
+
+          stage=certify-current-fleet-report
+          REPORT="$json_report" EXPECTED_COUNT="$EXPECTED_COUNT" FLEET_ID="$FLEET_ID" python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(Path(os.environ["REPORT"]).read_text(encoding="utf-8"))
+          organizations = payload.get("organizations")
+          expected_count = int(os.environ["EXPECTED_COUNT"])
+          if payload.get("mode") != "execute" or payload.get("fleet_id") != os.environ["FLEET_ID"]:
+              raise SystemExit("publisher report does not certify the requested execute fleet")
+          if not isinstance(organizations, list) or len(organizations) != expected_count:
+              raise SystemExit("publisher report has the wrong organization count")
+          seen = set()
+          for item in organizations:
+              organization = item.get("organization")
+              repository = item.get("repository")
+              if not isinstance(organization, str) or repository != f"{organization}/.github":
+                  raise SystemExit(f"invalid organization report entry: {item!r}")
+              lowered = organization.lower()
+              if lowered in seen or item.get("verified") is not True:
+                  raise SystemExit(f"unverified or duplicate organization report entry: {item!r}")
+              if item.get("created_repository") == item.get("preserved_repository"):
+                  raise SystemExit(f"invalid created/preserved result: {item!r}")
+              seen.add(lowered)
+          PY
+          test -s "$success_report"
+          {
+            echo
+            echo '<!-- current-org-dotgithub-governance-report-complete -->'
+          } >> "$success_report"
+          stage=complete
+
+      - name: Publish the bounded result to issue 615
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "$PUBLISH_OUTCOME" == success ]] && \
+             grep -Fq '<!-- current-org-dotgithub-governance-report-complete -->' \
+               "$RUNNER_TEMP/current-org-dotgithub-governance.md"; then
+            body="$RUNNER_TEMP/current-org-dotgithub-governance.md"
+          else
+            body="$RUNNER_TEMP/current-org-dotgithub-failure.md"
+            test -s "$body" || {
+              echo '# Current organization `.github` publication failed before a bounded report was produced' > "$body"
+              echo >> "$body"
+              echo "Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> "$body"
+            }
+          fi
+          gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" --body-file "$body"
+          test "$PUBLISH_OUTCOME" == success
