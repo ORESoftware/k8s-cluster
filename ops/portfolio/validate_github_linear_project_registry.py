@@ -3,12 +3,13 @@
 
 from __future__ import annotations
 
+import argparse
 import csv
 import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
-REGISTRY = Path(__file__).with_name("github-linear-project-registry.tsv")
+DEFAULT_REGISTRY = Path(__file__).with_name("github-linear-project-registry.tsv")
 EXPECTED_COLUMNS = (
     "organization",
     "github_project_title",
@@ -20,8 +21,12 @@ PROJECT_NUMBER_EXCEPTIONS = {"dancing-dragons": 4}
 ORG_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
 
 
+class RegistryError(ValueError):
+    """The registry violates a reviewed identity or formatting invariant."""
+
+
 def fail(message: str) -> None:
-    raise SystemExit(f"registry validation failed: {message}")
+    raise RegistryError(message)
 
 
 def exact_https_url(value: str, *, host: str, path: str, label: str) -> None:
@@ -39,8 +44,8 @@ def exact_https_url(value: str, *, host: str, path: str, label: str) -> None:
         fail(f"{label} must be exactly https://{host}{path}: {value!r}")
 
 
-def main() -> None:
-    raw = REGISTRY.read_bytes()
+def validate(registry: Path) -> tuple[int, int, int]:
+    raw = registry.read_bytes()
     if b"\r" in raw:
         fail("registry must use LF line endings")
     if not raw.endswith(b"\n"):
@@ -48,7 +53,7 @@ def main() -> None:
     if b"\x00" in raw:
         fail("registry contains a NUL byte")
 
-    with REGISTRY.open(newline="", encoding="utf-8") as stream:
+    with registry.open(newline="", encoding="utf-8") as stream:
         reader = csv.DictReader(stream, delimiter="\t", strict=True)
         if tuple(reader.fieldnames or ()) != EXPECTED_COLUMNS:
             fail(
@@ -124,15 +129,35 @@ def main() -> None:
             fail(f"line {number} duplicates Linear URL {linear_url!r}")
         linear_urls.add(linear_url)
 
-    expected_exceptions = set(PROJECT_NUMBER_EXCEPTIONS)
-    if not expected_exceptions.issubset(organizations):
+    if not set(PROJECT_NUMBER_EXCEPTIONS).issubset(organizations):
         fail("project-number exception references an organization outside the registry")
 
+    return len(rows), len(project_urls), len(linear_urls)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "registry",
+        nargs="?",
+        type=Path,
+        default=DEFAULT_REGISTRY,
+        help="TSV registry to validate",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    try:
+        organizations, projects, linear_projects = validate(args.registry)
+    except (OSError, csv.Error, UnicodeError, RegistryError) as error:
+        raise SystemExit(f"registry validation failed: {error}") from None
     print(
         "registry=ok "
-        f"organizations={len(rows)} "
-        f"projects={len(project_urls)} "
-        f"linear_projects={len(linear_urls)}"
+        f"organizations={organizations} "
+        f"projects={projects} "
+        f"linear_projects={linear_projects}"
     )
 
 
