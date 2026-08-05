@@ -1,5 +1,5 @@
-name: One-time push reviewed zed-intellij bundle
-run-name: Push exact zed-intellij Git history from checksum-verified chunks
+name: One-time push zed-intellij source
+run-name: Push zed-intellij source, then let the GitHub app add workflows
 
 on:
   issue_comment:
@@ -10,7 +10,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: ops-push-zed-intellij-chunked-20260805
+  group: ops-push-zed-intellij-source-20260805
   cancel-in-progress: false
 
 jobs:
@@ -18,18 +18,17 @@ jobs:
     if: >-
       github.event.issue.number == 967 &&
       github.actor == 'ORESoftware' &&
-      github.event.comment.body == 'ops-publish-zed-intellij:967:push-chunked-v3:20260805T1715Z'
+      github.event.comment.body == 'ops-publish-zed-intellij:967:push-source-v4:20260805T1725Z'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       REPOSITORY: ${{ github.repository }}
       CARRIER_NUMBER: '967'
       TARGET_REPOSITORY: zed-pkg/zed-intellij
-      CHALLENGE_BRANCH: ops/zed-intellij-chunked-credential-challenge-20260805
-      CHALLENGE_PATH: ops/zed-intellij-chunked-credential-challenge.json
-      STALE_CHALLENGE_BRANCH: ops/zed-intellij-push-credential-challenge-20260805
+      CHALLENGE_BRANCH: ops/zed-intellij-source-credential-challenge-20260805
+      CHALLENGE_PATH: ops/zed-intellij-source-credential-challenge.json
       EXPECTED_BUNDLE_SHA256: 6a6be4b95e13042075686d0a35a601716e7dd8004966f68f8efff4fea14cffdc
-      EXPECTED_COMMIT: 2a25eed96997a0fe3410184f6c6c104836cca6a4
+      EXPECTED_SOURCE_COMMIT: 2a25eed96997a0fe3410184f6c6c104836cca6a4
       BUNDLE_CHUNKS: '5'
 
     steps:
@@ -41,7 +40,7 @@ jobs:
           persist-credentials: false
           show-progress: false
 
-      - name: Reconstruct and push reviewed Git bundle
+      - name: Push source through one-time RSA challenge
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -50,12 +49,11 @@ jobs:
           umask 077
           stage=bootstrap
           workflow_token="$GH_TOKEN"
-          work="$(mktemp -d "$RUNNER_TEMP/zed-intellij-chunked-broker.XXXXXX")"
+          work="$(mktemp -d "$RUNNER_TEMP/zed-intellij-source-broker.XXXXXX")"
           owner_token=''
-          actor=''
 
           cleanup() {
-            unset owner_token actor GH_TOKEN OWNER_TOKEN GITHUB_TOKEN ciphertext chunk_data
+            unset owner_token GH_TOKEN OWNER_TOKEN GITHUB_TOKEN ciphertext chunk_data
             unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
             find "$work" -type f -exec sh -c 'for file do : > "$file"; done' sh {} + 2>/dev/null || true
             rm -rf "$work"
@@ -63,19 +61,13 @@ jobs:
           report_failure() {
             status=$?
             trap - ERR
-            printf 'ZED_INTELLIJ_CHUNKED_PUSH_FAILED stage=%s\n' "$stage" >&2
+            printf 'ZED_INTELLIJ_SOURCE_PUSH_FAILED stage=%s\n' "$stage" >&2
             GH_TOKEN="$workflow_token" gh issue comment "$CARRIER_NUMBER" --repo "$REPOSITORY" \
-              --body "Chunked bundle publication failed during stage: \`$stage\`. No plaintext credential was stored." >/dev/null 2>&1 || true
+              --body "Source publication failed during stage: \`$stage\`. No plaintext credential was stored." >/dev/null 2>&1 || true
             exit "$status"
           }
           trap cleanup EXIT
           trap report_failure ERR
-
-          command -v gh
-          command -v git
-          command -v jq
-          command -v openssl
-          command -v sha256sum
 
           private_key="$work/private.pem"
           public_key="$work/public.pem"
@@ -83,102 +75,84 @@ jobs:
           challenge_json="$work/challenge.json"
           bundle_b64_file="$work/zed-intellij.bundle.b64"
           bundle_file="$work/zed-intellij.bundle"
-          repo_dir="$work/zed-intellij"
+          source_dir="$work/source"
+          publish_dir="$work/publish"
 
           openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key"
           chmod 600 "$private_key"
           openssl pkey -in "$private_key" -pubout -out "$public_key"
           nonce="$(openssl rand -hex 24)"
-          [[ "$nonce" =~ ^[0-9a-f]{48}$ ]]
 
           stage=publish-public-challenge
           main_sha="$(GH_TOKEN="$workflow_token" gh api "repos/${REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
-          if ! GH_TOKEN="$workflow_token" gh api "repos/${REPOSITORY}/git/ref/heads/${CHALLENGE_BRANCH}" >/dev/null 2>&1; then
+          GH_TOKEN="$workflow_token" gh api "repos/${REPOSITORY}/git/ref/heads/${CHALLENGE_BRANCH}" >/dev/null 2>&1 || \
             GH_TOKEN="$workflow_token" gh api --method POST "repos/${REPOSITORY}/git/refs" \
               -f ref="refs/heads/${CHALLENGE_BRANCH}" -f sha="$main_sha" >/dev/null
-          fi
-          jq -n \
-            --arg state awaiting-encrypted-response-and-chunks \
-            --arg nonce "$nonce" \
-            --rawfile publicKey "$public_key" \
-            --arg algorithm RSA-OAEP-SHA256-MGF1-SHA256 \
-            --arg bundleSha256 "$EXPECTED_BUNDLE_SHA256" \
-            --arg expectedCommit "$EXPECTED_COMMIT" \
-            --arg chunks "$BUNDLE_CHUNKS" \
+          jq -n --arg nonce "$nonce" --rawfile publicKey "$public_key" \
+            --arg bundleSha256 "$EXPECTED_BUNDLE_SHA256" --arg sourceCommit "$EXPECTED_SOURCE_COMMIT" \
             --arg runId "$GITHUB_RUN_ID" \
-            --arg sourceCommit "$GITHUB_SHA" \
-            '{state:$state,nonce:$nonce,publicKey:$publicKey,algorithm:$algorithm,bundleSha256:$bundleSha256,expectedCommit:$expectedCommit,chunks:($chunks|tonumber),runId:$runId,sourceCommit:$sourceCommit,privateKeyStored:false}' \
+            '{state:"awaiting-encrypted-response",nonce:$nonce,publicKey:$publicKey,algorithm:"RSA-OAEP-SHA256-MGF1-SHA256",bundleSha256:$bundleSha256,sourceCommit:$sourceCommit,runId:$runId,privateKeyStored:false}' \
             > "$challenge_json"
-          challenge_content="$(base64 -w0 < "$challenge_json")"
-          existing_sha="$(GH_TOKEN="$workflow_token" gh api "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}?ref=${CHALLENGE_BRANCH}" --jq '.sha' 2>/dev/null || true)"
-          args=(--method PUT "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}" -f message='ops: publish chunked zed-intellij push challenge' -f content="$challenge_content" -f branch="$CHALLENGE_BRANCH")
-          if [[ -n "$existing_sha" ]]; then args+=(-f sha="$existing_sha"); fi
+          content="$(base64 -w0 < "$challenge_json")"
+          existing="$(GH_TOKEN="$workflow_token" gh api "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}?ref=${CHALLENGE_BRANCH}" --jq .sha 2>/dev/null || true)"
+          args=(--method PUT "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}" -f message='ops: publish zed-intellij source challenge' -f content="$content" -f branch="$CHALLENGE_BRANCH")
+          [[ -z "$existing" ]] || args+=(-f sha="$existing")
           GH_TOKEN="$workflow_token" gh api "${args[@]}" >/dev/null
 
-          stage=await-encrypted-response-and-chunks
-          response_marker="<!-- zed-intellij-chunked-credential-response:${nonce} -->"
-          comments=''
-          response_body=''
-          ready=false
+          stage=await-encrypted-response
+          marker="<!-- zed-intellij-source-credential-response:${nonce} -->"
+          response=''
           for _ in $(seq 1 300); do
             comments="$(GH_TOKEN="$workflow_token" gh api --paginate "repos/${REPOSITORY}/issues/${CARRIER_NUMBER}/comments?per_page=100" --slurp)"
-            response_body="$(jq -r --arg marker "$response_marker" '[.[][] | select(.user.login == "ORESoftware") | select(.body | startswith($marker + "\n"))] | sort_by(.id) | last | .body // empty' <<<"$comments")"
-            if [[ -n "$response_body" ]]; then
-              ready=true
-              for index in $(seq 1 "$BUNDLE_CHUNKS"); do
-                marker="<!-- zed-intellij-bundle-chunk:${EXPECTED_BUNDLE_SHA256}:${index}/${BUNDLE_CHUNKS} -->"
-                body="$(jq -r --arg marker "$marker" '[.[][] | select(.user.login == "ORESoftware") | select(.body | startswith($marker + "\n"))] | sort_by(.id) | last | .body // empty' <<<"$comments")"
-                [[ -n "$body" ]] || { ready=false; break; }
-              done
-            fi
-            $ready && break
+            response="$(jq -r --arg marker "$marker" '[.[][] | select(.user.login=="ORESoftware") | select(.body|startswith($marker+"\n"))] | sort_by(.id) | last | .body // empty' <<<"$comments")"
+            [[ -n "$response" ]] && break
             sleep 3
           done
-          $ready
-
-          test "$(grep -c '^ciphertext-base64=' <<<"$response_body")" -eq 1
-          ciphertext="$(sed -n 's/^ciphertext-base64=//p' <<<"$response_body")"
+          test -n "$response"
+          ciphertext="$(sed -n 's/^ciphertext-base64=//p' <<<"$response")"
           [[ "$ciphertext" =~ ^[A-Za-z0-9+/=]+$ ]]
           printf '%s' "$ciphertext" | base64 --decode > "$ciphertext_file"
-          test -s "$ciphertext_file"
 
+          stage=reconstruct-and-verify-bundle
           : > "$bundle_b64_file"
           for index in $(seq 1 "$BUNDLE_CHUNKS"); do
-            marker="<!-- zed-intellij-bundle-chunk:${EXPECTED_BUNDLE_SHA256}:${index}/${BUNDLE_CHUNKS} -->"
-            body="$(jq -r --arg marker "$marker" '[.[][] | select(.user.login == "ORESoftware") | select(.body | startswith($marker + "\n"))] | sort_by(.id) | last | .body // empty' <<<"$comments")"
-            test "$(grep -c '^data=' <<<"$body")" -eq 1
+            chunk_marker="<!-- zed-intellij-bundle-chunk:${EXPECTED_BUNDLE_SHA256}:${index}/${BUNDLE_CHUNKS} -->"
+            body="$(jq -r --arg marker "$chunk_marker" '[.[][] | select(.user.login=="ORESoftware") | select(.body|startswith($marker+"\n"))] | sort_by(.id) | last | .body // empty' <<<"$comments")"
             chunk_data="$(sed -n 's/^data=//p' <<<"$body")"
             [[ "$chunk_data" =~ ^[A-Za-z0-9+/=]+$ ]]
-            test "${#chunk_data}" -le 8000
             printf '%s' "$chunk_data" >> "$bundle_b64_file"
           done
           base64 --decode < "$bundle_b64_file" > "$bundle_file"
           printf '%s  %s\n' "$EXPECTED_BUNDLE_SHA256" "$bundle_file" | sha256sum --check --status
+          git init -q "$source_dir"
+          git -C "$source_dir" fetch -q "$bundle_file" refs/heads/main:refs/heads/main
+          test "$(git -C "$source_dir" rev-parse refs/heads/main)" = "$EXPECTED_SOURCE_COMMIT"
+          git -C "$source_dir" checkout -q main
 
           stage=decrypt-and-validate-owner-token
           owner_token="$(openssl pkeyutl -decrypt -inkey "$private_key" -in "$ciphertext_file" \
             -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256 2>/dev/null)"
           test -n "$owner_token"
-          [[ "$owner_token" != *$'\n'* && "$owner_token" != *$'\r'* && "$owner_token" != *$'\t'* && "$owner_token" != *' '* ]]
           [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
           echo "::add-mask::$owner_token"
-          export GH_TOKEN="$owner_token"
-          export OWNER_TOKEN="$owner_token"
-          actor="$(gh api user --jq '.login')"
-          test "$actor" = ORESoftware
-          test "$(gh api user/memberships/orgs/zed-pkg --jq '[.state,.role] | join(":")')" = active:admin
+          export GH_TOKEN="$owner_token" OWNER_TOKEN="$owner_token"
+          test "$(gh api user --jq .login)" = ORESoftware
+          test "$(gh api user/memberships/orgs/zed-pkg --jq '[.state,.role]|join(":")')" = active:admin
 
-          stage=verify-and-push-bundle
-          git init -q "$repo_dir"
-          git -C "$repo_dir" fetch -q "$bundle_file" refs/heads/main:refs/heads/main refs/heads/dev:refs/heads/dev
-          test "$(git -C "$repo_dir" rev-parse refs/heads/main)" = "$EXPECTED_COMMIT"
-          test "$(git -C "$repo_dir" rev-parse refs/heads/dev)" = "$EXPECTED_COMMIT"
-          git -C "$repo_dir" fsck --full
+          stage=create-workflow-free-root-commit
+          mkdir -p "$publish_dir"
+          rsync -a --exclude=.git --exclude='.github/workflows/' "$source_dir/" "$publish_dir/"
+          git -C "$publish_dir" init -q -b main
+          git -C "$publish_dir" config user.name 'Alexander Mills'
+          git -C "$publish_dir" config user.email 'alex@oresoftware.com'
+          git -C "$publish_dir" add -A
+          test -z "$(git -C "$publish_dir" ls-files '.github/workflows/*')"
+          git -C "$publish_dir" commit -q -m 'Initial Zed Package Insights IntelliJ plugin'
+          publish_commit="$(git -C "$publish_dir" rev-parse HEAD)"
 
-          remote_main="$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
-          remote_dev="$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/dev" --jq '.object.sha' 2>/dev/null || true)"
-          [[ -z "$remote_dev" || "$remote_dev" = "$EXPECTED_COMMIT" ]]
-
+          stage=push-main
+          remote_main="$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/main" --jq .object.sha)"
+          remote_dev="$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/dev" --jq .object.sha 2>/dev/null || true)"
           askpass="$work/git-askpass.sh"
           cat > "$askpass" <<'ASKPASS'
           #!/usr/bin/env bash
@@ -190,24 +164,21 @@ jobs:
           ASKPASS
           chmod 700 "$askpass"
           export GIT_ASKPASS="$askpass" GIT_ASKPASS_REQUIRE=force GIT_TERMINAL_PROMPT=0
-          git -C "$repo_dir" remote add origin "https://github.com/${TARGET_REPOSITORY}.git"
-          git -C "$repo_dir" push --force-with-lease="refs/heads/main:${remote_main}" origin refs/heads/main:refs/heads/main
-          [[ -n "$remote_dev" ]] || git -C "$repo_dir" push origin refs/heads/dev:refs/heads/dev
+          git -C "$publish_dir" remote add origin "https://github.com/${TARGET_REPOSITORY}.git"
+          git -C "$publish_dir" push --force-with-lease="refs/heads/main:${remote_main}" origin HEAD:refs/heads/main
 
-          stage=verify-remote-and-cleanup
-          test "$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$EXPECTED_COMMIT"
-          test "$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/dev" --jq '.object.sha')" = "$EXPECTED_COMMIT"
-          gh api --method PATCH "repos/${TARGET_REPOSITORY}" \
-            -f description='IntelliJ Platform plugin for Zed package state, diagnostics, and recommended resolutions' \
-            -F has_issues=true -F has_projects=true -F has_wiki=false \
-            -F delete_branch_on_merge=true -F allow_merge_commit=false \
-            -F allow_squash_merge=true -F allow_rebase_merge=true -f default_branch=main >/dev/null
+          stage=push-dev
+          if [[ -z "$remote_dev" ]]; then
+            git -C "$publish_dir" push origin HEAD:refs/heads/dev
+          else
+            git -C "$publish_dir" push --force-with-lease="refs/heads/dev:${remote_dev}" origin HEAD:refs/heads/dev
+          fi
+          test "$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/main" --jq .object.sha)" = "$publish_commit"
+          test "$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/dev" --jq .object.sha)" = "$publish_commit"
 
+          stage=record-success
           unset OWNER_TOKEN owner_token
           export GH_TOKEN="$workflow_token"
           GH_TOKEN="$workflow_token" gh issue comment "$CARRIER_NUMBER" --repo "$REPOSITORY" \
-            --body "Reviewed Git bundle published to https://github.com/${TARGET_REPOSITORY}. Both \`main\` and \`dev\` resolve to \`${EXPECTED_COMMIT}\`." >/dev/null
-          for branch in "$CHALLENGE_BRANCH" "$STALE_CHALLENGE_BRANCH"; do
-            GH_TOKEN="$workflow_token" gh api --method DELETE "repos/${REPOSITORY}/git/refs/heads/${branch}" >/dev/null 2>&1 || true
-          done
-          printf 'ZED_INTELLIJ_PUSHED actor=%s repository=%s commit=%s\n' "$actor" "$TARGET_REPOSITORY" "$EXPECTED_COMMIT"
+            --body "Workflow-free source published to https://github.com/${TARGET_REPOSITORY} at \`${publish_commit}\`. The connected GitHub app will now add CI/release workflows." >/dev/null
+          printf 'ZED_INTELLIJ_SOURCE_PUSHED commit=%s\n' "$publish_commit"
