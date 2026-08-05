@@ -16,6 +16,7 @@ import {
   parseBoolean,
   parseBoundedInteger,
   planCategoryTargets,
+  shouldIncludeOverflow,
 } from './contact-batch-lib.mjs';
 
 const require = createRequire('/work/package.json');
@@ -226,7 +227,7 @@ async function run() {
     const categories = await loadCategories();
     if (!categories.length) throw new Error('no active ICP categories are available');
     const plan = planCategoryTargets(categories, config.targetContacts, config.maxPerCategory, {
-      includeOverflow: true,
+      includeOverflow: shouldIncludeOverflow(config.dryRun),
     });
 
     console.log(
