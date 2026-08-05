@@ -9,26 +9,41 @@ request_file="$trusted_root/$request_path"
 [[ "$request_path" == ops/requests/zed-vscode-encrypted-pat-20260805.json ]]
 [[ -f "$request_file" && ! -L "$request_file" ]]
 
-for command in base64 git gh jq openssl sha256sum stat; do
+work="$(mktemp -d /tmp/zed-vscode-encrypted-publisher.XXXXXX)"
+for command in base64 git jq openssl python3 sha256sum stat tar; do
   command -v "$command" >/dev/null
 done
+
+gh_archive="$work/gh_2.97.0_linux_amd64.tar.gz"
+python3 - "$gh_archive" <<'PYGH'
+import sys
+import urllib.request
+url = "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_linux_amd64.tar.gz"
+request = urllib.request.Request(url, headers={"User-Agent": "zed-vscode-bounded-publisher/1"})
+with urllib.request.urlopen(request, timeout=180) as response:
+    open(sys.argv[1], "wb").write(response.read())
+PYGH
+printf '%s  %s\n' 'a2c9b8497e1f85b1ad0dfcb78b5a622e098801b8e461e459e88e1ee12f018112' "$gh_archive" | sha256sum --check --strict
+tar -xzf "$gh_archive" -C "$work"
+export PATH="$work/gh_2.97.0_linux_amd64/bin:$PATH"
+command -v gh >/dev/null
+[[ "$(gh --version | head -n1)" == 'gh version 2.97.0 '* ]]
 
 jq -e '
   .schema_version == 1 and .execute == true and
   .organization == "zed-pkg" and .repository == "zed-pkg/zed-vscode" and
   .visibility == "public" and .default_branch == "main" and
-  .recipient_id == "ncc-publish-20260805-81f87008997e0af7" and
-  .recipient_fingerprint == "f2f5515ee2f22718318b5d88e27226ae3db9e5231954715f5dd16d6f59dec831" and
+  .recipient_id == "ncc-publish-20260805-2b8a4d7c91e6f503" and
+  .recipient_fingerprint == "02e8c3781927c4870d1274e660f163c393322f36a163f8f76ccf8e9d0065bb66" and
   .source_repository == "zed-pkg/.github" and
   .source_commit == "62b920b818e1255cd8643b47fc614133a7287a38" and
   .bundle_sha256 == "a0d927aa62ab20922e85ee2de9592d0a9fd4bafebf6a5b00a0029a95914c2991" and
   .initial_sha == "376372168e12ddd0d2f3cf873a120671d64ca422" and
   .candidate_sha == "7fe04d03d5c16c45381aff23eec4e8c6c441ec31" and
-  .ciphertext_sha256 == "5f989cbc9a674a4c4e2ee4eb7eea26e0ae1b7dc30026f3a10d042aae138e0859" and
+  .ciphertext_sha256 == "7eccc4ddc7f67260c3c647631f8dbe05138c605e2a12d693f47540b10829c335" and
   (.ciphertext_base64 | type == "string" and test("^[A-Za-z0-9+/]+={0,2}$"))
 ' "$request_file" >/dev/null
 
-work="$(mktemp -d /tmp/zed-vscode-encrypted-publisher.XXXXXX)"
 request_id="$(jq -er '.recipient_id' "$request_file")"
 private_key="/var/lib/oresoftware/ephemeral-pat-recipients/${request_id}.pem"
 metadata="/var/lib/oresoftware/ephemeral-pat-recipients/${request_id}.json"
@@ -203,7 +218,7 @@ project_id="$(gh project view "$project_number" --owner zed-pkg --format json --
 for field in Repository Linear 'Pull Request' 'Candidate SHA' 'Merge SHA' Gate Evidence; do
   field_id="$(gh project field-list "$project_number" --owner zed-pkg --format json --jq ".fields[] | select(.name == \"$field\") | .id" | head -n1 || true)"
   [[ -n "$field_id" ]] || gh project field-create "$project_number" --owner zed-pkg --name "$field" --data-type TEXT >/dev/null
-done
+ done
 item_id="$(gh project item-list "$project_number" --owner zed-pkg --limit 1000 --format json --jq '.items[] | select(.content.url == "https://github.com/zed-pkg/.github/issues/15") | .id' | head -n1 || true)"
 [[ -n "$item_id" ]] || item_id="$(gh project item-add "$project_number" --owner zed-pkg --url https://github.com/zed-pkg/.github/issues/15 --format json --jq .id)"
 set_text() {

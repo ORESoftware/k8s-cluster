@@ -49,8 +49,8 @@ jobs:
           assert data['repository'] == 'zed-pkg/zed-vscode'
           assert data['visibility'] == 'public'
           assert data['default_branch'] == 'main'
-          assert data['recipient_id'] == 'ncc-publish-20260805-81f87008997e0af7'
-          assert data['recipient_fingerprint'] == 'f2f5515ee2f22718318b5d88e27226ae3db9e5231954715f5dd16d6f59dec831'
+          assert data['recipient_id'] == 'ncc-publish-20260805-2b8a4d7c91e6f503'
+          assert data['recipient_fingerprint'] == '02e8c3781927c4870d1274e660f163c393322f36a163f8f76ccf8e9d0065bb66'
           assert data['source_repository'] == 'zed-pkg/.github'
           assert data['source_commit'] == '62b920b818e1255cd8643b47fc614133a7287a38'
           assert data['bundle_sha256'] == 'a0d927aa62ab20922e85ee2de9592d0a9fd4bafebf6a5b00a0029a95914c2991'
@@ -59,7 +59,7 @@ jobs:
           assert re.fullmatch(r'[A-Za-z0-9+/]+={0,2}', data['ciphertext_base64'])
           ciphertext = base64.b64decode(data['ciphertext_base64'], validate=True)
           assert len(ciphertext) == 512
-          assert hashlib.sha256(ciphertext).hexdigest() == data['ciphertext_sha256'] == '5f989cbc9a674a4c4e2ee4eb7eea26e0ae1b7dc30026f3a10d042aae138e0859'
+          assert hashlib.sha256(ciphertext).hexdigest() == data['ciphertext_sha256'] == '7eccc4ddc7f67260c3c647631f8dbe05138c605e2a12d693f47540b10829c335'
           PY
           bash -n scripts/ops/publish_zed_vscode_with_encrypted_pat_20260805.sh
           if grep -RIE 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}' \
