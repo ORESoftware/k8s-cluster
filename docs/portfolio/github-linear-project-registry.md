@@ -15,16 +15,3 @@ The machine-readable registry is [`ops/portfolio/github-linear-project-registry.
 ## Reconciliation
 
 Run [`scripts/ops/sync_org_project_docs.sh`](../../scripts/ops/sync_org_project_docs.sh) with an authenticated GitHub CLI session that can administer the listed organizations. The one-time workflow [`ops-sync-org-project-docs-once.yml`](../../.github/workflows/ops-sync-org-project-docs-once.yml) performs the fleet-wide reconciliation and publishes machine-readable and Markdown evidence under `ops/evidence/org-project-docs/`.
-
-## 2026-08-05 reconciliation and artifact-publication pass
-
-The fleet reconciliation is being rerun after the certified Zed package publication workflow merged at `zed-pkg/zed-interfaces@d36ac522915792539740cb105e928652503dfde2`.
-
-This pass has four coupled goals:
-
-1. create or reopen the canonical `<org>-project` for every registered organization;
-2. provision or update each public `<org>/.github` documentation repository through reviewed pull requests;
-3. create the durable governance issue and add it to the canonical organization Project;
-4. record exact pull-request, merge, artifact ID, digest, and blocker evidence in GitHub and the linked Linear project.
-
-The project/document reconciler remains source-bound to this 64-row registry. The repository-gap publisher is separate and create-only: it may create missing sealed HypeSiege/StreemPilot repositories, but it must preserve every pre-existing repository ID and `main` SHA unchanged.
