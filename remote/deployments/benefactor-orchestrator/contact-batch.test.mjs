@@ -8,6 +8,7 @@ import {
   parseBoolean,
   parseBoundedInteger,
   planCategoryTargets,
+  shouldIncludeOverflow,
   validateBatchId,
 } from './contact-batch-lib.mjs';
 
@@ -54,6 +55,11 @@ test('a 250-contact plan stays bounded and rotates categories', () => {
   assert.equal(plan.reduce((sum, item) => sum + item.target, 0), 250);
   assert.ok(plan.every((item) => item.target <= 40));
   assert.ok(plan.some((item) => item.pass > 0));
+});
+
+test('dry runs omit overflow categories while live plans retain them', () => {
+  assert.equal(shouldIncludeOverflow(true), false);
+  assert.equal(shouldIncludeOverflow(false), true);
 });
 
 test('overflow planning keeps lower-priority categories available when early categories under-yield', () => {
