@@ -1,0 +1,270 @@
+name: Create missing StreemPilot sp repository shells with one-time owner credential
+run-name: Create seven missing StreemPilot sp repositories
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: read
+
+concurrency:
+  group: ops-create-streempilot-sp-shells-owner-20260805
+  cancel-in-progress: false
+
+jobs:
+  create-shells:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.number == 901 &&
+      github.actor == 'ORESoftware' &&
+      github.event.comment.body == 'ops-create-streempilot-sp-shells:901:rsa-v1:20260805T0410Z'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      REPOSITORY: ${{ github.repository }}
+      CARRIER_NUMBER: '901'
+      CHALLENGE_BRANCH: ops/streempilot-sp-credential-challenge-20260805
+      CHALLENGE_PATH: ops/streempilot-sp-credential-challenge.json
+      TARGET_ORG: StreemPilot
+
+    steps:
+      - name: Check out trusted main without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Issue one-time challenge, create shells, and verify
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          stage=challenge-bootstrap
+          workflow_token="$GH_TOKEN"
+          work="$(mktemp -d "$RUNNER_TEMP/streempilot-shell-creator.XXXXXX")"
+          owner_token=''
+          actor=''
+          membership=''
+
+          cleanup() {
+            unset owner_token actor membership GH_TOKEN OWNER_TOKEN GITHUB_TOKEN
+            find "$work" -type f -exec sh -c 'for file do : > "$file"; done' sh {} + 2>/dev/null || true
+            rm -rf "$work"
+          }
+          fail() {
+            status=$?
+            trap - ERR
+            printf 'STREEMPILOT_SHELL_CREATION_FAILED stage=%s\n' "$stage" >&2
+            exit "$status"
+          }
+          trap cleanup EXIT
+          trap fail ERR
+
+          private_key="$work/private.pem"
+          public_key="$work/public.pem"
+          ciphertext_file="$work/ciphertext.bin"
+          challenge_json="$work/challenge.json"
+          openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key"
+          chmod 600 "$private_key"
+          openssl pkey -in "$private_key" -pubout -out "$public_key"
+          nonce="$(openssl rand -hex 24)"
+          [[ "$nonce" =~ ^[0-9a-f]{48}$ ]]
+
+          stage=publish-public-challenge
+          jq -n \
+            --arg state awaiting-encrypted-response \
+            --arg purpose create-missing-streempilot-sp-repository-shells \
+            --arg nonce "$nonce" \
+            --rawfile publicKey "$public_key" \
+            --arg algorithm RSA-OAEP-SHA256-MGF1-SHA256 \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg sourceCommit "$GITHUB_SHA" \
+            '{state:$state,purpose:$purpose,nonce:$nonce,publicKey:$publicKey,algorithm:$algorithm,runId:$runId,sourceCommit:$sourceCommit,privateKeyStored:false,plaintextCredentialStored:false}' \
+            > "$challenge_json"
+          challenge_sha="$(GH_TOKEN="$workflow_token" gh api "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}?ref=${CHALLENGE_BRANCH}" --jq '.sha')"
+          GH_TOKEN="$workflow_token" gh api --method PUT "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}" \
+            -f message='ops: publish StreemPilot shell-creation credential challenge' \
+            -f content="$(base64 -w0 < "$challenge_json")" \
+            -f branch="$CHALLENGE_BRANCH" \
+            -f sha="$challenge_sha" >/dev/null
+
+          stage=await-encrypted-response
+          marker="<!-- streempilot-sp-credential-response:${nonce} -->"
+          response=''
+          for _ in $(seq 1 600); do
+            comments="$(GH_TOKEN="$workflow_token" gh api --paginate "repos/${REPOSITORY}/issues/${CARRIER_NUMBER}/comments?per_page=100" --slurp)"
+            response="$(jq -r --arg marker "$marker" '[.[][] | select(.user.login == "ORESoftware") | select(.body | startswith($marker + "\n"))] | sort_by(.id) | last | .body // empty' <<<"$comments")"
+            test -n "$response" && break
+            sleep 3
+          done
+          test -n "$response"
+          test "$(grep -c '^ciphertext-base64=' <<<"$response")" -eq 1
+          ciphertext="$(sed -n 's/^ciphertext-base64=//p' <<<"$response")"
+          [[ "$ciphertext" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#ciphertext}" -le 8192
+          printf '%s' "$ciphertext" | base64 --decode > "$ciphertext_file"
+          test -s "$ciphertext_file"
+
+          stage=decrypt-and-validate-owner
+          owner_token="$(openssl pkeyutl -decrypt -inkey "$private_key" -in "$ciphertext_file" -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256 2>/dev/null)"
+          test -n "$owner_token"
+          [[ "$owner_token" != *$'\n'* && "$owner_token" != *$'\r'* && "$owner_token" != *$'\t'* && "$owner_token" != *' '* ]]
+          [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
+          echo "::add-mask::$owner_token"
+          export GH_TOKEN="$owner_token"
+          export OWNER_TOKEN="$owner_token"
+          actor="$(gh api user --jq '.login')"
+          test "$actor" = ORESoftware
+          membership="$(gh api user/memberships/orgs/${TARGET_ORG} --jq '[.state,.role] | join(":")')"
+          test "$membership" = active:admin
+
+          api_status() {
+            local method="$1" endpoint="$2" output="$3" headers="$4" payload="${5:-}"
+            local -a args=(
+              --silent --show-error
+              --request "$method"
+              --dump-header "$headers"
+              --output "$output"
+              --write-out '%{http_code}'
+              --header 'Accept: application/vnd.github+json'
+              --header "Authorization: Bearer ${OWNER_TOKEN}"
+              --header 'X-GitHub-Api-Version: 2022-11-28'
+            )
+            if [[ -n "$payload" ]]; then
+              args+=(--header 'Content-Type: application/json' --data-binary "@$payload")
+            fi
+            curl "${args[@]}" "https://api.github.com/${endpoint}"
+          }
+
+          repository_exists() {
+            local full="$1" body="$work/check-${full//\//-}.json" headers="$work/check-${full//\//-}.headers"
+            [[ "$(api_status GET "repos/$full" "$body" "$headers")" == 200 ]]
+          }
+
+          create_one() {
+            local name="$1" description="$2" full="${TARGET_ORG}/${name}"
+            if repository_exists "$full"; then
+              printf 'repository-exists=%s\n' "$full"
+              return 0
+            fi
+
+            local direct_payload="$work/${name}-direct.json"
+            local template_payload="$work/${name}-template.json"
+            jq -n --arg name "$name" --arg description "$description" '{name:$name,description:$description,private:true,has_issues:true,has_projects:false,has_wiki:false,auto_init:false}' > "$direct_payload"
+            jq -n --arg owner "$TARGET_ORG" --arg name "$name" --arg description "$description" '{owner:$owner,name:$name,description:$description,private:true,include_all_branches:false}' > "$template_payload"
+
+            local -a delays=(0 30 60 120 180 300 300 300 600 600 900)
+            local attempt=0 delay direct_code template_code retry_after observed_wait
+            for delay in "${delays[@]}"; do
+              attempt=$((attempt + 1))
+              if (( delay > 0 )); then
+                printf 'repository-create-backoff repository=%s seconds=%s attempt=%s\n' "$full" "$delay" "$attempt"
+                sleep "$delay"
+              fi
+
+              direct_code="$(api_status POST "orgs/${TARGET_ORG}/repos" "$work/${name}-direct-response.json" "$work/${name}-direct.headers" "$direct_payload")"
+              if [[ "$direct_code" == 201 ]] || repository_exists "$full"; then
+                printf 'repository-created=%s transport=organization-rest attempt=%s\n' "$full" "$attempt"
+                return 0
+              fi
+
+              template_code=0
+              if [[ "${TEMPLATE_AVAILABLE:-0}" == 1 ]]; then
+                template_code="$(api_status POST "repos/${TARGET_ORG}/sp-api/generate" "$work/${name}-template-response.json" "$work/${name}-template.headers" "$template_payload")"
+                if [[ "$template_code" == 201 ]] || repository_exists "$full"; then
+                  printf 'repository-created=%s transport=template-rest attempt=%s\n' "$full" "$attempt"
+                  return 0
+                fi
+              fi
+
+              retry_after="$(awk 'tolower($1)=="retry-after:" {gsub("\r", "", $2); print $2}' "$work/${name}-direct.headers" | tail -n 1)"
+              observed_wait=0
+              [[ "$retry_after" =~ ^[0-9]+$ ]] && observed_wait="$retry_after"
+              printf 'repository-create-retry repository=%s attempt=%s direct_http=%s template_http=%s retry_after=%s\n' "$full" "$attempt" "$direct_code" "$template_code" "$observed_wait" >&2
+              if (( observed_wait > delay && observed_wait <= 1800 )); then
+                sleep "$observed_wait"
+              fi
+            done
+            return 1
+          }
+
+          stage=prepare-template-fallback
+          TEMPLATE_AVAILABLE=0
+          template_patch="$work/template-patch.json"
+          jq -n '{is_template:true}' > "$template_patch"
+          template_code="$(api_status PATCH "repos/${TARGET_ORG}/sp-api" "$work/template-patch-response.json" "$work/template-patch.headers" "$template_patch")"
+          if [[ "$template_code" == 200 ]]; then
+            TEMPLATE_AVAILABLE=1
+          fi
+          export TEMPLATE_AVAILABLE
+          printf 'template-fallback-available=%s\n' "$TEMPLATE_AVAILABLE"
+
+          stage=create-seven-repository-shells
+          targets=(
+            sp-web-mash
+            sp-web-leptos
+            sp-web-dioxus
+            sp-infra
+            sp-cli
+            sp-interfaces
+            sp-sync
+          )
+          for name in "${targets[@]}"; do
+            case "$name" in
+              sp-web-mash) description='Maud, Axum, SeaORM, Supabase, HTMX, and WebSocket broadcast portal' ;;
+              sp-web-leptos) description='Leptos SSR and Axum broadcast portal for StreemPilot' ;;
+              sp-web-dioxus) description='Dioxus SSR and Axum broadcast portal for StreemPilot' ;;
+              sp-infra) description='Kubernetes, WebRTC, observability, and Cloudflare Worker infrastructure for StreemPilot' ;;
+              sp-cli) description='Operator CLI for StreemPilot using flags-2-env' ;;
+              sp-interfaces) description='Shared OpenAPI, AsyncAPI, and domain contracts for StreemPilot' ;;
+              sp-sync) description='Offline-first StreemPilot synchronization using opto-sync' ;;
+            esac
+            create_one "$name" "$description"
+
+            settings="$work/${name}-settings.json"
+            jq -n --arg description "$description" '{description:$description,has_wiki:false,delete_branch_on_merge:true,allow_merge_commit:true,allow_squash_merge:true,allow_rebase_merge:true}' > "$settings"
+            settings_code="$(api_status PATCH "repos/${TARGET_ORG}/${name}" "$work/${name}-settings-response.json" "$work/${name}-settings.headers" "$settings")"
+            [[ "$settings_code" == 200 ]]
+            sleep 120
+          done
+
+          stage=restore-template-setting
+          if [[ "$TEMPLATE_AVAILABLE" == 1 ]]; then
+            jq -n '{is_template:false}' > "$work/template-restore.json"
+            api_status PATCH "repos/${TARGET_ORG}/sp-api" "$work/template-restore-response.json" "$work/template-restore.headers" "$work/template-restore.json" >/dev/null || true
+          fi
+
+          stage=verify-eight-repositories
+          verified=0
+          for name in sp-api "${targets[@]}"; do
+            full="${TARGET_ORG}/${name}"
+            repository_exists "$full"
+            verified=$((verified + 1))
+          done
+          test "$verified" -eq 8
+
+          stage=record-sanitized-completion
+          unset OWNER_TOKEN owner_token
+          export GH_TOKEN="$workflow_token"
+          completed="$work/completed.json"
+          jq -n \
+            --arg state completed \
+            --arg purpose create-missing-streempilot-sp-repository-shells \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg sourceCommit "$GITHUB_SHA" \
+            --arg authenticatedActor "$actor" \
+            '{state:$state,purpose:$purpose,runId:$runId,sourceCommit:$sourceCommit,authenticatedActor:$authenticatedActor,repositoriesVerified:8,privateKeyStored:false,plaintextCredentialStored:false}' \
+            > "$completed"
+          completed_sha="$(gh api "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}?ref=${CHALLENGE_BRANCH}" --jq '.sha')"
+          gh api --method PUT "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}" \
+            -f message='ops: complete StreemPilot shell-creation credential challenge' \
+            -f content="$(base64 -w0 < "$completed")" \
+            -f branch="$CHALLENGE_BRANCH" \
+            -f sha="$completed_sha" >/dev/null
+          printf 'STREEMPILOT_SHELL_CREATION_COMPLETE actor=%s repositories=8\n' "$actor"
