@@ -30,6 +30,12 @@
     ]
   },
   "expected_repository_count": 209,
+  "fleet_bundles": [
+    "fleets-00.json",
+    "fleets-01.json",
+    "fleets-02.json",
+    "fleets-03.json"
+  ],
   "fleet_files": {
     "3fa-app-test": "3fa-app-test.json",
     "claritas-viz-test": "claritas-viz-test.json",
