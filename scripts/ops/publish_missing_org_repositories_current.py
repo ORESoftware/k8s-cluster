@@ -13,6 +13,7 @@ from pathlib import Path
 from private_repository_creation import (
     ensure_private_repository as ensure_private_repository_with_api,
 )
+from repository_fleet_aliases import load_repository_aliases
 from repository_fleet_remote_state import (
     RemoteFleetStateError,
     classify_remote_fleet,
@@ -29,6 +30,10 @@ MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
+ROOT = Path(__file__).resolve().parents[2]
+REPOSITORY_ALIAS_LEDGER = (
+    ROOT / "ops/portfolio/hypesiege-streempilot-repository-aliases.json"
+)
 FLEET_SOURCE_REPOSITORY = "ORESoftware/ai-agent-coordinator.rs"
 FLEET_SOURCE_SHA = "5d9a0c2cb44dff607bc3953954ce4b9af08e5789"
 FLEET_GENERATOR_SHA256 = (
@@ -191,6 +196,20 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
     ):
         fail("sealed product-intent ledger is no longer uniformly public")
 
+    sealed_full_names = [str(record.get("full_name", "")) for record in records]
+    repository_aliases = load_repository_aliases(
+        REPOSITORY_ALIAS_LEDGER,
+        sealed_full_names=sealed_full_names,
+        expected_source_repository=FLEET_SOURCE_REPOSITORY,
+        expected_source_sha=FLEET_SOURCE_SHA,
+    )
+    if len(repository_aliases) != 6:
+        fail(
+            "reviewed repository-alias count changed: "
+            f"{len(repository_aliases)} != 6"
+        )
+    print("VERIFIED reviewed repository aliases 6/6")
+
     # Keep the sealed reviewed ledger unchanged as provenance. The operational
     # manifest is a deep-copy projection, and the helper proves that visibility
     # is the only field that moved.
@@ -214,6 +233,7 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
             execution_records,
             repository_lookup=_repository_lookup,
             main_ref_lookup=MODULE.main_ref,
+            repository_aliases=repository_aliases,
         )
     except RemoteFleetStateError as error:
         fail(str(error))
@@ -224,6 +244,13 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
     )
     for full_name in sorted(existing_snapshot, key=str.casefold):
         state = existing_snapshot[full_name]
+        if state["renamed"]:
+            print(
+                "PRESERVE_RENAMED "
+                f"{full_name} -> {state['remote_full_name']} "
+                f"id={state['repository_id']} head={state['head']}"
+            )
+            continue
         disposition = (
             "SEALED" if state["matches_sealed_commit"] else "DIVERGENT_REVIEWED"
         )
@@ -266,6 +293,7 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
             existing_snapshot,
             repository_lookup=_repository_lookup,
             main_ref_lookup=MODULE.main_ref,
+            repository_aliases=repository_aliases,
         )
     except RemoteFleetStateError as error:
         fail(str(error))
@@ -274,7 +302,14 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
         full_name = str(record["full_name"])
         print(f"VERIFIED_CREATED_PRIVATE {full_name} {record['commit']}")
     for full_name in sorted(existing_snapshot, key=str.casefold):
-        print(f"VERIFIED_PRESERVED_PRIVATE {full_name} {existing_snapshot[full_name]['head']}")
+        state = existing_snapshot[full_name]
+        if state["renamed"]:
+            print(
+                "VERIFIED_PRESERVED_RENAMED "
+                f"{full_name} {state['remote_full_name']} "
+                f"{state['repository_id']} {state['head']}"
+            )
+        print(f"VERIFIED_PRESERVED_PRIVATE {full_name} {state['head']}")
     print(
         "VERIFIED private canonical fleet remote state "
         f"created={len(missing_records)} preserved={len(existing_snapshot)} "
