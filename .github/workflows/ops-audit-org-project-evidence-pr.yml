@@ -1,0 +1,42 @@
+name: Audit organization Project evidence on repair branch
+
+on:
+  push:
+    branches:
+      - fix/org-project-reconciler-fail-closed-20260805
+
+permissions:
+  contents: write
+
+concurrency:
+  group: audit-org-project-evidence-repair
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/org-project-reconciler-fail-closed-20260805
+      - name: Audit the committed 64-organization evidence
+        run: |
+          python3 scripts/ops/audit_org_project_docs_evidence.py \
+            --registry ops/portfolio/github-linear-project-registry.tsv \
+            --evidence ops/evidence/org-project-docs/results.json \
+            --output ops/evidence/org-project-docs/audit.json \
+            --allow-invalid
+      - name: Commit the deterministic audit
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if git diff --quiet -- ops/evidence/org-project-docs/audit.json; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- ops/evidence/org-project-docs/audit.json
+          git commit -m 'ops: record fail-closed audit of organization evidence'
+          git push origin HEAD:fix/org-project-reconciler-fail-closed-20260805
