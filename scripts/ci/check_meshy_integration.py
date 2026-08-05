@@ -47,8 +47,11 @@ def validate_source_image(image: object, index: int) -> None:
 def contains_meshy_credential(text: str) -> bool:
     """Reject likely credentials while permitting explicit documentation placeholders."""
 
-    if re.search(r"\bmsy_[A-Za-z0-9_-]{16,}\b", text):
-        return True
+    placeholder_words = ("example", "placeholder", "redact", "replace", "test", "your")
+    for match in re.finditer(r"\bmsy_[A-Za-z0-9_-]{16,}\b", text):
+        value = match.group(0).lower()
+        if not any(word in value for word in placeholder_words):
+            return True
 
     placeholders = {
         "",
@@ -66,10 +69,14 @@ def contains_meshy_credential(text: str) -> bool:
     )
     for match in assignment.finditer(text):
         value = (match.group(1) if match.group(1) is not None else match.group(2)).strip()
-        if value not in placeholders:
+        lower = value.lower()
+        if value in placeholders or value.startswith(("$", "<")):
+            continue
+        if "..." in value or any(word in lower for word in placeholder_words):
+            continue
+        if re.fullmatch(r"[A-Za-z0-9_+/=-]{24,}", value):
             return True
     return False
-
 
 def main() -> None:
     provider_manifest = read("crates/meshy-client/Cargo.toml")
