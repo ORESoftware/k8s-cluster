@@ -5,8 +5,8 @@ umask 077
 stage=all-protected-bootstrap
 
 cleanup_environment() {
-  unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
-  unset secret_json raw_pat parse_status
+  unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GH_ENTERPRISE_TOKEN
+  unset K8S_SUBMODULE_APP_ID K8S_SUBMODULE_APP_PRIVATE_KEY
 }
 trap cleanup_environment EXIT
 trap 'status=$?; printf "publisher-stage=%s status=failed rc=%s line=%s\n" "${stage:-all-protected-startup}" "$status" "$LINENO" >&2; exit "$status"' ERR
@@ -19,43 +19,27 @@ fail() {
   exit "$status"
 }
 
-valid_token() {
-  local candidate="${1:-}"
-  test -n "$candidate" &&
-    [[ "$candidate" != *$'\n'* ]] &&
-    [[ "$candidate" != *$'\r'* ]] &&
-    [[ "$candidate" != *$'\t'* ]] &&
-    [[ "$candidate" != *' '* ]]
-}
-
 trusted_sha="${1:-}"
 source_root="${2:-}"
 [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]] || fail invalid-trusted-sha 64
 [[ "$source_root" == /* ]] || fail source-root-not-absolute 64
 [[ -d "$source_root" ]] || fail source-root-missing 66
 
-raw_region="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
-command -v tr >/dev/null 2>&1 || fail tr-unavailable 69
-publisher_region="$(printf '%s' "$raw_region" | tr -d '[:space:]')"
-unset raw_region
-[[ "$publisher_region" =~ ^[a-z]{2}(-gov)?-[a-z0-9-]+-[0-9]$ ]] || \
-  fail invalid-aws-region 64
-export AWS_REGION="$publisher_region"
-export AWS_DEFAULT_REGION="$publisher_region"
-unset publisher_region
-
 required_paths=(
   scripts/ops/bootstrap_org_dotgithub_repositories.py
   scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py
   scripts/ops/bootstrap_org_dotgithub_repositories_all.py
+  scripts/ops/bootstrap_org_dotgithub_repositories_with_app.py
+  scripts/ops/select_hypesiege_github_app_from_aws.py
   tests/ops/test_bootstrap_org_dotgithub_repositories.py
   tests/ops/test_bootstrap_org_dotgithub_repositories_hardened.py
   tests/ops/test_bootstrap_org_dotgithub_repositories_all.py
+  tests/ops/test_bootstrap_org_dotgithub_repositories_with_app.py
 )
 for relative_path in "${required_paths[@]}"; do
   [[ -f "$source_root/$relative_path" ]] || fail trusted-source-missing 66
 done
-command -v aws >/dev/null 2>&1 || fail aws-unavailable 69
+command -v openssl >/dev/null 2>&1 || fail openssl-unavailable 69
 command -v python3 >/dev/null 2>&1 || fail python3-unavailable 69
 printf 'publisher-stage=%s status=passed sha=%s\n' "$stage" "$trusted_sha" >&2
 
@@ -63,50 +47,21 @@ stage=all-protected-validation
 python3 -m py_compile \
   "$source_root/scripts/ops/bootstrap_org_dotgithub_repositories.py" \
   "$source_root/scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py" \
-  "$source_root/scripts/ops/bootstrap_org_dotgithub_repositories_all.py"
+  "$source_root/scripts/ops/bootstrap_org_dotgithub_repositories_all.py" \
+  "$source_root/scripts/ops/bootstrap_org_dotgithub_repositories_with_app.py" \
+  "$source_root/scripts/ops/select_hypesiege_github_app_from_aws.py"
 python3 -m unittest discover \
   -s "$source_root/tests/ops" \
   -p 'test_bootstrap_org_dotgithub_repositories*.py' \
   -v >&2
 printf 'publisher-stage=%s status=passed\n' "$stage" >&2
 
-stage=all-protected-credential
-if ! secret_json="$(
-  aws secretsmanager get-secret-value \
-    --region "$AWS_REGION" \
-    --secret-id dd/remote-dev/agent-secrets \
-    --query SecretString \
-    --output text 2>/dev/null
-)"; then
-  fail protected-secret-unavailable 65
-fi
-[[ -n "$secret_json" ]] || fail protected-secret-empty 65
-
-set +e
-raw_pat="$(
-  printf '%s' "$secret_json" | python3 -c '
-import json
-import sys
-try:
-    payload = json.load(sys.stdin)
-except (json.JSONDecodeError, OSError):
-    raise SystemExit(65)
-value = payload.get("GH_PAT")
-if not isinstance(value, str) or not value or any(ch.isspace() for ch in value):
-    raise SystemExit(65)
-sys.stdout.write(value)
-' 2>/dev/null
-)"
-parse_status=$?
-set -e
-unset secret_json
-[[ "$parse_status" -eq 0 ]] || fail protected-secret-invalid 65
-valid_token "$raw_pat" || fail protected-token-invalid 65
-GH_TOKEN="$raw_pat"
-unset raw_pat parse_status
-export GH_TOKEN
-export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
-printf 'publisher-stage=%s status=passed source=aws-secrets-manager\n' "$stage" >&2
+stage=all-protected-app-credential
+[[ "${K8S_SUBMODULE_APP_ID:-}" =~ ^[0-9]+$ ]] || fail app-id-missing-or-invalid 65
+[[ -n "${K8S_SUBMODULE_APP_PRIVATE_KEY:-}" ]] || fail app-private-key-missing 65
+grep -Eq '^-----BEGIN (RSA )?PRIVATE KEY-----' <<<"$K8S_SUBMODULE_APP_PRIVATE_KEY" \
+  || fail app-private-key-invalid 65
+printf 'publisher-stage=%s status=passed source=actions-secret-github-app\n' "$stage" >&2
 
 stage=all-protected-publication
 runtime_dir="$(mktemp -d /tmp/org-dotgithub-all-governance.XXXXXX)"
@@ -116,16 +71,16 @@ markdown_report="$runtime_dir/org-dotgithub-governance.md"
 publisher_log="$runtime_dir/org-dotgithub-governance.log"
 
 set +e
-python3 "$source_root/scripts/ops/bootstrap_org_dotgithub_repositories_all.py" \
+python3 "$source_root/scripts/ops/bootstrap_org_dotgithub_repositories_with_app.py" \
   --execute \
   --json-report "$json_report" \
   --markdown-report "$markdown_report" \
   >"$publisher_log" 2>&1
 publisher_status=$?
 set -e
+cleanup_environment
 
 if [[ "$publisher_status" -ne 0 ]]; then
-  cleanup_environment
   LOG="$publisher_log" python3 - <<'PY' >&2
 import os
 import re
@@ -138,10 +93,12 @@ patterns = [
     (r"github_pat_[A-Za-z0-9_]{20,}", "github_pat_***"),
     (r"gh[pousr]_[A-Za-z0-9_]{20,}", "gh*_***"),
     (r"(Authorization:\s*Bearer\s+)[A-Za-z0-9._-]{20,}", r"\1***"),
+    (r"-----BEGIN (?:RSA )?PRIVATE KEY-----.*?-----END (?:RSA )?PRIVATE KEY-----", "***REDACTED PRIVATE KEY***"),
+    (r"eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}", "***REDACTED JWT***"),
 ]
 for pattern, replacement in patterns:
-    text = re.sub(pattern, replacement, text, flags=re.I)
-print("\n".join(text.splitlines()[-220:])[-24000:])
+    text = re.sub(pattern, replacement, text, flags=re.I | re.S)
+print("\n".join(text.splitlines()[-260:])[-30000:])
 PY
   printf 'publisher-stage=%s status=failed rc=%s\n' "$stage" "$publisher_status" >&2
   exit "$publisher_status"
@@ -161,9 +118,24 @@ import bootstrap_org_dotgithub_repositories_all as publisher
 
 payload = json.loads(Path(os.environ["REPORT"]).read_text(encoding="utf-8"))
 organizations = payload.get("organizations")
+credential = payload.get("publisher")
 expected = {name.lower() for name in publisher.TARGET_ORGANIZATIONS}
 if payload.get("mode") != "execute":
     raise SystemExit("publisher report is not an execute report")
+if payload.get("preflight_organizations") != 61:
+    raise SystemExit("publisher report does not certify complete App preflight")
+if not isinstance(credential, dict) or credential.get("kind") != "github_app_installation_token":
+    raise SystemExit("publisher report does not certify GitHub App installation tokens")
+if credential.get("repository_selection") != "all":
+    raise SystemExit("publisher report does not certify all-repository installations")
+if credential.get("permissions") != {
+    "administration": "write",
+    "contents": "write",
+    "metadata": "read",
+}:
+    raise SystemExit("publisher report does not certify bounded App permissions")
+if not isinstance(credential.get("app_slug"), str) or not credential["app_slug"]:
+    raise SystemExit("publisher report is missing the GitHub App slug")
 if not isinstance(organizations, list) or len(organizations) != 61:
     raise SystemExit("publisher report does not certify the fixed 61-organization fleet")
 if expected & publisher.EXCLUDED_ORGANIZATIONS:
@@ -187,7 +159,6 @@ if seen != expected:
 PY
 
 test -s "$markdown_report"
-cleanup_environment
-printf 'publisher-stage=%s status=passed organizations=61\n' "$stage" >&2
+printf 'publisher-stage=%s status=passed organizations=61 credential=github-app\n' "$stage" >&2
 cat "$markdown_report"
 printf '\n<!-- org-dotgithub-governance-report-complete -->\n'

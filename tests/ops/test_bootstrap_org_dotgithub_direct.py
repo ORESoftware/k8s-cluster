@@ -11,6 +11,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "ops-bootstrap-org-dotgithub-direct.
 DIRECT_RUNNER = ROOT / "scripts" / "ops" / "run_direct_org_dotgithub_publisher.sh"
 LEGACY_PROTECTED_RUNNER = ROOT / "scripts" / "ops" / "run_protected_org_dotgithub_publisher.sh"
 ALL_PROTECTED_RUNNER = ROOT / "scripts" / "ops" / "run_protected_org_dotgithub_all_publisher.sh"
+APP_PUBLISHER = ROOT / "scripts" / "ops" / "bootstrap_org_dotgithub_repositories_with_app.py"
 
 
 class DirectOrgDotgithubPublisherTests(unittest.TestCase):
@@ -29,13 +30,17 @@ class DirectOrgDotgithubPublisherTests(unittest.TestCase):
             "persist-credentials: false",
             "run_direct_org_dotgithub_publisher.sh",
             "run_protected_org_dotgithub_all_publisher.sh",
-            "bootstrap_org_dotgithub_repositories_all.py",
+            "bootstrap_org_dotgithub_repositories_with_app.py",
             "test_bootstrap_org_dotgithub*.py",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, text)
 
-    def test_publication_is_exact_main_and_aws_oidc_bound(self) -> None:
+        validate_job = text.split("  publish:\n", 1)[0]
+        self.assertNotIn("secrets.K8S_SUBMODULE_APP_ID", validate_job)
+        self.assertNotIn("secrets.K8S_SUBMODULE_APP_PRIVATE_KEY", validate_job)
+
+    def test_publication_is_exact_main_and_app_secret_bound(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")
         for phrase in (
             "push:",
@@ -44,27 +49,30 @@ class DirectOrgDotgithubPublisherTests(unittest.TestCase):
             "ref: ${{ github.sha }}",
             'test "$GITHUB_REF" = refs/heads/main',
             'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"',
-            "id-token: write",
-            "aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c",
+            "K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}",
+            "K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}",
             "run_direct_org_dotgithub_publisher.sh",
             '"$GITHUB_SHA"',
             '"$GITHUB_WORKSPACE"',
+            "with a GitHub App",
             "org-dotgithub-governance-report-complete",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, text)
+        self.assertEqual(1, text.count("secrets.K8S_SUBMODULE_APP_ID"))
+        self.assertEqual(1, text.count("secrets.K8S_SUBMODULE_APP_PRIVATE_KEY"))
+        self.assertNotIn("id-token: write", text)
+        self.assertNotIn("aws-actions/configure-aws-credentials", text)
 
-    def test_direct_runner_normalizes_bootstrap_and_delegates_fail_closed(self) -> None:
+    def test_direct_runner_delegates_without_credential_logic(self) -> None:
         text = DIRECT_RUNNER.read_text(encoding="utf-8")
         for phrase in (
             "stage=direct-bootstrap",
             "invalid-trusted-sha",
             "source-root-not-absolute",
             "source-root-missing",
-            "tr -d '[:space:]'",
-            "invalid-aws-region",
-            "export AWS_REGION",
             "run_protected_org_dotgithub_all_publisher.sh",
+            "bootstrap_org_dotgithub_repositories_with_app.py",
             "bash -n \"$protected_runner\"",
             "stage=direct-delegate",
             "status=failed rc=%s",
@@ -74,10 +82,12 @@ class DirectOrgDotgithubPublisherTests(unittest.TestCase):
         for forbidden in (
             "GH_TOKEN",
             "GITHUB_TOKEN",
-            "GH_PAT",
+            "K8S_SUBMODULE_APP_ID",
+            "K8S_SUBMODULE_APP_PRIVATE_KEY",
             "oauth_token",
             "Authorization",
             "secretsmanager",
+            "AWS_REGION",
             "kubectl",
             "gh auth",
             "old_target_count",
@@ -86,27 +96,60 @@ class DirectOrgDotgithubPublisherTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, text)
 
-    def test_all_protected_launcher_is_fixed_bounded_and_secret_safe(self) -> None:
+    def test_all_protected_launcher_is_fixed_bounded_and_app_only(self) -> None:
         text = ALL_PROTECTED_RUNNER.read_text(encoding="utf-8")
         for phrase in (
-            "dd/remote-dev/agent-secrets",
-            'payload.get("GH_PAT")',
-            "bootstrap_org_dotgithub_repositories_all.py",
+            "K8S_SUBMODULE_APP_ID",
+            "K8S_SUBMODULE_APP_PRIVATE_KEY",
+            "bootstrap_org_dotgithub_repositories_with_app.py",
             "len(organizations) != 61",
+            "github_app_installation_token",
             "publisher.TARGET_ORGANIZATIONS",
             "publisher.EXCLUDED_ORGANIZATIONS",
-            "organizations=61",
+            "organizations=61 credential=github-app",
             "org-dotgithub-governance-report-complete",
-            "source=aws-secrets-manager",
+            "source=actions-secret-github-app",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, text)
-        self.assertNotIn("${3", text)
-        self.assertNotIn("set -x", text)
-        self.assertNotIn('echo "$GH_TOKEN"', text)
-        self.assertNotIn("Authorization: Bearer", text)
+        for forbidden in (
+            "dd/remote-dev/agent-secrets",
+            "aws secretsmanager",
+            "GH_PAT",
+            "raw_pat",
+            "source=aws-secrets-manager",
+            "${3",
+            "set -x",
+            'echo "$GH_TOKEN"',
+            "Authorization: Bearer",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, text)
 
-    def test_workflow_does_not_transport_an_organization_admin_token(self) -> None:
+    def test_app_publisher_has_no_personal_token_fallback(self) -> None:
+        text = APP_PUBLISHER.read_text(encoding="utf-8")
+        for phrase in (
+            "preflight_installations",
+            "validated_installation_token",
+            '"administration": "write"',
+            '"contents": "write"',
+            '"metadata": "read"',
+            'installation.get("repository_selection") != "all"',
+            "len(prepared) != 61",
+            "github_app_installation_token",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, text)
+        for forbidden in (
+            "secretsmanager",
+            "oauth_token",
+            "payload.get(\"GH_PAT\")",
+            "GITHUB_REPOSITORY_ADMIN_TOKEN =",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, text)
+
+    def test_workflow_transports_only_the_bounded_app_credential(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")
         for forbidden in (
             "secrets.GH_PAT",
@@ -132,9 +175,11 @@ class DirectOrgDotgithubPublisherTests(unittest.TestCase):
             "org-dotgithub-redacted.log",
             "github_pat_***",
             "gh*_***",
+            "REDACTED PRIVATE KEY",
+            "REDACTED JWT",
             "gh issue comment 615",
             'test "$PUBLISH_OUTCOME" == success',
-            "The fixed 61-organization fleet was verified",
+            "short-lived GitHub App installation tokens",
             "Publish and verify the fixed 61-organization fleet",
         ):
             with self.subTest(phrase=phrase):
