@@ -1,0 +1,51 @@
+name: Correct organization documentation no-op contract
+
+on:
+  push:
+    branches:
+      - fix/org-project-reconciler-owner-and-evidence-20260805
+    paths:
+      - .github/workflows/ops-fix-org-project-doc-noop-pr.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/org-project-reconciler-owner-and-evidence-20260805
+      - name: Correct update versus no-op evidence validation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/ops/sync_org_project_docs.sh')
+          text = path.read_text(encoding='utf-8')
+          old = '''  [[ "$pr_number" =~ ^[1-9][0-9]*$ ]]\n  [[ "$pr_url" == "https://github.com/${canonical_org}/.github/pull/${pr_number}" ]]\n  [[ "$pr_state" == merged-* || "$pr_state" == "auto-merge-enabled" || "$pr_state" == "not-needed" ]]\n  [[ "$issue_number" =~ ^[1-9][0-9]*$ ]]'''
+          new = '''  if [[ "$docs_action" == "updated" ]]; then\n    [[ "$pr_number" =~ ^[1-9][0-9]*$ ]]\n    [[ "$pr_url" == "https://github.com/${canonical_org}/.github/pull/${pr_number}" ]]\n    [[ "$pr_state" == merged-* || "$pr_state" == "auto-merge-enabled" ]]\n  elif [[ "$docs_action" == "unchanged" ]]; then\n    [[ -z "$pr_number" && -z "$pr_url" ]]\n    [[ "$pr_state" == "not-needed" ]]\n  else\n    false\n  fi\n  [[ "$issue_number" =~ ^[1-9][0-9]*$ ]]'''
+          if old not in text:
+              if new not in text:
+                  raise SystemExit('documentation validation anchor missing')
+          else:
+              text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+          bash -n scripts/ops/sync_org_project_docs.sh
+          python3 -m unittest \
+            tests/ops/test_audit_org_project_docs_evidence.py \
+            tests/ops/test_sync_org_project_docs_source.py
+      - name: Commit the correction
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if git diff --quiet -- scripts/ops/sync_org_project_docs.sh; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- scripts/ops/sync_org_project_docs.sh
+          git commit -m 'fix: accept explicit documentation no-op evidence'
+          git push origin HEAD:fix/org-project-reconciler-owner-and-evidence-20260805
