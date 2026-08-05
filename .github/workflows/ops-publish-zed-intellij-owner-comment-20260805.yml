@@ -1,0 +1,172 @@
+name: One-time publish zed-intellij with encrypted owner credential
+run-name: Publish zed-pkg/zed-intellij from an ephemeral RSA challenge
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: ops-publish-zed-intellij-20260805
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event.issue.number == 967 &&
+      github.actor == 'ORESoftware' &&
+      github.event.comment.body == 'ops-publish-zed-intellij:967:rsa-file-v1:20260805T1705Z'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      REPOSITORY: ${{ github.repository }}
+      CARRIER_NUMBER: '967'
+      TARGET_REPOSITORY: zed-pkg/zed-intellij
+      CHALLENGE_BRANCH: ops/zed-intellij-credential-challenge-20260805
+      CHALLENGE_PATH: ops/zed-intellij-credential-challenge.json
+
+    steps:
+      - name: Check out trusted main without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Publish repository through one-time RSA challenge
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          stage=bootstrap
+          workflow_token="$GH_TOKEN"
+          work="$(mktemp -d "$RUNNER_TEMP/zed-intellij-owner-broker.XXXXXX")"
+          owner_token=''
+          actor=''
+
+          cleanup() {
+            unset owner_token actor GH_TOKEN OWNER_TOKEN GITHUB_TOKEN
+            unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
+            find "$work" -type f -exec sh -c 'for file do : > "$file"; done' sh {} + 2>/dev/null || true
+            rm -rf "$work"
+          }
+          report_failure() {
+            status=$?
+            trap - ERR
+            printf 'ZED_INTELLIJ_PUBLICATION_FAILED stage=%s\n' "$stage" >&2
+            GH_TOKEN="$workflow_token" gh issue comment "$CARRIER_NUMBER" --repo "$REPOSITORY" \
+              --body "Publication failed during stage: \`$stage\`. No plaintext credential was stored." >/dev/null 2>&1 || true
+            exit "$status"
+          }
+          trap cleanup EXIT
+          trap report_failure ERR
+
+          command -v gh
+          command -v git
+          command -v jq
+          command -v openssl
+
+          private_key="$work/private.pem"
+          public_key="$work/public.pem"
+          ciphertext_file="$work/ciphertext.bin"
+          challenge_json="$work/challenge.json"
+          openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key"
+          chmod 600 "$private_key"
+          openssl pkey -in "$private_key" -pubout -out "$public_key"
+          nonce="$(openssl rand -hex 24)"
+          [[ "$nonce" =~ ^[0-9a-f]{48}$ ]]
+
+          stage=publish-public-challenge
+          main_sha="$(GH_TOKEN="$workflow_token" gh api "repos/${REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          if ! GH_TOKEN="$workflow_token" gh api "repos/${REPOSITORY}/git/ref/heads/${CHALLENGE_BRANCH}" >/dev/null 2>&1; then
+            GH_TOKEN="$workflow_token" gh api --method POST "repos/${REPOSITORY}/git/refs" \
+              -f ref="refs/heads/${CHALLENGE_BRANCH}" -f sha="$main_sha" >/dev/null
+          fi
+          jq -n \
+            --arg state awaiting-encrypted-response \
+            --arg nonce "$nonce" \
+            --rawfile publicKey "$public_key" \
+            --arg algorithm RSA-OAEP-SHA256-MGF1-SHA256 \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg sourceCommit "$GITHUB_SHA" \
+            '{state:$state,nonce:$nonce,publicKey:$publicKey,algorithm:$algorithm,runId:$runId,sourceCommit:$sourceCommit,privateKeyStored:false}' \
+            > "$challenge_json"
+          challenge_content="$(base64 -w0 < "$challenge_json")"
+          existing_sha="$(GH_TOKEN="$workflow_token" gh api "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}?ref=${CHALLENGE_BRANCH}" --jq '.sha' 2>/dev/null || true)"
+          args=(--method PUT "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}" -f message='ops: publish one-time zed-intellij credential challenge' -f content="$challenge_content" -f branch="$CHALLENGE_BRANCH")
+          if [[ -n "$existing_sha" ]]; then args+=(-f sha="$existing_sha"); fi
+          GH_TOKEN="$workflow_token" gh api "${args[@]}" >/dev/null
+
+          stage=await-encrypted-response
+          response_marker="<!-- zed-intellij-credential-response:${nonce} -->"
+          response_body=''
+          for _ in $(seq 1 300); do
+            comments="$(GH_TOKEN="$workflow_token" gh api --paginate "repos/${REPOSITORY}/issues/${CARRIER_NUMBER}/comments?per_page=100" --slurp)"
+            response_body="$(
+              jq -r --arg marker "$response_marker" '
+                [.[][]
+                  | select(.user.login == "ORESoftware")
+                  | select(.body | startswith($marker + "\n"))]
+                | sort_by(.id) | last | .body // empty
+              ' <<<"$comments"
+            )"
+            test -n "$response_body" && break
+            sleep 3
+          done
+          test -n "$response_body"
+          test "$(grep -c '^ciphertext-base64=' <<<"$response_body")" -eq 1
+          ciphertext="$(sed -n 's/^ciphertext-base64=//p' <<<"$response_body")"
+          [[ "$ciphertext" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#ciphertext}" -le 8192
+          printf '%s' "$ciphertext" | base64 --decode > "$ciphertext_file"
+          test -s "$ciphertext_file"
+
+          stage=decrypt-and-validate-owner-token
+          owner_token="$(openssl pkeyutl -decrypt -inkey "$private_key" -in "$ciphertext_file" \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256 2>/dev/null)"
+          test -n "$owner_token"
+          [[ "$owner_token" != *$'\n'* && "$owner_token" != *$'\r'* && "$owner_token" != *$'\t'* && "$owner_token" != *' '* ]]
+          [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
+          echo "::add-mask::$owner_token"
+          export GH_TOKEN="$owner_token"
+          export OWNER_TOKEN="$owner_token"
+          actor="$(gh api user --jq '.login')"
+          test "$actor" = ORESoftware
+          membership="$(gh api user/memberships/orgs/zed-pkg --jq '[.state,.role] | join(":")')"
+          test "$membership" = active:admin
+
+          stage=create-and-configure-repository
+          if ! gh repo view "$TARGET_REPOSITORY" --json nameWithOwner >/dev/null 2>&1; then
+            gh repo create "$TARGET_REPOSITORY" \
+              --public \
+              --add-readme \
+              --description 'IntelliJ Platform plugin for Zed package state, diagnostics, and recommended resolutions'
+          fi
+          gh api --method PATCH "repos/${TARGET_REPOSITORY}" \
+            -f description='IntelliJ Platform plugin for Zed package state, diagnostics, and recommended resolutions' \
+            -F has_issues=true \
+            -F has_projects=true \
+            -F has_wiki=false \
+            -F delete_branch_on_merge=true \
+            -F allow_merge_commit=false \
+            -F allow_squash_merge=true \
+            -F allow_rebase_merge=true \
+            -f default_branch=main >/dev/null
+          test "$(gh api "repos/${TARGET_REPOSITORY}" --jq '.full_name')" = "$TARGET_REPOSITORY"
+          test -n "$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+
+          stage=record-success-and-remove-challenge
+          unset OWNER_TOKEN owner_token
+          export GH_TOKEN="$workflow_token"
+          GH_TOKEN="$workflow_token" gh issue comment "$CARRIER_NUMBER" --repo "$REPOSITORY" \
+            --body "Repository provisioned: https://github.com/${TARGET_REPOSITORY}. The connected GitHub app can now publish the reviewed source tree." >/dev/null
+          GH_TOKEN="$workflow_token" gh api --method DELETE "repos/${REPOSITORY}/git/refs/heads/${CHALLENGE_BRANCH}" >/dev/null
+          printf 'ZED_INTELLIJ_REPOSITORY_PROVISIONED actor=%s repository=%s\n' "$actor" "$TARGET_REPOSITORY"
