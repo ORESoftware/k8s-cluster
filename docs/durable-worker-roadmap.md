@@ -66,6 +66,18 @@ An HTTP success response is not proof of exactly-once execution. The runtime rej
 - redirect refusal, bounded responses, progress, heartbeats, fencing, and draining;
 - unbound submissions and ambiguous worker polls are not retried.
 
+### Go worker SDK and shared protocol conformance — PR #999 / DEN-2289
+
+- dependency-free Go 1.23+ client and long-lived worker loop;
+- Go 1.23 and current-stable race tests, vet, and repeated fencing stress;
+- local slot admission, worker and step heartbeats, progress, panic recovery, and draining;
+- confirmed lease loss and ambiguous terminal-protocol failures remain distinct outcomes;
+- a versioned TypeScript, Python, and Go protocol fixture ratchets retry, progress-ID, and fencing behavior;
+- TypeScript signals and ambiguous polls are no longer retried, and redirects are rejected before credentials can be forwarded;
+- a push-only workflow publishes a deterministic source archive and SHA-256 checksum.
+
+The `dev` run for merge commit `a693040ad69a1f54f14dd65fb8b74ab11fee132b` published artifact `durable-worker-go-sdk-a693040ad69a1f54f14dd65fb8b74ab11fee132b` with GitHub artifact digest `sha256:b24060664d79c845c4b7370f4cabb5b0ac79b9a09fc5b00b45b596ad9948d78c`.
+
 ## Architectural position
 
 The runtime's differentiated model is:
@@ -116,9 +128,14 @@ Exit gate:
 
 ## Milestone M3 — SDK and executor fleet
 
-Deliver hand-authored worker SDKs for:
+Delivered lifecycle-aware worker SDKs:
 
-- Go;
+- TypeScript;
+- Python;
+- Go.
+
+Remaining worker SDKs:
+
 - Rust;
 - Dart;
 - Gleam;
@@ -127,9 +144,9 @@ Deliver hand-authored worker SDKs for:
 Also deliver:
 
 - adapters for `dd-agent-worker-broker` and `dd-build-server`;
-- Node.js, Bun, Deno, edge, Python, and container examples;
+- Node.js, Bun, Deno, edge, Python, Go, and container examples;
 - generated API clients kept separate from lifecycle-aware worker SDKs;
-- one cross-language fixture corpus for retries, progress, cancellation, restart, lease loss, and fencing.
+- one cross-language fixture corpus for retries, polling ambiguity, progress, cancellation, restart, lease loss, and fencing.
 
 Exit gate:
 
@@ -165,6 +182,12 @@ Exit gate:
 
 - no scheduler or worker can mutate authoritative state after losing its epoch;
 - failover objectives are demonstrated by repeatable destructive tests rather than documentation alone.
+
+## Current infrastructure blocker
+
+GitHub issue [#886](https://github.com/ORESoftware/k8s-cluster/issues/886) and Linear issue [DEN-2332](https://linear.app/denman/issue/DEN-2332/restore-github-app-credentials-for-private-deployment-contract-ci) track the missing `K8S_SUBMODULE_APP_ID` and `K8S_SUBMODULE_APP_PRIVATE_KEY` configuration required by the broad private-backend deployment-contract job.
+
+This is a repository infrastructure blocker, not evidence that a focused durable-worker protocol, SDK, or GitOps contract failed. The fix must use a least-privilege repository-scoped GitHub App rather than a user PAT.
 
 ## Merge gates
 
