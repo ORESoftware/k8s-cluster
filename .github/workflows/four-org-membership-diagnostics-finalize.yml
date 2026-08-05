@@ -1,4 +1,4 @@
-name: Four-org membership diagnostics finalizer
+name: Four-org membership diagnostics staging
 
 on:
   pull_request:
@@ -11,11 +11,11 @@ permissions:
   contents: write
 
 concurrency:
-  group: four-org-membership-diagnostics-finalizer
+  group: four-org-membership-diagnostics-staging
   cancel-in-progress: false
 
 jobs:
-  finalize:
+  stage:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/four-org-membership-diagnostics-20260805'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -27,7 +27,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Add bounded per-organization diagnostics and tests
+      - name: Generate staged permanent publisher and test blobs
         shell: python
         run: |
           from pathlib import Path
@@ -116,11 +116,11 @@ jobs:
           '''
           if source.count(old_memberships) != 1:
               raise SystemExit(f'expected one membership loop, found {source.count(old_memberships)}')
-          workflow.write_text(source.replace(old_memberships, new_memberships, 1), encoding='utf-8')
+          staged_workflow = Path('scripts/ops/.staged-four-org-publisher.yml')
+          staged_workflow.write_text(source.replace(old_memberships, new_memberships, 1), encoding='utf-8')
 
           tests = Path('scripts/ops/test_four_org_encrypted_publisher.py')
           source = tests.read_text(encoding='utf-8')
-
           old_cleanup = '            "unset owner_token actor membership GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN",\n'
           new_cleanup = '            "unset owner_token actor membership failed_organization observed_membership GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN",\n'
           if source.count(old_cleanup) != 1:
@@ -156,37 +156,49 @@ jobs:
               raise SystemExit('membership test insertion marker is not unique')
           if 'test_membership_failures_name_only_the_fixed_org' in source:
               raise SystemExit('membership diagnostics test already exists')
-          tests.write_text(source.replace(marker, addition + marker, 1), encoding='utf-8')
+          Path('scripts/ops/.staged-test-four-org-encrypted-publisher.py').write_text(
+              source.replace(marker, addition + marker, 1), encoding='utf-8'
+          )
 
-          Path('.github/workflows/four-org-membership-diagnostics-finalize.yml').unlink()
-
-      - name: Validate permanent publisher and tests
+      - name: Validate staged blobs in an isolated repository layout
         shell: bash
         run: |
           set -euo pipefail
+          stage_root="$(mktemp -d "$RUNNER_TEMP/four-org-staged.XXXXXX")"
+          trap 'rm -rf "$stage_root"' EXIT
+          mkdir -p "$stage_root/.github/workflows" "$stage_root/scripts/ops"
+          cp scripts/ops/.staged-four-org-publisher.yml \
+            "$stage_root/.github/workflows/ops-publish-four-org-fleet-encrypted-owner.yml"
+          cp .github/workflows/ops-publish-four-org-fleet-encrypted-owner-contract.yml \
+            "$stage_root/.github/workflows/ops-publish-four-org-fleet-encrypted-owner-contract.yml"
+          cp scripts/ops/.staged-test-four-org-encrypted-publisher.py \
+            "$stage_root/scripts/ops/test_four_org_encrypted_publisher.py"
+
           docker run --rm \
-            -v "$PWD:/repo" \
+            -v "$stage_root:/repo" \
             -w /repo \
             rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
             -ignore 'SC2016' \
             .github/workflows/ops-publish-four-org-fleet-encrypted-owner.yml \
             .github/workflows/ops-publish-four-org-fleet-encrypted-owner-contract.yml
-          python3 -m py_compile scripts/ops/test_four_org_encrypted_publisher.py
-          python3 -m unittest -v scripts/ops/test_four_org_encrypted_publisher.py
-          git diff --check
-          if git grep -nE 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}' -- \
-            .github/workflows/ops-publish-four-org-fleet-encrypted-owner.yml \
-            scripts/ops/test_four_org_encrypted_publisher.py; then
+          python3 "$stage_root/scripts/ops/test_four_org_encrypted_publisher.py"
+          git diff --check -- scripts/ops/.staged-four-org-publisher.yml \
+            scripts/ops/.staged-test-four-org-encrypted-publisher.py
+          if grep -R --line-number -E 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}' \
+            scripts/ops/.staged-four-org-publisher.yml \
+            scripts/ops/.staged-test-four-org-encrypted-publisher.py; then
             echo 'Plaintext GitHub credentials are forbidden.' >&2
             exit 1
           fi
 
-      - name: Commit and push permanent repair
+      - name: Commit staged blobs for GitHub App installation
         shell: bash
         run: |
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -A
-          git commit -m 'fix(ops): report bounded four-org membership failures'
+          git add \
+            scripts/ops/.staged-four-org-publisher.yml \
+            scripts/ops/.staged-test-four-org-encrypted-publisher.py
+          git commit -m 'chore(ops): stage validated four-org membership diagnostics blobs'
           git push origin HEAD:agent/four-org-membership-diagnostics-20260805
