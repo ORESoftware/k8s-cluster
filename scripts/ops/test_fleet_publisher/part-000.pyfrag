@@ -288,7 +288,31 @@ def load_config(path: Path) -> dict[str, Any]:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise FleetError(f"cannot load fleet config {path}: {exc}") from exc
-    fleet_files = payload.get("fleet_files")
+    bundle_paths = payload.get("fleet_bundles")
+    if bundle_paths is not None:
+        if not isinstance(bundle_paths, list) or any(not isinstance(item, str) or not item or Path(item).is_absolute() for item in bundle_paths):
+            raise FleetError("fleet_bundles must be a list of safe relative JSON paths")
+        root = path.parent.resolve()
+        fleets: dict[str, Any] = {}
+        for relative in bundle_paths:
+            bundle_path = (root / relative).resolve()
+            if bundle_path.parent != root:
+                raise FleetError(f"fleet bundle must stay directly under {root}: {relative!r}")
+            try:
+                bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise FleetError(f"cannot load fleet bundle {bundle_path}: {exc}") from exc
+            if not isinstance(bundle, dict):
+                raise FleetError(f"fleet bundle must contain an object: {bundle_path}")
+            for test_org, fleet in bundle.items():
+                if test_org in fleets or not isinstance(fleet, dict):
+                    raise FleetError(f"duplicate or invalid fleet bundle entry: {test_org!r}")
+                fleets[test_org] = fleet
+        payload = dict(payload)
+        payload["fleets"] = fleets
+        fleet_files = None
+    else:
+        fleet_files = payload.get("fleet_files")
     if fleet_files is not None:
         if not isinstance(fleet_files, dict):
             raise FleetError("fleet_files must be an object")
