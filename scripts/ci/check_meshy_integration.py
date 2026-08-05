@@ -161,7 +161,7 @@ def main() -> None:
             "GLB/STL/3MF",
             "Daedalus-controlled storage",
             "MESHY_ARTIFACT_ALLOWED_HOSTS",
-            "release_state\": \"blocked",
+            '"release_state": "blocked"',
             "webhook",
         ],
         "docs/meshy-integration.md",
