@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fiducia-load-balance
+  namespace: fiducia
+spec:
+  template:
+    metadata:
+      annotations:
+        dd.dev/fiducia-revocation-contract: den-1119-reader-only-v2
+    spec:
+      containers:
+        - name: fiducia-load-balance
+          env:
+            - name: FIDUCIA_REVOCATION_CHECK_URL
+              value: http://fiducia-revocation-admin.fiducia.svc.cluster.local:8098/v1/revocations/check
+            - name: FIDUCIA_REVOCATION_READER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: fiducia-revocation-secrets
+                  key: reader-secret
+                  optional: false
+            - name: FIDUCIA_REVOCATION_CACHE_FRESHNESS_SECS
+              value: "30"
+            - name: FIDUCIA_REVOCATION_CACHE_CAPACITY
+              value: "65536"
+            - name: FIDUCIA_REVOCATION_TIMEOUT_MILLIS
+              value: "2000"
