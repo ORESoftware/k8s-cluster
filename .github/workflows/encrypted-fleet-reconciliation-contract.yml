@@ -1,0 +1,42 @@
+name: encrypted fleet reconciliation contract
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/ops-sync-org-project-docs-once.yml
+      - .github/workflows/encrypted-fleet-reconciliation-contract.yml
+      - scripts/ops/test_encrypted_fleet_reconciliation_workflow.py
+      - scripts/ops/sync_org_project_docs_rate_aware.py
+      - scripts/ops/test_sync_org_project_docs_rate_aware.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-sync-org-project-docs-once.yml
+      - .github/workflows/encrypted-fleet-reconciliation-contract.yml
+      - scripts/ops/test_encrypted_fleet_reconciliation_workflow.py
+      - scripts/ops/sync_org_project_docs_rate_aware.py
+      - scripts/ops/test_sync_org_project_docs_rate_aware.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: encrypted-fleet-reconciliation-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+          show-progress: false
+      - name: Validate workflow and Python contracts
+        run: |
+          python3 scripts/ops/test_encrypted_fleet_reconciliation_workflow.py -v
+          python3 scripts/ops/test_sync_org_project_docs_rate_aware.py -v
+          python3 -m py_compile scripts/ops/sync_org_project_docs_rate_aware.py
