@@ -7,10 +7,8 @@ use super::model::DispatchRequest;
 use super::{adapt_dispatch, DISPATCH_SCHEMA};
 
 const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
-const DIGEST_ONE: &str =
-    "sha256:1111111111111111111111111111111111111111111111111111111111111111";
-const DIGEST_TWO: &str =
-    "sha256:2222222222222222222222222222222222222222222222222222222222222222";
+const DIGEST_ONE: &str = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+const DIGEST_TWO: &str = "sha256:2222222222222222222222222222222222222222222222222222222222222222";
 const DIGEST_THREE: &str =
     "sha256:3333333333333333333333333333333333333333333333333333333333333333";
 
@@ -83,11 +81,9 @@ fn rejects_stale_content_digest_and_identity() {
     let mut stale_digest = request();
     stale_digest.request_id = stable_request_id(&stale_digest).unwrap();
     stale_digest.request_digest = DIGEST_ONE.to_string();
-    assert!(
-        adapt_dispatch(&serde_json::to_value(stale_digest).unwrap())
-            .unwrap_err()
-            .contains("requestDigest does not match")
-    );
+    assert!(adapt_dispatch(&serde_json::to_value(stale_digest).unwrap())
+        .unwrap_err()
+        .contains("requestDigest does not match"));
 }
 
 #[test]
