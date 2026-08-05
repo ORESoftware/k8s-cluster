@@ -28,7 +28,7 @@ pub mod webhook;
 use std::time::Duration;
 
 use axum::{
-    http::{header, HeaderValue, Method},
+    http::{header, HeaderName, HeaderValue, Method},
     routing::{delete, get, post},
     Router,
 };
@@ -134,6 +134,24 @@ pub fn router(state: AppState) -> Router {
         .layer(SetResponseHeaderLayer::if_not_present(
             header::STRICT_TRANSPORT_SECURITY,
             HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+        ))
+        // Token-bearing responses must not enter shared or browser caches.
+        // if_not_present preserves the explicit public JWKS cache policy.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-store"),
+        ))
+        // The script-free UI needs no powerful browser capabilities.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("permissions-policy"),
+            HeaderValue::from_static(
+                "accelerometer=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()",
+            ),
+        ))
+        // Isolate authentication UI from cross-origin opener relationships.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("cross-origin-opener-policy"),
+            HeaderValue::from_static("same-origin"),
         ))
         .layer(cors)
         .with_state(state)
