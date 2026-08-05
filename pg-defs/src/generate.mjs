@@ -2313,7 +2313,7 @@ function renderSeaOrmCargo() {
     'edition = "2021"',
     '',
     '[dependencies]',
-    'sea-orm = { version = "1", features = ["macros", "with-uuid", "with-json", "with-chrono"] }',
+    'sea-orm = { version = "1", default-features = false, features = ["macros", "with-uuid", "with-json", "with-chrono"] }',
     'serde = { version = "1", features = ["derive"] }',
   ].join('\n')}\n`;
 }
