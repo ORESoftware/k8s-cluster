@@ -24,6 +24,10 @@ use super::bearer;
 #[derive(Debug, Deserialize)]
 pub struct IntrospectRequest {
     token: String,
+    /// Exact expected audience for a delegated product token. When omitted,
+    /// introspection verifies the normal shared-auth audience.
+    #[serde(default)]
+    audience: Option<String>,
 }
 
 /// Enforce caller authentication before introspection reveals full token claims.
@@ -82,8 +86,12 @@ pub async fn introspect(
     if let Err(error) = authorize_caller(&state, &headers) {
         return error.into_response();
     }
-    let verified = if request.token.len() <= 16 * 1024 {
-        active_claims(&state, &request.token).await
+    let expected_audience = request
+        .audience
+        .as_deref()
+        .unwrap_or(state.config.signing.audience.as_str());
+    let verified = if request.token.len() <= 16 * 1024 && valid_audience(expected_audience) {
+        active_claims_for_audience(&state, &request.token, expected_audience).await
     } else {
         Err(AuthError::Unauthorized)
     };
@@ -104,6 +112,8 @@ pub async fn introspect(
             "aud": claims.aud,
             "exp": claims.exp,
             "iat": claims.iat,
+            "nbf": claims.nbf,
+            "auth_time": claims.auth_time,
             "sid": claims.sid,
             "provider": claims.provider,
             "provider_tenant": claims.provider_tenant,
@@ -116,6 +126,9 @@ pub async fn introspect(
             "aal": claims.aal,
             "amr": claims.amr,
             "acr": claims.acr,
+            "scope": claims.scope,
+            "azp": claims.azp,
+            "parent_jti": claims.parent_jti,
         }))
         .into_response(),
         Err(_) => Json(json!({ "active": false })).into_response(),
@@ -150,6 +163,12 @@ pub async fn verify(State(state): State<AppState>, headers: HeaderMap) -> impl I
             if let Some(email) = &claims.email {
                 insert_header(&mut output, "x-auth-email", email);
             }
+            if !claims.scope.is_empty() {
+                insert_header(&mut output, "x-auth-scope", &claims.scope);
+            }
+            if let Some(authorized_party) = &claims.azp {
+                insert_header(&mut output, "x-auth-azp", authorized_party);
+            }
             (StatusCode::OK, output).into_response()
         }
         Err(error) => error.into_response(),
@@ -157,7 +176,22 @@ pub async fn verify(State(state): State<AppState>, headers: HeaderMap) -> impl I
 }
 
 pub(crate) async fn active_claims(state: &AppState, token: &str) -> Result<OreClaims, AuthError> {
-    let claims = state.minter.verify(token)?;
+    active_claims_for_audience(state, token, state.config.signing.audience.as_str()).await
+}
+
+pub(crate) async fn active_claims_for_audience(
+    state: &AppState,
+    token: &str,
+    expected_audience: &str,
+) -> Result<OreClaims, AuthError> {
+    let claims = state
+        .minter
+        .verify_for_audience(token, expected_audience)?;
+    enforce_session_revocation(state, &claims).await?;
+    Ok(claims)
+}
+
+async fn enforce_session_revocation(state: &AppState, claims: &OreClaims) -> Result<(), AuthError> {
     match (&state.db, claims.sid.as_deref()) {
         (Some(db), Some(raw_session_id)) => {
             let session_id =
@@ -180,7 +214,15 @@ pub(crate) async fn active_claims(state: &AppState, token: &str) -> Result<OreCl
         (Some(_), None) => return Err(AuthError::Unauthorized),
         (None, _) => {}
     }
-    Ok(claims)
+    Ok(())
+}
+
+fn valid_audience(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'/' | b'-')
+        })
 }
 
 fn insert_header(map: &mut HeaderMap, name: &'static str, value: &str) {
