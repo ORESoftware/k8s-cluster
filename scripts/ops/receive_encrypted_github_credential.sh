@@ -23,6 +23,10 @@ MAX_RATE_WAIT_SECONDS="${MAX_RATE_WAIT_SECONDS:-10800}"
 CIPHERTEXT_WAIT_ATTEMPTS="${CIPHERTEXT_WAIT_ATTEMPTS:-720}"
 CIPHERTEXT_POLL_SECONDS="${CIPHERTEXT_POLL_SECONDS:-5}"
 RATE_POLL_SECONDS="${RATE_POLL_SECONDS:-120}"
+IDENTITY_MAX_WAIT_SECONDS="${IDENTITY_MAX_WAIT_SECONDS:-1800}"
+IDENTITY_RETRY_INITIAL_SECONDS="${IDENTITY_RETRY_INITIAL_SECONDS:-60}"
+IDENTITY_RETRY_MAX_SECONDS="${IDENTITY_RETRY_MAX_SECONDS:-300}"
+EXPECTED_GITHUB_LOGIN="${EXPECTED_GITHUB_LOGIN:-ORESoftware}"
 
 umask 077
 repo_api="https://api.github.com/repos/${REPOSITORY}"
@@ -30,6 +34,12 @@ private_key="/tmp/github-fleet-${HANDSHAKE_NONCE}.private.pem"
 public_key="/tmp/github-fleet-${HANDSHAKE_NONCE}.public.pem"
 encrypted_token="/tmp/github-fleet-${HANDSHAKE_NONCE}.token.enc"
 plain_token="/tmp/github-fleet-${HANDSHAKE_NONCE}.token.txt"
+
+redact_output() {
+  sed -E \
+    -e 's/(ghp_|github_pat_)[A-Za-z0-9_]+/[redacted]/g' \
+    -e 's/(Authorization: *(Bearer|token) +)[^[:space:]]+/\1[redacted]/Ig'
+}
 
 repo_api_call() {
   local method="$1"
@@ -112,7 +122,7 @@ wait_for_rate_budget() {
   while true; do
     payload="$(GH_TOKEN="$USER_TOKEN" gh api rate_limit 2>&1)" || {
       printf 'rate-limit endpoint failed; retrying without exposing credential: %s\n' \
-        "$(sed -E 's/(ghp_|github_pat_)[A-Za-z0-9_]+/[redacted]/g' <<<"$payload")" >&2
+        "$(redact_output <<<"$payload")" >&2
       sleep 60
       continue
     }
@@ -156,6 +166,56 @@ wait_for_rate_budget() {
       "$core_remaining" "$MIN_CORE_REMAINING" \
       "$graphql_remaining" "$MIN_GRAPHQL_REMAINING" "$wait_seconds"
     sleep "$wait_seconds"
+  done
+}
+
+lookup_expected_login_with_retry() {
+  local started now elapsed attempt delay output sleep_seconds
+  started="$(date +%s)"
+  attempt=1
+  delay="$IDENTITY_RETRY_INITIAL_SECONDS"
+
+  while true; do
+    if output="$(GH_TOKEN="$USER_TOKEN" gh api user --jq .login 2>&1)"; then
+      if [[ "$output" != "$EXPECTED_GITHUB_LOGIN" ]]; then
+        printf 'decrypted credential belongs to unexpected GitHub login: %s\n' \
+          "$(redact_output <<<"$output")" >&2
+        return 1
+      fi
+      printf '%s\n' "$output"
+      return 0
+    fi
+
+    now="$(date +%s)"
+    elapsed=$(( now - started ))
+    if (( elapsed >= IDENTITY_MAX_WAIT_SECONDS )); then
+      printf 'GitHub identity endpoint did not recover before timeout after %ss: %s\n' \
+        "$elapsed" "$(redact_output <<<"$output")" >&2
+      return 1
+    fi
+
+    sleep_seconds="$delay"
+    if (( sleep_seconds > IDENTITY_RETRY_MAX_SECONDS )); then
+      sleep_seconds="$IDENTITY_RETRY_MAX_SECONDS"
+    fi
+    if (( elapsed + sleep_seconds > IDENTITY_MAX_WAIT_SECONDS )); then
+      sleep_seconds=$(( IDENTITY_MAX_WAIT_SECONDS - elapsed ))
+    fi
+    if (( sleep_seconds < 1 )); then
+      sleep_seconds=1
+    fi
+
+    printf 'WAIT_IDENTITY_API attempt=%s elapsed=%ss sleep=%ss reason=%s\n' \
+      "$attempt" "$elapsed" "$sleep_seconds" \
+      "$(redact_output <<<"$output" | head -c 600)" >&2
+    sleep "$sleep_seconds"
+    attempt=$(( attempt + 1 ))
+    if (( delay < IDENTITY_RETRY_MAX_SECONDS )); then
+      delay=$(( delay * 2 ))
+      if (( delay > IDENTITY_RETRY_MAX_SECONDS )); then
+        delay="$IDENTITY_RETRY_MAX_SECONDS"
+      fi
+    fi
   done
 }
 
@@ -212,12 +272,7 @@ fi
 printf '::add-mask::%s\n' "$USER_TOKEN"
 
 wait_for_rate_budget
-login="$(GH_TOKEN="$USER_TOKEN" gh api user --jq .login)"
-if [[ "$login" != ORESoftware ]]; then
-  printf 'decrypted credential belongs to unexpected GitHub login: %s\n' "$login" >&2
-  exit 1
-fi
-GH_TOKEN="$USER_TOKEN" gh auth status >/dev/null
+login="$(lookup_expected_login_with_retry)"
 
 {
   printf 'GH_TOKEN=%s\n' "$USER_TOKEN"
