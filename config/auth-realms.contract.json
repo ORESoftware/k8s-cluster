@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "program": "DEN-2189",
   "applicationDatabaseFallbackAllowed": false,
+  "loopbackAllowedInProduction": false,
   "providerProjectsPerRealm": 1,
   "productAuthorizationOwner": "application-databases",
   "profiles": [
