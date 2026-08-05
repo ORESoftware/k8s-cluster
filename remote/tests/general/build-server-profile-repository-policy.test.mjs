@@ -110,12 +110,33 @@ test('GitOps binds each reviewed repository to only its fixed profiles', () => {
       repository: 'https://github.com/3FA-app/3fa-interfaces.git',
       profiles: ['node-hardened-test', 'rust-generated-verify'],
     },
+    {
+      repository:
+        'https://github.com/discrete-event-systems-test/des-web-playwright-e2e.git',
+      profiles: ['playwright'],
+    },
+    {
+      repository:
+        'https://github.com/discrete-event-systems-test/des-web-puppeteer-e2e.git',
+      profiles: ['puppeteer'],
+    },
   ]);
   assert.doesNotMatch(patch, /msgint-connectors[^\n]*node-verify/);
   assert.doesNotMatch(patch, /msgint-connectors[^\n]*(playwright|python-verify|rust-verify)/);
   assert.doesNotMatch(patch, /3fa-interfaces[^\n]*"rust-verify"/);
   assert.doesNotMatch(patch, /3fa-interfaces[^\n]*(playwright|python-verify|node-verify)/);
-  assert.doesNotMatch(patch, /messaging-intel\/\*|3FA-app\/\*/);
+  assert.doesNotMatch(
+    patch,
+    /des-web-playwright-e2e[^\n]*(puppeteer|browser-e2e|node-verify|rust-verify)/,
+  );
+  assert.doesNotMatch(
+    patch,
+    /des-web-puppeteer-e2e[^\n]*(playwright|browser-e2e|node-verify|rust-verify)/,
+  );
+  assert.doesNotMatch(
+    patch,
+    /messaging-intel\/\*|3FA-app\/\*|discrete-event-systems-test\/\*/,
+  );
 });
 
 test('generated Rust profile is fixed, ordered, locked, and non-publishing', () => {
