@@ -266,7 +266,13 @@ def main() -> int:
     )
     aws_stats = protected.discover_aws_secret_material(
         args.region,
-        set(protected.EXPLICIT_SECRET_NAMES) | set(external_secret_names),
+        set(external_secret_names) | {
+            "dd/remote-dev/agent-secrets",
+            "dd/remote-dev/k8s-submodule-github-app",
+            "dd/remote-dev/github-app",
+            "dd/remote-dev/github-app-secrets",
+            "k8s-submodule-github-app",
+        },
         app_ids,
         private_keys,
     )
@@ -361,6 +367,7 @@ def main() -> int:
         "installation_id": selected.installation_id,
         "app_permissions": selected.app_permissions,
         "token_permissions": selected.token_permissions,
+        "permissions": selected.token_permissions,
         "repository_restriction_verified": True,
         "candidate_counts": {
             "app_ids": len(app_ids),
