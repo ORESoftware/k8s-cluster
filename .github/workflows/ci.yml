@@ -91,6 +91,7 @@ jobs:
       AUTH_BASE_URL: http://localhost:8120
       AUTH_REALM: customer
       AUTH_REALM_DEPLOYMENT: shared-auth-customer-browser-ci
+      AUTH_DATABASE_ENDPOINT_HOST: 127.0.0.1
       AUTH_DATABASE_RESOURCE_REF: test:postgres:shared-auth-customer-browser-ci
       AUTH_DATABASE_SECRET_REF: dd/shared-auth/customer/browser-ci-database-url
       AUTH_SIGNING_KEY_REF: dd/shared-auth/customer/browser-ci-signing-key
