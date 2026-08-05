@@ -196,6 +196,58 @@ class AppOrganizationGovernancePublisherTests(unittest.TestCase):
         self.assertEqual(60, events.count("revoke"))
         self.assertFalse(any(event.startswith("reconcile:") for event in events))
 
+    def test_repository_inspection_failure_revokes_current_and_prepared_tokens(self) -> None:
+        revoked: list[str] = []
+        organizations = fleet.TARGET_ORGANIZATIONS[:2]
+        installation_ids = {
+            organization.lower(): index
+            for index, organization in enumerate(organizations, start=1)
+        }
+
+        def request(method: str, path: str, bearer: str, body=None):
+            if method == "GET":
+                organization = path.split("/")[2]
+                return 200, {
+                    "id": installation_ids[organization.lower()],
+                    "app_slug": "fleet-admin-app",
+                    "repository_selection": "all",
+                    "account": {"login": organization},
+                }
+            if method == "POST":
+                installation_id = int(path.split("/")[3])
+                return 201, {
+                    "token": f"installation-token-{installation_id}",
+                    "permissions": dict(module.REQUIRED_PERMISSIONS),
+                }
+            if method == "DELETE":
+                revoked.append(bearer)
+                return 204, None
+            self.fail(f"unexpected request: {method} {path}")
+
+        def repository_getter(api: DummyApi, organization: str):
+            if organization == organizations[1]:
+                raise module.AppPublisherError("simulated repository inspection failure")
+            return None
+
+        original_targets = fleet.TARGET_ORGANIZATIONS
+        try:
+            fleet.TARGET_ORGANIZATIONS = organizations
+            with self.assertRaises(module.AppPublisherError):
+                module.preflight_installations(
+                    "app-jwt",
+                    request_fn=request,
+                    api_factory=DummyApi,
+                    repository_getter=repository_getter,
+                    repository_validator=lambda repository, organization: None,
+                )
+        finally:
+            fleet.TARGET_ORGANIZATIONS = original_targets
+
+        self.assertCountEqual(
+            ["installation-token-1", "installation-token-2"],
+            revoked,
+        )
+
     def test_result_set_rejects_missing_or_unverified_organizations(self) -> None:
         complete = [
             base.OrganizationResult(
