@@ -7,7 +7,7 @@ import {
   redactSensitiveContent,
   scanSensitiveContent,
 } from '../sensitive-content.mjs';
-import { sanitizeDocuments } from '../sanitize-export.mjs';
+import { assertUniqueOutputBasenames, sanitizeDocuments } from '../sanitize-export.mjs';
 
 const secretFixtures = [
   ['aws_access_key_id', `AccessKeyId: ${'AKIA' + 'ABCDEFGHIJKLMNOP'}`],
@@ -60,6 +60,23 @@ test('classifies high-confidence contact-only messages without treating ordinary
   assert.equal(isHighConfidenceContactOnly('202 555 0147wpp'), true);
   assert.equal(isHighConfidenceContactOnly('100 variables, 150 constraints, objective 47824'), false);
   assert.equal(isHighConfidenceContactOnly('100.1.1.250'), false);
+});
+
+test('rejects duplicate output basenames before sanitized pages can overwrite each other', () => {
+  assert.throws(
+    () =>
+      assertUniqueOutputBasenames([
+        '/private/export-a/page-1.json',
+        '/private/export-b/PAGE-1.JSON',
+      ]),
+    /Duplicate JSON basename would overwrite sanitized output/,
+  );
+  assert.doesNotThrow(() =>
+    assertUniqueOutputBasenames([
+      '/private/export-a/page-1.json',
+      '/private/export-b/page-2.json',
+    ]),
+  );
 });
 
 test('sanitizer preserves provenance but never emits secret or contact values', async () => {
