@@ -203,7 +203,7 @@ pub(crate) async fn response_from_issued_with_assurance(
     })
 }
 
-async fn enforce_limit(
+pub(crate) async fn enforce_limit(
     state: &AppState,
     bucket: &str,
     identifier: &str,

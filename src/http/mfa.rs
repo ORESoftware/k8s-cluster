@@ -15,7 +15,7 @@ use crate::state::AppState;
 
 use super::bearer;
 use super::introspect::active_claims;
-use super::local::{response_from_issued_with_assurance, SessionResponse};
+use super::local::{enforce_limit, response_from_issued_with_assurance, SessionResponse};
 
 #[derive(Deserialize)]
 pub struct SmsChallengeRequest {
@@ -54,6 +54,13 @@ pub async fn request_sms(
             .await?
             .ok_or(AuthError::BadRequest("phone is required for enrollment"))?,
     };
+    // Toll-fraud guard: cap SMS enrollment sends per user and per destination
+    // number before any paid Twilio call. Both identifiers are hashed inside
+    // `enforce_limit`; when Redis is unconfigured this is a no-op, exactly like
+    // the login/register limits. Without it an authenticated caller can pump
+    // unbounded SMS to arbitrary numbers (SMS-pumping / cost abuse).
+    enforce_limit(&state, "mfa_sms_user", &shared_user_id.to_string(), 3, 3600).await?;
+    enforce_limit(&state, "mfa_sms_phone", &phone, 3, 3600).await?;
     let expires_at = chrono::Utc::now().fixed_offset() + TimeDelta::minutes(10);
     let challenge_id = db
         .create_sms_challenge(shared_user_id, &phone, expires_at)

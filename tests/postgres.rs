@@ -243,3 +243,32 @@ async fn redis_cache_is_disposable_and_uses_hashed_buckets() {
     cache.mark_revoked(session_id, 60).await.unwrap();
     assert!(cache.is_revoked(session_id).await.unwrap());
 }
+
+#[tokio::test]
+async fn mfa_sms_enrollment_rate_limit_denies_after_threshold() {
+    // Locks the DEN-1311 toll-fraud policy that request_sms enforces before any
+    // Twilio call: at most 3 SMS enrollment sends per destination number within
+    // an hour, keyed on a hashed identifier (as enforce_limit does internally).
+    let Some(url) = std::env::var("AUTH_TEST_REDIS_URL").ok() else {
+        eprintln!("AUTH_TEST_REDIS_URL unset; skipping Redis integration test");
+        return;
+    };
+    let cache = Cache::connect(&RedisConfig {
+        url,
+        key_prefix: format!("shared-auth:test:{}", Uuid::new_v4()),
+    })
+    .await
+    .unwrap();
+    let phone = shared_auth_server::session::hashed_identifier("+15550001234");
+    for _ in 0..3 {
+        assert!(cache.allow("mfa_sms_phone", &phone, 3, 3600).await.unwrap());
+    }
+    assert!(
+        !cache.allow("mfa_sms_phone", &phone, 3, 3600).await.unwrap(),
+        "the 4th SMS enrollment to one number within the window must be denied"
+    );
+
+    // A different destination number has an independent budget.
+    let other = shared_auth_server::session::hashed_identifier("+15550009999");
+    assert!(cache.allow("mfa_sms_phone", &other, 3, 3600).await.unwrap());
+}
