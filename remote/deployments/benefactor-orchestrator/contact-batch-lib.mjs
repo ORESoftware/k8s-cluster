@@ -52,7 +52,7 @@ export function normalizeCategoryRows(rows, allowlist = []) {
     .sort((a, b) => b.priority - a.priority || b.queryCount - a.queryCount || a.category.localeCompare(b.category));
 }
 
-export function planCategoryTargets(categories, targetContacts, maxPerCategory) {
+export function planCategoryTargets(categories, targetContacts, maxPerCategory, { includeOverflow = false } = {}) {
   if (!Array.isArray(categories) || categories.length === 0) return [];
   if (!Number.isInteger(targetContacts) || targetContacts < 1) throw new Error('targetContacts must be positive');
   if (!Number.isInteger(maxPerCategory) || maxPerCategory < 1) throw new Error('maxPerCategory must be positive');
@@ -77,6 +77,21 @@ export function planCategoryTargets(categories, targetContacts, maxPerCategory) 
     }
     if (allocatedThisPass === 0) break;
     pass += 1;
+  }
+
+  if (includeOverflow) {
+    const scheduled = new Set(plans.map((item) => item.category));
+    for (const category of categories) {
+      if (scheduled.has(category.category)) continue;
+      plans.push({
+        category: category.category,
+        target: maxPerCategory,
+        pass,
+        queryCount: category.queryCount,
+        priority: category.priority,
+        overflow: true,
+      });
+    }
   }
   return plans;
 }
