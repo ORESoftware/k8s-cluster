@@ -34,6 +34,39 @@ git config --global user.name "github-actions[bot]"
 git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 gh auth setup-git >/dev/null
 
+gh_api_json() {
+  local output="" attempt reset now delay
+  for attempt in 1 2 3 4 5 6; do
+    if output="$(gh api "$@" 2>&1)"; then
+      if jq -e 'type == "object" and (((.message? // "") | test("rate limit"; "i")) | not) and (((.status? // "") | tostring) != "403")' <<<"$output" >/dev/null 2>&1; then
+        printf '%s\n' "$output"
+        return 0
+      fi
+    fi
+
+    if grep -Eqi 'rate limit|secondary rate limit|abuse detection' <<<"$output"; then
+      reset="$(gh api rate_limit --jq '.resources.core.reset // empty' 2>/dev/null || true)"
+      now="$(date +%s)"
+      if [[ "$reset" =~ ^[0-9]+$ && "$reset" -gt "$now" ]]; then
+        delay=$((reset - now + 5))
+      else
+        delay=$((attempt * 30))
+      fi
+      (( delay < 5 )) && delay=5
+      (( delay > 900 )) && delay=900
+      printf 'GitHub API rate limited; retrying in %s seconds (attempt %s/6)\n' "$delay" "$attempt" >&2
+      sleep "$delay"
+      continue
+    fi
+
+    printf '%s\n' "$output" >&2
+    return 1
+  done
+
+  printf 'GitHub API remained rate limited after 6 attempts\n' >&2
+  return 1
+}
+
 upsert_managed_block() {
   local path="$1"
   local marker="$2"
@@ -157,7 +190,11 @@ reconcile_org() (
   trap cleanup EXIT
   trap on_error ERR
 
-  canonical_org="$(gh api "orgs/${requested_org}" --jq '.login')"
+  local organization_response
+  organization_response="$(gh_api_json "orgs/${requested_org}")"
+  canonical_org="$(jq -er '.login | strings' <<<"$organization_response")"
+  [[ "$canonical_org" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,38})$ ]]
+  [[ "${canonical_org,,}" == "${requested_org,,}" ]]
   project_title="${canonical_org}-project"
 
   current_step="GitHub Project lookup"
@@ -449,6 +486,11 @@ while IFS=$'\t' read -r organization linear_url; do
 done < "$REGISTRY_FILE"
 
 jq -s 'sort_by(.canonical_org // .requested_org)' "$RESULTS_JSONL" > "$RESULTS_JSON"
+
+python3 scripts/ops/audit_org_project_docs_evidence.py \
+  --registry "$REGISTRY_FILE" \
+  --evidence "$RESULTS_JSON" \
+  --output "$EVIDENCE_DIR/audit.json"
 
 jq -r '
   "# Organization Project and documentation reconciliation\n\n" +
