@@ -8,9 +8,9 @@ import { classifySensitiveMessage, quarantineMessage } from './sensitive-content
 
 function usage() {
   return `Usage:
-  node tools/google-chat-space-export/sanitize-export.mjs \\
-    --input <raw-export-file-or-directory> \\
-    --out <sanitized-directory> \\
+  node tools/google-chat-space-export/sanitize-export.mjs \
+    --input <raw-export-file-or-directory> \
+    --out <sanitized-directory> \
     [--since <RFC-3339>] [--report <report.json>] [--fail-on-sensitive]
 
 Copies planner-readable Google Chat export pages into a sanitized directory.
@@ -79,6 +79,18 @@ async function collectJsonFiles(inputPaths) {
   }
   for (const input of inputPaths) await visit(path.resolve(input));
   return [...new Set(files)].sort();
+}
+
+export function assertUniqueOutputBasenames(filePaths) {
+  const seen = new Set();
+  for (const filePath of filePaths) {
+    const filename = path.basename(filePath);
+    const collisionKey = filename.normalize('NFC').toLowerCase();
+    if (seen.has(collisionKey)) {
+      throw new Error(`Duplicate JSON basename would overwrite sanitized output: ${filename}`);
+    }
+    seen.add(collisionKey);
+  }
 }
 
 function extractMessages(document) {
@@ -170,6 +182,7 @@ async function main(argv) {
   }
 
   const files = await collectJsonFiles(options.inputs);
+  assertUniqueOutputBasenames(files);
   const documents = [];
   for (const filePath of files) {
     documents.push({ filePath, document: JSON.parse(await fs.readFile(filePath, 'utf8')) });
