@@ -9,6 +9,7 @@ on:
       - scripts/ops/prepare_four_org_fleet.sh
       - scripts/ops/run_four_org_device_auth_publisher.sh
       - scripts/ops/run_four_org_session_key_publisher.sh
+      - scripts/ops/patch_streempilot_publish_scripts.py
       - scripts/ops/four-org-additions-overlay-2026-08-04.tar.xz.b64.part*
       - scripts/ops/streempilot-generator/generate_streempilot_sp_fleet.py.xz.b64.part*
   workflow_dispatch:
@@ -90,7 +91,7 @@ jobs:
             '5787afe68091b62d6cbde1d9e094f663807742de742d3567e781365ba01779a7' \
             "$overlay_archive" \
             | sha256sum --check --strict
-          tar --extract --xz --file "$overlay_archive" --directory "$RUNNER_TEMP"
+          tar --extract --xz --file "$overlay_archive" --directory="$RUNNER_TEMP"
 
           overlay_root="$RUNNER_TEMP/four-org-additions-overlay-2026-08-04"
           bash scripts/ops/prepare_four_org_fleet.sh "$fleet_root" "$overlay_root"
@@ -124,9 +125,11 @@ jobs:
             "$generator" \
             | sha256sum --check --strict
           python3 -m py_compile "$generator"
+          python3 -m py_compile scripts/ops/patch_streempilot_publish_scripts.py
 
           fleet_root="$RUNNER_TEMP/streempilot-sp-fleet"
           python3 "$generator" --output "$fleet_root"
+          python3 scripts/ops/patch_streempilot_publish_scripts.py "$fleet_root"
 
           repository_count="$(find "$fleet_root/StreemPilot" -mindepth 2 -maxdepth 2 -type d -name .git | wc -l | tr -d '[:space:]')"
           [[ "$repository_count" == 8 ]]
@@ -150,6 +153,10 @@ jobs:
           grep -qF 'htmx.org' "$fleet_root/StreemPilot/sp-web-mash/src/main.rs"
           grep -qF 'WebSocketUpgrade' "$fleet_root/StreemPilot/sp-api/src/main.rs"
           test -f "$fleet_root/StreemPilot/sp-infra/cloudflare-worker/src/index.mjs"
+          grep -qF 'read -r full local_path description main_sha feature feature_sha title body_file <&3' "$fleet_root/scripts/publish-all.sh"
+          grep -qF 'done 3< <(python3' "$fleet_root/scripts/publish-all.sh"
+          grep -qF 'read -r full main_sha feature feature_sha <&3' "$fleet_root/scripts/verify-remote.sh"
+          grep -qF 'done 3< <(jq -r' "$fleet_root/scripts/verify-remote.sh"
           bash -n "$fleet_root/scripts/publish-all.sh"
           bash -n "$fleet_root/scripts/verify-remote.sh"
 
