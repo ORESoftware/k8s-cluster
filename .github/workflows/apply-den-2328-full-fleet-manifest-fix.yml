@@ -1,0 +1,91 @@
+name: Apply DEN-2328 full-fleet manifest fix
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-den-2328-full-fleet-manifest-fix.yml'
+      - 'scripts/ops/apply_den_2328_full_manifest_fix.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-2328-full-fleet-manifest-fix
+  cancel-in-progress: false
+
+jobs:
+  apply-test-clean:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      (github.event_name != 'pull_request' || github.head_ref == 'fix/den-2328-full-fleet-manifest-current-main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact writable branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/den-2328-full-fleet-manifest-current-main
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Apply the exact full-fleet manifest correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/apply_den_2328_full_manifest_fix.py
+          python3 -m py_compile \
+            scripts/ops/publish_exact_private_repository_gaps.py \
+            scripts/ops/test_publish_exact_private_repository_gaps.py \
+            scripts/ops/run_exact_private_repository_gaps_with_retry.py
+
+      - name: Run exact publisher and preservation contracts
+        shell: bash
+        env:
+          GH_TOKEN: unit-test-installation-token
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/test_publish_exact_private_repository_gaps.py -v
+          python3 scripts/ops/test_run_exact_private_repository_gaps_with_retry.py -v
+          python3 scripts/ops/test_private_repository_creation.py -v
+          python3 scripts/ops/test_repository_fleet_remote_state.py -v
+          python3 scripts/ops/test_repository_redirect_aliases.py -v
+
+      - name: Validate permanent encrypted workflow
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/ops-publish-exact-repository-gaps-encrypted-retry.yml
+
+      - name: Prove full-ledger integrity and exact selection remain distinct
+        shell: bash
+        run: |
+          set -euo pipefail
+          source=scripts/ops/publish_exact_private_repository_gaps.py
+          grep -qF 'json.dumps(execution_manifest' "$source"
+          grep -qF 'str(publisher_manifest_path)' "$source"
+          grep -qF 'refusing to publish repository outside exact allowlist' "$source"
+          test -z "$(grep -F '"'"'repository_count'"'": len(selected)' "$source" || true)"
+          test -z "$(grep -F '"'"'repositories'"'": selected' "$source" || true)"
+          ! grep -nE '^(<{7}|={7}|>{7})' \
+            scripts/ops/publish_exact_private_repository_gaps.py \
+            scripts/ops/test_publish_exact_private_repository_gaps.py
+          git diff --check
+
+      - name: Remove one-shot transport and commit product changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            .github/workflows/apply-den-2328-full-fleet-manifest-fix.yml \
+            scripts/ops/apply_den_2328_full_manifest_fix.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          test -z "$(git diff --cached --name-only | grep -E 'apply-den-2328-full-fleet-manifest|apply_den_2328_full_manifest' || true)"
+          git commit -m 'fix(DEN-2328): preserve the full fleet ledger during exact publication'
+          git push origin HEAD:fix/den-2328-full-fleet-manifest-current-main
