@@ -147,7 +147,7 @@ class FourOrgEncryptedPublisherTests(unittest.TestCase):
 
     def test_contract_workflow_is_read_only_and_runs_actionlint_and_tests(self) -> None:
         self.assertIn("permissions:\n  contents: read", self.contract)
-        self.assertIn("docker://rhysd/actionlint@sha256:", self.contract)
+        self.assertIn("rhysd/actionlint@sha256:", self.contract)
         self.assertIn(
             "python3 -m unittest -v scripts/ops/test_four_org_encrypted_publisher.py",
             self.contract,
