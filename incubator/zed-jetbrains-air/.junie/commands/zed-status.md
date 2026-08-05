@@ -1,0 +1,1 @@
+Use the `zed_project_status` MCP tool for this workspace. Report package identity, lockfile state, materialization state, diagnostic codes, and the safest recommended resolution. Never run a mutating Zed command unless the user explicitly approves it.

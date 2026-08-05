@@ -1,0 +1,37 @@
+name: zed-jetbrains-air incubator
+
+on:
+  pull_request:
+    paths:
+      - "incubator/zed-jetbrains-air/**"
+      - ".github/workflows/zed-jetbrains-air-incubator.yml"
+  push:
+    branches: [main, dev]
+    paths:
+      - "incubator/zed-jetbrains-air/**"
+      - ".github/workflows/zed-jetbrains-air-incubator.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: incubator/zed-jetbrains-air
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: incubator/zed-jetbrains-air
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo test --all-targets --all-features
+      - run: cargo build --release

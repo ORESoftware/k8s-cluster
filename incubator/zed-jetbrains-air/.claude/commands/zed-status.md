@@ -1,0 +1,1 @@
+Inspect the current workspace with the `zed_project_status` MCP tool. Summarize package identity, lock/materialization state, and diagnostics. Recommend the smallest safe next action. Do not execute mutating commands without explicit user approval.

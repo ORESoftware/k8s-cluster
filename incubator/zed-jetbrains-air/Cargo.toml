@@ -1,0 +1,23 @@
+[package]
+name = "zed-jetbrains-air"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "JetBrains Air integration for Zed package diagnostics and recommended resolutions"
+license = "MIT"
+repository = "https://github.com/zed-pkg/zed-jetbrains-air"
+keywords = ["zed-pkg", "jetbrains-air", "mcp", "package-manager"]
+categories = ["development-tools"]
+
+[[bin]]
+name = "zed-air"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+[dev-dependencies]
+tempfile = "3.10"

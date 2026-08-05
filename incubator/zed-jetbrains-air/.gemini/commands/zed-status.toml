@@ -1,0 +1,2 @@
+description = "Inspect Zed package state and recommend the safest resolution"
+prompt = "Use the zed_project_status MCP tool for the current workspace. Summarize package identity, lock/materialization state, diagnostics, and the smallest safe next action. Do not execute mutating commands without explicit user approval."

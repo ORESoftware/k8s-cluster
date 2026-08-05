@@ -1,0 +1,35 @@
+[package]
+org = "zed-pkg"
+name = "zed-jetbrains-air"
+version = "0.1.0"
+description = "JetBrains Air integration for Zed package diagnostics and recommended resolutions"
+license = "MIT"
+keywords = ["zed-pkg", "jetbrains-air", "mcp", "developer-tools", "package-manager"]
+language = "rust"
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/zed-pkg/zed-jetbrains-air"
+
+[build]
+command = "cargo build --release"
+outputs = ["target/release/zed-air"]
+
+[bin]
+zed-air = "target/release/zed-air"
+
+[publish]
+include_readme = true
+tag_format = "v{version}"
+smoke_test = "test -x \"$ZED_PKG_TEST_TARGET/target/release/zed-air\" && \"$ZED_PKG_TEST_TARGET/target/release/zed-air\" --version"
+exclude = ["target/**", ".env", ".env.*", "**/*.log", ".DS_Store"]
+
+[publish.native]
+registry = "crates-io"
+package = "zed-jetbrains-air"
+
+[install]
+adapter = "none"
+
+[scripts]
+test = "cargo test --all-targets"
