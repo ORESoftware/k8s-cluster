@@ -1,14 +1,15 @@
 schema_version = 1
 id = "akrion-match-lifecycle"
 repository = "akrion-sim/akrion-soccer-engine-rs"
-issue = "DEN-80"
+issue = "DEN-816"
 model = "formal/match_model.py"
 runner = "python3"
 adapter_protocol = "json-stdin/v1"
 command = ["python3", "formal/match_model.py"]
-replay_command = ["python3", "formal/match_model.py", "--json-stdin"]
-claim = "finite-match-lifecycle-specification"
-timeout_seconds = 30
+replay_command = ["cargo", "run", "--quiet", "--bin", "fm_match_adapter"]
+comparison_command = ["python3", "formal/compare_match_replay.py"]
+claim = "finite-match-lifecycle-production-refinement"
+timeout_seconds = 1800
 
 [limits]
 transition_depth = 7
@@ -41,6 +42,10 @@ id = "deterministic-replay"
 description = "The same abstract event sequence yields the same state trace."
 
 [refinement]
-status = "planned"
+status = "implemented-bounded"
 production_symbols = ["SoccerMatch", "SoccerRealtimeSession"]
-notes = "This PR establishes the lifecycle specification and trace contract. A Rust ITF/JSON-lines adapter is required before claiming production refinement."
+adapter = "src/bin/fm_match_adapter.rs"
+projection = "MatchProjection"
+comparison = "formal/compare_match_replay.py"
+profiles = ["debug", "release"]
+notes = "The comparison enumerates one shortest witness per reachable bounded state, checks every outgoing bounded transition, replays through production Rust twice in debug and once in release, and compares the complete canonical trace with the finite model. Continuous physics, stochastic policy, persistence, and unbounded liveness remain outside this claim."

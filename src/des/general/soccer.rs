@@ -129,6 +129,11 @@ mod pass_lane_yield;
 pub use pass_lane_yield::*;
 mod slip_break_offside;
 pub(crate) use slip_break_offside::*;
+// Deterministic production match lifecycle (DEN-816). Qualified path only (no glob
+// re-export): its `SoccerMatch` and `SoccerRealtimeSession` are the small formal
+// lifecycle envelope, which would otherwise collide with the full-simulation types
+// of the same names defined in this module.
+pub mod lifecycle;
 
 pub const DEFAULT_DT_SECONDS: f64 = 1.0 / 15.0;
 /// Convert a real-world duration in seconds to a whole number of simulation ticks at the

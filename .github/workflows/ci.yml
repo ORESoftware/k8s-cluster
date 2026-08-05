@@ -54,6 +54,12 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: akrion-soccer-engine.rs
+      - name: Formal production lifecycle unit tests
+        working-directory: akrion-soccer-engine.rs
+        run: cargo test --lib des::general::soccer::lifecycle::tests
+      - name: Formal model-to-Rust debug/release refinement
+        working-directory: akrion-soccer-engine.rs
+        run: python3 formal/compare_match_replay.py
       - name: check (lib + bins + tests compile)
         working-directory: akrion-soccer-engine.rs
         run: cargo check --all-targets
