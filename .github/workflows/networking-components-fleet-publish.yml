@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 45
     env:
       PUBLISHER_SHA256: 3d1679596dfd85d045afd54790db88b63f061d3450156ac81a112c8d031c2120
-      PUBLISHER_B64_SHA256: 8312403e998808e7aa00f7a5ad78e87cc02cf0352d562c726eb3fa133c2017af
+      PUBLISHER_B64_SHA256: 45076b806e1444be073c008cf0561c2fe9d8964862d751e0d1526a96e1cd8c00
       PYTHONHASHSEED: '0'
     steps:
       - name: Check out exact trigger commit
