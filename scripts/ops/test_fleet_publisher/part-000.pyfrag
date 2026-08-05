@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+"""Create and bootstrap the bounded GitHub test-organization repository fleets.
+
+The publisher is intentionally idempotent and dry-run by default. In execute
+mode it creates the allowlisted repositories, renders source-pinned test
+scaffolds, commits them to deterministic automation branches, opens pull
+requests, and merges those pull requests when repository policy permits.
+
+No repository outside the checked-in configuration can be mutated. The r2g
+accounts are explicitly rejected. Existing non-managed files are preserved.
+"""
+from __future__ import annotations
+
+import argparse
+import concurrent.futures
+import dataclasses
+import datetime as dt
+import hashlib
+import json
+import os
+from pathlib import Path
+import random
+import re
+import subprocess
+import sys
+import threading
+import time
+import tomllib
+from typing import Any, Iterable, Mapping, Sequence
+import urllib.error
+import urllib.parse
+import urllib.request
+
+API_ROOT = "https://api.github.com"
+API_VERSION = "2022-11-28"
+USER_AGENT = "bounded-test-org-fleet-publisher/1.0"
+RENDERER_VERSION = 2
+MANAGED_MARKER = "<!-- managed-test-fleet:v1"
+EXPECTED_TEST_ORGS = {
+    "3fa-app-test",
+    "claritas-viz-test",
+    "cliptown-test",
+    "declarative-migrations-test",
+    "embedded-alerts-test",
+    "evento-globolo-test",
+    "fiducia-cloud-test",
+    "file-tunnel-test",
+    "hypesiege-test",
+    "memebank-test",
+    "messaging-intel-test",
+    "opto-sync-test",
+    "quaestor-ledger-test",
+    "scintilla-run-test",
+    "shared-auth-test",
+    "sonus-auris-test",
+    "streempilot-test",
+    "zed-pkg-test",
+}
+EXCLUDED_ACCOUNTS = {"r2g", "r2g-test"}
+SAFE_NAME = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
+SAFE_FULL_NAME = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+SAFE_BRANCH = re.compile(r"^[A-Za-z0-9._/-]+$")
+
+
+class FleetError(RuntimeError):
+    """Bounded publisher failure."""
+
+
+class ApiError(FleetError):
+    def __init__(self, status: int, method: str, path: str, payload: Any, headers: Mapping[str, str] | None = None):
+        super().__init__(f"GitHub API {method} {path} failed with HTTP {status}: {payload!r}")
+        self.status = status
+        self.method = method
+        self.path = path
+        self.payload = payload
+        self.headers = dict(headers or {})
+
+
+@dataclasses.dataclass(frozen=True)
+class SourcePin:
+    repository: str
+    alias: str
+    role: str
+    required: bool
+    zed_dependency: bool
+    exists: bool
+    default_branch: str | None = None
+    commit_sha: str | None = None
+    private: bool | None = None
+    html_url: str | None = None
+    error: str | None = None
+
+    def as_json(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+@dataclasses.dataclass
+class RepoResult:
+    organization: str
+    repository: str
+    action: str = "pending"
+    created: bool = False
+    branch: str | None = None
+    commit_sha: str | None = None
+    pull_request_number: int | None = None
+    pull_request_url: str | None = None
+    merged: bool = False
+    verified: bool = False
+    missing_sources: list[str] = dataclasses.field(default_factory=list)
+    warnings: list[str] = dataclasses.field(default_factory=list)
+    error: str | None = None
+
+    def as_json(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+class GitHubClient:
+    def __init__(self, token: str | None, *, execute: bool, timeout: int = 45, retries: int = 6):
+        self.token = token
+        self.execute = execute
+        self.timeout = timeout
+        self.retries = retries
+        self._lock = threading.Lock()
+        self._remaining: int | None = None
+        self._reset_epoch: int | None = None
+
+    @staticmethod
+    def _decode(data: bytes, content_type: str) -> Any:
+        if not data:
+            return None
+        if "json" in content_type:
+            return json.loads(data.decode("utf-8"))
+        return data.decode("utf-8", errors="replace")
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: Any | None = None,
+        expected: Sequence[int] = (200,),
+        allow_404: bool = False,
+    ) -> Any:
+        if not path.startswith("/"):
+            raise FleetError(f"unsafe GitHub API path: {path!r}")
+        if method not in {"GET", "POST", "PUT", "PATCH"}:
+            raise FleetError(f"unsupported GitHub API method: {method}")
+        if method != "GET" and not self.execute:
+            raise FleetError(f"mutation attempted in dry-run mode: {method} {path}")
+        url = API_ROOT + path
+        payload = None if body is None else json.dumps(body, separators=(",", ":")).encode("utf-8")
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": API_VERSION,
+            "User-Agent": USER_AGENT,
+        }
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        if payload is not None:
+            headers["Content-Type"] = "application/json"
+
+        for attempt in range(self.retries + 1):
+            request = urllib.request.Request(url, data=payload, headers=headers, method=method)
+            try:
+                with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                    raw = response.read()
+                    response_headers = {k.lower(): v for k, v in response.headers.items()}
+                    self._record_rate_limit(response_headers)
+                    if response.status not in expected:
+                        decoded = self._decode(raw, response_headers.get("content-type", ""))
+                        raise ApiError(response.status, method, path, decoded, response_headers)
+                    return self._decode(raw, response_headers.get("content-type", ""))
+            except urllib.error.HTTPError as exc:
+                raw = exc.read()
+                response_headers = {k.lower(): v for k, v in exc.headers.items()}
+                self._record_rate_limit(response_headers)
+                decoded = self._decode(raw, response_headers.get("content-type", ""))
+                if allow_404 and exc.code == 404:
+                    return None
+                retryable = exc.code in {403, 409, 422, 429, 500, 502, 503, 504}
+                if retryable and attempt < self.retries:
+                    self._sleep_for_retry(attempt, response_headers, decoded)
+                    continue
+                raise ApiError(exc.code, method, path, decoded, response_headers) from exc
+            except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+                if attempt < self.retries:
+                    self._sleep_for_retry(attempt, {}, str(exc))
+                    continue
+                raise FleetError(f"GitHub API {method} {path} transport failure: {exc}") from exc
+        raise AssertionError("retry loop fell through")
+
+    def _record_rate_limit(self, headers: Mapping[str, str]) -> None:
+        with self._lock:
+            try:
+                self._remaining = int(headers.get("x-ratelimit-remaining", ""))
+            except ValueError:
+                pass
+            try:
+                self._reset_epoch = int(headers.get("x-ratelimit-reset", ""))
+            except ValueError:
+                pass
+
+    def _sleep_for_retry(self, attempt: int, headers: Mapping[str, str], payload: Any) -> None:
+        retry_after = headers.get("retry-after")
+        if retry_after and retry_after.isdigit():
+            delay = min(90.0, float(retry_after) + random.random())
+        elif headers.get("x-ratelimit-remaining") == "0" and headers.get("x-ratelimit-reset", "").isdigit():
+            delay = max(1.0, min(90.0, int(headers["x-ratelimit-reset"]) - time.time() + 1.0))
+        else:
+            text = json.dumps(payload) if not isinstance(payload, str) else payload
+            secondary = "secondary rate limit" in text.lower() or "abuse" in text.lower()
+            base = 8.0 if secondary else 1.0
+            delay = min(90.0, base * (2 ** attempt) + random.random())
+        time.sleep(delay)
+
+    def get(self, path: str, *, allow_404: bool = False) -> Any:
+        return self.request("GET", path, expected=(200,), allow_404=allow_404)
+
+    def post(self, path: str, body: Any, *, expected: Sequence[int] = (201,)) -> Any:
+        return self.request("POST", path, body=body, expected=expected)
+
+    def put(self, path: str, body: Any, *, expected: Sequence[int] = (200, 201)) -> Any:
+        return self.request("PUT", path, body=body, expected=expected)
+
+    def patch(self, path: str, body: Any, *, expected: Sequence[int] = (200,)) -> Any:
+        return self.request("PATCH", path, body=body, expected=expected)
+
+
+class SourceResolver:
+    def __init__(self, client: GitHubClient):
+        self.client = client
+        self._cache: dict[str, SourcePin] = {}
+        self._lock = threading.Lock()
+
+    def resolve(self, source: Mapping[str, Any]) -> SourcePin:
+        repository = str(source["repository"])
+        with self._lock:
+            cached = self._cache.get(repository.lower())
+        if cached is not None:
+            return dataclasses.replace(
+                cached,
+                alias=str(source["alias"]),
+                role=str(source.get("role", "component")),
+                required=bool(source.get("required", True)),
+                zed_dependency=bool(source.get("zed_dependency", False)),
+            )
+        alias = str(source["alias"])
+        role = str(source.get("role", "component"))
+        required = bool(source.get("required", True))
+        zed_dependency = bool(source.get("zed_dependency", False))
+        encoded = "/".join(urllib.parse.quote(part, safe="") for part in repository.split("/", 1))
+        try:
+            meta = self.client.get(f"/repos/{encoded}", allow_404=True)
+            if meta is None:
+                pin = SourcePin(repository, alias, role, required, zed_dependency, False, error="repository not found or not accessible")
+            else:
+                branch = str(meta.get("default_branch") or "main")
+                ref = self.client.get(f"/repos/{encoded}/git/ref/heads/{urllib.parse.quote(branch, safe='')}", allow_404=True)
+                sha = None
+                if isinstance(ref, dict):
+                    obj = ref.get("object")
+                    if isinstance(obj, dict) and isinstance(obj.get("sha"), str):
+                        sha = obj["sha"]
+                if not sha:
+                    pin = SourcePin(repository, alias, role, required, zed_dependency, False, branch, error="default branch has no resolvable commit")
+                else:
+                    pin = SourcePin(
+                        repository,
+                        alias,
+                        role,
+                        required,
+                        zed_dependency,
+                        True,
+                        branch,
+                        sha,
+                        bool(meta.get("private")),
+                        str(meta.get("html_url") or f"https://github.com/{repository}"),
+                    )
+        except Exception as exc:  # retain fleet progress when one source is temporarily inaccessible
+            pin = SourcePin(repository, alias, role, required, zed_dependency, False, error=str(exc))
+        with self._lock:
+            self._cache[repository.lower()] = pin
+        return pin
+
+
+def load_config(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise FleetError(f"cannot load fleet config {path}: {exc}") from exc
+    fleet_files = payload.get("fleet_files")
+    if fleet_files is not None:
+        if not isinstance(fleet_files, dict):
+            raise FleetError("fleet_files must be an object")
+        root = path.parent.resolve()
+        fleets: dict[str, Any] = {}
+        for expected_org, relative in sorted(fleet_files.items()):
