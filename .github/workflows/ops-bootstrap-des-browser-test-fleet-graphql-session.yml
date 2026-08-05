@@ -6,6 +6,7 @@ on:
     paths:
       - .github/workflows/ops-bootstrap-des-browser-test-fleet-graphql-session.yml
       - scripts/ops/bootstrap_des_browser_test_fleet_graphql_session.sh
+      - scripts/ops/bootstrap_des_browser_test_fleet_graphql_session_v2.sh
   workflow_dispatch:
 
 permissions:
@@ -33,4 +34,4 @@ jobs:
         env:
           ISSUE_TOKEN: ${{ github.token }}
           TRACKING_ISSUE: '1011'
-        run: bash scripts/ops/bootstrap_des_browser_test_fleet_graphql_session.sh
+        run: bash scripts/ops/bootstrap_des_browser_test_fleet_graphql_session_v2.sh
