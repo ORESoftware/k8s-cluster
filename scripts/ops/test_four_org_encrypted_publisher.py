@@ -109,7 +109,7 @@ class FourOrgEncryptedPublisherTests(unittest.TestCase):
         for snippet in (
             'echo "::add-mask::$owner_token"',
             'export GH_TOKEN="$owner_token"',
-            "unset owner_token actor membership GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN",
+            "unset owner_token actor membership failed_organization observed_membership GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN",
         ):
             self.assertIn(snippet, self.workflow)
         self.assertNotIn("upload-artifact", self.workflow)
@@ -133,6 +133,28 @@ class FourOrgEncryptedPublisherTests(unittest.TestCase):
         ):
             self.assertIn(org, self.workflow)
         self.assertIn('test "$membership" = active:admin', self.workflow)
+
+    def test_membership_failures_name_only_the_fixed_org_and_safe_role_state(self) -> None:
+        for snippet in (
+            "failed_organization=''",
+            "observed_membership=''",
+            'stage="validate-owner-membership:${organization}"',
+            "observed_membership=api-error",
+            'observed_membership="$membership"',
+            "FOUR_ORG_MEMBERSHIP organization=%s observed=%s",
+            'if [[ "$stage" == validate-owner-membership:* ]]',
+            'diagnostic=" Organization ',
+        ):
+            with self.subTest(snippet=snippet):
+                self.assertIn(snippet, self.workflow)
+
+        diagnostics = self.workflow[
+            self.workflow.index("stage=validate-owner-memberships") :
+            self.workflow.index("stage=publish-reviewed-fleet")
+        ]
+        self.assertIn("2>/dev/null", diagnostics)
+        self.assertNotIn("response_body", diagnostics)
+        self.assertNotIn("owner_token", diagnostics)
 
     def test_remote_result_counts_and_carrier_cleanup_are_required(self) -> None:
         for snippet in (
