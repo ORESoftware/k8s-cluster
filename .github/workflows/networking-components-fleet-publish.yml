@@ -1,0 +1,181 @@
+name: One-shot networking-components fleet publisher
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - .github/networking-components-publish-trigger
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: networking-components-fleet-2026-08-05
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'ORESoftware/k8s-cluster'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GITHUB_REPOSITORY_ADMIN_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
+      REPORT_PATH: ${{ runner.temp }}/networking-components-fleet-2026-08-05.json
+      PUBLISHER_SHA256: 3d1679596dfd85d045afd54790db88b63f061d3450156ac81a112c8d031c2120
+      PUBLISHER_B64_SHA256: 8312403e998808e7aa00f7a5ad78e87cc02cf0352d562c726eb3fa133c2017af
+      PUBLISHER_PATH: ${{ runner.temp }}/networking-components-publish.py
+      PYTHONHASHSEED: '0'
+    steps:
+      - name: Check out exact trigger commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+
+      - name: Validate the fail-closed carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' \
+            "$PUBLISHER_B64_SHA256" \
+            scripts/networking-components-fleet/publish.py.gz.b64 \
+            | sha256sum --check --strict
+          base64 --decode \
+            < scripts/networking-components-fleet/publish.py.gz.b64 \
+            | gzip --decompress \
+            > "$PUBLISHER_PATH"
+          printf '%s  %s\n' \
+            "$PUBLISHER_SHA256" \
+            "$PUBLISHER_PATH" \
+            | sha256sum --check --strict
+          python3 -m py_compile "$PUBLISHER_PATH"
+          ! git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- \
+            .github/workflows/networking-components-fleet-publish.yml
+
+      - name: Fail closed unless a protected repository-administration credential exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$GITHUB_REPOSITORY_ADMIN_TOKEN" || {
+            echo 'Neither GITHUB_REPOSITORY_ADMIN_TOKEN nor ORG_GITOPS_TOKEN is configured.' >&2
+            exit 1
+          }
+          printf '::add-mask::%s\n' "$GITHUB_REPOSITORY_ADMIN_TOKEN"
+          response="$(curl --fail --silent --show-error \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer $GITHUB_REPOSITORY_ADMIN_TOKEN" \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            https://api.github.com/user)"
+          python3 -c 'import json,sys; value=json.load(sys.stdin); assert value.get("login")' <<<"$response"
+          unset response
+
+      - name: Validate, create, seed, and verify the exact repository fleet
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$PUBLISHER_PATH" \
+            --execute \
+            --output "$REPORT_PATH" \
+            > "${RUNNER_TEMP}/networking-components-fleet.stdout.json"
+
+      - name: Cross-check non-secret publication evidence
+        shell: python
+        env:
+          TRIGGER_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          report_path = Path(os.environ["REPORT_PATH"])
+          report = json.loads(report_path.read_text(encoding="utf-8"))
+          expected = [
+              "ncc-conntrack",
+              "ncc-dhcp-server",
+              "ncc-dns-resolver",
+              "ncc-firewall",
+              "ncc-nat-gateway",
+              "ncc-routing-daemon",
+              "ncc-forward-proxy",
+              "ncc-time-server",
+              "ncc-nat-traversal",
+              "ncc-network-observer",
+              "ncc-traffic-shaper",
+          ]
+          assert report["schema_version"] == 1
+          assert report["organization"] == "networking-components"
+          assert report["mode"] == "execute"
+          assert report["expected_repository_count"] == len(expected) == 11
+          assert report["verified_repository_count"] == 11
+          records = report["repositories"]
+          assert [record["name"] for record in records] == expected
+          assert all(record["private"] is True for record in records)
+          assert all(record["commit"] == record["remote_main"] for record in records)
+          assert all(
+              record["repository"] == f"networking-components/{record['name']}"
+              for record in records
+          )
+          report["publisher_sha256"] = os.environ["PUBLISHER_SHA256"]
+          report["trigger_sha"] = os.environ["TRIGGER_SHA"]
+          report["workflow_run_id"] = os.environ["RUN_ID"]
+          report["evidence_sha256"] = hashlib.sha256(
+              json.dumps(report, sort_keys=True, separators=(",", ":")).encode("utf-8")
+          ).hexdigest()
+          report_path.write_text(
+              json.dumps(report, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(
+              json.dumps(
+                  {
+                      "verified": len(records),
+                      "evidence_sha256": report["evidence_sha256"],
+                  }
+              )
+          )
+
+      - name: Upload non-secret publication evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: networking-components-fleet-2026-08-05
+          path: ${{ env.REPORT_PATH }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove the one-shot carrier and retain verified evidence on dev
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3; do
+            git fetch origin dev
+            git reset --hard origin/dev
+            git rm -r --ignore-unmatch \
+              .github/networking-components-publish-trigger \
+              .github/workflows/networking-components-fleet-publish.yml \
+              scripts/networking-components-fleet
+            mkdir -p docs/evidence
+            cp "$REPORT_PATH" docs/evidence/networking-components-fleet-2026-08-05.json
+            git add docs/evidence/networking-components-fleet-2026-08-05.json
+            if git diff --cached --quiet; then
+              echo 'No cleanup/evidence change remains to publish.'
+              exit 0
+            fi
+            git commit -m 'chore: record networking-components fleet publication'
+            if git push origin HEAD:dev; then
+              exit 0
+            fi
+            echo "cleanup push raced on attempt $attempt; retrying" >&2
+          done
+          echo 'failed to publish cleanup/evidence after three attempts' >&2
+          exit 1
