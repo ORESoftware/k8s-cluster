@@ -1,0 +1,40 @@
+name: Temporary regenerate PR 972 application catalog
+
+on:
+  push:
+    branches:
+      - agent/hypesiege-streempilot-app-of-apps-current-main-20260805
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ops-regenerate-pr-972-application-catalog
+  cancel-in-progress: false
+
+jobs:
+  regenerate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out the exact PR branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/hypesiege-streempilot-app-of-apps-current-main-20260805
+          fetch-depth: 1
+      - name: Regenerate the canonical Argo application catalog
+        run: python3 tools/application_catalog.py generate catalog/applications.json
+      - name: Commit only the generated catalog when it changed
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if git diff --quiet -- catalog/applications.json; then
+            echo 'catalog already current'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- catalog/applications.json
+          git commit -m 'chore: regenerate application catalog for product app-of-apps'
+          git push origin HEAD:agent/hypesiege-streempilot-app-of-apps-current-main-20260805
