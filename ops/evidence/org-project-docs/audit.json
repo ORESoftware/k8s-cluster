@@ -1,0 +1,433 @@
+{
+  "expected_records": 64,
+  "invalid": [
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "messaging-intel"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "messaging-intel-test"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "meta-agents-demo"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "networking-components"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "OmniBlitz"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "opto-sync"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "opto-sync-test"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "quaestor-ledger"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "quaestor-ledger-test"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "r2g-test"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "rust-ssr-demos"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "sagitta-stack"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "scintilla-run"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "scintilla-run-test"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "shared-auth"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "shared-auth-test"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "sonus-auris"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "sonus-auris-test"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "streamkore"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "StreemPilot"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "streempilot-test"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "unreal-unity-poc"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "usa-acc"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "voxletra"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "zed-pkg"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "zed-pkg-test"
+    }
+  ],
+  "invalid_reason_counts": {
+    "invalid-canonical-org": 26,
+    "invalid-documentation-pr-state": 26,
+    "invalid-documentation-pr-url": 26,
+    "invalid-governance-issue-url": 26,
+    "invalid-project-item-action": 26,
+    "invalid-project-number": 26,
+    "invalid-project-url": 26,
+    "missing-documentation-pr-number": 26,
+    "missing-governance-issue-number": 26
+  },
+  "invalid_records": 26,
+  "is_valid": false,
+  "missing_requested_orgs": [
+    "3FA-app",
+    "3fa-app-test",
+    "agent-pontifex",
+    "akrion-sim",
+    "anticaptrad",
+    "apostille-me",
+    "athlet-o",
+    "benefactor-cc",
+    "canonical-cloud",
+    "channelsiege",
+    "claritas-viz",
+    "claritas-viz-test",
+    "cliptown",
+    "cliptown-test",
+    "daedalus-fab",
+    "dancing-dragons",
+    "declarative-migrations",
+    "declarative-migrations-test",
+    "discrete-event-systems",
+    "drone-mngr",
+    "embedded-alerts",
+    "embedded-alerts-test",
+    "evento-globolo",
+    "evento-globolo-test",
+    "fanwaave",
+    "fiducia-cloud",
+    "fiducia-cloud-test",
+    "fifa-math",
+    "file-tunnel",
+    "file-tunnel-test",
+    "gha-indie-worker",
+    "hacker-house-medellin",
+    "hypeblitz",
+    "hypesiege",
+    "hypesiege-test",
+    "led-dynamo",
+    "memebank",
+    "memebank-test"
+  ],
+  "observed_records": 26,
+  "schema_version": 1,
+  "unexpected_requested_orgs": [],
+  "valid_action_counts": {
+    "documentation_actions": {},
+    "project_actions": {},
+    "project_item_actions": {},
+    "pull_request_states": {},
+    "repository_actions": {}
+  },
+  "valid_records": 0
+}
