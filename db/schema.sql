@@ -145,6 +145,103 @@ create table if not exists shared_auth.roles (
 create index if not exists roles_user_idx
     on shared_auth.roles (shared_user_id);
 
+-- The customer realm owns one global principal and a separate enrollment in
+-- each first-party application. SSO reuses the central login ceremony, but each
+-- application receives its own audience-scoped token and may deny enrollment.
+-- Product authorization remains in each application database; these tables do
+-- not own organization membership, billing authority, or resource permissions.
+create table if not exists shared_auth.applications (
+    application_id     uuid        primary key default gen_random_uuid(),
+    application_key    text        not null unique
+                                  check (application_key ~ '^[a-z][a-z0-9-]{1,63}$'),
+    display_name       text        not null check (length(display_name) between 1 and 160),
+    status             text        not null default 'active'
+                                  check (status in ('active', 'disabled')),
+    enrollment_policy  text        not null default 'automatic'
+                                  check (enrollment_policy in ('automatic', 'invite', 'disabled')),
+    created_at         timestamptz not null default now(),
+    updated_at         timestamptz not null default now()
+);
+
+create table if not exists shared_auth.application_accounts (
+    application_id       uuid        not null references shared_auth.applications(application_id) on delete cascade,
+    shared_user_id       uuid        not null references shared_auth.principals(shared_user_id) on delete cascade,
+    status               text        not null default 'active'
+                                     check (status in ('active', 'suspended', 'deleted')),
+    profile              jsonb       not null default '{}'::jsonb,
+    created_at           timestamptz not null default now(),
+    updated_at           timestamptz not null default now(),
+    last_authenticated_at timestamptz,
+    primary key (application_id, shared_user_id),
+    check (jsonb_typeof(profile) = 'object')
+);
+
+create index if not exists application_accounts_user_idx
+    on shared_auth.application_accounts (shared_user_id, status);
+
+create table if not exists shared_auth.oauth_clients (
+    client_id           text        primary key
+                                  check (client_id ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$'),
+    application_id      uuid        not null references shared_auth.applications(application_id) on delete cascade,
+    audience            text        not null unique
+                                  check (audience ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$'),
+    client_type         text        not null default 'public'
+                                  check (client_type in ('public', 'confidential')),
+    client_secret_hash  text,
+    redirect_uris       jsonb       not null default '[]'::jsonb,
+    allowed_scopes      jsonb       not null default '[]'::jsonb,
+    require_pkce        boolean     not null default true,
+    status              text        not null default 'active'
+                                  check (status in ('active', 'disabled')),
+    created_at          timestamptz not null default now(),
+    updated_at          timestamptz not null default now(),
+    unique (application_id, client_id),
+    check (jsonb_typeof(redirect_uris) = 'array'),
+    check (jsonb_typeof(allowed_scopes) = 'array'),
+    check (
+        (client_type = 'public' and client_secret_hash is null and require_pkce)
+        or
+        (client_type = 'confidential' and client_secret_hash is not null
+         and length(client_secret_hash) between 43 and 512)
+    )
+);
+
+create index if not exists oauth_clients_application_idx
+    on shared_auth.oauth_clients (application_id, status);
+
+create table if not exists shared_auth.application_consents (
+    application_id     uuid        not null references shared_auth.applications(application_id) on delete cascade,
+    shared_user_id     uuid        not null references shared_auth.principals(shared_user_id) on delete cascade,
+    scopes             jsonb       not null default '[]'::jsonb,
+    granted_at         timestamptz not null default now(),
+    updated_at         timestamptz not null default now(),
+    revoked_at         timestamptz,
+    primary key (application_id, shared_user_id),
+    check (jsonb_typeof(scopes) = 'array')
+);
+
+create index if not exists application_consents_user_idx
+    on shared_auth.application_consents (shared_user_id, revoked_at);
+
+-- A central browser session can authorize several applications without sharing
+-- cookies or bearer tokens between them. Each grant names the exact registered
+-- client; revoking one grant need not terminate unrelated application sessions.
+create table if not exists shared_auth.session_application_grants (
+    session_id         uuid        not null references shared_auth.sessions(session_id) on delete cascade,
+    application_id     uuid        not null,
+    client_id          text        not null,
+    granted_at         timestamptz not null default now(),
+    last_used_at       timestamptz not null default now(),
+    revoked_at         timestamptz,
+    primary key (session_id, application_id, client_id),
+    foreign key (application_id, client_id)
+        references shared_auth.oauth_clients(application_id, client_id) on delete cascade
+);
+
+create index if not exists session_application_grants_active_idx
+    on shared_auth.session_application_grants (application_id, client_id, last_used_at desc)
+    where revoked_at is null;
+
 -- Enrolled MFA factors. TOTP seeds are AES-256-GCM ciphertext and nonce; passkeys
 -- contain only the serialised public credential returned by webauthn-rs. Raw
 -- fingerprint/face material is never accepted or stored.
