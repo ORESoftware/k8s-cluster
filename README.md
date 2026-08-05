@@ -17,15 +17,19 @@ The repositories above are included under `apps/` as secondary submodule checkou
 
 ## Companion applications
 
-[Memebank](https://github.com/memebank) is a companion image and meme catalog. Memebank owns ingestion, OCR, visual tagging, semantic retrieval, collections, and explicit image export; ClipTown owns generic clipboard history and trusted-device clipboard synchronization. The products integrate through standard clipboard representations and versioned public metadata rather than shared databases.
+[Memebank](https://github.com/memebank) is a companion image and meme catalog. MemeBank owns ingestion, OCR, visual tagging, semantic retrieval, collections, and sharing policy; ClipTown owns generic clipboard history and encrypted transfer synchronization.
 
-See [`docs/memebank-integration.md`](docs/memebank-integration.md) for the proposed clipboard, security, privacy, authentication, and versioning contract.
+MemeBank interoperability is API- and SDK-only. MemeBank obtains a short-lived, audience- and scope-limited ClipTown token from shared-auth and calls the versioned ClipTown transfer API through an official SDK. The integration never requires both mobile apps to be installed, never probes app presence, and never uses deep links, local IPC, loopback services, clipboard monitoring, shared databases, or shared cloud credentials as product-to-product transport. Native clipboard export remains a separate user feature.
+
+See [`docs/memebank-integration.md`](docs/memebank-integration.md) for the authentication, authorization, ciphertext, idempotency, availability, and conformance contract.
 
 ## Authentication
 
-Supabase provides the primary identity and session layer. A six-digit PIN can be used as a local unlock or step-up factor, while platform biometrics can unlock device-protected key material. Optional 3FA and `shared-auth` integrations provide additional authentication signals.
+Supabase may remain part of ClipTown's primary identity and session implementation, and a six-digit PIN or platform biometric may protect local device key material. For MemeBank interoperability, however, shared-auth is the sole cross-product authentication and assurance boundary. Any assurance produced through 3FA, passkeys, TOTP, email OTP, SMS OTP, or recovery is consumed only as signed shared-auth `aal`/`acr`/`amr`/`auth_time` claims—not as a direct factor-app token or proof.
 
-The default reauthentication interval is 10 days. A user may configure an interval up to 20 days. Device and session revocation must invalidate subsequent sync operations.
+Shared-auth delegates narrowly scoped tokens with audience `cliptown-api`, authorized party `memebank-api`, and one `cliptown:memebank:*` scope. ClipTown verifies the delegated token and enforces subject/resource ownership on every request. Clients must not infer authorization from local state or from whether another application is installed.
+
+The default reauthentication interval is 10 days. A user may configure an interval up to 20 days. Device and session revocation must invalidate subsequent sync operations; sensitive MemeBank write and delete scopes additionally require recent LOA2 under shared-auth policy.
 
 ## End-device encryption
 
