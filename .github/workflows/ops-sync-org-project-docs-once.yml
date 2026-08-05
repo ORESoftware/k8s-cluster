@@ -1,14 +1,17 @@
-name: Reconcile organization Projects and planning documentation
+name: Reconcile organization Projects, docs, and sealed repository gaps once
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - .github/workflows/ops-sync-org-project-docs-once.yml
       - scripts/ops/sync_org_project_docs.sh
+      - scripts/ops/sync_org_project_docs_rate_aware.py
+      - scripts/ops/test_sync_org_project_docs_rate_aware.py
+      - scripts/ops/publish_missing_org_repositories_current.py
+      - scripts/ops/test_private_fleet_publisher_contract.py
       - ops/portfolio/github-linear-project-registry.tsv
-      - docs/portfolio/github-linear-project-registry.md
+  workflow_dispatch:
 
 permissions:
   actions: read
@@ -17,54 +20,79 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: reconcile-organization-project-docs-once
+  group: reconcile-organization-project-docs-and-repository-gaps-once
   cancel-in-progress: false
 
 jobs:
   reconcile:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/main' &&
+      (github.actor == 'ORESoftware' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 240
     env:
       REPOSITORY: ${{ github.repository }}
       DEFAULT_BRANCH: main
-      HANDSHAKE_NONCE: fa3b61c9a2d74e3ea0f8aa26f112c682
-      PUBLIC_KEY_PATH: .github/tmp/org-project-docs-fa3b61c9a2d74e3ea0f8aa26f112c682.pub.pem
-      CIPHERTEXT_PATH: .github/tmp/org-project-docs-fa3b61c9a2d74e3ea0f8aa26f112c682.enc.b64
+      HANDSHAKE_NONCE: b7c1b9d0b8e443ec9f4f1a4d93bc4052
+      PUBLIC_KEY_PATH: .github/tmp/fleet-reconcile-b7c1b9d0b8e443ec9f4f1a4d93bc4052.pub.pem
+      CIPHERTEXT_PATH: .github/tmp/fleet-reconcile-b7c1b9d0b8e443ec9f4f1a4d93bc4052.enc.b64
       RUN_STAMP: 20260805-${{ github.run_id }}
-      EVIDENCE_DIR: ops/evidence/org-project-docs
-    steps:
-      - name: Check out the reconciler
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      PROJECT_EVIDENCE_DIR: ops/evidence/org-project-docs-rate-aware
+      REPOSITORY_EVIDENCE_DIR: ops/evidence/missing-organization-repositories
 
-      - name: Validate the reconciler
+    steps:
+      - name: Check out exact trusted main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+          show-progress: false
+
+      - name: Validate exact trusted source and fail-closed contracts
         shell: bash
         run: |
           set -Eeuo pipefail
+          test "$GITHUB_REPOSITORY" = ORESoftware/k8s-cluster
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           bash -n scripts/ops/sync_org_project_docs.sh
+          python3 -m py_compile \
+            scripts/ops/sync_org_project_docs_rate_aware.py \
+            scripts/ops/publish_missing_org_repositories.py \
+            scripts/ops/publish_missing_org_repositories_current.py \
+            scripts/ops/private_repository_creation.py \
+            scripts/ops/repository_fleet_visibility.py \
+            scripts/ops/repository_fleet_remote_state.py
+          python3 scripts/ops/test_sync_org_project_docs_rate_aware.py -v
+          python3 scripts/ops/test_repository_fleet_visibility.py -v
+          python3 scripts/ops/test_repository_fleet_remote_state.py -v
+          python3 scripts/ops/test_private_fleet_publisher_contract.py -v
           python3 - <<'PY'
           from pathlib import Path
 
           rows = []
-          for line in Path("ops/portfolio/github-linear-project-registry.tsv").read_text().splitlines()[1:]:
+          registry = Path("ops/portfolio/github-linear-project-registry.tsv")
+          for line in registry.read_text(encoding="utf-8").splitlines()[1:]:
               if not line.strip():
                   continue
-              org, linear = line.split("\t", 1)
-              assert org and linear.startswith("https://linear.app/")
-              rows.append(org)
+              organization, linear_url = line.split("\t", 1)
+              assert organization
+              assert linear_url.startswith("https://linear.app/")
+              rows.append(organization.casefold())
           assert len(rows) == 64, f"expected 64 organizations, found {len(rows)}"
-          assert len(set(rows)) == len(rows), "organization registry contains duplicates"
+          assert len(set(rows)) == 64, "organization registry contains duplicates"
           PY
 
-      - name: Reconcile Projects, repositories, PRs, issues, and evidence
+      - name: Publish ephemeral RSA handoff key and reconcile the fleet
         shell: bash
         env:
           GITHUB_TOKEN_VALUE: ${{ github.token }}
         run: |
           set -Eeuo pipefail
           umask 077
-
           repo_api="https://api.github.com/repos/${REPOSITORY}"
 
           repo_api_call() {
@@ -121,28 +149,36 @@ jobs:
           }
 
           cleanup_credentials() {
-            delete_file_if_present "$PUBLIC_KEY_PATH" "ci: remove expired organization-project public key"
-            delete_file_if_present "$CIPHERTEXT_PATH" "ci: remove encrypted organization-project credential"
-            rm -f /tmp/org-project-private.pem /tmp/org-project-public.pem /tmp/org-project-token.enc /tmp/org-project-token.txt
+            delete_file_if_present "$PUBLIC_KEY_PATH" "ci: remove expired fleet reconciliation public key"
+            delete_file_if_present "$CIPHERTEXT_PATH" "ci: remove encrypted fleet reconciliation credential"
+            shred -u \
+              /tmp/fleet-reconcile-private.pem \
+              /tmp/fleet-reconcile-public.pem \
+              /tmp/fleet-reconcile-token.enc \
+              /tmp/fleet-reconcile-token.txt \
+              2>/dev/null || true
           }
           trap cleanup_credentials EXIT
+
+          delete_file_if_present "$PUBLIC_KEY_PATH" "ci: remove stale fleet reconciliation public key"
+          delete_file_if_present "$CIPHERTEXT_PATH" "ci: remove stale encrypted fleet credential"
 
           openssl genpkey \
             -algorithm RSA \
             -pkeyopt rsa_keygen_bits:4096 \
-            -out /tmp/org-project-private.pem >/dev/null 2>&1
+            -out /tmp/fleet-reconcile-private.pem >/dev/null 2>&1
           openssl pkey \
-            -in /tmp/org-project-private.pem \
+            -in /tmp/fleet-reconcile-private.pem \
             -pubout \
-            -out /tmp/org-project-public.pem >/dev/null 2>&1
-
+            -out /tmp/fleet-reconcile-public.pem >/dev/null 2>&1
           put_file \
             "$PUBLIC_KEY_PATH" \
-            /tmp/org-project-public.pem \
-            "ci: publish ephemeral organization-project key"
+            /tmp/fleet-reconcile-public.pem \
+            "ci: publish ephemeral fleet reconciliation key"
+          echo "HANDSHAKE_READY nonce=${HANDSHAKE_NONCE} path=${PUBLIC_KEY_PATH}"
 
           ciphertext=""
-          for _ in $(seq 1 360); do
+          for _ in $(seq 1 720); do
             if metadata="$(repo_api_call GET "${repo_api}/contents/${CIPHERTEXT_PATH}?ref=${DEFAULT_BRANCH}" 2>/dev/null)"; then
               ciphertext="$(jq -r '.content // empty' <<<"$metadata" \
                 | tr -d '\n' \
@@ -152,86 +188,158 @@ jobs:
             fi
             sleep 5
           done
-
           if [[ -z "$ciphertext" ]]; then
-            printf 'encrypted credential was not received for handshake %s\n' "$HANDSHAKE_NONCE" >&2
+            echo "encrypted credential was not received for handshake ${HANDSHAKE_NONCE}" >&2
             exit 1
           fi
 
-          printf '%s' "$ciphertext" | base64 -d > /tmp/org-project-token.enc
+          printf '%s' "$ciphertext" | base64 -d > /tmp/fleet-reconcile-token.enc
           openssl pkeyutl \
             -decrypt \
-            -inkey /tmp/org-project-private.pem \
-            -in /tmp/org-project-token.enc \
+            -inkey /tmp/fleet-reconcile-private.pem \
+            -in /tmp/fleet-reconcile-token.enc \
             -pkeyopt rsa_padding_mode:oaep \
             -pkeyopt rsa_oaep_md:sha256 \
             -pkeyopt rsa_mgf1_md:sha256 \
-            > /tmp/org-project-token.txt
+            > /tmp/fleet-reconcile-token.txt
 
-          USER_TOKEN="$(tr -d '\r\n' < /tmp/org-project-token.txt)"
+          USER_TOKEN="$(tr -d '\r\n' < /tmp/fleet-reconcile-token.txt)"
           if [[ -z "$USER_TOKEN" ]]; then
-            printf 'decrypted credential was empty\n' >&2
+            echo 'decrypted credential was empty' >&2
             exit 1
           fi
           echo "::add-mask::${USER_TOKEN}"
           export GH_TOKEN="$USER_TOKEN"
+          export GITHUB_REPOSITORY_ADMIN_TOKEN="$USER_TOKEN"
           gh auth status >/dev/null
+          test "$(gh api user --jq .login)" = ORESoftware
           gh auth setup-git >/dev/null
 
-          set +e
-          REGISTRY_FILE=ops/portfolio/github-linear-project-registry.tsv \
-          EVIDENCE_DIR="$EVIDENCE_DIR" \
-          RUN_STAMP="$RUN_STAMP" \
-            bash scripts/ops/sync_org_project_docs.sh
-          reconcile_rc=$?
-          set -e
+          rm -rf "$PROJECT_EVIDENCE_DIR" "$REPOSITORY_EVIDENCE_DIR"
+          mkdir -p "$PROJECT_EVIDENCE_DIR" "$REPOSITORY_EVIDENCE_DIR"
+          operation_rc=0
 
-          mkdir -p /tmp/org-project-evidence
-          cp -a "$EVIDENCE_DIR"/. /tmp/org-project-evidence/
+          set +e
+          python3 scripts/ops/publish_missing_org_repositories_current.py \
+            2>&1 | tee "$REPOSITORY_EVIDENCE_DIR/publisher.log"
+          publisher_rc=${PIPESTATUS[0]}
+          set -e
+          if [[ "$publisher_rc" -ne 0 ]]; then
+            operation_rc="$publisher_rc"
+          else
+            grep -F 'VERIFIED private canonical fleet remote state' \
+              "$REPOSITORY_EVIDENCE_DIR/publisher.log"
+            python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          targets = [
+              "StreemPilot/streempilot-media-router.rs",
+              "hypesiege/hypesiege-scheduler.rs",
+              "hypesiege/hypesiege-publishing-worker.rs",
+              "hypesiege/hypesiege-analytics.rs",
+          ]
+          evidence = []
+          for full_name in targets:
+              repository = json.loads(subprocess.check_output(
+                  ["gh", "api", f"repos/{full_name}"], text=True
+              ))
+              if repository.get("private") is not True or repository.get("visibility") != "private":
+                  raise SystemExit(f"{full_name} is not private")
+              if repository.get("default_branch") != "main":
+                  raise SystemExit(f"{full_name} default branch is not main")
+              ref = json.loads(subprocess.check_output(
+                  ["gh", "api", f"repos/{full_name}/git/ref/heads/main"], text=True
+              ))
+              head = ref.get("object", {}).get("sha")
+              if not isinstance(head, str) or len(head) != 40:
+                  raise SystemExit(f"{full_name} has no exact main SHA")
+              evidence.append({
+                  "full_name": full_name,
+                  "repository_id": repository.get("id"),
+                  "visibility": repository.get("visibility"),
+                  "default_branch": repository.get("default_branch"),
+                  "main_sha": head,
+                  "html_url": repository.get("html_url"),
+              })
+          path = Path(os.environ["REPOSITORY_EVIDENCE_DIR"]) / "requested-gaps.json"
+          path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")
+          print(f"VERIFIED_REQUESTED_GAPS {len(evidence)}/4")
+          PY
+          fi
+
+          if [[ "$operation_rc" -eq 0 ]]; then
+            set +e
+            python3 scripts/ops/sync_org_project_docs_rate_aware.py \
+              --evidence-dir "$PROJECT_EVIDENCE_DIR" \
+              --expected-count 64 \
+              --min-core-start 1800 \
+              --min-graphql-start 400 \
+              --max-wait-seconds 10800 \
+              --per-org-timeout 1200 \
+              --retries 3
+            projects_rc=$?
+            set -e
+            if [[ "$projects_rc" -ne 0 ]]; then
+              operation_rc="$projects_rc"
+            else
+              python3 scripts/ops/sync_org_project_docs_rate_aware.py \
+                --evidence-dir "$PROJECT_EVIDENCE_DIR" \
+                --expected-count 64 \
+                --validate-only
+            fi
+          fi
+
+          rm -rf /tmp/fleet-reconciliation-evidence
+          mkdir -p /tmp/fleet-reconciliation-evidence
+          cp -a "$PROJECT_EVIDENCE_DIR" /tmp/fleet-reconciliation-evidence/ 2>/dev/null || true
+          cp -a "$REPOSITORY_EVIDENCE_DIR" /tmp/fleet-reconciliation-evidence/ 2>/dev/null || true
 
           cleanup_credentials
           trap - EXIT
 
-          rm -rf "$EVIDENCE_DIR"
-          for _ in $(seq 1 30); do
-            git fetch origin "$DEFAULT_BRANCH" >/dev/null 2>&1 || true
-            if git rev-parse --verify "origin/${DEFAULT_BRANCH}" >/dev/null 2>&1; then
-              break
-            fi
-            sleep 2
-          done
-
-          evidence_branch="agent/org-project-docs-evidence-${RUN_STAMP}"
+          git fetch origin "$DEFAULT_BRANCH"
+          evidence_branch="agent/fleet-reconciliation-evidence-${RUN_STAMP}"
           git checkout -B "$evidence_branch" "origin/${DEFAULT_BRANCH}"
-          rm -rf "$EVIDENCE_DIR"
-          mkdir -p "$EVIDENCE_DIR"
-          cp -a /tmp/org-project-evidence/. "$EVIDENCE_DIR/"
-          git add "$EVIDENCE_DIR"
+          rm -rf "$PROJECT_EVIDENCE_DIR" "$REPOSITORY_EVIDENCE_DIR"
+          mkdir -p "$(dirname "$PROJECT_EVIDENCE_DIR")" "$(dirname "$REPOSITORY_EVIDENCE_DIR")"
+          cp -a /tmp/fleet-reconciliation-evidence/org-project-docs-rate-aware "$PROJECT_EVIDENCE_DIR" 2>/dev/null || true
+          cp -a /tmp/fleet-reconciliation-evidence/missing-organization-repositories "$REPOSITORY_EVIDENCE_DIR" 2>/dev/null || true
+          git add "$PROJECT_EVIDENCE_DIR" "$REPOSITORY_EVIDENCE_DIR"
 
           if git diff --cached --quiet; then
-            printf 'evidence already matches main\n'
+            echo 'fleet evidence already matches main'
           else
-            git commit -m "ops: record organization Project reconciliation evidence"
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'ops: record validated fleet reconciliation evidence'
             git push --force-with-lease -u origin "$evidence_branch"
             evidence_pr_url="$(gh pr create \
               --repo "$REPOSITORY" \
               --base "$DEFAULT_BRANCH" \
               --head "$evidence_branch" \
-              --title "ops: record organization Project reconciliation evidence" \
-              --body "Records the per-organization GitHub Project, Linear, repository, documentation PR, merge, and governance-issue results produced by run ${RUN_STAMP}.")"
+              --title 'ops: record validated fleet reconciliation evidence' \
+              --body "Records strict organization Project/docs and sealed repository publication evidence produced by run ${RUN_STAMP}.")"
             evidence_pr_number="$(gh pr view "$evidence_pr_url" --repo "$REPOSITORY" --json number --jq '.number')"
-            if ! gh pr merge "$evidence_pr_number" --repo "$REPOSITORY" --squash --delete-branch --admin; then
-              gh pr merge "$evidence_pr_number" --repo "$REPOSITORY" --squash --delete-branch
+            if [[ "$operation_rc" -eq 0 ]]; then
+              if ! gh pr merge "$evidence_pr_number" --repo "$REPOSITORY" --squash --delete-branch --admin; then
+                gh pr merge "$evidence_pr_number" --repo "$REPOSITORY" --squash --delete-branch
+              fi
             fi
           fi
 
-          exit "$reconcile_rc"
+          exit "$operation_rc"
 
       - name: Upload reconciliation evidence artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: organization-project-docs-${{ github.run_id }}
-          path: ops/evidence/org-project-docs
+          name: fleet-reconciliation-${{ github.run_id }}
+          path: |
+            ops/evidence/org-project-docs-rate-aware
+            ops/evidence/missing-organization-repositories
           if-no-files-found: warn
           retention-days: 30
+          include-hidden-files: true
