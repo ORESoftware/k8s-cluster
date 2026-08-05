@@ -1,3 +1,4 @@
+# Revalidated after #945 retired the stale one-use durable-worker writer.
 name: workflow branch trigger contract
 
 on:
