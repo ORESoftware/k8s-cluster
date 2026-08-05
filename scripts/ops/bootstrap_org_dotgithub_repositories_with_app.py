@@ -32,7 +32,6 @@ from select_hypesiege_github_app_from_aws import (  # noqa: E402
     request_json,
 )
 
-API_ROOT = "https://api.github.com"
 APP_ID_ENV = "K8S_SUBMODULE_APP_ID"
 APP_PRIVATE_KEY_ENV = "K8S_SUBMODULE_APP_PRIVATE_KEY"
 PEM_PATTERN = re.compile(
@@ -44,11 +43,6 @@ REQUIRED_PERMISSIONS: dict[str, str] = {
     "contents": "write",
     "metadata": "read",
 }
-
-RequestFunction = Callable[
-    [str, str, str, dict[str, Any] | None],
-    tuple[int | None, Any | None],
-]
 
 
 @dataclass
@@ -204,36 +198,41 @@ def preflight_installations(
     app_slug: str | None = None
     try:
         for organization in fleet.TARGET_ORGANIZATIONS:
-            observed_slug, token = validated_installation_token(
-                organization,
-                app_jwt,
-                request_fn=request_fn,
-            )
-            if app_slug is None:
-                app_slug = observed_slug
-            elif observed_slug != app_slug:
-                revoke_installation_token(token, request_fn=request_fn)
-                raise AppPublisherError(
-                    f"{organization}: App slug {observed_slug!r} differs from {app_slug!r}"
+            current_token = ""
+            try:
+                observed_slug, current_token = validated_installation_token(
+                    organization,
+                    app_jwt,
+                    request_fn=request_fn,
                 )
+                if app_slug is None:
+                    app_slug = observed_slug
+                elif observed_slug != app_slug:
+                    raise AppPublisherError(
+                        f"{organization}: App slug {observed_slug!r} differs from {app_slug!r}"
+                    )
 
-            api = api_factory(token)
-            repository = repository_getter(api, organization)
-            if repository is not None:
-                repository_validator(repository, organization)
-            prepared.append(
-                PreparedInstallation(
-                    organization=organization,
-                    app_slug=observed_slug,
-                    token=token,
-                    api=api,
-                    existing_repository=repository,
+                api = api_factory(current_token)
+                repository = repository_getter(api, organization)
+                if repository is not None:
+                    repository_validator(repository, organization)
+                prepared.append(
+                    PreparedInstallation(
+                        organization=organization,
+                        app_slug=observed_slug,
+                        token=current_token,
+                        api=api,
+                        existing_repository=repository,
+                    )
                 )
-            )
-            print(
-                f"APP-PREFLIGHT {organization} "
-                f"repository={'present' if repository else 'missing'}"
-            )
+                current_token = ""
+                print(
+                    f"APP-PREFLIGHT {organization} "
+                    f"repository={'present' if repository else 'missing'}"
+                )
+            finally:
+                if current_token:
+                    revoke_installation_token(current_token, request_fn=request_fn)
     except Exception:
         for item in prepared:
             revoke_installation_token(item.token, request_fn=request_fn)
