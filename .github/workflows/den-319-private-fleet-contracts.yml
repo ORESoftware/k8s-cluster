@@ -8,6 +8,7 @@ on:
       - .github/workflows/ops-dispatch-private-fleet-gaps-comment.yml
       - .github/workflows/ops-dispatch-private-fleet-gaps-pr-target.yml
       - .github/workflows/ops-publish-missing-org-repositories-gh-profile.yml
+      - .github/workflows/ops-publish-exact-repository-gaps-encrypted-once.yml
       - scripts/ops/publish_missing_org_repositories.py
       - scripts/ops/publish_missing_org_repositories_current.py
       - scripts/ops/private_repository_creation.py
@@ -18,6 +19,7 @@ on:
       - scripts/ops/test_private_fleet_publisher_contract.py
       - scripts/ops/test_private_repository_creation.py
       - scripts/ops/test_private_fleet_gap_dispatch_contract.py
+      - scripts/ops/test_encrypted_repository_gap_workflow.py
   push:
     branches: [main]
     paths:
@@ -26,6 +28,7 @@ on:
       - .github/workflows/ops-dispatch-private-fleet-gaps-comment.yml
       - .github/workflows/ops-dispatch-private-fleet-gaps-pr-target.yml
       - .github/workflows/ops-publish-missing-org-repositories-gh-profile.yml
+      - .github/workflows/ops-publish-exact-repository-gaps-encrypted-once.yml
       - scripts/ops/publish_missing_org_repositories.py
       - scripts/ops/publish_missing_org_repositories_current.py
       - scripts/ops/private_repository_creation.py
@@ -36,6 +39,7 @@ on:
       - scripts/ops/test_private_fleet_publisher_contract.py
       - scripts/ops/test_private_repository_creation.py
       - scripts/ops/test_private_fleet_gap_dispatch_contract.py
+      - scripts/ops/test_encrypted_repository_gap_workflow.py
   workflow_dispatch:
 
 permissions:
@@ -69,6 +73,7 @@ jobs:
             scripts/ops/test_repository_fleet_remote_state.py \
             scripts/ops/test_private_fleet_publisher_contract.py \
             scripts/ops/test_private_fleet_gap_dispatch_contract.py \
+            scripts/ops/test_encrypted_repository_gap_workflow.py \
             scripts/ops/publish_missing_org_repositories_current.py
 
       - name: Run visibility projection negative fixtures
@@ -95,6 +100,12 @@ jobs:
           set -euo pipefail
           python3 scripts/ops/test_private_fleet_publisher_contract.py -v
 
+      - name: Run encrypted exact-gap publisher contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/test_encrypted_repository_gap_workflow.py -v
+
       - name: Run trusted dispatch and observer contracts
         shell: bash
         run: |
@@ -112,6 +123,7 @@ jobs:
             .github/workflows/ops-dispatch-private-fleet-gaps-comment.yml \
             .github/workflows/ops-dispatch-private-fleet-gaps-pr-target.yml \
             .github/workflows/ops-publish-missing-org-repositories-gh-profile.yml \
+            .github/workflows/ops-publish-exact-repository-gaps-encrypted-once.yml \
             scripts/ops/private_repository_creation.py \
             scripts/ops/repository_fleet_visibility.py \
             scripts/ops/repository_fleet_remote_state.py \
@@ -120,4 +132,5 @@ jobs:
             scripts/ops/test_repository_fleet_remote_state.py \
             scripts/ops/test_private_fleet_publisher_contract.py \
             scripts/ops/test_private_fleet_gap_dispatch_contract.py \
+            scripts/ops/test_encrypted_repository_gap_workflow.py \
             scripts/ops/publish_missing_org_repositories_current.py
