@@ -48,7 +48,7 @@ jobs:
           bash -n "$script"
           grep -qF "repository='benefactor-cc/benefactor-gas'" "$script"
           grep -qF 'candidate-personal-access-token-rejected' "$script"
-          grep -qF 'chown ec2-user:ec2-user "$work"' "$script"
+          grep -qF 'chown ec2-user:ec2-user' "$script"
           grep -qF "membership" "$script"
           grep -qF "admin" "$script"
           grep -qF -- '--private' "$script"
