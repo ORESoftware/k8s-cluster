@@ -59,6 +59,11 @@ class ProjectReconciliationWorkflowContractTests(unittest.TestCase):
         self.assertIn("IDENTITY_RETRY_INITIAL_SECONDS: 60", self.text)
         self.assertIn("IDENTITY_RETRY_MAX_SECONDS: 300", self.text)
 
+    def test_only_latest_one_time_reconciliation_can_continue(self) -> None:
+        self.assertIn("group: reconcile-organization-project-docs-once", self.text)
+        self.assertIn("cancel-in-progress: true", self.text)
+        self.assertNotIn("cancel-in-progress: false", self.text)
+
     def test_fifth_gap_and_alias_guard_are_explicitly_covered(self) -> None:
         self.assertIn(
             "- scripts/ops/repository_rename_alias_guard.py", self.text
