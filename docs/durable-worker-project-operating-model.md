@@ -70,6 +70,8 @@ Close the GitHub issue and mark the Linear issue Done only after the PR reports 
 
 Update the roadmap and project status when a milestone changes materially. Documentation-only status changes must not claim an unexecuted test or undeployed capability.
 
+When a push workflow publishes an artifact, record its immutable source commit, artifact name, checksum or digest, retention boundary, and producing workflow run. Do not treat an Actions artifact as a package-registry release unless it was also published to that registry.
+
 ## Recommended GitHub Project fields
 
 | Field | Type | Values or format |
@@ -144,6 +146,15 @@ Fiducia ownership epochs, partitioned streams, failover, chaos testing, and disa
 | destructive restart and fencing proof | related to DEN-1675 | PR #783 | merged |
 | TypeScript execution SDK | related to DEN-1675 | PR #791 | merged |
 | Python execution SDK | DEN-2218 | PR #971 | merged |
+| Go execution SDK and shared TypeScript/Python/Go conformance | DEN-2289 | PR #999 | merged; source artifact published |
+
+## Current tracked infrastructure blocker
+
+| Work | Linear | GitHub | State |
+| --- | --- | --- | --- |
+| restore least-privilege GitHub App credentials for private deployment-contract CI | DEN-2332 | issue #886 | open |
+
+The missing `K8S_SUBMODULE_APP_ID` and `K8S_SUBMODULE_APP_PRIVATE_KEY` prevent the broad private-backend job from executing. They do not invalidate focused worker SDK or protocol checks. The solution must be a repository-scoped GitHub App with short-lived installation tokens, not a user PAT.
 
 ## Automation boundaries
 
@@ -172,3 +183,4 @@ The organization Project is an index, not an execution authority. Code and tests
 - [ ] Current `dev` incorporated semantically.
 - [ ] PR merged with expected head SHA.
 - [ ] Linear and GitHub project status updated after merge.
+- [ ] Published artifact identity and digest recorded when applicable.
