@@ -1,0 +1,412 @@
+{
+  "fleet": {
+    "default_visibility": "public",
+    "production_org": "cliptown",
+    "repositories": [
+      {
+        "kind": "device",
+        "languages": [
+          "dart",
+          "kotlin"
+        ],
+        "name": "cliptown-android-clipboard-emulator",
+        "package_managers": [
+          "pub",
+          "gradle",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Exercise Android clipboard text, rich content, images, permissions, background limits, history, and app-to-app handoff.",
+        "source_refs": [
+          "flutter",
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "android-emulator",
+          "text",
+          "image",
+          "background-limits"
+        ]
+      },
+      {
+        "kind": "device",
+        "languages": [
+          "dart",
+          "swift"
+        ],
+        "name": "cliptown-ios-pasteboard-simulator",
+        "package_managers": [
+          "pub",
+          "swiftpm",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "macos-latest"
+        ],
+        "purpose": "Exercise iOS pasteboard text, images, privacy prompts, universal-clipboard semantics, history, and app-to-app handoff.",
+        "source_refs": [
+          "flutter",
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "ios-simulator",
+          "text",
+          "image",
+          "privacy-prompts"
+        ]
+      },
+      {
+        "kind": "desktop",
+        "languages": [
+          "dart",
+          "rust"
+        ],
+        "name": "cliptown-linux-clipboard",
+        "package_managers": [
+          "pub",
+          "cargo",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Test X11 and Wayland clipboard ownership, primary selection, mixed MIME payloads, tray lifecycle, and persistent history.",
+        "source_refs": [
+          "flutter",
+          "clients"
+        ],
+        "suites": [
+          "x11",
+          "wayland",
+          "primary-selection",
+          "history-persistence"
+        ]
+      },
+      {
+        "kind": "desktop",
+        "languages": [
+          "dart",
+          "swift"
+        ],
+        "name": "cliptown-macos-pasteboard",
+        "package_managers": [
+          "pub",
+          "swiftpm",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "macos-latest"
+        ],
+        "purpose": "Test NSPasteboard text, images, files, privacy behavior, menu-bar lifecycle, persistence, and universal-clipboard boundaries.",
+        "source_refs": [
+          "flutter",
+          "clients"
+        ],
+        "suites": [
+          "nspasteboard",
+          "images",
+          "files",
+          "menu-bar"
+        ]
+      },
+      {
+        "kind": "desktop",
+        "languages": [
+          "dart",
+          "rust"
+        ],
+        "name": "cliptown-windows-clipboard",
+        "package_managers": [
+          "pub",
+          "cargo",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "windows-latest"
+        ],
+        "purpose": "Test Win32 clipboard formats, files, images, delayed rendering, tray lifecycle, ownership changes, and persistent history.",
+        "source_refs": [
+          "flutter",
+          "clients"
+        ],
+        "suites": [
+          "win32-formats",
+          "delayed-rendering",
+          "files",
+          "tray-lifecycle"
+        ]
+      },
+      {
+        "kind": "ui",
+        "languages": [
+          "dart"
+        ],
+        "name": "cliptown-flutter-ui",
+        "package_managers": [
+          "pub",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest",
+          "macos-latest",
+          "windows-latest"
+        ],
+        "purpose": "Run Flutter widget, golden, navigation, localization, keyboard, accessibility, and responsive-layout tests for all form factors.",
+        "source_refs": [
+          "flutter",
+          "interfaces"
+        ],
+        "suites": [
+          "widget",
+          "golden",
+          "keyboard",
+          "responsive-layout"
+        ]
+      },
+      {
+        "kind": "ui",
+        "languages": [
+          "typescript"
+        ],
+        "name": "cliptown-web-extension-e2e",
+        "package_managers": [
+          "npm",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Test extension capture, restore, browser permissions, sign-in, offline queueing, and Chromium/Firefox interoperability.",
+        "source_refs": [
+          "extension",
+          "backend",
+          "clients"
+        ],
+        "suites": [
+          "chromium",
+          "firefox",
+          "permissions",
+          "offline-queue"
+        ]
+      },
+      {
+        "kind": "client",
+        "languages": [
+          "rust"
+        ],
+        "name": "cliptown-clients-rust",
+        "package_managers": [
+          "cargo",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Consume the Rust client through Cargo, Zed, and a pinned git source while enforcing clipboard item, serialization, search, and sync contracts.",
+        "source_refs": [
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "sdk-surface",
+          "clipboard-item",
+          "serialization",
+          "sync-contract"
+        ]
+      },
+      {
+        "kind": "client",
+        "languages": [
+          "dart"
+        ],
+        "name": "cliptown-clients-dart",
+        "package_managers": [
+          "pub",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest",
+          "macos-latest"
+        ],
+        "purpose": "Consume the Dart client through pub, Zed, and a pinned git source across Flutter mobile, desktop, and web.",
+        "source_refs": [
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "sdk-surface",
+          "clipboard-item",
+          "serialization",
+          "platform-parity"
+        ]
+      },
+      {
+        "kind": "api",
+        "languages": [
+          "python"
+        ],
+        "name": "cliptown-api-contract",
+        "package_managers": [
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Validate item, history, search, sync, authorization, pagination, binary metadata, idempotency, and websocket contracts.",
+        "source_refs": [
+          "backend",
+          "interfaces",
+          "clients"
+        ],
+        "suites": [
+          "openapi-contract",
+          "binary-metadata",
+          "pagination",
+          "websocket-contract"
+        ]
+      },
+      {
+        "fixtures": [
+          "png",
+          "jpeg",
+          "webp",
+          "animated-gif"
+        ],
+        "kind": "interop",
+        "languages": [
+          "python",
+          "typescript"
+        ],
+        "name": "cliptown-memebank-interop",
+        "package_managers": [
+          "pip",
+          "npm",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Prove externally copied images flow through Cliptown into Memebank with bytes, MIME metadata, hashes, OCR triggers, deduplication, and deletion semantics intact.",
+        "source_refs": [
+          "backend",
+          "clients",
+          "memebank-api",
+          "memebank-pwa"
+        ],
+        "suites": [
+          "image-roundtrip",
+          "metadata-preservation",
+          "deduplication",
+          "ocr-trigger"
+        ]
+      },
+      {
+        "kind": "load",
+        "languages": [
+          "python"
+        ],
+        "name": "cliptown-large-image-history-e2e",
+        "package_managers": [
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Stress clipboard history with large images, mixed MIME types, search, eviction, retention, synchronization, and backpressure.",
+        "services": [
+          "postgres",
+          "s3-compatible"
+        ],
+        "source_refs": [
+          "backend",
+          "flutter",
+          "clients"
+        ],
+        "suites": [
+          "large-images",
+          "retention",
+          "eviction",
+          "sync-backpressure"
+        ]
+      }
+    ],
+    "sources": {
+      "backend": {
+        "alias": "backend",
+        "repository": "cliptown/cliptown-rust-backend.rs",
+        "required": true,
+        "role": "api",
+        "zed_dependency": false
+      },
+      "cli": {
+        "alias": "cli",
+        "repository": "cliptown/cliptown-cli",
+        "required": true,
+        "role": "cli",
+        "zed_dependency": false
+      },
+      "clients": {
+        "alias": "clients",
+        "repository": "cliptown/cliptown-clients",
+        "required": true,
+        "role": "clients",
+        "zed_dependency": true
+      },
+      "extension": {
+        "alias": "extension",
+        "repository": "cliptown/cliptown-extension",
+        "required": true,
+        "role": "ui",
+        "zed_dependency": false
+      },
+      "flutter": {
+        "alias": "flutter",
+        "repository": "cliptown/cliptown-flutter",
+        "required": true,
+        "role": "ui",
+        "zed_dependency": false
+      },
+      "interfaces": {
+        "alias": "interfaces",
+        "repository": "cliptown/cliptown-interfaces",
+        "required": true,
+        "role": "interfaces",
+        "zed_dependency": true
+      },
+      "memebank-api": {
+        "alias": "memebank-api",
+        "repository": "memebank/mbk-rest-api",
+        "required": true,
+        "role": "api",
+        "zed_dependency": false
+      },
+      "memebank-pwa": {
+        "alias": "memebank-pwa",
+        "repository": "memebank/mbk-pwa",
+        "required": true,
+        "role": "ui",
+        "zed_dependency": false
+      }
+    },
+    "summary": "Cross-device clipboard, UI, SDK, API, load, and Memebank interoperability coverage."
+  },
+  "test_org": "cliptown-test"
+}
