@@ -21,6 +21,7 @@ command -v sudo >/dev/null
 command -v getent >/dev/null
 command -v install >/dev/null
 command -v stat >/dev/null
+command -v chown >/dev/null
 command -v python3 >/dev/null
 
 profile_home="$(getent passwd ec2-user | awk -F: '$1 == "ec2-user" { print $6 }')"
@@ -29,6 +30,12 @@ case "$profile_home" in
   /*) ;;
   *) echo 'benefactor-gas-profile=failed reason=missing-ec2-user' >&2; exit 65 ;;
 esac
+
+# The delegated gh process must be able to traverse the temporary profile
+# hierarchy. Keep the entire workspace private to ec2-user (and root) rather
+# than creating an ec2-user child beneath an untraversable root-owned parent.
+chown ec2-user:ec2-user "$work"
+chmod 700 "$work"
 
 selected_dir=''
 diagnostic='no-candidate-profile'
