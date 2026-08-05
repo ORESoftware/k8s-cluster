@@ -1,0 +1,51 @@
+# Platform-owned tenancy boundary for Hypesiege. Application repositories
+# must not declare any of these resources themselves.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hypesiege
+  labels:
+    app.kubernetes.io/part-of: hypesiege
+    kubernetes.io/metadata.name: hypesiege
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: hypesiege-quota
+  namespace: hypesiege
+spec:
+  hard:
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    limits.cpu: "12"
+    limits.memory: 16Gi
+    pods: "40"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: hypesiege-limits
+  namespace: hypesiege
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 500m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hypesiege-default-deny-ingress
+  namespace: hypesiege
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress

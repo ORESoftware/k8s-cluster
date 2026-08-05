@@ -1651,6 +1651,76 @@
           "application_namespace": "argocd",
           "destination": {
             "name": "",
+            "namespace": "hypesiege",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/apps/hypesiege.applications.yaml",
+          "project": "hypesiege",
+          "sources": [
+            {
+              "chart": "",
+              "path": "deploy/k8s",
+              "repo_url": "git@github.com:hypesiege/hypesiege-api-server.rs.git",
+              "target_revision": "main"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-hypesiege-api-server"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "hypesiege",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 1,
+          "manifest_path": "remote/argocd/apps/hypesiege.applications.yaml",
+          "project": "hypesiege",
+          "sources": [
+            {
+              "chart": "",
+              "path": "deploy/k8s",
+              "repo_url": "git@github.com:hypesiege/hypesiege-web-server.rs.git",
+              "target_revision": "main"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-hypesiege-web-server"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
             "namespace": "ai-ml",
             "server": "https://kubernetes.default.svc"
           },
@@ -2251,6 +2321,42 @@
           "application_namespace": "argocd",
           "destination": {
             "name": "",
+            "namespace": "default",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/hetzner/project-automation.application.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/project-automation",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": true,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-project-automation"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
             "namespace": "ai-ml",
             "server": "https://kubernetes.default.svc"
           },
@@ -2661,6 +2767,76 @@
       ],
       "duplicate_name": false,
       "name": "dd-spark-pipeline-server"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "streempilot",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/apps/streempilot.applications.yaml",
+          "project": "streempilot",
+          "sources": [
+            {
+              "chart": "",
+              "path": "deploy/k8s",
+              "repo_url": "git@github.com:StreemPilot/streempilot-api-server.rs.git",
+              "target_revision": "main"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-streempilot-api-server"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "streempilot",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 1,
+          "manifest_path": "remote/argocd/apps/streempilot.applications.yaml",
+          "project": "streempilot",
+          "sources": [
+            {
+              "chart": "",
+              "path": "deploy/k8s",
+              "repo_url": "git@github.com:StreemPilot/sp-web-mash.git",
+              "target_revision": "main"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-streempilot-web-server"
     },
     {
       "declaration_count": 1,
@@ -3412,6 +3588,41 @@
       "name": "headlamp"
     },
     {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "argocd",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/apps/hypesiege-root.application.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd",
+              "repo_url": "git@github.com:ORESoftware/k8s-cluster.git",
+              "target_revision": "main"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "hypesiege-root"
+    },
+    {
       "declaration_count": 4,
       "declarations": [
         {
@@ -3739,6 +3950,41 @@
           "application_namespace": "argocd",
           "destination": {
             "name": "",
+            "namespace": "argocd",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/apps/streempilot-root.application.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd",
+              "repo_url": "git@github.com:ORESoftware/k8s-cluster.git",
+              "target_revision": "main"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "streempilot-root"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
             "namespace": "threefa",
             "server": "https://kubernetes.default.svc"
           },
@@ -3778,12 +4024,12 @@
     "source": "tracked Argo CD Application manifests"
   },
   "summary": {
-    "application_documents": 114,
-    "applications": 79,
-    "default_destination_namespace_declarations": 53,
-    "default_project_declarations": 91,
+    "application_documents": 121,
+    "applications": 86,
+    "default_destination_namespace_declarations": 54,
+    "default_project_declarations": 94,
     "duplicate_names": 15,
     "gitlink_render_path_violations": 0,
-    "in_repo_source_declarations": 74
+    "in_repo_source_declarations": 77
   }
 }
