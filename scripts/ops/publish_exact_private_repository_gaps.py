@@ -195,17 +195,13 @@ def publish_exact(organization: str, evidence_out: Path) -> None:
         if any(record.get("visibility") != "private" for record in selected):
             fail("exact execution selection contains a non-private repository")
 
-        exact_manifest = {
-            **execution_manifest,
-            "repository_count": len(selected),
-            "total_tracked_files": sum(int(record["files"]) for record in selected),
-            "total_gitlinks": sum(int(record["gitlinks"]) for record in selected),
-            "organizations": {organization.casefold(): len(selected)},
-            "repositories": selected,
-        }
-        exact_manifest_path = work / f"{organization.casefold()}-exact-private-gaps.json"
-        exact_manifest_path.write_text(
-            json.dumps(exact_manifest, indent=2, sort_keys=True) + "\n",
+        # The sealed publisher validates the complete 32-repository ledger before
+        # honoring its single --repository selector. Keep fleet totals and all
+        # records intact here; the exact allowlist above controls only which
+        # repository invocations and evidence rows are permitted.
+        publisher_manifest_path = work / "private-fleet-execution.json"
+        publisher_manifest_path.write_text(
+            json.dumps(execution_manifest, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
 
@@ -242,7 +238,7 @@ def publish_exact(organization: str, evidence_out: Path) -> None:
                     sys.executable,
                     str(publisher),
                     "--manifest",
-                    str(exact_manifest_path),
+                    str(publisher_manifest_path),
                     "--source-root",
                     str(source_root),
                     "--repository",
