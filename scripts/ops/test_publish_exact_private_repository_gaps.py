@@ -48,6 +48,15 @@ class ExactPrivateRepositoryGapTests(unittest.TestCase):
         )
         self.assertNotIn("hypesiege/unreviewed.rs", {item["full_name"] for item in selected})
 
+    def test_streempilot_selection_accepts_sealed_lowercase_owner(self) -> None:
+        sealed = record("streempilot/streempilot-media-router.rs")
+        selected = MODULE.selected_records([sealed], "StreemPilot")
+        self.assertEqual(selected, [sealed])
+        self.assertEqual(
+            MODULE.EXPECTED_REPOSITORIES["StreemPilot"],
+            ("StreemPilot/streempilot-media-router.rs",),
+        )
+
     def test_streempilot_selection_fails_closed_on_missing_or_cross_org_identity(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "missing from sealed manifest"):
             MODULE.selected_records([], "StreemPilot")
@@ -73,16 +82,17 @@ class ExactPrivateRepositoryGapTests(unittest.TestCase):
         finally:
             MODULE.EXPECTED_REPOSITORIES["StreemPilot"] = original
 
-    def test_duplicate_or_invalid_reviewed_identity_is_rejected(self) -> None:
-        full_name = "StreemPilot/streempilot-media-router.rs"
+    def test_case_insensitive_duplicate_or_invalid_identity_is_rejected(self) -> None:
+        canonical = "StreemPilot/streempilot-media-router.rs"
+        sealed = "streempilot/streempilot-media-router.rs"
         with self.assertRaisesRegex(RuntimeError, "duplicate repository identity"):
-            MODULE.selected_records([record(full_name), record(full_name)], "StreemPilot")
+            MODULE.selected_records([record(canonical), record(sealed)], "StreemPilot")
 
-        invalid_commit = record(full_name, "A" * 40)
+        invalid_commit = record(canonical, "A" * 40)
         with self.assertRaisesRegex(RuntimeError, "invalid commit identity"):
             MODULE.selected_records([invalid_commit], "StreemPilot")
 
-        invalid_branch = record(full_name)
+        invalid_branch = record(canonical)
         invalid_branch["default_branch"] = "master"
         with self.assertRaisesRegex(RuntimeError, "must use main"):
             MODULE.selected_records([invalid_branch], "StreemPilot")
@@ -98,6 +108,8 @@ class ExactPrivateRepositoryGapTests(unittest.TestCase):
         self.assertNotIn('"repository_count": len(selected)', source)
         self.assertIn("json.dumps(execution_manifest", source)
         self.assertIn('"--repository"', source)
+        self.assertIn("casefold()", source)
+        self.assertIn('"full_name": repository_full_name', source)
 
 
 if __name__ == "__main__":
