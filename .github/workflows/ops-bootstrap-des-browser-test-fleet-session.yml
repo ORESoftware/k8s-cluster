@@ -6,6 +6,7 @@ on:
     paths:
       - .github/workflows/ops-bootstrap-des-browser-test-fleet-session.yml
       - scripts/ops/bootstrap_des_browser_test_fleet_session.sh
+      - scripts/ops/bootstrap_des_browser_test_fleet_session_rate_limit_safe.sh
   workflow_dispatch:
 
 permissions:
@@ -44,4 +45,4 @@ jobs:
           ISSUE_TOKEN: ${{ github.token }}
           TRACKING_ISSUE: '1011'
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
-        run: bash scripts/ops/bootstrap_des_browser_test_fleet_session.sh
+        run: bash scripts/ops/bootstrap_des_browser_test_fleet_session_rate_limit_safe.sh
