@@ -33,7 +33,7 @@ impl ScriptedTransport {
 }
 
 impl Transport for ScriptedTransport {
-    fn execute<'a>(&'a self, request: TransportRequest) -> TransportFuture<'a> {
+    fn execute(&self, request: TransportRequest) -> TransportFuture<'_> {
         Box::pin(async move {
             self.requests
                 .lock()
