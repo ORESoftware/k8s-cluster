@@ -1,0 +1,44 @@
+{
+  "schema_version": 2,
+  "repository": "canonical-cloud/canonical-docs",
+  "visibility": "public",
+  "default_branch": "main",
+  "feature_branch": "agent/den-1049-publish-business-plan",
+  "source": {
+    "encoding": "base64",
+    "format": "tar.gz",
+    "sha256": "0651f887fc6189317209b6c41903872d1b49c3f179ebfcde8ef968e54ebe6af1",
+    "size": 35233,
+    "parts": [
+      "source.tar.gz.b64.part000",
+      "source.tar.gz.b64.part001",
+      "source.tar.gz.b64.part002",
+      "source.tar.gz.b64.part003"
+    ]
+  },
+  "commits": {
+    "main": "86fb7c44ac88f2f4e5f9ff314c50cac736f63789",
+    "feature": "07da928d1b80aeca10c8d29daa26a967be1748dd"
+  },
+  "trees": {
+    "main": "5cd9c62d21b4a32d34b886b037849d27258e287c",
+    "feature": "8a3ee9d5f610bb4f7b6ba63220a7c7e9291a12ad"
+  },
+  "commit_identity": {
+    "name": "Canonical Cloud Automation",
+    "email": "automation@canonical.cloud",
+    "main_date": "2026-08-04T20:00:00Z",
+    "feature_date": "2026-08-04T20:01:00Z",
+    "main_message": "Bootstrap canonical-docs repository",
+    "feature_message": "Publish Canonical Cloud business plan and documentation baseline"
+  },
+  "main_files": [
+    ".gitignore",
+    "README.md"
+  ],
+  "feature_file_count": 26,
+  "business_plan": {
+    "path": "docs/business-plan.md",
+    "sha256": "db82c704fd3cfc472ed0cc77e2fc15acad8641929441c3772137920a735960f8"
+  }
+}
