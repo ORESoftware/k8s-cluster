@@ -4,30 +4,38 @@ name: Portfolio project links
 on:
   pull_request:
     paths:
+      - ops/portfolio/github-linear-project-registry.tsv
       - ops/registries/portfolio-project-links.csv
       - ops/evidence/github-organization-access.json
       - scripts/ops/portfolio_project_links.py
+      - scripts/ops/validate_github_linear_registry_relationship.py
       - scripts/ops/validate_portfolio_project_links.py
       - scripts/ops/sync_portfolio_project_links.py
       - scripts/ops/sync_github_project_metadata.py
       - scripts/ops/tests/test_github_organization_access.py
+      - scripts/ops/tests/test_github_linear_registry_relationship.py
       - scripts/ops/tests/test_portfolio_project_links.py
       - scripts/ops/tests/test_sync_portfolio_project_links.py
+      - docs/portfolio/github-linear-project-registry.md
       - docs/portfolio-project-linking.md
       - docs/daily-portfolio-project-sync.md
       - .github/workflows/validate-portfolio-project-links.yml
   push:
     branches: [main]
     paths:
+      - ops/portfolio/github-linear-project-registry.tsv
       - ops/registries/portfolio-project-links.csv
       - ops/evidence/github-organization-access.json
       - scripts/ops/portfolio_project_links.py
+      - scripts/ops/validate_github_linear_registry_relationship.py
       - scripts/ops/validate_portfolio_project_links.py
       - scripts/ops/sync_portfolio_project_links.py
       - scripts/ops/sync_github_project_metadata.py
       - scripts/ops/tests/test_github_organization_access.py
+      - scripts/ops/tests/test_github_linear_registry_relationship.py
       - scripts/ops/tests/test_portfolio_project_links.py
       - scripts/ops/tests/test_sync_portfolio_project_links.py
+      - docs/portfolio/github-linear-project-registry.md
       - docs/portfolio-project-linking.md
       - docs/daily-portfolio-project-sync.md
       - .github/workflows/validate-portfolio-project-links.yml
@@ -75,6 +83,11 @@ jobs:
         with:
           args: .github/workflows/validate-portfolio-project-links.yml
 
+      - name: Validate governance-to-portfolio relationship
+        run: >-
+          python scripts/ops/validate_github_linear_registry_relationship.py
+          --json-output artifacts/github-linear-registry-relationship.json
+
       - name: Validate canonical mappings
         run: python scripts/ops/validate_portfolio_project_links.py
 
@@ -96,7 +109,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: portfolio-project-link-validation
-          path: artifacts/portfolio-project-sync.*
+          path: |
+            artifacts/github-linear-registry-relationship.json
+            artifacts/portfolio-project-sync.*
           if-no-files-found: error
           retention-days: 14
 
