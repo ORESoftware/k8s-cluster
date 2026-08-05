@@ -5,9 +5,16 @@
 //! executor router records an assignment. Orchestration-only metadata remains
 //! bound into the request identity but is not exposed as worker commands,
 //! environment variables, image names, or caller-selected executors.
+//!
+//! This module is loaded through the executor-router service's existing `#[path]`
+//! module graph. Keep each child path explicit so every binary resolves the same
+//! adapter sources instead of inheriting the including module's directory.
 
+#[path = "indie_dispatch/digest.rs"]
 mod digest;
+#[path = "indie_dispatch/model.rs"]
 mod model;
+#[path = "indie_dispatch/validate/mod.rs"]
 mod validate;
 
 use serde_json::{json, Value};
@@ -75,4 +82,5 @@ pub(super) fn adapt_dispatch(value: &Value) -> Result<Option<AdaptedDispatch>, S
 }
 
 #[cfg(test)]
+#[path = "indie_dispatch/tests.rs"]
 mod tests;
