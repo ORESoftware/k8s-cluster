@@ -59,31 +59,28 @@ jobs:
             exit 1
           fi
 
-          if (( ${#conflicts[@]} > 0 )); then
-            printf 'semantic conflict paths:\n%s\n' "${conflicts[*]}"
-            for path in "${conflicts[@]}"; do
-              allowed=false
-              for reviewed in "${reviewed_paths[@]}"; do
-                if [[ "$path" == "$reviewed" ]]; then allowed=true; break; fi
-              done
-              if [[ "$allowed" != true ]]; then
-                echo "unexpected conflict outside reviewed scope: $path" >&2
-                exit 1
-              fi
+          for path in "${conflicts[@]}"; do
+            allowed=false
+            for reviewed in "${reviewed_paths[@]}"; do
+              if [[ "$path" == "$reviewed" ]]; then allowed=true; break; fi
             done
+            if [[ "$allowed" != true ]]; then
+              echo "unexpected conflict outside reviewed scope: $path" >&2
+              exit 1
+            fi
 
-            git diff --binary "$original_base" "$original_head" -- "${conflicts[@]}" > "$RUNNER_TEMP/pr-946-conflicts.patch"
-            git checkout origin/main -- "${conflicts[@]}"
-            git add -- "${conflicts[@]}"
-            git apply --3way --index "$RUNNER_TEMP/pr-946-conflicts.patch"
-          fi
+            # A reviewed PR file may be selected directly only when current main
+            # is byte-identical to the PR's true merge base for that path. This
+            # proves no concurrent meaning is being discarded.
+            if ! git diff --quiet "$original_base" origin/main -- "$path"; then
+              echo "current main changed reviewed conflict path: $path" >&2
+              exit 1
+            fi
+            git checkout "$original_head" -- "$path"
+            git add -- "$path"
+          done
 
-          if [[ -n "$(git diff --name-only --diff-filter=U)" ]]; then
-            echo 'unresolved conflict markers remain' >&2
-            git diff --name-only --diff-filter=U >&2
-            exit 1
-          fi
-
+          test -z "$(git diff --name-only --diff-filter=U)"
           git diff --check
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
