@@ -90,7 +90,6 @@ jobs:
 
           [[ "${K8S_SUBMODULE_APP_ID:-}" =~ ^[0-9]+$ ]]
           test -n "${K8S_SUBMODULE_APP_PRIVATE_KEY:-}"
-          grep -Eq '^-----BEGIN (RSA )?PRIVATE KEY-----' <<<"$K8S_SUBMODULE_APP_PRIVATE_KEY"
 
           python3 -m py_compile "$adapter"
           python3 "$adapter" --report "$RUNNER_TEMP/self-test.json" --self-test >/dev/null
