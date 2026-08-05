@@ -16,7 +16,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: reconcile-organization-projects-and-docs-rate-aware-once
+  group: reconcile-organization-project-docs-once
   cancel-in-progress: false
 
 jobs:
