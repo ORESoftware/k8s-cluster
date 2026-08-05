@@ -40,10 +40,7 @@ impl FakeApi {
 }
 
 impl WorkerApi for FakeApi {
-    fn register_worker<'a>(
-        &'a self,
-        _registration: WorkerRegistration,
-    ) -> WorkerFuture<'a, ()> {
+    fn register_worker(&self, _registration: WorkerRegistration) -> WorkerFuture<'_, ()> {
         Box::pin(async move {
             self.record("register");
             Ok(())
