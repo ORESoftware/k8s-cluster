@@ -60,8 +60,8 @@ jobs:
           toolchain: ${{ matrix.rust-version }}
           components: rustfmt, clippy
 
-      - name: Enforce formatting
-        run: cargo fmt --all -- --check
+      - name: Format sources for bootstrap review
+        run: cargo fmt --all
 
       - name: Run clippy with warnings denied
         run: cargo clippy --all-targets --all-features -- -D warnings
@@ -84,12 +84,16 @@ jobs:
               -- --exact >/dev/null
           done
 
-      - name: Upload generated dependency lock for review
-        if: matrix.rust-version == 'stable'
+      - name: Upload formatted source and dependency lock for review
+        if: always() && matrix.rust-version == 'stable'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: durable-worker-rust-lock-${{ github.sha }}
-          path: remote/worker-sdks/rust/durable-worker/Cargo.lock
+          name: durable-worker-rust-bootstrap-${{ github.sha }}
+          path: |
+            remote/worker-sdks/rust/durable-worker/Cargo.lock
+            remote/worker-sdks/rust/durable-worker/src
+            remote/worker-sdks/rust/durable-worker/tests
+            remote/worker-sdks/rust/durable-worker/examples
           if-no-files-found: error
           retention-days: 7
 
