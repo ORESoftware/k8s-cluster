@@ -1,0 +1,369 @@
+{
+  "catalog_version": 1,
+  "observed_at": "2026-08-04",
+  "source": "connected GitHub App installations",
+  "organization_count": 45,
+  "organizations": [
+    {
+      "name": "3FA-app",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "agent-pontifex",
+      "class": "platform",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true,
+      "repository_visibility": "ai-agent-bridge.rs, ai-agent-coordinator.rs, agent-sdk.rs",
+      "platform_boundary": {
+        "owns": [
+          "coding-agent job intake and policy",
+          "model routing and budget enforcement",
+          "agent worker leases and job history",
+          "cross-agent orchestration SDKs"
+        ],
+        "calls": [
+          "GitHub through installation-scoped GitHub App credentials",
+          "gha-indie-worker for GitHub Actions-compatible workflow execution",
+          "Fiducia for cross-process fencing at irreversible side effects"
+        ],
+        "does_not_own": [
+          "GitHub Actions workflow semantics",
+          "cluster registration or GitOps tenancy",
+          "portfolio-wide human identity",
+          "product domain APIs"
+        ]
+      }
+    },
+    {
+      "name": "akrion-sim",
+      "class": "research",
+      "lifecycle": "research",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": false
+    },
+    {
+      "name": "anticaptrad",
+      "class": "product",
+      "lifecycle": "incubating",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "apostille-me",
+      "class": "product",
+      "lifecycle": "incubating",
+      "runtime_dependency_allowed": false,
+      "production_dependency_allowed": false,
+      "repository_visibility": "no repositories visible to the connected GitHub App on 2026-08-04"
+    },
+    {
+      "name": "athlet-o",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "benefactor-cc",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "canonical-cloud",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "channelsiege",
+      "class": "reserved",
+      "lifecycle": "reserved",
+      "runtime_dependency_allowed": false,
+      "production_dependency_allowed": false
+    },
+    {
+      "name": "claritas-viz",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "cliptown",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "daedalus-fab",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "declarative-migrations",
+      "class": "platform",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "discrete-event-systems",
+      "class": "research",
+      "lifecycle": "research",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": false
+    },
+    {
+      "name": "drone-mngr",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "embedded-alerts",
+      "class": "product",
+      "lifecycle": "incubating",
+      "runtime_dependency_allowed": false,
+      "production_dependency_allowed": false,
+      "repository_visibility": "no repositories visible to the connected GitHub App on 2026-08-04"
+    },
+    {
+      "name": "evento-globolo",
+      "class": "product",
+      "lifecycle": "incubating",
+      "runtime_dependency_allowed": false,
+      "production_dependency_allowed": false,
+      "repository_visibility": "no repositories visible to the connected GitHub App on 2026-08-04"
+    },
+    {
+      "name": "fanwaave",
+      "class": "product",
+      "lifecycle": "incubating",
+      "runtime_dependency_allowed": false,
+      "production_dependency_allowed": false,
+      "repository_visibility": "no repositories visible to the connected GitHub App on 2026-08-04"
+    },
+    {
+      "name": "fiducia-cloud",
+      "class": "platform",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "fifa-math",
+      "class": "product",
+      "lifecycle": "incubating",
+      "runtime_dependency_allowed": false,
+      "production_dependency_allowed": false,
+      "repository_visibility": "marketing repository only"
+    },
+    {
+      "name": "file-tunnel",
+      "class": "platform",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "gha-indie-worker",
+      "class": "platform",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true,
+      "repository_visibility": "gha-clone-server.rs, gha-indie-worker.rs",
+      "platform_boundary": {
+        "owns": [
+          "GitHub Actions-compatible worker execution",
+          "ARC runner integration",
+          "bounded independent workflow planning",
+          "immutable commit and fixed-profile dispatch"
+        ],
+        "calls": [
+          "k8s-cluster for runner fleet and deployment tenancy",
+          "Fiducia for horizontally scaled delivery claims or fencing when enabled",
+          "GitHub with installation-scoped tokens for exact workflow and commit reads"
+        ],
+        "does_not_own": [
+          "general coding-agent model routing",
+          "product build definitions outside reviewed workflow/profile contracts",
+          "human identity",
+          "arbitrary caller-selected shell execution"
+        ]
+      }
+    },
+    {
+      "name": "hacker-house-medellin",
+      "class": "product",
+      "lifecycle": "incubating",
+      "runtime_dependency_allowed": false,
+      "production_dependency_allowed": false,
+      "repository_visibility": "no repositories visible to the connected GitHub App on 2026-08-04"
+    },
+    {
+      "name": "hypeblitz",
+      "class": "reserved",
+      "lifecycle": "reserved",
+      "runtime_dependency_allowed": false,
+      "production_dependency_allowed": false
+    },
+    {
+      "name": "hypesiege",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "memebank",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "messaging-intel",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "meta-agents-demo",
+      "class": "research",
+      "lifecycle": "research",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": false
+    },
+    {
+      "name": "networking-components",
+      "class": "platform",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "OmniBlitz",
+      "class": "reserved",
+      "lifecycle": "reserved",
+      "runtime_dependency_allowed": false,
+      "production_dependency_allowed": false
+    },
+    {
+      "name": "opto-sync",
+      "class": "platform",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "ORESoftware",
+      "class": "platform",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "quaestor-ledger",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "rust-ssr-demos",
+      "class": "research",
+      "lifecycle": "research",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": false
+    },
+    {
+      "name": "sagitta-stack",
+      "class": "product",
+      "lifecycle": "incubating",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "scintilla-run",
+      "class": "platform",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "shared-auth",
+      "class": "platform",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "sonus-auris",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "streamkore",
+      "class": "reserved",
+      "lifecycle": "reserved",
+      "runtime_dependency_allowed": false,
+      "production_dependency_allowed": false
+    },
+    {
+      "name": "StreemPilot",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "unreal-unity-poc",
+      "class": "research",
+      "lifecycle": "research",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": false
+    },
+    {
+      "name": "usa-acc",
+      "class": "research",
+      "lifecycle": "research",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": false
+    },
+    {
+      "name": "voxletra",
+      "class": "product",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "zed-pkg",
+      "class": "platform",
+      "lifecycle": "active",
+      "runtime_dependency_allowed": true,
+      "production_dependency_allowed": true
+    },
+    {
+      "name": "zed-pkg-test",
+      "class": "test-fixture",
+      "lifecycle": "test",
+      "runtime_dependency_allowed": false,
+      "production_dependency_allowed": false
+    }
+  ]
+}
