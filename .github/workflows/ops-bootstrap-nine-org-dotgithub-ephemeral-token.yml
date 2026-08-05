@@ -1,0 +1,249 @@
+name: Bootstrap nine organization .github repositories
+run-name: Bootstrap nine organization .github repositories @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-bootstrap-nine-org-dotgithub-ephemeral-token.yml
+      - scripts/ops/bootstrap_missing_org_dotgithub_with_ephemeral_pat.py
+      - scripts/ops/publish_org_dotgithub_policy_with_protected_apps.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-bootstrap-nine-org-dotgithub-ephemeral-token.yml
+      - scripts/ops/bootstrap_missing_org_dotgithub_with_ephemeral_pat.py
+      - scripts/ops/publish_org_dotgithub_policy_with_protected_apps.py
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ops-bootstrap-nine-org-dotgithub-ephemeral-token
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate bounded bootstrap
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          helper=scripts/ops/bootstrap_missing_org_dotgithub_with_ephemeral_pat.py
+          canonical=scripts/ops/publish_org_dotgithub_policy_with_protected_apps.py
+          python3 -m py_compile "$helper" "$canonical"
+          python3 "$canonical" --self-test
+          python3 "$helper" --report "$RUNNER_TEMP/self-test.json" --self-test
+          grep -q 'len(TARGET_ORGANIZATIONS) != 9' "$helper"
+          grep -q 'test organizations are forbidden' "$helper"
+          grep -q 'token_persisted.*False' "$helper"
+          grep -q 'greater than 99.1%' "$canonical"
+          grep -q 'greater than 99.7%' "$canonical"
+          grep -q '`dev` is the integration branch' "$canonical"
+          grep -q '\*-infra' "$canonical"
+          grep -q 'GitOps controller' "$canonical"
+          git diff --check
+
+  bootstrap:
+    if: >-
+      github.event_name == 'push' &&
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      INPUT_BRANCH: ops/ephemeral-nine-dotgithub-input-20260805
+      INPUT_PATH: .github/ops-inputs/org-dotgithub-pat.enc.b64
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Generate one-time RSA transport key
+        id: transport
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          private_key="$RUNNER_TEMP/org-dotgithub-transport-private.pem"
+          public_key="$RUNNER_TEMP/org-dotgithub-transport-public.pem"
+          openssl genpkey \
+            -algorithm RSA \
+            -pkeyopt rsa_keygen_bits:3072 \
+            -out "$private_key" \
+            >/dev/null 2>&1
+          openssl pkey -in "$private_key" -pubout -out "$public_key" >/dev/null 2>&1
+          encoded_public_key="$(base64 --wrap=0 "$public_key")"
+          test -n "$encoded_public_key"
+          printf 'EPHEMERAL_RSA_PUBLIC_KEY_BASE64=%s\n' "$encoded_public_key"
+          printf 'input_branch=%s\n' "$INPUT_BRANCH" >> "$GITHUB_OUTPUT"
+          printf 'input_path=%s\n' "$INPUT_PATH" >> "$GITHUB_OUTPUT"
+          {
+            echo '## One-time encrypted credential transport'
+            echo
+            echo '- The private key exists only in this job workspace.'
+            echo '- The encrypted input branch is deleted after consumption.'
+            echo '- No plaintext credential is written to Git, logs, artifacts, or outputs.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Wait for encrypted credential and publish
+        shell: bash
+        env:
+          API_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          response="$RUNNER_TEMP/encrypted-input-response.json"
+          encrypted_b64="$RUNNER_TEMP/org-dotgithub-token.enc.b64"
+          encrypted_bin="$RUNNER_TEMP/org-dotgithub-token.enc"
+          plaintext_file="$RUNNER_TEMP/org-dotgithub-token.txt"
+          report="$RUNNER_TEMP/nine-org-dotgithub-report.json"
+          private_key="$RUNNER_TEMP/org-dotgithub-transport-private.pem"
+          encoded_ref="ops%2Fephemeral-nine-dotgithub-input-20260805"
+          encoded_path=".github/ops-inputs/org-dotgithub-pat.enc.b64"
+
+          found=false
+          for _ in $(seq 1 240); do
+            status="$(
+              curl --silent --show-error \
+                --output "$response" \
+                --write-out '%{http_code}' \
+                --header 'Accept: application/vnd.github+json' \
+                --header "Authorization: Bearer $API_TOKEN" \
+                --header 'X-GitHub-Api-Version: 2022-11-28' \
+                "https://api.github.com/repos/ORESoftware/k8s-cluster/contents/$encoded_path?ref=$encoded_ref"
+            )"
+            if [[ "$status" == 200 ]]; then
+              found=true
+              break
+            fi
+            if [[ "$status" != 404 ]]; then
+              jq . "$response" >&2 || cat "$response" >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          [[ "$found" == true ]]
+
+          jq -r '.content' "$response" | tr -d '\n' | base64 --decode > "$encrypted_b64"
+          tr -d '\r\n ' < "$encrypted_b64" | base64 --decode > "$encrypted_bin"
+          test -s "$encrypted_bin"
+
+          openssl pkeyutl \
+            -decrypt \
+            -inkey "$private_key" \
+            -in "$encrypted_bin" \
+            -out "$plaintext_file" \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256
+
+          token="$(cat "$plaintext_file")"
+          test -n "$token"
+          [[ "$token" != *$'\n'* ]]
+          printf '::add-mask::%s\n' "$token"
+          rm -f "$plaintext_file" "$encrypted_bin" "$encrypted_b64" "$response"
+
+          set +e
+          GH_ORG_BOOTSTRAP_TOKEN="$token" \
+            python3 scripts/ops/bootstrap_missing_org_dotgithub_with_ephemeral_pat.py \
+              --report "$report" \
+              >"$RUNNER_TEMP/nine-org-dotgithub.stdout" \
+              2>"$RUNNER_TEMP/nine-org-dotgithub.stderr"
+          bootstrap_status=$?
+          set -e
+          token=''
+          unset token
+
+          if [[ -s "$RUNNER_TEMP/nine-org-dotgithub.stderr" ]]; then
+            tail -n 240 "$RUNNER_TEMP/nine-org-dotgithub.stderr" >&2
+          fi
+          test -s "$report"
+          jq . "$report"
+          if [[ "$bootstrap_status" -ne 0 ]]; then
+            exit "$bootstrap_status"
+          fi
+
+          jq -e '
+            .schema_version == 1 and
+            .policy_version == "2026-08-05.1" and
+            .target_count == 9 and
+            .verified_count == 9 and
+            .repository_created_count == 9 and
+            .token_persisted == false and
+            (.failures | length) == 0 and
+            (.organizations | length) == 9 and
+            all(.organizations[];
+              .verified == true and
+              ((.organization | ascii_downcase | endswith("-test")) | not) and
+              (.files_created + .files_updated + .files_unchanged) == 6
+            )
+          ' "$report" >/dev/null
+
+      - name: Delete encrypted input branch
+        if: always()
+        shell: bash
+        env:
+          API_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          status="$(
+            curl --silent --show-error \
+              --request DELETE \
+              --output "$RUNNER_TEMP/delete-input-branch.json" \
+              --write-out '%{http_code}' \
+              --header 'Accept: application/vnd.github+json' \
+              --header "Authorization: Bearer $API_TOKEN" \
+              --header 'X-GitHub-Api-Version: 2022-11-28' \
+              'https://api.github.com/repos/ORESoftware/k8s-cluster/git/refs/heads/ops/ephemeral-nine-dotgithub-input-20260805'
+          )"
+          if [[ "$status" != 204 && "$status" != 404 ]]; then
+            cat "$RUNNER_TEMP/delete-input-branch.json" >&2
+            exit 1
+          fi
+          rm -f \
+            "$RUNNER_TEMP/org-dotgithub-transport-private.pem" \
+            "$RUNNER_TEMP/org-dotgithub-transport-public.pem" \
+            "$RUNNER_TEMP/org-dotgithub-token.txt" \
+            "$RUNNER_TEMP/org-dotgithub-token.enc" \
+            "$RUNNER_TEMP/org-dotgithub-token.enc.b64"
+
+      - name: Summarize verified publication
+        if: success()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          report="$RUNNER_TEMP/nine-org-dotgithub-report.json"
+          {
+            echo '# Nine organization `.github` repositories completed'
+            echo
+            jq -r '"- Verified: `\(.verified_count)` / `\(.target_count)`"' "$report"
+            jq -r '"- Repositories created: `\(.repository_created_count)`"' "$report"
+            echo '- Policy files verified per repository: `6`'
+            echo '- Plaintext credential persisted: `false`'
+            echo
+            jq -r '.organizations[] | "- `\(.organization)/.github` — created `\(.files_created)`, updated `\(.files_updated)`, unchanged `\(.files_unchanged)`"' "$report"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload non-secret verification report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nine-organization-dotgithub-verification
+          path: |
+            ${{ runner.temp }}/nine-org-dotgithub-report.json
+            ${{ runner.temp }}/nine-org-dotgithub.stderr
+          if-no-files-found: warn
+          retention-days: 14
