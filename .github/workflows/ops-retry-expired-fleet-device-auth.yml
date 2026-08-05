@@ -1,0 +1,96 @@
+name: Retry expired canonical fleet device authorization
+run-name: Retry expired owner authorization for run ${{ github.event.workflow_run.id }}
+
+on:
+  workflow_run:
+    workflows:
+      - Run canonical critical organization fleet publication isolated
+    types: [completed]
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: retry-canonical-fleet-device-auth-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  retry-expired-device-auth:
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event == 'workflow_dispatch' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.run_attempt < 6
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      TRACKING_PR: '471'
+      SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+      SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+      EXPECTED_WORKFLOW_PATH: .github/workflows/ops-run-canonical-fleet-isolated.yml
+
+    steps:
+      - name: Verify exact failed run is an expired device session
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          raw_log="$RUNNER_TEMP/canonical-fleet-failed-${SOURCE_RUN_ID}.log"
+          sanitized_log="$RUNNER_TEMP/canonical-fleet-failed-${SOURCE_RUN_ID}.sanitized.log"
+          cleanup() {
+            rm -f "$raw_log" "$sanitized_log"
+          }
+          trap cleanup EXIT
+
+          run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}")"
+          jq -e \
+            --arg path "$EXPECTED_WORKFLOW_PATH" \
+            --argjson attempt "$SOURCE_RUN_ATTEMPT" '
+              .path == $path and
+              .event == "workflow_dispatch" and
+              .head_branch == "main" and
+              .status == "completed" and
+              .conclusion == "failure" and
+              .run_attempt == $attempt
+            ' <<<"$run" >/dev/null
+
+          gh run view "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" --log-failed >"$raw_log"
+          sed -E \
+            -e 's/[A-Z0-9]{4}-[A-Z0-9]{4}/[REDACTED-CODE]/g' \
+            -e 's/(gh[opsu]_[A-Za-z0-9_]{20,})/[REDACTED-TOKEN]/g' \
+            "$raw_log" >"$sanitized_log"
+
+          grep -Eiq \
+            'context deadline exceeded|expired_token|device authorization failed or expired|failed to authenticate via web browser' \
+            "$sanitized_log"
+          if grep -Eiq \
+            'Published and directly verified|CREATED_AND_VERIFIED|34/34 live repository' \
+            "$sanitized_log"; then
+            echo 'Refusing to retry a run that contains publication-success evidence.' >&2
+            exit 1
+          fi
+
+      - name: Re-run only the failed jobs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/rerun-failed-jobs" \
+            >/dev/null
+
+      - name: Record automatic fresh-code rotation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          next_attempt=$((SOURCE_RUN_ATTEMPT + 1))
+          gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body \
+            "Device authorization expired on attempt ${SOURCE_RUN_ATTEMPT}; automatically started attempt ${next_attempt}/6. The prior code is invalid. Watch this PR for the fresh one-time code from the re-run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" \
+            >/dev/null

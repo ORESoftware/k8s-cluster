@@ -1,0 +1,62 @@
+# fiducia.cloud KV data-plane — deployed auth-enforcement browser smoke on the
+# remote/tests runner. Drives a DEPLOYED api.fiducia.cloud through Playwright AND
+# Puppeteer (remote/tests/fiducia-kv-auth-smoke.mjs) and asserts the security
+# invariant: an unauthenticated GET /v1/kv is refused (401/403), never served.
+# The target URL comes from the `FIDUCIA_API_TEST_URL` repo variable; when it is
+# unset the smoke SKIPS cleanly (exit 0), so this workflow is safe to keep
+# enabled before the data plane is deployed. Manual dispatch plus a daily
+# schedule once a URL exists. See docs/fiducia-secret-delivery.md (FID-SEC-1).
+name: fiducia kv auth smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: "Deployed api.fiducia.cloud base URL (overrides the FIDUCIA_API_TEST_URL variable)"
+        required: false
+        type: string
+  schedule:
+    - cron: "37 7 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fiducia-kv-auth-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: kv auth smoke (playwright + puppeteer)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install remote test dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+        working-directory: remote/tests
+
+      - name: KV auth-enforcement smoke (both engines)
+        working-directory: remote/tests
+        env:
+          # Manual input wins; otherwise the repo variable. Empty => the smoke skips.
+          FIDUCIA_API_TEST_URL: ${{ inputs.target_url || vars.FIDUCIA_API_TEST_URL }}
+        run: pnpm run test:ui:fiducia-kv-auth
