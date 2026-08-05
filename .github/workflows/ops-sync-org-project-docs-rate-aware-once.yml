@@ -40,14 +40,17 @@ jobs:
     env:
       REPOSITORY: ${{ github.repository }}
       DEFAULT_BRANCH: main
-      HANDSHAKE_NONCE: c431a31ac2fc48b79939156cae1a98fa
-      PUBLIC_KEY_PATH: .github/tmp/fleet-reconcile-c431a31ac2fc48b79939156cae1a98fa.pub.pem
-      CIPHERTEXT_PATH: .github/tmp/fleet-reconcile-c431a31ac2fc48b79939156cae1a98fa.enc.b64
+      HANDSHAKE_NONCE: fleet-reconcile-${{ github.run_id }}-${{ github.run_attempt }}
+      PUBLIC_KEY_PATH: .github/tmp/fleet-reconcile-${{ github.run_id }}-${{ github.run_attempt }}.pub.pem
+      CIPHERTEXT_PATH: .github/tmp/fleet-reconcile-${{ github.run_id }}-${{ github.run_attempt }}.enc.b64
       PROJECT_EVIDENCE_DIR: ops/evidence/org-project-docs-rate-aware
       REPOSITORY_EVIDENCE_DIR: ops/evidence/missing-organization-repositories
       MIN_CORE_REMAINING: 2500
       MIN_GRAPHQL_REMAINING: 500
       MAX_RATE_WAIT_SECONDS: 10800
+      IDENTITY_MAX_WAIT_SECONDS: 1800
+      IDENTITY_RETRY_INITIAL_SECONDS: 60
+      IDENTITY_RETRY_MAX_SECONDS: 300
 
     steps:
       - name: Check out exact trusted main commit
