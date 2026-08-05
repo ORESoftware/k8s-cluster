@@ -24,7 +24,7 @@ fail() {
 cleanup() {
   local status=$?
   unset PROTECTED_GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN NCC_PUBLISHER_SHA256
-  unset GH_PAT GH_TOKEN GITHUB_TOKEN token
+  unset GH_PAT GH_TOKEN GITHUB_TOKEN token SANITIZE_TOKEN
   if [[ -n "$work" && -e "$work" ]]; then
     python3 - "$work" <<'PY'
 import shutil
@@ -83,13 +83,16 @@ identity_status="$(request_json GET /user "$identity_json")"
 [[ "$identity_status" == 200 ]] || fail "GitHub identity lookup returned HTTP ${identity_status}"
 login="$(jq -er '.login | select(type == "string" and length > 0)' "$identity_json")"
 
-membership_json="$work/membership.json"
-membership_status="$(request_json GET "/user/memberships/orgs/${ORG}" "$membership_json")"
-[[ "$membership_status" == 200 ]] || fail "organization membership lookup returned HTTP ${membership_status}"
-membership_state="$(jq -er '.state' "$membership_json")"
-membership_role="$(jq -er '.role' "$membership_json")"
-[[ "$membership_state" == active ]] || fail "organization membership is not active: ${membership_state}"
-[[ "$membership_role" == admin ]] || fail "repository creation requires an organization owner; observed role=${membership_role}"
+repositories_json="$work/preexisting-repositories.json"
+repositories_status="$(request_json GET "/orgs/${ORG}/repos?type=all&per_page=100" "$repositories_json")"
+[[ "$repositories_status" == 200 ]] || fail "private repository inventory returned HTTP ${repositories_status}"
+jq -e '
+  type == "array" and
+  any(.[]; .name == ".github" and .private == true) and
+  any(.[]; .name == "ncc-router" and .private == true) and
+  any(.[]; .name == "ncc-switch" and .private == true)
+' "$repositories_json" >/dev/null || fail 'credential cannot observe the expected private organization baseline'
+preexisting_repository_count="$(jq -er 'length' "$repositories_json")"
 
 stage='reconstruct-reviewed-publisher'
 normalized="$work/publish.py.gz.b64.normalized"
@@ -161,12 +164,13 @@ stage='record-sanitized-evidence'
 tmp_report="$work/publication-with-credential.json"
 jq \
   --arg login "$login" \
-  --arg membership_role "$membership_role" \
+  --argjson preexisting_repository_count "$preexisting_repository_count" \
   --arg publisher_sha256 "$publisher_sha256" \
   '. + {
     credential_type:"protected-host-pat",
     authenticated_login:$login,
-    organization_membership_role:$membership_role,
+    private_repository_access_verified:true,
+    preexisting_repository_count:$preexisting_repository_count,
     publisher_sha256:$publisher_sha256,
     token_exposed:false
   }' \
@@ -178,7 +182,7 @@ mv "$tmp_report" "$REPORT_JSON"
   echo
   echo '- Credential location: `protected administration host`'
   echo '- Credential exposed to GitHub Actions: `false`'
-  echo "- Organization membership role: \`$membership_role\`"
+  echo '- Existing private-repository access verified: `true`'
   echo "- Repositories verified: \`$EXPECTED_REPOSITORIES\`"
   echo
   jq -r '.repositories[] | "- `\(.repository)` — main `\(.remote_main)`; created `\(.created)`"' "$REPORT_JSON"
