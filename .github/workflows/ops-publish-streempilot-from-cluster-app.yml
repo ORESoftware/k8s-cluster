@@ -29,7 +29,7 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - name: Check out the exact reviewed revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -37,7 +37,12 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Validate the selector, payload, and App-only publisher
+      - name: Set up Node.js for fleet validation
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Validate the selector, full fleet, and App-only publisher
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -70,12 +75,44 @@ jobs:
             '59c1bc4595d340ab9af0e51b9ba8ea4baea0b250346e3d25d8f5d5e607fe624e' \
             "$encoded" \
             | sha256sum --check --strict
-          base64 --decode < "$encoded" | xz --decompress --stdout > "$generator"
+          python3 - "$encoded" "$generator" <<'PY'
+          from __future__ import annotations
+
+          import base64
+          import lzma
+          import sys
+          from pathlib import Path
+
+          encoded_path = Path(sys.argv[1])
+          generator_path = Path(sys.argv[2])
+          compressed = base64.b64decode(encoded_path.read_bytes(), validate=True)
+          generator_path.write_bytes(lzma.decompress(compressed))
+          PY
           printf '%s  %s\n' \
             '10188d2d4018dec7a28ff3e85a6779f67517864d7d85b5d03d769402a3a55fd7' \
             "$generator" \
             | sha256sum --check --strict
           python3 -m py_compile "$generator"
+
+          fleet_root="$RUNNER_TEMP/streempilot-sp-validated-fleet"
+          python3 "$generator" --output "$fleet_root"
+          [[ "$(jq -er '.repository_count' "$fleet_root/REPOSITORY_MANIFEST.json")" == 8 ]]
+          [[ "$(find "$fleet_root/StreemPilot" -mindepth 2 -maxdepth 2 -type d -name .git | wc -l | tr -d '[:space:]')" == 8 ]]
+          while IFS= read -r repo; do
+            git -C "$repo" fsck --full
+          done < <(find "$fleet_root/StreemPilot" -mindepth 1 -maxdepth 1 -type d | LC_ALL=C sort)
+          python3 "$fleet_root/StreemPilot/sp-interfaces/scripts/validate_contracts.py"
+          npm test --prefix "$fleet_root/StreemPilot/sp-infra/cloudflare-worker"
+          npm run lint --prefix "$fleet_root/StreemPilot/sp-infra/cloudflare-worker"
+          grep -qF 'flags-2-env' "$fleet_root/StreemPilot/sp-cli/Cargo.toml"
+          grep -qF 'opto-sync' "$fleet_root/StreemPilot/sp-sync/Cargo.toml"
+          grep -qF 'maud' "$fleet_root/StreemPilot/sp-web-mash/Cargo.toml"
+          grep -qF 'sea-orm' "$fleet_root/StreemPilot/sp-web-mash/Cargo.toml"
+          grep -qF 'SUPABASE_URL' "$fleet_root/StreemPilot/sp-web-mash/src/main.rs"
+          grep -qF 'htmx.org' "$fleet_root/StreemPilot/sp-web-mash/src/main.rs"
+          grep -qF 'WebSocketUpgrade' "$fleet_root/StreemPilot/sp-api/src/main.rs"
+          bash -n "$fleet_root/scripts/publish-all.sh"
+          bash -n "$fleet_root/scripts/verify-remote.sh"
           git diff --check
 
   publish:
@@ -131,18 +168,29 @@ jobs:
               shutil.rmtree(path)
           PY
           }
+          on_error() {
+            local status=$?
+            printf 'streempilot-remote-wrapper status=failed line=%s exit=%s\n' "${BASH_LINENO[0]:-unknown}" "$status" >&2
+            exit "$status"
+          }
           trap cleanup EXIT
+          trap on_error ERR
 
-          for command in aws base64 curl gh git jq kubectl node npm openssl python3 sha256sum xz; do
-            command -v "$command" >/dev/null
+          for command in aws base64 curl gh git jq kubectl openssl python3 sha256sum; do
+            command -v "$command" >/dev/null || {
+              printf 'streempilot-remote-wrapper missing-command=%s\n' "$command" >&2
+              exit 70
+            }
           done
 
+          printf 'streempilot-remote-wrapper stage=checkout\n'
           git init "$work/k8s-cluster" >/dev/null
           git -C "$work/k8s-cluster" remote add origin https://github.com/ORESoftware/k8s-cluster.git
           git -C "$work/k8s-cluster" fetch --quiet --depth=1 origin "$trusted_sha"
           git -C "$work/k8s-cluster" switch --quiet --detach FETCH_HEAD
           test "$(git -C "$work/k8s-cluster" rev-parse HEAD)" = "$trusted_sha"
 
+          printf 'streempilot-remote-wrapper stage=select-app\n'
           app_id_file="$work/github-app-id"
           private_key_file="$work/github-app-private-key.pem"
           selector_evidence="$work/streempilot-protected-app-selector.json"
@@ -156,6 +204,7 @@ jobs:
           test -s "$private_key_file"
           test -s "$selector_evidence"
 
+          printf 'streempilot-remote-wrapper stage=publish\n'
           export K8S_SUBMODULE_APP_ID="$(tr -d '\r\n' < "$app_id_file")"
           export K8S_SUBMODULE_APP_PRIVATE_KEY="$(cat "$private_key_file")"
           export RUNNER_TEMP="$work"
