@@ -43,10 +43,6 @@ printf 'publisher-stage=%s status=passed\n' "$stage" >&2
 
 stage=direct-bounded-extension
 patched_runner="$(mktemp /tmp/org-dotgithub-protected-runner.XXXXXX)"
-cleanup_direct_runner() {
-  rm -f -- "$patched_runner"
-}
-trap cleanup_direct_runner EXIT
 
 python3 - "$protected_runner" "$patched_runner" <<'PY'
 from pathlib import Path
