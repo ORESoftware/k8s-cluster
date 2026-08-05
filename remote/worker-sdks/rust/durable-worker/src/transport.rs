@@ -27,7 +27,7 @@ pub struct TransportResponse {
 }
 
 pub trait Transport: Send + Sync {
-    fn execute<'a>(&'a self, request: TransportRequest) -> TransportFuture<'a>;
+    fn execute(&self, request: TransportRequest) -> TransportFuture<'_>;
 }
 
 #[derive(Clone, Debug)]
@@ -47,7 +47,7 @@ impl ReqwestTransport {
 }
 
 impl Transport for ReqwestTransport {
-    fn execute<'a>(&'a self, request: TransportRequest) -> TransportFuture<'a> {
+    fn execute(&self, request: TransportRequest) -> TransportFuture<'_> {
         Box::pin(async move {
             let method = Method::from_bytes(request.method.as_bytes())
                 .map_err(|error| TransportError::new(error.to_string(), false))?;

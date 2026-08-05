@@ -1,6 +1,6 @@
 use crate::client::{
-    Assignment, Client, JsonObject, Lease, StepCompletion, StepFailure, StepOutput,
-    WorkerPoll, WorkerRegistration,
+    Assignment, Client, JsonObject, Lease, StepCompletion, StepFailure, StepOutput, WorkerPoll,
+    WorkerRegistration,
 };
 use crate::error::{DurableWorkerError, ProtocolError};
 use std::collections::HashMap;
@@ -19,23 +19,15 @@ pub type HandlerFuture =
 pub type Handler = Arc<dyn Fn(TaskContext) -> HandlerFuture + Send + Sync>;
 
 pub trait WorkerApi: Send + Sync {
-    fn register_worker<'a>(
-        &'a self,
-        registration: WorkerRegistration,
-    ) -> WorkerFuture<'a, ()>;
+    fn register_worker(&self, registration: WorkerRegistration) -> WorkerFuture<'_, ()>;
     fn heartbeat_worker<'a>(
         &'a self,
         worker_id: &'a str,
         drain: Option<bool>,
     ) -> WorkerFuture<'a, ()>;
-    fn poll_worker<'a>(&'a self, worker_id: &'a str, wait_ms: u64)
-        -> WorkerFuture<'a, WorkerPoll>;
+    fn poll_worker<'a>(&'a self, worker_id: &'a str, wait_ms: u64) -> WorkerFuture<'a, WorkerPoll>;
     fn start_step<'a>(&'a self, step_id: &'a str, lease: Lease) -> WorkerFuture<'a, ()>;
-    fn heartbeat_step<'a>(
-        &'a self,
-        step_id: &'a str,
-        lease: Lease,
-    ) -> WorkerFuture<'a, ()>;
+    fn heartbeat_step<'a>(&'a self, step_id: &'a str, lease: Lease) -> WorkerFuture<'a, ()>;
     fn append_step_output<'a>(
         &'a self,
         step_id: &'a str,
@@ -46,19 +38,16 @@ pub trait WorkerApi: Send + Sync {
         step_id: &'a str,
         completion: StepCompletion,
     ) -> WorkerFuture<'a, ()>;
-    fn fail_step<'a>(
-        &'a self,
-        step_id: &'a str,
-        failure: StepFailure,
-    ) -> WorkerFuture<'a, ()>;
+    fn fail_step<'a>(&'a self, step_id: &'a str, failure: StepFailure) -> WorkerFuture<'a, ()>;
 }
 
 impl WorkerApi for Client {
-    fn register_worker<'a>(
-        &'a self,
-        registration: WorkerRegistration,
-    ) -> WorkerFuture<'a, ()> {
-        Box::pin(async move { Client::register_worker(self, registration).await.map(|_| ()) })
+    fn register_worker(&self, registration: WorkerRegistration) -> WorkerFuture<'_, ()> {
+        Box::pin(async move {
+            Client::register_worker(self, registration)
+                .await
+                .map(|_| ())
+        })
     }
 
     fn heartbeat_worker<'a>(
@@ -66,14 +55,14 @@ impl WorkerApi for Client {
         worker_id: &'a str,
         drain: Option<bool>,
     ) -> WorkerFuture<'a, ()> {
-        Box::pin(async move { Client::heartbeat_worker(self, worker_id, drain).await.map(|_| ()) })
+        Box::pin(async move {
+            Client::heartbeat_worker(self, worker_id, drain)
+                .await
+                .map(|_| ())
+        })
     }
 
-    fn poll_worker<'a>(
-        &'a self,
-        worker_id: &'a str,
-        wait_ms: u64,
-    ) -> WorkerFuture<'a, WorkerPoll> {
+    fn poll_worker<'a>(&'a self, worker_id: &'a str, wait_ms: u64) -> WorkerFuture<'a, WorkerPoll> {
         Box::pin(async move { Client::poll_worker(self, worker_id, wait_ms).await })
     }
 
@@ -81,12 +70,12 @@ impl WorkerApi for Client {
         Box::pin(async move { Client::start_step(self, step_id, lease).await.map(|_| ()) })
     }
 
-    fn heartbeat_step<'a>(
-        &'a self,
-        step_id: &'a str,
-        lease: Lease,
-    ) -> WorkerFuture<'a, ()> {
-        Box::pin(async move { Client::heartbeat_step(self, step_id, lease).await.map(|_| ()) })
+    fn heartbeat_step<'a>(&'a self, step_id: &'a str, lease: Lease) -> WorkerFuture<'a, ()> {
+        Box::pin(async move {
+            Client::heartbeat_step(self, step_id, lease)
+                .await
+                .map(|_| ())
+        })
     }
 
     fn append_step_output<'a>(
@@ -113,11 +102,7 @@ impl WorkerApi for Client {
         })
     }
 
-    fn fail_step<'a>(
-        &'a self,
-        step_id: &'a str,
-        failure: StepFailure,
-    ) -> WorkerFuture<'a, ()> {
+    fn fail_step<'a>(&'a self, step_id: &'a str, failure: StepFailure) -> WorkerFuture<'a, ()> {
         Box::pin(async move { Client::fail_step(self, step_id, failure).await.map(|_| ()) })
     }
 }
@@ -154,10 +139,7 @@ impl WorkerConfig {
                 "worker slots must be positive".to_owned(),
             ));
         }
-        if self.ttl_ms == 0
-            || self.worker_heartbeat_ms == 0
-            || self.step_heartbeat_ms == 0
-        {
+        if self.ttl_ms == 0 || self.worker_heartbeat_ms == 0 || self.step_heartbeat_ms == 0 {
             return Err(DurableWorkerError::Configuration(
                 "worker TTL and heartbeat intervals must be positive".to_owned(),
             ));
@@ -200,11 +182,7 @@ pub struct WorkerFailure {
 }
 
 impl WorkerFailure {
-    pub fn new(
-        code: impl Into<String>,
-        message: impl Into<String>,
-        retryable: bool,
-    ) -> Self {
+    pub fn new(code: impl Into<String>, message: impl Into<String>, retryable: bool) -> Self {
         Self {
             code: code.into(),
             message: message.into(),
@@ -358,10 +336,7 @@ impl Worker {
         })
     }
 
-    pub async fn run(
-        &self,
-        shutdown: Cancellation,
-    ) -> Result<WorkerSummary, DurableWorkerError> {
+    pub async fn run(&self, shutdown: Cancellation) -> Result<WorkerSummary, DurableWorkerError> {
         self.api
             .register_worker(WorkerRegistration {
                 worker_id: self.config.worker_id.clone(),
@@ -388,9 +363,8 @@ impl Worker {
         let run_result = async {
             loop {
                 while let Some(joined) = tasks.try_join_next() {
-                    let outcome = joined.map_err(|error| {
-                        DurableWorkerError::WorkerJoin(error.to_string())
-                    })?;
+                    let outcome = joined
+                        .map_err(|error| DurableWorkerError::WorkerJoin(error.to_string()))?;
                     apply_outcome(&mut summary, outcome);
                 }
 
@@ -403,9 +377,8 @@ impl Worker {
                 }
                 if shutdown.is_cancelled() || limit_reached || tasks.len() >= self.config.slots {
                     if let Some(joined) = tasks.join_next().await {
-                        let outcome = joined.map_err(|error| {
-                            DurableWorkerError::WorkerJoin(error.to_string())
-                        })?;
+                        let outcome = joined
+                            .map_err(|error| DurableWorkerError::WorkerJoin(error.to_string()))?;
                         apply_outcome(&mut summary, outcome);
                     }
                     continue;
@@ -536,7 +509,10 @@ async fn execute_assignment(
         Some(handler) => handler(context).await,
         None => Err(WorkerFailure::new(
             "handler_not_found",
-            format!("no handler registered for task type {}", assignment.task_type),
+            format!(
+                "no handler registered for task type {}",
+                assignment.task_type
+            ),
             false,
         )),
     };
@@ -551,13 +527,7 @@ async fn execute_assignment(
 
     match result {
         Ok(result) => match api
-            .complete_step(
-                &assignment.step_id,
-                StepCompletion {
-                    lease,
-                    result,
-                },
-            )
+            .complete_step(&assignment.step_id, StepCompletion { lease, result })
             .await
         {
             Ok(()) => TaskOutcome::Completed,
