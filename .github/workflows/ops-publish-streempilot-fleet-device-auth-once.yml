@@ -6,7 +6,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/ops-publish-streempilot-fleet-device-auth-once.yml
-      - scripts/ops/generate_streempilot_sp_fleet.py.xz.b64
+      - scripts/ops/streempilot-generator/generate_streempilot_sp_fleet.py.xz.b64.part*
       - scripts/ops/run_streempilot_device_auth_publisher.sh
   workflow_dispatch:
 
@@ -59,14 +59,24 @@ jobs:
         run: |
           set -Eeuo pipefail
           umask 077
+
           generator="$RUNNER_TEMP/generate_streempilot_sp_fleet.py"
-          encoded="scripts/ops/generate_streempilot_sp_fleet.py.xz.b64"
-          tr -d '\r\n' < "$encoded" | base64 --decode | xz --decompress --stdout > "$generator"
+          encoded="$RUNNER_TEMP/generate_streempilot_sp_fleet.py.xz.b64"
+          parts=(scripts/ops/streempilot-generator/generate_streempilot_sp_fleet.py.xz.b64.part*)
+          [[ "${#parts[@]}" == 7 ]]
+          cat "${parts[@]}" | tr -d '\r\n' > "$encoded"
+          [[ "$(wc -c < "$encoded" | tr -d '[:space:]')" == 13280 ]]
+          printf '%s  %s\n' \
+            '59c1bc4595d340ab9af0e51b9ba8ea4baea0b250346e3d25d8f5d5e607fe624e' \
+            "$encoded" \
+            | sha256sum --check --strict
+          base64 --decode < "$encoded" | xz --decompress --stdout > "$generator"
           printf '%s  %s\n' \
             '10188d2d4018dec7a28ff3e85a6779f67517864d7d85b5d03d769402a3a55fd7' \
             "$generator" \
             | sha256sum --check --strict
           python3 -m py_compile "$generator"
+
           fleet_root="$RUNNER_TEMP/streempilot-sp-fleet"
           python3 "$generator" --output "$fleet_root"
 
@@ -76,9 +86,9 @@ jobs:
 
           while IFS= read -r repo; do
             git -C "$repo" fsck --full
-            cargo metadata --no-deps --format-version 1 --manifest-path "$repo/Cargo.toml" >/dev/null 2>&1 || {
-              [[ ! -f "$repo/Cargo.toml" ]] || exit 1
-            }
+            if [[ -f "$repo/Cargo.toml" ]]; then
+              cargo metadata --no-deps --format-version 1 --manifest-path "$repo/Cargo.toml" >/dev/null
+            fi
           done < <(find "$fleet_root/StreemPilot" -mindepth 1 -maxdepth 1 -type d | sort)
 
           python3 "$fleet_root/StreemPilot/sp-interfaces/scripts/validate_contracts.py"
