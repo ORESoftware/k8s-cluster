@@ -93,14 +93,14 @@ jobs:
             | sha256sum --check --strict
           python3 - "$encoded" "$generator" <<'PY'
           import base64
-          import lma
+          import lzma
           import sys
           from pathlib import Path
 
           encoded_path = Path(sys.argv[1])
           generator_path = Path(sys.argv[2])
           generator_path.write_bytes(
-              lma.decompress(base64.b64decode(encoded_path.read_bytes(), validate=True))
+              lzma.decompress(base64.b64decode(encoded_path.read_bytes(), validate=True))
           )
           PY
           printf '%s  %s\n' \
