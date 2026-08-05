@@ -11,9 +11,13 @@ spec:
           env:
             - name: BUILD_SERVER_ALLOWED_PROFILES
               value: rust-verify,node-verify,python-verify,flutter-verify,flutter-android-debug,flutter-web-release,flutter-linux-release,flutter-linux-desktop-entrypoint,flutter-web-e2e,playwright,puppeteer,browser-e2e
+            # Permit only the two reviewed DES black-box repositories, not the
+            # entire test organization, to reach executable browser profiles.
+            - name: BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES
+              value: https://github.com/ORESoftware/,https://github.com/sonus-auris/,https://github.com/discrete-event-systems-test/des-web-playwright-e2e,https://github.com/discrete-event-systems-test/des-web-puppeteer-e2e,git@github.com:ORESoftware/,git@github.com:sonus-auris/,git@github.com:discrete-event-systems-test/des-web-playwright-e2e,git@github.com:discrete-event-systems-test/des-web-puppeteer-e2e
             # GHA indie-worker: planning is available after authentication, but
-            # execution is opt-in until repository/profile allowlists and live
-            # container capacity are certified.
+            # execution remains opt-in until live container capacity and the
+            # end-to-end network boundary are certified.
             - name: BUILD_SERVER_GHA_WORKFLOW_EXECUTION_ENABLED
               value: 'false'
             - name: BUILD_SERVER_GHA_MAX_YAML_BYTES
