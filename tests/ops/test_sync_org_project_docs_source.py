@@ -41,12 +41,12 @@ class ReconcilerSourceContracts(unittest.TestCase):
             self.assertIn(contract, self.source)
             self.assertLess(self.source.index(contract), success_record)
 
-    def test_documentation_evidence_supports_updates_and_true_noops(self) -> None:
+    def test_documentation_evidence_supports_merged_updates_and_true_noops(self) -> None:
         self.assertIn('if [[ "$docs_action" == "updated" ]]; then', self.source)
         self.assertIn('[[ "$pr_number" =~ ^[1-9][0-9]*$ ]]', self.source)
-        self.assertIn('[[ "$pr_state" == merged-* || "$pr_state" == "auto-merge-enabled" ]]', self.source)
-        self.assertIn('elif [[ "$docs_action" == "unchanged" ]]; then', self.source)
-        self.assertIn('[[ "$pr_state" == "not-needed" ]]', self.source)
+        self.assertIn('[[ "$pr_state" == merged-* ]]', self.source)
+        self.assertIn('else', self.source)
+        self.assertIn('[[ -z "$pr_number" && -z "$pr_url" && "$pr_state" == "not-needed" ]]', self.source)
 
 
 if __name__ == "__main__":
