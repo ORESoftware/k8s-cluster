@@ -361,3 +361,101 @@ test('aborts the handler and suppresses completion when the lease heartbeat is f
     assert.ok(observedErrors.some((error) => error instanceof LeaseLostError));
   });
 });
+
+
+test('does not retry ambiguous polls or signals and refuses redirects', async () => {
+  let pollAttempts = 0;
+  const pollClient = client('https://workers.example.test', {
+    fetch: async (_url, options) => {
+      pollAttempts += 1;
+      assert.equal(options.redirect, 'manual');
+      throw new Error('connection reset after poll write');
+    },
+  });
+  await assert.rejects(
+    pollClient.pollWorker('worker-1', { waitMs: 1 }),
+    (error) => error instanceof DurableWorkerError && error.retryable === true,
+  );
+  assert.equal(pollAttempts, 1);
+
+  let signalAttempts = 0;
+  const signalClient = client('https://workers.example.test', {
+    fetch: async () => {
+      signalAttempts += 1;
+      throw new Error('connection reset after signal write');
+    },
+  });
+  await assert.rejects(
+    signalClient.signalRun('run-1', 'approval', { approved: true }),
+    (error) => error instanceof DurableWorkerError && error.retryable === true,
+  );
+  assert.equal(signalAttempts, 1);
+
+  let redirectAttempts = 0;
+  const redirectClient = client('https://workers.example.test', {
+    fetch: async (_url, options) => {
+      redirectAttempts += 1;
+      assert.equal(options.redirect, 'manual');
+      return new Response('', {
+        status: 302,
+        headers: { location: 'https://untrusted.example.test/steal' },
+      });
+    },
+  });
+  await assert.rejects(
+    redirectClient.getRun('run-1'),
+    (error) => error instanceof DurableWorkerError && error.status === 302,
+  );
+  assert.equal(redirectAttempts, 1);
+});
+
+test('stops the worker loop after an ambiguous poll outcome', async () => {
+  let pollAttempts = 0;
+  const sdk = client('https://workers.example.test', {
+    fetch: async (url, options) => {
+      if (url.endsWith('/api/v1/workers/register')) {
+        return new Response(JSON.stringify(workerRecord({ workerId: 'safe-worker' })), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (url.includes('/api/v1/workers/safe-worker/poll')) {
+        pollAttempts += 1;
+        throw new Error('lost poll response');
+      }
+      if (url.endsWith('/api/v1/workers/safe-worker/heartbeat')) {
+        return new Response(JSON.stringify(workerRecord({ workerId: 'safe-worker' }, true)), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      throw new Error(`unexpected request ${options.method} ${url}`);
+    },
+  });
+
+  await assert.rejects(
+    sdk.runWorker({
+      workerId: 'safe-worker',
+      queues: ['default'],
+      workerHeartbeatMs: 10_000,
+      handlers: {},
+    }),
+    (error) => error instanceof DurableWorkerError && error.retryable === true,
+  );
+  assert.equal(pollAttempts, 1);
+});
+
+test('rejects credential-bearing base URLs and multiline secrets', () => {
+  assert.throws(
+    () => client('https://user:pass@workers.example.test'),
+    /must not contain credentials/u,
+  );
+  assert.throws(
+    () => client('https://workers.example.test?secret=value'),
+    /must not contain credentials/u,
+  );
+  assert.throws(
+    () => client('https://workers.example.test', { authSecret: 'secret\nInjected: value' }),
+    /single-line/u,
+  );
+});
