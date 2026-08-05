@@ -10,6 +10,11 @@ use crate::state::AppState;
 
 use super::session_tokens;
 
+/// Password byte bounds, shared by registration validation and the login
+/// pre-hash guard so the two can never drift apart.
+const MIN_PASSWORD_BYTES: usize = 12;
+const MAX_PASSWORD_BYTES: usize = 1024;
+
 #[derive(Deserialize)]
 pub struct RegisterRequest {
     email: String,
@@ -84,6 +89,14 @@ pub async fn login(
 ) -> Result<Json<SessionResponse>, AuthError> {
     let db = state.db.as_ref().ok_or(AuthError::Unavailable)?;
     let email = normalize_email(&request.email)?;
+
+    // Registration never accepts more than MAX_PASSWORD_BYTES. Reject a value
+    // that can never match before entering Argon2, while making the decision
+    // solely from caller-supplied length so account existence is not disclosed.
+    if request.password.len() > MAX_PASSWORD_BYTES {
+        return Err(AuthError::BadRequest("password exceeds maximum length"));
+    }
+
     enforce_limit(&state, "login", &email, 10, 900).await?;
 
     let credential = db.local_credential(&email).await?;
@@ -244,7 +257,7 @@ pub(crate) fn normalize_email(input: &str) -> Result<String, AuthError> {
 }
 
 fn validate_password(password: &str) -> Result<(), AuthError> {
-    if !(12..=1024).contains(&password.len()) {
+    if !(MIN_PASSWORD_BYTES..=MAX_PASSWORD_BYTES).contains(&password.len()) {
         return Err(AuthError::BadRequest(
             "password must be between 12 and 1024 bytes",
         ));
