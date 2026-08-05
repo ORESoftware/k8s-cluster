@@ -42,6 +42,23 @@ class ProjectReconciliationWorkflowContractTests(unittest.TestCase):
         self.assertIn("--validate-only", block)
         self.assertNotIn("continue-on-error", block)
 
+    def test_credential_handoff_is_unique_per_run_attempt(self) -> None:
+        self.assertIn(
+            "HANDSHAKE_NONCE: fleet-reconcile-${{ github.run_id }}-${{ github.run_attempt }}",
+            self.text,
+        )
+        self.assertIn(
+            "PUBLIC_KEY_PATH: .github/tmp/fleet-reconcile-${{ github.run_id }}-${{ github.run_attempt }}.pub.pem",
+            self.text,
+        )
+        self.assertIn(
+            "CIPHERTEXT_PATH: .github/tmp/fleet-reconcile-${{ github.run_id }}-${{ github.run_attempt }}.enc.b64",
+            self.text,
+        )
+        self.assertIn("IDENTITY_MAX_WAIT_SECONDS: 1800", self.text)
+        self.assertIn("IDENTITY_RETRY_INITIAL_SECONDS: 60", self.text)
+        self.assertIn("IDENTITY_RETRY_MAX_SECONDS: 300", self.text)
+
     def test_fifth_gap_and_alias_guard_are_explicitly_covered(self) -> None:
         self.assertIn(
             "- scripts/ops/repository_rename_alias_guard.py", self.text
