@@ -1,0 +1,225 @@
+name: Publish organization .github GitFlow and GitOps policy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ops-publish-org-dotgithub-policy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ops-publish-org-dotgithub-policy
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Configure trusted main-branch AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Load and mask the protected GitHub publisher token
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret_json="$(aws secretsmanager get-secret-value --secret-id dd/remote-dev/agent-secrets --query SecretString --output text)"
+          token="$(jq -er '.GH_PAT | select(type == "string" and length > 0)' <<<"$secret_json")"
+          echo "::add-mask::$token"
+          printf 'GH_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+          unset token secret_json
+
+      - name: Create, update, and verify the production .github fleet
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import base64
+          import json
+          import os
+          import sys
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          API = "https://api.github.com"
+          VERSION = "2026-08-05.1"
+          START = "<!-- BEGIN ORESOFTWARE MANAGED BRANCHING AND GITOPS POLICY -->"
+          END = "<!-- END ORESOFTWARE MANAGED BRANCHING AND GITOPS POLICY -->"
+          ORGS = (
+              "3FA-app", "agent-pontifex", "akrion-sim", "anticaptrad", "apostille-me",
+              "athlet-o", "benefactor-cc", "canonical-cloud", "channelsiege", "claritas-viz",
+              "cliptown", "daedalus-fab", "dancing-dragons", "declarative-migrations",
+              "discrete-event-systems", "drone-mngr", "embedded-alerts", "evento-globolo",
+              "fanwaave", "fifa-math", "fiducia-cloud", "file-tunnel", "gha-indie-worker",
+              "hacker-house-medellin", "hypeblitz", "hypesiege", "memebank",
+              "messaging-intel", "meta-agents-demo", "networking-components", "OmniBlitz",
+              "opto-sync", "quaestor-ledger", "rust-ssr-demos", "sagitta-stack",
+              "scintilla-run", "shared-auth", "sonus-auris", "StreemPilot", "streamkore",
+              "unreal-unity-poc", "usa-acc", "voxletra", "zed-pkg",
+          )
+          TARGETS = tuple((org, "organization") for org in ORGS) + (("ORESoftware", "account"),)
+          TOKEN = os.environ["GH_TOKEN"]
+
+          POLICY = f"""# Branching, merge-confidence, and GitOps deployment policy
+
+          Policy version: `{VERSION}`.
+
+          ## Branch names and GitFlow
+
+          - **`dev` is the integration branch.** Feature, fix, refactor, and routine dependency branches should normally branch from `dev` and open pull requests back into `dev`.
+          - The repository's existing **`main` or `master` branch is the production/release branch**. Document which name the repository uses; do not rename it merely to satisfy this policy.
+          - Strive for GitFlow: short-lived `feature/*`, `fix/*`, and related branches flow into `dev`; releases flow from `dev` into `main`/`master`; urgent `hotfix/*` work may branch from production but must be merged back into `dev` immediately after production is repaired.
+          - Avoid direct feature-to-production pull requests. Preserve branch protections, required reviews, security gates, environment approvals, and semantic conflict resolution.
+
+          ## AI-assisted merge thresholds
+
+          These are strict greater-than comparisons, not greater-than-or-equal comparisons.
+
+          1. **Feature or fix PR -> `dev`:** when all configured tests and required checks pass and the reviewing AI records evidence-based confidence **greater than 99.1%**, merge the pull request into `dev`.
+          2. **`dev` -> `main`/`master`:** when all integration, release, deployment, migration, security, and required checks pass and the reviewing AI records evidence-based confidence **greater than 99.7%**, merge `dev` into the repository's production branch.
+          3. Record the numerical score, supporting evidence, exact checks run, unresolved uncertainty, migration/deployment impact, and rollback or roll-forward plan in the pull request.
+          4. Confidence never overrides a failed or missing required check, unresolved review, branch protection, security/compliance gate, environment approval, or known contradictory evidence. Do not invent precision; justify the score from review depth, test coverage, affected contracts, and deployment evidence.
+
+          ## `*-infra`, GitHub Actions, branch-based promotion, and GitOps
+
+          - Each organization must designate a canonical infrastructure repository whose name ends in **`-infra`**. It owns environment desired state: deployment manifests and overlays, Kubernetes/Helm/Kustomize configuration, Terraform/Pulumi or other infrastructure code, GitOps controller configuration, environment policy, and repository-to-environment mappings.
+          - Individual application, service, library, CLI, web, API, worker, and client repositories own source code, tests, build definitions, artifact metadata, and repository-specific GitHub Actions workflows. They are not the source of truth for live cluster or cloud state.
+          - Pull requests and short-lived branches run CI and may create bounded ephemeral previews, but they do not directly mutate persistent shared environments.
+          - A merge into **`dev`** builds and verifies an immutable integration artifact identified by commit SHA and digest. GitHub Actions then opens or updates a reviewed desired-state change in `*-infra` for the integration/development/staging environment. The GitOps controller reconciles it.
+          - A merge from **`dev` into `main`/`master`** should promote the already-tested immutable artifact instead of rebuilding different bytes. GitHub Actions opens or updates the production desired-state change in `*-infra`; required approvals complete there; the GitOps controller performs reconciliation.
+          - Infrastructure-repository changes follow the same GitFlow intent: `dev` represents integration desired state and `main`/`master` represents production desired state, unless that repository explicitly documents an equally reviewable environment-directory model on one protected branch.
+          - GitHub Actions is the validation, build, attestation, and promotion-orchestration layer. The GitOps controller is the normal deployment authority. Application workflows must not perform routine imperative production mutation such as direct `kubectl apply`, ad hoc cloud-console changes, or unreviewed Terraform applies.
+          - Use least-privilege OIDC or other short-lived credentials, protected GitHub environments, immutable action pins, explicit timeouts, concurrency controls, artifact provenance, and deployment-status reporting. Never expose repository or cloud credentials to untrusted pull-request contexts.
+          - Rollback normally means a reviewed revert or forward fix to desired state in `*-infra`, followed by GitOps reconciliation. Break-glass paths must be exceptional, auditable, time-bounded, and reconciled back into Git immediately.
+
+          Repository-local policy may strengthen these requirements but must not weaken the `dev` integration-branch declaration, strict confidence thresholds, required checks, GitFlow intent, or GitOps separation of responsibilities.
+          """.replace("\n          ", "\n").lstrip()
+
+          AGENT_BLOCK = f"""{START}
+          ## Required `dev`/GitFlow/GitOps policy
+
+          Read and follow [`BRANCHING_AND_DEPLOYMENT.md`](BRANCHING_AND_DEPLOYMENT.md) before reviewing, merging, releasing, or deploying changes.
+
+          - `dev` is the integration branch; strive for GitFlow.
+          - With all tests and required checks passing, merge feature/fix PRs into `dev` only when AI confidence is strictly greater than 99.1%.
+          - Merge `dev` into `main`/`master` only when release/deployment checks pass and AI confidence is strictly greater than 99.7%.
+          - Use the organization's canonical `*-infra` repository, GitHub Actions, immutable artifacts, and GitOps reconciliation for branch-based deployment promotion.
+          - Required reviews, branch protection, security gates, and environment approvals always take precedence.
+          {END}""".replace("\n          ", "\n").lstrip()
+
+          def request(method, path, body=None, allow_404=False):
+              payload = None if body is None else json.dumps(body).encode()
+              req = urllib.request.Request(API + path, data=payload, method=method)
+              req.add_header("Accept", "application/vnd.github+json")
+              req.add_header("Authorization", f"Bearer {TOKEN}")
+              req.add_header("X-GitHub-Api-Version", "2022-11-28")
+              req.add_header("User-Agent", "oresoftware-org-dotgithub-policy-publisher")
+              if payload is not None:
+                  req.add_header("Content-Type", "application/json")
+              try:
+                  with urllib.request.urlopen(req, timeout=45) as response:
+                      raw = response.read()
+                      return response.status, json.loads(raw) if raw else None
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read(8192).decode(errors="replace")
+                  if allow_404 and exc.code == 404:
+                      return 404, None
+                  raise RuntimeError(f"HTTP {exc.code} {method} {path}: {raw}") from exc
+
+          def file_path(owner, path):
+              quoted = "/".join(urllib.parse.quote(part, safe="") for part in path.split("/"))
+              return f"/repos/{urllib.parse.quote(owner, safe='')}/.github/contents/{quoted}"
+
+          def get_file(owner, path):
+              status, value = request("GET", file_path(owner, path), allow_404=True)
+              if status == 404:
+                  return None, None
+              return base64.b64decode(value["content"]).decode(), value["sha"]
+
+          def put_file(owner, path, content):
+              existing, sha = get_file(owner, path)
+              if existing == content:
+                  print(f"UNCHANGED {owner}/.github:{path}")
+                  return
+              body = {
+                  "message": "docs: define dev GitFlow and GitOps promotion policy",
+                  "content": base64.b64encode(content.encode()).decode(),
+              }
+              if sha:
+                  body["sha"] = sha
+              request("PUT", file_path(owner, path), body)
+              actual, _ = get_file(owner, path)
+              if actual != content:
+                  raise RuntimeError(f"verification mismatch for {owner}/.github:{path}")
+              print(f"{'UPDATED' if sha else 'CREATED'} {owner}/.github:{path}")
+
+          def managed(existing, preamble):
+              if existing is None:
+                  return preamble.rstrip() + "\n\n" + AGENT_BLOCK.rstrip() + "\n"
+              start = existing.find(START)
+              end = existing.find(END)
+              if (start == -1) != (end == -1) or (start != -1 and end < start):
+                  raise RuntimeError("malformed managed block")
+              if start == -1:
+                  return existing.rstrip() + "\n\n" + AGENT_BLOCK.rstrip() + "\n"
+              end += len(END)
+              return (existing[:start].rstrip() + "\n\n" + AGENT_BLOCK + existing[end:]).rstrip() + "\n"
+
+          def ensure_repo(owner, kind):
+              status, repo = request("GET", f"/repos/{urllib.parse.quote(owner, safe='')}/.github", allow_404=True)
+              if status == 404:
+                  body = {
+                      "name": ".github",
+                      "description": "Organization-wide GitHub, branching, agent, and delivery policy",
+                      "private": False,
+                      "has_issues": True,
+                      "has_projects": False,
+                      "has_wiki": False,
+                      "auto_init": True,
+                      "delete_branch_on_merge": True,
+                  }
+                  endpoint = f"/orgs/{urllib.parse.quote(owner, safe='')}/repos" if kind == "organization" else "/user/repos"
+                  status, repo = request("POST", endpoint, body)
+                  if status != 201:
+                      raise RuntimeError(f"repository creation returned {status}")
+                  print(f"CREATED_REPO {owner}/.github")
+                  time.sleep(1)
+              if repo.get("visibility") != "public" or repo.get("archived"):
+                  raise RuntimeError("policy repository must be public and active")
+
+          _, profile = request("GET", "/user")
+          if profile.get("login") != "ORESoftware":
+              raise SystemExit("GH_TOKEN must authenticate as ORESoftware")
+          if any(org.lower().endswith("-test") for org in ORGS):
+              raise SystemExit("test organization leaked into production target list")
+
+          failures = []
+          for owner, kind in TARGETS:
+              print(f"TARGET {owner}/.github")
+              try:
+                  ensure_repo(owner, kind)
+                  put_file(owner, "BRANCHING_AND_DEPLOYMENT.md", POLICY)
+                  upper, _ = get_file(owner, "AGENTS.md")
+                  lower, _ = get_file(owner, "agents.md")
+                  copilot, _ = get_file(owner, ".github/copilot-instructions.md")
+                  put_file(owner, "AGENTS.md", managed(upper, "# Organization-wide agent instructions"))
+                  put_file(owner, "agents.md", managed(lower, "# Organization-wide agent instructions"))
+                  put_file(owner, ".github/copilot-instructions.md", managed(copilot, "# Organization-wide coding-agent instructions"))
+              except Exception as exc:
+                  failures.append(f"{owner}: {exc}")
+                  print(f"FAILED {owner}: {exc}", file=sys.stderr)
+          print(f"SUMMARY targets={len(TARGETS)} failures={len(failures)}")
+          if failures:
+              raise SystemExit("\n".join(failures))
+          PY
