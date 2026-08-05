@@ -1,17 +1,21 @@
 name: Cancel superseded StreemPilot shell creator
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/ops-cancel-superseded-streempilot-shell-run-20260805.yml
+  issue_comment:
+    types: [created]
 
 permissions:
   actions: write
   contents: read
+  issues: read
 
 jobs:
   cancel:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.number == 901 &&
+      github.actor == 'ORESoftware' &&
+      github.event.comment.body == 'ops-cancel-superseded-streempilot-shell-run:30974008744'
     runs-on: ubuntu-24.04
     steps:
       - name: Cancel superseded shell creator
@@ -24,5 +28,10 @@ jobs:
           if [[ "$status" != completed ]]; then
             gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/cancel"
           fi
-          final_status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" --jq '.status')"
-          printf 'superseded_run=%s status=%s\n' "$run_id" "$final_status"
+          for _ in $(seq 1 30); do
+            status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" --jq '.status')"
+            [[ "$status" == completed ]] && break
+            sleep 2
+          done
+          printf 'superseded_run=%s status=%s\n' "$run_id" "$status"
+          [[ "$status" == completed ]]
