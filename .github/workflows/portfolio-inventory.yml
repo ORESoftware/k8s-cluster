@@ -8,7 +8,10 @@ on:
       - ".zpkg.lock"
       - ".github/workflows/portfolio-inventory.yml"
       - "README.md"
+      - "docs/zed-and-submodules.md"
       - "scripts/check-portfolio-inventory.py"
+      - "scripts/validate-zed-submodules.sh"
+      - "scripts/zed-install-with-submodules.sh"
   push:
     branches: [main]
     paths:
@@ -17,7 +20,10 @@ on:
       - ".zpkg.lock"
       - ".github/workflows/portfolio-inventory.yml"
       - "README.md"
+      - "docs/zed-and-submodules.md"
       - "scripts/check-portfolio-inventory.py"
+      - "scripts/validate-zed-submodules.sh"
+      - "scripts/zed-install-with-submodules.sh"
   workflow_dispatch:
   schedule:
     - cron: "17 7 * * *"
@@ -31,12 +37,14 @@ concurrency:
 
 jobs:
   package-boundary:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Verify Zed package and gitlink ownership
-        run: python3 scripts/check-portfolio-inventory.py
+          submodules: false
+      - name: Verify normalized Zed and Git-submodule ownership
+        run: |
+          bash scripts/validate-zed-submodules.sh
+          python3 scripts/check-portfolio-inventory.py

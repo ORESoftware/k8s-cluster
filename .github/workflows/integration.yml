@@ -1,5 +1,4 @@
-# Deterministic integration CI for the repositories pinned by this workspace.
-# CLI and infrastructure are independently owned and are intentionally absent.
+# Cross-repository integration CI for the exact allowed gitlink set.
 name: integration
 
 on:
@@ -18,31 +17,30 @@ permissions:
 
 jobs:
   package-boundary:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          submodules: false
       - name: Verify Zed package and gitlink ownership
-        run: python3 scripts/check-portfolio-inventory.py
+        run: |
+          bash scripts/validate-zed-submodules.sh
+          python3 scripts/check-portfolio-inventory.py
 
-  rust:
-    runs-on: ubuntu-latest
+  rust-services:
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: recursive
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
-        with:
-          toolchain: stable
-      - name: Install mold (fast linker)
-        uses: rui314/setup-mold@v1
-        with:
-          make-default: true
-      - uses: Swatinem/rust-cache@v2
+      - name: Validate ownership before building
+        run: bash scripts/validate-zed-submodules.sh
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: |
             apps/zed-interfaces
@@ -50,7 +48,7 @@ jobs:
             apps/zed-web-server.rs
       - name: Report the pinned combination
         run: git submodule status --recursive
-      - name: zed-interfaces (contract)
+      - name: zed-interfaces contract
         run: cargo test
         working-directory: apps/zed-interfaces
       - name: zed-api-server.rs
@@ -59,3 +57,52 @@ jobs:
       - name: zed-web-server.rs
         run: cargo test
         working-directory: apps/zed-web-server.rs
+
+  client-core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Rust client
+        run: cargo test
+        working-directory: apps/zed-clients/clients/rust
+      - name: TypeScript client
+        run: npm install && npm run build && npm test
+        working-directory: apps/zed-clients/clients/typescript
+      - name: Python client
+        run: python3 -m unittest
+        working-directory: apps/zed-clients/clients/python
+      - name: Sync Rust core
+        run: cargo test
+        working-directory: apps/zed-sync
+      - name: Sync JavaScript SDK
+        run: npm install && npm test && npm run typecheck
+        working-directory: apps/zed-sync/sdk
+
+  e2e-harness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Install E2E harness dependencies
+        run: npm install
+        working-directory: apps/zed-e2e
+      - name: Type-check harness
+        run: npm run typecheck
+        working-directory: apps/zed-e2e
+      - name: Harness unit tests
+        run: npm run test:harness
+        working-directory: apps/zed-e2e

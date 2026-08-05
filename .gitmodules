@@ -1,24 +1,32 @@
 [submodule "apps/zed-interfaces"]
 	path = apps/zed-interfaces
 	url = https://github.com/zed-pkg/zed-interfaces.git
+	branch = main
 [submodule "apps/zed-api-server.rs"]
 	path = apps/zed-api-server.rs
 	url = https://github.com/zed-pkg/zed-api-server.rs.git
+	branch = main
 [submodule "apps/zed-web-server.rs"]
 	path = apps/zed-web-server.rs
 	url = https://github.com/zed-pkg/zed-web-server.rs.git
+	branch = main
 [submodule "apps/zed-clients"]
 	path = apps/zed-clients
 	url = https://github.com/zed-pkg/zed-clients.git
+	branch = main
 [submodule "apps/zed-sync"]
 	path = apps/zed-sync
 	url = https://github.com/zed-pkg/zed-sync.git
+	branch = main
 [submodule "apps/zed-docs"]
 	path = apps/zed-docs
 	url = https://github.com/zed-pkg/zed-docs.git
+	branch = main
 [submodule "apps/zed-pkg.github.io"]
 	path = apps/zed-pkg.github.io
 	url = https://github.com/zed-pkg/zed-pkg.github.io.git
+	branch = main
 [submodule "apps/zed-e2e"]
 	path = apps/zed-e2e
 	url = https://github.com/zed-pkg/zed-e2e.git
+	branch = main
