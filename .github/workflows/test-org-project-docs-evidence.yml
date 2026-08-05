@@ -3,8 +3,11 @@ name: Organization Project evidence contract
 on:
   pull_request:
     paths:
+      - docs/org-project-delivery-ledger-2026-08-05.md
+      - ops/portfolio/github-linear-project-registry.tsv
       - scripts/ops/sync_org_project_docs.sh
       - scripts/ops/validate_org_project_docs_evidence.py
+      - scripts/ops/tests/test_org_project_delivery_ledger.py
       - scripts/ops/tests/test_validate_org_project_docs_evidence.py
       - ops/evidence/org-project-docs/**
       - .github/workflows/test-org-project-docs-evidence.yml
@@ -12,8 +15,11 @@ on:
     branches:
       - main
     paths:
+      - docs/org-project-delivery-ledger-2026-08-05.md
+      - ops/portfolio/github-linear-project-registry.tsv
       - scripts/ops/sync_org_project_docs.sh
       - scripts/ops/validate_org_project_docs_evidence.py
+      - scripts/ops/tests/test_org_project_delivery_ledger.py
       - scripts/ops/tests/test_validate_org_project_docs_evidence.py
       - ops/evidence/org-project-docs/**
       - .github/workflows/test-org-project-docs-evidence.yml
@@ -31,8 +37,9 @@ jobs:
       - name: Check shell syntax
         run: bash -n scripts/ops/sync_org_project_docs.sh
 
-      - name: Run evidence validator regression tests
-        run: python3 -m unittest scripts/ops/tests/test_validate_org_project_docs_evidence.py
+      - name: Run evidence and ledger regression tests
+        run: |
+          python3 -m unittest scripts/ops/tests/test_validate_org_project_docs_evidence.py scripts/ops/tests/test_org_project_delivery_ledger.py
 
       - name: Enforce evidence quarantine or acceptance
         shell: bash

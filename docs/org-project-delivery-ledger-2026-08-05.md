@@ -1,10 +1,25 @@
 # Organization project delivery ledger — August 5, 2026
 
-This ledger records the current reviewed delivery state for the three GitHub organizations that own the Fiducia queue/Raft work and the bounded GitHub Actions continuity lane. It complements the canonical 41-row registry in [`ops/registries/portfolio-project-links.csv`](../ops/registries/portfolio-project-links.csv).
+This ledger has two deliberately separate scopes:
 
-The registry owns immutable routing identity. This ledger owns delivery evidence and cross-organization responsibility boundaries.
+1. **Fleet routing:** the canonical machine-readable source is the current 64-organization registry at [`ops/portfolio/github-linear-project-registry.tsv`](../ops/portfolio/github-linear-project-registry.tsv), with the human operating contract at [`docs/portfolio/github-linear-project-registry.md`](portfolio/github-linear-project-registry.md).
+2. **Detailed delivery evidence:** the later sections retain the reviewed Fiducia, `ORESoftware`, and `gha-indie-worker` responsibility and implementation evidence that originally motivated this ledger.
 
-## Project routing
+The three-row detailed routing table is not a substitute for the 64-organization fleet registry. `ORESoftware` is included as the central control-plane owner even though the fleet registry is organized around the connected product and test organizations.
+
+GitHub issue [`ORESoftware/k8s-cluster#831`](https://github.com/ORESoftware/k8s-cluster/issues/831) and Linear issue [`DEN-2242`](https://linear.app/denman/issue/DEN-2242/reconcile-github-projects-and-linear-documentation-across) own fleet-level closure.
+
+## 64-organization fleet status
+
+- [`ORESoftware/k8s-cluster#974`](https://github.com/ORESoftware/k8s-cluster/pull/974) introduced the canonical 64-organization GitHub ↔ Linear registry and the semantic Project/documentation reconciler.
+- [`ORESoftware/k8s-cluster#1025`](https://github.com/ORESoftware/k8s-cluster/pull/1025) made public organization `.github` repository publication and additive governance hardening self-contained.
+- The August 5 owner update on issue #831 reports merged routing documentation in all 64 organization `.github` repositories. That delivery report is retained as useful operational evidence, but it does not by itself establish final exact-64 completion.
+- Strict workflow run [`31037622675`](https://github.com/ORESoftware/k8s-cluster/actions/runs/31037622675) was cancelled on August 5, 2026 at 19:22 UTC. It is not accepted as completion evidence.
+- Issue #831 and DEN-2242 remain open until one retained artifact independently validates all 64 unique canonical organizations, organization-owned Project titles and URLs, live `.github` documentation, open durable governance issues, Project item insertion, zero rate-limit/error payloads, and cleanup of ephemeral credential material.
+
+No statement in this ledger should be read as claiming that the cancelled run completed those final acceptance gates.
+
+## Detailed delivery routing
 
 | Portfolio key | GitHub organization | GitHub Project | Linear project | Delivery ownership |
 |---|---|---|---|---|
@@ -43,7 +58,9 @@ The queue container remains a deterministic data structure; logical queue author
 | Semantic transport, origin, runtime-bound, and build-identity union | [#764](https://github.com/ORESoftware/k8s-cluster/pull/764) | `b827d1fde69bdfc5acfeb9d8a785f184c3ce5505` |
 | Real-process redirect, poll-before-trust, identity, and zero-bound tests | [#843](https://github.com/ORESoftware/k8s-cluster/pull/843) | `fee1b96e90cd340fb65da26fd4c785a8bb1eeb1c` |
 | Raw exact-profile policy byte hardening | [#844](https://github.com/ORESoftware/k8s-cluster/pull/844) | `a9776dce110a348c531dcab22244847c3e419184` |
-| Daily 41-organization project-link reconciliation | [#877](https://github.com/ORESoftware/k8s-cluster/pull/877) | `74bd901418c61bfe48a5e0480b2d577564100179` |
+| Legacy daily project-link reconciliation | [#877](https://github.com/ORESoftware/k8s-cluster/pull/877) | `74bd901418c61bfe48a5e0480b2d577564100179` |
+| Canonical 64-organization Project/Linear documentation reconciler | [#974](https://github.com/ORESoftware/k8s-cluster/pull/974) | `a689ab581bd932b3b8b8e992afb779a80e76aa9c` |
+| Self-contained 64-organization `.github` publisher hardening | [#1025](https://github.com/ORESoftware/k8s-cluster/pull/1025) | `2d82b517c9de573d2b6ae76076e4e015ddc67065` |
 
 Official Actions Runner Controller remains the native-semantics lane. The independent clone-server lane accepts only reviewed repositories, immutable revisions, direct workflow paths, a bounded YAML subset, and fixed build profiles. It does not claim full GitHub Actions parity.
 
@@ -87,4 +104,4 @@ Do not duplicate ownership across boards:
 - cluster, ARC, router, fixed-profile executor, and cross-provider operations belong to `ORESoftware`;
 - standalone clone-server source, repository CI, and extraction provenance belong to `gha-indie-worker`.
 
-The daily project reconciler preserves human-authored GitHub Project and Linear descriptions outside bounded managed blocks. The separate Linear-next-steps workflow may create or update selected GitHub Project items using the same canonical `portfolio_key`.
+The 64-organization reconciler preserves human-authored GitHub Project and Linear descriptions outside bounded managed blocks. The separate Linear-next-steps workflow may create or update selected GitHub Project items using the same canonical organization identity.
