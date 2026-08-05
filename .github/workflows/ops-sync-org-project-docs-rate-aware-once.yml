@@ -7,13 +7,16 @@ on:
       - .github/workflows/ops-sync-org-project-docs-rate-aware-once.yml
       - scripts/ops/sync_org_project_docs_rate_aware.py
       - scripts/ops/test_sync_org_project_docs_rate_aware.py
+      - scripts/ops/sync_org_project_docs.sh
+      - ops/portfolio/github-linear-project-registry.tsv
   workflow_dispatch:
 
 permissions:
-  contents: read
+  actions: read
+  contents: write
 
 concurrency:
-  group: reconcile-organization-projects-and-docs-rate-aware-once
+  group: reconcile-organization-project-docs-once
   cancel-in-progress: false
 
 jobs:
@@ -24,9 +27,12 @@ jobs:
       (github.actor == 'ORESoftware' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     timeout-minutes: 240
-    environment: portfolio-project-sync
     env:
-      GH_TOKEN: ${{ secrets.PROJECT_SYNC_GITHUB_TOKEN }}
+      REPOSITORY: ${{ github.repository }}
+      DEFAULT_BRANCH: main
+      HANDSHAKE_NONCE: 7e6a2f49134d4d1ca969b435748ad93b
+      PUBLIC_KEY_PATH: .github/tmp/org-project-docs-rate-aware-7e6a2f49134d4d1ca969b435748ad93b.pub.pem
+      CIPHERTEXT_PATH: .github/tmp/org-project-docs-rate-aware-7e6a2f49134d4d1ca969b435748ad93b.enc.b64
       EVIDENCE_DIR: ops/evidence/org-project-docs-rate-aware
 
     steps:
@@ -38,16 +44,135 @@ jobs:
           submodules: false
           show-progress: false
 
-      - name: Bind execution to trusted main and protected credential
+      - name: Bind exact trusted main to one-time encrypted credential
         shell: bash
+        env:
+          GITHUB_TOKEN_VALUE: ${{ github.token }}
         run: |
           set -Eeuo pipefail
+          umask 077
+
           test "$GITHUB_REPOSITORY" = ORESoftware/k8s-cluster
           test "$GITHUB_REF" = refs/heads/main
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test -n "${GH_TOKEN:-}"
+
+          repo_api="https://api.github.com/repos/${REPOSITORY}"
+
+          repo_api_call() {
+            local method="$1"
+            local url="$2"
+            local data="${3:-}"
+            if [[ -n "$data" ]]; then
+              curl --fail-with-body --silent --show-error \
+                --request "$method" \
+                --url "$url" \
+                --header "Accept: application/vnd.github+json" \
+                --header "Authorization: Bearer ${GITHUB_TOKEN_VALUE}" \
+                --header "X-GitHub-Api-Version: 2022-11-28" \
+                --data-binary "$data"
+            else
+              curl --fail-with-body --silent --show-error \
+                --request "$method" \
+                --url "$url" \
+                --header "Accept: application/vnd.github+json" \
+                --header "Authorization: Bearer ${GITHUB_TOKEN_VALUE}" \
+                --header "X-GitHub-Api-Version: 2022-11-28"
+            fi
+          }
+
+          put_file() {
+            local path="$1"
+            local source_file="$2"
+            local message="$3"
+            local content payload
+            content="$(base64 -w0 "$source_file")"
+            payload="$(jq -nc \
+              --arg message "$message" \
+              --arg content "$content" \
+              --arg branch "$DEFAULT_BRANCH" \
+              '{message:$message,content:$content,branch:$branch}')"
+            repo_api_call PUT "${repo_api}/contents/${path}" "$payload" >/dev/null
+          }
+
+          delete_file_if_present() {
+            local path="$1"
+            local message="$2"
+            local metadata sha payload
+            if metadata="$(repo_api_call GET "${repo_api}/contents/${path}?ref=${DEFAULT_BRANCH}" 2>/dev/null)"; then
+              sha="$(jq -r '.sha // empty' <<<"$metadata")"
+              if [[ -n "$sha" ]]; then
+                payload="$(jq -nc \
+                  --arg message "$message" \
+                  --arg sha "$sha" \
+                  --arg branch "$DEFAULT_BRANCH" \
+                  '{message:$message,sha:$sha,branch:$branch}')"
+                repo_api_call DELETE "${repo_api}/contents/${path}" "$payload" >/dev/null || true
+              fi
+            fi
+          }
+
+          cleanup_credentials() {
+            delete_file_if_present "$PUBLIC_KEY_PATH" "ci: remove expired rate-aware Project key"
+            delete_file_if_present "$CIPHERTEXT_PATH" "ci: remove encrypted rate-aware Project credential"
+            rm -f \
+              /tmp/org-project-rate-aware-private.pem \
+              /tmp/org-project-rate-aware-public.pem \
+              /tmp/org-project-rate-aware-token.enc \
+              /tmp/org-project-rate-aware-token.txt
+          }
+          trap cleanup_credentials EXIT
+
+          openssl genpkey \
+            -algorithm RSA \
+            -pkeyopt rsa_keygen_bits:4096 \
+            -out /tmp/org-project-rate-aware-private.pem >/dev/null 2>&1
+          openssl pkey \
+            -in /tmp/org-project-rate-aware-private.pem \
+            -pubout \
+            -out /tmp/org-project-rate-aware-public.pem >/dev/null 2>&1
+
+          put_file \
+            "$PUBLIC_KEY_PATH" \
+            /tmp/org-project-rate-aware-public.pem \
+            "ci: publish ephemeral rate-aware Project key"
+
+          ciphertext=""
+          for _ in $(seq 1 360); do
+            if metadata="$(repo_api_call GET "${repo_api}/contents/${CIPHERTEXT_PATH}?ref=${DEFAULT_BRANCH}" 2>/dev/null)"; then
+              ciphertext="$(jq -r '.content // empty' <<<"$metadata" \
+                | tr -d '\n' \
+                | base64 -d \
+                | tr -d '\r\n')"
+              [[ -z "$ciphertext" ]] || break
+            fi
+            sleep 5
+          done
+
+          if [[ -z "$ciphertext" ]]; then
+            printf 'encrypted credential was not received for handshake %s\n' "$HANDSHAKE_NONCE" >&2
+            exit 1
+          fi
+
+          printf '%s' "$ciphertext" | base64 -d > /tmp/org-project-rate-aware-token.enc
+          openssl pkeyutl \
+            -decrypt \
+            -inkey /tmp/org-project-rate-aware-private.pem \
+            -in /tmp/org-project-rate-aware-token.enc \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256 \
+            > /tmp/org-project-rate-aware-token.txt
+
+          USER_TOKEN="$(tr -d '\r\n' < /tmp/org-project-rate-aware-token.txt)"
+          test -n "$USER_TOKEN"
+          echo "::add-mask::$USER_TOKEN"
+          export GH_TOKEN="$USER_TOKEN"
           test "$(gh api user --jq .login)" = ORESoftware
           gh auth status
+          printf 'GH_TOKEN=%s\n' "$USER_TOKEN" >> "$GITHUB_ENV"
+
+          cleanup_credentials
+          trap - EXIT
 
       - name: Run fail-closed reconciliation contract tests
         run: python3 scripts/ops/test_sync_org_project_docs_rate_aware.py -v
@@ -72,10 +197,11 @@ jobs:
           --validate-only
 
       - name: Upload validated reconciliation evidence
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: organization-project-docs-rate-aware-${{ github.run_id }}
           path: ops/evidence/org-project-docs-rate-aware
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
           include-hidden-files: true
