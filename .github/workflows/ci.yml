@@ -15,12 +15,59 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Validate the Fanwaave workflow
+      - name: Validate the Fanwaave repository-copy workflow
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
           args: .github/workflows/copy-to-fanwaave.yml
-      - name: Validate the Fanwaave publisher shell
-        run: bash -n scripts/ops/copy_to_fanwaave.sh
+      - name: Validate the Fanwaave governance-bootstrap workflow
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/bootstrap-fanwaave-governance.yml
+      - name: Validate the encrypted Fanwaave publication workflow
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/publish-fanwaave-encrypted.yml
+      - name: Validate the bounded publisher shells
+        run: >-
+          bash -n
+          scripts/ops/copy_to_fanwaave.sh
+          scripts/ops/bootstrap_fanwaave_org.sh
+          scripts/ops/publish_fanwaave_encrypted.sh
+      - name: Prove the encrypted token handoff round trip
+        shell: bash
+        run: |
+          set -euo pipefail
+          directory="$(mktemp -d)"
+          trap 'rm -rf "$directory"' EXIT
+          printf '%s' 'ghp_ci_dummy_token_1234567890' > "$directory/input"
+          openssl genpkey \
+            -algorithm RSA \
+            -pkeyopt rsa_keygen_bits:2048 \
+            -out "$directory/private.pem" \
+            >/dev/null 2>&1
+          openssl pkey \
+            -in "$directory/private.pem" \
+            -pubout \
+            -out "$directory/public.pem" \
+            >/dev/null
+          openssl pkeyutl \
+            -encrypt \
+            -pubin \
+            -inkey "$directory/public.pem" \
+            -in "$directory/input" \
+            -out "$directory/cipher.bin" \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256
+          openssl pkeyutl \
+            -decrypt \
+            -inkey "$directory/private.pem" \
+            -in "$directory/cipher.bin" \
+            -out "$directory/output" \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256
+          cmp "$directory/input" "$directory/output"
 
   rust:
     runs-on: ubuntu-latest

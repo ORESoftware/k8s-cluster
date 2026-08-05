@@ -1,0 +1,58 @@
+name: Bootstrap Fanwaave organization governance
+run-name: Bootstrap fanwaave/.github and fanwaave-project
+
+on:
+  issue_comment:
+    types:
+      - created
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: bootstrap-fanwaave-organization-governance
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    if: "${{ github.repository == 'ORESoftware/push-notification-server.rs' && github.event.issue.number == 33 && github.event.comment.user.login == 'ORESoftware' && github.event.comment.body == '/bootstrap-fanwaave-governance' }}"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      COMMENT_TOKEN: ${{ github.token }}
+      SOURCE_REPOSITORY: ORESoftware/push-notification-server.rs
+      SOURCE_REPOSITORY_ID: "1314172992"
+      DESTINATION_ORGANIZATION: fanwaave
+      EXPECTED_LOGIN: ORESoftware
+      TRACKING_ISSUE: "33"
+      PROJECT_TITLE: fanwaave-project
+
+    steps:
+      - name: Check out the exact default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: main
+
+      - name: Validate the publisher shell
+        shell: bash
+        run: bash -n scripts/ops/bootstrap_fanwaave_org.sh
+
+      - name: Bootstrap Fanwaave governance and project
+        shell: bash
+        env:
+          GH_CONFIG_DIR: ${{ runner.temp }}/fanwaave-governance-owner-auth
+        run: bash scripts/ops/bootstrap_fanwaave_org.sh
+
+      - name: Record a failed bootstrap attempt
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh api --method POST
+          "repos/${SOURCE_REPOSITORY}/issues/${TRACKING_ISSUE}/comments"
+          -f body="Fanwaave governance bootstrap failed closed. No source refs were deleted or force-pushed. Inspect https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}."
+          >/dev/null || true
