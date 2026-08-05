@@ -1,0 +1,56 @@
+name: Publish Fanwaave repositories and project
+run-name: Publish fanwaave repositories, governance, and project
+
+on:
+  issue_comment:
+    types:
+      - created
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: fanwaave-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: "${{ github.repository == 'ORESoftware/push-notification-server.rs' && github.event.issue.number == 33 && github.event.comment.user.login == 'ORESoftware' && github.event.comment.body == '/publish-fanwaave' }}"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      COMMENT_TOKEN: ${{ github.token }}
+      SOURCE_REPOSITORY: ORESoftware/push-notification-server.rs
+      SOURCE_REPOSITORY_ID: "1314172992"
+      DESTINATION_ORGANIZATION: fanwaave
+      EXPECTED_LOGIN: ORESoftware
+      TRACKING_ISSUE: "33"
+      PROJECT_TITLE: fanwaave-project
+
+    steps:
+      - name: Check out the exact default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: main
+
+      - name: Validate the encrypted publisher shell
+        shell: bash
+        run: bash -n scripts/ops/publish_fanwaave_encrypted.sh
+
+      - name: Publish Fanwaave repositories and project
+        shell: bash
+        run: bash scripts/ops/publish_fanwaave_encrypted.sh
+
+      - name: Record a failed publication attempt
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh api --method POST
+          "repos/${SOURCE_REPOSITORY}/issues/${TRACKING_ISSUE}/comments"
+          -f body="Encrypted Fanwaave publication failed closed. No source refs were deleted, rewritten, or force-pushed. Inspect https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}."
+          >/dev/null || true
