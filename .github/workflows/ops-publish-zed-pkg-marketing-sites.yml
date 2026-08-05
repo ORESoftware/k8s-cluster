@@ -5,16 +5,18 @@ on:
     paths:
       - .github/workflows/ops-publish-zed-pkg-marketing-sites.yml
       - scripts/ops/publish_zed_pkg_marketing_sites.py
+      - scripts/ops/publish_zed_pkg_marketing_sites.py.part*
       - scripts/ops/run_protected_zed_pkg_marketing_sites.sh
-      - scripts/ops/zed_pkg_marketing_sites.json
+      - scripts/ops/zed_pkg_marketing_sites.json.bz2.b64.part*
       - tests/ops/test_publish_zed_pkg_marketing_sites.py
   push:
     branches: [main]
     paths:
       - .github/workflows/ops-publish-zed-pkg-marketing-sites.yml
       - scripts/ops/publish_zed_pkg_marketing_sites.py
+      - scripts/ops/publish_zed_pkg_marketing_sites.py.part*
       - scripts/ops/run_protected_zed_pkg_marketing_sites.sh
-      - scripts/ops/zed_pkg_marketing_sites.json
+      - scripts/ops/zed_pkg_marketing_sites.json.bz2.b64.part*
       - tests/ops/test_publish_zed_pkg_marketing_sites.py
   workflow_dispatch:
 
