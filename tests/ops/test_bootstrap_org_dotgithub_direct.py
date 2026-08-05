@@ -9,12 +9,13 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "ops-bootstrap-org-dotgithub-direct.yml"
 DIRECT_RUNNER = ROOT / "scripts" / "ops" / "run_direct_org_dotgithub_publisher.sh"
-PROTECTED_RUNNER = ROOT / "scripts" / "ops" / "run_protected_org_dotgithub_publisher.sh"
+LEGACY_PROTECTED_RUNNER = ROOT / "scripts" / "ops" / "run_protected_org_dotgithub_publisher.sh"
+ALL_PROTECTED_RUNNER = ROOT / "scripts" / "ops" / "run_protected_org_dotgithub_all_publisher.sh"
 
 
 class DirectOrgDotgithubPublisherTests(unittest.TestCase):
     def test_runners_are_valid_bash(self) -> None:
-        for runner in (DIRECT_RUNNER, PROTECTED_RUNNER):
+        for runner in (DIRECT_RUNNER, LEGACY_PROTECTED_RUNNER, ALL_PROTECTED_RUNNER):
             with self.subTest(runner=runner.name):
                 subprocess.run(["bash", "-n", str(runner)], check=True)
 
@@ -27,6 +28,8 @@ class DirectOrgDotgithubPublisherTests(unittest.TestCase):
             'test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"',
             "persist-credentials: false",
             "run_direct_org_dotgithub_publisher.sh",
+            "run_protected_org_dotgithub_all_publisher.sh",
+            "bootstrap_org_dotgithub_repositories_all.py",
             "test_bootstrap_org_dotgithub*.py",
         ):
             with self.subTest(phrase=phrase):
@@ -61,7 +64,7 @@ class DirectOrgDotgithubPublisherTests(unittest.TestCase):
             "tr -d '[:space:]'",
             "invalid-aws-region",
             "export AWS_REGION",
-            "run_protected_org_dotgithub_publisher.sh",
+            "run_protected_org_dotgithub_all_publisher.sh",
             "bash -n \"$protected_runner\"",
             "stage=direct-delegate",
             "status=failed rc=%s",
@@ -77,9 +80,31 @@ class DirectOrgDotgithubPublisherTests(unittest.TestCase):
             "secretsmanager",
             "kubectl",
             "gh auth",
+            "old_target_count",
+            "text.replace",
         ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, text)
+
+    def test_all_protected_launcher_is_fixed_bounded_and_secret_safe(self) -> None:
+        text = ALL_PROTECTED_RUNNER.read_text(encoding="utf-8")
+        for phrase in (
+            "dd/remote-dev/agent-secrets",
+            'payload.get("GH_PAT")',
+            "bootstrap_org_dotgithub_repositories_all.py",
+            "len(organizations) != 61",
+            "publisher.TARGET_ORGANIZATIONS",
+            "publisher.EXCLUDED_ORGANIZATIONS",
+            "organizations=61",
+            "org-dotgithub-governance-report-complete",
+            "source=aws-secrets-manager",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, text)
+        self.assertNotIn("${3", text)
+        self.assertNotIn("set -x", text)
+        self.assertNotIn('echo "$GH_TOKEN"', text)
+        self.assertNotIn("Authorization: Bearer", text)
 
     def test_workflow_does_not_transport_an_organization_admin_token(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")
@@ -109,14 +134,18 @@ class DirectOrgDotgithubPublisherTests(unittest.TestCase):
             "gh*_***",
             "gh issue comment 615",
             'test "$PUBLISH_OUTCOME" == success',
-            "The fixed 36-organization fleet was verified",
+            "The fixed 61-organization fleet was verified",
+            "Publish and verify the fixed 61-organization fleet",
         ):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, text)
         self.assertNotIn("gh issue close 615", text)
 
-    def test_direct_workflow_and_wrapper_add_no_destructive_recovery_commands(self) -> None:
-        text = WORKFLOW.read_text(encoding="utf-8") + "\n" + DIRECT_RUNNER.read_text(encoding="utf-8")
+    def test_direct_workflow_and_runners_add_no_destructive_recovery_commands(self) -> None:
+        text = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (WORKFLOW, DIRECT_RUNNER, ALL_PROTECTED_RUNNER)
+        )
         for phrase in (
             "git checkout --",
             "git reset",
@@ -131,6 +160,7 @@ class DirectOrgDotgithubPublisherTests(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertNotIn(phrase, text)
         self.assertIsNone(re.search(r"(?:^|[;&|()]|\s)rm(?:\s|$)", text))
+        self.assertIsNone(re.search(r"(?:^|[;&|()]|\s)sed(?:\s|$)", text))
 
 
 if __name__ == "__main__":
