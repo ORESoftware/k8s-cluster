@@ -1,0 +1,81 @@
+name: Reconcile organization Projects and docs with rate-aware evidence once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-sync-org-project-docs-rate-aware-once.yml
+      - scripts/ops/sync_org_project_docs_rate_aware.py
+      - scripts/ops/test_sync_org_project_docs_rate_aware.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reconcile-organization-projects-and-docs-rate-aware-once
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/main' &&
+      (github.actor == 'ORESoftware' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    environment: portfolio-project-sync
+    env:
+      GH_TOKEN: ${{ secrets.PROJECT_SYNC_GITHUB_TOKEN }}
+      EVIDENCE_DIR: ops/evidence/org-project-docs-rate-aware
+
+    steps:
+      - name: Check out exact trusted main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          submodules: false
+          show-progress: false
+
+      - name: Bind execution to trusted main and protected credential
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REPOSITORY" = ORESoftware/k8s-cluster
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -n "${GH_TOKEN:-}"
+          test "$(gh api user --jq .login)" = ORESoftware
+          gh auth status
+
+      - name: Run fail-closed reconciliation contract tests
+        run: python3 scripts/ops/test_sync_org_project_docs_rate_aware.py -v
+
+      - name: Reconcile all registered organizations
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf "$EVIDENCE_DIR"
+          python3 scripts/ops/sync_org_project_docs_rate_aware.py \
+            --expected-count 64 \
+            --min-core-start 1800 \
+            --min-graphql-start 400 \
+            --max-wait-seconds 10800 \
+            --per-org-timeout 1200 \
+            --retries 3
+
+      - name: Revalidate exact 64-organization evidence
+        run: >-
+          python3 scripts/ops/sync_org_project_docs_rate_aware.py
+          --expected-count 64
+          --validate-only
+
+      - name: Upload validated reconciliation evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: organization-project-docs-rate-aware-${{ github.run_id }}
+          path: ops/evidence/org-project-docs-rate-aware
+          if-no-files-found: error
+          retention-days: 30
+          include-hidden-files: true
