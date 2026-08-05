@@ -42,8 +42,8 @@ for the complete architecture and rollout rationale.
   not-before, unique token id, session id, provider provenance, roles,
   authentication assurance level (`aal`), and authentication methods (`amr`).
 - Admin and customer startup fails closed when deployment identity, issuer,
-  database host/reference, secret path, signing-key reference, cookie name, or
-  Supabase project does not match the selected realm.
+  exact database endpoint host/resource reference, secret path, signing-key
+  reference, cookie name, or Supabase project does not match the selected realm.
 - The application database is not an authentication fallback. A non-empty
   `AUTH_APPLICATION_DATABASE_URL` is rejected by the server.
 - Customer SSO reuses a central login ceremony, never another application's
@@ -136,6 +136,7 @@ token. Enroll or challenge with an E.164 phone number, then submit the returned
 |---|---:|---|
 | `AUTH_REALM` | DB-backed | Exact realm: `admin` or `customer` |
 | `AUTH_REALM_DEPLOYMENT` | DB-backed | Deployment identity that visibly names the realm |
+| `AUTH_DATABASE_ENDPOINT_HOST` | DB-backed | Exact expected PostgreSQL host; the host parsed from `AUTH_DATABASE_URL` must match it |
 | `AUTH_DATABASE_RESOURCE_REF` | DB-backed | Non-secret realm-specific RDS resource reference |
 | `AUTH_DATABASE_SECRET_REF` | DB-backed | Non-secret realm-specific secret-manager path for the DSN |
 | `AUTH_SIGNING_KEY_REF` | DB-backed | Non-secret realm-specific signing-key secret path |
@@ -216,9 +217,11 @@ RDS contract is also kept in the cluster's `pg-defs` repository and migrations
 must be generated/reviewed with `dpm`; the application never executes DDL.
 
 The target production topology uses separate admin-auth and customer-auth RDS
-instances. The legacy single-realm Kubernetes resources under `deploy/k8s/` are
-not silently rewritten by the realm implementation; reviewed overlays and the
-new realm-specific secrets must exist before cutover. This prevents a watched
+instances. The exact RDS endpoint host exported by infrastructure is supplied as
+`AUTH_DATABASE_ENDPOINT_HOST` and must match the host in the protected DSN. The
+legacy single-realm Kubernetes resources under `deploy/k8s/` are not silently
+rewritten by the realm implementation; reviewed overlays and the new
+realm-specific secrets must exist before cutover. This prevents a watched
 manifest from switching to nonexistent databases or secret paths.
 
 Kubernetes deployments consume RDS, Redis, signing, provider, and webhook values
