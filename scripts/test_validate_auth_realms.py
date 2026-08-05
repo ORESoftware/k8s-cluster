@@ -66,6 +66,14 @@ class AuthRealmContractTests(unittest.TestCase):
             self.validate(contract=contract),
         )
 
+    def test_loopback_is_rejected_by_the_production_contract(self) -> None:
+        contract = copy.deepcopy(self.contract)
+        contract["loopbackAllowedInProduction"] = True
+        self.assertIn(
+            "loopbackAllowedInProduction must be false",
+            self.validate(contract=contract),
+        )
+
     def test_application_enrollment_tables_are_required(self) -> None:
         schema = self.schema.replace(
             "create table if not exists shared_auth.application_accounts",
