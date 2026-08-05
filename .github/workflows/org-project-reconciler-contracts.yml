@@ -6,6 +6,7 @@ on:
       - scripts/ops/audit_org_project_docs_evidence.py
       - scripts/ops/sync_org_project_docs.sh
       - tests/ops/test_audit_org_project_docs_evidence.py
+      - tests/ops/test_sync_org_project_docs_source.py
       - .github/workflows/org-project-reconciler-contracts.yml
   push:
     branches: [main]
@@ -13,6 +14,7 @@ on:
       - scripts/ops/audit_org_project_docs_evidence.py
       - scripts/ops/sync_org_project_docs.sh
       - tests/ops/test_audit_org_project_docs_evidence.py
+      - tests/ops/test_sync_org_project_docs_source.py
       - .github/workflows/org-project-reconciler-contracts.yml
 
 permissions:
@@ -26,5 +28,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate shell syntax
         run: bash -n scripts/ops/sync_org_project_docs.sh
-      - name: Run offline evidence contracts
-        run: python3 -m unittest tests/ops/test_audit_org_project_docs_evidence.py
+      - name: Run offline evidence and source contracts
+        run: |
+          python3 -m unittest \
+            tests/ops/test_audit_org_project_docs_evidence.py \
+            tests/ops/test_sync_org_project_docs_source.py
