@@ -152,6 +152,7 @@ export SLACK_EXPECTED_APP_ID="$EXPECTED_SLACK_APP_ID"
 export SLACK_EXPECTED_TEAM_ID="$EXPECTED_SLACK_TEAM_ID"
 export SLACK_EXPECTED_CHANNEL_ID="$EXPECTED_SLACK_CHANNEL_ID"
 export SLACK_EXPECTED_USER_ID="$EXPECTED_SLACK_USER_ID"
+export SLACK_EXPECTED_DRY_RUN=true
 
 cd "${ROOT}/remote/tests"
 node --test ui/slack-agent-command-security.playwright.test.mjs 2>&1 \
