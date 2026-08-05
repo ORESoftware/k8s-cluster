@@ -120,6 +120,13 @@ jobs:
 
           tests = Path('scripts/ops/test_four_org_encrypted_publisher.py')
           source = tests.read_text(encoding='utf-8')
+
+          old_cleanup = '            "unset owner_token actor membership GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN",\n'
+          new_cleanup = '            "unset owner_token actor membership failed_organization observed_membership GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN",\n'
+          if source.count(old_cleanup) != 1:
+              raise SystemExit(f'expected one cleanup assertion, found {source.count(old_cleanup)}')
+          source = source.replace(old_cleanup, new_cleanup, 1)
+
           marker = '    def test_remote_result_counts_and_carrier_cleanup_are_required(self) -> None:\n'
           addition = indent(dedent('''\
           def test_membership_failures_name_only_the_fixed_org_and_safe_role_state(self) -> None:
@@ -130,7 +137,8 @@ jobs:
                   "observed_membership=api-error",
                   'observed_membership="$membership"',
                   "FOUR_ORG_MEMBERSHIP organization=%s observed=%s",
-                  'diagnostic=" Organization \\`${failed_organization}\\` reported \\`${observed_membership}\\`."',
+                  'if [[ "$stage" == validate-owner-membership:* ]]',
+                  'diagnostic=" Organization ',
               ):
                   with self.subTest(snippet=snippet):
                       self.assertIn(snippet, self.workflow)
