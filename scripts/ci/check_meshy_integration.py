@@ -159,7 +159,7 @@ def main() -> None:
             "SubmissionCheckpoint::Prepared",
             "provider_submission_unreconciled",
             "GLB/STL/3MF",
-            "Daedalus-controlled storage",
+            "durable directory or Kubernetes PVC",
             "MESHY_ARTIFACT_ALLOWED_HOSTS",
             '"release_state": "blocked"',
             "webhook",
