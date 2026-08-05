@@ -97,6 +97,14 @@ pub(crate) fn first_env(keys: &[&str]) -> Option<String> {
     })
 }
 
+/// Read a structured environment value without normalizing it first.
+///
+/// Size-bounded parsers must inspect the original UTF-8 bytes before
+/// trimming whitespace or applying any other normalization.
+pub(crate) fn raw_env(key: &str) -> Option<String> {
+    env::var(key).ok()
+}
+
 pub(crate) fn env_value(key: &str, fallback: &str) -> String {
     first_env(&[key]).unwrap_or_else(|| fallback.to_string())
 }
@@ -223,7 +231,7 @@ pub(crate) fn config_from_env() -> Config {
             "BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES",
             "https://github.com/ORESoftware/,https://github.com/sonus-auris/,git@github.com:ORESoftware/,git@github.com:sonus-auris/",
         )),
-        first_env(&["BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON"]).as_deref(),
+        raw_env("BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON").as_deref(),
         &allowed_profiles,
     )
     .unwrap_or_else(|error| {
