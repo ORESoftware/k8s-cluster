@@ -167,15 +167,43 @@ pub(crate) async fn verify(
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    if totp::verify_totp(&secret, &form.code, now) {
-        tracing::info!(enrollment.outcome = "accepted", "TOTP enrollment verified");
-        fragment("success", "Device enrolled — your authenticator is linked.").into_response()
-    } else {
+    let Some(counter) = totp::matching_counter(&secret, &form.code, now) else {
         tracing::info!(enrollment.outcome = "rejected", "TOTP enrollment rejected");
-        fragment(
+        return fragment(
             "error",
             "That code didn't match — wait for a fresh code and try again.",
         )
+        .into_response();
+    };
+
+    // RFC 6238 §5.2: never accept a second attempt of an already-verified
+    // code. Track the highest accepted counter per secret and reject any
+    // counter at or below it; prune entries once every code they could gate
+    // has aged out of the ±skew verification window.
+    let now_counter = now / totp::STEP_SECONDS;
+    let replayed = {
+        let mut used = state
+            .used_totp_counters
+            .lock()
+            .expect("used-counter mutex is never poisoned");
+        used.retain(|_, last| last.saturating_add(totp::SKEW_STEPS as u64) >= now_counter);
+        match used.get(secret_b32) {
+            Some(&last) if counter <= last => true,
+            _ => {
+                used.insert(secret_b32.to_owned(), counter);
+                false
+            }
+        }
+    };
+    if replayed {
+        tracing::info!(enrollment.outcome = "replayed", "TOTP code replay rejected");
+        fragment(
+            "error",
+            "That code was already used — wait for a fresh code and try again.",
+        )
         .into_response()
+    } else {
+        tracing::info!(enrollment.outcome = "accepted", "TOTP enrollment verified");
+        fragment("success", "Device enrolled — your authenticator is linked.").into_response()
     }
 }

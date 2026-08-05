@@ -3,7 +3,8 @@
 use crate::config::{Config, SharedAuthConfig, SupabaseConfig};
 use crate::metrics::Metrics;
 use crate::shared_auth::SharedAuthClient;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
 pub(crate) struct AppState {
@@ -12,6 +13,12 @@ pub(crate) struct AppState {
     pub server_secret: Arc<Vec<u8>>,
     pub http: reqwest::Client,
     pub metrics: Arc<Metrics>,
+    /// Highest HOTP counter accepted per enrollment secret (base32), so an
+    /// already-verified code cannot be replayed (RFC 6238 §5.2). Entries are
+    /// pruned once they fall outside the ±skew verification window, which
+    /// bounds the map by the number of successful enrollments per window.
+    /// In-memory, so per-replica; fine for the current single-replica deploy.
+    pub used_totp_counters: Arc<Mutex<HashMap<String, u64>>>,
 }
 
 impl AppState {
@@ -31,6 +38,7 @@ impl AppState {
             server_secret: Arc::new(server_secret),
             http,
             metrics: Arc::new(Metrics::new()?),
+            used_totp_counters: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 

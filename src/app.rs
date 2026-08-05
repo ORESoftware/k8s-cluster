@@ -135,8 +135,10 @@ mod tests {
         assert!(body.contains("<svg"));
     }
 
-    async fn enroll_cookie() -> (String, Vec<u8>) {
-        let response = router(test_state())
+    /// Enroll against `state` so tests can keep replay state across requests
+    /// (`AppState` is `Clone` over shared `Arc`s).
+    async fn enroll_cookie_on(state: &AppState) -> (String, Vec<u8>) {
+        let response = router(state.clone())
             .oneshot(
                 Request::builder()
                     .uri("/enroll")
@@ -162,8 +164,12 @@ mod tests {
         (value, secret)
     }
 
-    async fn post_verify(cookie: &str, code: &str) -> (StatusCode, String) {
-        let response = router(test_state())
+    async fn enroll_cookie() -> (String, Vec<u8>) {
+        enroll_cookie_on(&test_state()).await
+    }
+
+    async fn post_verify_on(state: &AppState, cookie: &str, code: &str) -> (StatusCode, String) {
+        let response = router(state.clone())
             .oneshot(
                 Request::builder()
                     .method("POST")
@@ -180,6 +186,10 @@ mod tests {
             .unwrap();
         let status = response.status();
         (status, body_string(response).await)
+    }
+
+    async fn post_verify(cookie: &str, code: &str) -> (StatusCode, String) {
+        post_verify_on(&test_state(), cookie, code).await
     }
 
     #[tokio::test]
@@ -249,6 +259,109 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert!(body.contains("didn&#39;t match") || body.contains("didn't match"));
         assert!(!body.contains("Device enrolled"));
+    }
+
+    #[tokio::test]
+    async fn enrollment_generates_fresh_160_bit_secrets_shown_on_the_page() {
+        let state = test_state();
+        let (_, first_secret) = enroll_cookie_on(&state).await;
+        let (_, second_secret) = enroll_cookie_on(&state).await;
+
+        // RFC 4226 §4 requires at least a 128-bit shared secret and
+        // recommends 160 bits; the handler generates 20 random bytes.
+        assert_eq!(first_secret.len(), 20);
+        assert_eq!(second_secret.len(), 20);
+        assert_ne!(first_secret, second_secret, "secrets must not repeat");
+
+        // The page must show the same secret it sealed into the cookie so
+        // manual entry enrolls the authenticator the server will verify.
+        let response = router(state.clone())
+            .oneshot(
+                Request::builder()
+                    .uri("/enroll")
+                    .header(header::COOKIE, "threefa_session=test-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let cookie_secret = response
+            .headers()
+            .get(header::SET_COOKIE)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .strip_prefix("threefa_enroll=")
+            .unwrap()
+            .split('.')
+            .next()
+            .unwrap()
+            .to_owned();
+        let body = body_string(response).await;
+        assert!(body.contains(&cookie_secret), "page shows the secret");
+    }
+
+    #[tokio::test]
+    async fn verify_rejects_a_replayed_code_but_accepts_a_later_one() {
+        let state = test_state();
+        let (cookie, secret) = enroll_cookie_on(&state).await;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let counter = now / totp::STEP_SECONDS;
+        let current = totp::hotp(&secret, counter, 6);
+        let previous = totp::hotp(&secret, counter - 1, 6);
+        let next = totp::hotp(&secret, counter + 1, 6);
+
+        let (status, body) = post_verify_on(&state, &cookie, &current).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.contains("Device enrolled"));
+
+        // RFC 6238 §5.2: the exact accepted code must not verify twice.
+        let (status, body) = post_verify_on(&state, &cookie, &current).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.contains("already used"), "replay must be rejected");
+        assert!(!body.contains("Device enrolled"));
+
+        // An earlier in-window code is also at-or-below the accepted counter.
+        if previous != current {
+            let (_, body) = post_verify_on(&state, &cookie, &previous).await;
+            assert!(body.contains("already used"), "stale code must be rejected");
+            assert!(!body.contains("Device enrolled"));
+        }
+
+        // A genuinely fresh later code still verifies.
+        if next != current {
+            let (status, body) = post_verify_on(&state, &cookie, &next).await;
+            assert_eq!(status, StatusCode::OK);
+            assert!(body.contains("Device enrolled"));
+        }
+    }
+
+    #[tokio::test]
+    async fn replay_tracking_is_scoped_per_enrollment_secret() {
+        let state = test_state();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let (first_cookie, first_secret) = enroll_cookie_on(&state).await;
+        let (_, body) =
+            post_verify_on(&state, &first_cookie, &totp::totp_code(&first_secret, now)).await;
+        assert!(body.contains("Device enrolled"));
+
+        // A different enrollment (fresh secret) is unaffected by the first
+        // enrollment's accepted counter.
+        let (second_cookie, second_secret) = enroll_cookie_on(&state).await;
+        let (_, body) = post_verify_on(
+            &state,
+            &second_cookie,
+            &totp::totp_code(&second_secret, now),
+        )
+        .await;
+        assert!(body.contains("Device enrolled"));
     }
 
     #[tokio::test]
