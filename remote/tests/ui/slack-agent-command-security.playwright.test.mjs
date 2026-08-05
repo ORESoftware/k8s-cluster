@@ -13,6 +13,8 @@ const slackAppId = process.env.SLACK_EXPECTED_APP_ID ?? 'A0BMBAMM5NJ';
 const slackTeamId = process.env.SLACK_EXPECTED_TEAM_ID ?? 'T01B3C83PMK';
 const slackChannelId = process.env.SLACK_EXPECTED_CHANNEL_ID ?? 'C0BKP2N3LG7';
 const slackUserId = process.env.SLACK_EXPECTED_USER_ID ?? 'U01AZNU2LJ2';
+const expectedDryRun =
+  (process.env.SLACK_EXPECTED_DRY_RUN ?? 'false').toLowerCase() === 'true';
 const outputDir =
   process.env.PLAYWRIGHT_OUTPUT_DIR ?? path.resolve('test-results/slack-agent-command-security');
 
@@ -110,7 +112,7 @@ test(
         },
         {
           ok: true,
-          dry_run: true,
+          dry_run: expectedDryRun,
           installed_app_identity_enforced: true,
         },
       );
