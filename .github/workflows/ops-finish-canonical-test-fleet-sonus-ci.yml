@@ -40,4 +40,19 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: bash scripts/ops/run_canonical_test_fleet_sonus_ci.sh
+        run: |
+          set -euo pipefail
+          runtime_launcher="$RUNNER_TEMP/run-canonical-test-fleet-sonus-ci.sh"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          source = Path("scripts/ops/run_canonical_test_fleet_sonus_ci.sh").read_text()
+          obsolete = 'cp "$canonical/bootstrap/test-org-fleet.json.gz" "$audit/bootstrap/test-org-fleet.json.gz"\n'
+          if source.count(obsolete) != 1:
+              raise SystemExit("canonical fleet manifest seam changed")
+          destination = Path(os.environ["RUNNER_TEMP"]) / "run-canonical-test-fleet-sonus-ci.sh"
+          destination.write_text(source.replace(obsolete, ""))
+          destination.chmod(0o700)
+          PY
+          bash "$runtime_launcher"
