@@ -56,6 +56,19 @@ test('a 250-contact plan stays bounded and rotates categories', () => {
   assert.ok(plan.some((item) => item.pass > 0));
 });
 
+test('overflow planning keeps lower-priority categories available when early categories under-yield', () => {
+  const categories = normalizeCategoryRows([
+    { service_category: 'roofing', query_count: 10, max_priority: 5 },
+    { service_category: 'hvac', query_count: 9, max_priority: 4 },
+    { service_category: 'plumbing', query_count: 8, max_priority: 3 },
+    { service_category: 'electrical', query_count: 7, max_priority: 2 },
+  ]);
+  const plan = planCategoryTargets(categories, 100, 50, { includeOverflow: true });
+  assert.deepEqual(plan.map((item) => item.category), ['roofing', 'hvac', 'plumbing', 'electrical']);
+  assert.equal(plan[2].overflow, true);
+  assert.equal(plan[3].overflow, true);
+});
+
 test('reports never imply that discovery authorizes outreach', () => {
   const report = buildBatchReport({
     batchId: 'benefactor-20260805T201500Z-01020304',
