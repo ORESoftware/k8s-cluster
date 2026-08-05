@@ -87,6 +87,16 @@ class ExactPrivateRepositoryGapTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "must use main"):
             MODULE.selected_records([invalid_branch], "StreemPilot")
 
+    def test_full_projected_manifest_is_preserved_for_sealed_publisher(self) -> None:
+        source = MODULE_PATH.read_text(encoding="utf-8")
+        self.assertIn("full_private_manifest_path", source)
+        self.assertIn("json.dumps(execution_manifest", source)
+        self.assertNotIn('"repository_count": len(selected)', source)
+        self.assertNotIn("exact_manifest_path", source)
+        self.assertIn("for record in missing_records", source)
+        self.assertIn("if full_name not in expected_names", source)
+        self.assertIn("--confirm-repository", source)
+
     def test_source_has_no_public_creation_or_force_update_path(self) -> None:
         source = MODULE_PATH.read_text(encoding="utf-8")
         self.assertNotIn('"private": False', source)
