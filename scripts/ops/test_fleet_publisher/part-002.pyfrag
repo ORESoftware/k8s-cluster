@@ -1,0 +1,287 @@
+API/UI/device/database/load suites use environment variables documented in `test-plan.md`; absent external targets are reported as skipped rather than replaced with mocks that could conceal integration gaps.
+
+## Pull-request policy
+
+Generated content is introduced through a pull request. Keep later changes reviewable, preserve source-pin intent, and resolve conflicts semantically using repository, history, API, and cross-repository context.
+"""
+
+
+def render_test_plan(repo: Mapping[str, Any], pins: Sequence[SourcePin]) -> str:
+    suites = "\n".join(f"- [ ] `{suite}`" for suite in repo.get("suites", [])) or "- [ ] `smoke`"
+    services = "\n".join(f"- `{item}`" for item in repo.get("services", [])) or "- None declared"
+    fixtures = "\n".join(f"- `{item}`" for item in repo.get("fixtures", [])) or "- Generate deterministic, synthetic fixtures only"
+    kind = str(repo.get("kind", "contract"))
+    env_by_kind = {
+        "api": ["TARGET_BASE_URL", "TARGET_API_TOKEN"],
+        "ui": ["TARGET_WEB_URL", "TARGET_API_URL"],
+        "device": ["APP_UNDER_TEST", "EMULATOR_TARGET"],
+        "desktop": ["APP_UNDER_TEST", "DISPLAY_BACKEND"],
+        "database": ["MIGRATION_COMMAND", "DATABASE_URL"],
+        "load": ["TARGET_BASE_URL", "LOAD_PROFILE"],
+        "security": ["TARGET_BASE_URL", "SECURITY_FIXTURE_ROOT"],
+        "chaos": ["TARGET_BASE_URL", "TOXIPROXY_URL"],
+        "client": ["TEST_FLEET_READ_TOKEN", "NATIVE_PACKAGE_ROOT"],
+    }
+    envs = env_by_kind.get(kind, ["TARGET_BASE_URL", "TEST_FLEET_READ_TOKEN"])
+    return f"""# Executable test plan
+
+## Acceptance suites
+
+{suites}
+
+## External services
+
+{services}
+
+## Fixtures
+
+{fixtures}
+
+## Runtime inputs
+
+{chr(10).join(f'- `{name}`' for name in envs)}
+
+## Invariants
+
+1. Source revisions are immutable and match `source-pins.json`.
+2. Git-submodule and Zed acquisition resolve the same intended production component revision or an explicitly documented package release derived from it.
+3. Native package-manager probes use the pinned source tree; they must not silently fetch a different SDK fork.
+4. API tests assert status, schema, negative cases, idempotency, pagination/realtime semantics when applicable, and stable error contracts.
+5. UI/device tests cover lifecycle, offline/reconnect, accessibility, permissions, and platform-specific behavior named by the suite list.
+6. Database/distributed tests are repeatable, isolate state, and verify rollback or convergence rather than only successful forward execution.
+7. Test data is synthetic and contains no live credentials, private conversations, biometric records, customer data, or production exports.
+"""
+
+
+def render_verify_script(test_org: str, repo_name: str, digest: str) -> str:
+    return f'''#!/usr/bin/env python3
+from __future__ import annotations
+import configparser
+import hashlib
+import json
+from pathlib import Path
+import re
+import subprocess
+
+ROOT = Path(__file__).resolve().parents[1]
+EXPECTED_ORG = {test_org!r}
+EXPECTED_REPO = {repo_name!r}
+EXPECTED_DIGEST = {digest!r}
+SHA_RE = re.compile(r"^[0-9a-f]{{40}}$")
+
+
+def fail(message: str) -> None:
+    raise SystemExit(f"fleet verification failed: {{message}}")
+
+
+def main() -> None:
+    manifest = json.loads((ROOT / "test-fleet.json").read_text(encoding="utf-8"))
+    pins = json.loads((ROOT / "source-pins.json").read_text(encoding="utf-8"))
+    if manifest.get("test_org") != EXPECTED_ORG or manifest.get("repository", {{}}).get("name") != EXPECTED_REPO:
+        fail("repository identity does not match generated contract")
+    if manifest.get("renderer_version") != pins.get("renderer_version"):
+        fail("renderer versions do not match")
+    contract = {{
+        "renderer_version": manifest.get("renderer_version"),
+        "test_org": manifest.get("test_org"),
+        "production_org": manifest.get("production_org"),
+        "repository": manifest.get("repository"),
+        "sources": pins.get("sources", []),
+    }}
+    canonical = json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()
+    if hashlib.sha256(canonical).hexdigest() != EXPECTED_DIGEST:
+        fail("repository/source-pin contract digest changed without regeneration")
+    if manifest.get("contract_digest") != EXPECTED_DIGEST:
+        fail("recorded contract digest does not match the generated verifier")
+    aliases = set()
+    for pin in pins.get("sources", []):
+        alias = pin.get("alias")
+        if not isinstance(alias, str) or not alias or alias in aliases:
+            fail("source aliases must be unique non-empty strings")
+        aliases.add(alias)
+        if pin.get("exists") and not SHA_RE.fullmatch(str(pin.get("commit_sha", ""))):
+            fail(f"source {{alias}} is marked available without a full commit SHA")
+    zpkg = (ROOT / ".zpkg.toml").read_bytes()
+    if b"[package]" not in zpkg or b"[install]" not in zpkg:
+        fail(".zpkg.toml is incomplete")
+    gitmodules_path = ROOT / ".gitmodules"
+    available = [pin for pin in pins.get("sources", []) if pin.get("exists")]
+    if available and not gitmodules_path.exists():
+        fail("available sources require .gitmodules")
+    if gitmodules_path.exists():
+        parser = configparser.ConfigParser()
+        parser.read(gitmodules_path, encoding="utf-8")
+        declared = {{parser[section].get("path") for section in parser.sections()}}
+        expected = {{f"vendor/{{pin['alias']}}" for pin in available}}
+        if declared != expected:
+            fail(f"gitmodule paths mismatch: declared={{sorted(declared)}}, expected={{sorted(expected)}}")
+    try:
+        output = subprocess.check_output(["git", "ls-files", "--stage"], cwd=ROOT, text=True, stderr=subprocess.DEVNULL)
+    except Exception:
+        output = ""
+    staged = {{line.split(maxsplit=3)[-1]: line.split(maxsplit=1)[0] for line in output.splitlines() if len(line.split(maxsplit=3)) == 4}}
+    for pin in available:
+        path = f"vendor/{{pin['alias']}}"
+        mode = staged.get(path)
+        if mode is not None and mode != "160000":
+            fail(f"{{path}} is tracked but is not a gitlink")
+    print(f"verified {{EXPECTED_ORG}}/{{EXPECTED_REPO}} with {{len(available)}} available source pin(s)")
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+def render_materialize_script() -> str:
+    return r'''#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$root"
+
+token="${GH_TOKEN:-${TEST_FLEET_READ_TOKEN:-${GITHUB_TOKEN:-}}}"
+askpass=''
+cleanup() {
+  if [[ -n "$askpass" ]]; then rm -f "$askpass"; fi
+  unset token TEST_FLEET_EFFECTIVE_TOKEN GH_TOKEN GITHUB_TOKEN TEST_FLEET_READ_TOKEN GIT_ASKPASS GIT_TERMINAL_PROMPT
+}
+trap cleanup EXIT
+
+if [[ -n "$token" ]]; then
+  [[ "$token" != *$'\n'* && "$token" != *$'\r'* && "$token" != *' '* ]]
+  export TEST_FLEET_EFFECTIVE_TOKEN="$token"
+  askpass="$(mktemp)"
+  cat >"$askpass" <<'ASKPASS_EOF'
+#!/usr/bin/env bash
+case "${1:-}" in
+  *Username*) printf '%s\n' x-access-token ;;
+  *) printf '%s\n' "${TEST_FLEET_EFFECTIVE_TOKEN:?}" ;;
+esac
+ASKPASS_EOF
+  chmod 700 "$askpass"
+  export GIT_ASKPASS="$askpass"
+  export GIT_TERMINAL_PROMPT=0
+fi
+
+# Use actual gitlinks whenever the publisher could create them.
+if [[ -f .gitmodules ]]; then
+  git submodule update --init --recursive --depth 1 || true
+fi
+
+# GitHub's Trees API may reject a gitlink whose commit belongs to a different
+# private repository. Materialize every missing path directly from the immutable
+# source pin so dependency checkout remains exact.
+python3 - <<'PIN_MATERIALIZER_PY'
+from __future__ import annotations
+import json
+from pathlib import Path
+import shutil
+import subprocess
+
+root = Path.cwd()
+payload = json.loads((root / "source-pins.json").read_text(encoding="utf-8"))
+for pin in payload.get("sources", []):
+    if not pin.get("exists"):
+        continue
+    alias = pin["alias"]
+    repository = pin["repository"]
+    sha = pin["commit_sha"]
+    destination = root / "vendor" / alias
+    if destination.exists():
+        try:
+            current = subprocess.check_output(["git", "-C", str(destination), "rev-parse", "HEAD"], text=True).strip()
+        except Exception:
+            current = ""
+        if current == sha:
+            continue
+        if destination.is_symlink() or not (destination / ".git").exists():
+            raise SystemExit(f"refusing to replace non-git dependency path: {destination}")
+        shutil.rmtree(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    url = f"https://github.com/{repository}.git"
+    subprocess.run(["git", "clone", "--filter=blob:none", "--no-checkout", url, str(destination)], check=True)
+    subprocess.run(["git", "-C", str(destination), "fetch", "--depth", "1", "origin", sha], check=True)
+    subprocess.run(["git", "-C", str(destination), "checkout", "--detach", sha], check=True)
+    current = subprocess.check_output(["git", "-C", str(destination), "rev-parse", "HEAD"], text=True).strip()
+    if current != sha:
+        raise SystemExit(f"source pin mismatch for {repository}: expected {sha}, got {current}")
+    print(f"materialized {repository}@{sha[:12]} -> vendor/{alias}")
+PIN_MATERIALIZER_PY
+
+if command -v zed >/dev/null 2>&1; then
+  zed install
+else
+  echo "notice: zed CLI is not installed; immutable git sources were still materialized" >&2
+fi
+'''
+
+def render_probe_script(repo: Mapping[str, Any], pins: Sequence[SourcePin]) -> str:
+    managers = [m for m in repo.get("package_managers", []) if m not in {"zed", "git-submodule"}]
+    aliases = [pin.alias for pin in pins if pin.exists]
+    return f'''#!/usr/bin/env python3
+from __future__ import annotations
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tomllib
+import xml.etree.ElementTree as ET
+
+ROOT = Path(__file__).resolve().parents[1]
+MANAGERS = {managers!r}
+ALIASES = {aliases!r}
+MANIFESTS = {{
+    "cargo": ["Cargo.toml"],
+    "npm": ["package.json"],
+    "pip": ["pyproject.toml", "setup.py", "setup.cfg"],
+    "go-modules": ["go.mod"],
+    "maven": ["pom.xml"],
+    "gradle": ["build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"],
+    "pub": ["pubspec.yaml"],
+    "swiftpm": ["Package.swift"],
+    "nuget": ["*.csproj", "*.fsproj", "*.vbproj"],
+    "composer": ["composer.json"],
+    "gleam": ["gleam.toml"],
+    "cmake": ["CMakeLists.txt"],
+    "homebrew": ["*.rb"],
+}}
+
+
+def candidates(base: Path, patterns: list[str]) -> list[Path]:
+    found = []
+    for pattern in patterns:
+        found.extend(path for path in base.glob(f"**/{{pattern}}") if len(path.relative_to(base).parts) <= 6)
+    return sorted(set(found))
+
+
+def validate(path: Path) -> None:
+    if path.name in {{"package.json", "composer.json"}}:
+        json.loads(path.read_text(encoding="utf-8"))
+    elif path.name == "Cargo.toml" and shutil_which("cargo"):
+        tomllib.loads(path.read_text(encoding="utf-8"))
+        subprocess.run(["cargo", "metadata", "--no-deps", "--format-version", "1", "--manifest-path", str(path)], check=True, stdout=subprocess.DEVNULL)
+    elif path.name in {{"Cargo.toml", "pyproject.toml", "gleam.toml"}}:
+        tomllib.loads(path.read_text(encoding="utf-8"))
+    elif path.suffix in {{".xml", ".csproj", ".fsproj", ".vbproj"}} or path.name == "pom.xml":
+        ET.parse(path)
+    elif path.name == "Package.swift" and shutil_which("swift"):
+        subprocess.run(["swift", "package", "dump-package"], cwd=path.parent, check=True, stdout=subprocess.DEVNULL)
+    else:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if not text.strip():
+            raise RuntimeError(f"empty native manifest: {{path}}")
+
+
+def shutil_which(name: str):
+    import shutil
+    return shutil.which(name)
+
+
+def main() -> None:
+    if not ALIASES:
+        print("no currently available source repositories; native probes are planned")
+        return
+    failures = []
+    for manager in MANAGERS:
+        patterns = MANIFESTS.get(manager, [])
+        if not patterns:
