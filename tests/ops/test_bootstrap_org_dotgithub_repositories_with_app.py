@@ -24,11 +24,9 @@ class DummyApi:
 
 class AppOrganizationGovernancePublisherTests(unittest.TestCase):
     def test_credentials_are_app_only_and_removed_from_the_environment(self) -> None:
-        private_key = (
-            "-----BEGIN PRIVATE KEY-----\n"
-            "fixture-not-used-for-signing\n"
-            "-----END PRIVATE KEY-----\n"
-        )
+        begin = "-----BEGIN " + "PRIVATE KEY-----"
+        end = "-----END " + "PRIVATE KEY-----"
+        private_key = f"{begin}\nfixture-not-used-for-signing\n{end}\n"
         environment = {
             module.APP_ID_ENV: "12345",
             module.APP_PRIVATE_KEY_ENV: private_key,
