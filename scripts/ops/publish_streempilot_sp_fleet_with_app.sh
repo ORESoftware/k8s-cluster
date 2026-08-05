@@ -160,6 +160,22 @@ grep -qF 'SUPABASE_URL' "$fleet_root/StreemPilot/sp-web-mash/src/main.rs"
 grep -qF 'htmx.org' "$fleet_root/StreemPilot/sp-web-mash/src/main.rs"
 grep -qF 'WebSocketUpgrade' "$fleet_root/StreemPilot/sp-api/src/main.rs"
 
+stage='ensure-repositories'
+while IFS=$'\t' read -r full description; do
+  name="${full#*/}"
+  if ! gh api "repos/${full}" >/dev/null 2>&1; then
+    gh api --method POST "orgs/${ORG}/repos" \
+      -f name="$name" \
+      -f description="$description" \
+      -F private=true \
+      -F has_issues=true \
+      -F has_projects=false \
+      -F has_wiki=false \
+      -F auto_init=false >/dev/null
+  fi
+  gh api "repos/${full}" --jq '.full_name + " " + .visibility' | grep -qF "${full} private"
+done < <(jq -r '.repositories[] | [.full_name,.description] | @tsv' "$fleet_root/REPOSITORY_MANIFEST.json")
+
 stage='publish'
 CODE_VISIBILITY=private DRAFT_PRS=0 "$fleet_root/scripts/publish-all.sh"
 
