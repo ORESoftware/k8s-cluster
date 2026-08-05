@@ -147,7 +147,7 @@ while (( SECONDS < deadline )); do
       --header 'Accept: application/json' \
       --data-urlencode "client_id=${oauth_client_id}" \
       --data-urlencode "device_code=${device_code}" \
-      --data-urlencode 'grant_type=urn:ietf:params:oauth-grant-type:device_code' \
+      --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:device_code' \
       https://github.com/login/oauth/access_token
   )"
   [[ "$http_status" == 200 ]] || { echo "GitHub OAuth polling returned HTTP ${http_status}." >&2; exit 74; }
