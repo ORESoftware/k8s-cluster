@@ -36,6 +36,12 @@ resources:
 # optional. Keep the source manifests readable while making the rendered GitOps
 # contract fail closed after the cloud-bootstrap ExternalSecrets reconcile.
 patches:
+  - path: fiducia-node.durable-storage.patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: StatefulSet
+      name: fiducia-node
   - path: fiducia-node.required-secrets.patch.yaml
     target:
       group: apps

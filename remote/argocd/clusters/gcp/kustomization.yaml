@@ -9,7 +9,4 @@ resources:
   - storageclass.yaml
   - applications.yaml
   - ai-agent-coordinator.applications.yaml
-  # Self-referencing root app-of-apps: gives the Application set above drift
-  # detection + selfHeal (audit finding #1 / DEN-1150). Bootstrap applies it
-  # with this overlay; thereafter it reconciles clusters/gcp from `dev`.
   - root.application.yaml

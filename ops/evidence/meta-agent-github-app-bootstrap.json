@@ -1,0 +1,29 @@
+{
+  "installation": {
+    "account": "",
+    "id": "",
+    "lookup_http_status": ""
+  },
+  "installation_token": {
+    "expires_at": "",
+    "issue_http_status": "",
+    "permissions": {}
+  },
+  "observed_at": "2026-08-02T02:24:25Z",
+  "protected_app_credentials": {
+    "app_id_present": false,
+    "private_key_present": false,
+    "private_key_valid": false
+  },
+  "repository_operation": {
+    "authenticated_lookup_http_status": "",
+    "create_attempted": false,
+    "create_http_status": "",
+    "default_branch": "",
+    "exists_public": false,
+    "full_name": "",
+    "public_lookup_http_status": "404",
+    "visibility": ""
+  },
+  "schema_version": 1
+}

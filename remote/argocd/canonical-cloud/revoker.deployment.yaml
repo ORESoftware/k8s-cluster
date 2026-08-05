@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/name: canonical-session-revoker
     app.kubernetes.io/component: revoker
   annotations:
-    canonical.cloud/release-sha: "e09bb95160aaf95a836e810eb20b65e74f6317a6"
+    canonical.cloud/release-sha: "488791e252c2ac94de78e1cd4d71165b53c2a2c3"
 spec:
   replicas: 1
   minReadySeconds: 5
@@ -27,7 +27,7 @@ spec:
         app.kubernetes.io/name: canonical-session-revoker
         app.kubernetes.io/component: revoker
       annotations:
-        canonical.cloud/release-sha: "e09bb95160aaf95a836e810eb20b65e74f6317a6"
+        canonical.cloud/release-sha: "488791e252c2ac94de78e1cd4d71165b53c2a2c3"
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
@@ -44,7 +44,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: revoker
-          image: ghcr.io/canonical-cloud/canonical-web-server-rs:revoker-e09bb95160aaf95a836e810eb20b65e74f6317a6@sha256:beb1b3414f429836be78cd41005070bf86dfd367389dbe7b202a89a5308d297b
+          image: ghcr.io/canonical-cloud/canonical-session-revoker@sha256:cb675d56785093ef8a944ed5af5bd5d2387eb052d5e914ebe956cefe09361d5b
           imagePullPolicy: IfNotPresent
           args:
             - run
