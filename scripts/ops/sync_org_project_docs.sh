@@ -474,9 +474,16 @@ ISSUE
     false
   fi
 
-  [[ "$pr_number" =~ ^[1-9][0-9]*$ ]]
-  [[ "$pr_url" == "https://github.com/${canonical_org}/.github/pull/${pr_number}" ]]
-  [[ "$pr_state" == merged-* || "$pr_state" == "auto-merge-enabled" || "$pr_state" == "not-needed" ]]
+  if [[ "$docs_action" == "updated" ]]; then
+    [[ "$pr_number" =~ ^[1-9][0-9]*$ ]]
+    [[ "$pr_url" == "https://github.com/${canonical_org}/.github/pull/${pr_number}" ]]
+    [[ "$pr_state" == merged-* || "$pr_state" == "auto-merge-enabled" ]]
+  elif [[ "$docs_action" == "unchanged" ]]; then
+    [[ -z "$pr_number" && -z "$pr_url" ]]
+    [[ "$pr_state" == "not-needed" ]]
+  else
+    false
+  fi
   [[ "$issue_number" =~ ^[1-9][0-9]*$ ]]
   [[ "$issue_url" == "https://github.com/${canonical_org}/.github/issues/${issue_number}" ]]
   [[ "$project_item_action" == "added" || "$project_item_action" == "existing" ]]
