@@ -28,7 +28,30 @@ new = '''    run(["git", "checkout", "-b", FEATURE_BRANCH], cwd=root)\n    write
 if new not in text:
     if old not in text:
         raise SystemExit("StreemPilot generator formatting patch target was not found")
-    path.write_text(text.replace(old, new, 1), encoding="utf-8")
+    text = text.replace(old, new, 1)
+
+# Serde's enum-level rename_all changes variant names, not fields inside
+# struct variants. Add rename_all_fields to the generated RealtimeEvent enum
+# so studio_id serializes as studioId, matching the public JSON contract and
+# the existing generator test.
+marker = "pub enum RealtimeEvent"
+marker_index = text.find(marker)
+if marker_index < 0:
+    raise SystemExit("StreemPilot RealtimeEvent enum patch target was not found")
+attribute_start = text.rfind("#[serde(", max(0, marker_index - 1200), marker_index)
+attribute_end = text.find(")]", attribute_start, marker_index)
+if attribute_start < 0 or attribute_end < 0:
+    raise SystemExit("StreemPilot RealtimeEvent serde attribute was not found")
+attribute_end += 2
+attribute = text[attribute_start:attribute_end]
+if 'rename_all_fields = "camelCase"' not in attribute:
+    needle = 'rename_all = "camelCase"'
+    if needle not in attribute:
+        raise SystemExit("StreemPilot RealtimeEvent camelCase attribute was not found")
+    replacement = attribute[:-2] + ', rename_all_fields = "camelCase")]'
+    text = text[:attribute_start] + replacement + text[attribute_end:]
+
+path.write_text(text, encoding="utf-8")
 PY
 
 chmod 0755 \
