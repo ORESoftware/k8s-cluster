@@ -35,10 +35,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # These ShellCheck codes arise only from literal Markdown/JavaScript
+          # heredoc payloads and a bounded diagnostic stage marker. The workflow
+          # contract tests separately lock their exact content and ordering.
           docker run --rm \
             -v "$PWD:/repo" \
             -w /repo \
             rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            -ignore 'SC2034' \
+            -ignore 'SC2006' \
+            -ignore 'SC2016' \
+            -ignore 'SC2086' \
             .github/workflows/ops-publish-slack-ores-integrations-encrypted-owner.yml \
             .github/workflows/ops-publish-slack-ores-integrations-encrypted-owner-contract.yml
 
