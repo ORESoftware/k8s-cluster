@@ -1,0 +1,36 @@
+name: meshy-worker-rustfmt
+
+on:
+  push:
+    branches:
+      - feature/den-2506-durable-meshy-worker
+    paths:
+      - "src/bin/meshy-job-worker.rs"
+      - ".github/workflows/meshy-worker-rustfmt.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/den-2506-durable-meshy-worker
+          fetch-depth: 0
+      - name: Apply rustfmt
+        run: rustfmt --edition 2021 src/bin/meshy-job-worker.rs
+      - name: Commit deterministic formatting when needed
+        run: |
+          if git diff --quiet -- src/bin/meshy-job-worker.rs; then
+            echo "rustfmt produced no changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/bin/meshy-job-worker.rs
+          git commit -m "style: rustfmt durable Meshy worker"
+          git push origin HEAD:feature/den-2506-durable-meshy-worker
