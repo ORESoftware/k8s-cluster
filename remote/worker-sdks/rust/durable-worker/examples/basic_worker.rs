@@ -1,6 +1,5 @@
 use oresoftware_durable_worker::{
-    Cancellation, Client, ClientOptions, Handler, JsonObject, TaskContext, Worker,
-    WorkerConfig,
+    Cancellation, Client, ClientOptions, Handler, JsonObject, TaskContext, Worker, WorkerConfig,
 };
 use serde_json::json;
 use std::collections::HashMap;
@@ -8,8 +7,8 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let base_url = std::env::var("DURABLE_WORKER_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:8152".to_owned());
+    let base_url =
+        std::env::var("DURABLE_WORKER_URL").unwrap_or_else(|_| "http://127.0.0.1:8152".to_owned());
     let secret = std::env::var("DURABLE_WORKER_AUTH_SECRET")?;
     let client = Arc::new(Client::new(&base_url, secret, ClientOptions::default())?);
 

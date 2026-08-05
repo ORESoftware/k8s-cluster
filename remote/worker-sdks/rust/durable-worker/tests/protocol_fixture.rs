@@ -24,9 +24,14 @@ fn consumes_the_shared_protocol_v1_fixture() {
     .expect("shared protocol fixture");
     assert_eq!(fixture.version, 1);
     assert_eq!(fixture.delivery, "at-least-once");
-    assert!(fixture.effect_safety.contains(&"idempotency-key".to_owned()));
+    assert!(fixture
+        .effect_safety
+        .contains(&"idempotency-key".to_owned()));
     assert!(fixture.effect_safety.contains(&"fencing-token".to_owned()));
-    assert_eq!(fixture.transient_statuses, vec![408, 425, 429, 500, 502, 503, 504]);
+    assert_eq!(
+        fixture.transient_statuses,
+        vec![408, 425, 429, 500, 502, 503, 504]
+    );
     assert_eq!(fixture.lease_lost_statuses, vec![404, 409]);
     assert!(fixture
         .never_retry_without_identity
@@ -37,7 +42,10 @@ fn consumes_the_shared_protocol_v1_fixture() {
     assert!(fixture
         .endpoint_fragments
         .contains(&"/api/v1/tasks".to_owned()));
-    assert_eq!(fixture.progress_chunk_id, "{stepId}:{leaseGeneration}:{sequence}");
+    assert_eq!(
+        fixture.progress_chunk_id,
+        "{stepId}:{leaseGeneration}:{sequence}"
+    );
     assert_eq!(fixture.assignment.step_id, "step-fixture");
     assert_eq!(fixture.assignment.lease_generation, 3);
     assert_eq!(fixture.assignment.fencing_token, 9);

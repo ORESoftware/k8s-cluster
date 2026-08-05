@@ -6,8 +6,8 @@ mod transport;
 mod worker;
 
 pub use client::{
-    Assignment, Client, ClientOptions, JsonObject, Lease, StepCompletion, StepFailure,
-    StepOutput, WorkerPoll, WorkerRegistration,
+    Assignment, Client, ClientOptions, JsonObject, Lease, StepCompletion, StepFailure, StepOutput,
+    WorkerPoll, WorkerRegistration,
 };
 pub use error::{DurableWorkerError, ProtocolError, TransportError};
 pub use transport::{

@@ -35,10 +35,7 @@ impl ScriptedTransport {
 impl Transport for ScriptedTransport {
     fn execute(&self, request: TransportRequest) -> TransportFuture<'_> {
         Box::pin(async move {
-            self.requests
-                .lock()
-                .expect("requests lock")
-                .push(request);
+            self.requests.lock().expect("requests lock").push(request);
             match self
                 .responses
                 .lock()
@@ -104,9 +101,10 @@ async fn bound_submission_retries_but_unbound_submission_does_not() {
 
 #[tokio::test]
 async fn ambiguous_worker_poll_is_never_retried() {
-    let transport = ScriptedTransport::new(vec![ScriptedResponse::Error(
-        TransportError::new("connection reset", true),
-    )]);
+    let transport = ScriptedTransport::new(vec![ScriptedResponse::Error(TransportError::new(
+        "connection reset",
+        true,
+    ))]);
     let sdk = client(transport.clone());
     let error = sdk.poll_worker("worker-1", 30_000).await.unwrap_err();
     assert!(error.retryable());
@@ -143,17 +141,14 @@ async fn fenced_step_mutation_is_reported_as_lease_loss() {
 
 #[tokio::test]
 async fn redirect_status_is_not_treated_as_success() {
-    let transport = ScriptedTransport::new(vec![ScriptedResponse::Response(
-        TransportResponse {
-            status: 302,
-            headers: BTreeMap::from([(
-                "location".to_owned(),
-                "https://untrusted.example.test".to_owned(),
-            )]),
-            body: serde_json::to_vec(&json!({"message":"redirect refused"}))
-                .expect("encode response"),
-        },
-    )]);
+    let transport = ScriptedTransport::new(vec![ScriptedResponse::Response(TransportResponse {
+        status: 302,
+        headers: BTreeMap::from([(
+            "location".to_owned(),
+            "https://untrusted.example.test".to_owned(),
+        )]),
+        body: serde_json::to_vec(&json!({"message":"redirect refused"})).expect("encode response"),
+    })]);
     let sdk = client(transport);
     let error = sdk.get_run("run-1").await.unwrap_err();
     assert_eq!(error.status(), Some(302));

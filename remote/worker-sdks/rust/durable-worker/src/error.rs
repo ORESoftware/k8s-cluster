@@ -33,11 +33,7 @@ impl Display for ProtocolError {
                 "durable-worker {} (HTTP {}): {}",
                 self.code, status, self.message
             ),
-            None => write!(
-                formatter,
-                "durable-worker {}: {}",
-                self.code, self.message
-            ),
+            None => write!(formatter, "durable-worker {}: {}", self.code, self.message),
         }
     }
 }
@@ -61,7 +57,11 @@ impl TransportError {
 
 impl Display for TransportError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "durable-worker transport error: {}", self.message)
+        write!(
+            formatter,
+            "durable-worker transport error: {}",
+            self.message
+        )
     }
 }
 
