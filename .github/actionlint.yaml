@@ -4,3 +4,8 @@ self-hosted-runner:
     - sonus-browser
     - sonus-ci-dind
     - sonus-android-kvm
+
+paths:
+  .github/workflows/ops-publish-exact-repository-gaps-with-apps.yml:
+    ignore:
+      - 'shellcheck reported issue in this script: SC2251:.+'
