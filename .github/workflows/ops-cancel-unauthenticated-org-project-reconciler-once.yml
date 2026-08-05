@@ -1,0 +1,61 @@
+name: Cancel unauthenticated organization-project reconciler once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-cancel-unauthenticated-org-project-reconciler-once.yml
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: cancel-unauthenticated-organization-project-reconciler-once
+  cancel-in-progress: false
+
+jobs:
+  cancel-and-clean:
+    if: github.actor == 'ORESoftware'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      DEFAULT_BRANCH: main
+      TARGET_RUN_ID: '31033274687'
+      PUBLIC_KEY_PATH: .github/tmp/org-project-docs-fa3b61c9a2d74e3ea0f8aa26f112c682.pub.pem
+      CIPHERTEXT_PATH: .github/tmp/org-project-docs-fa3b61c9a2d74e3ea0f8aa26f112c682.enc.b64
+      SELF_PATH: .github/workflows/ops-cancel-unauthenticated-org-project-reconciler-once.yml
+    steps:
+      - name: Cancel the blocked run and remove ephemeral handshake files
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          gh run cancel "$TARGET_RUN_ID" --repo "$REPOSITORY" || true
+          for _ in $(seq 1 30); do
+            status="$(gh run view "$TARGET_RUN_ID" --repo "$REPOSITORY" --json status --jq '.status' 2>/dev/null || true)"
+            [[ "$status" == 'completed' ]] && break
+            sleep 2
+          done
+
+          delete_path() {
+            local path="$1"
+            local metadata sha payload
+            if metadata="$(gh api "repos/${REPOSITORY}/contents/${path}?ref=${DEFAULT_BRANCH}" 2>/dev/null)"; then
+              sha="$(jq -r '.sha // empty' <<<"$metadata")"
+              if [[ -n "$sha" ]]; then
+                payload="$(jq -nc \
+                  --arg message "ops: remove ephemeral organization-project handshake file" \
+                  --arg sha "$sha" \
+                  --arg branch "$DEFAULT_BRANCH" \
+                  '{message:$message,sha:$sha,branch:$branch}')"
+                gh api --method DELETE "repos/${REPOSITORY}/contents/${path}" --input - <<<"$payload" >/dev/null
+              fi
+            fi
+          }
+
+          delete_path "$PUBLIC_KEY_PATH"
+          delete_path "$CIPHERTEXT_PATH"
+          delete_path "$SELF_PATH"
