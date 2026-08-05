@@ -1,8 +1,9 @@
-name: TEMP DEN-2328 fix actionlint findings
+name: TEMP DEN-2328 apply exact actionlint repair
 
 on:
   push:
-    branches: [agent/DEN-2328-protected-app-exact-gaps]
+    branches:
+      - agent/DEN-2328-protected-app-exact-gaps
     paths:
       - .github/workflows/temp-den-2328-fix-actionlint.yml
 
@@ -10,7 +11,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: temp-den-2328-fix-actionlint
+  group: temp-den-2328-apply-actionlint-repair
   cancel-in-progress: false
 
 jobs:
@@ -25,7 +26,7 @@ jobs:
           persist-credentials: true
           fetch-depth: 2
 
-      - name: Replace shellcheck-unsafe negation and consume helper
+      - name: Apply explicit fail-closed grep checks and consume helper
         shell: bash
         run: |
           set -euo pipefail
@@ -33,30 +34,37 @@ jobs:
           from pathlib import Path
 
           path = Path('.github/workflows/ops-publish-exact-repository-gaps-with-apps.yml')
-          text = path.read_text(encoding='utf-8')
-          replacements = {
-              "          ! grep -nE 'ghp_|github_pat_|-----BEGIN (RSA )?PRIVATE KEY-----' \"${targets[@]}\"\n": """          if grep -nE 'ghp_|github_pat_|-----BEGIN (RSA )?PRIVATE KEY-----' \"${targets[@]}\"; then
-            echo 'credential-shaped source material detected' >&2
-            exit 1
-          fi
-""",
-              "          ! grep -nE 'git push --force|--visibility[ =]+public|\"private\"[[:space:]]*:[[:space:]]*false' \"${targets[@]}\"\n": """          if grep -nE 'git push --force|--visibility[ =]+public|\"private\"[[:space:]]*:[[:space:]]*false' \"${targets[@]}\"; then
-            echo 'unsafe repository mutation path detected' >&2
-            exit 1
-          fi
-""",
-          }
-          for old, new in replacements.items():
-              if text.count(old) != 1:
-                  raise SystemExit(f'expected exactly one actionlint target, found {text.count(old)}')
-              text = text.replace(old, new, 1)
-          path.write_text(text, encoding='utf-8')
+          first = "          ! grep -nE 'ghp_|github_pat_|-----BEGIN (RSA )?PRIVATE KEY-----' \"${targets[@]}\""
+          second = "          ! grep -nE 'git push --force|--visibility[ =]+public|\"private\"[[:space:]]*:[[:space:]]*false' \"${targets[@]}\""
+          lines = path.read_text(encoding='utf-8').splitlines()
+          output = []
+          replaced = 0
+          for line in lines:
+              if line == first:
+                  output.extend([
+                      "          if grep -nE 'ghp_|github_pat_|-----BEGIN (RSA )?PRIVATE KEY-----' \"${targets[@]}\"; then",
+                      "            echo 'credential-shaped source material detected' >&2",
+                      "            exit 1",
+                      "          fi",
+                  ])
+                  replaced += 1
+              elif line == second:
+                  output.extend([
+                      "          if grep -nE 'git push --force|--visibility[ =]+public|\"private\"[[:space:]]*:[[:space:]]*false' \"${targets[@]}\"; then",
+                      "            echo 'unsafe repository mutation path detected' >&2",
+                      "            exit 1",
+                      "          fi",
+                  ])
+                  replaced += 1
+              else:
+                  output.append(line)
+          if replaced != 2:
+              raise SystemExit(f'expected two actionlint repairs, applied {replaced}')
+          path.write_text('\n'.join(output) + '\n', encoding='utf-8')
           PY
           git rm .github/workflows/temp-den-2328-fix-actionlint.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .github/workflows/ops-publish-exact-repository-gaps-with-apps.yml
-          git commit -m 'fix(DEN-2328): use explicit fail-closed grep checks'
+          git commit -m 'fix(DEN-2328): apply explicit fail-closed grep checks'
           git push origin HEAD:agent/DEN-2328-protected-app-exact-gaps
-
-# Trigger the workflow after its initial definition commit.
