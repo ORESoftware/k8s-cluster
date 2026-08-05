@@ -121,22 +121,38 @@ test('GitOps binds each reviewed repository to only its fixed profiles', () => {
       profiles: ['puppeteer'],
     },
   ]);
-  assert.doesNotMatch(patch, /msgint-connectors[^\n]*node-verify/);
-  assert.doesNotMatch(patch, /msgint-connectors[^\n]*(playwright|python-verify|rust-verify)/);
-  assert.doesNotMatch(patch, /3fa-interfaces[^\n]*"rust-verify"/);
-  assert.doesNotMatch(patch, /3fa-interfaces[^\n]*(playwright|python-verify|node-verify)/);
-  assert.doesNotMatch(
-    patch,
-    /des-web-playwright-e2e[^\n]*(puppeteer|browser-e2e|node-verify|rust-verify)/,
+
+  const profilesByRepository = new Map(
+    rules.map(({ repository, profiles: repositoryProfiles }) => [
+      repository,
+      repositoryProfiles,
+    ]),
   );
-  assert.doesNotMatch(
-    patch,
-    /des-web-puppeteer-e2e[^\n]*(playwright|browser-e2e|node-verify|rust-verify)/,
+  assert.deepEqual(
+    profilesByRepository.get(
+      'https://github.com/messaging-intel/msgint-connectors.git',
+    ),
+    ['node-hardened-verify', 'node-hardened-test'],
   );
-  assert.doesNotMatch(
-    patch,
-    /messaging-intel\/\*|3FA-app\/\*|discrete-event-systems-test\/\*/,
+  assert.deepEqual(
+    profilesByRepository.get('https://github.com/3FA-app/3fa-interfaces.git'),
+    ['node-hardened-test', 'rust-generated-verify'],
   );
+  assert.deepEqual(
+    profilesByRepository.get(
+      'https://github.com/discrete-event-systems-test/des-web-playwright-e2e.git',
+    ),
+    ['playwright'],
+  );
+  assert.deepEqual(
+    profilesByRepository.get(
+      'https://github.com/discrete-event-systems-test/des-web-puppeteer-e2e.git',
+    ),
+    ['puppeteer'],
+  );
+  for (const { repository } of rules) {
+    assert.doesNotMatch(repository, /\*/, `wildcard repository rule is forbidden: ${repository}`);
+  }
 });
 
 test('generated Rust profile is fixed, ordered, locked, and non-publishing', () => {
