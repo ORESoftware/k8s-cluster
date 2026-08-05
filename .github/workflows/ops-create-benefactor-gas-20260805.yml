@@ -7,11 +7,13 @@ on:
     paths:
       - .github/workflows/ops-create-benefactor-gas-20260805.yml
       - scripts/ops/create_benefactor_gas_repository_20260805.sh
+      - scripts/ops/install_pinned_github_cli.sh
   push:
     branches: [main]
     paths:
       - .github/workflows/ops-create-benefactor-gas-20260805.yml
       - scripts/ops/create_benefactor_gas_repository_20260805.sh
+      - scripts/ops/install_pinned_github_cli.sh
   workflow_dispatch:
 
 permissions:
@@ -45,10 +47,15 @@ jobs:
         run: |
           set -euo pipefail
           script=scripts/ops/create_benefactor_gas_repository_20260805.sh
+          installer=scripts/ops/install_pinned_github_cli.sh
           bash -n "$script"
+          bash -n "$installer"
           grep -qF "repository='benefactor-cc/benefactor-gas'" "$script"
+          grep -qF 'install_pinned_github_cli.sh' "$script"
           grep -qF 'candidate-personal-access-token-rejected' "$script"
-          grep -qF 'chown ec2-user:ec2-user' "$script"
+          grep -qF 'chown -R ec2-user:ec2-user' "$script"
+          pinned_gh_auth='"$''gh_binary" auth token'
+          grep -qF "$pinned_gh_auth" "$script"
           grep -qF "membership" "$script"
           grep -qF "admin" "$script"
           grep -qF -- '--private' "$script"
