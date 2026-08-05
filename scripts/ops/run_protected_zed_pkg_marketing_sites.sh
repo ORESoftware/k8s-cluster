@@ -28,14 +28,22 @@ case "$origin_url" in
 esac
 
 publisher="scripts/ops/publish_zed_pkg_marketing_sites.py"
-spec="scripts/ops/zed_pkg_marketing_sites.json"
 test_file="tests/ops/test_publish_zed_pkg_marketing_sites.py"
-for required in "$publisher" "$spec" "$test_file"; do
+for required in "$publisher" "$test_file"; do
   if [[ ! -f "$required" ]]; then
     printf 'required trusted source is missing: %s\n' "$required" >&2
     exit 67
   fi
 done
+
+shopt -s nullglob
+publisher_parts=(scripts/ops/publish_zed_pkg_marketing_sites.py.part*)
+spec_parts=(scripts/ops/zed_pkg_marketing_sites.json.bz2.b64.part*)
+if (( ${#publisher_parts[@]} < 2 || ${#spec_parts[@]} < 2 )); then
+  printf 'trusted publisher/specification parts are incomplete\n' >&2
+  exit 67
+fi
+shopt -u nullglob
 
 command -v aws >/dev/null
 command -v python3 >/dev/null
