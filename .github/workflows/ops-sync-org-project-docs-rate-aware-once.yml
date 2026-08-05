@@ -8,6 +8,9 @@ on:
       - scripts/ops/sync_org_project_docs_rate_aware.py
       - scripts/ops/test_sync_org_project_docs_rate_aware.py
       - scripts/ops/sync_org_project_docs.sh
+      - scripts/ops/upsert_managed_markdown_block.py
+      - scripts/ops/prepare_org_project_docs_reconciler.py
+      - scripts/ops/test_upsert_managed_markdown_block.py
       - ops/portfolio/github-linear-project-registry.tsv
   workflow_dispatch:
 
@@ -30,9 +33,9 @@ jobs:
     env:
       REPOSITORY: ${{ github.repository }}
       DEFAULT_BRANCH: main
-      HANDSHAKE_NONCE: 7e6a2f49134d4d1ca969b435748ad93b
-      PUBLIC_KEY_PATH: .github/tmp/org-project-docs-rate-aware-7e6a2f49134d4d1ca969b435748ad93b.pub.pem
-      CIPHERTEXT_PATH: .github/tmp/org-project-docs-rate-aware-7e6a2f49134d4d1ca969b435748ad93b.enc.b64
+      HANDSHAKE_NONCE: c40d18ad2f734641ab1c722cd5b5a129
+      PUBLIC_KEY_PATH: .github/tmp/org-project-docs-rate-aware-c40d18ad2f734641ab1c722cd5b5a129.pub.pem
+      CIPHERTEXT_PATH: .github/tmp/org-project-docs-rate-aware-c40d18ad2f734641ab1c722cd5b5a129.enc.b64
       EVIDENCE_DIR: ops/evidence/org-project-docs-rate-aware
 
     steps:
@@ -43,6 +46,14 @@ jobs:
           persist-credentials: false
           submodules: false
           show-progress: false
+
+      - name: Prepare and test idempotent managed-block reconciliation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/ops/prepare_org_project_docs_reconciler.py
+          bash -n scripts/ops/sync_org_project_docs.sh
+          python3 scripts/ops/test_upsert_managed_markdown_block.py -v
 
       - name: Bind exact trusted main to one-time encrypted credential
         shell: bash
