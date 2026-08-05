@@ -1,0 +1,228 @@
+            if not isinstance(relative, str) or not relative or Path(relative).is_absolute():
+                raise FleetError(f"invalid fleet fragment path for {expected_org}: {relative!r}")
+            fragment_path = (root / relative).resolve()
+            if fragment_path.parent != root:
+                raise FleetError(f"fleet fragment must stay directly under {root}: {relative!r}")
+            try:
+                fragment = json.loads(fragment_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise FleetError(f"cannot load fleet fragment {fragment_path}: {exc}") from exc
+            if fragment.get("test_org") != expected_org or not isinstance(fragment.get("fleet"), dict):
+                raise FleetError(f"fleet fragment identity mismatch for {expected_org}: {fragment_path}")
+            fleets[expected_org] = fragment["fleet"]
+        payload = dict(payload)
+        payload["fleets"] = fleets
+    validate_config(payload)
+    return payload
+
+
+def validate_config(payload: Mapping[str, Any]) -> None:
+    if payload.get("schema_version") != 1:
+        raise FleetError("fleet config schema_version must be 1")
+    excluded = {str(x).lower() for x in payload.get("excluded_organizations", [])}
+    if not EXCLUDED_ACCOUNTS.issubset(excluded):
+        raise FleetError("fleet config must explicitly exclude r2g and r2g-test")
+    fleets = payload.get("fleets")
+    if not isinstance(fleets, dict):
+        raise FleetError("fleet config must contain an object named fleets")
+    actual_orgs = {str(x).lower() for x in fleets}
+    if actual_orgs != EXPECTED_TEST_ORGS:
+        missing = sorted(EXPECTED_TEST_ORGS - actual_orgs)
+        extra = sorted(actual_orgs - EXPECTED_TEST_ORGS)
+        raise FleetError(f"fleet organization allowlist mismatch; missing={missing}, extra={extra}")
+    total = 0
+    global_full_names: set[str] = set()
+    for test_org, fleet in fleets.items():
+        if not SAFE_NAME.fullmatch(test_org) or not test_org.lower().endswith("-test"):
+            raise FleetError(f"unsafe test organization name: {test_org!r}")
+        if test_org.lower() in EXCLUDED_ACCOUNTS:
+            raise FleetError(f"excluded organization present: {test_org}")
+        if not isinstance(fleet, dict):
+            raise FleetError(f"fleet {test_org} must be an object")
+        production_org = str(fleet.get("production_org", ""))
+        if not SAFE_NAME.fullmatch(production_org) or production_org.lower() in EXCLUDED_ACCOUNTS:
+            raise FleetError(f"unsafe production organization for {test_org}: {production_org!r}")
+        sources = fleet.get("sources", {})
+        if not isinstance(sources, dict):
+            raise FleetError(f"fleet {test_org} sources must be an object")
+        source_aliases: set[str] = set()
+        for key, source in sources.items():
+            if not SAFE_NAME.fullmatch(str(key)) or not isinstance(source, dict):
+                raise FleetError(f"invalid source entry {test_org}/{key}")
+            repository = str(source.get("repository", ""))
+            alias = str(source.get("alias", key))
+            if not SAFE_FULL_NAME.fullmatch(repository) or not SAFE_NAME.fullmatch(alias):
+                raise FleetError(f"unsafe source {test_org}/{key}: {repository!r}, alias={alias!r}")
+            if repository.split("/", 1)[0].lower() in EXCLUDED_ACCOUNTS:
+                raise FleetError(f"excluded source account used: {repository}")
+            if alias.lower() in source_aliases:
+                raise FleetError(f"duplicate source alias in {test_org}: {alias}")
+            source_aliases.add(alias.lower())
+        repositories = fleet.get("repositories")
+        if not isinstance(repositories, list) or not repositories:
+            raise FleetError(f"fleet {test_org} must contain repositories")
+        local_names: set[str] = set()
+        for repo in repositories:
+            if not isinstance(repo, dict):
+                raise FleetError(f"repository entry in {test_org} must be an object")
+            name = str(repo.get("name", ""))
+            if not SAFE_NAME.fullmatch(name) or name == ".github":
+                raise FleetError(f"unsafe repository name {test_org}/{name}")
+            lowered = name.lower()
+            if lowered in local_names:
+                raise FleetError(f"duplicate repository name in {test_org}: {name}")
+            local_names.add(lowered)
+            full_name = f"{test_org.lower()}/{lowered}"
+            if full_name in global_full_names:
+                raise FleetError(f"duplicate repository full name: {full_name}")
+            global_full_names.add(full_name)
+            refs = repo.get("source_refs", [])
+            if not isinstance(refs, list) or any(str(ref) not in sources for ref in refs):
+                raise FleetError(f"unknown source reference in {test_org}/{name}: {refs!r}")
+            for field in ("languages", "platforms", "package_managers", "suites"):
+                values = repo.get(field, [])
+                if not isinstance(values, list) or any(not isinstance(v, str) or not v for v in values):
+                    raise FleetError(f"{test_org}/{name} field {field} must be a list of strings")
+            total += 1
+    expected = int(payload.get("expected_repository_count", total))
+    if total != expected:
+        raise FleetError(f"configured repository count {total} does not match expected_repository_count {expected}")
+    if total != 209:
+        raise FleetError(f"bounded fleet must contain exactly 209 test repositories, got {total}")
+
+
+def slug(value: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9-]+", "-", value.lower()).strip("-")
+    return cleaned[:100] or "test-fleet"
+
+
+def toml_quote(value: str) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
+def manager_probe_guidance(manager: str, aliases: Sequence[str]) -> str:
+    source = f"vendor/{aliases[0]}" if aliases else "vendor/<source>"
+    mapping = {
+        "cargo": f"Find `{source}/Cargo.toml`, then run `cargo metadata --no-deps --manifest-path <path>`.",
+        "npm": f"Find `{source}/package.json`, then run `npm install` or `npm pack` from that package directory.",
+        "pip": f"Find `{source}/pyproject.toml` or `setup.py`, then build a wheel in an isolated environment.",
+        "go-modules": f"Find `{source}/go.mod`, then use a `replace` directive pointing to the pinned submodule.",
+        "maven": f"Find `{source}/pom.xml`, then consume it through a Maven reactor or install it to a temporary local repository.",
+        "gradle": f"Find `{source}/build.gradle(.kts)`, then include the pinned source as a composite build.",
+        "pub": f"Find `{source}/pubspec.yaml`, then declare a local `path:` dependency.",
+        "swiftpm": f"Find `{source}/Package.swift`, then declare a local package dependency.",
+        "nuget": f"Find a project under `{source}`, then use a project reference or build a temporary NuGet package.",
+        "composer": f"Find `{source}/composer.json`, then use a Composer path repository.",
+        "gleam": f"Find `{source}/gleam.toml`, then declare a path dependency.",
+        "cmake": f"Find `{source}/CMakeLists.txt`, then use `add_subdirectory` against the pinned source.",
+        "homebrew": f"Install the formula from the pinned tap source and execute the smoke suite.",
+        "zed": "Run `zed install` from this repository and verify the resolved package tree against `source-pins.json`.",
+        "git-submodule": "Run `git submodule update --init --recursive`, then verify every gitlink matches `source-pins.json`.",
+    }
+    return mapping.get(manager, f"Use the native `{manager}` resolver against the pinned source tree.")
+
+
+def render_zpkg(test_org: str, repo: Mapping[str, Any], pins: Sequence[SourcePin]) -> str:
+    lines = [
+        "[package]",
+        f"org = {toml_quote(slug(test_org))}",
+        f"name = {toml_quote(slug(str(repo['name'])))}",
+        'version = "0.1.0"',
+        f"description = {toml_quote(str(repo['purpose']))}",
+        'license = "MIT"',
+        "",
+        "[package.repository]",
+        'vcs = "git"',
+        f"url = {toml_quote('https://github.com/' + test_org + '/' + str(repo['name']))}",
+        "",
+    ]
+    dependencies = [pin for pin in pins if pin.zed_dependency and pin.exists]
+    if dependencies:
+        lines.append("[dependencies]")
+        for pin in sorted(dependencies, key=lambda item: item.repository.lower()):
+            lines.append(f"{toml_quote(pin.repository.lower())} = \"*\"")
+        lines.append("")
+    lines += [
+        "[install]",
+        'dir = ".vendor/.zed"',
+        'adapter = "none"',
+        "",
+        "[test-fleet]",
+        f"kind = {toml_quote(str(repo['kind']))}",
+        f"source_pin_count = {sum(1 for pin in pins if pin.exists)}",
+        f"generated_schema = 1",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def render_gitmodules(pins: Sequence[SourcePin]) -> str:
+    blocks = []
+    for pin in sorted((p for p in pins if p.exists), key=lambda item: item.alias.lower()):
+        blocks.append(
+            f'[submodule "vendor/{pin.alias}"]\n'
+            f"\tpath = vendor/{pin.alias}\n"
+            f"\turl = https://github.com/{pin.repository}.git\n"
+            f"\tbranch = {pin.default_branch or 'main'}\n"
+        )
+    return "\n".join(blocks)
+
+
+def render_readme(test_org: str, production_org: str, repo: Mapping[str, Any], pins: Sequence[SourcePin], digest: str) -> str:
+    source_lines = []
+    for pin in pins:
+        status = f"pinned `{pin.commit_sha[:12]}`" if pin.exists and pin.commit_sha else f"planned/unavailable ({pin.error or 'not resolved'})"
+        modes = []
+        if pin.exists:
+            modes.append("git submodule")
+        if pin.zed_dependency:
+            modes.append("Zed dependency")
+        source_lines.append(f"| `{pin.repository}` | `{pin.role}` | {status} | {', '.join(modes) or 'contract reference'} |")
+    if not source_lines:
+        source_lines.append("| _No source repositories declared_ | — | — | — |")
+    suites = "\n".join(f"- `{suite}`" for suite in repo.get("suites", [])) or "- `smoke`"
+    managers = "\n".join(
+        f"- **{manager}:** {manager_probe_guidance(manager, [pin.alias for pin in pins if pin.exists])}"
+        for manager in repo.get("package_managers", [])
+    ) or "- Use the source repository's native package manager."
+    return f"""{MANAGED_MARKER} digest={digest} -->
+# {repo['name']}
+
+Focused **{repo['kind']}** test repository for [`{production_org}`](https://github.com/{production_org}), owned by [`{test_org}`](https://github.com/{test_org}).
+
+## Purpose
+
+{repo['purpose']}
+
+## Production source pins
+
+| Repository | Role | Resolution | Consumption |
+| --- | --- | --- | --- |
+{chr(10).join(source_lines)}
+
+The committed `source-pins.json` is authoritative. The publisher requests actual gitlinks under `vendor/`; when GitHub rejects a cross-repository gitlink object, `scripts/materialize_dependencies.sh` clones and checks out the exact recorded commit instead. Zed-capable SDK/library sources are also declared in `.zpkg.toml`. Missing planned components remain explicit and do not silently redirect to substitutes.
+
+## Test matrix
+
+- **Languages:** {', '.join(f'`{x}`' for x in repo.get('languages', [])) or '`language-neutral`'}
+- **Platforms:** {', '.join(f'`{x}`' for x in repo.get('platforms', [])) or '`ubuntu-latest`'}
+- **Native/package acquisition:** {', '.join(f'`{x}`' for x in repo.get('package_managers', [])) or '`git-submodule`'}
+
+### Required suites
+
+{suites}
+
+## Running the scaffold
+
+```bash
+python3 scripts/verify_fleet.py
+python3 -m unittest discover -s tests -v
+```
+
+To materialize private cross-organization sources, provide a bounded read token through `GH_TOKEN` or the repository secret `TEST_FLEET_READ_TOKEN`, then run:
+
+```bash
+scripts/materialize_dependencies.sh
+python3 scripts/probe_native_packages.py
+```
+
