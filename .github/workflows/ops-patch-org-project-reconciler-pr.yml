@@ -1,0 +1,115 @@
+name: Apply fail-closed organization reconciler patch
+
+on:
+  push:
+    branches:
+      - fix/org-project-reconciler-fail-closed-20260805
+    paths:
+      - .github/workflows/ops-patch-org-project-reconciler-pr.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/org-project-reconciler-fail-closed-20260805
+      - name: Patch the reconciler deterministically
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/ops/sync_org_project_docs.sh')
+          text = path.read_text(encoding='utf-8')
+
+          anchor = 'gh auth setup-git >/dev/null\n\n'
+          helper = r'''gh_api_json() {
+            local output="" attempt reset now delay
+            for attempt in 1 2 3 4 5 6; do
+              if output="$(gh api "$@" 2>&1)"; then
+                if jq -e 'type == "object" and (((.message? // "") | test("rate limit"; "i")) | not) and (((.status? // "") | tostring) != "403")' <<<"$output" >/dev/null 2>&1; then
+                  printf '%s\n' "$output"
+                  return 0
+                fi
+              fi
+
+              if grep -Eqi 'rate limit|secondary rate limit|abuse detection' <<<"$output"; then
+                reset="$(gh api rate_limit --jq '.resources.core.reset // empty' 2>/dev/null || true)"
+                now="$(date +%s)"
+                if [[ "$reset" =~ ^[0-9]+$ && "$reset" -gt "$now" ]]; then
+                  delay=$((reset - now + 5))
+                else
+                  delay=$((attempt * 30))
+                fi
+                (( delay < 5 )) && delay=5
+                (( delay > 900 )) && delay=900
+                printf 'GitHub API rate limited; retrying in %s seconds (attempt %s/6)\n' "$delay" "$attempt" >&2
+                sleep "$delay"
+                continue
+              fi
+
+              printf '%s\n' "$output" >&2
+              return 1
+            done
+
+            printf 'GitHub API remained rate limited after 6 attempts\n' >&2
+            return 1
+          }
+
+          '''
+          if 'gh_api_json() {' not in text:
+              if anchor not in text:
+                  raise SystemExit('auth setup anchor not found')
+              text = text.replace(anchor, anchor + helper, 1)
+
+          old_lookup = '''  canonical_org="$(gh api "orgs/${requested_org}" --jq '.login')"
+            project_title="${canonical_org}-project"
+          '''
+          new_lookup = '''  local organization_response
+            organization_response="$(gh_api_json "orgs/${requested_org}")"
+            canonical_org="$(jq -er '.login | strings' <<<"$organization_response")"
+            [[ "$canonical_org" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,38})$ ]]
+            [[ "${canonical_org,,}" == "${requested_org,,}" ]]
+            project_title="${canonical_org}-project"
+          '''
+          if old_lookup in text:
+              text = text.replace(old_lookup, new_lookup, 1)
+          elif new_lookup not in text:
+              raise SystemExit('organization lookup anchor not found')
+
+          audit_anchor = '''jq -s 'sort_by(.canonical_org // .requested_org)' "$RESULTS_JSONL" > "$RESULTS_JSON"
+
+          jq -r '''
+          audit_replacement = '''jq -s 'sort_by(.canonical_org // .requested_org)' "$RESULTS_JSONL" > "$RESULTS_JSON"
+
+          python3 scripts/ops/audit_org_project_docs_evidence.py \\
+            --registry "$REGISTRY_FILE" \\
+            --evidence "$RESULTS_JSON" \\
+            --output "$EVIDENCE_DIR/audit.json"
+
+          jq -r '''
+          if 'python3 scripts/ops/audit_org_project_docs_evidence.py' not in text:
+              if audit_anchor not in text:
+                  raise SystemExit('evidence finalization anchor not found')
+              text = text.replace(audit_anchor, audit_replacement, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+          bash -n scripts/ops/sync_org_project_docs.sh
+          python3 -m unittest tests/ops/test_audit_org_project_docs_evidence.py
+      - name: Commit the durable patch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if git diff --quiet -- scripts/ops/sync_org_project_docs.sh; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- scripts/ops/sync_org_project_docs.sh
+          git commit -m 'fix: fail closed on GitHub API rate limits'
+          git push origin HEAD:fix/org-project-reconciler-fail-closed-20260805
