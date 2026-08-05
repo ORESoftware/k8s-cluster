@@ -1,0 +1,6 @@
+{
+  "state": "pending",
+  "purpose": "migrate preserved StreemPilot repositories to canonical sp names",
+  "privateKeyStored": false,
+  "plaintextCredentialStored": false
+}
