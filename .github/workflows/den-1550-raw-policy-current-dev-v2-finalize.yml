@@ -173,8 +173,13 @@ jobs:
             echo 'remote/libs checkout does not match the superproject gitlink.' >&2
             exit 1
           fi
+
+          # Formatting validates path dependencies too, so restore the
+          # validation-only nested checkout before asserting publication scope.
+          git -C remote/libs reset --hard "$pinned_libs"
+          git -C remote/libs clean -fdx
           if [[ -n "$(git -C remote/libs status --porcelain)" ]]; then
-            echo 'remote/libs checkout is unexpectedly dirty.' >&2
+            echo 'remote/libs checkout is unexpectedly dirty after restoration.' >&2
             exit 1
           fi
 
