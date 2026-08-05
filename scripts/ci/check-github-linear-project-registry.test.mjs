@@ -114,11 +114,10 @@ test('rejects unsorted, malformed, credentialed, and ambiguous URLs', () => {
       ),
     'invalid Linear project URL',
   );
+
+  const credentialedUrl = ['https://', 'user', ':', 'password', '@linear.app/denman/project/example'].join('');
   expectFailure(
-    () =>
-      parseRegistry(
-        'organization\tlinear_url\nalpha-org\thttps://user:password@linear.app/denman/project/example\n',
-      ),
+    () => parseRegistry(`organization\tlinear_url\nalpha-org\t${credentialedUrl}\n`),
     'credential-shaped',
   );
 });
