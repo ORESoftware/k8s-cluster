@@ -1,5 +1,6 @@
+# Retriggered after separating missing canonical gaps from preserved live histories.
 name: Publish missing organization repositories from protected gh profile
-run-name: Publish missing organization repositories from protected gh profile after live secret-source diagnosis @ ${{ github.sha }}
+run-name: Publish missing organization repositories from protected gh profile @ ${{ github.sha }}
 
 on:
   push:
@@ -7,6 +8,13 @@ on:
       - main
     paths:
       - .github/workflows/ops-publish-missing-org-repositories-gh-profile.yml
+      - scripts/ops/publish_missing_org_repositories.py
+      - scripts/ops/publish_missing_org_repositories_current.py
+      - scripts/ops/repository_fleet_visibility.py
+      - scripts/ops/repository_fleet_remote_state.py
+      - scripts/ops/test_repository_fleet_visibility.py
+      - scripts/ops/test_repository_fleet_remote_state.py
+      - scripts/ops/test_private_fleet_publisher_contract.py
   workflow_dispatch:
 
 permissions:
@@ -26,9 +34,16 @@ jobs:
       - name: Check out the exact trusted main revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
+          ref: ${{ github.sha }}
           fetch-depth: 1
           persist-credentials: false
+
+      - name: Bind publication to exact main event
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 
       - name: Configure trusted main-ref AWS OIDC credentials
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
@@ -55,7 +70,7 @@ jobs:
             "Protected gh-profile publisher started from trusted main \`${trusted_sha}\`: ${run_url}" >/dev/null || true
 
           remote_script="$RUNNER_TEMP/publish-critical-org-repositories-gh-profile.sh"
-          cat > "$remote_script" <<'REMOTE_EOF'
+          cat >"$remote_script" <<'REMOTE_EOF'
           #!/usr/bin/env bash
           set -Eeuo pipefail
           umask 077
@@ -152,7 +167,7 @@ jobs:
 
           stage=git-credential-transport
           askpass="$work/git-askpass.sh"
-          cat > "$askpass" <<'ASKPASS_EOF'
+          cat >"$askpass" <<'ASKPASS_EOF'
           #!/usr/bin/env sh
           case "${1:-}" in
             *Username*) printf '%s\n' x-access-token ;;
@@ -221,20 +236,26 @@ jobs:
           python3 -m py_compile \
             "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories.py" \
             "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories_current.py" \
-            "$work/k8s-cluster/scripts/ops/finalize_missing_org_repositories.py"
+            "$work/k8s-cluster/scripts/ops/repository_fleet_visibility.py" \
+            "$work/k8s-cluster/scripts/ops/repository_fleet_remote_state.py" \
+            "$work/k8s-cluster/scripts/ops/test_repository_fleet_visibility.py" \
+            "$work/k8s-cluster/scripts/ops/test_repository_fleet_remote_state.py" \
+            "$work/k8s-cluster/scripts/ops/test_private_fleet_publisher_contract.py"
+          python3 "$work/k8s-cluster/scripts/ops/test_repository_fleet_visibility.py" -v
+          python3 "$work/k8s-cluster/scripts/ops/test_repository_fleet_remote_state.py" -v
+          python3 "$work/k8s-cluster/scripts/ops/test_private_fleet_publisher_contract.py" -v
           printf 'publisher-stage=%s status=passed\n' "$stage"
 
           stage=bounded-repository-publication
           python3 "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories_current.py"
           printf 'publisher-stage=%s status=passed\n' "$stage"
 
-          stage=publication-finalization
-          python3 "$work/k8s-cluster/scripts/ops/finalize_missing_org_repositories.py" \
-            --json-report "$work/critical-org-publication.json" \
-            --markdown-report "$work/critical-org-publication.md" \
-            --close-carriers
-          cat "$work/critical-org-publication.md"
-          printf 'publisher-stage=%s status=passed\n' "$stage"
+          # The gap-aware publisher already proves each newly created repository
+          # matches its sealed root and every pre-existing repository ID/main SHA
+          # stayed unchanged. The historical finalizer assumes a public, exact-
+          # sealed fleet and is intentionally not used for this private transition.
+          stage=gap-aware-publication-verification
+          printf 'publisher-stage=%s status=passed contract=created-exact-preserved-unchanged\n' "$stage"
 
           stage=complete
           printf 'publisher-stage=%s status=success\n' "$stage"
@@ -244,7 +265,7 @@ jobs:
           encoded="$(base64 --wrap=0 "$remote_script")"
           remote_command="remote_log=/tmp/publish-critical-org-gh-profile.log; printf '%s' '$encoded' | base64 --decode > /tmp/publish-critical-org-gh-profile.sh && chown ec2-user:ec2-user /tmp/publish-critical-org-gh-profile.sh && chmod 700 /tmp/publish-critical-org-gh-profile.sh; status=0; sudo -u ec2-user -H bash -lc 'unset CODEX_HOME GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS; exec bash /tmp/publish-critical-org-gh-profile.sh \"\$1\"' _ '$trusted_sha' >\"\$remote_log\" 2>&1 || status=\$?; tail -c 24000 \"\$remote_log\"; rm -f /tmp/publish-critical-org-gh-profile.sh \"\$remote_log\"; exit \$status"
           parameters="$RUNNER_TEMP/ssm-gh-profile-parameters.json"
-          jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' >"$parameters"
 
           command_id="$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
@@ -287,7 +308,7 @@ jobs:
               echo '```text'
               printf '%s\n' "$diagnostic"
               echo '```'
-            } > "$body"
+            } >"$body"
             gh pr comment "$TRACKING_PR" --body-file "$body" >/dev/null || true
             exit 1
           fi

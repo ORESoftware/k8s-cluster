@@ -11,6 +11,7 @@ on:
       - 'remote/tests/pnpm-lock.yaml'
       - 'tools/google-chat-space-export/**'
       - 'remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs'
+      - 'remote/tests/general/slack-agent-command-workflow-contract.test.mjs'
   push:
     branches: [main]
     paths:
@@ -22,16 +23,8 @@ on:
       - 'remote/tests/pnpm-lock.yaml'
       - 'tools/google-chat-space-export/**'
       - 'remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs'
+      - 'remote/tests/general/slack-agent-command-workflow-contract.test.mjs'
   workflow_dispatch:
-    inputs:
-      bridge_ref:
-        description: ai-agent-bridge.rs branch, tag, or commit
-        required: false
-        default: agent/den-1041-ores-slash-commands
-      coordinator_ref:
-        description: ai-agent-coordinator.rs branch, tag, or commit
-        required: false
-        default: agent/den-1231-slack-run-envelope
 
 permissions:
   contents: read
@@ -79,7 +72,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ORESoftware/ai-agent-bridge.rs
-          ref: ${{ github.event_name == 'push' && 'main' || (inputs.bridge_ref || 'agent/den-1041-ores-slash-commands') }}
+          ref: 63d4d9be4343d3eeba02205ec64dd443716c5249
           path: .e2e/bridge
           fetch-depth: 1
           persist-credentials: false
@@ -89,7 +82,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ORESoftware/ai-agent-coordinator.rs
-          ref: ${{ github.event_name == 'push' && 'main' || (inputs.coordinator_ref || 'agent/den-1231-slack-run-envelope') }}
+          ref: 06ff42f28d8795c8f39c3ca48259602fbadf62e8
           path: .e2e/coordinator
           fetch-depth: 1
           persist-credentials: false
@@ -136,11 +129,54 @@ jobs:
             tools/google-chat-space-export/test/import-plan.test.mjs \
             | tee "$RUNNER_TEMP/slack-command-e2e-results/google-chat-tests.tap"
 
-      - name: Run AI bridge Kubernetes contract
+      - name: Verify Slack alias, observable-event, and idempotency source contracts
         run: |
           set -euo pipefail
-          node --test remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs \
-            | tee "$RUNNER_TEMP/slack-command-e2e-results/bridge-k8s-contract.tap"
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          bridge = Path('.e2e/bridge')
+          coordinator = Path('.e2e/coordinator')
+          bridge_commands = (bridge / 'src/slack_commands_parts/part1.rs').read_text()
+          bridge_jobs = (bridge / 'src/slack_commands_parts/part4.rs').read_text()
+          bridge_payload = (bridge / 'src/slack_commands_parts/part5.rs').read_text()
+          manifest = (bridge / 'slack-app/manifest.yaml').read_text()
+          coordinator_jobs = (coordinator / 'src/jobs.rs').read_text()
+          coordinator_slack = (coordinator / 'src/slack_run.rs').read_text()
+
+          aliases = {
+              '/ores-claude': '/slack/commands/ores-claude',
+              '/x-claude': '/slack/commands/ores-claude',
+              '/my-claude': '/slack/commands/ores-claude',
+              '/ores-chatgpt': '/slack/commands/ores-chatgpt',
+              '/x-chatgpt': '/slack/commands/ores-chatgpt',
+              '/my-chatgpt': '/slack/commands/ores-chatgpt',
+          }
+          for command, endpoint in aliases.items():
+              assert f'"{command}"' in bridge_commands, command
+              pattern = rf'- command: {re.escape(command)}\s+url: https://api\.fiducia\.cloud{re.escape(endpoint)}'
+              assert re.search(pattern, manifest), command
+
+          assert re.search(
+              r'\.header\(\s*"idempotency-key"\s*,\s*&request\.run_id\s*\)',
+              bridge_jobs,
+              re.S,
+          )
+          assert 'slack-command:{}' not in bridge_jobs
+          assert '"observable_event": observable_event' in bridge_payload
+          assert 'pub observable_event: Option<Value>' in coordinator_slack
+          assert 'validate_observable_event(event, self)?' in coordinator_slack
+          assert 'slack_agent_run Idempotency-Key must equal payload.run_id' in coordinator_jobs
+          PY
+
+      - name: Run AI bridge and workflow contracts
+        run: |
+          set -euo pipefail
+          node --test \
+            remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs \
+            remote/tests/general/slack-agent-command-workflow-contract.test.mjs \
+            | tee "$RUNNER_TEMP/slack-command-e2e-results/integration-contracts.tap"
 
       - name: Install pinned Chromium runtime
         working-directory: remote/tests
@@ -150,26 +186,33 @@ jobs:
             | tee "$RUNNER_TEMP/slack-command-e2e-results/playwright-version.txt"
           pnpm exec playwright install --with-deps chromium
 
-      - name: Record tested revisions
+      - name: Record and verify tested revisions
         env:
-          BRIDGE_REF: ${{ github.event_name == 'push' && 'main' || (inputs.bridge_ref || 'agent/den-1041-ores-slash-commands') }}
-          COORDINATOR_REF: ${{ github.event_name == 'push' && 'main' || (inputs.coordinator_ref || 'agent/den-1231-slack-run-envelope') }}
+          BRIDGE_REF: 63d4d9be4343d3eeba02205ec64dd443716c5249
+          COORDINATOR_REF: 06ff42f28d8795c8f39c3ca48259602fbadf62e8
         run: |
           set -euo pipefail
+          bridge_commit="$(git -C .e2e/bridge rev-parse HEAD)"
+          coordinator_commit="$(git -C .e2e/coordinator rev-parse HEAD)"
+          test "$bridge_commit" = "$BRIDGE_REF"
+          test "$coordinator_commit" = "$COORDINATOR_REF"
           jq -n \
             --arg harness "$GITHUB_SHA" \
             --arg bridge_ref "$BRIDGE_REF" \
-            --arg bridge_commit "$(git -C .e2e/bridge rev-parse HEAD)" \
+            --arg bridge_commit "$bridge_commit" \
             --arg coordinator_ref "$COORDINATOR_REF" \
-            --arg coordinator_commit "$(git -C .e2e/coordinator rev-parse HEAD)" \
+            --arg coordinator_commit "$coordinator_commit" \
             --arg postgres_image "$POSTGRES_TEST_IMAGE" \
             '{
-              schema_version: 2,
+              schema_version: 5,
               harness_commit: $harness,
               bridge_ref: $bridge_ref,
               bridge_commit: $bridge_commit,
               coordinator_ref: $coordinator_ref,
               coordinator_commit: $coordinator_commit,
+              alias_contract: "six_manifest_commands_to_two_canonical_endpoints",
+              idempotency_contract: "header_equals_payload_run_id",
+              observable_event_contract: "validated_sanitized_task_created_v1",
               postgres_image: $postgres_image
             }' >"$RUNNER_TEMP/slack-command-e2e-results/revisions.json"
 
@@ -187,6 +230,11 @@ jobs:
             echo '## Slack agent command browser E2E'
             echo
             echo "- Harness: \`${GITHUB_SHA}\`"
+            echo "- Bridge: 63d4d9be4343d3eeba02205ec64dd443716c5249"
+            echo "- Coordinator: 06ff42f28d8795c8f39c3ca48259602fbadf62e8"
+            echo "- Commands: /ores-claude, /x-claude, /my-claude, /ores-chatgpt, /x-chatgpt, /my-chatgpt"
+            echo "- Idempotency: Idempotency-Key == payload.run_id"
+            echo "- Observable event: validated sanitized task_created v1"
             echo "- Run attempt: \`${GITHUB_RUN_ATTEMPT}\`"
             echo "- Evidence artifact: \`slack-agent-command-browser-e2e-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}\`"
           } >>"$GITHUB_STEP_SUMMARY"

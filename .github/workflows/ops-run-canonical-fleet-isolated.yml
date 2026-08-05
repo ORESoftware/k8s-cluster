@@ -1,17 +1,17 @@
 name: Run canonical critical organization fleet publication isolated
-run-name: Owner-authorize and publish the exact 34-repository fleet in an isolated run v2
+run-name: Owner-authorize and publish the exact 34-repository fleet from trusted main
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/ops-run-canonical-fleet-isolated.yml
   workflow_dispatch:
 
 permissions:
   contents: read
   issues: write
   pull-requests: write
+
+concurrency:
+  group: critical-org-fleet-publication
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -24,22 +24,18 @@ jobs:
       GH_CONFIG_DIR: ${{ runner.temp }}/critical-org-fleet-owner-auth
 
     steps:
-      - name: Check out exact trusted main
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: main
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Validate exact carrier, authorize owner, publish, and verify
+      - name: Validate exact carrier and bind immutable trusted main
+        id: carrier
         shell: bash
         env:
-          COMMENT_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
-          umask 077
+          test "$GITHUB_REF" = refs/heads/main
+          trusted_sha="$GITHUB_SHA"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
 
-          pull="$(GH_TOKEN="$COMMENT_TOKEN" gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRACKING_PR}")"
+          pull="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRACKING_PR}")"
           jq -e '
             .state == "open" and
             .draft == true and
@@ -51,28 +47,73 @@ jobs:
             .commits == 1 and
             .changed_files == 1
           ' <<<"$pull" >/dev/null
-          files="$(GH_TOKEN="$COMMENT_TOKEN" gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRACKING_PR}/files?per_page=100")"
+          head_sha="$(jq -er .head.sha <<<"$pull")"
+          [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          commits="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRACKING_PR}/commits?per_page=100")"
+          test "$(jq 'length' <<<"$commits")" -eq 1
+          parent_sha="$(jq -er '.[0].parents[0].sha' <<<"$commits")"
+          [[ "$parent_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          files="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRACKING_PR}/files?per_page=100")"
           test "$(jq 'length' <<<"$files")" -eq 1
           jq -e '
             .[0].filename == ".github/critical-org-fleet-device-auth-trigger" and
             .[0].status == "added" and
             .[0].changes == 3
           ' <<<"$files" >/dev/null
-          head_sha="$(jq -er .head.sha <<<"$pull")"
-          encoded="$(GH_TOKEN="$COMMENT_TOKEN" gh api "repos/${GITHUB_REPOSITORY}/contents/.github/critical-org-fleet-device-auth-trigger?ref=${head_sha}" --jq .content)"
+
+          encoded="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/critical-org-fleet-device-auth-trigger?ref=${head_sha}" --jq .content)"
           marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
           test "$(sed -n 's/^target=//p' <<<"$marker")" = critical-org-fleet-v1
+          test "$(sed -n 's/^trusted-main=//p' <<<"$marker")" = "$parent_sha"
           test "$(sed -n 's/^fleet-source=//p' <<<"$marker")" = "$FLEET_SOURCE_SHA"
+
+          carrier_to_trusted="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${parent_sha}...${trusted_sha}")"
+          jq -e '(.status == "ahead" or .status == "identical") and .behind_by == 0' <<<"$carrier_to_trusted" >/dev/null
+
+          current_main="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)"
+          [[ "$current_main" =~ ^[0-9a-f]{40}$ ]]
+          trusted_to_current="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${trusted_sha}...${current_main}")"
+          jq -e '(.status == "ahead" or .status == "identical") and .behind_by == 0' <<<"$trusted_to_current" >/dev/null
+
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+          echo "trusted_sha=$trusted_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the exact validated trusted-main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.carrier.outputs.trusted_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Authorize owner, publish, and verify exact fleet
+        shell: bash
+        env:
+          COMMENT_TOKEN: ${{ github.token }}
+          CARRIER_HEAD_SHA: ${{ steps.carrier.outputs.head_sha }}
+          TRUSTED_SHA: ${{ steps.carrier.outputs.trusted_sha }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
 
           rm -rf "$GH_CONFIG_DIR"
           mkdir -p "$GH_CONFIG_DIR"
           auth_log="$RUNNER_TEMP/critical-org-fleet-owner-auth.log"
+          report_json="$RUNNER_TEMP/critical-org-fleet-publication.json"
+          report_md="$RUNNER_TEMP/critical-org-fleet-publication.md"
           : > "$auth_log"
           auth_pid=''
+          auth_comment_id=''
           cleanup() {
             if [[ -n "${auth_pid:-}" ]] && kill -0 "$auth_pid" 2>/dev/null; then
               kill "$auth_pid" 2>/dev/null || true
               wait "$auth_pid" 2>/dev/null || true
+            fi
+            if [[ -n "${auth_comment_id:-}" ]]; then
+              GH_TOKEN="$COMMENT_TOKEN" gh api --method DELETE \
+                "repos/${GITHUB_REPOSITORY}/issues/comments/${auth_comment_id}" \
+                >/dev/null 2>&1 || true
             fi
             unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN token
             rm -f "$auth_log"
@@ -95,10 +136,20 @@ jobs:
             kill -0 "$auth_pid" 2>/dev/null || break
             sleep 1
           done
-          test -n "$code"
+          if [[ -z "$code" ]]; then
+            wait "$auth_pid" 2>/dev/null || true
+            auth_pid=''
+            sed -E 's/[A-Z0-9]{4}-[A-Z0-9]{4}/[REDACTED-CODE]/g' "$auth_log" >&2 || true
+            echo "GitHub CLI did not emit a device code" >&2
+            exit 1
+          fi
 
-          GH_TOKEN="$COMMENT_TOKEN" gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body \
-            "**Fresh isolated canonical fleet authorization:** open https://github.com/login/device and enter **\`$code\`**. Ignore every earlier code. This run accepts only \`${EXPECTED_LOGIN}\` with active admin access to all five target organizations. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          auth_body="**Fresh isolated canonical fleet authorization:** open https://github.com/login/device and enter **\`$code\`**. Ignore every earlier code. This run accepts only \`${EXPECTED_LOGIN}\` with active admin access to all five target organizations. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          auth_comment_id="$(GH_TOKEN="$COMMENT_TOKEN" gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_PR}/comments" \
+            -f body="$auth_body" --jq .id)"
+          [[ "$auth_comment_id" =~ ^[0-9]+$ ]]
+          unset auth_body
           echo "::notice title=GitHub device authorization::Open https://github.com/login/device and enter $code"
 
           set +e
@@ -106,14 +157,41 @@ jobs:
           auth_rc=$?
           set -e
           auth_pid=''
-          test "$auth_rc" -eq 0
+          if [[ "$auth_rc" -ne 0 ]]; then
+            sed -E 's/[A-Z0-9]{4}-[A-Z0-9]{4}/[REDACTED-CODE]/g' "$auth_log" >&2 || true
+            exit "$auth_rc"
+          fi
           rm -f "$auth_log"
+          if GH_TOKEN="$COMMENT_TOKEN" gh api --method DELETE \
+            "repos/${GITHUB_REPOSITORY}/issues/comments/${auth_comment_id}" >/dev/null; then
+            auth_comment_id=''
+          fi
+
+          current_pull="$(GH_TOKEN="$COMMENT_TOKEN" gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRACKING_PR}")"
+          jq -e --arg head "$CARRIER_HEAD_SHA" '
+            .state == "open" and
+            .draft == true and
+            .user.login == "ORESoftware" and
+            .base.ref == "main" and
+            .head.sha == $head and
+            .head.repo.full_name == "ORESoftware/k8s-cluster" and
+            .head.ref == "agent/critical-org-fleet-device-auth-20260731-v1" and
+            .title == "DO NOT MERGE: publish exact 34-repository organization fleet" and
+            .commits == 1 and
+            .changed_files == 1
+          ' <<<"$current_pull" >/dev/null
+
+          current_main="$(GH_TOKEN="$COMMENT_TOKEN" gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)"
+          [[ "$current_main" =~ ^[0-9a-f]{40}$ ]]
+          trusted_to_current_after_auth="$(GH_TOKEN="$COMMENT_TOKEN" gh api "repos/${GITHUB_REPOSITORY}/compare/${TRUSTED_SHA}...${current_main}")"
+          jq -e '(.status == "ahead" or .status == "identical") and .behind_by == 0' <<<"$trusted_to_current_after_auth" >/dev/null
 
           test "$(env -u GH_TOKEN -u GITHUB_TOKEN gh api user --jq .login)" = "$EXPECTED_LOGIN"
           for organization in hypesiege StreemPilot meta-agents-demo file-tunnel unreal-unity-poc; do
             membership="$(env -u GH_TOKEN -u GITHUB_TOKEN gh api "user/memberships/orgs/${organization}")"
             test "$(jq -er .role <<<"$membership")" = admin
             test "$(jq -er .state <<<"$membership")" = active
+            echo "$organization owner membership verified"
           done
 
           token="$(env -u GH_TOKEN -u GITHUB_TOKEN gh auth token)"
@@ -130,13 +208,19 @@ jobs:
             scripts/ops/publish_missing_org_repositories_current.py \
             scripts/ops/finalize_missing_org_repositories.py
           python3 scripts/ops/publish_missing_org_repositories_current.py
-
-          report_json="$RUNNER_TEMP/critical-org-fleet-publication.json"
-          report_md="$RUNNER_TEMP/critical-org-fleet-publication.md"
           python3 scripts/ops/finalize_missing_org_repositories.py \
             --json-report "$report_json" \
             --markdown-report "$report_md"
-          jq -e '.success == true and .organizations.hypesiege.count == 15 and .organizations.StreemPilot.count == 17 and (.extracted_repositories | length) == 2' "$report_json" >/dev/null
+
+          jq -e '
+            .success == true and
+            .organizations.hypesiege.count == 15 and
+            .organizations.StreemPilot.count == 17 and
+            (.organizations.hypesiege.repositories | length) == 15 and
+            (.organizations.StreemPilot.repositories | length) == 17 and
+            (.extracted_repositories | length) == 2
+          ' "$report_json" >/dev/null
+          test -s "$report_md"
           cat "$report_md"
 
           unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN token
@@ -154,3 +238,14 @@ jobs:
         run: |
           gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body \
             "Canonical fleet publication failed before 34/34 verification. Inspect: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >/dev/null || true
+
+      - name: Upload non-secret publication evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: critical-org-fleet-publication-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/critical-org-fleet-publication.json
+            ${{ runner.temp }}/critical-org-fleet-publication.md
+          if-no-files-found: warn
+          retention-days: 14

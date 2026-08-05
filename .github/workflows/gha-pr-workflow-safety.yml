@@ -1,0 +1,104 @@
+name: GHA PR workflow safety
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/**"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: gha-pr-workflow-safety-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  inspect-workflows:
+    name: Inspect changed workflow files
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout the trusted base scanner
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Materialize pull request workflows as inert data
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const os = require('node:os');
+            const path = require('node:path');
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pullNumber = context.payload.pull_request.number;
+            const headSha = process.env.HEAD_SHA;
+            if (!/^[0-9a-f]{40}$/i.test(headSha || '')) {
+              core.setFailed('pull request head SHA is missing or malformed');
+              return;
+            }
+
+            const changed = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number: pullNumber,
+              per_page: 100,
+            });
+            const workflows = changed.filter((file) =>
+              /^\.github\/workflows\/[^/]+\.(?:ya?ml)$/i.test(file.filename),
+            );
+            if (workflows.length > 64) {
+              core.setFailed(`too many changed workflow files: ${workflows.length}; limit is 64`);
+              return;
+            }
+
+            const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gha-workflow-safety-'));
+            const manifest = [];
+            for (const [index, file] of workflows.entries()) {
+              if (file.status === 'removed') {
+                core.setFailed(`workflow deletion requires an explicit trusted-base change: ${file.filename}`);
+                return;
+              }
+
+              const response = await github.rest.repos.getContent({
+                owner,
+                repo,
+                path: file.filename,
+                ref: headSha,
+              });
+              if (Array.isArray(response.data) || response.data.type !== 'file' || !response.data.content) {
+                core.setFailed(`unable to retrieve workflow as a regular file: ${file.filename}`);
+                return;
+              }
+
+              const bytes = Buffer.from(response.data.content.replace(/\n/g, ''), 'base64');
+              if (bytes.length > 512 * 1024) {
+                core.setFailed(`workflow exceeds 512 KiB: ${file.filename}`);
+                return;
+              }
+              if (bytes.includes(0)) {
+                core.setFailed(`workflow contains a NUL byte: ${file.filename}`);
+                return;
+              }
+
+              const destination = path.join(directory, `${String(index).padStart(3, '0')}.yml`);
+              fs.writeFileSync(destination, bytes, { mode: 0o600 });
+              manifest.push({ displayPath: file.filename, path: destination });
+            }
+
+            const manifestPath = path.join(directory, 'manifest.json');
+            fs.writeFileSync(manifestPath, JSON.stringify(manifest), { mode: 0o600 });
+            core.exportVariable('GHA_WORKFLOW_SAFETY_MANIFEST', manifestPath);
+            core.info(`materialized ${manifest.length} workflow file(s) as inert data`);
+
+      - name: Enforce workflow trust-boundary policy
+        run: >-
+          node scripts/security/check-pr-workflow-safety.mjs
+          --manifest "$GHA_WORKFLOW_SAFETY_MANIFEST"

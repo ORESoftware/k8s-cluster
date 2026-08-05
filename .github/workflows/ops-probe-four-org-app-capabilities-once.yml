@@ -1,0 +1,172 @@
+name: Probe four organization GitHub App capabilities once
+run-name: Probe four organization repository-creation capabilities @ ${{ github.sha }}
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-probe-four-org-app-capabilities-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: probe-four-org-app-capabilities-20260804
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+      K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+      GH_TOKEN: ${{ github.token }}
+      TRACKING_ISSUE: '860'
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Probe bounded App installations and report sanitized evidence
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          [[ "${K8S_SUBMODULE_APP_ID:-}" =~ ^[0-9]+$ ]]
+          test -n "${K8S_SUBMODULE_APP_PRIVATE_KEY:-}"
+
+          work="$(mktemp -d "$RUNNER_TEMP/four-org-app-probe.XXXXXX")"
+          cleanup() {
+            unset app_jwt installation_token K8S_SUBMODULE_APP_PRIVATE_KEY
+            rm -rf "$work"
+          }
+          trap cleanup EXIT
+
+          private_key="$work/app-private-key.pem"
+          printf '%s' "$K8S_SUBMODULE_APP_PRIVATE_KEY" > "$private_key"
+          chmod 600 "$private_key"
+          grep -Eq '^-----BEGIN (RSA )?PRIVATE KEY-----$' "$private_key"
+
+          base64url() {
+            openssl base64 -A | tr '+/' '-_' | tr -d '='
+          }
+
+          now="$(date +%s)"
+          header='{"alg":"RS256","typ":"JWT"}'
+          payload="$(printf '{"iat":%s,"exp":%s,"iss":%s}' "$((now - 60))" "$((now + 540))" "$K8S_SUBMODULE_APP_ID")"
+          unsigned="$(printf '%s' "$header" | base64url).$(printf '%s' "$payload" | base64url)"
+          signature="$(printf '%s' "$unsigned" | openssl dgst -sha256 -sign "$private_key" -binary | base64url)"
+          app_jwt="${unsigned}.${signature}"
+          echo "::add-mask::$app_jwt"
+
+          evidence="$work/four-org-app-capabilities.json"
+          printf '{"schema_version":1,"organizations":[]}' > "$evidence"
+
+          for organization in apostille-me evento-globolo hacker-house-medellin embedded-alerts; do
+            installation_json="$work/${organization}-installation.json"
+            installation_status="$(
+              curl --silent --show-error \
+                --output "$installation_json" \
+                --write-out '%{http_code}' \
+                --header 'Accept: application/vnd.github+json' \
+                --header "Authorization: Bearer ${app_jwt}" \
+                --header 'X-GitHub-Api-Version: 2022-11-28' \
+                "https://api.github.com/orgs/${organization}/installation"
+            )"
+
+            repository_selection=null
+            token_status=null
+            administration=null
+            contents=null
+            pull_requests=null
+            workflows=null
+            installed=false
+            repository_creation_capable=false
+
+            if [[ "$installation_status" == 200 ]]; then
+              installed=true
+              installation_id="$(jq -er '.id | select(type == "number" and . > 0)' "$installation_json")"
+              repository_selection="$(jq -c '.repository_selection // null' "$installation_json")"
+
+              token_json="$work/${organization}-token.json"
+              token_status="$(
+                curl --silent --show-error \
+                  --request POST \
+                  --output "$token_json" \
+                  --write-out '%{http_code}' \
+                  --header 'Accept: application/vnd.github+json' \
+                  --header "Authorization: Bearer ${app_jwt}" \
+                  --header 'X-GitHub-Api-Version: 2022-11-28' \
+                  --header 'Content-Type: application/json' \
+                  --data '{}' \
+                  "https://api.github.com/app/installations/${installation_id}/access_tokens"
+              )"
+
+              if [[ "$token_status" == 201 ]]; then
+                installation_token="$(jq -er '.token | select(type == "string" and length > 0)' "$token_json")"
+                echo "::add-mask::$installation_token"
+                administration="$(jq -c '.permissions.administration // null' "$token_json")"
+                contents="$(jq -c '.permissions.contents // null' "$token_json")"
+                pull_requests="$(jq -c '.permissions.pull_requests // null' "$token_json")"
+                workflows="$(jq -c '.permissions.workflows // null' "$token_json")"
+                if [[ "$administration" == '"write"' && "$contents" == '"write"' ]]; then
+                  repository_creation_capable=true
+                fi
+                unset installation_token
+              fi
+            fi
+
+            next="$work/evidence-next.json"
+            jq \
+              --arg organization "$organization" \
+              --argjson installed "$installed" \
+              --argjson installation_http_status "$installation_status" \
+              --argjson repository_selection "$repository_selection" \
+              --argjson token_http_status "$token_status" \
+              --argjson administration "$administration" \
+              --argjson contents "$contents" \
+              --argjson pull_requests "$pull_requests" \
+              --argjson workflows "$workflows" \
+              --argjson repository_creation_capable "$repository_creation_capable" \
+              '.organizations += [{
+                organization: $organization,
+                installed: $installed,
+                installation_http_status: $installation_http_status,
+                repository_selection: $repository_selection,
+                token_http_status: $token_http_status,
+                permissions: {
+                  administration: $administration,
+                  contents: $contents,
+                  pull_requests: $pull_requests,
+                  workflows: $workflows
+                },
+                repository_creation_capable: $repository_creation_capable
+              }]' \
+              "$evidence" > "$next"
+            mv "$next" "$evidence"
+          done
+
+          {
+            echo 'GitHub App capability probe completed for the four target organizations.'
+            echo
+            echo '```json'
+            jq --sort-keys . "$evidence"
+            echo '```'
+          } > "$work/comment.md"
+          gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" --body-file "$work/comment.md"
+
+          jq -e '
+            .schema_version == 1 and
+            (.organizations | length == 4) and
+            all(.organizations[];
+              .installed == true and
+              .token_http_status == 201 and
+              .repository_creation_capable == true
+            )
+          ' "$evidence" >/dev/null

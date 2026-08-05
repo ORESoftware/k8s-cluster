@@ -1,0 +1,155 @@
+name: Create missing StreemPilot sp shells with alternate owner credential
+run-name: Validate alternate owner and create missing StreemPilot repositories
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: read
+
+concurrency:
+  group: ops-create-streempilot-sp-shells-alternate-owner-20260805
+  cancel-in-progress: false
+
+jobs:
+  create-shells:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.number == 901 &&
+      github.actor == 'ORESoftware' &&
+      github.event.comment.body == 'ops-create-streempilot-sp-shells-alternate:901:rsa-v1:20260805T0420Z'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      REPOSITORY: ${{ github.repository }}
+      CARRIER_NUMBER: '901'
+      CHALLENGE_BRANCH: ops/streempilot-sp-credential-challenge-20260805
+      CHALLENGE_PATH: ops/streempilot-sp-alternate-credential-challenge.json
+      TARGET_ORG: StreemPilot
+
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Broker alternate credential and create only for a distinct administrator
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          stage=challenge-bootstrap
+          workflow_token="$GH_TOKEN"
+          work="$(mktemp -d "$RUNNER_TEMP/streempilot-alternate-owner.XXXXXX")"
+          owner_token=''
+          actor=''
+
+          cleanup() {
+            unset owner_token actor GH_TOKEN OWNER_TOKEN GITHUB_TOKEN
+            find "$work" -type f -exec sh -c 'for file do : > "$file"; done' sh {} + 2>/dev/null || true
+            rm -rf "$work"
+          }
+          fail() {
+            status=$?
+            trap - ERR
+            printf 'STREEMPILOT_ALTERNATE_OWNER_FAILED stage=%s\n' "$stage" >&2
+            exit "$status"
+          }
+          trap cleanup EXIT
+          trap fail ERR
+
+          private_key="$work/private.pem"
+          public_key="$work/public.pem"
+          ciphertext_file="$work/ciphertext.bin"
+          challenge="$work/challenge.json"
+          openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key"
+          chmod 600 "$private_key"
+          openssl pkey -in "$private_key" -pubout -out "$public_key"
+          nonce="$(openssl rand -hex 24)"
+
+          stage=publish-challenge
+          jq -n --arg state awaiting-encrypted-response --arg purpose validate-alternate-streempilot-repository-creator --arg nonce "$nonce" --rawfile publicKey "$public_key" --arg algorithm RSA-OAEP-SHA256-MGF1-SHA256 --arg runId "$GITHUB_RUN_ID" '{state:$state,purpose:$purpose,nonce:$nonce,publicKey:$publicKey,algorithm:$algorithm,runId:$runId,privateKeyStored:false,plaintextCredentialStored:false}' > "$challenge"
+          sha="$(GH_TOKEN="$workflow_token" gh api "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}?ref=${CHALLENGE_BRANCH}" --jq '.sha')"
+          GH_TOKEN="$workflow_token" gh api --method PUT "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}" -f message='ops: publish alternate StreemPilot credential challenge' -f content="$(base64 -w0 < "$challenge")" -f branch="$CHALLENGE_BRANCH" -f sha="$sha" >/dev/null
+
+          stage=await-response
+          marker="<!-- streempilot-sp-alternate-credential-response:${nonce} -->"
+          response=''
+          for _ in $(seq 1 300); do
+            comments="$(GH_TOKEN="$workflow_token" gh api --paginate "repos/${REPOSITORY}/issues/${CARRIER_NUMBER}/comments?per_page=100" --slurp)"
+            response="$(jq -r --arg marker "$marker" '[.[][] | select(.user.login == "ORESoftware") | select(.body | startswith($marker + "\n"))] | sort_by(.id) | last | .body // empty' <<<"$comments")"
+            test -n "$response" && break
+            sleep 3
+          done
+          test -n "$response"
+          ciphertext="$(sed -n 's/^ciphertext-base64=//p' <<<"$response")"
+          [[ "$ciphertext" =~ ^[A-Za-z0-9+/=]+$ ]]
+          printf '%s' "$ciphertext" | base64 --decode > "$ciphertext_file"
+
+          stage=decrypt-and-validate
+          owner_token="$(openssl pkeyutl -decrypt -inkey "$private_key" -in "$ciphertext_file" -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256 2>/dev/null)"
+          test -n "$owner_token"
+          [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
+          echo "::add-mask::$owner_token"
+          export GH_TOKEN="$owner_token"
+          actor="$(gh api user --jq '.login')"
+          membership="$(gh api user/memberships/orgs/${TARGET_ORG} --jq '[.state,.role] | join(":")')"
+          test "$membership" = active:admin
+
+          stage=compare-owner
+          if [[ "$actor" == ORESoftware ]]; then
+            unset owner_token GH_TOKEN
+            export GH_TOKEN="$workflow_token"
+            completed="$work/completed.json"
+            jq -n --arg state same-owner --arg actor "$actor" --arg runId "$GITHUB_RUN_ID" '{state:$state,authenticatedActor:$actor,runId:$runId,repositoriesCreated:0,privateKeyStored:false,plaintextCredentialStored:false}' > "$completed"
+            sha="$(gh api "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}?ref=${CHALLENGE_BRANCH}" --jq '.sha')"
+            gh api --method PUT "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}" -f message='ops: record alternate credential identity' -f content="$(base64 -w0 < "$completed")" -f branch="$CHALLENGE_BRANCH" -f sha="$sha" >/dev/null
+            printf 'ALTERNATE_CREDENTIAL_SAME_OWNER actor=%s\n' "$actor"
+            exit 0
+          fi
+
+          stage=create-missing-shells
+          targets=(sp-web-mash sp-web-leptos sp-web-dioxus sp-infra sp-cli sp-interfaces sp-sync)
+          created=0
+          for name in "${targets[@]}"; do
+            if gh api "repos/${TARGET_ORG}/${name}" >/dev/null 2>&1; then
+              continue
+            fi
+            case "$name" in
+              sp-web-mash) description='Maud, Axum, SeaORM, Supabase, HTMX, and WebSocket broadcast portal' ;;
+              sp-web-leptos) description='Leptos SSR and Axum broadcast portal for StreemPilot' ;;
+              sp-web-dioxus) description='Dioxus SSR and Axum broadcast portal for StreemPilot' ;;
+              sp-infra) description='Kubernetes, WebRTC, observability, and Cloudflare Worker infrastructure for StreemPilot' ;;
+              sp-cli) description='Operator CLI for StreemPilot using flags-2-env' ;;
+              sp-interfaces) description='Shared OpenAPI, AsyncAPI, and domain contracts for StreemPilot' ;;
+              sp-sync) description='Offline-first StreemPilot synchronization using opto-sync' ;;
+            esac
+            payload="$work/${name}.json"
+            jq -n --arg owner "$TARGET_ORG" --arg name "$name" --arg description "$description" '{owner:$owner,name:$name,description:$description,private:true,include_all_branches:false}' > "$payload"
+            for delay in 0 15 30 60 120 180; do
+              (( delay > 0 )) && sleep "$delay"
+              if gh api --method POST "repos/${TARGET_ORG}/sp-api/generate" --input "$payload" >"$work/${name}-response.json" 2>"$work/${name}-error.txt" || true; then :; fi
+              if gh api "repos/${TARGET_ORG}/${name}" >/dev/null 2>&1; then
+                created=$((created + 1))
+                break
+              fi
+            done
+            gh api "repos/${TARGET_ORG}/${name}" >/dev/null
+            sleep 60
+          done
+
+          stage=record-result
+          unset owner_token GH_TOKEN
+          export GH_TOKEN="$workflow_token"
+          completed="$work/completed.json"
+          jq -n --arg state completed --arg actor "$actor" --arg runId "$GITHUB_RUN_ID" --argjson created "$created" '{state:$state,authenticatedActor:$actor,runId:$runId,repositoriesCreated:$created,privateKeyStored:false,plaintextCredentialStored:false}' > "$completed"
+          sha="$(gh api "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}?ref=${CHALLENGE_BRANCH}" --jq '.sha')"
+          gh api --method PUT "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}" -f message='ops: complete alternate StreemPilot creation attempt' -f content="$(base64 -w0 < "$completed")" -f branch="$CHALLENGE_BRANCH" -f sha="$sha" >/dev/null
+          printf 'ALTERNATE_CREDENTIAL_CREATION_COMPLETE actor=%s created=%s\n' "$actor" "$created"

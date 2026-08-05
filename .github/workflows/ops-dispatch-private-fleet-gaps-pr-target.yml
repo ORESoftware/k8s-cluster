@@ -1,0 +1,168 @@
+name: Dispatch private fleet gaps from exact PR carrier
+run-name: Dispatch private fleet gaps for carrier PR #${{ github.event.pull_request.number }}
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ops-dispatch-private-fleet-gaps-pr-target
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: >-
+      github.actor == 'ORESoftware' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-319-private-fleet-execution-carrier' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.title == 'ops(DEN-319): dispatch gap-aware private fleet publisher'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    env:
+      PUBLISH_WORKFLOW: ops-publish-missing-org-repositories-gh-profile.yml
+      TRACKING_PR: '595'
+      PORTFOLIO_PR: '291'
+      EXPECTED_PUBLISHER_TITLE: 'fix(DEN-319): publish canonical gaps without rewriting existing histories'
+      EXPECTED_PUBLISHER_HEAD_SHA: '04352cf5e8d87532ffc65afa9480a7ccdc3407b8'
+      EXPECTED_PUBLISHER_MERGE_SHA: '0cdb72ec06cff74a4cb5d6062777b619703be12b'
+      EXPECTED_MARKER: |-
+        DEN-319 gap-aware private fleet execution
+        publisher_merge=0cdb72ec06cff74a4cb5d6062777b619703be12b
+        request=2026-08-03T18:30:00Z
+
+    steps:
+      - name: Validate exact same-repository carrier and publisher provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CARRIER_PR: ${{ github.event.pull_request.number }}
+          CARRIER_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CARRIER_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+          files="$(
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/pulls/${CARRIER_PR}/files?per_page=100" \
+              --jq '[.[].filename] | sort | join("\n")'
+          )"
+          test "$files" = 'ops/den-319-private-fleet-execution.trigger'
+
+          marker="$(
+            gh api \
+              "repos/${GITHUB_REPOSITORY}/contents/ops/den-319-private-fleet-execution.trigger?ref=${CARRIER_HEAD_SHA}" \
+              --jq -r '.content' | tr -d '\n' | base64 --decode
+          )"
+          test "$marker" = "$EXPECTED_MARKER"
+
+          publisher="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRACKING_PR}")"
+          test "$(jq -r '.merged' <<<"$publisher")" = true
+          test "$(jq -r '.base.ref' <<<"$publisher")" = main
+          test "$(jq -r '.head.repo.full_name' <<<"$publisher")" = "$GITHUB_REPOSITORY"
+          test "$(jq -r '.head.sha' <<<"$publisher")" = "$EXPECTED_PUBLISHER_HEAD_SHA"
+          test "$(jq -r '.merge_commit_sha' <<<"$publisher")" = "$EXPECTED_PUBLISHER_MERGE_SHA"
+          test "$(jq -r '.title' <<<"$publisher")" = "$EXPECTED_PUBLISHER_TITLE"
+
+          comparison="$(
+            gh api "repos/${GITHUB_REPOSITORY}/compare/${EXPECTED_PUBLISHER_MERGE_SHA}...main"
+          )"
+          case "$(jq -r '.status' <<<"$comparison")" in
+            identical|ahead) ;;
+            *)
+              echo 'trusted gap-aware publisher is not contained by current main' >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Dispatch and identify the exact protected publisher run
+        id: dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CARRIER_PR: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="$(
+            gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow "$PUBLISH_WORKFLOW" \
+              --event workflow_dispatch \
+              --branch main \
+              --limit 1 \
+              --json databaseId \
+              --jq '.[0].databaseId // empty'
+          )"
+
+          gh workflow run "$PUBLISH_WORKFLOW" \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+
+          run_id=''
+          for _ in $(seq 1 90); do
+            candidate="$(
+              gh run list \
+                --repo "$GITHUB_REPOSITORY" \
+                --workflow "$PUBLISH_WORKFLOW" \
+                --event workflow_dispatch \
+                --branch main \
+                --limit 1 \
+                --json databaseId \
+                --jq '.[0].databaseId // empty'
+            )"
+            if [[ -n "$candidate" && "$candidate" != "$before" ]]; then
+              run_id="$candidate"
+              break
+            fi
+            sleep 2
+          done
+          test -n "$run_id"
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "run_url=$run_url" >> "$GITHUB_OUTPUT"
+
+          body="Exact carrier PR #${CARRIER_PR} dispatched protected gap-aware publisher run ${run_id}: ${run_url}"
+          gh pr comment "$CARRIER_PR" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
+          gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
+          gh pr comment "$PORTFOLIO_PR" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
+
+      - name: Follow the exact protected publisher run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run watch "$RUN_ID" --repo "$GITHUB_REPOSITORY" --exit-status
+
+      - name: Report exact carrier execution result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CARRIER_PR: ${{ github.event.pull_request.number }}
+          DISPATCH_OUTCOME: ${{ steps.dispatch.outcome }}
+          JOB_RESULT: ${{ job.status }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+          RUN_URL: ${{ steps.dispatch.outputs.run_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$DISPATCH_OUTCOME" = success && -n "$RUN_ID" && "$JOB_RESULT" = success ]]; then
+            body="Protected gap-aware private fleet publisher completed successfully: ${RUN_URL}"
+          else
+            body="Protected gap-aware private fleet publisher did not complete successfully. Dispatch=${DISPATCH_OUTCOME}; job=${JOB_RESULT}; run=${RUN_URL:-unavailable}"
+          fi
+          gh pr comment "$CARRIER_PR" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
+          gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
+          gh pr comment "$PORTFOLIO_PR" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
+          test "$DISPATCH_OUTCOME" = success
+          test -n "$RUN_ID"
+          test "$JOB_RESULT" = success
