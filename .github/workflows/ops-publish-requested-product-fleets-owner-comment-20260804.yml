@@ -8,7 +8,6 @@ on:
 permissions:
   contents: read
   id-token: write
-  issues: write
 
 concurrency:
   group: ops-publish-requested-product-fleets-owner-comment-20260804
@@ -20,7 +19,7 @@ jobs:
       github.event.issue.pull_request &&
       github.event.issue.number == 901 &&
       github.actor == 'ORESoftware' &&
-      github.event.comment.body == 'ops-publish-requested-product-fleets:901:58c4c04a910a315853877492ded65e6064e82219'
+      github.event.comment.body == 'ops-publish-requested-product-fleets:901:retry-no-comments:20260805T0321Z'
     runs-on: ubuntu-24.04
     timeout-minutes: 100
     steps:
@@ -41,14 +40,6 @@ jobs:
           tools_root="$RUNNER_TEMP/requested-product-fleet-tools"
           bash scripts/ops/materialize_requested_product_fleet_tools_20260804.sh "$tools_root"
           test -x "$tools_root/run_protected_requested_product_fleets_20260804.sh"
-
-      - name: Record publication start
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          gh pr comment 901 --body "Protected requested-product fleet publication started from trusted main commit $(git rev-parse HEAD)." >/dev/null
 
       - name: Configure AWS OIDC credentials
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
@@ -85,18 +76,3 @@ jobs:
           done
           aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' --output json
           test "$status" = Success
-
-      - name: Record publication result
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          JOB_STATUS: ${{ job.status }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          if [[ "$JOB_STATUS" = success ]]; then
-            gh pr comment 901 --body "Protected requested-product fleet publication completed successfully. The remote publisher created or updated all requested repositories, pushed their review branches, opened the planned pull requests, and passed its remote verification." >/dev/null
-          else
-            gh pr comment 901 --body "Protected requested-product fleet publication did not complete successfully in this run; inspect the exact owner-comment workflow logs for the bounded failure." >/dev/null
-            exit 1
-          fi
