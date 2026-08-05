@@ -1,0 +1,50 @@
+name: meshy-durable-worker
+
+on:
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "crates/meshy-client/**"
+      - "crates/meshy-job/**"
+      - "src/bin/meshy-job-worker.rs"
+      - "src/job_control.rs"
+      - "examples/meshy/durable-job-request.json"
+      - "docs/meshy-integration.md"
+      - "scripts/ci/check_meshy_integration.py"
+      - ".github/workflows/meshy-durable-worker.yml"
+  push:
+    branches: [main]
+    paths:
+      - "Cargo.toml"
+      - "crates/meshy-client/**"
+      - "crates/meshy-job/**"
+      - "src/bin/meshy-job-worker.rs"
+      - "src/job_control.rs"
+      - "examples/meshy/durable-job-request.json"
+      - "docs/meshy-integration.md"
+      - "scripts/ci/check_meshy_integration.py"
+      - ".github/workflows/meshy-durable-worker.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  durable-meshy-crate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Format the standalone durable Meshy crate
+        run: cargo fmt --manifest-path crates/meshy-job/Cargo.toml -- --check
+      - name: Check all crate targets
+        run: cargo check --manifest-path crates/meshy-job/Cargo.toml --all-targets
+      - name: Test submission safety, provider polling, and artifact archival
+        run: cargo test --manifest-path crates/meshy-job/Cargo.toml --all-targets
+
+  source-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify worker, documentation, and secret-hygiene contracts
+        run: python3 scripts/ci/check_meshy_integration.py
