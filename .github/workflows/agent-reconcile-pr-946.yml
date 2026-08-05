@@ -34,7 +34,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          original_base='272a68dc7df695edcda1d8d0121640de20f5ffe7'
+          original_base='d3fcc435d7a696717591e748b6dee71bb5646d00'
           original_head='85a942f2543d854c5ff8af6a61b23ab23cc2fa85'
           reviewed_paths=(
             '.github/workflows/ops-publish-org-dotgithub-policy.yml'
