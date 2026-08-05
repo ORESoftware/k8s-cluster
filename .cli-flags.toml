@@ -33,6 +33,12 @@ aliases = ["realm-deployment"]
 type = "string"
 help = "Non-secret deployment identity; it must visibly name the selected realm."
 
+[flags.database-endpoint-host]
+env = "AUTH_DATABASE_ENDPOINT_HOST"
+aliases = ["database-endpoint-host", "db-endpoint-host"]
+type = "string"
+help = "Exact expected PostgreSQL endpoint host; the DSN host must match it."
+
 [flags.database-resource-ref]
 env = "AUTH_DATABASE_RESOURCE_REF"
 aliases = ["database-resource-ref", "db-resource-ref"]
