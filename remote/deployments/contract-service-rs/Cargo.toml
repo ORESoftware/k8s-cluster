@@ -12,16 +12,20 @@ base64 = "0.22"
 # Source-of-truth NATS subject constants for contract validate/result
 # subjects plus the shared runtime events subject.
 dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
+# Generated SeaORM table identities come from the canonical shared
+# `remote/libs/pg-defs/schema/schema.sql` contract. This service does not own or
+# run migrations.
+dd-pg-defs-sea-orm = { path = "../../libs/pg-defs/generated/rust/sea-orm" }
 dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
 bs58 = "0.5"
 futures-util = "0.3"
 hex = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+sea-orm = { version = "1.1.20", default-features = false, features = ["macros", "runtime-tokio-rustls", "sqlx-postgres", "with-json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 # keccak256 for the EVM module (EIP-55 address checksums + log-topic hashing).
 # RustCrypto family, consistent with sha2 above.
 sha3 = "0.10"
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }

@@ -72,7 +72,12 @@ fn severity_number(severity: &str) -> i32 {
     }
 }
 
-pub(crate) fn structured_log_record(severity: &str, event_name: &str, body: &str, attributes: Value) -> Value {
+pub(crate) fn structured_log_record(
+    severity: &str,
+    event_name: &str,
+    body: &str,
+    attributes: Value,
+) -> Value {
     json!({
         "schema": LOG_SCHEMA,
         "time_unix_nano": now_unix_nano().to_string(),

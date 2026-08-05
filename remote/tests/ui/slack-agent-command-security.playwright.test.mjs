@@ -7,13 +7,18 @@ import { chromium } from 'playwright';
 const commandBase = process.env.SLACK_COMMAND_BASE_URL ?? 'http://127.0.0.1:8151';
 const slackMockBase = process.env.SLACK_MOCK_BASE_URL ?? 'http://127.0.0.1:8170';
 const signingSecret = process.env.SLACK_SIGNING_SECRET ?? 'integration-signing-secret';
+const slackAppId = process.env.SLACK_EXPECTED_APP_ID ?? 'A0BMBAMM5NJ';
+const slackTeamId = process.env.SLACK_EXPECTED_TEAM_ID ?? 'T01B3C83PMK';
+const slackChannelId = 'C0BKP2N3LG7';
+const slackUserId = 'U01AZNU2LJ2';
 
-function encodedCommand({ channel = 'C1', text = '', trigger }) {
+function encodedCommand({ channel = slackChannelId, text = '', trigger }) {
   return new URLSearchParams({
+    api_app_id: slackAppId,
     command: '/ores-chatgpt',
-    team_id: 'T1',
+    team_id: slackTeamId,
     channel_id: channel,
-    user_id: 'U1',
+    user_id: slackUserId,
     text,
     trigger_id: trigger,
   }).toString();
@@ -106,7 +111,7 @@ test(
       assert.equal(stale.status(), 401, await stale.text());
 
       const unauthorizedBody = encodedCommand({
-        channel: 'C2',
+        channel: 'C0000000000',
         text: 'must not run outside the bound pilot channel',
         trigger: 'security-unauthorized-channel',
       });

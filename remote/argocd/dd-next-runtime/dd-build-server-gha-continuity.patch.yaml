@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-build-server
+  namespace: default
+spec:
+  template:
+    spec:
+      containers:
+        - name: build-server
+          env:
+            - name: BUILD_SERVER_ALLOWED_PROFILES
+              value: rust-verify,node-verify,python-verify,flutter-verify,flutter-android-debug,flutter-web-release,flutter-linux-release,flutter-linux-desktop-entrypoint,flutter-web-e2e,playwright,puppeteer,browser-e2e
+            # GHA indie-worker: planning is available after authentication, but
+            # execution is opt-in until repository/profile allowlists and live
+            # container capacity are certified.
+            - name: BUILD_SERVER_GHA_WORKFLOW_EXECUTION_ENABLED
+              value: 'false'
+            - name: BUILD_SERVER_GHA_MAX_YAML_BYTES
+              value: '262144'
+            - name: BUILD_SERVER_GHA_MAX_JOBS
+              value: '64'
+            - name: BUILD_SERVER_GHA_MAX_STEPS_PER_JOB
+              value: '128'
+            - name: BUILD_SERVER_GHA_MAX_YAML_NODES
+              value: '16384'
+            - name: BUILD_SERVER_GHA_MAX_YAML_DEPTH
+              value: '64'
+            - name: BUILD_SERVER_GHA_POLL_MILLISECONDS
+              value: '250'
+            - name: BUILD_SERVER_GHA_RUN_TIMEOUT_SECONDS
+              value: '3600'
+            - name: BUILD_SERVER_GHA_MAX_RUNS
+              value: '512'

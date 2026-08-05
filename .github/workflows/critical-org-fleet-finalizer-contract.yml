@@ -1,0 +1,55 @@
+name: critical org fleet finalizer contract
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/ops/finalize_missing_org_repositories.py'
+      - 'scripts/ops/tests/test_finalize_missing_org_repositories.py'
+      - '.github/workflows/critical-org-fleet-finalizer-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/ops/finalize_missing_org_repositories.py'
+      - 'scripts/ops/tests/test_finalize_missing_org_repositories.py'
+      - '.github/workflows/critical-org-fleet-finalizer-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: critical-org-fleet-finalizer-contract-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+
+      - name: Compile finalizer and tests
+        run: |
+          python -m py_compile \
+            scripts/ops/finalize_missing_org_repositories.py \
+            scripts/ops/tests/test_finalize_missing_org_repositories.py
+
+      - name: Run focused finalizer contracts
+        run: >-
+          python -m unittest discover
+          -s scripts/ops/tests
+          -p 'test_finalize_missing_org_repositories.py'
+          -v
+
+      - name: Check finalizer self-documentation and diff hygiene
+        run: |
+          python scripts/ops/finalize_missing_org_repositories.py --help >/dev/null
+          git diff --check

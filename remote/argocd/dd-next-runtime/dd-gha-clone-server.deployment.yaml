@@ -1,0 +1,152 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-gha-clone-server
+  namespace: default
+  labels:
+    app: dd-gha-clone-server
+spec:
+  # Fail-closed activation boundary. Provision and verify the ExternalSecret,
+  # then scale to one only after plan-only smoke evidence.
+  replicas: 0
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-gha-clone-server
+  template:
+    metadata:
+      labels:
+        app: dd-gha-clone-server
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gha-clone-server
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              export CARGO_HOME=/tmp/cargo
+              export CARGO_TARGET_DIR=/tmp/gha-clone-target
+              source_root="$(mktemp -d /tmp/gha-clone-source.XXXXXX)"
+              git -c protocol.ext.allow=never -c protocol.file.allow=never \
+                clone --depth 1 --no-tags --branch "${GHA_CLONE_SOURCE_REF}" -- \
+                "${GHA_CLONE_SOURCE_URL}" "$source_root"
+              cd "$source_root/remote/deployments/gha-clone-server-rs"
+              exec cargo run --release
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: "8125"
+            - name: RUST_LOG
+              value: gha_clone_server=info
+            - name: GHA_CLONE_SOURCE_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: GHA_CLONE_SOURCE_REF
+              value: main
+            - name: GHA_CLONE_EXECUTION_ENABLED
+              value: "false"
+            - name: GHA_CLONE_WEBHOOK_EXECUTION_ENABLED
+              value: "false"
+            - name: GHA_CLONE_BUILD_SERVER_URL
+              value: http://dd-build-server.default.svc.cluster.local:8100
+            - name: GHA_CLONE_BUILD_POLL_SECONDS
+              value: "2"
+            - name: GHA_CLONE_BUILD_TIMEOUT_SECONDS
+              value: "3600"
+            - name: GHA_CLONE_MAX_WORKFLOW_BYTES
+              value: "262144"
+            - name: GHA_CLONE_MAX_JOBS
+              value: "64"
+            - name: GHA_CLONE_MAX_STEPS_PER_JOB
+              value: "128"
+            - name: GHA_CLONE_MAX_RUNS
+              value: "256"
+            - name: GHA_CLONE_ALLOWED_REPOSITORIES
+              valueFrom:
+                configMapKeyRef:
+                  name: dd-gha-clone-server
+                  key: GHA_CLONE_ALLOWED_REPOSITORIES
+            - name: GHA_CLONE_WORKFLOW_RULES_JSON
+              valueFrom:
+                configMapKeyRef:
+                  name: dd-gha-clone-server
+                  key: GHA_CLONE_WORKFLOW_RULES_JSON
+            - name: GHA_CLONE_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gha-clone-server-secrets
+                  key: auth_secret
+            - name: GHA_CLONE_GITHUB_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gha-clone-server-secrets
+                  key: github_webhook_secret
+            - name: GHA_CLONE_GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gha-clone-server-secrets
+                  key: github_app_installation_token
+            - name: GHA_CLONE_BUILD_SERVER_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gha-clone-server-secrets
+                  key: build_server_auth
+          ports:
+            - name: http
+              containerPort: 8125
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+              ephemeral-storage: 2Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+              ephemeral-storage: 8Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 8Gi

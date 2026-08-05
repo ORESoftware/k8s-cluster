@@ -235,7 +235,9 @@ impl ResolutionRequest {
     }
 }
 
-pub(crate) fn resolve_confirm_target(options: &Option<ConfirmOptions>) -> Result<(String, u64, u64), String> {
+pub(crate) fn resolve_confirm_target(
+    options: &Option<ConfirmOptions>,
+) -> Result<(String, u64, u64), String> {
     let (target, timeout_ms, poll_interval_ms) = match options {
         Some(options) => (
             normalize_confirm_commitment(options.target_commitment.as_deref())?,

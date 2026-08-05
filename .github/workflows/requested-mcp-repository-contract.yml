@@ -1,0 +1,95 @@
+name: Requested MCP repository contract
+
+on:
+  pull_request:
+    paths:
+      - scripts/ops/publish_requested_mcp_servers.py
+      - scripts/ops/requested_mcp_publisher/**
+      - scripts/ops/prepare_requested_mcp_token_envelope.sh
+      - scripts/ops/run_protected_requested_mcp_publisher.sh
+      - scripts/ops/run_requested_mcp_publisher_remote.sh
+      - scripts/ops/tests/test_publish_requested_mcp_servers.py
+      - .github/requested-mcp-token.envelope
+      - .github/workflows/requested-mcp-repository-contract.yml
+      - .github/workflows/ops-prepare-requested-mcp-token-envelope.yml
+      - .github/workflows/ops-publish-requested-mcp-servers-once.yml
+  push:
+    branches: [main]
+    paths:
+      - scripts/ops/publish_requested_mcp_servers.py
+      - scripts/ops/requested_mcp_publisher/**
+      - scripts/ops/prepare_requested_mcp_token_envelope.sh
+      - scripts/ops/run_protected_requested_mcp_publisher.sh
+      - scripts/ops/run_requested_mcp_publisher_remote.sh
+      - scripts/ops/tests/test_publish_requested_mcp_servers.py
+      - .github/requested-mcp-token.envelope
+      - .github/workflows/requested-mcp-repository-contract.yml
+      - .github/workflows/ops-prepare-requested-mcp-token-envelope.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compile and test the bounded publisher
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ops/publish_requested_mcp_servers.py scripts/ops/requested_mcp_publisher/*.py
+          python3 -m unittest -v scripts/ops/tests/test_publish_requested_mcp_servers.py
+          python3 scripts/ops/publish_requested_mcp_servers.py --check > /tmp/requested-mcp-check.json
+          test "$(jq '.repositories | length' /tmp/requested-mcp-check.json)" -eq 5
+          bash -n scripts/ops/prepare_requested_mcp_token_envelope.sh
+          bash -n scripts/ops/run_protected_requested_mcp_publisher.sh
+          bash -n scripts/ops/run_requested_mcp_publisher_remote.sh
+          grep -qF 'rsa_padding_mode:oaep' scripts/ops/prepare_requested_mcp_token_envelope.sh
+          grep -qF 'rsa_oaep_md:sha256' scripts/ops/prepare_requested_mcp_token_envelope.sh
+          grep -qF 'rsa_mgf1_md:sha256' scripts/ops/prepare_requested_mcp_token_envelope.sh
+          grep -qF 'MCP_TOKEN_ENVELOPE_PUBLIC_KEY ' scripts/ops/prepare_requested_mcp_token_envelope.sh
+          grep -qF 'one-time-envelope-decryption' scripts/ops/run_protected_requested_mcp_publisher.sh
+          grep -qF 'MCP_PUBLISHER_ERROR stage=' scripts/ops/run_protected_requested_mcp_publisher.sh
+          grep -qF 'MCP_PUBLISHER_ERROR stage=' scripts/ops/run_requested_mcp_publisher_remote.sh
+          grep -qF 'MCP_REPOSITORY_VERIFIED ' scripts/ops/run_requested_mcp_publisher_remote.sh
+          grep -qF '/tmp/publish-requested-mcp-repositories.sh' scripts/ops/run_protected_requested_mcp_publisher.sh
+
+          envelope='.github/requested-mcp-token.envelope'
+          test "$(wc -l < "$envelope")" -eq 1
+          grep -qxE 'MCP_TOKEN_ENVELOPE_V1 fingerprint=6a747f9387283fcf4a2eeba3cb433a3c9cfc1105a533d5dd315ccc912975b704 ciphertext=[A-Za-z0-9+/=]+' "$envelope"
+          test "$(sha256sum "$envelope" | awk '{print $1}')" = '6d8599173b0a18e6fc73f712af86b43dd95d5b9c4d73b22b7895fcd67fabb186'
+          ciphertext="$(sed -E 's/^.* ciphertext=//' "$envelope")"
+          printf '%s' "$ciphertext" | base64 --decode > /tmp/requested-mcp-token.enc
+          test "$(stat -c '%s' /tmp/requested-mcp-token.enc)" -eq 512
+          rm -f /tmp/requested-mcp-token.enc
+          unset ciphertext
+
+      - name: Reject credential literals and destructive Git operations
+        run: |
+          set -euo pipefail
+          ! grep -R -E 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}' \
+            scripts/ops/publish_requested_mcp_servers.py \
+            scripts/ops/requested_mcp_publisher \
+            scripts/ops/prepare_requested_mcp_token_envelope.sh \
+            scripts/ops/run_protected_requested_mcp_publisher.sh \
+            scripts/ops/run_requested_mcp_publisher_remote.sh \
+            scripts/ops/tests/test_publish_requested_mcp_servers.py \
+            .github/requested-mcp-token.envelope \
+            .github/workflows/requested-mcp-repository-contract.yml \
+            .github/workflows/ops-prepare-requested-mcp-token-envelope.yml \
+            .github/workflows/ops-publish-requested-mcp-servers-once.yml
+          ! grep -R -E 'git push[^\n]*(--force|-f([[:space:]]|$))' \
+            scripts/ops/requested_mcp_publisher \
+            scripts/ops/prepare_requested_mcp_token_envelope.sh \
+            scripts/ops/run_protected_requested_mcp_publisher.sh \
+            scripts/ops/run_requested_mcp_publisher_remote.sh

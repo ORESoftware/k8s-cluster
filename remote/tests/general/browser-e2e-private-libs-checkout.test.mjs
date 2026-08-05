@@ -11,11 +11,26 @@ const action = await readFile(
   'utf8',
 );
 
-test('browser e2e uses the narrow exact-gitlink remote/libs checkout', () => {
+test('public browser E2E is credential-free and always runs the hermetic suite', () => {
+  assert.match(workflow, /public-browser:[\s\S]*?browser\/harness-hardening\.test\.mjs browser\/func-approx-ui\.test\.mjs/);
+  assert.match(workflow, /BROWSER_ARTIFACT_DIR:/);
+  assert.match(workflow, /actions\/upload-artifact@[0-9a-f]{40}/);
+
+  const publicJob = workflow.match(/  public-browser:[\s\S]*?\n  private-service-worker:/)?.[0] ?? '';
+  assert.ok(publicJob, 'expected a public-browser job before the private job');
+  assert.doesNotMatch(publicJob, /K8S_LIBS_DEPLOY_KEY|checkout-remote-libs/);
+});
+
+test('private service-worker E2E uses the narrow exact-gitlink checkout only when the key exists', () => {
   assert.match(workflow, /uses: \.\/\.github\/actions\/checkout-remote-libs/);
   assert.match(
     workflow,
-    /ssh-key:\s*\$\{\{\s*secrets\.K8S_LIBS_DEPLOY_KEY\s*\}\}/,
+    /if:\s*steps\.private_libs\.outputs\.available == 'true'[\s\S]*?ssh-key:\s*\$\{\{\s*secrets\.K8S_LIBS_DEPLOY_KEY\s*\}\}/,
+  );
+  assert.match(
+    workflow,
+    /K8S_LIBS_DEPLOY_KEY:\s*\$\{\{\s*secrets\.K8S_LIBS_DEPLOY_KEY\s*\}\}[\s\S]*?available=false/,
+    'the workflow must explicitly record when private coverage cannot run',
   );
   assert.match(
     workflow,

@@ -1,0 +1,64 @@
+name: Observe protected private fleet publisher
+run-name: Observe private fleet publisher run ${{ github.event.workflow_run.id }}
+
+on:
+  workflow_run:
+    workflows:
+      - Publish missing organization repositories from protected gh profile
+    types:
+      - requested
+      - completed
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+concurrency:
+  group: observe-private-fleet-publisher-${{ github.event.workflow_run.id }}-${{ github.event.action }}
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Publish bounded run evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_STATUS: ${{ github.event.workflow_run.status }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_ACTOR: ${{ github.event.workflow_run.actor.login }}
+          OBSERVER_ACTION: ${{ github.event.action }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$RUN_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$RUN_HEAD_BRANCH" = main
+          case "$RUN_EVENT" in
+            push|workflow_dispatch) ;;
+            *)
+              echo "Ignoring non-trusted publisher event: $RUN_EVENT" >&2
+              exit 0
+              ;;
+          esac
+
+          failed_jobs='none'
+          if [[ "$OBSERVER_ACTION" = completed ]]; then
+            failed_jobs="$(
+              gh api --paginate \
+                "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs?per_page=100" \
+                --jq '[.jobs[] | select(.conclusion != "success" and .conclusion != "skipped") | (.name + "=" + (.conclusion // "unknown"))] | if length == 0 then "none" else join(", ") end'
+            )"
+          fi
+
+          conclusion="${RUN_CONCLUSION:-pending}"
+          body="Protected private fleet publisher ${OBSERVER_ACTION}: run ${RUN_ID}; event=${RUN_EVENT}; branch=${RUN_HEAD_BRANCH}; sha=${RUN_HEAD_SHA}; actor=${RUN_ACTOR}; status=${RUN_STATUS}; conclusion=${conclusion}; failed_jobs=${failed_jobs}; ${RUN_URL}"
+          gh pr comment 595 --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
+          gh pr comment 291 --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
