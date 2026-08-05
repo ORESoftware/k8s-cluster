@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -41,6 +42,33 @@ def validate_source_image(image: object, index: int) -> None:
         raise SystemExit(
             f"durable Meshy source image {index} needs a lowercase SHA-256"
         )
+
+
+def contains_meshy_credential(text: str) -> bool:
+    """Reject likely credentials while permitting explicit documentation placeholders."""
+
+    if re.search(r"\bmsy_[A-Za-z0-9_-]{16,}\b", text):
+        return True
+
+    placeholders = {
+        "",
+        "...",
+        "<key>",
+        "<redacted>",
+        "replace-me",
+        "your-key",
+        "your-meshy-api-key",
+        "$MESHY_API_KEY",
+        "${MESHY_API_KEY}",
+    }
+    assignment = re.compile(
+        r"(?:export\s+)?MESHY_API_KEY\s*=\s*(?:['\"]([^'\"]*)['\"]|([^\s#]+))"
+    )
+    for match in assignment.finditer(text):
+        value = (match.group(1) if match.group(1) is not None else match.group(2)).strip()
+        if value not in placeholders:
+            return True
+    return False
 
 
 def main() -> None:
@@ -195,13 +223,12 @@ def main() -> None:
     if not isinstance(durable.get("max_artifact_bytes"), int):
         raise SystemExit("durable Meshy example must include max_artifact_bytes")
 
-    forbidden_patterns = ("msy_", "MESHY_API_KEY=")
     forbidden = []
     for path in ROOT.rglob("*"):
         if not path.is_file() or path.name == "check_meshy_integration.py":
             continue
         text = path.read_text(encoding="utf-8", errors="ignore")
-        if any(pattern in text for pattern in forbidden_patterns):
+        if contains_meshy_credential(text):
             forbidden.append(path)
     if forbidden:
         paths = "\n".join(f"  - {path.relative_to(ROOT)}" for path in forbidden)
