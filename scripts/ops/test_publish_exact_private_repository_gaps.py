@@ -90,8 +90,8 @@ class ExactPrivateRepositoryGapTests(unittest.TestCase):
     def test_source_has_no_public_creation_or_force_update_path(self) -> None:
         source = MODULE_PATH.read_text(encoding="utf-8")
         self.assertNotIn('"private": False', source)
-        self.assertNotIn("--visibility public", source)
-        self.assertNotIn("git push --force", source)
+        self.assertNotIn("--visibility " + "public", source)
+        self.assertNotIn("git push --" + "force", source)
         self.assertNotIn("gh repo edit", source)
         self.assertIn("verify_preserved_existing", source)
         self.assertIn("refusing to publish repository outside exact allowlist", source)
