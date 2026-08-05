@@ -119,7 +119,9 @@ def main() -> None:
             f"missing={sorted(EXPECTED - set(documented))}, "
             f"extra={sorted(set(documented) - EXPECTED)}"
         )
-    for forbidden_path in ("apps/zed-cli", "apps/zed-infra"):
+    # Use exact directory spellings: `apps/zed-clients` legitimately starts
+    # with the characters `apps/zed-cli` and must not trigger this guard.
+    for forbidden_path in ("apps/zed-cli/", "apps/zed-infra/"):
         if forbidden_path in readme or forbidden_path in GITMODULES.read_text(encoding="utf-8"):
             fail(f"forbidden monorepo import returned: {forbidden_path}")
     if "fourteen maintained SDK slices" not in readme:
