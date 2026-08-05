@@ -1,0 +1,28 @@
+name: Cancel superseded StreemPilot shell creator
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-cancel-superseded-streempilot-shell-run-20260805.yml
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cancel:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Cancel superseded shell creator
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id=30974008744
+          status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" --jq '.status')"
+          if [[ "$status" != completed ]]; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/cancel"
+          fi
+          final_status="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" --jq '.status')"
+          printf 'superseded_run=%s status=%s\n' "$run_id" "$final_status"
