@@ -44,18 +44,12 @@ pub async fn run(args: Vec<String>) -> Result<(), CliError> {
             print_json(&created.daedalus_receipt(TaskKind::ImageTo3d))?;
         }
         "create-multi-image" => {
-            let request: MultiImageTo3dRequest =
-                read_request(argument(&args, 1, "request file")?)?;
+            let request: MultiImageTo3dRequest = read_request(argument(&args, 1, "request file")?)?;
             let created = client.create_multi_image_task(&request).await?;
             print_json(&created.daedalus_receipt(TaskKind::MultiImageTo3d))?;
         }
         "get-image" => {
-            print_candidate(
-                &client,
-                TaskKind::ImageTo3d,
-                argument(&args, 1, "task id")?,
-            )
-            .await?;
+            print_candidate(&client, TaskKind::ImageTo3d, argument(&args, 1, "task id")?).await?;
         }
         "get-multi-image" => {
             print_candidate(
@@ -145,12 +139,7 @@ fn argument<'a>(args: &'a [String], index: usize, name: &str) -> Result<&'a str,
         .ok_or_else(|| CliError::Usage(format!("missing {name}")))
 }
 
-fn optional_u64(
-    args: &[String],
-    index: usize,
-    fallback: u64,
-    name: &str,
-) -> Result<u64, CliError> {
+fn optional_u64(args: &[String], index: usize, fallback: u64, name: &str) -> Result<u64, CliError> {
     args.get(index)
         .map(|value| {
             value

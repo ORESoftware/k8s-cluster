@@ -4,13 +4,7 @@
 //! represented as a review-blocked candidate; it is never promoted directly to
 //! Daedalus machine-ready release.
 
-use std::{
-    collections::BTreeMap,
-    env,
-    error::Error,
-    fmt,
-    time::Duration,
-};
+use std::{collections::BTreeMap, env, error::Error, fmt, time::Duration};
 
 use reqwest::{
     header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, RETRY_AFTER},
@@ -127,18 +121,10 @@ impl MeshyClient {
         .await
     }
 
-    pub async fn get_task(
-        &self,
-        kind: TaskKind,
-        task_id: &str,
-    ) -> Result<MeshyTask, MeshyError> {
+    pub async fn get_task(&self, kind: TaskKind, task_id: &str) -> Result<MeshyTask, MeshyError> {
         validate_task_id(task_id)?;
-        self.send_json::<(), MeshyTask>(
-            Method::GET,
-            self.endpoint(kind, Some(task_id))?,
-            None,
-        )
-        .await
+        self.send_json::<(), MeshyTask>(Method::GET, self.endpoint(kind, Some(task_id))?, None)
+            .await
     }
 
     pub async fn list_tasks(
@@ -301,7 +287,12 @@ fn api_error(status: StatusCode, retry_after_seconds: Option<u64>, bytes: &[u8])
         .and_then(extract_error_message)
         .or_else(|| String::from_utf8(bounded.to_vec()).ok())
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| status.canonical_reason().unwrap_or("Meshy API error").to_string());
+        .unwrap_or_else(|| {
+            status
+                .canonical_reason()
+                .unwrap_or("Meshy API error")
+                .to_string()
+        });
     MeshyError::Api {
         status: status.as_u16(),
         code,
@@ -369,7 +360,10 @@ impl fmt::Display for MeshyError {
                 Ok(())
             }
             Self::Decode { status, message } => {
-                write!(f, "Meshy response decode failed after HTTP {status}: {message}")
+                write!(
+                    f,
+                    "Meshy response decode failed after HTTP {status}: {message}"
+                )
             }
             Self::Timeout { task_id, timeout } => write!(
                 f,
@@ -462,7 +456,10 @@ impl MultiImageTo3dRequest {
             .input_task_id
             .as_deref()
             .is_some_and(|value| !value.trim().is_empty());
-        let has_images = self.image_urls.as_ref().is_some_and(|values| !values.is_empty());
+        let has_images = self
+            .image_urls
+            .as_ref()
+            .is_some_and(|values| !values.is_empty());
         if has_task == has_images {
             return Err(MeshyError::Validation(
                 "provide exactly one of input_task_id or image_urls".to_string(),
@@ -534,8 +531,7 @@ fn validate_model_selection(
         ModelType::Standard => {
             if matches!(ai_model, Some(AiModel::MeshyT1 | AiModel::MeshyT2)) {
                 return Err(MeshyError::Validation(
-                    "standard image generation supports meshy-5, meshy-6, or latest"
-                        .to_string(),
+                    "standard image generation supports meshy-5, meshy-6, or latest".to_string(),
                 ));
             }
         }
@@ -560,8 +556,7 @@ fn validate_model_selection(
             }
             if ai_model == Some(AiModel::MeshyT1) && options.target_polycount.is_some() {
                 return Err(MeshyError::Validation(
-                    "meshy-t1 does not support target_polycount; use meshy-t2"
-                        .to_string(),
+                    "meshy-t1 does not support target_polycount; use meshy-t2".to_string(),
                 ));
             }
             if ai_model.unwrap_or(AiModel::MeshyT2) == AiModel::MeshyT2 {
@@ -664,8 +659,7 @@ impl GenerationOptions {
             }
             if self.target_polycount.is_some() {
                 return Err(MeshyError::Validation(
-                    "decimation_mode and target_polycount are mutually exclusive"
-                        .to_string(),
+                    "decimation_mode and target_polycount are mutually exclusive".to_string(),
                 ));
             }
         }
@@ -972,9 +966,7 @@ impl Default for ListTasksQuery {
 impl ListTasksQuery {
     fn validate(self) -> Result<(), MeshyError> {
         if self.page_num == 0 {
-            return Err(MeshyError::Validation(
-                "page_num starts at 1".to_string(),
-            ));
+            return Err(MeshyError::Validation("page_num starts at 1".to_string()));
         }
         if self.page_size == 0 || self.page_size > MAX_PAGE_SIZE {
             return Err(MeshyError::Validation(format!(
@@ -1133,7 +1125,9 @@ mod tests {
     };
 
     async fn mock_server(status: u16, response_body: &'static str) -> (String, Arc<Mutex<String>>) {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind mock server");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind mock server");
         let address = listener.local_addr().expect("mock server address");
         let observed = Arc::new(Mutex::new(String::new()));
         let observed_task = Arc::clone(&observed);
