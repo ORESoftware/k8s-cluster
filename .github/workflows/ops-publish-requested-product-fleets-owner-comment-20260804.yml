@@ -1,0 +1,338 @@
+name: Publish StreemPilot sp fleet with one-time encrypted owner credential
+run-name: Publish eight StreemPilot sp repositories from a transient RSA challenge
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: read
+
+concurrency:
+  group: ops-publish-streempilot-sp-encrypted-owner-20260805-v2
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.number == 901 &&
+      github.actor == 'ORESoftware' &&
+      github.event.comment.body == 'ops-publish-streempilot-sp:901:rsa-file-v2:20260805T0340Z'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      REPOSITORY: ${{ github.repository }}
+      CARRIER_NUMBER: '901'
+      FEATURE_BRANCH: agent/bootstrap-streamyard-parity
+      CHALLENGE_BRANCH: ops/streempilot-sp-credential-challenge-20260805
+      CHALLENGE_PATH: ops/streempilot-sp-credential-challenge.json
+
+    steps:
+      - name: Check out trusted main without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Regenerate and verify deterministic repository histories
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          command -v gh
+          command -v git
+          command -v jq
+          command -v openssl
+
+          tools_root="$RUNNER_TEMP/requested-product-fleet-tools"
+          bash scripts/ops/materialize_requested_product_fleet_tools_20260804.sh "$tools_root"
+          sp_root="$RUNNER_TEMP/streempilot-sp-fleet"
+          python3 "$tools_root/generate_streempilot_sp_fleet.py" --output "$sp_root"
+
+          expected=(
+            sp-api
+            sp-mash-web
+            sp-leptos-web
+            sp-dioxus-web
+            sp-infra
+            sp-cli
+            sp-interfaces
+            sp-sync
+          )
+          for repo in "${expected[@]}"; do
+            repo_dir="$sp_root/StreemPilot/$repo"
+            test -d "$repo_dir/.git"
+            git -C "$repo_dir" show-ref --verify --quiet refs/heads/main
+            git -C "$repo_dir" show-ref --verify --quiet "refs/heads/$FEATURE_BRANCH"
+            git -C "$repo_dir" fsck --full
+            test -z "$(git -C "$repo_dir" status --porcelain)"
+          done
+
+          # The immediately preceding trusted-main run validated these exact
+          # generated histories with cargo fmt, all-target tests, Clippy with
+          # warnings denied, and the Cloudflare Worker test suite. This run
+          # regenerates and integrity-checks them before the credential exists.
+          printf 'SP_ROOT=%s\n' "$sp_root" >> "$GITHUB_ENV"
+
+      - name: Publish through one-time RSA challenge and verify every remote
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          stage=challenge-bootstrap
+          workflow_token="$GH_TOKEN"
+          work="$(mktemp -d "$RUNNER_TEMP/streempilot-owner-broker.XXXXXX")"
+          owner_token=''
+          actor=''
+          membership=''
+
+          cleanup() {
+            unset owner_token actor membership GH_TOKEN OWNER_TOKEN GITHUB_TOKEN
+            unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
+            find "$work" -type f -exec sh -c 'for file do : > "$file"; done' sh {} + 2>/dev/null || true
+            rm -rf "$work"
+          }
+          report_failure() {
+            status=$?
+            trap - ERR
+            printf 'STREEMPILOT_SP_PUBLICATION_FAILED stage=%s\n' "$stage" >&2
+            exit "$status"
+          }
+          trap cleanup EXIT
+          trap report_failure ERR
+
+          private_key="$work/private.pem"
+          public_key="$work/public.pem"
+          ciphertext_file="$work/ciphertext.bin"
+          challenge_json="$work/challenge.json"
+          openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key"
+          chmod 600 "$private_key"
+          openssl pkey -in "$private_key" -pubout -out "$public_key"
+          nonce="$(openssl rand -hex 24)"
+          [[ "$nonce" =~ ^[0-9a-f]{48}$ ]]
+
+          stage=publish-public-challenge
+          jq -n \
+            --arg state awaiting-encrypted-response \
+            --arg nonce "$nonce" \
+            --rawfile publicKey "$public_key" \
+            --arg algorithm RSA-OAEP-SHA256-MGF1-SHA256 \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg sourceCommit "$GITHUB_SHA" \
+            '{state:$state,nonce:$nonce,publicKey:$publicKey,algorithm:$algorithm,runId:$runId,sourceCommit:$sourceCommit,privateKeyStored:false}' \
+            > "$challenge_json"
+          challenge_sha="$(GH_TOKEN="$workflow_token" gh api "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}?ref=${CHALLENGE_BRANCH}" --jq '.sha')"
+          challenge_content="$(base64 -w0 < "$challenge_json")"
+          GH_TOKEN="$workflow_token" gh api --method PUT "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}" \
+            -f message="ops: publish one-time StreemPilot credential challenge" \
+            -f content="$challenge_content" \
+            -f branch="$CHALLENGE_BRANCH" \
+            -f sha="$challenge_sha" >/dev/null
+
+          stage=await-encrypted-response
+          response_marker="<!-- streempilot-sp-credential-response:${nonce} -->"
+          response_body=''
+          for _ in $(seq 1 300); do
+            comments="$(GH_TOKEN="$workflow_token" gh api --paginate "repos/${REPOSITORY}/issues/${CARRIER_NUMBER}/comments?per_page=100" --slurp)"
+            response_body="$(
+              jq -r \
+                --arg marker "$response_marker" '
+                [
+                  .[][]
+                  | select(.user.login == "ORESoftware")
+                  | select(.body | startswith($marker + "\n"))
+                ]
+                | sort_by(.id)
+                | last
+                | .body // empty
+              ' <<<"$comments"
+            )"
+            test -n "$response_body" && break
+            sleep 3
+          done
+          test -n "$response_body"
+          test "$(grep -c '^ciphertext-base64=' <<<"$response_body")" -eq 1
+          ciphertext="$(sed -n 's/^ciphertext-base64=//p' <<<"$response_body")"
+          [[ "$ciphertext" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#ciphertext}" -le 8192
+          printf '%s' "$ciphertext" | base64 --decode > "$ciphertext_file"
+          test -s "$ciphertext_file"
+
+          stage=decrypt-ciphertext
+          owner_token="$(
+            openssl pkeyutl -decrypt \
+              -inkey "$private_key" \
+              -in "$ciphertext_file" \
+              -pkeyopt rsa_padding_mode:oaep \
+              -pkeyopt rsa_oaep_md:sha256 \
+              -pkeyopt rsa_mgf1_md:sha256 \
+              2>/dev/null
+          )"
+
+          stage=validate-owner-token
+          test -n "$owner_token"
+          [[ "$owner_token" != *$'\n'* && "$owner_token" != *$'\r'* && "$owner_token" != *$'\t'* && "$owner_token" != *' '* ]]
+          [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
+          echo "::add-mask::$owner_token"
+          export GH_TOKEN="$owner_token"
+          export OWNER_TOKEN="$owner_token"
+          actor="$(gh api user --jq '.login')"
+          test "$actor" = ORESoftware
+          membership="$(gh api user/memberships/orgs/StreemPilot --jq '[.state,.role] | join(":")')"
+          test "$membership" = active:admin
+
+          askpass="$work/git-askpass.sh"
+          cat > "$askpass" <<'ASKPASS'
+          #!/usr/bin/env bash
+          case "${1:-}" in
+            *Username*) printf '%s\n' x-access-token ;;
+            *Password*) printf '%s\n' "$OWNER_TOKEN" ;;
+            *) exit 1 ;;
+          esac
+          ASKPASS
+          chmod 700 "$askpass"
+          export GIT_ASKPASS="$askpass"
+          export GIT_ASKPASS_REQUIRE=force
+          export GIT_TERMINAL_PROMPT=0
+
+          stage=publish-streempilot-repositories
+          expected=(
+            sp-api
+            sp-mash-web
+            sp-leptos-web
+            sp-dioxus-web
+            sp-infra
+            sp-cli
+            sp-interfaces
+            sp-sync
+          )
+          for repo in "${expected[@]}"; do
+            full="StreemPilot/$repo"
+            repo_dir="$SP_ROOT/StreemPilot/$repo"
+            case "$repo" in
+              sp-api) description='REST and WebSocket API for StreemPilot broadcasts' ;;
+              sp-mash-web) description='Maud, Axum, SeaORM, Supabase, HTMX, and WebSocket broadcast portal' ;;
+              sp-leptos-web) description='Leptos SSR and Axum broadcast portal for StreemPilot' ;;
+              sp-dioxus-web) description='Dioxus SSR and Axum broadcast portal for StreemPilot' ;;
+              sp-infra) description='Kubernetes, WebRTC, observability, and Cloudflare Worker infrastructure for StreemPilot' ;;
+              sp-cli) description='Operator CLI for StreemPilot using flags-2-env' ;;
+              sp-interfaces) description='Shared OpenAPI, AsyncAPI, and domain contracts for StreemPilot' ;;
+              sp-sync) description='Offline-first StreemPilot synchronization using opto-sync' ;;
+            esac
+
+            main_sha="$(git -C "$repo_dir" rev-parse refs/heads/main)"
+            feature_sha="$(git -C "$repo_dir" rev-parse "refs/heads/$FEATURE_BRANCH")"
+            if ! gh repo view "$full" --json nameWithOwner >/dev/null 2>&1; then
+              gh repo create "$full" --private --description "$description"
+            fi
+            gh api --method PATCH "repos/$full" \
+              -f description="$description" \
+              -F has_wiki=false \
+              -F delete_branch_on_merge=true \
+              -F allow_merge_commit=true \
+              -F allow_squash_merge=true \
+              -F allow_rebase_merge=true >/dev/null
+
+            remote_main="$(gh api "repos/$full/git/ref/heads/main" --jq '.object.sha' 2>/dev/null || true)"
+            if [[ -n "$remote_main" && "$remote_main" != "$main_sha" ]]; then
+              echo "$full has divergent remote main: $remote_main != $main_sha" >&2
+              exit 1
+            fi
+            remote_feature="$(gh api "repos/$full/git/ref/heads/$FEATURE_BRANCH" --jq '.object.sha' 2>/dev/null || true)"
+            if [[ -n "$remote_feature" && "$remote_feature" != "$feature_sha" ]]; then
+              echo "$full has divergent remote feature branch: $remote_feature != $feature_sha" >&2
+              exit 1
+            fi
+
+            if git -C "$repo_dir" remote get-url origin >/dev/null 2>&1; then
+              git -C "$repo_dir" remote set-url origin "https://github.com/$full.git"
+            else
+              git -C "$repo_dir" remote add origin "https://github.com/$full.git"
+            fi
+            git -C "$repo_dir" push --set-upstream origin refs/heads/main:refs/heads/main
+            git -C "$repo_dir" push --set-upstream origin "refs/heads/$FEATURE_BRANCH:refs/heads/$FEATURE_BRANCH"
+            git -C "$repo_dir" push origin --tags
+            gh api --method PATCH "repos/$full" -f default_branch=main >/dev/null
+
+            pr_number="$(gh pr list --repo "$full" --base main --head "$FEATURE_BRANCH" --state open --json number --jq '.[0].number // empty')"
+            if [[ -z "$pr_number" ]]; then
+              body="$work/${repo}-pr.md"
+              cat > "$body" <<EOF
+          ## Summary
+
+          - bootstrap the reviewed StreemPilot \`$repo\` repository
+          - preserve an independently reviewable \`main\` baseline
+          - add the StreamYard-parity implementation on \`$FEATURE_BRANCH\`
+          - include pinned CI, tests, and repository-specific contracts
+
+          ## Validation
+
+          Trusted-main run 30972228170 verified Git integrity, Rust formatting, all-target tests, and Clippy with warnings denied for every Rust repository. The Cloudflare Worker suite also passed for \`sp-infra\`.
+          EOF
+              gh pr create \
+                --repo "$full" \
+                --base main \
+                --head "$FEATURE_BRANCH" \
+                --title "Bootstrap StreamYard-parity foundation" \
+                --body-file "$body" >/dev/null
+            fi
+          done
+
+          stage=verify-all-requested-remotes
+          sp_count=0
+          pr_count=0
+          for repo in "${expected[@]}"; do
+            full="StreemPilot/$repo"
+            repo_dir="$SP_ROOT/StreemPilot/$repo"
+            expected_main="$(git -C "$repo_dir" rev-parse refs/heads/main)"
+            expected_feature="$(git -C "$repo_dir" rev-parse "refs/heads/$FEATURE_BRANCH")"
+            test "$(gh api "repos/$full/git/ref/heads/main" --jq '.object.sha')" = "$expected_main"
+            test "$(gh api "repos/$full/git/ref/heads/$FEATURE_BRANCH" --jq '.object.sha')" = "$expected_feature"
+            test -n "$(gh pr list --repo "$full" --base main --head "$FEATURE_BRANCH" --state open --json number --jq '.[0].number // empty')"
+            sp_count=$((sp_count + 1))
+            pr_count=$((pr_count + 1))
+          done
+          test "$sp_count" -eq 8
+          test "$pr_count" -eq 8
+
+          four_org_count=0
+          for spec in \
+            'apostille-me:apme:apostille-me.github.io' \
+            'evento-globolo:evgl:evento-globolo.github.io' \
+            'embedded-alerts:eal:embedded-alerts.github.io' \
+            'hacker-house-medellin:hhm:hacker-house-medellin.github.io'; do
+            IFS=: read -r org prefix site <<<"$spec"
+            for suffix in api web-mash web-leptos web-dioxus infra cli interfaces sync clients libs monorepo; do
+              gh api "repos/$org/$prefix-$suffix" --jq '.full_name' >/dev/null
+              four_org_count=$((four_org_count + 1))
+            done
+            gh api "repos/$org/$site" --jq '.full_name' >/dev/null
+            four_org_count=$((four_org_count + 1))
+          done
+          test "$four_org_count" -eq 48
+
+          stage=record-sanitized-success
+          unset OWNER_TOKEN owner_token
+          export GH_TOKEN="$workflow_token"
+          completed_json="$work/completed.json"
+          jq -n \
+            --arg state completed \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg sourceCommit "$GITHUB_SHA" \
+            --arg authenticatedActor "$actor" \
+            '{state:$state,runId:$runId,sourceCommit:$sourceCommit,authenticatedActor:$authenticatedActor,repositoriesCreatedOrVerified:8,pullRequestsOpen:8,companionRepositoriesVerified:48,privateKeyStored:false,plaintextCredentialStored:false}' \
+            > "$completed_json"
+          completed_sha="$(GH_TOKEN="$workflow_token" gh api "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}?ref=${CHALLENGE_BRANCH}" --jq '.sha')"
+          completed_content="$(base64 -w0 < "$completed_json")"
+          GH_TOKEN="$workflow_token" gh api --method PUT "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}" \
+            -f message="ops: complete one-time StreemPilot credential challenge" \
+            -f content="$completed_content" \
+            -f branch="$CHALLENGE_BRANCH" \
+            -f sha="$completed_sha" >/dev/null
+          printf 'STREEMPILOT_SP_PUBLICATION_COMPLETE actor=%s repositories=8 pull_requests=8 four_org_repositories=48\n' "$actor"

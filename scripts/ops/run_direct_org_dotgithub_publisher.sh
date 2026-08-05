@@ -27,9 +27,17 @@ export AWS_REGION="$publisher_region"
 export AWS_DEFAULT_REGION="$publisher_region"
 unset publisher_region
 
-protected_runner="$source_root/scripts/ops/run_protected_org_dotgithub_publisher.sh"
+protected_runner="$source_root/scripts/ops/run_protected_org_dotgithub_all_publisher.sh"
+all_publisher="$source_root/scripts/ops/bootstrap_org_dotgithub_repositories_all.py"
 [[ -f "$protected_runner" ]] || fail protected-runner-missing 66
+[[ -f "$all_publisher" ]] || fail all-publisher-missing 66
+command -v python3 >/dev/null 2>&1 || fail python3-unavailable 69
 bash -n "$protected_runner" || fail protected-runner-invalid 65
+python3 -m py_compile "$all_publisher" || fail all-publisher-invalid 65
+python3 -m unittest discover \
+  -s "$source_root/tests/ops" \
+  -p 'test_bootstrap_org_dotgithub_repositories_all.py' \
+  -v || fail all-publisher-tests-failed 65
 printf 'publisher-stage=%s status=passed\n' "$stage" >&2
 
 stage=direct-delegate
@@ -37,7 +45,7 @@ set +e
 bash "$protected_runner" "$trusted_sha" "$source_root"
 status=$?
 set -e
-if test "$status" -ne 0; then
+if [[ "$status" -ne 0 ]]; then
   printf 'publisher-stage=%s status=failed rc=%s\n' "$stage" "$status" >&2
   exit "$status"
 fi

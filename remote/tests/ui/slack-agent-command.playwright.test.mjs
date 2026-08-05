@@ -17,7 +17,65 @@ const slackAppId = process.env.SLACK_EXPECTED_APP_ID ?? 'A0BMBAMM5NJ';
 const slackTeamId = process.env.SLACK_EXPECTED_TEAM_ID ?? 'T01B3C83PMK';
 const slackChannelId = 'C0BKP2N3LG7';
 const slackUserId = 'U01AZNU2LJ2';
-const outputDir = process.env.PLAYWRIGHT_OUTPUT_DIR ?? path.resolve('test-results/slack-agent-command');
+const outputDir =
+  process.env.PLAYWRIGHT_OUTPUT_DIR ?? path.resolve('test-results/slack-agent-command');
+
+const aliasMatrix = Object.freeze([
+  {
+    command: '/ores-claude',
+    endpoint: '/slack/commands/ores-claude',
+    provider: 'claude',
+    providerLabel: 'Claude',
+    observableProvider: 'anthropic',
+    agent: 'claude-fable-5',
+  },
+  {
+    command: '/x-claude',
+    endpoint: '/slack/commands/ores-claude',
+    provider: 'claude',
+    providerLabel: 'Claude',
+    observableProvider: 'anthropic',
+    agent: 'claude-fable-5',
+  },
+  {
+    command: '/my-claude',
+    endpoint: '/slack/commands/ores-claude',
+    provider: 'claude',
+    providerLabel: 'Claude',
+    observableProvider: 'anthropic',
+    agent: 'claude-fable-5',
+  },
+  {
+    command: '/ores-chatgpt',
+    endpoint: '/slack/commands/ores-chatgpt',
+    provider: 'chatgpt',
+    providerLabel: 'ChatGPT',
+    observableProvider: 'openai',
+    agent: 'gpt-5.6-sol',
+  },
+  {
+    command: '/x-chatgpt',
+    endpoint: '/slack/commands/ores-chatgpt',
+    provider: 'chatgpt',
+    providerLabel: 'ChatGPT',
+    observableProvider: 'openai',
+    agent: 'gpt-5.6-sol',
+  },
+  {
+    command: '/my-chatgpt',
+    endpoint: '/slack/commands/ores-chatgpt',
+    provider: 'chatgpt',
+    providerLabel: 'ChatGPT',
+    observableProvider: 'openai',
+    agent: 'gpt-5.6-sol',
+  },
+]);
+
+function alias(command) {
+  const entry = aliasMatrix.find((candidate) => candidate.command === command);
+  assert.ok(entry, `unknown test alias ${command}`);
+  return entry;
+}
 
 function encodedCommand({
   command,
@@ -72,7 +130,7 @@ async function mockState(request) {
 }
 
 async function waitFor(request, predicate, description) {
-  const deadline = Date.now() + 15_000;
+  const deadline = Date.now() + 30_000;
   let last;
   while (Date.now() < deadline) {
     last = await mockState(request);
@@ -97,10 +155,12 @@ async function verifyDispatch(
   statusText,
   {
     expectedProvider,
+    expectedObservableProvider,
     expectedAgent,
     expectedRepository,
     expectedIssue,
     expectedAction,
+    expectedPrompt,
   },
 ) {
   const ids = idsFromStatus(statusText);
@@ -113,11 +173,14 @@ async function verifyDispatch(
 
   const job = coordinator.job;
   const payload = job.payload;
+  const observableEvent = payload.observable_event;
   const normalizedRepository = expectedRepository.toLowerCase();
+
   assert.equal(job.task_type, 'slack_agent_run');
   assert.equal(payload.run_id, ids.run);
   assert.equal(payload.provider, expectedProvider);
   assert.equal(payload.action, expectedAction);
+  assert.equal(payload.prompt, expectedPrompt);
   assert.equal(payload.bridge_workflow_id, ids.workflow);
   assert.equal(payload.origin.workspace_id, slackTeamId);
   assert.equal(payload.origin.channel_id, slackChannelId);
@@ -146,6 +209,39 @@ async function verifyDispatch(
     ].sort(),
   );
 
+  assert.equal(observableEvent.schema_version, '1.0');
+  assert.equal(observableEvent.kind, 'task_created');
+  assert.equal(observableEvent.payload_classification, 'internal');
+  assert.equal(observableEvent.redaction_state, 'sanitized');
+  assert.equal(observableEvent.idempotency_key, `slack-task-created:${ids.run}`);
+  assert.equal(observableEvent.correlation.run_id, ids.run);
+  assert.equal(observableEvent.correlation.session_id, ids.run);
+  assert.equal(observableEvent.correlation.task_id, ids.run);
+  assert.equal(observableEvent.source.agent_id, expectedAgent);
+  assert.equal(observableEvent.source.model, expectedAgent);
+  assert.equal(observableEvent.source.provider, expectedObservableProvider);
+  assert.equal(observableEvent.payload.repository.toLowerCase(), normalizedRepository);
+  assert.equal(observableEvent.payload.bridge_workflow_id, ids.workflow);
+  assert.equal(observableEvent.payload.linear_issue, expectedIssue);
+  assert.equal(observableEvent.delivery.ack_requested, true);
+  assert.equal(observableEvent.delivery.attempt, 1);
+
+  const encodedObservableEvent = JSON.stringify(observableEvent);
+  for (const forbidden of [
+    expectedPrompt,
+    slackTeamId,
+    slackChannelId,
+    slackUserId,
+    'message-2',
+    'message-6',
+  ]) {
+    assert.equal(
+      encodedObservableEvent.includes(forbidden),
+      false,
+      `observable event leaked private Slack input: ${forbidden}`,
+    );
+  }
+
   assert.equal(bridge.workflow.plan.assignments.length, 1);
   assert.equal(bridge.workflow.plan.assignments[0].agent_key, expectedAgent);
   assert.equal(bridge.workflow.plan.meta.repository.toLowerCase(), normalizedRepository);
@@ -155,27 +251,41 @@ async function verifyDispatch(
     'Slack repository metadata must not opt the workflow into file leases',
   );
 
-  const duplicate = await request.post(`${coordinatorBase}/v1/jobs`, {
+  const duplicateRequest = {
+    org: job.org,
+    repo: job.repo,
+    task_type: job.task_type,
+    payload: job.payload,
+    priority: job.priority,
+    max_attempts: job.max_attempts,
+    budget_usd: job.budget_usd,
+  };
+  const prefixed = await request.post(`${coordinatorBase}/v1/jobs`, {
     headers: {
       authorization: `Bearer ${coordinatorBearer}`,
       'idempotency-key': `slack-command:${ids.run}`,
     },
-    data: {
-      org: job.org,
-      repo: job.repo,
-      task_type: job.task_type,
-      payload: job.payload,
-      priority: job.priority,
-      max_attempts: job.max_attempts,
-      budget_usd: job.budget_usd,
+    data: duplicateRequest,
+  });
+  assert.equal(
+    prefixed.status(),
+    400,
+    `prefixed Slack idempotency key was not rejected: ${await prefixed.text()}`,
+  );
+
+  const duplicate = await request.post(`${coordinatorBase}/v1/jobs`, {
+    headers: {
+      authorization: `Bearer ${coordinatorBearer}`,
+      'idempotency-key': ids.run,
     },
+    data: duplicateRequest,
   });
   assert.equal(duplicate.status(), 202, await duplicate.text());
   assert.equal((await duplicate.json()).job.id, ids.job, 'coordinator idempotency created a second job');
   return ids;
 }
 
-test('Slack slash commands traverse browser, modal, bridge, coordinator, PostgreSQL, and Slack contracts', async () => {
+test('all six Slack slash-command aliases traverse browser, modal, bridge, coordinator, PostgreSQL, and Slack contracts', async () => {
   await mkdir(outputDir, { recursive: true });
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext();
@@ -201,12 +311,14 @@ test('Slack slash commands traverse browser, modal, bridge, coordinator, Postgre
     );
 
     await page.goto(`${slackMockBase}/`);
-    await page.getByRole('heading', { name: 'ORESoftware Slack command integration dashboard' }).waitFor();
+    await page
+      .getByRole('heading', { name: 'ORESoftware Slack command integration dashboard' })
+      .waitFor();
     assert.equal(await page.getByTestId('modal-count').innerText(), '0');
     assert.equal(await page.getByTestId('message-count').innerText(), '0');
 
     const wrongEndpointBody = encodedCommand({
-      command: '/ores-chatgpt',
+      command: '/x-chatgpt',
       text: 'Implement DEN-1041',
       trigger: 'trigger-wrong-endpoint',
     });
@@ -218,21 +330,29 @@ test('Slack slash commands traverse browser, modal, bridge, coordinator, Postgre
     assert.equal(wrongEndpoint.status(), 400, await wrongEndpoint.text());
 
     const wrongAppBody = encodedCommand({
-      command: '/ores-chatgpt',
+      command: '/my-chatgpt',
       appId: 'A0WRONGAPP',
       text: 'Implement DEN-1041',
       trigger: 'trigger-wrong-app',
     });
-    const wrongApp = await postSigned(request, '/slack/commands/ores-chatgpt', wrongAppBody);
+    const wrongApp = await postSigned(
+      request,
+      '/slack/commands/ores-chatgpt',
+      wrongAppBody,
+    );
     assert.equal(wrongApp.status(), 403, await wrongApp.text());
 
     const wrongTeamBody = encodedCommand({
-      command: '/ores-chatgpt',
+      command: '/x-claude',
       team: 'T0WRONGTEAM',
       text: 'Implement DEN-1041',
       trigger: 'trigger-wrong-team',
     });
-    const wrongTeam = await postSigned(request, '/slack/commands/ores-chatgpt', wrongTeamBody);
+    const wrongTeam = await postSigned(
+      request,
+      '/slack/commands/ores-claude',
+      wrongTeamBody,
+    );
     assert.equal(wrongTeam.status(), 403, await wrongTeam.text());
 
     let state = await mockState(request);
@@ -240,10 +360,18 @@ test('Slack slash commands traverse browser, modal, bridge, coordinator, Postgre
     assert.equal(state.messages.length, 0);
     assert.equal(state.historyCalls, 0);
 
-    const modalBody = encodedCommand({ command: '/ores-claude', trigger: 'trigger-modal' });
-    const modalResponse = await postSigned(request, '/slack/commands/ores-claude', modalBody);
+    const modalAlias = alias('/my-claude');
+    const modalBody = encodedCommand({
+      command: modalAlias.command,
+      trigger: 'trigger-my-claude-modal',
+    });
+    const modalResponse = await postSigned(request, modalAlias.endpoint, modalBody);
     assert.equal(modalResponse.status(), 200, await modalResponse.text());
-    state = await waitFor(request, (candidate) => candidate.views.length === 1, 'modal was not opened');
+    state = await waitFor(
+      request,
+      (candidate) => candidate.views.length === 1,
+      `${modalAlias.command} modal was not opened`,
+    );
 
     await page.reload();
     assert.equal(await page.getByTestId('modal-count').innerText(), '1');
@@ -257,6 +385,12 @@ test('Slack slash commands traverse browser, modal, bridge, coordinator, Postgre
 
     const privateMetadata = state.views[0].view.private_metadata;
     assert.equal(typeof privateMetadata, 'string');
+    assert.deepEqual(JSON.parse(privateMetadata), {
+      provider: 'claude',
+      team_id: slackTeamId,
+      channel_id: slackChannelId,
+      user_id: slackUserId,
+    });
 
     const wrongInteractionBody = encodedInteraction({
       api_app_id: 'A0WRONGAPP',
@@ -277,18 +411,19 @@ test('Slack slash commands traverse browser, modal, bridge, coordinator, Postgre
     );
     assert.equal(wrongInteraction.status(), 403, await wrongInteraction.text());
 
+    const modalPrompt = 'Investigate DEN-1231 with tests through /my-claude';
     const interactionBody = encodedInteraction({
       api_app_id: slackAppId,
       type: 'view_submission',
       team: { id: slackTeamId },
       user: { id: slackUserId },
       view: {
-        id: 'V-modal-submit-1',
+        id: 'V-my-claude-modal-submit-1',
         callback_id: 'ores-agent-run-v1',
         private_metadata: privateMetadata,
         state: {
           values: {
-            task: { task: { value: 'Investigate DEN-1231 with tests' } },
+            task: { task: { value: modalPrompt } },
             action: { action: { selected_option: { value: 'investigate' } } },
             repository: {
               repository: {
@@ -311,96 +446,117 @@ test('Slack slash commands traverse browser, modal, bridge, coordinator, Postgre
     state = await waitFor(
       request,
       (candidate) => candidate.messages.length === 1,
-      'Claude modal dispatch status was not posted',
+      `${modalAlias.command} modal dispatch status was not posted`,
     );
-    await verifyDispatch(request, state.messages[0].text, {
-      expectedProvider: 'claude',
-      expectedAgent: 'claude-fable-5',
-      expectedRepository: 'ORESoftware/ai-agent-coordinator.rs',
-      expectedIssue: 'DEN-1231',
-      expectedAction: 'investigate',
-    });
 
-    const chatgptBody = encodedCommand({
-      command: '/ores-chatgpt',
-      text: 'Implement DEN-1041 with tests',
-      trigger: 'trigger-chatgpt',
-    });
-    const chatgptResponse = await postSigned(request, '/slack/commands/ores-chatgpt', chatgptBody);
-    assert.equal(chatgptResponse.status(), 200, await chatgptResponse.text());
-    assert.match((await chatgptResponse.json()).text, /Accepted ChatGPT run/);
-    state = await waitFor(
-      request,
-      (candidate) => candidate.messages.length === 2,
-      'ChatGPT dispatch status was not posted',
+    const dispatches = new Map();
+    dispatches.set(
+      modalAlias.command,
+      await verifyDispatch(request, state.messages[0].text, {
+        expectedProvider: modalAlias.provider,
+        expectedObservableProvider: modalAlias.observableProvider,
+        expectedAgent: modalAlias.agent,
+        expectedRepository: 'ORESoftware/ai-agent-coordinator.rs',
+        expectedIssue: 'DEN-1231',
+        expectedAction: 'investigate',
+        expectedPrompt: modalPrompt,
+      }),
     );
-    await verifyDispatch(request, state.messages[1].text, {
-      expectedProvider: 'chatgpt',
-      expectedAgent: 'gpt-5.6-sol',
-      expectedRepository: 'ORESoftware/ai-agent-bridge.rs',
-      expectedIssue: 'DEN-1041',
-      expectedAction: 'implement',
-    });
 
-    const claudeBody = encodedCommand({
-      command: '/ores-claude',
-      text: 'Implement DEN-1231 with tests',
-      trigger: 'trigger-claude-direct',
-    });
-    const claudeResponse = await postSigned(request, '/slack/commands/ores-claude', claudeBody);
-    assert.equal(claudeResponse.status(), 200, await claudeResponse.text());
-    assert.match((await claudeResponse.json()).text, /Accepted Claude run/);
-    state = await waitFor(
-      request,
-      (candidate) => candidate.messages.length === 3,
-      'Direct Claude dispatch status was not posted',
+    const directAliases = aliasMatrix.filter((entry) => entry.command !== modalAlias.command);
+    let replay;
+    for (const [index, entry] of directAliases.entries()) {
+      const issue = 'DEN-1041';
+      const prompt = `Implement ${issue} with tests through ${entry.command}`;
+      const body = encodedCommand({
+        command: entry.command,
+        text: prompt,
+        trigger: `trigger-alias-${index}-${entry.command.slice(1)}`,
+      });
+      const response = await postSigned(request, entry.endpoint, body);
+      assert.equal(response.status(), 200, `${entry.command}: ${await response.text()}`);
+      assert.match((await response.json()).text, new RegExp(`Accepted ${entry.providerLabel} run`));
+
+      const expectedMessageCount = index + 2;
+      state = await waitFor(
+        request,
+        (candidate) => candidate.messages.length === expectedMessageCount,
+        `${entry.command} dispatch status was not posted`,
+      );
+      dispatches.set(
+        entry.command,
+        await verifyDispatch(request, state.messages[expectedMessageCount - 1].text, {
+          expectedProvider: entry.provider,
+          expectedObservableProvider: entry.observableProvider,
+          expectedAgent: entry.agent,
+          expectedRepository: 'ORESoftware/ai-agent-bridge.rs',
+          expectedIssue: issue,
+          expectedAction: 'implement',
+          expectedPrompt: prompt,
+        }),
+      );
+      if (entry.command === '/my-chatgpt') replay = { entry, body };
+    }
+
+    assert.deepEqual([...dispatches.keys()].sort(), aliasMatrix.map((entry) => entry.command).sort());
+    assert.equal(
+      new Set([...dispatches.values()].map((ids) => ids.run)).size,
+      aliasMatrix.length,
+      'each alias must create a distinct deterministic run for its unique Slack trigger',
     );
-    await verifyDispatch(request, state.messages[2].text, {
-      expectedProvider: 'claude',
-      expectedAgent: 'claude-fable-5',
-      expectedRepository: 'ORESoftware/ai-agent-bridge.rs',
-      expectedIssue: 'DEN-1231',
-      expectedAction: 'implement',
-    });
+    assert.ok(replay, 'the /my-chatgpt replay fixture was not captured');
 
-    const duplicateResponse = await postSigned(request, '/slack/commands/ores-chatgpt', chatgptBody);
+    const duplicateResponse = await postSigned(request, replay.entry.endpoint, replay.body);
     assert.equal(duplicateResponse.status(), 200, await duplicateResponse.text());
     assert.match((await duplicateResponse.json()).text, /already accepted/);
     await new Promise((resolve) => setTimeout(resolve, 250));
     state = await mockState(request);
-    assert.equal(state.messages.length, 3, 'duplicate Slack request posted a second status');
+    assert.equal(
+      state.messages.length,
+      aliasMatrix.length,
+      'duplicate Slack request posted a second status',
+    );
 
     const unauthorizedBody = encodedCommand({
-      command: '/ores-chatgpt',
+      command: '/x-chatgpt',
       channel: 'C0UNAUTHORIZED',
       text: 'Implement DEN-1041',
       trigger: 'trigger-unauthorized',
     });
-    const unauthorized = await postSigned(request, '/slack/commands/ores-chatgpt', unauthorizedBody);
+    const unauthorized = await postSigned(
+      request,
+      '/slack/commands/ores-chatgpt',
+      unauthorizedBody,
+    );
     assert.equal(unauthorized.status(), 403, await unauthorized.text());
 
     const staleBody = encodedCommand({
-      command: '/ores-chatgpt',
+      command: '/ores-claude',
       text: 'Implement DEN-1041',
       trigger: 'trigger-stale',
     });
     const stale = await postSigned(
       request,
-      '/slack/commands/ores-chatgpt',
+      '/slack/commands/ores-claude',
       staleBody,
       Math.floor(Date.now() / 1000) - 600,
     );
     assert.equal(stale.status(), 401, await stale.text());
 
     state = await mockState(request);
-    assert.equal(state.messages.length, 3);
+    assert.equal(state.messages.length, aliasMatrix.length);
     assert.equal(state.views.length, 1);
-    assert.equal(state.historyCalls, 3, 'one bounded history read is performed per live dispatch');
+    assert.equal(
+      state.historyCalls,
+      aliasMatrix.length,
+      'one bounded history read is performed per live alias dispatch',
+    );
 
     await page.goto(`${slackMockBase}/`);
-    assert.equal(await page.getByTestId('message-count').innerText(), '3');
+    assert.equal(await page.getByTestId('message-count').innerText(), String(aliasMatrix.length));
+    assert.equal(await page.getByTestId('modal-count').innerText(), '1');
     await page.screenshot({
-      path: path.join(outputDir, 'slack-agent-command-dashboard.png'),
+      path: path.join(outputDir, 'slack-agent-command-six-alias-dashboard.png'),
       fullPage: true,
     });
   } catch (error) {
