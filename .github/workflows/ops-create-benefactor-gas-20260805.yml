@@ -48,6 +48,7 @@ jobs:
           bash -n "$script"
           grep -qF "repository='benefactor-cc/benefactor-gas'" "$script"
           grep -qF 'candidate-personal-access-token-rejected' "$script"
+          grep -qF 'chown ec2-user:ec2-user "$work"' "$script"
           grep -qF "membership" "$script"
           grep -qF "admin" "$script"
           grep -qF -- '--private' "$script"
@@ -133,7 +134,8 @@ jobs:
             --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
             --output json > "$invocation"
           jq '{Status, Stderr}' "$invocation"
-          test "$(jq -r .Status < "$invocation")" = Success
           stdout="$(jq -r '.Stdout // empty' < "$invocation")"
+          printf '%s\n' "$stdout"
+          test "$(jq -r .Status < "$invocation")" = Success
           grep -Eq '^BENEFACTOR_GAS_REPOSITORY_READY repository=benefactor-cc/benefactor-gas created=(true|false) main=[0-9a-f]{40} trusted_k8s_cluster_sha=[0-9a-f]{40}$' <<< "$stdout"
           grep '^BENEFACTOR_GAS_REPOSITORY_READY ' <<< "$stdout"
