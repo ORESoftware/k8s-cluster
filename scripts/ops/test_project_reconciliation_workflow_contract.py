@@ -42,6 +42,31 @@ class ProjectReconciliationWorkflowContractTests(unittest.TestCase):
         self.assertIn("--validate-only", block)
         self.assertNotIn("continue-on-error", block)
 
+    def test_fifth_gap_and_alias_guard_are_explicitly_covered(self) -> None:
+        self.assertIn(
+            "- scripts/ops/repository_rename_alias_guard.py", self.text
+        )
+        self.assertIn(
+            "- scripts/ops/test_project_reconciliation_workflow_contract.py",
+            self.text,
+        )
+        self.assertIn(
+            "scripts/ops/repository_rename_alias_guard.py", self.text
+        )
+        self.assertIn(
+            "python3 scripts/ops/test_project_reconciliation_workflow_contract.py -v",
+            self.text,
+        )
+        self.assertIn(
+            '"StreemPilot/streempilot-flutter-app"', self.text
+        )
+        self.assertIn(
+            'VERIFIED_REQUESTED_GAPS {len(evidence)}/5', self.text
+        )
+        self.assertNotIn(
+            'VERIFIED_REQUESTED_GAPS {len(evidence)}/4', self.text
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
