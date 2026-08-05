@@ -136,7 +136,7 @@ jobs:
           chmod 700 "$remote_script"
 
           encoded="$(base64 --wrap=0 "$remote_script")"
-          remote_command="remote_script=/tmp/publish-hsg-from-cluster.sh; printf '%s' '$encoded' | base64 --decode > \"\$remote_script\"; chmod 700 \"\$remote_script\"; status=0; bash \"\$remote_script\" '$TRUSTED_SHA' || status=\$?; python3 - \"\$remote_script\" <<'PY'\nimport sys\nfrom pathlib import Path\nPath(sys.argv[1]).unlink(missing_ok=True)\nPY\nexit \$status"
+          remote_command="remote_script=/tmp/publish-hsg-from-cluster.sh; printf '%s' '$encoded' | base64 --decode > \"\$remote_script\"; chmod 700 \"\$remote_script\"; status=0; bash \"\$remote_script\" '$TRUSTED_SHA' || status=\$?; exit \$status"
           parameters="$RUNNER_TEMP/ssm-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
 
