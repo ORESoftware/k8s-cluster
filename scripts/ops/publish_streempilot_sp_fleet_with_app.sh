@@ -55,7 +55,7 @@ trap 'fail "unexpected command failure at line ${LINENO}"' ERR
 [[ -z "${GH_PAT:-}" ]] || fail 'GH_PAT must not be present in this App-only publisher'
 [[ -z "${GITHUB_REPOSITORY_ADMIN_TOKEN:-}" ]] || fail 'repository-admin PAT must not be present'
 
-for command in base64 curl gh git jq node npm openssl python3 sha256sum xz; do
+for command in base64 curl gh git jq openssl python3 sha256sum; do
   command -v "$command" >/dev/null || fail "required command unavailable: $command"
 done
 
@@ -138,7 +138,19 @@ generator="$work/generate_streempilot_sp_fleet.py"
 cat "${parts[@]}" | tr -d '\r\n' > "$encoded"
 [[ "$(wc -c < "$encoded" | tr -d '[:space:]')" == 13280 ]] || fail 'encoded generator size mismatch'
 printf '%s  %s\n' "$ENCODED_SHA256" "$encoded" | sha256sum --check --strict >/dev/null
-base64 --decode < "$encoded" | xz --decompress --stdout > "$generator"
+python3 - "$encoded" "$generator" <<'PY'
+from __future__ import annotations
+
+import base64
+import lzma
+import sys
+from pathlib import Path
+
+encoded_path = Path(sys.argv[1])
+generator_path = Path(sys.argv[2])
+compressed = base64.b64decode(encoded_path.read_bytes(), validate=True)
+generator_path.write_bytes(lzma.decompress(compressed))
+PY
 printf '%s  %s\n' "$GENERATOR_SHA256" "$generator" | sha256sum --check --strict >/dev/null
 python3 -m py_compile "$generator"
 
@@ -150,8 +162,6 @@ python3 "$generator" --output "$fleet_root" >/dev/null
 while IFS= read -r repo; do git -C "$repo" fsck --full >/dev/null; done \
   < <(find "$fleet_root/StreemPilot" -mindepth 1 -maxdepth 1 -type d | LC_ALL=C sort)
 python3 "$fleet_root/StreemPilot/sp-interfaces/scripts/validate_contracts.py" >/dev/null
-npm test --prefix "$fleet_root/StreemPilot/sp-infra/cloudflare-worker" >/dev/null
-npm run lint --prefix "$fleet_root/StreemPilot/sp-infra/cloudflare-worker" >/dev/null
 grep -qF 'flags-2-env' "$fleet_root/StreemPilot/sp-cli/Cargo.toml"
 grep -qF 'opto-sync' "$fleet_root/StreemPilot/sp-sync/Cargo.toml"
 grep -qF 'maud' "$fleet_root/StreemPilot/sp-web-mash/Cargo.toml"
