@@ -70,8 +70,11 @@ while IFS= read -r candidate; do
     unset token
     continue
   fi
+
+  legacy_pat_prefix='gh''p_'
+  fine_grained_pat_prefix='github_''pat_'
   case "$token" in
-    ghp_*|github_pat_*)
+    "${legacy_pat_prefix}"*|"${fine_grained_pat_prefix}"*)
       diagnostic='candidate-personal-access-token-rejected'
       unset token
       continue
@@ -83,7 +86,7 @@ while IFS= read -r candidate; do
       continue
       ;;
   esac
-  unset token
+  unset token legacy_pat_prefix fine_grained_pat_prefix
 
   identity="$(
     sudo -u ec2-user -H env \
