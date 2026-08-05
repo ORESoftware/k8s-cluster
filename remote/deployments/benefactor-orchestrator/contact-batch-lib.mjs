@@ -52,6 +52,10 @@ export function normalizeCategoryRows(rows, allowlist = []) {
     .sort((a, b) => b.priority - a.priority || b.queryCount - a.queryCount || a.category.localeCompare(b.category));
 }
 
+export function shouldIncludeOverflow(dryRun) {
+  return !Boolean(dryRun);
+}
+
 export function planCategoryTargets(categories, targetContacts, maxPerCategory, { includeOverflow = false } = {}) {
   if (!Array.isArray(categories) || categories.length === 0) return [];
   if (!Number.isInteger(targetContacts) || targetContacts < 1) throw new Error('targetContacts must be positive');
