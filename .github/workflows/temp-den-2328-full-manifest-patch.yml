@@ -35,24 +35,22 @@ jobs:
 
           path = Path('scripts/ops/publish_exact_private_repository_gaps.py')
           text = path.read_text(encoding='utf-8')
-          old = '''        exact_manifest = {
-              **execution_manifest,
-              "repository_count": len(selected),
-              "total_tracked_files": sum(int(record["files"]) for record in selected),
-              "total_gitlinks": sum(int(record["gitlinks"]) for record in selected),
-              "organizations": {organization.casefold(): len(selected)},
-              "repositories": selected,
-          }
-          exact_manifest_path = work / f"{organization.casefold()}-exact-private-gaps.json"
-          exact_manifest_path.write_text(
-              json.dumps(exact_manifest, indent=2, sort_keys=True) + "\\n",
-              encoding="utf-8",
-          )
-          '''
-          new = '''        # The sealed publisher validates the complete 32-repository topology even
+          start_marker = '        exact_manifest = {\n'
+          end_marker = '\n        try:\n            missing_records, existing_snapshot = classify_remote_fleet(\n'
+          if text.count(start_marker) != 1:
+              raise SystemExit(
+                  f'expected one subset-manifest start, found {text.count(start_marker)}'
+              )
+          if text.count(end_marker) != 1:
+              raise SystemExit(
+                  f'expected one preflight boundary, found {text.count(end_marker)}'
+              )
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
+          replacement = '''        # The sealed publisher validates the complete 32-repository topology even
           # when --repository selects exactly one mutation. Keep the projected
-          # private execution ledger complete; the allowlist and missing_records
-          # loop below remain the sole mutation boundary.
+          # private execution ledger complete; selected/missing_records below
+          # remain the sole mutation boundary.
           full_private_manifest_path = (
               work / f"{organization.casefold()}-full-private-fleet.json"
           )
@@ -61,9 +59,7 @@ jobs:
               encoding="utf-8",
           )
           '''
-          if text.count(old) != 1:
-              raise SystemExit(f'expected one subset-manifest block, found {text.count(old)}')
-          text = text.replace(old, new, 1)
+          text = text[:start] + replacement + text[end:]
           old_argument = '                    str(exact_manifest_path),\n'
           new_argument = '                    str(full_private_manifest_path),\n'
           if text.count(old_argument) != 1:
@@ -74,6 +70,12 @@ jobs:
           path.write_text(text, encoding='utf-8')
           PY
           python3 -m py_compile scripts/ops/publish_exact_private_repository_gaps.py
+          grep -qF 'full_private_manifest_path' scripts/ops/publish_exact_private_repository_gaps.py
+          grep -qF 'json.dumps(execution_manifest' scripts/ops/publish_exact_private_repository_gaps.py
+          if grep -qF '"repository_count": len(selected)' scripts/ops/publish_exact_private_repository_gaps.py; then
+            echo 'subset fleet manifest remains in product source' >&2
+            exit 1
+          fi
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -81,4 +83,4 @@ jobs:
           git commit -m 'fix(DEN-2328): pass full sealed manifest to publisher'
           git push origin HEAD:fix/den-2328-full-fleet-manifest-20260805
 
-# Trigger after definition.
+# trigger=2026-08-05T20:25Z
