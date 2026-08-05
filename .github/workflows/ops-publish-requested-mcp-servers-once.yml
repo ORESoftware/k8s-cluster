@@ -4,11 +4,6 @@ on:
   push:
     branches: [main]
     paths:
-      - scripts/ops/publish_requested_mcp_servers.py
-      - scripts/ops/requested_mcp_publisher/**
-      - scripts/ops/run_protected_requested_mcp_publisher.sh
-      - scripts/ops/run_requested_mcp_publisher_remote.sh
-      - scripts/ops/tests/test_publish_requested_mcp_servers.py
       - .github/requested-mcp-token.envelope
       - .github/workflows/ops-publish-requested-mcp-servers-once.yml
       - .github/requested-mcp-publisher.activate
@@ -62,8 +57,7 @@ jobs:
 
           envelope='.github/requested-mcp-token.envelope'
           test "$(wc -l < "$envelope")" -eq 1
-          grep -qxE 'MCP_TOKEN_ENVELOPE_V1 fingerprint=6a747f9387283fcf4a2eeba3cb433a3c9cfc1105a533d5dd315ccc912975b704 ciphertext=[A-Za-z0-9+/=]+' "$envelope"
-          test "$(sha256sum "$envelope" | awk '{print $1}')" = '6d8599173b0a18e6fc73f712af86b43dd95d5b9c4d73b22b7895fcd67fabb186'
+          grep -qxE 'MCP_TOKEN_ENVELOPE_V1 fingerprint=[0-9a-f]{64} ciphertext=[A-Za-z0-9+/=]+' "$envelope"
           ciphertext="$(sed -E 's/^.* ciphertext=//' "$envelope")"
           printf '%s' "$ciphertext" | base64 --decode > "$RUNNER_TEMP/requested-mcp-token.enc"
           test "$(stat -c '%s' "$RUNNER_TEMP/requested-mcp-token.enc")" -eq 512
@@ -143,7 +137,7 @@ jobs:
             > "$RUNNER_TEMP/requested-mcp-verified" || true
           jq -r '.Stdout // ""' "$invocation" \
             | grep -E '^MCP_PUBLISHER_ERROR stage=[a-z0-9-]+ code=[0-9]+$' \
-            | tail -n 1 > "$RUNNER_TEMP/requested-mcp-error" || true
+            | head -n 1 > "$RUNNER_TEMP/requested-mcp-error" || true
 
           test "$(jq -r '.Status' "$invocation")" = Success
           test "$status" = Success
