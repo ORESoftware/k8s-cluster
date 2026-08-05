@@ -1,0 +1,75 @@
+name: Reconcile Hypesiege and StreemPilot app-of-apps
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened]
+    paths:
+      - '.github/workflows/agent-reconcile-pr-577.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: agent-reconcile-pr-577
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/hypesiege-streempilot-app-of-apps'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out exact PR branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/hypesiege-streempilot-app-of-apps
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Merge current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          set +e
+          git merge --no-ff --no-commit origin/main
+          status=$?
+          set -e
+          if (( status != 0 )); then
+            echo 'Current main did not form a clean semantic union:' >&2
+            git diff --name-only --diff-filter=U >&2
+            exit 1
+          fi
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31.11.0
+
+      - name: Regenerate and validate the canonical Argo application inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          nix develop --accept-flake-config -c python tools/application_catalog.py generate catalog/applications.json
+          nix develop --accept-flake-config -c python tools/application_catalog.py check catalog/applications.json
+          ruby tools/test_product_app_of_apps.rb
+          git diff --check
+
+      - name: Commit the semantic union
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'Branch is already reconciled.'
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'merge: reconcile product app-of-apps with current main'
+
+      - name: Push reconciled branch
+        shell: bash
+        run: git push origin HEAD:agent/hypesiege-streempilot-app-of-apps
