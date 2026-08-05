@@ -13,6 +13,24 @@ cat "$script_dir"/requested-product-fleet-tools-20260804.tar.xz.b64.part* \
   > "$archive"
 printf '%s  %s\n' '87aa53c3a797d894a70056c8802edd2b3676342e72ede2251bf02caa5e88fddc' "$archive" | sha256sum --check --strict
 tar --extract --xz --file "$archive" --directory "$output"
+
+# Keep generated Rust feature commits formatted on every execution host. The
+# sealed payload is immutable; this bounded source patch is applied after its
+# checksum has been verified and before the generator is compiled or run.
+python3 - "$output/generate_streempilot_sp_fleet.py" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+old = '''    run(["git", "checkout", "-b", FEATURE_BRANCH], cwd=root)\n    write_files(root, files_for(spec))\n    run(["git", "add", "."], cwd=root)\n'''
+new = '''    run(["git", "checkout", "-b", FEATURE_BRANCH], cwd=root)\n    write_files(root, files_for(spec))\n    if spec.kind != "infra" and shutil.which("cargo"):\n        run(["cargo", "fmt", "--all"], cwd=root)\n    run(["git", "add", "."], cwd=root)\n'''
+if new not in text:
+    if old not in text:
+        raise SystemExit("StreemPilot generator formatting patch target was not found")
+    path.write_text(text.replace(old, new, 1), encoding="utf-8")
+PY
+
 chmod 0755 \
   "$output/generate_streempilot_sp_fleet.py" \
   "$output/finalize_requested_product_fleets.py" \
