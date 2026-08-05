@@ -48,6 +48,7 @@ jobs:
 
           allowed_exact = {
               'remote/worker-sdks/README.md',
+              'remote/worker-sdks/python/durable-worker',
               'remote/tests/general/durable-worker-python-sdk.test.mjs',
           }
           allowed_prefix = 'remote/worker-sdks/python/durable-worker/'
