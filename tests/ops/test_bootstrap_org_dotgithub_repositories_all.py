@@ -66,9 +66,15 @@ class AllOrganizationGovernancePublisherTests(unittest.TestCase):
         runner = (ROOT / "scripts" / "ops" / "run_direct_org_dotgithub_publisher.sh").read_text(
             encoding="utf-8"
         )
+        protected = (
+            ROOT / "scripts" / "ops" / "run_protected_org_dotgithub_publisher.sh"
+        ).read_text(encoding="utf-8")
+        target = "bootstrap_org_dotgithub_repositories_hardened.py"
+
+        self.assertEqual(4, protected.count(target))
         self.assertIn("bootstrap_org_dotgithub_repositories_all.py", runner)
         self.assertIn("len(organizations) != 61", runner)
-        self.assertIn("old_target_count != 3", runner)
+        self.assertIn("old_target_count != 4", runner)
         self.assertIn("old_count_guard_count != 1", runner)
 
 
