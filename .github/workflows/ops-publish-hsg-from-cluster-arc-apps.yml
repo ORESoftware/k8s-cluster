@@ -67,6 +67,11 @@ jobs:
           grep -q 'pat_used.*False' "$selector"
           grep -q 'GH_PAT must not be present' "$publisher"
           grep -q 'github_app_installation_token' "$publisher"
+          grep -q 'api_request()' "$publisher"
+          if grep -nE '(^|[[:space:]])gh([[:space:]]|$)' "$publisher"; then
+            echo 'protected publisher must not depend on the gh binary' >&2
+            exit 1
+          fi
           git diff --check
 
   publish:
@@ -124,10 +129,24 @@ jobs:
           }
           trap cleanup EXIT
 
-          for command in aws base64 curl gh git jq kubectl openssl python3 sha256sum tar; do
-            command -v "$command" >/dev/null
+          missing=()
+          for command in aws base64 curl git jq kubectl openssl python3 sha256sum tar; do
+            command -v "$command" >/dev/null || missing+=("$command")
           done
+          if (( ${#missing[@]} > 0 )); then
+            jq -n \
+              --arg status failed \
+              --arg stage prerequisites \
+              --arg message "required commands unavailable: ${missing[*]}" \
+              '{schema_version:1,status:$status,stage:$stage,message:$message,pat_used:false}' \
+              > "$work/hsg-selector-diagnostic.json"
+            printf 'HSG_SELECTOR_DIAGNOSTIC_BASE64='
+            base64 --wrap=0 "$work/hsg-selector-diagnostic.json"
+            printf '\n'
+            exit 1
+          fi
 
+          git config --global init.defaultBranch main
           git init "$work/k8s-cluster" >/dev/null
           git -C "$work/k8s-cluster" remote add origin https://github.com/ORESoftware/k8s-cluster.git
           git -C "$work/k8s-cluster" fetch --quiet --depth=1 origin "$trusted_sha"
@@ -137,12 +156,32 @@ jobs:
           app_id_file="$work/github-app-id"
           private_key_file="$work/github-app-private-key.pem"
           selector_evidence="$work/hsg-protected-app-selector.json"
+          selector_log="$work/hsg-selector.log"
+          set +e
           python3 "$work/k8s-cluster/scripts/ops/select_hypesiege_github_app_from_protected_sources.py" \
             --organization hypesiege \
             --region "$region" \
             --app-id-out "$app_id_file" \
             --private-key-out "$private_key_file" \
-            --evidence-out "$selector_evidence"
+            --evidence-out "$selector_evidence" \
+            > "$selector_log" 2>&1
+          selector_status=$?
+          set -e
+          cat "$selector_log"
+          if [[ "$selector_status" -ne 0 ]]; then
+            selector_message="$(tail -n 1 "$selector_log" | tr -d '\r' | cut -c1-4000)"
+            jq -n \
+              --arg status failed \
+              --arg stage select-protected-app \
+              --arg message "$selector_message" \
+              --argjson exit_code "$selector_status" \
+              '{schema_version:1,status:$status,stage:$stage,message:$message,exit_code:$exit_code,pat_used:false}' \
+              > "$work/hsg-selector-diagnostic.json"
+            printf 'HSG_SELECTOR_DIAGNOSTIC_BASE64='
+            base64 --wrap=0 "$work/hsg-selector-diagnostic.json"
+            printf '\n'
+            exit "$selector_status"
+          fi
           test -s "$app_id_file"
           test -s "$private_key_file"
           test -s "$selector_evidence"
@@ -150,15 +189,31 @@ jobs:
           export K8S_SUBMODULE_APP_ID="$(tr -d '\r\n' < "$app_id_file")"
           export K8S_SUBMODULE_APP_PRIVATE_KEY="$(cat "$private_key_file")"
           export RUNNER_TEMP="$work"
-          chmod 700 "$work/k8s-cluster/scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh"
-          "$work/k8s-cluster/scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh"
+          publisher="$work/k8s-cluster/scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh"
+          publisher_log="$work/hsg-publisher.log"
+          chmod 700 "$publisher"
+          set +e
+          "$publisher" > "$publisher_log" 2>&1
+          publisher_status=$?
+          set -e
+          cat "$publisher_log"
           unset K8S_SUBMODULE_APP_ID K8S_SUBMODULE_APP_PRIVATE_KEY GH_TOKEN
+
+          printf 'HSG_SELECTOR_BASE64='
+          base64 --wrap=0 "$selector_evidence"
+          printf '\n'
+          if [[ -s "$work/hypesiege-hsg-publication-diagnostic.json" ]]; then
+            printf 'HSG_PUBLISHER_DIAGNOSTIC_BASE64='
+            base64 --wrap=0 "$work/hypesiege-hsg-publication-diagnostic.json"
+            printf '\n'
+          fi
+          if [[ "$publisher_status" -ne 0 ]]; then
+            exit "$publisher_status"
+          fi
 
           report="$work/hypesiege-hsg-publication.json"
           test -s "$report"
-          printf 'HSG_SELECTOR_BASE64='
-          base64 --wrap=0 "$selector_evidence"
-          printf '\nHSG_REPORT_BASE64='
+          printf 'HSG_REPORT_BASE64='
           base64 --wrap=0 "$report"
           printf '\n'
           REMOTE
@@ -203,22 +258,42 @@ jobs:
             --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
             --output json > "$invocation"
 
-          jq -r '.Stdout // ""' "$invocation"
+          stdout="$(jq -r '.Stdout // ""' "$invocation")"
+          printf '%s\n' "$stdout"
+
+          decode_marker() {
+            local marker="$1"
+            local destination="$2"
+            local encoded_value
+            encoded_value="$(printf '%s\n' "$stdout" | sed -n "s/^${marker}=//p" | tail -n 1)"
+            if [[ -n "$encoded_value" ]]; then
+              printf '%s' "$encoded_value" | base64 --decode > "$destination"
+            fi
+          }
+
+          decode_marker HSG_SELECTOR_DIAGNOSTIC_BASE64 "$RUNNER_TEMP/hsg-selector-diagnostic.json"
+          decode_marker HSG_SELECTOR_BASE64 "$RUNNER_TEMP/hsg-protected-app-selector.json"
+          decode_marker HSG_PUBLISHER_DIAGNOSTIC_BASE64 "$RUNNER_TEMP/hsg-publisher-diagnostic.json"
+          decode_marker HSG_REPORT_BASE64 "$RUNNER_TEMP/hypesiege-hsg-publication.json"
+
+          if [[ -s "$RUNNER_TEMP/hsg-selector-diagnostic.json" ]]; then
+            echo 'selector_diagnostic='
+            jq . "$RUNNER_TEMP/hsg-selector-diagnostic.json"
+          fi
+          if [[ -s "$RUNNER_TEMP/hsg-publisher-diagnostic.json" ]]; then
+            echo 'publisher_diagnostic='
+            jq . "$RUNNER_TEMP/hsg-publisher-diagnostic.json"
+          fi
+
           if [[ "$status" != Success ]]; then
             jq -r '.Stderr // ""' "$invocation" >&2
             exit 1
           fi
 
-          stdout="$(jq -r '.Stdout // ""' "$invocation")"
-          selector_encoded="$(printf '%s\n' "$stdout" | sed -n 's/^HSG_SELECTOR_BASE64=//p' | tail -n 1)"
-          report_encoded="$(printf '%s\n' "$stdout" | sed -n 's/^HSG_REPORT_BASE64=//p' | tail -n 1)"
-          test -n "$selector_encoded"
-          test -n "$report_encoded"
-
           selector_report="$RUNNER_TEMP/hsg-protected-app-selector.json"
           publication_report="$RUNNER_TEMP/hypesiege-hsg-publication.json"
-          printf '%s' "$selector_encoded" | base64 --decode > "$selector_report"
-          printf '%s' "$report_encoded" | base64 --decode > "$publication_report"
+          test -s "$selector_report"
+          test -s "$publication_report"
 
           jq -e '
             .schema_version == 1 and
@@ -234,7 +309,7 @@ jobs:
             .organization == "hypesiege" and
             (.repositories | length) == 8 and
             all(.repositories[];
-              .target | startswith("hypesiege/hsg-") and
+              (.target | startswith("hypesiege/hsg-")) and
               .visibility == "private" and
               .default_branch == "main" and
               (.main_sha | test("^[0-9a-f]{40}$")) and
@@ -266,7 +341,9 @@ jobs:
         with:
           name: hypesiege-hsg-protected-app-publication
           path: |
+            ${{ runner.temp }}/hsg-selector-diagnostic.json
             ${{ runner.temp }}/hsg-protected-app-selector.json
+            ${{ runner.temp }}/hsg-publisher-diagnostic.json
             ${{ runner.temp }}/hypesiege-hsg-publication.json
             ${{ runner.temp }}/hsg-protected-app-invocation.json
           if-no-files-found: warn
