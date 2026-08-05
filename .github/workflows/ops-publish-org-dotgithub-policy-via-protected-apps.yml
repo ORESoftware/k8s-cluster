@@ -99,6 +99,8 @@ jobs:
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
 
           work="$(mktemp -d /tmp/org-dotgithub-policy-protected-apps.XXXXXX)"
+          export HOME="$work/home"
+          mkdir -p "$HOME"
           cleanup() {
             unset GH_PAT GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS
             python3 - "$work" <<'PY'
