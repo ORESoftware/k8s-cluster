@@ -95,6 +95,9 @@ class ExactPrivateRepositoryGapTests(unittest.TestCase):
         self.assertNotIn("gh repo edit", source)
         self.assertIn("verify_preserved_existing", source)
         self.assertIn("refusing to publish repository outside exact allowlist", source)
+        self.assertNotIn('"repository_count": len(selected)', source)
+        self.assertIn("json.dumps(execution_manifest", source)
+        self.assertIn('"--repository"', source)
 
 
 if __name__ == "__main__":
