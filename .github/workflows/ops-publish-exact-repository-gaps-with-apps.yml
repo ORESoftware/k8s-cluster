@@ -144,6 +144,8 @@ jobs:
           test -n "${INSTANCE_ID:-}"
           trusted_sha="$(git rev-parse HEAD)"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          ssm_comment="DEN-2328 exact gaps ${trusted_sha:0:12}"
+          (( ${#ssm_comment} <= 100 ))
 
           host_script="scripts/ops/publish_exact_private_repository_gaps_via_apps.sh"
           bash -n "$host_script"
@@ -156,7 +158,7 @@ jobs:
             aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
               --document-name AWS-RunShellScript \
-              --comment "Publish exact private repository gaps from protected Apps at $trusted_sha" \
+              --comment "$ssm_comment" \
               --parameters "file://$parameters" \
               --query 'Command.CommandId' \
               --output text
