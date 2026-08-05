@@ -18,6 +18,18 @@ jobs:
         run: cargo metadata --no-deps --format-version 1 > /dev/null
       - name: Validate named turning model integration
         run: python3 scripts/ci/check_turning_model_integration.py
+      - name: Validate Meshy provider integration
+        run: python3 scripts/ci/check_meshy_integration.py
+  meshy-client:
+    # Unlike the top-level service, the Meshy provider crate has no private path
+    # dependencies and is therefore fully buildable in a standalone checkout.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Format Meshy client
+        run: cargo fmt --manifest-path crates/meshy-client/Cargo.toml -- --check
+      - name: Test Meshy client and adapter
+        run: cargo test --manifest-path crates/meshy-client/Cargo.toml --all-targets
   fmt:
     # Informational: full builds require the k8s-cluster superproject (path deps).
     runs-on: ubuntu-latest
