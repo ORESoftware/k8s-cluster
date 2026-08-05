@@ -1,9 +1,6 @@
 [submodule "apps/zed-interfaces"]
 	path = apps/zed-interfaces
 	url = https://github.com/zed-pkg/zed-interfaces.git
-[submodule "apps/zed-cli"]
-	path = apps/zed-cli
-	url = https://github.com/zed-pkg/zed-cli.git
 [submodule "apps/zed-api-server.rs"]
 	path = apps/zed-api-server.rs
 	url = https://github.com/zed-pkg/zed-api-server.rs.git
@@ -16,9 +13,6 @@
 [submodule "apps/zed-sync"]
 	path = apps/zed-sync
 	url = https://github.com/zed-pkg/zed-sync.git
-[submodule "apps/zed-infra"]
-	path = apps/zed-infra
-	url = https://github.com/zed-pkg/zed-infra.git
 [submodule "apps/zed-docs"]
 	path = apps/zed-docs
 	url = https://github.com/zed-pkg/zed-docs.git

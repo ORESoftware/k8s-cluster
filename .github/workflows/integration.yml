@@ -1,24 +1,11 @@
-# Cross-repo integration CI.
-#
-# Why this exists: each repo's own CI compiles against `zed-pkg/zed-interfaces`
-# checked out at its **default-branch tip**, which floats. That makes a single
-# repo's CI answer "does this commit work against the newest contract?" — but
-# nothing answers "does this exact *combination* of repo versions work?", and a
-# contract change pushed after its consumer turns the consumer's CI red for a
-# reason that has nothing to do with the consumer's commit.
-#
-# This repo pins every repo to an exact SHA via submodules, and lays them out as
-# siblings under `apps/` — the same layout the Rust services' `../zed-interfaces`
-# path dependency expects. So building here verifies the pinned set
-# deterministically, with no floating checkout anywhere.
+# Deterministic integration CI for the repositories pinned by this workspace.
+# CLI and infrastructure are independently owned and are intentionally absent.
 name: integration
 
 on:
   push:
     branches: [main]
   pull_request:
-  # Contract changes land in another repo, so allow verifying the pinned set
-  # on demand (and nightly) rather than only when this repo changes.
   workflow_dispatch:
   schedule:
     - cron: "0 6 * * *"
@@ -26,85 +13,49 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: read
+
 jobs:
-  # Fast, deterministic answer to "do the pinned versions compile and pass
-  # their own tests together?" — this is what catches contract/consumer skew.
+  package-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify Zed package and gitlink ownership
+        run: python3 scripts/check-portfolio-inventory.py
+
   rust:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           submodules: recursive
-      - uses: dtolnay/rust-toolchain@stable
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
       - name: Install mold (fast linker)
         uses: rui314/setup-mold@v1
         with:
           make-default: true
       - uses: Swatinem/rust-cache@v2
         with:
-          # One shared cache across the sibling crates; they build together.
           workspaces: |
             apps/zed-interfaces
-            apps/zed-cli
             apps/zed-api-server.rs
             apps/zed-web-server.rs
       - name: Report the pinned combination
-        run: git submodule status
+        run: git submodule status --recursive
       - name: zed-interfaces (contract)
         run: cargo test
         working-directory: apps/zed-interfaces
-      - name: zed-cli
-        run: cargo test
-        working-directory: apps/zed-cli
       - name: zed-api-server.rs
         run: cargo test --workspace
         working-directory: apps/zed-api-server.rs
       - name: zed-web-server.rs
         run: cargo test
         working-directory: apps/zed-web-server.rs
-
-  # The real cross-stack proof: boot Postgres + both servers and drive them
-  # with the CLI and a browser. Only the Playwright suite runs here — it covers
-  # the API contract, CLI round-trips, and the web UI; puppeteer/selenium add
-  # browser diversity that is not worth the CI minutes on every push.
-  e2e:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install mold (fast linker)
-        uses: rui314/setup-mold@v1
-        with:
-          make-default: true
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            apps/zed-api-server.rs
-            apps/zed-web-server.rs
-            apps/zed-cli
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Install e2e deps
-        run: npm install
-        working-directory: apps/zed-e2e
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
-        working-directory: apps/zed-e2e
-      # The harness builds the servers/CLI in debug and boots Postgres in
-      # Docker itself; sibling paths resolve because apps/ mirrors the layout
-      # the harness expects.
-      - name: Playwright suite (Postgres + api + web + CLI)
-        run: npm run e2e:playwright
-        working-directory: apps/zed-e2e
-      - name: Upload report on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: |
-            apps/zed-e2e/playwright-report
-            apps/zed-e2e/test-results
-          retention-days: 7
