@@ -1,0 +1,114 @@
+name: Publish HypeSiege hsg fleet with GitHub App
+run-name: Publish HypeSiege hsg fleet with GitHub App @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-hypesiege-hsg-fleet-with-app.yml
+      - scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-hypesiege-hsg-fleet-with-app.yml
+      - scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-hypesiege-hsg-fleet-with-app
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the exact reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate the bounded App-only publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+          script=scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh
+          bash -n "$script"
+          test "$(grep -c '^  hsg-' "$script")" -ge 8
+          grep -q "readonly ORG='hypesiege'" "$script"
+          grep -q "repository_selection.*all" "$script"
+          grep -q 'administration:write' "$script"
+          grep -q 'pull_requests:write' "$script"
+          grep -q "GH_PAT must not be present" "$script"
+          grep -q 'github_app_installation_token' "$script"
+          if grep -nE 'git (checkout|reset|stash)|(^|[[:space:]])rm([[:space:]]|$)|GITHUB_REPOSITORY_ADMIN_TOKEN=' "$script"; then
+            echo 'publisher contains a forbidden command or PAT assignment' >&2
+            exit 1
+          fi
+          python3 - "$script" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          text = Path(sys.argv[1]).read_text(encoding='utf-8')
+          targets = re.findall(r'^  (hsg-[a-z0-9-]+)$', text, re.MULTILINE)
+          expected = {
+              'hsg-web-mash',
+              'hsg-web-leptos',
+              'hsg-web-dioxus',
+              'hsg-api',
+              'hsg-infra',
+              'hsg-cli',
+              'hsg-interfaces',
+              'hsg-sync',
+          }
+          assert set(targets[:8]) == expected, targets[:8]
+          source_shas = re.findall(r"\[hsg-[^]]+\]='([0-9a-f]{40})'", text)
+          assert len(source_shas) >= 8
+          assert len(set(source_shas)) >= 6
+          assert 'SUPABASE_SERVICE_ROLE_KEY' not in text
+          PY
+          git diff --check
+
+  publish:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+      K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Publish all eight repositories, commits, branches, and pull requests
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod 700 scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh
+          scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh
+
+      - name: Add the non-secret publication summary
+        if: success()
+        shell: bash
+        run: cat "$RUNNER_TEMP/hypesiege-hsg-publication.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload non-secret publication evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hypesiege-hsg-github-app-publication
+          path: |
+            ${{ runner.temp }}/hypesiege-hsg-publication.json
+            ${{ runner.temp }}/hypesiege-hsg-publication.md
+          if-no-files-found: warn
+          retention-days: 14
