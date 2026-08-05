@@ -143,7 +143,7 @@ Fiducia ownership epochs, partitioned streams, failover, chaos testing, and disa
 | independent Rust durable control plane | DEN-1675 | PR #714 | merged |
 | destructive restart and fencing proof | related to DEN-1675 | PR #783 | merged |
 | TypeScript execution SDK | related to DEN-1675 | PR #791 | merged |
-| Python execution SDK | DEN-2218 | PR #971 | in review |
+| Python execution SDK | DEN-2218 | PR #971 | merged |
 
 ## Automation boundaries
 
