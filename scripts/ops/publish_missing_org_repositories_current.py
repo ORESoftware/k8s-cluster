@@ -20,6 +20,10 @@ from repository_fleet_remote_state import (
     verify_preserved_existing,
 )
 from repository_fleet_visibility import project_private_execution_manifest
+from repository_rename_alias_guard import (
+    RepositoryRenameAliasError,
+    RepositoryRenameAliasGuard,
+)
 
 MODULE_PATH = Path(__file__).with_name("publish_missing_org_repositories.py")
 SPEC = importlib.util.spec_from_file_location("bounded_missing_repo_publisher", MODULE_PATH)
@@ -85,10 +89,6 @@ def ensure_private_repository(
         name,
         description,
     )
-
-
-def _repository_lookup(full_name: str) -> tuple[int, dict[str, object] | None]:
-    return MODULE.api("GET", f"/repos/{full_name}")
 
 
 def publish_current_hypesiege_and_streempilot(work: Path) -> None:
@@ -207,20 +207,36 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
         for record in execution_records
     ):
         fail("private execution manifest contains a non-private repository")
+    canonical_full_names = {
+        str(record["full_name"])
+        for record in execution_records
+        if isinstance(record.get("full_name"), str)
+    }
+    if len(canonical_full_names) != 32:
+        fail("private execution manifest repository identities are malformed")
     print("VERIFIED private execution projection for 32 reviewed histories")
+
+    alias_guard = RepositoryRenameAliasGuard(
+        api_base=MODULE.API,
+        token=MODULE.TOKEN,
+        api=MODULE.api,
+        main_ref_lookup=MODULE.main_ref,
+        canonical_full_names=canonical_full_names,
+    )
 
     try:
         missing_records, existing_snapshot = classify_remote_fleet(
             execution_records,
-            repository_lookup=_repository_lookup,
+            repository_lookup=alias_guard.repository_lookup,
             main_ref_lookup=MODULE.main_ref,
         )
-    except RemoteFleetStateError as error:
+    except (RemoteFleetStateError, RepositoryRenameAliasError) as error:
         fail(str(error))
 
     print(
         "VERIFIED remote fleet partition "
-        f"missing={len(missing_records)} preserved={len(existing_snapshot)}"
+        f"missing={len(missing_records)} preserved={len(existing_snapshot)} "
+        f"renamed_aliases={len(alias_guard.snapshots)}"
     )
     for full_name in sorted(existing_snapshot, key=str.casefold):
         state = existing_snapshot[full_name]
@@ -237,8 +253,31 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
     # reset to the old deterministic root merely to make the fleet count match.
     for record in missing_records:
         full_name = record.get("full_name")
-        if not isinstance(full_name, str):
+        owner = record.get("org")
+        name = record.get("name")
+        description = record.get("description")
+        if (
+            not isinstance(full_name, str)
+            or not isinstance(owner, str)
+            or not isinstance(name, str)
+            or not isinstance(description, str)
+            or full_name.casefold() != f"{owner}/{name}".casefold()
+        ):
             fail("reviewed fleet contains an invalid repository identity")
+
+        # Pre-create through the alias-aware create-only API. This converts a
+        # proven old-name redirect into the exact empty private repository before
+        # the sealed publisher performs its own exact-identity GET and push.
+        try:
+            ensure_private_repository_with_api(
+                alias_guard.api,
+                owner,
+                name,
+                description,
+            )
+        except (RuntimeError, RepositoryRenameAliasError) as error:
+            fail(str(error))
+
         MODULE.run(
             [
                 sys.executable,
@@ -259,25 +298,30 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
     try:
         verify_created_repositories(
             missing_records,
-            repository_lookup=_repository_lookup,
+            repository_lookup=alias_guard.repository_lookup,
             main_ref_lookup=MODULE.main_ref,
         )
         verify_preserved_existing(
             existing_snapshot,
-            repository_lookup=_repository_lookup,
+            repository_lookup=alias_guard.repository_lookup,
             main_ref_lookup=MODULE.main_ref,
         )
-    except RemoteFleetStateError as error:
+        alias_guard.verify_preserved()
+    except (RemoteFleetStateError, RepositoryRenameAliasError) as error:
         fail(str(error))
 
     for record in missing_records:
         full_name = str(record["full_name"])
         print(f"VERIFIED_CREATED_PRIVATE {full_name} {record['commit']}")
     for full_name in sorted(existing_snapshot, key=str.casefold):
-        print(f"VERIFIED_PRESERVED_PRIVATE {full_name} {existing_snapshot[full_name]['head']}")
+        print(
+            f"VERIFIED_PRESERVED_PRIVATE {full_name} "
+            f"{existing_snapshot[full_name]['head']}"
+        )
     print(
         "VERIFIED private canonical fleet remote state "
         f"created={len(missing_records)} preserved={len(existing_snapshot)} "
+        f"renamed_targets={len(alias_guard.snapshots)} "
         f"total={len(missing_records) + len(existing_snapshot)}"
     )
 
