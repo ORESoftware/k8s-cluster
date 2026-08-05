@@ -1,0 +1,80 @@
+name: Canonical Slack repository creator contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-create-slack-ores-integrations-encrypted-owner.yml
+      - .github/workflows/ops-create-slack-ores-integrations-encrypted-owner-contract.yml
+      - scripts/ops/test_slack_ores_repository_creator.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-create-slack-ores-integrations-encrypted-owner.yml
+      - .github/workflows/ops-create-slack-ores-integrations-encrypted-owner-contract.yml
+      - scripts/ops/test_slack_ores_repository_creator.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: slack-ores-repository-creator-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out proposed tree without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate workflow syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD:/repo" \
+            -w /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            -ignore 'SC2006' \
+            -ignore 'SC2016' \
+            .github/workflows/ops-create-slack-ores-integrations-encrypted-owner.yml \
+            .github/workflows/ops-create-slack-ores-integrations-encrypted-owner-contract.yml
+
+      - name: Compile and run fail-closed creator contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ops/test_slack_ores_repository_creator.py
+          python3 -m unittest -v scripts/ops/test_slack_ores_repository_creator.py
+          git diff --check
+          if git grep -nE '^(<{7}|={7}|>{7})' -- \
+            .github/workflows/ops-create-slack-ores-integrations-encrypted-owner.yml \
+            .github/workflows/ops-create-slack-ores-integrations-encrypted-owner-contract.yml \
+            scripts/ops/test_slack_ores_repository_creator.py; then
+            echo 'Git conflict markers are forbidden.' >&2
+            exit 1
+          fi
+
+      - name: Reject credentials, pushes, and persistence paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            .github/workflows/ops-create-slack-ores-integrations-encrypted-owner.yml
+            .github/workflows/ops-create-slack-ores-integrations-encrypted-owner-contract.yml
+            scripts/ops/test_slack_ores_repository_creator.py
+          )
+          if git grep -nE 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}' -- "${files[@]}"; then
+            echo 'Plaintext GitHub credentials are forbidden.' >&2
+            exit 1
+          fi
+          for forbidden in upload-artifact actions/cache GITHUB_ENV 'git push' 'git remote add'; do
+            if grep -F "$forbidden" .github/workflows/ops-create-slack-ores-integrations-encrypted-owner.yml; then
+              echo "Forbidden creator pattern: $forbidden" >&2
+              exit 1
+            fi
+          done
