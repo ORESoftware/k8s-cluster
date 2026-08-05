@@ -4,12 +4,10 @@ use reqwest::{Method, Url};
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::str::FromStr;
 use std::time::Duration;
 
-pub type TransportFuture<'a> = Pin<
-    Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send + 'a>,
->;
+pub type TransportFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send + 'a>>;
 
 #[derive(Clone, Debug)]
 pub struct TransportRequest {
@@ -90,10 +88,7 @@ impl Transport for ReqwestTransport {
                 .is_some_and(|length| length > request.max_response_bytes as u64)
             {
                 return Err(TransportError::new(
-                    format!(
-                        "response exceeded {} bytes",
-                        request.max_response_bytes
-                    ),
+                    format!("response exceeded {} bytes", request.max_response_bytes),
                     false,
                 ));
             }
@@ -106,10 +101,7 @@ impl Transport for ReqwestTransport {
             {
                 if body.len().saturating_add(chunk.len()) > request.max_response_bytes {
                     return Err(TransportError::new(
-                        format!(
-                            "response exceeded {} bytes",
-                            request.max_response_bytes
-                        ),
+                        format!("response exceeded {} bytes", request.max_response_bytes),
                         false,
                     ));
                 }

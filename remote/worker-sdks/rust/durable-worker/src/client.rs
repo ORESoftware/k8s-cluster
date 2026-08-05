@@ -5,7 +5,6 @@ use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -82,9 +81,7 @@ impl Client {
         parsed.set_path(&path);
 
         let auth_secret = auth_secret.into();
-        if auth_secret.trim().is_empty()
-            || auth_secret.contains('\r')
-            || auth_secret.contains('\n')
+        if auth_secret.trim().is_empty() || auth_secret.contains('\r') || auth_secret.contains('\n')
         {
             return Err(DurableWorkerError::Configuration(
                 "auth secret must be a non-empty single-line value".to_owned(),
@@ -116,9 +113,7 @@ impl Client {
 
         let transport = match options.transport {
             Some(transport) => transport,
-            None => Arc::new(
-                ReqwestTransport::new().map_err(DurableWorkerError::Transport)?,
-            ),
+            None => Arc::new(ReqwestTransport::new().map_err(DurableWorkerError::Transport)?),
         };
 
         Ok(Self {
@@ -190,10 +185,8 @@ impl Client {
                 && TRANSIENT_STATUSES.contains(&response.status)
                 && error.retryable()
             {
-                tokio::time::sleep(
-                    self.backoff(attempt, response.headers.get("retry-after")),
-                )
-                .await;
+                tokio::time::sleep(self.backoff(attempt, response.headers.get("retry-after")))
+                    .await;
                 continue;
             }
             return Err(error);
@@ -207,9 +200,7 @@ impl Client {
         if let Some(retry_after) = retry_after {
             if let Ok(seconds) = retry_after.trim().parse::<f64>() {
                 if seconds.is_finite() && seconds >= 0.0 {
-                    return Duration::from_secs_f64(
-                        seconds.min(self.max_backoff.as_secs_f64()),
-                    );
+                    return Duration::from_secs_f64(seconds.min(self.max_backoff.as_secs_f64()));
                 }
             }
         }
@@ -241,10 +232,7 @@ impl Client {
         Ok(url)
     }
 
-    pub async fn submit_task(
-        &self,
-        task: JsonObject,
-    ) -> Result<JsonObject, DurableWorkerError> {
+    pub async fn submit_task(&self, task: JsonObject) -> Result<JsonObject, DurableWorkerError> {
         let idempotent = non_empty_string(&task, "idempotencyKey");
         self.request(
             "POST",
@@ -256,10 +244,7 @@ impl Client {
         .await
     }
 
-    pub async fn submit_run(
-        &self,
-        run: JsonObject,
-    ) -> Result<JsonObject, DurableWorkerError> {
+    pub async fn submit_run(&self, run: JsonObject) -> Result<JsonObject, DurableWorkerError> {
         let idempotent = non_empty_string(&run, "idempotencyKey");
         self.request(
             "POST",
@@ -290,14 +275,7 @@ impl Client {
     ) -> Result<JsonObject, DurableWorkerError> {
         self.request(
             "POST",
-            self.endpoint(&[
-                "api",
-                "v1",
-                "runs",
-                run_id,
-                "signals",
-                signal_name,
-            ])?,
+            self.endpoint(&["api", "v1", "runs", run_id, "signals", signal_name])?,
             Some(serde_json::json!({ "payload": payload })),
             false,
             false,
@@ -471,9 +449,7 @@ fn to_value<T: Serialize>(value: T) -> Result<Value, DurableWorkerError> {
         .map_err(|error| DurableWorkerError::Serialization(error.to_string()))
 }
 
-fn from_object<T: for<'de> Deserialize<'de>>(
-    object: JsonObject,
-) -> Result<T, DurableWorkerError> {
+fn from_object<T: for<'de> Deserialize<'de>>(object: JsonObject) -> Result<T, DurableWorkerError> {
     serde_json::from_value(Value::Object(object))
         .map_err(|error| DurableWorkerError::Serialization(error.to_string()))
 }
@@ -503,11 +479,7 @@ fn decode_response(
     }
 }
 
-fn protocol_error(
-    status: u16,
-    body: &JsonObject,
-    lease_sensitive: bool,
-) -> DurableWorkerError {
+fn protocol_error(status: u16, body: &JsonObject, lease_sensitive: bool) -> DurableWorkerError {
     let message = body
         .get("message")
         .and_then(Value::as_str)
