@@ -53,10 +53,12 @@ class EncryptedExpectedRepositoryGapsWorkflowTests(unittest.TestCase):
             "verify_expected_repository_gaps.py preflight"
         )
         publisher = WORKFLOW.index(
-            "publish_missing_org_repositories_current.py"
+            "python3 scripts/ops/publish_missing_org_repositories_current.py",
+            preflight,
         )
         postflight = WORKFLOW.index(
-            "verify_expected_repository_gaps.py postflight"
+            "verify_expected_repository_gaps.py postflight",
+            publisher,
         )
         self.assertLess(preflight, publisher)
         self.assertLess(publisher, postflight)
