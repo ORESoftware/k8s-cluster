@@ -5,17 +5,28 @@ declared in `.cli-flags.toml` and parsed by
 [`flags-2-env`](https://github.com/oresoftware/flags-2-env) before configuration
 is loaded. Runtime logs are structured and spans use OTLP/HTTP OpenTelemetry.
 
-Rust authentication authority for ORESoftware services. Postgres is the source
-of truth for users, provider links, Argon2id credentials, roles, and refresh
-sessions. Supabase Auth remains available as a secondary authority: a verified
-Supabase access token can be exchanged for the same shared-auth session used by
-local accounts. An empty `AUTH_SUPABASE_PROJECTS` registry is valid, so a
-Supabase outage or an intentionally unconfigured project does not prevent
-Postgres-backed login, refresh, introspection, or existing application sessions.
+Rust authentication authority for ORESoftware services. The same binary is
+deployed independently as `shared-auth-admin` and `shared-auth-customer`.
+Each deployment has its own issuer, Supabase project, PostgreSQL RDS endpoint,
+signing key, cookie namespace, secret paths, session store, and recovery policy.
+The two deployments share source code but never runtime authority.
+
+Postgres is the source of truth for principals, provider links, Argon2id
+credentials, coarse Shared Auth roles, application enrollment, and refresh
+sessions. Supabase Auth remains an upstream credential authority: a verified
+realm-specific Supabase access token can be exchanged for the Shared Auth
+session used by that realm. A normal DB-backed production deployment accepts
+exactly one dedicated Supabase project. An empty provider registry is accepted
+only by the explicit DB-less or all-loopback development/test modes.
 
 The storage model is provider-neutral. Supabase is the first external adapter;
 Clerk, Cognito, or another OIDC provider can be added by writing a verifier that
 produces the existing `AuthenticatedIdentity` shape.
+
+See [`docs/runtime-realm-contract.md`](docs/runtime-realm-contract.md) for the
+executable deployment contract and
+[`docs/auth-realms-and-federated-sso.md`](docs/auth-realms-and-federated-sso.md)
+for the complete architecture and rollout rationale.
 
 ## Security properties
 
@@ -30,6 +41,16 @@ produces the existing `AuthenticatedIdentity` shape.
 - Access tokens are short-lived ES256 JWTs with issuer, audience, expiry,
   not-before, unique token id, session id, provider provenance, roles,
   authentication assurance level (`aal`), and authentication methods (`amr`).
+- Admin and customer startup fails closed when deployment identity, issuer,
+  database host/reference, secret path, signing-key reference, cookie name, or
+  Supabase project does not match the selected realm.
+- The application database is not an authentication fallback. A non-empty
+  `AUTH_APPLICATION_DATABASE_URL` is rejected by the server.
+- Customer SSO reuses a central login ceremony, never another application's
+  bearer token or cookie. Delegated product tokens carry an exact target
+  audience, authorized client, bounded scopes, session, and assurance lineage.
+- Product organizations, memberships, billing grants, and resource permissions
+  remain authoritative in each product database.
 - Postgres is authoritative. Redis/Valkey is optional and only accelerates
   rate-limit and revocation checks.
 - External identities are never linked merely because their email addresses
@@ -60,7 +81,8 @@ service-local paths.
 | `POST` | `/auth/mfa/sms/verify` | Verify SMS and issue a new AAL2 session |
 | `POST` | `/auth/refresh` | Rotate a refresh token and issue a new token pair |
 | `POST` | `/auth/logout` | Revoke a refresh session |
-| `POST` | `/auth/exchange` | Supabase access token to shared-auth token pair |
+| `POST` | `/auth/exchange` | Realm Supabase access token to Shared Auth token pair |
+| `POST` | `/auth/delegate` | Exchange a base customer token for an allow-listed audience/scope token |
 | `POST` | `/auth/introspect` | RFC 7662-shaped access-token check |
 | `GET` | `/auth/verify` | Gateway `auth_request` target |
 | `POST` | `/internal/webhook/sync` | HMAC-authenticated provider/session/role sync |
@@ -96,7 +118,7 @@ or the six-digit code:
 { "email": "person@example.com", "otp": "123456" }
 ```
 
-SMS MFA endpoints require the current shared-auth access token as a bearer
+SMS MFA endpoints require the current Shared Auth access token as a bearer
 token. Enroll or challenge with an E.164 phone number, then submit the returned
 `challenge_id` with the Twilio code:
 
@@ -112,10 +134,18 @@ token. Enroll or challenge with an E.164 phone number, then submit the returned
 
 | Variable | Required | Meaning |
 |---|---:|---|
-| `AUTH_DATABASE_URL` | yes | RDS Postgres DSN; schema is `shared_auth` |
+| `AUTH_REALM` | DB-backed | Exact realm: `admin` or `customer` |
+| `AUTH_REALM_DEPLOYMENT` | DB-backed | Deployment identity that visibly names the realm |
+| `AUTH_DATABASE_RESOURCE_REF` | DB-backed | Non-secret realm-specific RDS resource reference |
+| `AUTH_DATABASE_SECRET_REF` | DB-backed | Non-secret realm-specific secret-manager path for the DSN |
+| `AUTH_SIGNING_KEY_REF` | DB-backed | Non-secret realm-specific signing-key secret path |
+| `AUTH_SESSION_COOKIE_NAME` | DB-backed | Realm-specific `__Host-` cookie name |
+| `AUTH_REALM_SUPABASE_PROJECT_REF` | DB-backed | Dedicated Supabase project ref expected for the realm |
+| `AUTH_DATABASE_URL` | DB-backed | Realm PostgreSQL DSN; schema is `shared_auth` |
 | `AUTH_SIGNING_KEY_PEM` or `AUTH_SIGNING_KEY_FILE` | yes | PKCS#8 P-256 private key |
-| `AUTH_SUPABASE_PROJECTS` | no | JSON provider metadata and names of credential env vars; default `[]` |
+| `AUTH_SUPABASE_PROJECTS` | production | JSON array containing exactly the selected realm project |
 | provider credential env vars | per project | Publishable, secret/service-role, or legacy JWT keys referenced by name from project metadata |
+| `AUTH_REALM_ALLOW_LOOPBACK` | no | Explicit all-loopback development/test escape hatch; default `false` |
 | `AUTH_SENDGRID_API_KEY` | for email | SendGrid API key; secret and never accepted as a CLI flag |
 | `AUTH_OTP_PEPPER` | for email | At least 32 bytes used to HMAC email OTPs; secret |
 | `AUTH_EMAIL_FROM` | for email | Verified SendGrid sender address; empty disables passwordless email |
@@ -131,36 +161,32 @@ token. Enroll or challenge with an E.164 phone number, then submit the returned
 | `AUTH_ALLOW_REGISTRATION` | no | Public local registration; default `false` |
 | `AUTH_ACCESS_TOKEN_TTL_SECS` | no | Access TTL, 60–86400; default 900 |
 | `AUTH_REFRESH_TOKEN_TTL_SECS` | no | Refresh TTL, 300–31536000; default 2592000 |
-| `AUTH_ISSUER` / `AUTH_AUDIENCE` | no | Shared-auth JWT constraints |
+| `AUTH_ISSUER` / `AUTH_AUDIENCE` | yes | Realm JWT constraints; admin must use an `admin-auth` host |
 | `AUTH_CORS_ALLOW_ORIGINS` | no | Comma-separated exact browser origins |
 | `AUTH_ALLOW_DBLESS` | no | Explicit development/test escape hatch only |
 
-Example provider registry:
+Example customer-realm provider registry:
 
 ```json
 [
   {
-    "name": "fiducia-cloud",
+    "name": "shared-auth-customer",
     "project_ref": "abcdefghijklmnopqrst",
-    "publishable_key_env": "AUTH_SUPABASE_FIDUCIA_PUBLISHABLE_KEY",
-    "secret_key_env": "AUTH_SUPABASE_FIDUCIA_SECRET_KEY"
-  },
-  {
-    "name": "threefa",
-    "project_ref": "uvwxyz0123456789abcd",
-    "service_role_key_env": "AUTH_SUPABASE_THREEFA_SERVICE_ROLE_KEY",
-    "jwt_secret_env": "AUTH_SUPABASE_THREEFA_JWT_SECRET"
+    "publishable_key_env": "AUTH_SUPABASE_CUSTOMER_PUBLISHABLE_KEY",
+    "secret_key_env": "AUTH_SUPABASE_CUSTOMER_SECRET_KEY"
   }
 ]
 ```
 
-Every `*_env` value names a separate process environment variable; the parser
-rejects inline key material and fails startup if a referenced variable is absent.
-Modern asymmetric JWT verification needs no API key, so omit unused references
-and grant each configured key the narrowest Supabase scope available. Use
-`shared-auth-server discover` with `SUPABASE_ACCESS_TOKEN` only from an operator
-workstation or a short-lived Fiducia-injected job. The account token is never
-injected into or used by the serving Deployment.
+The admin process receives a separate one-element registry with a different
+project ref and credentials. Every `*_env` value names a separate process
+environment variable; the parser rejects inline key material and fails startup
+if a referenced variable is absent. Modern asymmetric JWT verification needs
+no API key, so omit unused references and grant each configured key the
+narrowest Supabase scope available. Use `shared-auth-server discover` with
+`SUPABASE_ACCESS_TOKEN` only from an operator workstation or a short-lived
+Fiducia-injected job. The account token is never injected into or used by a
+serving deployment.
 
 SendGrid and Twilio are optional integrations. Leaving all of their variables
 unset keeps their endpoints disabled without affecting server startup,
@@ -168,30 +194,55 @@ password login, Supabase exchange, refresh, introspection, or application
 traffic. Once any credential in an integration is supplied, its companion
 variables must also be valid so partial secret rollouts fail clearly.
 
+## Customer application federation
+
+`db/schema.sql` defines a stable global principal plus per-application records:
+`applications`, `application_accounts`, `oauth_clients`,
+`application_consents`, and `session_application_grants`. A customer may be
+active in App A and suspended or unenrolled in App B without changing the
+global principal.
+
+The customer realm can reuse its central login session when a customer opens
+another first-party application, but it creates or validates that application's
+account and issues a new token for that application's exact audience and client.
+App A must reject App B's token and vice versa. Neither application receives the
+other application's cookie, bearer token, roles, organization memberships, or
+database access.
+
 ## Database and deployment
 
 `db/schema.sql` is a reviewable copy of the declarative schema. The canonical
 RDS contract is also kept in the cluster's `pg-defs` repository and migrations
 must be generated/reviewed with `dpm`; the application never executes DDL.
 
-Kubernetes resources under `deploy/k8s/` are namespace-scoped and consume RDS,
-Redis, signing, provider, and webhook values through External Secrets. The
-`dd/shared-auth/provider-credentials` secret object is extracted into environment
-variables whose names match the provider registry; Fiducia can manage and rotate
-that object without committing values or rebuilding an image. Logs are
-structured JSON to stdout for Promtail/Loki, traces use OTLP/HTTP to the cluster
-collector, and `/metrics` is scraped by Prometheus for Grafana.
+The target production topology uses separate admin-auth and customer-auth RDS
+instances. The legacy single-realm Kubernetes resources under `deploy/k8s/` are
+not silently rewritten by the realm implementation; reviewed overlays and the
+new realm-specific secrets must exist before cutover. This prevents a watched
+manifest from switching to nonexistent databases or secret paths.
 
-The Cloudflare Worker lives in `shared-auth-infra`, not this application repo.
+Kubernetes deployments consume RDS, Redis, signing, provider, and webhook values
+through External Secrets. Logs are structured JSON to stdout for Promtail/Loki,
+traces use OTLP/HTTP to the cluster collector, and `/metrics` is scraped by
+Prometheus for Grafana.
+
+The Cloudflare Worker and AWS RDS definitions live in `shared-auth-infra`, not
+this application repo.
 
 ## Development
 
 ```sh
+python3 -m unittest scripts/test_validate_auth_realms.py
+python3 scripts/validate_auth_realms.py \
+  --contract config/auth-realms.contract.json \
+  --schema db/schema.sql \
+  --realm-source src/realm.rs
 cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
 cargo test --all-targets --locked
 ```
 
-The integration suite uses the explicit DB-less test configuration. Exercise
-registration/refresh/revocation against a disposable Postgres instance before a
-schema promotion.
+The browser integration suite uses the explicit all-loopback customer test
+profile. Exercise registration, refresh, revocation, App-A/App-B audience
+rejection, and admin/customer rejection against disposable Postgres instances
+before schema or traffic promotion.
