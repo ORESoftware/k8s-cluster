@@ -1,0 +1,106 @@
+name: Publish StreemPilot sp fleet once
+run-name: Publish eight StreemPilot repositories with PAT-free device authorization @ ${{ github.sha }}
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-streempilot-fleet-device-auth-once.yml
+      - scripts/ops/generate_streempilot_sp_fleet.py.xz.b64
+      - scripts/ops/run_streempilot_device_auth_publisher.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: publish-streempilot-sp-fleet-20260804
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install bounded publication prerequisites
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends jq openssl
+          for command in gh git jq openssl python3 node npm; do command -v "$command"; done
+          gh --version
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Set up stable Rust
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      - name: Generate, test, and verify the eight-repository fleet
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          generator="$RUNNER_TEMP/generate_streempilot_sp_fleet.py"
+          encoded="scripts/ops/generate_streempilot_sp_fleet.py.xz.b64"
+          tr -d '\r\n' < "$encoded" | base64 --decode | xz --decompress --stdout > "$generator"
+          printf '%s  %s\n' \
+            '10188d2d4018dec7a28ff3e85a6779f67517864d7d85b5d03d769402a3a55fd7' \
+            "$generator" \
+            | sha256sum --check --strict
+          python3 -m py_compile "$generator"
+          fleet_root="$RUNNER_TEMP/streempilot-sp-fleet"
+          python3 "$generator" --output "$fleet_root"
+
+          repository_count="$(find "$fleet_root/StreemPilot" -mindepth 2 -maxdepth 2 -type d -name .git | wc -l | tr -d '[:space:]')"
+          [[ "$repository_count" == 8 ]]
+          [[ "$(jq -er '.repository_count' "$fleet_root/REPOSITORY_MANIFEST.json")" == 8 ]]
+
+          while IFS= read -r repo; do
+            git -C "$repo" fsck --full
+            cargo metadata --no-deps --format-version 1 --manifest-path "$repo/Cargo.toml" >/dev/null 2>&1 || {
+              [[ ! -f "$repo/Cargo.toml" ]] || exit 1
+            }
+          done < <(find "$fleet_root/StreemPilot" -mindepth 1 -maxdepth 1 -type d | sort)
+
+          python3 "$fleet_root/StreemPilot/sp-interfaces/scripts/validate_contracts.py"
+          npm test --prefix "$fleet_root/StreemPilot/sp-infra/cloudflare-worker"
+          npm run lint --prefix "$fleet_root/StreemPilot/sp-infra/cloudflare-worker"
+          grep -q 'flags-2-env' "$fleet_root/StreemPilot/sp-cli/Cargo.toml"
+          grep -q 'opto-sync' "$fleet_root/StreemPilot/sp-sync/Cargo.toml"
+          grep -q 'maud' "$fleet_root/StreemPilot/sp-web-mash/Cargo.toml"
+          grep -q 'sea-orm' "$fleet_root/StreemPilot/sp-web-mash/Cargo.toml"
+          grep -q 'SUPABASE_URL' "$fleet_root/StreemPilot/sp-web-mash/src/main.rs"
+          grep -q 'htmx.org' "$fleet_root/StreemPilot/sp-web-mash/src/main.rs"
+          grep -q 'extract::WebSocketUpgrade' "$fleet_root/StreemPilot/sp-api/src/main.rs"
+          test -f "$fleet_root/StreemPilot/sp-infra/cloudflare-worker/src/index.mjs"
+          bash -n "$fleet_root/scripts/publish-all.sh"
+          bash -n "$fleet_root/scripts/verify-remote.sh"
+
+          printf 'FLEET_ROOT=%s\n' "$fleet_root" >> "$GITHUB_ENV"
+          printf 'STREEMPILOT_FLEET_PREPARED repositories=%s\n' "$repository_count"
+
+      - name: Authorize once, create repositories, push commits, and open pull requests
+        shell: bash
+        env:
+          ISSUE_TOKEN: ${{ github.token }}
+          TRACKING_ISSUE: '900'
+        run: bash scripts/ops/run_streempilot_device_auth_publisher.sh
