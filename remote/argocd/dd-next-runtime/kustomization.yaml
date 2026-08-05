@@ -67,7 +67,14 @@ resources:
   - dd-fabrication-server.deployment.yaml
   - dd-fabrication-server.service.yaml
   - dd-fabrication-server.networkpolicy.yaml
+  # Canonical DES browser surface. The legacy simulator Deployment stays at
+  # zero replicas; its stable Service name aliases the DES-owned web pods so the
+  # existing /des/ gateway rule remains identical in AWS and Hetzner.
   - dd-des-simulator.deployment.yaml
+  - dd-des-web.deployment.yaml
+  - dd-des-web.networkpolicy.yaml
+  - dd-des-web.pdb.yaml
+  - dd-des-web.service.yaml
   - dd-des-simulator.service.yaml
   - dd-des-rs.deployment.yaml
   - dd-des-rs.hpa.yaml
