@@ -18,6 +18,7 @@ Every database-backed deployment sets all of the following:
 | `AUTH_REALM` | `admin` | `customer` |
 | `AUTH_REALM_DEPLOYMENT` | `shared-auth-admin` | `shared-auth-customer` |
 | `AUTH_ISSUER` | `https://admin-auth.oresoftware.dev` | `https://auth.oresoftware.dev` |
+| `AUTH_DATABASE_ENDPOINT_HOST` | exact admin RDS endpoint host | exact customer RDS endpoint host |
 | `AUTH_DATABASE_RESOURCE_REF` | `aws:rds:shared-auth-admin-prod` | `aws:rds:shared-auth-customer-prod` |
 | `AUTH_DATABASE_SECRET_REF` | `dd/shared-auth/admin/database-url` | `dd/shared-auth/customer/database-url` |
 | `AUTH_SIGNING_KEY_REF` | `dd/shared-auth/admin/signing-key` | `dd/shared-auth/customer/signing-key` |
@@ -26,18 +27,18 @@ Every database-backed deployment sets all of the following:
 | `AUTH_SUPABASE_PROJECTS` | exactly the admin project | exactly the customer project |
 | `AUTH_DATABASE_URL` | admin-auth PostgreSQL endpoint | customer-auth PostgreSQL endpoint |
 
-The reference variables are non-secret identity assertions. The actual DSN, signing key, provider credentials, and service credentials remain environment/secret-manager only.
+The reference variables are non-secret identity assertions. The actual DSN, signing key, provider credentials, and service credentials remain environment/secret-manager only. `AUTH_DATABASE_ENDPOINT_HOST` is populated from the reviewed infrastructure output; the host parsed from `AUTH_DATABASE_URL` must match it exactly, not merely contain the realm name.
 
 Startup rejects:
 
 - an application-database fallback variable;
 - a deployment, database resource, secret path, signing-key path, or cookie name that does not name the selected realm;
+- a DSN whose parsed PostgreSQL host is not exactly `AUTH_DATABASE_ENDPOINT_HOST`;
 - an admin issuer without an `admin-auth` host;
 - a customer issuer using the admin host;
-- a PostgreSQL host that does not name the selected realm;
 - zero, multiple, or mismatched Supabase projects in a production profile.
 
-`AUTH_ALLOW_DBLESS=true` remains an explicit test-only mode. `AUTH_REALM_ALLOW_LOOPBACK=true` permits HTTP plus loopback PostgreSQL only when **both** issuer and database are loopback; setting the flag against normal hosts does not relax the one-project or realm checks. The production JSON contract forbids loopback.
+`AUTH_ALLOW_DBLESS=true` remains an explicit test-only mode. `AUTH_REALM_ALLOW_LOOPBACK=true` permits HTTP plus loopback PostgreSQL only when **both** issuer and database are loopback and the expected database host matches the loopback DSN; setting the flag against normal hosts does not relax the one-project or realm checks. The production JSON contract forbids loopback.
 
 ## Customer federation model
 
@@ -62,11 +63,12 @@ Administrative policy still needs its own deployment configuration for mandatory
 ## Safe rollout
 
 1. Provision both RDS planes and realm-specific secrets without changing traffic.
-2. Apply `db/schema.sql` through the declarative database pipeline with a migration role; the server never runs DDL.
-3. Create separate admin/customer deployment overlays with the complete settings above.
-4. Run startup cross-wire tests, schema tests, cross-realm token rejection, App-A/App-B audience rejection, restore drills, and load tests.
-5. Migrate customer applications incrementally, then migrate operators separately with reauthentication/MFA enrollment.
-6. Remove legacy auth queries and credentials from the application database only after observation and rollback windows.
+2. Export each exact RDS endpoint host into the corresponding protected deployment configuration.
+3. Apply `db/schema.sql` through the declarative database pipeline with a migration role; the server never runs DDL.
+4. Create separate admin/customer deployment overlays with the complete settings above.
+5. Run startup cross-wire tests, schema tests, cross-realm token rejection, App-A/App-B audience rejection, restore drills, and load tests.
+6. Migrate customer applications incrementally, then migrate operators separately with reauthentication/MFA enrollment.
+7. Remove legacy auth queries and credentials from the application database only after observation and rollback windows.
 
 The root `deploy/k8s` manifest is the legacy single-realm deployment and is intentionally not rewritten by this implementation PR. Production cutover must use reviewed realm-specific overlays after the new databases and secrets exist; changing the watched manifest early would create an avoidable authentication outage.
 
