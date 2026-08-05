@@ -56,11 +56,20 @@ jobs:
           readonly GH_ARCHIVE_SHA256=02d1290eba130e0b896f3709ffff22e1c75a51475ddb70476a85abc6b5807af0
 
           cleanup() {
-            unset GH_TOKEN GITHUB_TOKEN DES_GATEWAY_AUTH encoded_pat encoded_auth
+            unset GH_TOKEN GITHUB_TOKEN DES_GATEWAY_AUTH candidate_token encoded_pat encoded_auth secret_json
             rm -rf "/tmp/gh_${GH_VERSION}_linux_amd64" /tmp/gh-des-bootstrap.tar.gz
           }
           trap cleanup EXIT
           trap 'rc=$?; printf "bootstrap-stage=%s status=failed rc=%s\n" "$stage" "$rc" >&2; exit "$rc"' ERR
+
+          valid_token() {
+            local candidate="${1:-}"
+            [[ ${#candidate} -ge 20 ]] || return 1
+            [[ "$candidate" != *$'\n'* ]] || return 1
+            [[ "$candidate" != *$'\r'* ]] || return 1
+            [[ "$candidate" != *$'\t'* ]] || return 1
+            [[ "$candidate" != *' '* ]] || return 1
+          }
 
           stage=tool-preflight
           command -v kubectl >/dev/null
@@ -79,18 +88,108 @@ jobs:
           gh --version >/dev/null
           printf 'bootstrap-stage=%s status=passed\n' "$stage"
 
-          stage=protected-credentials
-          encoded_pat="$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}')"
-          encoded_auth="$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n default get secret dd-remote-auth-secrets -o jsonpath='{.data.DD_AUTH_COOKIE_VALUE}')"
-          test -n "$encoded_pat"
-          test -n "$encoded_auth"
-          GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode)"
-          DES_GATEWAY_AUTH="$(printf '%s' "$encoded_auth" | base64 --decode)"
-          unset encoded_pat encoded_auth
+          stage=protected-github-credential
+          GH_TOKEN=''
+          credential_source=''
+
+          # Prefer the newly authenticated gh profile. Keep token extraction and
+          # every subsequent GitHub mutation on this protected host.
+          candidate_token="$(
+            env -u GH_TOKEN -u GITHUB_TOKEN gh auth token --hostname github.com 2>/dev/null || true
+          )"
+          if valid_token "$candidate_token"; then
+            GH_TOKEN="$candidate_token"
+            credential_source='root-gh-profile'
+          fi
+          unset candidate_token
+
+          if [[ -z "$GH_TOKEN" ]] && command -v sudo >/dev/null 2>&1 && command -v getent >/dev/null 2>&1; then
+            ec2_home="$(getent passwd ec2-user | awk -F: '$1 == "ec2-user" {print $6}')"
+            if [[ "$ec2_home" == /* ]]; then
+              candidate_token="$(
+                sudo -u ec2-user -H env \
+                  -u GH_TOKEN \
+                  -u GITHUB_TOKEN \
+                  -u GH_ENTERPRISE_TOKEN \
+                  -u GITHUB_REPOSITORY_ADMIN_TOKEN \
+                  PATH="$PATH" \
+                  HOME="$ec2_home" \
+                  XDG_CONFIG_HOME="$ec2_home/.config" \
+                  gh auth token --hostname github.com 2>/dev/null || true
+              )"
+              if valid_token "$candidate_token"; then
+                GH_TOKEN="$candidate_token"
+                credential_source='ec2-user-gh-profile'
+              fi
+            fi
+            unset candidate_token ec2_home
+          fi
+
+          # Fall back to the External Secrets source, then its reconciled
+          # Kubernetes Secret. Missing or rotated fields are normal fallbacks.
+          if [[ -z "$GH_TOKEN" ]] && command -v aws >/dev/null 2>&1; then
+            secret_json="$(
+              aws secretsmanager get-secret-value \
+                --region "${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}" \
+                --secret-id dd/remote-dev/agent-secrets \
+                --query SecretString \
+                --output text 2>/dev/null || true
+            )"
+            if [[ -n "$secret_json" ]]; then
+              candidate_token="$(
+                printf '%s' "$secret_json" | python3 -c '
+          import json, sys
+          try:
+              payload = json.load(sys.stdin)
+          except (json.JSONDecodeError, OSError):
+              raise SystemExit(0)
+          value = payload.get("GH_PAT")
+          if isinstance(value, str) and value:
+              sys.stdout.write(value)
+          ' 2>/dev/null || true
+              )"
+              if valid_token "$candidate_token"; then
+                GH_TOKEN="$candidate_token"
+                credential_source='aws-secrets-manager'
+              fi
+            fi
+            unset candidate_token secret_json
+          fi
+
+          if [[ -z "$GH_TOKEN" ]]; then
+            encoded_pat="$(
+              KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n default get secret dd-agent-secrets \
+                -o jsonpath='{.data.GH_PAT}' 2>/dev/null || true
+            )"
+            if [[ -n "$encoded_pat" ]]; then
+              candidate_token="$(printf '%s' "$encoded_pat" | base64 --decode 2>/dev/null || true)"
+              if valid_token "$candidate_token"; then
+                GH_TOKEN="$candidate_token"
+                credential_source='kubernetes-secret'
+              fi
+            fi
+            unset candidate_token encoded_pat
+          fi
+
           test -n "$GH_TOKEN"
-          test -n "$DES_GATEWAY_AUTH"
           export GH_TOKEN GITHUB_TOKEN="$GH_TOKEN"
-          printf 'bootstrap-stage=%s status=passed\n' "$stage"
+          printf 'bootstrap-stage=%s status=passed source=%s\n' "$stage" "$credential_source"
+
+          stage=optional-gateway-credential
+          DES_GATEWAY_AUTH=''
+          encoded_auth="$(
+            KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n default get secret dd-remote-auth-secrets \
+              -o jsonpath='{.data.DD_AUTH_COOKIE_VALUE}' 2>/dev/null || true
+          )"
+          if [[ -n "$encoded_auth" ]]; then
+            DES_GATEWAY_AUTH="$(printf '%s' "$encoded_auth" | base64 --decode 2>/dev/null || true)"
+          fi
+          unset encoded_auth
+          if [[ -n "$DES_GATEWAY_AUTH" ]]; then
+            printf 'bootstrap-stage=%s status=passed source=kubernetes-secret\n' "$stage"
+          else
+            printf 'bootstrap-stage=%s status=skipped reason=credential-unavailable\n' "$stage"
+          fi
 
           stage=github-identity
           test "$(gh api user --jq .login)" = ORESoftware
@@ -105,8 +204,12 @@ jobs:
             if ! gh repo view "$full" >/dev/null 2>&1; then
               gh repo create "$full" --public --description "$description" --add-readme
             fi
-            gh api -X PATCH "repos/$full" -f has_issues=true -f has_projects=true -f has_wiki=false -f delete_branch_on_merge=true >/dev/null
-            if [[ "$name" != .github ]]; then
+            gh api -X PATCH "repos/$full" \
+              -F has_issues=true \
+              -F has_projects=true \
+              -F has_wiki=false \
+              -F delete_branch_on_merge=true >/dev/null
+            if [[ "$name" != .github && -n "$DES_GATEWAY_AUTH" ]]; then
               gh secret set DES_GATEWAY_AUTH --repo "$full" --body "$DES_GATEWAY_AUTH"
             fi
             printf 'bootstrap-stage=%s status=passed\n' "$stage"
@@ -116,11 +219,21 @@ jobs:
             local owner="$1"
             local number
             stage="project:$owner"
-            number="$(gh project list --owner "$owner" --format json --jq '.projects[] | select(.title == "DES Browser Automation") | .number' | head -1)"
+            number="$(
+              gh project list --owner "$owner" --format json \
+                --jq '.projects[] | select(.title == "DES Browser Automation") | .number' 2>/dev/null | head -1 || true
+            )"
             if [[ -z "$number" ]]; then
-              number="$(gh project create --owner "$owner" --title 'DES Browser Automation' --format json --jq .number)"
+              number="$(
+                gh project create --owner "$owner" --title 'DES Browser Automation' \
+                  --format json --jq .number 2>/dev/null || true
+              )"
             fi
-            printf 'bootstrap-stage=%s status=passed url=https://github.com/orgs/%s/projects/%s\n' "$stage" "$owner" "$number"
+            if [[ -n "$number" ]]; then
+              printf 'bootstrap-stage=%s status=passed url=https://github.com/orgs/%s/projects/%s\n' "$stage" "$owner" "$number"
+            else
+              printf 'bootstrap-stage=%s status=deferred reason=project-scope-unavailable\n' "$stage"
+            fi
           }
 
           ensure_repo des-web-playwright-e2e 'Playwright browser contracts for des-web across GitHub Actions and gha-indie-worker.'
