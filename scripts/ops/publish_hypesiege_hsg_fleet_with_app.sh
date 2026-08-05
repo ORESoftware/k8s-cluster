@@ -8,6 +8,7 @@ readonly API_VERSION='2022-11-28'
 readonly MIGRATION_BRANCH='agent/establish-hsg-identity'
 readonly REPORT_JSON="${RUNNER_TEMP:-/tmp}/hypesiege-hsg-publication.json"
 readonly REPORT_MARKDOWN="${RUNNER_TEMP:-/tmp}/hypesiege-hsg-publication.md"
+readonly DIAGNOSTIC_JSON="${RUNNER_TEMP:-/tmp}/hypesiege-hsg-publication-diagnostic.json"
 
 readonly -a TARGETS=(
   hsg-web-mash
@@ -68,13 +69,45 @@ stage='bootstrap'
 work=''
 app_jwt=''
 installation_token=''
+app_slug='unknown'
+installation_id=0
+published_count=0
+
+write_diagnostic() {
+  local status="$1"
+  local message="$2"
+  jq -n \
+    --arg status "$status" \
+    --arg stage "$stage" \
+    --arg message "$message" \
+    --arg organization "$ORG" \
+    --arg app "$app_slug" \
+    --argjson installation_id "$installation_id" \
+    --argjson published_count "$published_count" \
+    '{schema_version:1,status:$status,stage:$stage,message:$message,organization:$organization,app:$app,installation_id:$installation_id,published_count:$published_count,pat_used:false}' \
+    > "$DIAGNOSTIC_JSON" 2>/dev/null || true
+}
 
 fail() {
-  printf 'hsg-publisher-stage=%s status=failed message=%s\n' "$stage" "$*" >&2
+  local message="$*"
+  write_diagnostic failed "$message"
+  printf 'hsg-publisher-stage=%s status=failed message=%s\n' "$stage" "$message" >&2
   exit 1
 }
 
+revoke_installation_token() {
+  if [[ -n "$installation_token" ]]; then
+    curl --silent --show-error \
+      --request DELETE \
+      --header 'Accept: application/vnd.github+json' \
+      --header "Authorization: Bearer ${installation_token}" \
+      --header "X-GitHub-Api-Version: ${API_VERSION}" \
+      "${API_URL}/installation/token" >/dev/null 2>&1 || true
+  fi
+}
+
 cleanup() {
+  revoke_installation_token
   unset GH_TOKEN installation_token app_jwt K8S_SUBMODULE_APP_PRIVATE_KEY
   if [[ -n "$work" && -e "$work" ]]; then
     python3 - "$work" <<'PY'
@@ -96,18 +129,81 @@ trap 'fail "unexpected command failure at line ${LINENO}"' ERR
 [[ -z "${GH_PAT:-}" ]] || fail 'GH_PAT must not be present in this App-only publisher'
 [[ -z "${GITHUB_REPOSITORY_ADMIN_TOKEN:-}" ]] || fail 'repository-admin PAT must not be present'
 
-for command in curl git gh jq openssl python3 sha256sum tar; do
-  command -v "$command" >/dev/null || fail "required command is unavailable: $command"
+missing_commands=()
+for command in curl git jq openssl python3 sha256sum tar; do
+  command -v "$command" >/dev/null || missing_commands+=("$command")
 done
+if (( ${#missing_commands[@]} > 0 )); then
+  fail "required commands unavailable: ${missing_commands[*]}"
+fi
 
 work="$(mktemp -d "${RUNNER_TEMP:-/tmp}/hsg-app-publisher.XXXXXX")"
 private_key_file="$work/app-private-key.pem"
 printf '%s' "$K8S_SUBMODULE_APP_PRIVATE_KEY" > "$private_key_file"
 chmod 600 "$private_key_file"
-grep -Eq '^-----BEGIN (RSA )?PRIVATE KEY-----$' "$private_key_file"
+grep -Eq '^-----BEGIN (RSA )?PRIVATE KEY-----$' "$private_key_file" \
+  || fail 'GitHub App private key is not a supported PEM key'
 
 base64url() {
   openssl base64 -A | tr '+/' '-_' | tr -d '='
+}
+
+api_request() {
+  local method="$1"
+  local path="$2"
+  local output="$3"
+  local input_file="${4:-}"
+  local -a arguments=(
+    --silent
+    --show-error
+    --request "$method"
+    --output "$output"
+    --write-out '%{http_code}'
+    --header 'Accept: application/vnd.github+json'
+    --header "Authorization: Bearer ${installation_token}"
+    --header "X-GitHub-Api-Version: ${API_VERSION}"
+  )
+  if [[ -n "$input_file" ]]; then
+    arguments+=(
+      --header 'Content-Type: application/json'
+      --data-binary "@${input_file}"
+    )
+  fi
+  curl "${arguments[@]}" "${API_URL}/${path}"
+}
+
+api_get_ref_sha() {
+  local full_name="$1"
+  local ref="$2"
+  local output="$3"
+  local status
+  status="$(api_request GET "repos/${full_name}/git/ref/${ref}" "$output")"
+  if [[ "$status" == 200 ]]; then
+    jq -er '.object.sha | select(type == "string" and test("^[0-9a-f]{40}$"))' "$output"
+    return 0
+  fi
+  return 1
+}
+
+api_find_open_pr() {
+  local full_name="$1"
+  local output="$2"
+  local status
+  status="$(
+    curl --silent --show-error \
+      --get \
+      --output "$output" \
+      --write-out '%{http_code}' \
+      --header 'Accept: application/vnd.github+json' \
+      --header "Authorization: Bearer ${installation_token}" \
+      --header "X-GitHub-Api-Version: ${API_VERSION}" \
+      --data-urlencode 'state=open' \
+      --data-urlencode "head=${ORG}:${MIGRATION_BRANCH}" \
+      --data-urlencode 'base=main' \
+      "${API_URL}/repos/${full_name}/pulls"
+  )"
+  [[ "$status" == 200 ]] || fail "pull request lookup failed for ${full_name}: HTTP ${status}"
+  jq -r '.[0].html_url // empty' "$output"
 }
 
 stage='mint-app-jwt'
@@ -132,11 +228,13 @@ installation_status="$(
     --header "X-GitHub-Api-Version: ${API_VERSION}" \
     "${API_URL}/orgs/${ORG}/installation"
 )"
-[[ "$installation_status" == 200 ]] || fail "GitHub App installation lookup returned HTTP $installation_status"
+[[ "$installation_status" == 200 ]] \
+  || fail "GitHub App installation lookup returned HTTP ${installation_status}"
 installation_id="$(jq -er '.id | select(type == "number" and . > 0)' "$installation_json")"
 repository_selection="$(jq -er '.repository_selection' "$installation_json")"
 app_slug="$(jq -er '.app_slug | select(type == "string" and length > 0)' "$installation_json")"
-[[ "$repository_selection" == all ]] || fail "App installation must select all repositories, observed: $repository_selection"
+[[ "$repository_selection" == all ]] \
+  || fail "App installation must select all repositories, observed: ${repository_selection}"
 
 stage='mint-installation-token'
 token_json="$work/token.json"
@@ -152,13 +250,14 @@ token_status="$(
     --data '{}' \
     "${API_URL}/app/installations/${installation_id}/access_tokens"
 )"
-[[ "$token_status" == 201 ]] || fail "installation-token mint returned HTTP $token_status"
+[[ "$token_status" == 201 ]] \
+  || fail "installation-token mint returned HTTP ${token_status}"
 installation_token="$(jq -er '.token | select(type == "string" and length > 0)' "$token_json")"
 for permission in administration contents pull_requests metadata; do
   observed="$(jq -r --arg permission "$permission" '.permissions[$permission] // "none"' "$token_json")"
   case "$permission:$observed" in
     administration:write|contents:write|pull_requests:write|metadata:read) ;;
-    *) fail "required App permission missing: $permission=$observed" ;;
+    *) fail "required App permission missing: ${permission}=${observed}" ;;
   esac
 done
 if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
@@ -190,38 +289,42 @@ jq -n \
   --arg organization "$ORG" \
   --arg app "$app_slug" \
   --argjson installation_id "$installation_id" \
-  '{schema_version:1, organization:$organization, app:$app, installation_id:$installation_id, repositories:[]}' \
+  '{schema_version:1,organization:$organization,app:$app,installation_id:$installation_id,repositories:[]}' \
   > "$REPORT_JSON"
 
 create_repository() {
   local target="$1"
   local full_name="${ORG}/${target}"
-  local created=false
   local response="$work/${target}-repository.json"
+  local status
+  local created=false
 
-  if gh api "repos/${full_name}" > "$response" 2>/dev/null; then
-    test "$(jq -r .owner.login "$response")" = "$ORG"
-  else
+  status="$(api_request GET "repos/${full_name}" "$response")"
+  if [[ "$status" == 404 ]]; then
     created=true
-    gh api --method POST "orgs/${ORG}/repos" \
-      -f name="$target" \
-      -f description="${DESCRIPTION[$target]}" \
-      -F private=true \
-      -F has_issues=true \
-      -F has_projects=false \
-      -F has_wiki=false \
-      -F auto_init=false \
-      > "$response"
+    local payload_file="$work/${target}-create.json"
+    jq -n \
+      --arg name "$target" \
+      --arg description "${DESCRIPTION[$target]}" \
+      '{name:$name,description:$description,private:true,has_issues:true,has_projects:false,has_wiki:false,auto_init:false}' \
+      > "$payload_file"
+    status="$(api_request POST "orgs/${ORG}/repos" "$response" "$payload_file")"
+    [[ "$status" == 201 ]] \
+      || fail "repository creation failed for ${full_name}: HTTP ${status}"
+  elif [[ "$status" != 200 ]]; then
+    fail "repository lookup failed for ${full_name}: HTTP ${status}"
   fi
 
-  for attempt in $(seq 1 30); do
-    if gh api "repos/${full_name}" > "$response" 2>/dev/null; then
-      break
-    fi
+  for _ in $(seq 1 30); do
+    status="$(api_request GET "repos/${full_name}" "$response")"
+    [[ "$status" == 200 ]] && break
     sleep 2
   done
-  test "$(jq -r .full_name "$response")" = "$full_name"
-  test "$(jq -r .visibility "$response")" = private
+  [[ "$status" == 200 ]] || fail "repository did not become readable: ${full_name}"
+  [[ "$(jq -r .full_name "$response")" == "$full_name" ]] \
+    || fail "repository owner/name mismatch for ${full_name}"
+  [[ "$(jq -r .visibility "$response")" == private ]] \
+    || fail "repository is not private: ${full_name}"
   printf '%s' "$created"
 }
 
@@ -237,7 +340,8 @@ materialize_source() {
   git -C "$source_dir" remote add origin "https://github.com/${source}.git"
   git -C "$source_dir" fetch --no-tags origin "$source_sha" >/dev/null
   git -C "$source_dir" switch --detach FETCH_HEAD >/dev/null
-  test "$(git -C "$source_dir" rev-parse HEAD)" = "$source_sha"
+  [[ "$(git -C "$source_dir" rev-parse HEAD)" == "$source_sha" ]] \
+    || fail "source SHA verification failed for ${source}"
 
   if [[ "$source_path" == . ]]; then
     printf '%s\n' "$source_dir"
@@ -245,7 +349,8 @@ materialize_source() {
   fi
 
   mkdir -p "$repository_dir"
-  git -C "$source_dir" archive --format=tar "${source_sha}:${source_path}" | tar -xf - -C "$repository_dir"
+  git -C "$source_dir" archive --format=tar "${source_sha}:${source_path}" \
+    | tar -xf - -C "$repository_dir"
   git -C "$repository_dir" init >/dev/null
   git -C "$repository_dir" config user.name 'HypeSiege Repository Publisher App'
   git -C "$repository_dir" config user.email 'hypesiege-repository-publisher[bot]@users.noreply.github.com'
@@ -264,31 +369,36 @@ publish_main() {
   local full_name="${ORG}/${target}"
   local baseline_sha
   local target_main
+  local ref_json="$work/${target}-main-ref.json"
 
   baseline_sha="$(git -C "$repository_dir" rev-parse HEAD)"
-  if target_main="$(gh api "repos/${full_name}/git/ref/heads/main" --jq .object.sha 2>/dev/null)"; then
-    git -C "$repository_dir" remote add target "https://github.com/${full_name}.git" 2>/dev/null || true
-    git -C "$repository_dir" fetch --no-tags target refs/heads/main:refs/remotes/target/main >/dev/null
-    git -C "$repository_dir" merge-base --is-ancestor "$baseline_sha" refs/remotes/target/main \
+  git -C "$repository_dir" remote add target "https://github.com/${full_name}.git" 2>/dev/null || true
+
+  if target_main="$(api_get_ref_sha "$full_name" 'heads/main' "$ref_json")"; then
+    git -C "$repository_dir" fetch --no-tags target \
+      refs/heads/main:refs/remotes/target/main >/dev/null
+    git -C "$repository_dir" merge-base --is-ancestor \
+      "$baseline_sha" refs/remotes/target/main \
       || fail "existing ${full_name}@main does not descend from reviewed baseline ${baseline_sha}"
   else
-    git -C "$repository_dir" remote add target "https://github.com/${full_name}.git"
-    git -C "$repository_dir" push target "${baseline_sha}:refs/heads/main" >/dev/null
-    target_main="$(gh api "repos/${full_name}/git/ref/heads/main" --jq .object.sha)"
-    test "$target_main" = "$baseline_sha"
+    git -C "$repository_dir" push target \
+      "${baseline_sha}:refs/heads/main" >/dev/null
+    target_main="$(api_get_ref_sha "$full_name" 'heads/main' "$ref_json")" \
+      || fail "main ref was not created for ${full_name}"
+    [[ "$target_main" == "$baseline_sha" ]] \
+      || fail "main SHA mismatch after publishing ${full_name}"
   fi
 
-  gh api --method PATCH "repos/${full_name}" \
-    -f description="${DESCRIPTION[$target]}" \
-    -f default_branch=main \
-    -F private=true \
-    -F has_issues=true \
-    -F has_projects=false \
-    -F has_wiki=false \
-    -F allow_merge_commit=true \
-    -F allow_squash_merge=true \
-    -F allow_rebase_merge=true \
-    -F delete_branch_on_merge=true >/dev/null
+  local settings_payload="$work/${target}-settings.json"
+  local settings_response="$work/${target}-settings-response.json"
+  jq -n \
+    --arg description "${DESCRIPTION[$target]}" \
+    '{description:$description,default_branch:"main",private:true,has_issues:true,has_projects:false,has_wiki:false,allow_merge_commit:true,allow_squash_merge:true,allow_rebase_merge:true,delete_branch_on_merge:true}' \
+    > "$settings_payload"
+  local settings_status
+  settings_status="$(api_request PATCH "repos/${full_name}" "$settings_response" "$settings_payload")"
+  [[ "$settings_status" == 200 ]] \
+    || fail "repository settings update failed for ${full_name}: HTTP ${settings_status}"
 
   printf '%s\n' "$baseline_sha"
 }
@@ -301,22 +411,29 @@ publish_migration_pr() {
   local source="${SOURCE_REPOSITORY[$target]}"
   local source_sha="${SOURCE_SHA[$target]}"
   local source_path="${SOURCE_PATH[$target]}"
+  local main_ref_json="$work/${target}-main-ref-pr.json"
   local target_main
   local branch_sha
   local pr_url
 
-  target_main="$(gh api "repos/${full_name}/git/ref/heads/main" --jq .object.sha)"
-  git -C "$repository_dir" fetch --no-tags target refs/heads/main:refs/remotes/target/main >/dev/null
+  target_main="$(api_get_ref_sha "$full_name" 'heads/main' "$main_ref_json")" \
+    || fail "main ref unavailable while preparing migration PR for ${full_name}"
+  git -C "$repository_dir" fetch --no-tags target \
+    refs/heads/main:refs/remotes/target/main >/dev/null
   git -C "$repository_dir" switch --detach refs/remotes/target/main >/dev/null
 
-  if gh api "repos/${full_name}/contents/.github/hsg-lineage.json?ref=main" >/dev/null 2>&1; then
-    branch_sha="$target_main"
-    pr_url='merged-on-main'
-    printf '%s\t%s\n' "$branch_sha" "$pr_url"
+  local lineage_response="$work/${target}-lineage-main.json"
+  local lineage_status
+  lineage_status="$(api_request GET "repos/${full_name}/contents/.github/hsg-lineage.json?ref=main" "$lineage_response")"
+  if [[ "$lineage_status" == 200 ]]; then
+    printf '%s\t%s\n' "$target_main" 'merged-on-main'
     return
   fi
+  [[ "$lineage_status" == 404 ]] \
+    || fail "lineage lookup failed for ${full_name}: HTTP ${lineage_status}"
 
-  if branch_sha="$(gh api "repos/${full_name}/git/ref/heads/${MIGRATION_BRANCH}" --jq .object.sha 2>/dev/null)"; then
+  local branch_ref_json="$work/${target}-migration-ref.json"
+  if branch_sha="$(api_get_ref_sha "$full_name" "heads/${MIGRATION_BRANCH}" "$branch_ref_json")"; then
     git -C "$repository_dir" fetch --no-tags target \
       "refs/heads/${MIGRATION_BRANCH}:refs/remotes/target/${MIGRATION_BRANCH}" >/dev/null
   else
@@ -356,19 +473,17 @@ EOF
         -m 'chore: establish canonical hsg repository identity' \
         -m "Record reviewed lineage from ${source}@${source_sha}." >/dev/null
     branch_sha="$(git -C "$repository_dir" rev-parse HEAD)"
-    git -C "$repository_dir" push target "${branch_sha}:refs/heads/${MIGRATION_BRANCH}" >/dev/null
+    git -C "$repository_dir" push target \
+      "${branch_sha}:refs/heads/${MIGRATION_BRANCH}" >/dev/null
   fi
 
-  pr_url="$(
-    gh api --method GET "repos/${full_name}/pulls" \
-      -f state=open \
-      -f head="${ORG}:${MIGRATION_BRANCH}" \
-      -f base=main \
-      --jq '.[0].html_url // empty'
-  )"
+  local pulls_response="$work/${target}-open-pulls.json"
+  pr_url="$(api_find_open_pr "$full_name" "$pulls_response")"
   if [[ -z "$pr_url" ]]; then
-    pr_body="$work/${target}-pr-body.md"
-    cat > "$pr_body" <<EOF
+    local pr_body_file="$work/${target}-pr-body.md"
+    local pr_payload="$work/${target}-pr-payload.json"
+    local pr_response="$work/${target}-pr-response.json"
+    cat > "$pr_body_file" <<EOF
 ## What changed
 
 - record the canonical \`${full_name}\` service identity;
@@ -384,15 +499,18 @@ This is the reviewable handoff from the legacy HypeSiege repository layout to th
 
 The repository's inherited workflows run against this exact branch head. The publication workflow separately verifies repository ownership, visibility, default branch, main ancestry, branch SHA, and pull-request URL.
 EOF
-    pr_url="$(
-      jq -n \
-        --arg title 'chore: establish canonical hsg repository identity' \
-        --arg head "$MIGRATION_BRANCH" \
-        --arg base main \
-        --rawfile body "$pr_body" \
-        '{title:$title,head:$head,base:$base,body:$body,draft:false}' \
-        | gh api --method POST "repos/${full_name}/pulls" --input - --jq .html_url
-    )"
+    jq -n \
+      --arg title 'chore: establish canonical hsg repository identity' \
+      --arg head "$MIGRATION_BRANCH" \
+      --arg base main \
+      --rawfile body "$pr_body_file" \
+      '{title:$title,head:$head,base:$base,body:$body,draft:false}' \
+      > "$pr_payload"
+    local pr_status
+    pr_status="$(api_request POST "repos/${full_name}/pulls" "$pr_response" "$pr_payload")"
+    [[ "$pr_status" == 201 ]] \
+      || fail "pull request creation failed for ${full_name}: HTTP ${pr_status}"
+    pr_url="$(jq -er '.html_url | select(type == "string" and length > 0)' "$pr_response")"
   fi
 
   printf '%s\t%s\n' "$branch_sha" "$pr_url"
@@ -414,11 +532,17 @@ for target in "${TARGETS[@]}"; do
     publish_migration_pr "$target" "$repository_dir" "$baseline_sha"
   )
 
-  live_main="$(gh api "repos/${ORG}/${target}/git/ref/heads/main" --jq .object.sha)"
-  visibility="$(gh api "repos/${ORG}/${target}" --jq .visibility)"
-  default_branch="$(gh api "repos/${ORG}/${target}" --jq .default_branch)"
-  test "$visibility" = private
-  test "$default_branch" = main
+  local_metadata="$work/${target}-final-metadata.json"
+  metadata_status="$(api_request GET "repos/${ORG}/${target}" "$local_metadata")"
+  [[ "$metadata_status" == 200 ]] \
+    || fail "final metadata lookup failed for ${ORG}/${target}"
+  live_main_ref="$work/${target}-final-main-ref.json"
+  live_main="$(api_get_ref_sha "${ORG}/${target}" 'heads/main' "$live_main_ref")" \
+    || fail "final main ref lookup failed for ${ORG}/${target}"
+  visibility="$(jq -r .visibility "$local_metadata")"
+  default_branch="$(jq -r .default_branch "$local_metadata")"
+  [[ "$visibility" == private ]] || fail "final visibility is not private for ${ORG}/${target}"
+  [[ "$default_branch" == main ]] || fail "final default branch is not main for ${ORG}/${target}"
 
   next="$work/report-next.json"
   jq \
@@ -436,6 +560,7 @@ for target in "${TARGETS[@]}"; do
     '.repositories += [{target:$target,source:{repository:$source,commit:$source_sha,path:$source_path},created:$created,visibility:$visibility,default_branch:"main",baseline_sha:$baseline_sha,main_sha:$main_sha,migration_branch:$branch,migration_sha:$branch_sha,pull_request:$pull_request}]' \
     "$REPORT_JSON" > "$next"
   mv "$next" "$REPORT_JSON"
+  published_count=$((published_count + 1))
   printf 'hsg-published target=%s main=%s migration=%s pr=%s created=%s\n' \
     "${ORG}/${target}" "$live_main" "$branch_sha" "$pr_url" "$created"
 done
@@ -445,14 +570,14 @@ jq -e --argjson expected "${#TARGETS[@]}" '
   .schema_version == 1 and
   (.repositories | length) == $expected and
   all(.repositories[];
-    .target | startswith("hypesiege/hsg-") and
+    (.target | startswith("hypesiege/hsg-")) and
     .visibility == "private" and
     .default_branch == "main" and
     (.main_sha | test("^[0-9a-f]{40}$")) and
     (.migration_sha | test("^[0-9a-f]{40}$")) and
     ((.pull_request == "merged-on-main") or (.pull_request | startswith("https://github.com/hypesiege/hsg-")))
   )
-' "$REPORT_JSON" >/dev/null
+' "$REPORT_JSON" >/dev/null || fail 'final eight-repository report validation failed'
 
 {
   echo '# HypeSiege hsg-* GitHub App publication'
@@ -469,8 +594,10 @@ jq -e --argjson expected "${#TARGETS[@]}" '
 } > "$REPORT_MARKDOWN"
 
 stage='complete'
+write_diagnostic success 'all repositories, histories, lineage branches, and pull requests verified'
 echo 'HSG_PUBLICATION_REPORT_BEGIN'
 cat "$REPORT_MARKDOWN"
 echo 'HSG_PUBLICATION_REPORT_END'
 printf 'HSG_REPORT_JSON=%s\n' "$REPORT_JSON"
 printf 'HSG_REPORT_MARKDOWN=%s\n' "$REPORT_MARKDOWN"
+printf 'HSG_DIAGNOSTIC_JSON=%s\n' "$DIAGNOSTIC_JSON"
