@@ -28,6 +28,18 @@ test('roadmap preserves the independent service boundaries and effect contract',
   assert.match(roadmap, /PR #783/);
   assert.match(roadmap, /PR #791/);
   assert.match(roadmap, /PR #971/);
+  assert.match(roadmap, /PR #999/);
+});
+
+test('roadmap records the merged Go SDK, artifact, and remaining M3 work', () => {
+  assert.match(roadmap, /DEN-2289/);
+  assert.match(roadmap, /dependency-free Go 1\.23\+/);
+  assert.match(roadmap, /TypeScript, Python, and Go protocol fixture/);
+  assert.match(roadmap, /durable-worker-go-sdk-a693040ad69a1f54f14dd65fb8b74ab11fee132b/);
+  assert.match(roadmap, /sha256:b24060664d79c845c4b7370f4cabb5b0ac79b9a09fc5b00b45b596ad9948d78c/);
+  for (const language of ['Rust;', 'Dart;', 'Gleam;', 'Erlang and Elixir interoperability']) {
+    assert.match(roadmap, new RegExp(language));
+  }
 });
 
 test('roadmap defines five gated milestones', () => {
@@ -43,21 +55,32 @@ test('roadmap defines five gated milestones', () => {
   assert.equal((roadmap.match(/Exit gate:/g) ?? []).length, 5);
   assert.match(roadmap, /resumable SSE/i);
   assert.match(roadmap, /continue-as-new/);
-  assert.match(roadmap, /Go;/);
   assert.match(roadmap, /OpenTelemetry/);
   assert.match(roadmap, /Fiducia epochs/);
 });
 
-test('project operating model maps GitHub, Linear, and exact-head delivery', () => {
+test('project operating model maps GitHub, Linear, artifacts, and exact-head delivery', () => {
   assert.match(operatingModel, /github\.com\/ORESoftware\/k8s-cluster/);
   assert.match(operatingModel, /github\.com\/ORESoftware\/k8s-cluster`/);
   assert.match(operatingModel, /DEN-1675/);
   assert.match(operatingModel, /DEN-2218/);
+  assert.match(operatingModel, /DEN-2289/);
+  assert.match(operatingModel, /PR #999/);
+  assert.match(operatingModel, /source artifact published/);
   assert.match(operatingModel, /expected-head/i);
   assert.match(operatingModel, /semantic merge/i);
   assert.match(operatingModel, /Status \| single select/);
   assert.match(operatingModel, /Milestone \| single select/);
   assert.match(operatingModel, /Linear \| text/);
+});
+
+test('project docs track the private-backend CI blocker without recommending a PAT', () => {
+  assert.match(roadmap, /DEN-2332/);
+  assert.match(roadmap, /issue #886/);
+  assert.match(operatingModel, /DEN-2332/);
+  assert.match(operatingModel, /issue #886/);
+  assert.match(operatingModel, /repository-scoped GitHub App/);
+  assert.match(operatingModel, /not a user PAT/);
 });
 
 test('documentation and its CI contain no write credential or PAT shape', () => {
