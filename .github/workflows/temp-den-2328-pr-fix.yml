@@ -1,12 +1,13 @@
 name: TEMP DEN-2328 PR actionlint repair
 
 on:
-  issue_comment:
-    types: [created]
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/temp-den-2328-pr-fix.yml
 
 permissions:
   contents: write
-  pull-requests: read
 
 concurrency:
   group: temp-den-2328-pr-fix
@@ -14,10 +15,7 @@ concurrency:
 
 jobs:
   fix:
-    if: >-
-      github.event.issue.pull_request &&
-      github.event.issue.number == 1028 &&
-      github.event.comment.body == '/fix-den-2328-actionlint'
+    if: github.repository == 'ORESoftware/k8s-cluster' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
