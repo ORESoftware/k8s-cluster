@@ -17,6 +17,17 @@ pub async fn send_magic_link(
     token: &str,
     otp: &str,
 ) -> Result<(), AuthError> {
+    send_magic_link_to(http, config, SENDGRID_MAIL_SEND_URL, recipient, token, otp).await
+}
+
+async fn send_magic_link_to(
+    http: &reqwest::Client,
+    config: &MagicLinkConfig,
+    endpoint: &str,
+    recipient: &str,
+    token: &str,
+    otp: &str,
+) -> Result<(), AuthError> {
     let api_key = config
         .sendgrid_api_key
         .as_deref()
@@ -57,7 +68,7 @@ pub async fn send_magic_link(
     });
 
     let response = http
-        .post(SENDGRID_MAIL_SEND_URL)
+        .post(endpoint)
         .bearer_auth(api_key)
         .json(&payload)
         .send()
@@ -95,35 +106,5 @@ fn escape_html(value: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn config() -> MagicLinkConfig {
-        MagicLinkConfig {
-            sendgrid_api_key: Some("secret".into()),
-            otp_pepper: Some("test-pepper-at-least-thirty-two-bytes".into()),
-            from_email: Some("auth@example.com".into()),
-            from_name: "Example".into(),
-            link_base_url: Some("https://app.example/auth/magic-link".into()),
-            ttl_secs: 900,
-            allow_signup: true,
-        }
-    }
-
-    #[test]
-    fn link_contains_only_the_one_time_token_query() {
-        let link = magic_link_url(&config(), "sat_magic_a-b_C").unwrap();
-        assert_eq!(
-            link,
-            "https://app.example/auth/magic-link?token=sat_magic_a-b_C"
-        );
-    }
-
-    #[test]
-    fn html_escaping_protects_the_anchor_attribute() {
-        assert_eq!(
-            escape_html("https://example.test/?a=1&b=\"x\""),
-            "https://example.test/?a=1&amp;b=&quot;x&quot;"
-        );
-    }
-}
+#[path = "email_tests.rs"]
+mod tests;

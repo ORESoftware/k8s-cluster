@@ -25,6 +25,7 @@ pub mod config;
 pub mod db;
 pub mod email;
 pub mod error;
+pub mod factors;
 pub mod flags;
 pub mod http;
 pub mod metrics;

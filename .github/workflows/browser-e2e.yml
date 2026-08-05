@@ -1,12 +1,5 @@
 name: browser-e2e
 
-# Browser automation smokes for the Maud/htmx HTML UI (/, /ui, /ui/exchange,
-# /docs/api). Playwright boots the compiled release binary with a throwaway
-# ES256 signing key, no RDS mirror, and no Supabase projects, then drives a real
-# Chromium against it — covering rendered markup, security headers, and the
-# fail-closed exchange-error path that the in-process integration tests cannot
-# assert through a browser.
-
 on:
   push:
     branches: [main]
@@ -23,15 +16,19 @@ permissions:
   contents: read
 
 concurrency:
-  group: browser-e2e-${{ github.ref }}
+  group: browser-e2e-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   browser-e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - name: Check out without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
 
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal
@@ -39,9 +36,12 @@ jobs:
       - name: Build release binary
         run: cargo build --release --locked --bin shared-auth-server
 
-      - uses: actions/setup-node@v4
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "20"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
 
       - name: Install e2e dependencies
         working-directory: e2e
@@ -57,7 +57,7 @@ jobs:
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: playwright-report
           path: e2e/playwright-report/

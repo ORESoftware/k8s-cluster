@@ -15,21 +15,21 @@
 mod docs;
 mod exchange;
 mod health;
-mod introspect;
+pub(crate) mod introspect;
 mod jwks;
 mod local;
 mod metrics;
 mod mfa;
 mod passwordless;
-mod session_tokens;
+pub(crate) mod session_tokens;
 mod ui;
 pub mod webhook;
 
 use std::time::Duration;
 
 use axum::{
-    http::{header, HeaderValue, Method},
-    routing::{get, post},
+    http::{header, HeaderName, HeaderValue, Method},
+    routing::{delete, get, post},
     Router,
 };
 use tower_http::cors::CorsLayer;
@@ -65,6 +65,44 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/passwordless/consume", post(passwordless::consume))
         .route("/auth/mfa/sms/request", post(mfa::request_sms))
         .route("/auth/mfa/sms/verify", post(mfa::verify_sms))
+        .route("/auth/capabilities", get(crate::factors::capabilities))
+        .route("/auth/factors", get(crate::factors::list))
+        .route(
+            "/auth/factors/{factorId}",
+            delete(crate::factors::delete),
+        )
+        .route(
+            "/auth/factors/totp/enroll",
+            post(crate::factors::enroll_totp),
+        )
+        .route(
+            "/auth/factors/totp/confirm",
+            post(crate::factors::confirm_totp),
+        )
+        .route(
+            "/auth/challenges",
+            post(crate::factors::create_challenge),
+        )
+        .route(
+            "/auth/challenges/{challengeId}/verify",
+            post(crate::factors::verify_challenge),
+        )
+        .route(
+            "/auth/passkeys/registration/options",
+            post(crate::factors::start_passkey_registration),
+        )
+        .route(
+            "/auth/passkeys/registration/verify",
+            post(crate::factors::finish_passkey_registration),
+        )
+        .route(
+            "/auth/passkeys/authentication/options",
+            post(crate::factors::start_passkey_authentication),
+        )
+        .route(
+            "/auth/passkeys/authentication/verify",
+            post(crate::factors::finish_passkey_authentication),
+        )
         .route("/auth/refresh", post(local::refresh))
         .route("/auth/logout", post(local::logout))
         .route("/auth/introspect", post(introspect::introspect))
@@ -97,6 +135,24 @@ pub fn router(state: AppState) -> Router {
             header::STRICT_TRANSPORT_SECURITY,
             HeaderValue::from_static("max-age=31536000; includeSubDomains"),
         ))
+        // Token-bearing responses must not enter shared or browser caches.
+        // if_not_present preserves the explicit public JWKS cache policy.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-store"),
+        ))
+        // The script-free UI needs no powerful browser capabilities.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("permissions-policy"),
+            HeaderValue::from_static(
+                "accelerometer=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()",
+            ),
+        ))
+        // Isolate authentication UI from cross-origin opener relationships.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("cross-origin-opener-policy"),
+            HeaderValue::from_static("same-origin"),
+        ))
         .layer(cors)
         .with_state(state)
 }
@@ -113,7 +169,7 @@ fn build_cors(state: &AppState) -> CorsLayer {
         .collect::<Vec<_>>();
     CorsLayer::new()
         .allow_origin(origins)
-        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
         .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
 }
 
