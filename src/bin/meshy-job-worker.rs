@@ -76,10 +76,16 @@ async fn run_claimed_job(mut lease: ClaimedJobLease) -> JobControlResult<()> {
             Ok(())
         }
         Err(WorkerFailure::Job(error)) => {
-            // Ambiguous provider creates are never placed back on the automatic
-            // retry path. A human or reconciliation agent must locate/adopt the
-            // provider task and enqueue it as `existing_provider_task`.
-            let retryable = error.retryable && !error.submission_ambiguous;
+            // Any failure while the durable row still carries only a submission
+            // intent is ineligible for automatic retry, even when the provider
+            // supplied a retryable status such as 429. Without a persisted task
+            // id, another create could consume credits twice.
+            let create_unresolved = matches!(
+                lease.job().current_stage.as_str(),
+                "meshy_submission_prepared" | "meshy_submission_ambiguous"
+            );
+            let retryable =
+                error.retryable && !error.submission_ambiguous && !create_unresolved;
             let code = error.code.clone();
             let message = error.message.clone();
             let failed = lease.fail(&code, &message, retryable).await?;
