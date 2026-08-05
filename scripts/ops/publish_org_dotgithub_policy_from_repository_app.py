@@ -16,7 +16,6 @@ import argparse
 import hashlib
 import os
 from pathlib import Path
-import re
 import sys
 import tempfile
 from typing import Any
@@ -29,10 +28,7 @@ import publish_org_dotgithub_policy_with_protected_apps as publisher
 
 APP_ID_ENV = "K8S_SUBMODULE_APP_ID"
 PRIVATE_KEY_ENV = "K8S_SUBMODULE_APP_PRIVATE_KEY"
-PRIVATE_KEY_PATTERN = re.compile(
-    r"^-----BEGIN (?:RSA )?PRIVATE KEY-----\n.+\n-----END (?:RSA )?PRIVATE KEY-----\s*$",
-    re.DOTALL,
-)
+PRIVATE_KEY_LABELS = ("PRIVATE KEY", "RSA PRIVATE KEY")
 REQUIRED_TOKEN_PERMISSIONS = {
     "administration": "write",
     "contents": "write",
@@ -53,9 +49,26 @@ def expand_literal_newlines(value: str) -> str:
     return value
 
 
+def is_pem_private_key(value: str) -> bool:
+    lines = value.rstrip().splitlines()
+    if len(lines) < 3:
+        return False
+    fence = "-" * 5
+    for label in PRIVATE_KEY_LABELS:
+        begin = f"{fence}BEGIN {label}{fence}"
+        end = f"{fence}END {label}{fence}"
+        if (
+            lines[0] == begin
+            and lines[-1] == end
+            and any(line.strip() for line in lines[1:-1])
+        ):
+            return True
+    return False
+
+
 def normalize_private_key(value: str) -> str:
     normalized = expand_literal_newlines(value).strip() + "\n"
-    if PRIVATE_KEY_PATTERN.fullmatch(normalized) is None:
+    if not is_pem_private_key(normalized):
         raise RuntimeError("repository Actions App private key is not a PEM private key")
     if len(normalized.encode("utf-8")) > 1_048_576:
         raise RuntimeError("repository Actions App private key is too large")
@@ -148,6 +161,7 @@ def self_test() -> None:
     }
     assert expand_literal_newlines("alpha\\nbeta") == "alpha\nbeta"
     assert expand_literal_newlines("alpha\nbeta") == "alpha\nbeta"
+    assert not is_pem_private_key("alpha\nbeta\ngamma")
     assert "greater than 99.1%" in publisher.POLICY_BLOCK
     assert "greater than 99.7%" in publisher.POLICY_BLOCK
     assert "`dev` is the integration branch" in publisher.POLICY_BLOCK
