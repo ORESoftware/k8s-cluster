@@ -19,7 +19,7 @@ permissions:
 
 concurrency:
   group: publish-all-requested-fleets-20260804
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   publish:
