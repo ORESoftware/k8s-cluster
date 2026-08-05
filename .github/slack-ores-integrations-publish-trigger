@@ -1,0 +1,6 @@
+target=ORESoftware/slack-ores-integrations
+trusted-main=9ad300aae27229c3cf0aa46dc68f8c978bbe617f
+source-repository=ORESoftware/devops-slack
+source-sha=7d7b6f2a1018204eba8b727ffa069e6bef31b6a7
+expected-default=main
+protocol=rsa-oaep-sha256-v1
