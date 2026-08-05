@@ -75,7 +75,23 @@ jobs:
           trusted_sha="${1:?trusted SHA required}"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
           work="$(mktemp -d /tmp/canonical-docs-source.XXXXXX)"
-          cleanup() { rm -rf "$work"; }
+          profile_target=''
+          profile_backup=''
+          profile_handoff=0
+          cleanup() {
+            rc=$?
+            trap - EXIT
+            set +e
+            if test "$profile_handoff" = 1 && test -n "$profile_target"; then
+              if test -n "$profile_backup" && test -f "$profile_backup"; then
+                cp -a -- "$profile_backup" "$profile_target"
+              else
+                rm -f -- "$profile_target"
+              fi
+            fi
+            rm -rf "$work"
+            exit "$rc"
+          }
           trap cleanup EXIT
 
           git init "$work/k8s-cluster"
@@ -84,6 +100,116 @@ jobs:
           git -C "$work/k8s-cluster" fetch --depth=1 origin "$trusted_sha"
           git -C "$work/k8s-cluster" checkout --detach FETCH_HEAD
           test "$(git -C "$work/k8s-cluster" rev-parse HEAD)" = "$trusted_sha"
+
+          command -v sudo >/dev/null
+          command -v getent >/dev/null
+          command -v install >/dev/null
+          command -v stat >/dev/null
+          ec2_home="$(getent passwd ec2-user | awk -F: '$1 == "ec2-user" { print $6 }')"
+          ec2_uid="$(id -u ec2-user)"
+          case "$ec2_home" in /*) ;; *) echo 'canonical-docs-profile=failed reason=missing-ec2-user' >&2; exit 65 ;; esac
+          profile_target="$ec2_home/.config/gh/hosts.yml"
+          selected_profile=''
+          diagnostic='no-candidate-profile'
+
+          while IFS= read -r candidate; do
+            test -n "$candidate" || continue
+            test -f "$candidate" || continue
+            if test -L "$candidate"; then
+              diagnostic='candidate-symlink-rejected'
+              continue
+            fi
+            owner="$(stat -c '%u' "$candidate" 2>/dev/null || true)"
+            mode="$(stat -c '%a' "$candidate" 2>/dev/null || true)"
+            if test "$owner" != 0 && test "$owner" != "$ec2_uid"; then
+              diagnostic='candidate-owner-rejected'
+              continue
+            fi
+            if [[ ! "$mode" =~ ^[0-7]{3,4}$ ]] || (( (8#$mode & 0022) != 0 )); then
+              diagnostic='candidate-mode-rejected'
+              continue
+            fi
+
+            candidate_dir="$work/gh-profile-candidate"
+            rm -rf "$candidate_dir"
+            install -d -m 700 -o ec2-user -g ec2-user "$candidate_dir"
+            install -m 600 -o ec2-user -g ec2-user "$candidate" "$candidate_dir/hosts.yml"
+            candidate_token="$(
+              sudo -u ec2-user -H env \
+                -u GH_TOKEN -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN \
+                -u GITHUB_REPOSITORY_ADMIN_TOKEN \
+                GH_CONFIG_DIR="$candidate_dir" \
+                bash -c 'command -v gh >/dev/null 2>&1 && gh auth token --hostname github.com' \
+                2>/dev/null || true
+            )"
+            if test -z "$candidate_token" || \
+               [[ "$candidate_token" == *$'\n'* || "$candidate_token" == *$'\r'* || \
+                  "$candidate_token" == *$'\t'* || "$candidate_token" == *' '* ]]; then
+              diagnostic='candidate-profile-unusable'
+              unset candidate_token
+              continue
+            fi
+            case "$candidate_token" in
+              ghp_*|github_pat_*)
+                diagnostic='candidate-personal-access-token-rejected'
+                unset candidate_token
+                continue
+                ;;
+              gho_*|ghu_*|ghs_*) ;;
+              *)
+                diagnostic='candidate-token-class-rejected'
+                unset candidate_token
+                continue
+                ;;
+            esac
+            unset candidate_token
+
+            identity="$(
+              sudo -u ec2-user -H env \
+                -u GH_TOKEN -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN \
+                -u GITHUB_REPOSITORY_ADMIN_TOKEN \
+                GH_CONFIG_DIR="$candidate_dir" \
+                gh api user --jq .login 2>/dev/null || true
+            )"
+            membership="$(
+              sudo -u ec2-user -H env \
+                -u GH_TOKEN -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN \
+                -u GITHUB_REPOSITORY_ADMIN_TOKEN \
+                GH_CONFIG_DIR="$candidate_dir" \
+                gh api user/memberships/orgs/canonical-cloud \
+                  --jq '[.role,.state] | @tsv' 2>/dev/null || true
+            )"
+            if test "$identity" != ORESoftware || test "$membership" != $'admin\tactive'; then
+              diagnostic='candidate-identity-or-org-role-rejected'
+              continue
+            fi
+            selected_profile="$candidate"
+            break
+          done < <(
+            {
+              printf '%s\n' "$profile_target" /root/.config/gh/hosts.yml
+              find /home /root /var/lib -maxdepth 7 -type f \
+                -path '*/gh/hosts.yml' -print 2>/dev/null || true
+            } | awk '!seen[$0]++'
+          )
+
+          if test -z "$selected_profile"; then
+            printf 'canonical-docs-profile=failed reason=%s\n' "$diagnostic" >&2
+            exit 65
+          fi
+
+          if test "$selected_profile" != "$profile_target"; then
+            install -d -m 700 -o ec2-user -g ec2-user "$(dirname "$profile_target")"
+            if test -e "$profile_target" || test -L "$profile_target"; then
+              test -f "$profile_target" && ! test -L "$profile_target"
+              profile_backup="$work/original-hosts.yml"
+              cp -a -- "$profile_target" "$profile_backup"
+            fi
+            install -m 600 -o ec2-user -g ec2-user "$selected_profile" "$profile_target"
+            profile_handoff=1
+          fi
+          echo 'canonical-docs-profile=passed source=bounded-disposable-handoff identity=ORESoftware role=admin'
+
           bash "$work/k8s-cluster/scripts/ops/publish_canonical_docs_no_pat_20260804.sh" \
             "$work/k8s-cluster"
           REMOTE_EOF
