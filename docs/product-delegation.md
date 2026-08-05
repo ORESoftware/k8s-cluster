@@ -89,12 +89,15 @@ ClipTown must verify the ES256 signature through shared-auth JWKS and pin all of
 - `aud = cliptown-api`
 - `azp = memebank-api`
 - expiry and not-before
+- the delegated token's own `jti` and its distinct `parent_jti`
 - active `sid`
 - required `cliptown:memebank:*` scope
 - resource ownership for `sub`
 - LOA/freshness for sensitive routes
 
 Protected `/auth/introspect` accepts an optional exact `audience` field for
-services that choose revocation-aware remote introspection. The service
-credential belongs only on introspection and must never be forwarded to
-MemeBank, ClipTown clients, factor endpoints, or delegated API calls.
+services that choose revocation-aware remote introspection. An active response
+includes both `jti` and `parent_jti`, allowing a resource server to distinguish
+the current delegated grant from its parent without receiving either bearer.
+The service credential belongs only on introspection and must never be forwarded
+to MemeBank, ClipTown clients, factor endpoints, or delegated API calls.
