@@ -1,0 +1,70 @@
+{
+  "schema_version": 2,
+  "updated_at": "2026-08-05",
+  "timezone": "America/Lima",
+  "linear": {
+    "umbrella_issue": "DEN-1682",
+    "wave2_issue": "DEN-1757",
+    "projects": {
+      "hypesiege": "cd247cb1-870b-471e-89f6-9484df19e798",
+      "streempilot": "3f5bd157-4424-42cc-94d0-0bed993cdc1d",
+      "oresoftware": "7abf8be2-ffa5-4507-bd09-43aa59ca8718"
+    },
+    "documents": {
+      "hypesiege": "5ec99554-f2cf-4c2b-b244-5af38fc4fc78",
+      "streempilot": "066d5d11-cc79-4140-9e36-9f04a9ca56f8",
+      "oresoftware": "f0142f3a-d057-4988-af26-0d0ef74eb3ad"
+    }
+  },
+  "hypesiege": {
+    "wave2_contract": {
+      "pr": 1,
+      "head": "2d430aeb9a61b31ecfb71a2d8e57359c24f06f4a",
+      "merge": "aec0f442b1e189f16eec32ede0b4095413405073",
+      "workflow_run": 31032025476,
+      "artifact_id": 8941056209,
+      "artifact_sha256": "9040cb80f3f875e29b1a0119c26460b86e2c31be3c8bbd326d0c1208759fde69"
+    },
+    "provisioning": {
+      "workflow_merges": [
+        "6b4adfa919eaf5b7cc8c931f9ac4e04603a72579",
+        "7460f5109c2ae0711a75821094faa6629925b381"
+      ],
+      "trusted_run": 31036069654,
+      "contract_validation": "success",
+      "mutation": "not_started",
+      "failure": "no GitHub App candidates found: app_ids=0 private_keys=0",
+      "observed_secret_fields": ["github_token"],
+      "repositories_created": 0,
+      "pat_used": false
+    },
+    "targets": [
+      "hypesiege/hypesiege-scheduler.rs",
+      "hypesiege/hypesiege-publishing-worker.rs",
+      "hypesiege/hypesiege-analytics.rs"
+    ]
+  },
+  "streempilot": {
+    "media_router_pr": 16,
+    "media_router_head": "850a82afa51b3ee3f9581aa077bcc54aa489ff34",
+    "target_repository": "StreemPilot/streempilot-media-router.rs",
+    "repository_state": "provisioning_required",
+    "hosted_actions_blocker": "recent account payments failed or Actions spending limit must be increased",
+    "arc_labels": ["self-hosted", "linux", "sonus-ci"],
+    "arc_status": "queued_unclaimed"
+  },
+  "github_projects": {
+    "projects_v2_mutation_available": false,
+    "successful_project_mutation_claimed": false,
+    "project_ready_issues": {
+      "hypesiege": 15,
+      "streempilot": 17,
+      "oresoftware": 988
+    }
+  },
+  "credential_policy": {
+    "pat_used": false,
+    "repository_creation": "validated GitHub App installation token only",
+    "failed_closed_when_app_missing": true
+  }
+}
