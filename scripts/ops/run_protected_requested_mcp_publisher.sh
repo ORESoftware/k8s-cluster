@@ -24,7 +24,7 @@ private_key="$key_root/private.pem"
 public_key="$key_root/public.pem"
 cleanup() {
   unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
-  unset encoded_pat raw_pat secret_json credential_source ec2_home
+  unset encoded_pat raw_pat secret_json credential_source ec2_home child_status
   unset envelope_line envelope_fingerprint envelope_ciphertext actual_fingerprint
   rm -rf "$work"
 }
@@ -191,17 +191,24 @@ if ! valid_token "$GH_TOKEN"; then
 fi
 printf 'MCP_PUBLISHER_STAGE stage=protected-credential source=%s\n' "$credential_source"
 
-stage="unprivileged-publication-boundary"
+stage="unprivileged-user"
 ec2_home="$(getent passwd ec2-user | awk -F: '$1 == "ec2-user" { print $6 }')"
 case "$ec2_home" in
   /*) ;;
-  *) printf 'MCP_PUBLISHER_ERROR stage=unprivileged-publication-boundary code=66\n'; exit 66 ;;
+  *) printf 'MCP_PUBLISHER_ERROR stage=unprivileged-user code=66\n'; exit 66 ;;
 esac
+
+stage="unprivileged-script-ownership"
 chown ec2-user:ec2-user "$child_script"
 chmod 700 "$child_script"
 encoded_pat="$(printf '%s' "$GH_TOKEN" | base64 --wrap=0)"
 unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
 
+# Preserve the child's precise MCP_PUBLISHER_ERROR line. The broker adds a
+# generic boundary error afterwards only when sudo or the child exits nonzero;
+# the workflow deliberately reports the first bounded error line.
+stage="unprivileged-child-execution"
+set +e
 printf '%s\n' "$encoded_pat" |
   sudo -u ec2-user -H \
     env \
@@ -215,7 +222,14 @@ printf '%s\n' "$encoded_pat" |
       HOME="$ec2_home" \
       XDG_CONFIG_HOME="$ec2_home/.config" \
       bash -c 'exec bash "$1" "$2"' _ "$child_script" "$trusted_sha"
+child_status=$?
+set -e
 unset encoded_pat ec2_home
+if test "$child_status" -ne 0; then
+  printf 'MCP_PUBLISHER_ERROR stage=unprivileged-child-execution code=%d\n' "$child_status"
+  exit "$child_status"
+fi
+unset child_status
 
 stage="complete"
 printf 'MCP_PUBLISHER_STAGE stage=complete status=success\n'
