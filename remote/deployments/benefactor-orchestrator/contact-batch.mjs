@@ -225,7 +225,9 @@ async function run() {
   try {
     const categories = await loadCategories();
     if (!categories.length) throw new Error('no active ICP categories are available');
-    const plan = planCategoryTargets(categories, config.targetContacts, config.maxPerCategory);
+    const plan = planCategoryTargets(categories, config.targetContacts, config.maxPerCategory, {
+      includeOverflow: true,
+    });
 
     console.log(
       JSON.stringify({
@@ -268,6 +270,7 @@ async function run() {
       await runChild('hubspot-sync.mjs', {
         CONTACT_BATCH_ID: config.batchId,
         HUBSPOT_DRY_RUN: hubspot.dryRun ? 'true' : 'false',
+        HUBSPOT_BATCH_SIZE: String(config.maximumContacts),
       });
     }
 
