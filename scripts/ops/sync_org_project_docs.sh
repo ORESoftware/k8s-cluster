@@ -25,6 +25,13 @@ if [[ ! -f "$REGISTRY_FILE" ]]; then
   exit 2
 fi
 
+EVIDENCE_DIR="$(python3 - "$EVIDENCE_DIR" <<'PY_PATH'
+from pathlib import Path
+import sys
+print(Path(sys.argv[1]).resolve())
+PY_PATH
+)"
+
 mkdir -p "$EVIDENCE_DIR"
 RESULTS_JSONL="$EVIDENCE_DIR/results.jsonl"
 RESULTS_JSON="$EVIDENCE_DIR/results.json"
@@ -203,7 +210,7 @@ reconcile_org() (
 
   current_step="GitHub Project lookup"
   local lookup_query lookup_response lookup_errors owner_id project_json
-  lookup_query='query($login:String!){organization(login:$login){id login projectsV2(first:100){nodes{id number title url closed}}}}'
+  lookup_query='query($login:String!){organization(login:$login){id login projectsV2(first:100){nodes{id number title url closed owner{__typename ... on Organization{login} ... on User{login}}}}}}'
   lookup_response="$(gh api graphql -f query="$lookup_query" -F login="$canonical_org")"
   lookup_errors="$(jq -c '.errors // []' <<<"$lookup_response")"
   if [[ "$lookup_errors" != "[]" ]]; then
@@ -213,15 +220,15 @@ reconcile_org() (
   owner_id="$(jq -r '.data.organization.id // empty' <<<"$lookup_response")"
   [[ -n "$owner_id" ]]
 
-  project_json="$(jq -c --arg title "$project_title" '[.data.organization.projectsV2.nodes[]? | select(.title == $title)] | sort_by(.number) | .[0] // empty' <<<"$lookup_response")"
+  project_json="$(jq -c --arg title "$project_title" --arg org "$canonical_org" '[.data.organization.projectsV2.nodes[]? | select(.title == $title and .owner.__typename == "Organization" and (.owner.login | ascii_downcase) == ($org | ascii_downcase))] | sort_by(.number) | .[0] // empty' <<<"$lookup_response")"
   if [[ -z "$project_json" ]]; then
     local project_one
-    project_one="$(jq -c '[.data.organization.projectsV2.nodes[]? | select(.number == 1)] | .[0] // empty' <<<"$lookup_response")"
+    project_one="$(jq -c --arg org "$canonical_org" '[.data.organization.projectsV2.nodes[]? | select(.number == 1 and .owner.__typename == "Organization" and (.owner.login | ascii_downcase) == ($org | ascii_downcase))] | .[0] // empty' <<<"$lookup_response")"
     if [[ -n "$project_one" ]]; then
       current_step="GitHub Project 1 canonical rename"
       local rename_mutation rename_response rename_errors project_one_id
       project_one_id="$(jq -r '.id' <<<"$project_one")"
-      rename_mutation='mutation($projectId:ID!,$title:String!){updateProjectV2(input:{projectId:$projectId,title:$title,closed:false}){projectV2{id number title url closed}}}'
+      rename_mutation='mutation($projectId:ID!,$title:String!){updateProjectV2(input:{projectId:$projectId,title:$title,closed:false}){projectV2{id number title url closed owner{__typename ... on Organization{login} ... on User{login}}}}}'
       rename_response="$(gh api graphql -f query="$rename_mutation" -F projectId="$project_one_id" -f title="$project_title")"
       rename_errors="$(jq -c '.errors // []' <<<"$rename_response")"
       if [[ "$rename_errors" != "[]" ]]; then
@@ -233,7 +240,7 @@ reconcile_org() (
     else
       current_step="GitHub Project creation"
       local create_mutation create_response create_errors
-      create_mutation='mutation($ownerId:ID!,$title:String!){createProjectV2(input:{ownerId:$ownerId,title:$title}){projectV2{id number title url closed}}}'
+      create_mutation='mutation($ownerId:ID!,$title:String!){createProjectV2(input:{ownerId:$ownerId,title:$title}){projectV2{id number title url closed owner{__typename ... on Organization{login} ... on User{login}}}}}'
       create_response="$(gh api graphql -f query="$create_mutation" -F ownerId="$owner_id" -f title="$project_title")"
       create_errors="$(jq -c '.errors // []' <<<"$create_response")"
       if [[ "$create_errors" != "[]" ]]; then
@@ -247,7 +254,7 @@ reconcile_org() (
     current_step="GitHub Project reopen"
     local reopen_mutation reopen_response reopen_errors closed_project_id
     closed_project_id="$(jq -r '.id' <<<"$project_json")"
-    reopen_mutation='mutation($projectId:ID!){updateProjectV2(input:{projectId:$projectId,closed:false}){projectV2{id number title url closed}}}'
+    reopen_mutation='mutation($projectId:ID!){updateProjectV2(input:{projectId:$projectId,closed:false}){projectV2{id number title url closed owner{__typename ... on Organization{login} ... on User{login}}}}}'
     reopen_response="$(gh api graphql -f query="$reopen_mutation" -F projectId="$closed_project_id")"
     reopen_errors="$(jq -c '.errors // []' <<<"$reopen_response")"
     if [[ "$reopen_errors" != "[]" ]]; then
@@ -266,6 +273,8 @@ reconcile_org() (
   [[ -n "$project_id" && -n "$project_number" && -n "$project_url" ]]
   [[ "$(jq -r '.title' <<<"$project_json")" == "$project_title" ]]
   [[ "$(jq -r '.closed // false' <<<"$project_json")" == "false" ]]
+  [[ "$(jq -r '.owner.__typename' <<<"$project_json")" == "Organization" ]]
+  [[ "$(jq -r '.owner.login | ascii_downcase' <<<"$project_json")" == "${canonical_org,,}" ]]
 
   current_step="organization .github repository provisioning"
   local repo_full_name="${canonical_org}/.github"
