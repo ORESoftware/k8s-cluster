@@ -29,16 +29,17 @@ pub(crate) fn compile_rules(
         compiled.push(prefix);
     }
 
-    let Some(raw) = exact_rules_json
-        .map(str::trim)
-        .filter(|raw| !raw.is_empty())
-    else {
+    let Some(raw_untrimmed) = exact_rules_json else {
         return Ok(compiled);
     };
-    if raw.len() > MAX_POLICY_BYTES {
+    if raw_untrimmed.len() > MAX_POLICY_BYTES {
         return Err(format!(
             "BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON exceeds {MAX_POLICY_BYTES} bytes"
         ));
+    }
+    let raw = raw_untrimmed.trim();
+    if raw.is_empty() {
+        return Ok(compiled);
     }
 
     let rules: Vec<ExactRepositoryRule> =
@@ -124,21 +125,19 @@ pub(crate) fn ensure_repository_profile_allowed(
             .split_once(EXACT_RULE_SEPARATOR)
             .ok_or_else(|| "compiled exact profile repository rule is malformed".to_string())?;
         validate_compiled_identity(exact_identity)?;
-        let decoded = profiles
-            .split(PROFILE_SEPARATOR)
-            .filter(|value| !value.is_empty())
-            .collect::<BTreeSet<_>>();
-        if decoded.is_empty() {
-            return Err(format!(
-                "compiled exact profile repository rule for {exact_identity:?} has no profiles"
-            ));
-        }
-        if exact_identity == identity {
-            if exact_profiles.replace(decoded).is_some() {
+        let mut decoded = BTreeSet::new();
+        for value in profiles.split(PROFILE_SEPARATOR) {
+            validate_profile_name(value)?;
+            if !decoded.insert(value) {
                 return Err(format!(
-                    "multiple compiled exact profile repository rules match {identity:?}"
+                    "compiled exact profile repository rule for {exact_identity:?} repeats profile {value:?}"
                 ));
             }
+        }
+        if exact_identity == identity && exact_profiles.replace(decoded).is_some() {
+            return Err(format!(
+                "multiple compiled exact profile repository rules match {identity:?}"
+            ));
         }
     }
 
@@ -460,6 +459,32 @@ mod tests {
     }
 
     #[test]
+    fn raw_policy_accepts_the_exact_byte_limit_and_rejects_one_more_byte() {
+        let base = r#"[{"repository":"https://github.com/ORESoftware/k8s-cluster.git","profiles":["rust-verify"]}]"#;
+        assert!(base.len() < MAX_POLICY_BYTES);
+
+        let exact = format!("{base}{}", " ".repeat(MAX_POLICY_BYTES - base.len()));
+        assert_eq!(exact.len(), MAX_POLICY_BYTES);
+        assert!(compile_rules(Vec::new(), Some(&exact), &globally_allowed()).is_ok());
+
+        let oversized = format!("{exact} ");
+        assert_eq!(oversized.len(), MAX_POLICY_BYTES + 1);
+        assert!(compile_rules(Vec::new(), Some(&oversized), &globally_allowed()).is_err());
+    }
+
+    #[test]
+    fn raw_policy_limit_counts_utf8_bytes_before_unicode_whitespace_trimming() {
+        let base = r#"[{"repository":"https://github.com/ORESoftware/k8s-cluster.git","profiles":["rust-verify"]}]"#;
+        let unicode_whitespace = "\u{2003}";
+        let padding = " ".repeat(MAX_POLICY_BYTES - base.len() - 1);
+        let raw = format!("{base}{padding}{unicode_whitespace}");
+
+        assert_eq!(raw.chars().count(), MAX_POLICY_BYTES);
+        assert!(raw.len() > MAX_POLICY_BYTES);
+        assert!(compile_rules(Vec::new(), Some(&raw), &globally_allowed()).is_err());
+    }
+
+    #[test]
     fn compiled_exact_rules_are_deterministic_and_lowercase_identity() {
         let rules = compile_rules(
             Vec::new(),
@@ -482,6 +507,9 @@ mod tests {
             vec!["exact-id:#rust-verify".to_string()],
             vec!["exact-id:ORESoftware/k8s-cluster#rust-verify".to_string()],
             vec!["exact-id:oresoftware/k8s-cluster#".to_string()],
+            vec!["exact-id:oresoftware/k8s-cluster#rust-verify||node-verify".to_string()],
+            vec!["exact-id:oresoftware/k8s-cluster#rust-verify|rust-verify".to_string()],
+            vec!["exact-id:oresoftware/k8s-cluster#rust verify".to_string()],
             vec![
                 "exact-id:oresoftware/k8s-cluster#rust-verify".to_string(),
                 "exact-id:oresoftware/k8s-cluster#node-verify".to_string(),

@@ -36,12 +36,26 @@ function profileConstantBody(name) {
 test('startup compiles exact repository rules against the global profile registry', () => {
   assert.match(config, /pub\(crate\) mod profile_policy;/);
   assert.match(config, /BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON/);
+  assert.match(config, /raw_env\("BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON"\)/);
+  assert.doesNotMatch(
+    config,
+    /first_env\(&\["BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON"\]\)/,
+  );
   assert.match(config, /profile_policy::compile_rules/);
   assert.match(config, /invalid build-server profile repository policy/);
   assert.match(policy, /serde\(deny_unknown_fields\)/);
   assert.match(policy, /profiles::find/);
   assert.match(policy, /globally_allowed_profiles\.contains/);
   assert.match(policy, /MAX_POLICY_BYTES/);
+  assert.match(policy, /raw_untrimmed\.len\(\) > MAX_POLICY_BYTES/);
+  assert.match(
+    policy,
+    /raw_policy_accepts_the_exact_byte_limit_and_rejects_one_more_byte/,
+  );
+  assert.match(
+    policy,
+    /raw_policy_limit_counts_utf8_bytes_before_unicode_whitespace_trimming/,
+  );
   assert.match(policy, /MAX_EXACT_REPOSITORIES/);
   assert.match(policy, /MAX_PROFILES_PER_REPOSITORY/);
 });
