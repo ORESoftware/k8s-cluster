@@ -177,6 +177,8 @@ def classify_remote_fleet(
             "repository_id": remote.get("id"),
         }
 
+    # Missing leaf histories must be published before a missing monorepo, whose
+    # sealed gitlinks depend on the reviewed leaf identities.
     missing.sort(
         key=lambda record: (
             record.get("kind") == "monorepo",
