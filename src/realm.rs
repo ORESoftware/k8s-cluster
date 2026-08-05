@@ -3,7 +3,8 @@
 //! The same binary is deployed twice. Production startup fails unless the
 //! selected realm, issuer, RDS endpoint/reference, secret paths, signing-key
 //! reference, cookie namespace, and dedicated Supabase project all agree.
-//! `AUTH_ALLOW_DBLESS=true` remains the explicit development/test escape hatch.
+//! `AUTH_ALLOW_DBLESS=true` and `AUTH_REALM_ALLOW_LOOPBACK=true` remain explicit
+//! development/test escape hatches and never relax a normal production profile.
 
 use std::{env, fmt};
 
@@ -55,6 +56,7 @@ pub struct RealmConfig {
     pub session_cookie_name: String,
     pub supabase_project_ref: Option<String>,
     pub development_dbless: bool,
+    pub development_loopback: bool,
 }
 
 struct RealmInput {
@@ -67,6 +69,7 @@ struct RealmInput {
     signing_key_ref: String,
     session_cookie_name: String,
     supabase_project_ref: String,
+    allow_loopback: bool,
 }
 
 impl RealmConfig {
@@ -99,6 +102,7 @@ impl RealmConfig {
                     .first()
                     .map(|project| project.project_ref.clone()),
                 development_dbless: true,
+                development_loopback: false,
             });
         };
 
@@ -112,6 +116,7 @@ impl RealmConfig {
             signing_key_ref: required_env("AUTH_SIGNING_KEY_REF")?,
             session_cookie_name: required_env("AUTH_SESSION_COOKIE_NAME")?,
             supabase_project_ref: required_env("AUTH_REALM_SUPABASE_PROJECT_REF")?,
+            allow_loopback: parse_bool("AUTH_REALM_ALLOW_LOOPBACK", false)?,
         };
         let provider_refs: Vec<&str> = config
             .projects
@@ -156,11 +161,14 @@ impl RealmConfig {
         }
 
         validate_cookie_name(&input.session_cookie_name, input.realm)?;
-        validate_issuer(&input.issuer, input.realm)?;
-        validate_database_url(&input.database_url, input.realm)?;
+        validate_issuer(&input.issuer, input.realm, input.allow_loopback)?;
+        validate_database_url(&input.database_url, input.realm, input.allow_loopback)?;
         validate_project_ref(&input.supabase_project_ref)?;
 
-        if provider_refs.len() != 1 || provider_refs[0] != input.supabase_project_ref {
+        let provider_matches = provider_refs.len() == 1
+            && provider_refs[0] == input.supabase_project_ref.as_str();
+        let loopback_without_provider = input.allow_loopback && provider_refs.is_empty();
+        if !provider_matches && !loopback_without_provider {
             return Err(ConfigError::Invalid(
                 "AUTH_SUPABASE_PROJECTS must contain exactly the realm Supabase project",
             ));
@@ -175,6 +183,7 @@ impl RealmConfig {
             session_cookie_name: input.session_cookie_name,
             supabase_project_ref: Some(input.supabase_project_ref),
             development_dbless: false,
+            development_loopback: input.allow_loopback,
         })
     }
 }
@@ -188,6 +197,15 @@ fn optional_env(key: &str) -> Option<String> {
         .ok()
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty())
+}
+
+fn parse_bool(key: &'static str, default: bool) -> Result<bool, ConfigError> {
+    match optional_env(key).as_deref() {
+        None => Ok(default),
+        Some("1" | "true" | "TRUE" | "yes" | "YES") => Ok(true),
+        Some("0" | "false" | "FALSE" | "no" | "NO") => Ok(false),
+        Some(_) => Err(ConfigError::Invalid(key)),
+    }
 }
 
 fn validate_reference(value: &str, key: &'static str) -> Result<(), ConfigError> {
@@ -217,17 +235,25 @@ fn validate_cookie_name(value: &str, realm: Realm) -> Result<(), ConfigError> {
     Ok(())
 }
 
-fn validate_issuer(value: &str, realm: Realm) -> Result<(), ConfigError> {
+fn validate_issuer(value: &str, realm: Realm, allow_loopback: bool) -> Result<(), ConfigError> {
     let parsed = Url::parse(value).map_err(|_| ConfigError::Invalid("AUTH_ISSUER"))?;
-    if parsed.scheme() != "https"
+    let loopback_http = allow_loopback
+        && parsed.scheme() == "http"
+        && parsed
+            .host_str()
+            .is_some_and(|host| matches!(host, "localhost" | "127.0.0.1" | "::1"));
+    if (parsed.scheme() != "https" && !loopback_http)
         || parsed.username() != ""
         || parsed.password().is_some()
         || parsed.query().is_some()
         || parsed.fragment().is_some()
     {
         return Err(ConfigError::Invalid(
-            "AUTH_ISSUER must be a credential-free HTTPS origin/path",
+            "AUTH_ISSUER must use HTTPS except for explicitly enabled loopback tests",
         ));
+    }
+    if loopback_http {
+        return Ok(());
     }
     let first_label = parsed
         .host_str()
@@ -244,12 +270,16 @@ fn validate_issuer(value: &str, realm: Realm) -> Result<(), ConfigError> {
     }
 }
 
-fn validate_database_url(value: &str, realm: Realm) -> Result<(), ConfigError> {
+fn validate_database_url(
+    value: &str,
+    realm: Realm,
+    allow_loopback: bool,
+) -> Result<(), ConfigError> {
     let parsed = Url::parse(value).map_err(|_| ConfigError::Invalid("AUTH_DATABASE_URL"))?;
+    let host = parsed.host_str().unwrap_or_default();
+    let loopback = allow_loopback && matches!(host, "localhost" | "127.0.0.1" | "::1");
     if !matches!(parsed.scheme(), "postgres" | "postgresql")
-        || !parsed
-            .host_str()
-            .is_some_and(|host| host.contains(realm.as_str()))
+        || (!host.contains(realm.as_str()) && !loopback)
     {
         return Err(ConfigError::Invalid(
             "AUTH_DATABASE_URL must target the selected realm PostgreSQL endpoint",
@@ -290,6 +320,7 @@ mod tests {
             signing_key_ref: format!("dd/shared-auth/{name}/signing-key"),
             session_cookie_name: format!("__Host-shared-auth-{name}"),
             supabase_project_ref: format!("{name}projectref01"),
+            allow_loopback: false,
         }
     }
 
@@ -301,6 +332,7 @@ mod tests {
             let profile = RealmConfig::validate(candidate, &[provider_ref.as_str()]).unwrap();
             assert_eq!(profile.realm, realm);
             assert!(!profile.development_dbless);
+            assert!(!profile.development_loopback);
         }
     }
 
@@ -349,5 +381,22 @@ mod tests {
         let mut candidate = input(Realm::Customer);
         candidate.session_cookie_name = "__Host-shared-auth-admin".to_owned();
         assert!(RealmConfig::validate(candidate, &["customerprojectref01"]).is_err());
+    }
+
+    #[test]
+    fn loopback_requires_an_explicit_escape_hatch() {
+        let mut candidate = input(Realm::Customer);
+        candidate.issuer = "http://localhost:8120".to_owned();
+        candidate.database_url =
+            "postgres://runtime:secret@127.0.0.1:5432/shared_auth".to_owned();
+        assert!(RealmConfig::validate(candidate, &[]).is_err());
+
+        let mut candidate = input(Realm::Customer);
+        candidate.issuer = "http://localhost:8120".to_owned();
+        candidate.database_url =
+            "postgres://runtime:secret@127.0.0.1:5432/shared_auth".to_owned();
+        candidate.allow_loopback = true;
+        let profile = RealmConfig::validate(candidate, &[]).unwrap();
+        assert!(profile.development_loopback);
     }
 }
