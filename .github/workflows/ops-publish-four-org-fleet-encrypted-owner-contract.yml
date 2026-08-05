@@ -35,11 +35,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # SC2016 is intentional for the nested `sh -c` cleanup loop: `$file`
+          # must expand inside the child shell rather than in the workflow shell.
           docker run --rm \
             -v "$PWD:/repo" \
             -w /repo \
             rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
-            -ignore 'ops-publish-four-org-fleet-encrypted-owner\.yml:.*SC2016' \
+            -ignore 'SC2016' \
             .github/workflows/ops-publish-four-org-fleet-encrypted-owner.yml \
             .github/workflows/ops-publish-four-org-fleet-encrypted-owner-contract.yml
 
