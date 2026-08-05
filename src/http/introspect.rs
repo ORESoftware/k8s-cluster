@@ -113,6 +113,7 @@ pub async fn introspect(
             "exp": claims.exp,
             "iat": claims.iat,
             "nbf": claims.nbf,
+            "jti": claims.jti,
             "auth_time": claims.auth_time,
             "sid": claims.sid,
             "provider": claims.provider,
