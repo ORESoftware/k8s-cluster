@@ -185,8 +185,10 @@ jobs:
           owner_token=''
           actor=''
           membership=''
+          failed_organization=''
+          observed_membership=''
           cleanup() {
-            unset owner_token actor membership GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+            unset owner_token actor membership failed_organization observed_membership GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
             unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
             find "$work" -type f -exec sh -c 'for file do : > "$file"; done' sh {} + 2>/dev/null || true
             rm -rf "$work"
@@ -194,8 +196,12 @@ jobs:
           report_failure() {
             status=$?
             trap - ERR
+            diagnostic=''
+            if [[ "$stage" == validate-owner-membership:* ]]; then
+              diagnostic=" Organization \`${failed_organization}\` reported \`${observed_membership}\`."
+            fi
             GH_TOKEN="$workflow_token" gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" \
-              --body "Four-organization publication failed at bounded stage \`${stage}\`. No owner credential was written to Git, Actions outputs, artifacts, workflow inputs, remotes, or the environment file." >/dev/null || true
+              --body "Four-organization publication failed at bounded stage \`${stage}\`.${diagnostic} No owner credential was written to Git, Actions outputs, artifacts, workflow inputs, remotes, or the environment file." >/dev/null || true
             exit "$status"
           }
           trap cleanup EXIT
@@ -284,6 +290,9 @@ jobs:
 
           stage=validate-owner-memberships
           for organization in apostille-me evento-globolo hacker-house-medellin embedded-alerts; do
+            failed_organization="$organization"
+            observed_membership=api-error
+            stage="validate-owner-membership:${organization}"
             if ! membership="$(
               gh api "user/memberships/orgs/${organization}" \
                 --jq '[.state,.role] | join(":")' \
@@ -291,8 +300,13 @@ jobs:
             )"; then
               false
             fi
+            observed_membership="$membership"
+            printf 'FOUR_ORG_MEMBERSHIP organization=%s observed=%s\n' \
+              "$organization" "$observed_membership"
             test "$membership" = active:admin
           done
+          failed_organization=''
+          observed_membership=''
 
           stage=publish-reviewed-fleet
           gh auth setup-git --hostname github.com --force >/dev/null
