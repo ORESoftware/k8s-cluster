@@ -4,11 +4,13 @@ on:
   pull_request:
     paths:
       - 'tools/google-chat-space-export/**'
+      - 'docs/audits/google-chat/**'
       - '.github/workflows/google-chat-import-safety.yml'
   push:
     branches: [main]
     paths:
       - 'tools/google-chat-space-export/**'
+      - 'docs/audits/google-chat/**'
       - '.github/workflows/google-chat-import-safety.yml'
 
 permissions:
@@ -42,12 +44,13 @@ jobs:
           node --check tools/google-chat-space-export/sensitive-content.mjs
           node --check tools/google-chat-space-export/import-plan.mjs
 
-      - name: Run sanitizer, planner, and mandatory-pipeline contracts
+      - name: Run sanitizer, planner, mandatory-pipeline, and audit-ledger contracts
         run: >-
           node --test
           tools/google-chat-space-export/test/sensitive-content.test.mjs
           tools/google-chat-space-export/test/import-plan.test.mjs
           tools/google-chat-space-export/test/reconciliation-pipeline.test.mjs
+          tools/google-chat-space-export/test/audit-ledger-2026-08-04.test.mjs
 
       - name: Reject conflict markers and committed private-output paths
         shell: bash
@@ -55,7 +58,8 @@ jobs:
           set -euo pipefail
           if git grep -nE '^(<{7}|={7}|>{7})' -- \
             .github/workflows/google-chat-import-safety.yml \
-            tools/google-chat-space-export; then
+            tools/google-chat-space-export \
+            docs/audits/google-chat; then
             echo 'Git conflict markers are forbidden.' >&2
             exit 1
           fi
