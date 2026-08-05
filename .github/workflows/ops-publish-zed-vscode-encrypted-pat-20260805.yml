@@ -1,0 +1,148 @@
+name: Publish zed-vscode with encrypted PAT
+run-name: Publish zed-vscode from protected host @ ${{ github.sha }}
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ops/requests/zed-vscode-encrypted-pat-20260805.json
+      - scripts/ops/publish_zed_vscode_with_encrypted_pat_20260805.sh
+      - .github/workflows/ops-publish-zed-vscode-encrypted-pat-20260805.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-zed-vscode-encrypted-pat-20260805
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out exact trusted commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate bounded encrypted request and publisher
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import re
+          from pathlib import Path
+
+          path = Path('ops/requests/zed-vscode-encrypted-pat-20260805.json')
+          data = json.loads(path.read_text())
+          assert data['schema_version'] == 1
+          assert data['execute'] is True
+          assert data['organization'] == 'zed-pkg'
+          assert data['repository'] == 'zed-pkg/zed-vscode'
+          assert data['visibility'] == 'public'
+          assert data['default_branch'] == 'main'
+          assert data['recipient_id'] == 'ncc-publish-20260805-81f87008997e0af7'
+          assert data['recipient_fingerprint'] == 'f2f5515ee2f22718318b5d88e27226ae3db9e5231954715f5dd16d6f59dec831'
+          assert data['source_repository'] == 'zed-pkg/.github'
+          assert data['source_commit'] == '62b920b818e1255cd8643b47fc614133a7287a38'
+          assert data['bundle_sha256'] == 'a0d927aa62ab20922e85ee2de9592d0a9fd4bafebf6a5b00a0029a95914c2991'
+          assert data['initial_sha'] == '376372168e12ddd0d2f3cf873a120671d64ca422'
+          assert data['candidate_sha'] == '7fe04d03d5c16c45381aff23eec4e8c6c441ec31'
+          assert re.fullmatch(r'[A-Za-z0-9+/]+={0,2}', data['ciphertext_base64'])
+          ciphertext = base64.b64decode(data['ciphertext_base64'], validate=True)
+          assert len(ciphertext) == 512
+          assert hashlib.sha256(ciphertext).hexdigest() == data['ciphertext_sha256'] == '5f989cbc9a674a4c4e2ee4eb7eea26e0ae1b7dc30026f3a10d042aae138e0859'
+          PY
+          bash -n scripts/ops/publish_zed_vscode_with_encrypted_pat_20260805.sh
+          if grep -RIE 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}' \
+            ops/requests/zed-vscode-encrypted-pat-20260805.json \
+            scripts/ops/publish_zed_vscode_with_encrypted_pat_20260805.sh \
+            .github/workflows/ops-publish-zed-vscode-encrypted-pat-20260805.yml; then
+            echo 'plaintext GitHub credential pattern found' >&2
+            exit 1
+          fi
+
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: publish-zed-vscode-encrypted-pat
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Publish from protected host
+        id: publish
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: |
+          set -Eeuo pipefail
+          test -n "${INSTANCE_ID:-}"
+          trusted_sha="$(git rev-parse HEAD)"
+          remote_command="set -Eeuo pipefail; work=\$(mktemp -d /tmp/zed-vscode-publisher-launcher.XXXXXX); trap 'rm -rf \"\$work\"' EXIT; git init \"\$work/k8s-cluster\" >/dev/null; git -C \"\$work/k8s-cluster\" remote add origin https://github.com/ORESoftware/k8s-cluster.git; git -C \"\$work/k8s-cluster\" fetch --quiet --depth=1 origin '$trusted_sha'; git -C \"\$work/k8s-cluster\" switch --quiet --detach FETCH_HEAD; test \"\$(git -C \"\$work/k8s-cluster\" rev-parse HEAD)\" = '$trusted_sha'; bash \"\$work/k8s-cluster/scripts/ops/publish_zed_vscode_with_encrypted_pat_20260805.sh\" \"\$work/k8s-cluster\" ops/requests/zed-vscode-encrypted-pat-20260805.json"
+          parameters="$RUNNER_TEMP/ssm-parameters.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
+          command_id="$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment 'Publish verified zed-vscode repository with one-time encrypted credential' \
+            --parameters "file://$parameters" \
+            --timeout-seconds 6900 \
+            --query 'Command.CommandId' --output text)"
+          status=Pending
+          for _ in $(seq 1 720); do
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$status" in Success|Failed|Cancelled|TimedOut|Cancelling) break;; esac
+            sleep 10
+          done
+          invocation="$RUNNER_TEMP/zed-vscode-publication-invocation.json"
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json > "$invocation"
+          stdout_file="$RUNNER_TEMP/zed-vscode-publication.stdout"
+          jq -r '.Stdout // ""' "$invocation" > "$stdout_file"
+          cat "$stdout_file"
+          if [[ "$status" != Success ]]; then
+            jq -r '.Stderr // ""' "$invocation" >&2
+            exit 1
+          fi
+          grep -Fx 'ZED_VSCODE_PUBLICATION_COMPLETE=true' "$stdout_file"
+          grep -Fx 'ZED_VSCODE_TOKEN_EXPOSED=false' "$stdout_file"
+          grep -Eq '^ZED_VSCODE_REPOSITORY=https://github.com/zed-pkg/zed-vscode$' "$stdout_file"
+          grep -Eq '^ZED_VSCODE_PULL_REQUEST=https://github.com/zed-pkg/zed-vscode/pull/[0-9]+$' "$stdout_file"
+          grep -Eq '^ZED_VSCODE_CANDIDATE_SHA=7fe04d03d5c16c45381aff23eec4e8c6c441ec31$' "$stdout_file"
+          grep -Eq '^ZED_VSCODE_MERGE_SHA=[0-9a-f]{40}$' "$stdout_file"
+          grep -Eq '^ZED_VSCODE_RELEASE_RUN=[0-9]+$' "$stdout_file"
+          grep -Eq '^ZED_VSCODE_VSIX_ASSET_ID=[0-9]+$' "$stdout_file"
+          grep -Eq '^ZED_VSCODE_VSIX_SHA256=[0-9a-f]{64}$' "$stdout_file"
+          grep -Eq '^ZED_VSCODE_PROJECT_NUMBER=[0-9]+$' "$stdout_file"
+          grep -Eq '^ZED_VSCODE_PROJECT_URL=https://github.com/orgs/zed-pkg/projects/[0-9]+$' "$stdout_file"
+          while IFS='=' read -r key value; do
+            case "$key" in
+              ZED_VSCODE_*) echo "$key=$value" >> "$GITHUB_OUTPUT" ;;
+            esac
+          done < "$stdout_file"
+          {
+            echo '## zed-vscode publication evidence'
+            echo
+            sed -n '/^ZED_VSCODE_/p' "$stdout_file" | sed 's/^/- `/' | sed 's/$/`/'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Retain non-secret publication evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: zed-vscode-publication-${{ github.run_id }}
+          path: ${{ runner.temp }}/zed-vscode-publication.stdout
+          if-no-files-found: error
+          retention-days: 90
