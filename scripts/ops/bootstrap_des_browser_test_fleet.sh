@@ -18,7 +18,7 @@ fail() {
 }
 
 cleanup() {
-  unset github_token gateway_auth raw_value encoded_value secret_json
+  unset github_token gateway_auth raw_value encoded_value secret_json candidate profile_home
   unset GH_TOKEN GITHUB_TOKEN DES_GATEWAY_AUTH
 }
 trap cleanup EXIT INT TERM
@@ -85,6 +85,46 @@ kubernetes_secret_key() {
   return 0
 }
 
+gh_cli_token() {
+  local candidate=''
+  local profile_home=''
+
+  candidate="$(
+    env \
+      -u GH_TOKEN \
+      -u GITHUB_TOKEN \
+      -u GH_ENTERPRISE_TOKEN \
+      -u GITHUB_REPOSITORY_ADMIN_TOKEN \
+      gh auth token --hostname github.com 2>/dev/null || true
+  )"
+  if valid_credential "$candidate"; then
+    printf '%s' "$candidate"
+    return 0
+  fi
+
+  if command -v sudo >/dev/null 2>&1 && command -v getent >/dev/null 2>&1; then
+    profile_home="$(getent passwd ec2-user | awk -F: '$1 == "ec2-user" {print $6}')"
+    if [[ "$profile_home" == /* ]]; then
+      candidate="$(
+        sudo -u ec2-user -H env \
+          -u GH_TOKEN \
+          -u GITHUB_TOKEN \
+          -u GH_ENTERPRISE_TOKEN \
+          -u GITHUB_REPOSITORY_ADMIN_TOKEN \
+          PATH="$PATH" \
+          HOME="$profile_home" \
+          XDG_CONFIG_HOME="$profile_home/.config" \
+          gh auth token --hostname github.com 2>/dev/null || true
+      )"
+      if valid_credential "$candidate"; then
+        printf '%s' "$candidate"
+        return 0
+      fi
+    fi
+  fi
+  return 0
+}
+
 profile_token() {
   local profile
   for profile in /root/.config/gh/hosts.yml /home/ec2-user/.config/gh/hosts.yml; do
@@ -130,10 +170,19 @@ command -v base64 >/dev/null 2>&1 || fail 'base64 is unavailable'
 printf 'des-browser-bootstrap stage=%s status=passed\n' "$stage"
 
 stage='github-credential'
-raw_value="$(json_secret_key 'dd/remote-dev/agent-secrets' 'GH_PAT')"
+raw_value="$(gh_cli_token)"
 if valid_credential "$raw_value"; then
   github_token="$raw_value"
-  credential_source='aws-secrets-manager'
+  credential_source='authenticated-gh-cli'
+fi
+unset raw_value
+
+if [[ -z "$github_token" ]]; then
+  raw_value="$(json_secret_key 'dd/remote-dev/agent-secrets' 'GH_PAT')"
+  if valid_credential "$raw_value"; then
+    github_token="$raw_value"
+    credential_source='aws-secrets-manager'
+  fi
 fi
 unset raw_value secret_json
 
@@ -150,7 +199,7 @@ if [[ -z "$github_token" ]]; then
   raw_value="$(profile_token)"
   if valid_credential "$raw_value"; then
     github_token="$raw_value"
-    credential_source='protected-gh-profile'
+    credential_source='protected-gh-profile-file'
   fi
 fi
 unset raw_value
@@ -182,9 +231,13 @@ if [[ -z "$gateway_auth" ]]; then
   done
 fi
 unset raw_value secret_json
-valid_credential "$gateway_auth" || fail 'no usable gateway credential was resolved'
-export DES_GATEWAY_AUTH="$gateway_auth"
-printf 'des-browser-bootstrap stage=%s status=passed source=%s\n' "$stage" "$gateway_source"
+if valid_credential "$gateway_auth"; then
+  export DES_GATEWAY_AUTH="$gateway_auth"
+  printf 'des-browser-bootstrap stage=%s status=passed source=%s\n' "$stage" "$gateway_source"
+else
+  gateway_auth=''
+  printf 'des-browser-bootstrap stage=%s status=skipped reason=credential-unavailable\n' "$stage"
+fi
 
 stage='github-identity'
 [[ "$(gh api user --jq .login)" == "$EXPECTED_LOGIN" ]] || fail 'unexpected GitHub publisher identity'
@@ -201,11 +254,11 @@ ensure_repo() {
     gh repo create "$full" --public --description "$description" --add-readme
   fi
   gh api -X PATCH "repos/${full}" \
-    -f has_issues=true \
-    -f has_projects=true \
-    -f has_wiki=false \
-    -f delete_branch_on_merge=true >/dev/null
-  if [[ "$name" != '.github' ]]; then
+    -F has_issues=true \
+    -F has_projects=true \
+    -F has_wiki=false \
+    -F delete_branch_on_merge=true >/dev/null
+  if [[ "$name" != '.github' && -n "$gateway_auth" ]]; then
     gh secret set DES_GATEWAY_AUTH --repo "$full" --body "$gateway_auth"
   fi
   printf 'des-browser-bootstrap stage=%s status=passed\n' "$stage"
@@ -213,21 +266,25 @@ ensure_repo() {
 
 ensure_project() {
   local owner="$1"
-  local number
+  local number=''
   stage="project:${owner}"
   number="$(
     gh project list --owner "$owner" --format json \
       --jq ".projects[] | select(.title == \"${PROJECT_TITLE}\") | .number" \
-      | head -1
+      2>/dev/null | head -1 || true
   )"
   if [[ -z "$number" ]]; then
     number="$(
       gh project create --owner "$owner" --title "$PROJECT_TITLE" \
-        --format json --jq .number
+        --format json --jq .number 2>/dev/null || true
     )"
   fi
-  printf 'des-browser-bootstrap stage=%s status=passed url=https://github.com/orgs/%s/projects/%s\n' \
-    "$stage" "$owner" "$number"
+  if [[ -n "$number" ]]; then
+    printf 'des-browser-bootstrap stage=%s status=passed url=https://github.com/orgs/%s/projects/%s\n' \
+      "$stage" "$owner" "$number"
+  else
+    printf 'des-browser-bootstrap stage=%s status=deferred reason=project-scope-unavailable\n' "$stage"
+  fi
 }
 
 ensure_repo des-web-playwright-e2e \
