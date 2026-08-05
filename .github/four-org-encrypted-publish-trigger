@@ -1,0 +1,5 @@
+target=four-org-48-repository-fleet
+trusted-main=7d767095ddd7f988c2d8cb2ab2ed15689a13df3d
+protocol=rsa-oaep-sha256-v1
+expected-repositories=48
+expected-pull-requests=20
