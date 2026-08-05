@@ -1,0 +1,122 @@
+name: Publish Zed marketing sites
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/ops-publish-zed-pkg-marketing-sites.yml
+      - scripts/ops/publish_zed_pkg_marketing_sites.py
+      - scripts/ops/run_protected_zed_pkg_marketing_sites.sh
+      - scripts/ops/zed_pkg_marketing_sites.json
+      - tests/ops/test_publish_zed_pkg_marketing_sites.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-zed-pkg-marketing-sites.yml
+      - scripts/ops/publish_zed_pkg_marketing_sites.py
+      - scripts/ops/run_protected_zed_pkg_marketing_sites.sh
+      - scripts/ops/zed_pkg_marketing_sites.json
+      - tests/ops/test_publish_zed_pkg_marketing_sites.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zed-marketing-sites-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate all fourteen Astro sites
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the exact event commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind validation to the immutable event SHA
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Validate publisher and fixed target set
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ops/publish_zed_pkg_marketing_sites.py
+          python3 -m unittest tests/ops/test_publish_zed_pkg_marketing_sites.py
+          python3 scripts/ops/publish_zed_pkg_marketing_sites.py \
+            --validate-only \
+            --render-dir "$RUNNER_TEMP/zed-marketing-sites"
+
+      - name: Install the shared Astro toolchain
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Test and build every rendered site
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/zed-marketing-sites"
+          shared="$(find "$root" -mindepth 1 -maxdepth 1 -type d | sort | head -n 1)"
+          test -n "$shared"
+          (cd "$shared" && npm install --no-audit --no-fund)
+          while IFS= read -r site; do
+            if [[ "$site" != "$shared" ]]; then
+              ln -s "$shared/node_modules" "$site/node_modules"
+            fi
+            printf 'validating %s\n' "$(basename "$site")"
+            (cd "$site" && npm test && npm run build)
+          done < <(find "$root" -mindepth 1 -maxdepth 1 -type d | sort)
+
+  publish:
+    name: Publish through the protected trusted-main path
+    needs: validate
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out the exact trusted main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind publication to the immutable main SHA
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Configure AWS credentials for the protected GitHub credential exchange
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: zed-marketing-sites-publisher
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Create, improve, merge, deploy, and verify the site fleet
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/zed-marketing-report"
+          scripts/ops/run_protected_zed_pkg_marketing_sites.sh \
+            "$EXPECTED_SHA" \
+            "$GITHUB_WORKSPACE" \
+            "$RUNNER_TEMP/zed-marketing-report/report.json" \
+            "$RUNNER_TEMP/zed-marketing-report/report.md"
+          cat "$RUNNER_TEMP/zed-marketing-report/report.md" >> "$GITHUB_STEP_SUMMARY"
