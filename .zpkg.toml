@@ -1,0 +1,31 @@
+[package]
+org = "cliptown"
+name = "cliptown-monorepo"
+version = "0.1.0"
+description = "Pinned ClipTown integration workspace with Zed packages and Git submodules"
+license = "MIT"
+keywords = ["clipboard", "monorepo", "zed", "git-submodules", "integration"]
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/cliptown/cliptown-monorepo"
+
+[dependencies]
+"cliptown/cliptown-interfaces" = "^0.1.0"
+"cliptown/cliptown-clients" = "^0.1.0"
+
+[publish]
+include_readme = true
+tag_format = "v{version}"
+exclude = [".env", ".env.*", ".vendor/.zed/**", ".zed/**", ".zed-pack/**", "apps/**", "**/*.log"]
+
+[install]
+adapter = "none"
+dir = ".vendor/.zed"
+
+[targets.repository]
+dir = "."
+name = "cliptown-monorepo-repository"
+
+[scripts]
+test = "python3 scripts/verify-zed-submodules.py"

@@ -14,14 +14,6 @@
 	path = apps/cliptown-interfaces
 	url = https://github.com/cliptown/cliptown-interfaces.git
 	branch = main
-[submodule "apps/cliptown-infra"]
-	path = apps/cliptown-infra
-	url = https://github.com/cliptown/cliptown-infra.git
-	branch = main
-[submodule "apps/cliptown-cli"]
-	path = apps/cliptown-cli
-	url = https://github.com/cliptown/cliptown-cli.git
-	branch = main
 [submodule "apps/cliptown-extension"]
 	path = apps/cliptown-extension
 	url = https://github.com/cliptown/cliptown-extension.git

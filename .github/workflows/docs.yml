@@ -37,11 +37,21 @@ jobs:
           python3 scripts/validate-release-policy.py
       - name: Validate submodule policy
         run: |
-          test "$(git config --file .gitmodules --get-regexp '^submodule\..*\.branch$' | wc -l)" -eq 7
+          test "$(git config --file .gitmodules --get-regexp '^submodule\..*\.branch$' | wc -l)" -eq 5
           if git config --file .gitmodules --get-regexp '^submodule\..*\.branch$' | grep -v ' main$'; then
-            echo 'all ClipTown submodules must track main' >&2
+            echo 'all ClipTown source submodules must track main' >&2
             exit 1
           fi
+          for forbidden in apps/cliptown-cli apps/cliptown-infra; do
+            if git config --file .gitmodules --get-regexp '^submodule\..*\.path$' | awk '{print $2}' | grep -Fxq "$forbidden"; then
+              echo "forbidden monorepo submodule: $forbidden" >&2
+              exit 1
+            fi
+            if git ls-files --stage -- "$forbidden" | awk '$1 == "160000" {found=1} END {exit !found}'; then
+              echo "forbidden monorepo gitlink: $forbidden" >&2
+              exit 1
+            fi
+          done
           git submodule status --recursive
           if git submodule status --recursive | grep -E '^[+-]'; then
             echo 'submodule pointers must resolve exactly' >&2

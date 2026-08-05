@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "gitlinks_status": "applied",
-  "rollout": "final-low-risk-nix-capabilities-package-dry-runs",
+  "rollout": "zed-package-source-boundary",
   "repositories": {
     "apps/cliptown-interfaces": {
       "repository": "cliptown/cliptown-interfaces",
@@ -18,11 +18,6 @@
       "branch": "main",
       "commit": "f3697e62c6761dc3abc39f4577251fbc908bed5d"
     },
-    "apps/cliptown-cli": {
-      "repository": "cliptown/cliptown-cli",
-      "branch": "main",
-      "commit": "ed05e61b9b2d4ac326f54f8e43e7e9b0a4bbe8fe"
-    },
     "apps/cliptown-flutter": {
       "repository": "cliptown/cliptown-flutter",
       "branch": "main",
@@ -32,11 +27,6 @@
       "repository": "cliptown/cliptown-extension",
       "branch": "main",
       "commit": "1767062539c249e7dc9e8665b8c026777137a57e"
-    },
-    "apps/cliptown-infra": {
-      "repository": "cliptown/cliptown-infra",
-      "branch": "main",
-      "commit": "70f6ab51a9517c013fd10314d3e7ad07128565d8"
     }
   }
 }

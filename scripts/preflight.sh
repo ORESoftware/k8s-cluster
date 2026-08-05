@@ -29,17 +29,28 @@ require_contract_line '^dart = "3\.12\.2"$' 'Dart 3.12.2 contract'
 require_contract_line '^helm = "3\.17\.3"$' 'Helm 3.17.3 contract'
 require_contract_line '^CLIPTOWN_ANDROID_API = "35"$' 'Android API 35 contract'
 
+EXPECTED_SUBMODULE_BRANCH_COUNT=5
 SUBMODULE_BRANCH_COUNT=$(git config --file .gitmodules --get-regexp '^submodule\..*\.branch$' 2>/dev/null | wc -l | tr -d ' ')
-if [[ "$SUBMODULE_BRANCH_COUNT" == '7' ]]; then
-  pass 'seven ClipTown submodules declare a branch'
+if [[ "$SUBMODULE_BRANCH_COUNT" == "$EXPECTED_SUBMODULE_BRANCH_COUNT" ]]; then
+  pass "$EXPECTED_SUBMODULE_BRANCH_COUNT ClipTown source submodules declare a branch"
 else
-  fail "expected seven submodule branch declarations, found $SUBMODULE_BRANCH_COUNT"
+  fail "expected $EXPECTED_SUBMODULE_BRANCH_COUNT source submodule branch declarations, found $SUBMODULE_BRANCH_COUNT"
 fi
 
+for forbidden in apps/cliptown-cli apps/cliptown-infra; do
+  if git config --file .gitmodules --get-regexp '^submodule\..*\.path$' 2>/dev/null | awk '{print $2}' | grep -Fxq "$forbidden"; then
+    fail "forbidden monorepo submodule is declared: $forbidden"
+  elif git ls-files --stage -- "$forbidden" | awk '$1 == "160000" {found=1} END {exit !found}'; then
+    fail "forbidden monorepo gitlink is indexed: $forbidden"
+  else
+    pass "$forbidden remains independently owned"
+  fi
+done
+
 if git config --file .gitmodules --get-regexp '^submodule\..*\.branch$' 2>/dev/null | grep -v ' main$' >/dev/null; then
-  fail 'every ClipTown submodule must track main'
+  fail 'every ClipTown source submodule must track main'
 else
-  pass 'every ClipTown submodule tracks main'
+  pass 'every ClipTown source submodule tracks main'
 fi
 
 if [[ "$MODE" == '--contract-only' ]]; then
