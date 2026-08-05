@@ -7,15 +7,18 @@ on:
     paths:
       - .github/workflows/ops-publish-hypesiege-hsg-fleet-with-app.yml
       - scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh
+      - scripts/ops/select_hypesiege_github_app_from_aws.py
   push:
     branches: [main]
     paths:
       - .github/workflows/ops-publish-hypesiege-hsg-fleet-with-app.yml
       - scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh
+      - scripts/ops/select_hypesiege_github_app_from_aws.py
   workflow_dispatch:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: publish-hypesiege-hsg-fleet-with-app
@@ -36,20 +39,34 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          script=scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh
-          bash -n "$script"
-          test "$(grep -c '^  hsg-' "$script")" -ge 8
-          grep -q "readonly ORG='hypesiege'" "$script"
-          grep -q "repository_selection.*all" "$script"
-          grep -q 'administration:write' "$script"
-          grep -q 'pull_requests:write' "$script"
-          grep -q "GH_PAT must not be present" "$script"
-          grep -q 'github_app_installation_token' "$script"
-          if grep -nE 'git (checkout|reset|stash)|(^|[[:space:]])rm([[:space:]]|$)|GITHUB_REPOSITORY_ADMIN_TOKEN=' "$script"; then
+          publisher=scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh
+          selector=scripts/ops/select_hypesiege_github_app_from_aws.py
+          bash -n "$publisher"
+          python3 -m py_compile "$selector"
+          python3 "$selector" \
+            --organization hypesiege \
+            --app-id-out "$RUNNER_TEMP/self-test-id" \
+            --private-key-out "$RUNNER_TEMP/self-test-key" \
+            --evidence-out "$RUNNER_TEMP/self-test-evidence" \
+            --self-test
+          test "$(grep -c '^  hsg-' "$publisher")" -ge 8
+          grep -q "readonly ORG='hypesiege'" "$publisher"
+          grep -q "repository_selection.*all" "$publisher"
+          grep -q 'administration:write' "$publisher"
+          grep -q 'pull_requests:write' "$publisher"
+          grep -q "GH_PAT must not be present" "$publisher"
+          grep -q 'github_app_installation_token' "$publisher"
+          grep -q 'expected exactly one repository-admin App pair' "$selector"
+          grep -q 'pat_used.*False' "$selector"
+          if grep -nE 'git (checkout|reset|stash)|(^|[[:space:]])rm([[:space:]]|$)|GITHUB_REPOSITORY_ADMIN_TOKEN=' "$publisher"; then
             echo 'publisher contains a forbidden command or PAT assignment' >&2
             exit 1
           fi
-          python3 - "$script" <<'PY'
+          if grep -nE '(GH_PAT|GITHUB_PAT|github_pat_|ghp_)' "$selector"; then
+            echo 'selector must not accept or inspect PAT-shaped credentials' >&2
+            exit 1
+          fi
+          python3 - "$publisher" <<'PY'
           import re
           import sys
           from pathlib import Path
@@ -79,9 +96,6 @@ jobs:
     needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    env:
-      K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
-      K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
     steps:
       - name: Check out trusted main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -90,12 +104,43 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: publish-hypesiege-hsg-fleet
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Select one validated repository-admin GitHub App pair
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_id_file="$RUNNER_TEMP/hsg-github-app-id"
+          private_key_file="$RUNNER_TEMP/hsg-github-app-private-key.pem"
+          selector_evidence="$RUNNER_TEMP/hsg-github-app-selector.json"
+          python3 scripts/ops/select_hypesiege_github_app_from_aws.py \
+            --organization hypesiege \
+            --region "${AWS_REGION:?configured AWS region is required}" \
+            --app-id-out "$app_id_file" \
+            --private-key-out "$private_key_file" \
+            --evidence-out "$selector_evidence"
+          test -s "$app_id_file"
+          test -s "$private_key_file"
+          test -s "$selector_evidence"
+          printf 'HSG_APP_ID_FILE=%s\n' "$app_id_file" >> "$GITHUB_ENV"
+          printf 'HSG_APP_PRIVATE_KEY_FILE=%s\n' "$private_key_file" >> "$GITHUB_ENV"
+
       - name: Publish all eight repositories, commits, branches, and pull requests
         shell: bash
         run: |
           set -euo pipefail
+          export K8S_SUBMODULE_APP_ID="$(cat "${HSG_APP_ID_FILE:?}")"
+          export K8S_SUBMODULE_APP_PRIVATE_KEY="$(cat "${HSG_APP_PRIVATE_KEY_FILE:?}")"
           chmod 700 scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh
           scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh
+          unset K8S_SUBMODULE_APP_ID K8S_SUBMODULE_APP_PRIVATE_KEY
 
       - name: Add the non-secret publication summary
         if: success()
@@ -108,7 +153,21 @@ jobs:
         with:
           name: hypesiege-hsg-github-app-publication
           path: |
+            ${{ runner.temp }}/hsg-github-app-selector.json
             ${{ runner.temp }}/hypesiege-hsg-publication.json
             ${{ runner.temp }}/hypesiege-hsg-publication.md
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Destroy the selected App credential files
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "${HSG_APP_ID_FILE:-}" "${HSG_APP_PRIVATE_KEY_FILE:-}" <<'PY'
+          import sys
+          from pathlib import Path
+          for value in sys.argv[1:]:
+              if value:
+                  Path(value).unlink(missing_ok=True)
+          PY
