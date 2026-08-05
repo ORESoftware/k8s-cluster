@@ -1,369 +1,119 @@
 #!/usr/bin/env python3
-"""Select the dedicated read-only GitHub App used for private k8s submodules.
+"""Select a read-only GitHub App for private k8s submodule checkout.
 
-The selector scans AWS Secrets Manager values visible to the current role,
-accepts only submodule-labelled App IDs and PEM private keys, and validates every
-candidate pair against GitHub. The selected App must have read-only permissions,
-must be installed for the requested private repository, and must mint a token
-restricted to exactly that repository with ``contents:read``. The validation
-token is revoked before this process exits.
+This program runs only on the protected administration host. It reuses the
+repository's protected-source scanner to inspect readable Kubernetes Secret
+objects, ExternalSecret references, AWS Secrets Manager, and encrypted SSM
+Parameter Store values. Candidate values are never printed.
 
-Secret values are written only to caller-provided mode-0600 files. Standard
-output and the evidence document contain identifiers and fingerprints, never
-credentials.
+A credential pair is accepted only when GitHub proves all of the following:
+
+* the GitHub App's configured repository permissions are read-only;
+* the App is installed for the requested private repository;
+* the minted installation token is restricted to exactly that repository;
+* the token grants ``contents:read`` and no write permission; and
+* the validation token is revoked before the process exits.
+
+The selected App ID and private key are written only to caller-provided
+mode-0600 files. Evidence contains identifiers, source names, counts, and a
+private-key fingerprint, never credential values.
 """
 
 from __future__ import annotations
 
 import argparse
-import base64
-import hashlib
 import json
 import os
 import re
-import subprocess
 import sys
-import time
-import urllib.error
-import urllib.request
-from dataclasses import dataclass, field
+import tempfile
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
-API = "https://api.github.com"
-API_VERSION = "2022-11-28"
-MAX_SECRET_BYTES = 1_048_576
-MAX_SECRET_NAMES = 256
-EXPLICIT_SECRET_NAMES = (
-    "dd/remote-dev/agent-secrets",
-    "dd/remote-dev/k8s-submodule-github-app",
-    "dd/remote-dev/github-app",
-    "dd/remote-dev/github-app-secrets",
-    "k8s-submodule-github-app",
-)
-DISCOVERY_PATTERN = re.compile(r"(?:github|app|submodule|agent-secrets)", re.IGNORECASE)
-PEM_PATTERN = re.compile(
-    r"^-----BEGIN (?:RSA )?PRIVATE KEY-----\n.+\n-----END (?:RSA )?PRIVATE KEY-----\s*$",
-    re.DOTALL,
-)
+import select_hypesiege_github_app_from_protected_sources as protected
+
+MAX_PAIR_ATTEMPTS = 1024
 
 
-@dataclass
-class AppIdCandidate:
-    value: str
-    sources: set[str] = field(default_factory=set)
-    fields: set[str] = field(default_factory=set)
-
-
-@dataclass
-class KeyCandidate:
-    value: str
-    fingerprint: str
-    sources: set[str] = field(default_factory=set)
-    fields: set[str] = field(default_factory=set)
-
-
-@dataclass
+@dataclass(frozen=True)
 class ValidatedPair:
-    app_id: AppIdCandidate
-    key: KeyCandidate
+    app_id: protected.AppIdCandidate
+    private_key: protected.KeyCandidate
     app_slug: str
     installation_id: int
+    app_permissions: dict[str, str]
+    token_permissions: dict[str, str]
     score: int
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--region", default=os.environ.get("AWS_REGION", "us-east-1"))
-    parser.add_argument("--target-repository", required=True)
-    parser.add_argument("--app-id-out", type=Path, required=True)
-    parser.add_argument("--private-key-out", type=Path, required=True)
-    parser.add_argument("--evidence-out", type=Path, required=True)
+    parser.add_argument("--target-repository")
+    parser.add_argument("--app-id-out", type=Path)
+    parser.add_argument("--private-key-out", type=Path)
+    parser.add_argument("--evidence-out", type=Path)
+    parser.add_argument("--self-test", action="store_true")
     return parser.parse_args()
-
-
-def run_aws(arguments: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["aws", *arguments],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-
-
-def discover_secret_names(region: str) -> list[str]:
-    names = set(EXPLICIT_SECRET_NAMES)
-    process = run_aws([
-        "secretsmanager",
-        "list-secrets",
-        "--region",
-        region,
-        "--query",
-        "SecretList[].Name",
-        "--output",
-        "json",
-    ])
-    if process.returncode == 0:
-        try:
-            discovered = json.loads(process.stdout)
-        except json.JSONDecodeError:
-            discovered = []
-        if isinstance(discovered, list):
-            for name in discovered:
-                if isinstance(name, str) and DISCOVERY_PATTERN.search(name):
-                    names.add(name)
-    return sorted(names)[:MAX_SECRET_NAMES]
-
-
-def load_secret(region: str, name: str) -> Any | None:
-    process = run_aws([
-        "secretsmanager",
-        "get-secret-value",
-        "--region",
-        region,
-        "--secret-id",
-        name,
-        "--output",
-        "json",
-    ])
-    if process.returncode != 0:
-        return None
-    try:
-        document = json.loads(process.stdout)
-    except json.JSONDecodeError:
-        return None
-    raw: str | None = None
-    if isinstance(document.get("SecretString"), str):
-        raw = document["SecretString"]
-    elif isinstance(document.get("SecretBinary"), str):
-        try:
-            raw = base64.b64decode(document["SecretBinary"], validate=True).decode("utf-8")
-        except (ValueError, UnicodeDecodeError):
-            return None
-    if raw is None or len(raw.encode("utf-8")) > MAX_SECRET_BYTES:
-        return None
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return raw
-
-
-def flatten(value: Any, path: tuple[str, ...] = ()) -> Iterable[tuple[str, Any]]:
-    if isinstance(value, dict):
-        for key, child in value.items():
-            yield from flatten(child, path + (str(key),))
-    elif isinstance(value, list):
-        for index, child in enumerate(value):
-            yield from flatten(child, path + (str(index),))
-    else:
-        yield ".".join(path) or "$", value
 
 
 def normalize(value: str) -> str:
     return re.sub(r"[^a-z0-9]", "", value.casefold())
 
 
-def parse_nested(value: str) -> Any | None:
-    text = value.strip()
-    if not text or text[0] not in "[{":
+def normalize_permissions(value: Any) -> dict[str, str] | None:
+    if not isinstance(value, dict):
         return None
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        return None
+    normalized: dict[str, str] = {}
+    for name, permission in value.items():
+        if not isinstance(name, str) or not isinstance(permission, str):
+            return None
+        normalized[name] = permission
+    return normalized
 
 
-def app_id_shaped(field_path: str, source: str) -> bool:
-    field_name = normalize(field_path)
-    combined = normalize(source + field_path)
-    if any(marker in field_name for marker in ("token", "pat", "installationid")):
-        return False
+def permission_set_is_read_only(permissions: dict[str, str]) -> bool:
     return (
-        field_name in {"k8ssubmoduleappid", "submoduleappid"}
-        or "k8ssubmoduleappid" in field_name
-        or "submoduleappid" in field_name
-        or (
-            field_name in {"appid", "githubappid"}
-            and "submodule" in combined
-        )
-        or (
-            field_path == "$"
-            and "submodule" in combined
-            and "appid" in combined
-        )
+        permissions.get("contents") == "read"
+        and all(permission == "read" for permission in permissions.values())
     )
 
 
-def canonical_pem(value: str) -> str | None:
-    variants = [value.strip()]
-    if "\\n" in value:
-        variants.append(value.replace("\\n", "\n").strip())
-    try:
-        variants.append(base64.b64decode(value.strip(), validate=True).decode("utf-8").strip())
-    except (ValueError, UnicodeDecodeError):
-        pass
-    for candidate in variants:
-        if PEM_PATTERN.fullmatch(candidate):
-            return candidate + "\n"
-    return None
-
-
-def private_key_shaped(field_path: str, source: str) -> bool:
-    field_name = normalize(field_path)
-    combined = normalize(source + field_path)
-    if any(marker in field_name for marker in ("token", "pat")):
-        return False
-    return (
-        field_name in {
-            "k8ssubmoduleappprivatekey",
-            "submoduleappprivatekey",
-            "k8ssubmoduleprivatekey",
-        }
-        or "k8ssubmoduleappprivatekey" in field_name
-        or "submoduleappprivatekey" in field_name
-        or (
-            "privatekey" in field_name
-            and "submodule" in combined
-        )
-        or (
-            field_path == "$"
-            and "submodule" in combined
-            and "privatekey" in combined
-        )
-    )
-
-
-def collect_candidates(region: str) -> tuple[dict[str, AppIdCandidate], dict[str, KeyCandidate]]:
-    app_ids: dict[str, AppIdCandidate] = {}
-    keys: dict[str, KeyCandidate] = {}
-    for secret_name in discover_secret_names(region):
-        payload = load_secret(region, secret_name)
-        if payload is None:
-            continue
-        queue: list[tuple[str, Any]] = [("$", payload)]
-        visited: set[str] = set()
-        while queue:
-            root, current = queue.pop(0)
-            prefix = () if root == "$" else (root,)
-            for field_path, value in flatten(current, prefix):
-                if isinstance(value, int):
-                    text = str(value)
-                elif isinstance(value, str):
-                    text = value
-                else:
-                    continue
-                if app_id_shaped(field_path, secret_name):
-                    candidate = text.strip()
-                    if candidate.isdigit() and int(candidate) > 0:
-                        item = app_ids.setdefault(candidate, AppIdCandidate(candidate))
-                        item.sources.add(secret_name)
-                        item.fields.add(field_path)
-                if private_key_shaped(field_path, secret_name):
-                    pem = canonical_pem(text)
-                    if pem is not None:
-                        fingerprint = hashlib.sha256(pem.encode("utf-8")).hexdigest()
-                        item = keys.setdefault(fingerprint, KeyCandidate(pem, fingerprint))
-                        item.sources.add(secret_name)
-                        item.fields.add(field_path)
-                nested = parse_nested(text)
-                digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
-                if nested is not None and digest not in visited:
-                    visited.add(digest)
-                    queue.append((field_path, nested))
-        if isinstance(payload, dict):
-            payload.clear()
-    return app_ids, keys
-
-
-def base64url(value: bytes) -> str:
-    return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
-
-
-def mint_jwt(app_id: str, private_key: str, key_path: Path) -> str:
-    key_path.write_text(private_key, encoding="utf-8")
-    key_path.chmod(0o600)
-    now = int(time.time())
-    header = base64url(b'{"alg":"RS256","typ":"JWT"}')
-    payload = base64url(
-        json.dumps(
-            {"iat": now - 60, "exp": now + 540, "iss": int(app_id)},
-            separators=(",", ":"),
-        ).encode("utf-8")
-    )
-    unsigned = f"{header}.{payload}"
-    signed = subprocess.run(
-        ["openssl", "dgst", "-sha256", "-sign", str(key_path)],
-        input=unsigned.encode("utf-8"),
-        check=False,
-        capture_output=True,
-        timeout=20,
-    )
-    if signed.returncode != 0 or not signed.stdout:
-        raise ValueError("candidate key could not sign a JWT")
-    return f"{unsigned}.{base64url(signed.stdout)}"
-
-
-def request_json(
-    method: str,
-    path: str,
-    bearer: str,
-    body: dict[str, Any] | None = None,
-) -> tuple[int | None, Any | None]:
-    encoded = None if body is None else json.dumps(body, separators=(",", ":")).encode("utf-8")
-    request = urllib.request.Request(
-        API + path,
-        method=method,
-        data=encoded,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {bearer}",
-            "X-GitHub-Api-Version": API_VERSION,
-            "User-Agent": "k8s-submodule-app-secret-bootstrap",
-            **({"Content-Type": "application/json"} if encoded is not None else {}),
-        },
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=25) as response:
-            raw = response.read(MAX_SECRET_BYTES)
-            return response.status, json.loads(raw) if raw else None
-    except urllib.error.HTTPError as error:
-        error.read(8192)
-        return error.code, None
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
-        return None, None
-
-
-def validate(
-    work: Path,
+def validate_pair(
+    app_id: protected.AppIdCandidate,
+    private_key: protected.KeyCandidate,
     target_owner: str,
     target_repo: str,
-    app_id: AppIdCandidate,
-    key: KeyCandidate,
+    directory: Path,
 ) -> ValidatedPair | None:
-    key_path = work / f"candidate-{key.fingerprint}.pem"
     try:
-        app_jwt = mint_jwt(app_id.value, key.value, key_path)
+        app_jwt = protected.mint_app_jwt(
+            app_id.value,
+            private_key.value,
+            directory,
+        )
     except ValueError:
         return None
-    app_status, app_document = request_json("GET", "/app", app_jwt)
-    if app_status != 200 or not isinstance(app_document, dict):
+
+    status, app_document = protected.request_json("GET", "/app", app_jwt)
+    if status != 200 or not isinstance(app_document, dict):
         return None
     app_slug = app_document.get("slug")
-    app_permissions = app_document.get("permissions")
-    if not isinstance(app_slug, str) or not isinstance(app_permissions, dict):
-        return None
-    if app_permissions.get("contents") != "read":
-        return None
-    if any(value not in {"read"} for value in app_permissions.values()):
+    app_permissions = normalize_permissions(app_document.get("permissions"))
+    if (
+        not isinstance(app_slug, str)
+        or app_permissions is None
+        or not permission_set_is_read_only(app_permissions)
+    ):
         return None
 
-    installation_status, installation = request_json(
+    status, installation = protected.request_json(
         "GET",
         f"/repos/{target_owner}/{target_repo}/installation",
         app_jwt,
     )
-    if installation_status != 200 or not isinstance(installation, dict):
+    if status != 200 or not isinstance(installation, dict):
         return None
     installation_id = installation.get("id")
     account = installation.get("account")
@@ -375,7 +125,7 @@ def validate(
     ):
         return None
 
-    token_status, token_document = request_json(
+    status, token_document = protected.request_json(
         "POST",
         f"/app/installations/{installation_id}/access_tokens",
         app_jwt,
@@ -384,117 +134,251 @@ def validate(
             "permissions": {"contents": "read"},
         },
     )
-    if token_status != 201 or not isinstance(token_document, dict):
+    if status != 201 or not isinstance(token_document, dict):
         return None
     token = token_document.get("token")
-    token_permissions = token_document.get("permissions")
+    token_permissions = normalize_permissions(token_document.get("permissions"))
     if (
         not isinstance(token, str)
         or not token
-        or not isinstance(token_permissions, dict)
-        or token_permissions.get("contents") != "read"
-        or any(value not in {"read"} for value in token_permissions.values())
+        or token_permissions is None
+        or not permission_set_is_read_only(token_permissions)
     ):
         return None
+
     try:
-        repo_status, repo_document = request_json(
-            "GET", f"/repos/{target_owner}/{target_repo}", token
+        status, repo_document = protected.request_json(
+            "GET",
+            f"/repos/{target_owner}/{target_repo}",
+            token,
         )
-        list_status, repositories = request_json(
-            "GET", "/installation/repositories?per_page=100", token
-        )
-        if repo_status != 200 or not isinstance(repo_document, dict):
+        if status != 200 or not isinstance(repo_document, dict):
             return None
-        if list_status != 200 or not isinstance(repositories, dict):
+
+        status, repositories = protected.request_json(
+            "GET",
+            "/installation/repositories?per_page=100",
+            token,
+        )
+        if status != 200 or not isinstance(repositories, dict):
             return None
         full_names = sorted(
             str(item.get("full_name"))
             for item in repositories.get("repositories", [])
             if isinstance(item, dict)
         )
-        if repositories.get("total_count") != 1 or full_names != [f"{target_owner}/{target_repo}"]:
+        if repositories.get("total_count") != 1:
+            return None
+        if full_names != [f"{target_owner}/{target_repo}"]:
             return None
     finally:
-        request_json("DELETE", "/installation/token", token)
+        protected.request_json("DELETE", "/installation/token", token)
 
-    shared_sources = app_id.sources & key.sources
-    text = " ".join([app_slug, *app_id.sources, *key.sources]).casefold()
+    sources = app_id.sources | private_key.sources
+    shared_sources = app_id.sources & private_key.sources
+    source_text = " ".join(sorted(sources))
     score = 0
+    if shared_sources:
+        score += 40
     if "submodule" in app_slug.casefold():
-        score += 100
+        score += 120
     if "k8s" in app_slug.casefold():
         score += 20
-    if "k8s-submodule" in text or "k8ssubmodule" in normalize(text):
-        score += 80
-    if shared_sources:
-        score += 30
-    return ValidatedPair(app_id, key, app_slug, installation_id, score)
+    if "submodule" in source_text.casefold():
+        score += 100
+    if "k8ssubmodule" in normalize(source_text):
+        score += 20
+
+    return ValidatedPair(
+        app_id=app_id,
+        private_key=private_key,
+        app_slug=app_slug,
+        installation_id=installation_id,
+        app_permissions=app_permissions,
+        token_permissions=token_permissions,
+        score=score,
+    )
+
+
+def write_private(path: Path, value: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(value, encoding="utf-8")
+    path.chmod(0o600)
+
+
+def candidate_pair_priority(
+    app_id: protected.AppIdCandidate,
+    private_key: protected.KeyCandidate,
+) -> tuple[int, int, int, str, str]:
+    sources = app_id.sources | private_key.sources
+    source_text = " ".join(sorted(sources)).casefold()
+    return (
+        0 if "submodule" in source_text else 1,
+        0 if app_id.sources & private_key.sources else 1,
+        int(app_id.value),
+        app_id.value,
+        private_key.fingerprint,
+    )
+
+
+def self_test() -> None:
+    assert permission_set_is_read_only({"contents": "read", "metadata": "read"})
+    assert not permission_set_is_read_only({"contents": "write", "metadata": "read"})
+    assert not permission_set_is_read_only({"metadata": "read"})
+    assert normalize("k8s-submodule GitHub App") == "k8ssubmodulegithubapp"
+    print("k8s submodule App validator self-test: ok")
 
 
 def main() -> int:
     args = parse_args()
+    if args.self_test:
+        self_test()
+        return 0
+
+    required = {
+        "--target-repository": args.target_repository,
+        "--app-id-out": args.app_id_out,
+        "--private-key-out": args.private_key_out,
+        "--evidence-out": args.evidence_out,
+    }
+    missing = [name for name, value in required.items() if value is None]
+    if missing:
+        raise SystemExit(f"missing required arguments: {', '.join(missing)}")
+
+    assert isinstance(args.target_repository, str)
+    assert isinstance(args.app_id_out, Path)
+    assert isinstance(args.private_key_out, Path)
+    assert isinstance(args.evidence_out, Path)
+
     if "/" not in args.target_repository:
-        raise SystemExit("--target-repository must be in owner/name form")
+        raise SystemExit("--target-repository must use owner/name form")
     target_owner, target_repo = args.target_repository.split("/", 1)
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", target_owner):
         raise SystemExit("invalid target repository owner")
     if not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", target_repo):
         raise SystemExit("invalid target repository name")
 
-    output_paths = (args.app_id_out, args.private_key_out, args.evidence_out)
-    for path in output_paths:
-        path.parent.mkdir(parents=True, exist_ok=True)
-    work = args.evidence_out.parent
+    app_ids: dict[str, protected.AppIdCandidate] = {}
+    private_keys: dict[str, protected.KeyCandidate] = {}
+    kubernetes_stats, external_secret_names = protected.discover_kubernetes_material(
+        app_ids,
+        private_keys,
+    )
+    aws_stats = protected.discover_aws_secret_material(
+        args.region,
+        set(protected.EXPLICIT_SECRET_NAMES) | set(external_secret_names),
+        app_ids,
+        private_keys,
+    )
+    ssm_stats = protected.discover_ssm_material(
+        args.region,
+        app_ids,
+        private_keys,
+    )
+    discovery = {**kubernetes_stats, **aws_stats, **ssm_stats}
+    candidate_sources = sorted(
+        set().union(
+            *(candidate.sources for candidate in app_ids.values()),
+            *(candidate.sources for candidate in private_keys.values()),
+        )
+    ) if app_ids or private_keys else []
 
-    app_ids, keys = collect_candidates(args.region)
-    if not app_ids or not keys:
+    if not app_ids or not private_keys:
         raise SystemExit(
-            f"no dedicated submodule App material found: app_ids={len(app_ids)} private_keys={len(keys)}"
+            "no GitHub App credential material found "
+            f"app_ids={len(app_ids)} private_keys={len(private_keys)} "
+            f"candidate_sources={json.dumps(candidate_sources)} "
+            f"discovery={json.dumps(discovery, sort_keys=True)}"
         )
 
+    candidate_pairs = sorted(
+        (
+            (app_id, private_key)
+            for app_id in app_ids.values()
+            for private_key in private_keys.values()
+        ),
+        key=lambda pair: candidate_pair_priority(pair[0], pair[1]),
+    )
+    if len(candidate_pairs) > MAX_PAIR_ATTEMPTS:
+        raise SystemExit(
+            f"refusing {len(candidate_pairs)} candidate pairs; "
+            f"maximum is {MAX_PAIR_ATTEMPTS}"
+        )
+
+    args.evidence_out.parent.mkdir(parents=True, exist_ok=True)
     validated: list[ValidatedPair] = []
-    for app_id in sorted(app_ids.values(), key=lambda item: int(item.value)):
-        for key in sorted(keys.values(), key=lambda item: item.fingerprint):
-            pair = validate(work, target_owner, target_repo, app_id, key)
+    with tempfile.TemporaryDirectory(
+        prefix="k8s-submodule-app-validator-",
+        dir=str(args.evidence_out.parent),
+    ) as temporary:
+        directory = Path(temporary)
+        for app_id, private_key in candidate_pairs:
+            pair = validate_pair(
+                app_id,
+                private_key,
+                target_owner,
+                target_repo,
+                directory,
+            )
             if pair is not None:
                 validated.append(pair)
 
     if not validated:
-        raise SystemExit("no read-only, repository-restricted submodule App credential pair validated")
-    validated.sort(key=lambda item: (-item.score, int(item.app_id.value), item.key.fingerprint))
+        raise SystemExit(
+            "no globally read-only, single-repository GitHub App pair validated "
+            f"from app_ids={len(app_ids)} private_keys={len(private_keys)} "
+            f"candidate_sources={json.dumps(candidate_sources)}"
+        )
+
+    validated.sort(
+        key=lambda item: (
+            -item.score,
+            int(item.app_id.value),
+            item.private_key.fingerprint,
+        )
+    )
     selected = validated[0]
     if (
         len(validated) > 1
         and validated[1].score == selected.score
-        and validated[1].app_id.value != selected.app_id.value
+        and (
+            validated[1].app_id.value != selected.app_id.value
+            or validated[1].private_key.fingerprint
+            != selected.private_key.fingerprint
+        )
     ):
-        raise SystemExit("multiple equally preferred read-only submodule Apps validated; refusing ambiguous selection")
+        raise SystemExit(
+            "multiple equally preferred read-only Apps validated; "
+            "refusing ambiguous selection"
+        )
 
-    args.app_id_out.write_text(selected.app_id.value + "\n", encoding="utf-8")
-    args.private_key_out.write_text(selected.key.value, encoding="utf-8")
-    args.app_id_out.chmod(0o600)
-    args.private_key_out.chmod(0o600)
+    write_private(args.app_id_out, selected.app_id.value + "\n")
+    write_private(args.private_key_out, selected.private_key.value)
     evidence = {
         "schema_version": 1,
         "target_repository": f"{target_owner}/{target_repo}",
         "app_slug": selected.app_slug,
         "installation_id": selected.installation_id,
-        "permissions": {"contents": "read", "metadata": "read"},
+        "app_permissions": selected.app_permissions,
+        "token_permissions": selected.token_permissions,
         "repository_restriction_verified": True,
         "candidate_counts": {
             "app_ids": len(app_ids),
-            "private_keys": len(keys),
+            "private_keys": len(private_keys),
             "validated_pairs": len(validated),
         },
         "credential_sources": {
             "app_id": sorted(selected.app_id.sources),
-            "private_key": sorted(selected.key.sources),
-            "private_key_sha256": selected.key.fingerprint,
+            "private_key": sorted(selected.private_key.sources),
+            "private_key_sha256": selected.private_key.fingerprint,
         },
+        "discovery": discovery,
         "pat_used_for_submodule_access": False,
     }
-    args.evidence_out.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    args.evidence_out.chmod(0o600)
+    write_private(
+        args.evidence_out,
+        json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+    )
     print(
         "validated a read-only repository-restricted GitHub App "
         f"app={selected.app_slug} installation={selected.installation_id}"
