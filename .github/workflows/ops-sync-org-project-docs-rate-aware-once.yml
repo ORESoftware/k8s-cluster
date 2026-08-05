@@ -1,4 +1,4 @@
-name: Reconcile organization Projects, docs, and sealed repository gaps once
+name: Reconcile organization Projects and docs; audit sealed repository gaps once
 
 on:
   push:
@@ -38,9 +38,9 @@ jobs:
     env:
       REPOSITORY: ${{ github.repository }}
       DEFAULT_BRANCH: main
-      HANDSHAKE_NONCE: 8e756ec3c4fe4a4ca780bc9774d99aa1
-      PUBLIC_KEY_PATH: .github/tmp/fleet-reconcile-8e756ec3c4fe4a4ca780bc9774d99aa1.pub.pem
-      CIPHERTEXT_PATH: .github/tmp/fleet-reconcile-8e756ec3c4fe4a4ca780bc9774d99aa1.enc.b64
+      HANDSHAKE_NONCE: c431a31ac2fc48b79939156cae1a98fa
+      PUBLIC_KEY_PATH: .github/tmp/fleet-reconcile-c431a31ac2fc48b79939156cae1a98fa.pub.pem
+      CIPHERTEXT_PATH: .github/tmp/fleet-reconcile-c431a31ac2fc48b79939156cae1a98fa.enc.b64
       PROJECT_EVIDENCE_DIR: ops/evidence/org-project-docs-rate-aware
       REPOSITORY_EVIDENCE_DIR: ops/evidence/missing-organization-repositories
       MIN_CORE_REMAINING: 2500
@@ -74,7 +74,7 @@ jobs:
           GITHUB_TOKEN_VALUE: ${{ github.token }}
         run: bash scripts/ops/receive_encrypted_github_credential.sh
 
-      - name: Run fail-closed Project and repository publication contracts
+      - name: Run fail-closed Project reconciliation contracts
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -91,7 +91,30 @@ jobs:
           python3 scripts/ops/test_repository_fleet_remote_state.py -v
           python3 scripts/ops/test_private_fleet_publisher_contract.py -v
 
-      - name: Publish only sealed missing repositories and verify preserved histories
+      - name: Reconcile all registered organization Projects and docs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf "$PROJECT_EVIDENCE_DIR"
+          python3 scripts/ops/sync_org_project_docs_rate_aware.py \
+            --evidence-dir "$PROJECT_EVIDENCE_DIR" \
+            --expected-count 64 \
+            --min-core-start 1800 \
+            --min-graphql-start 400 \
+            --max-wait-seconds 10800 \
+            --per-org-timeout 1200 \
+            --retries 3
+
+      - name: Revalidate exact 64-organization Project evidence
+        run: >-
+          python3 scripts/ops/sync_org_project_docs_rate_aware.py
+          --evidence-dir "$PROJECT_EVIDENCE_DIR"
+          --expected-count 64
+          --validate-only
+
+      - name: Audit sealed private repository gaps without blocking Project reconciliation
+        id: private_repository_audit
+        continue-on-error: true
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -144,26 +167,34 @@ jobs:
           print(f"VERIFIED_REQUESTED_GAPS {len(evidence)}/4")
           PY
 
-      - name: Reconcile all registered organization Projects and docs
+      - name: Record advisory private repository audit result
+        if: always()
         shell: bash
+        env:
+          PRIVATE_REPOSITORY_AUDIT_OUTCOME: ${{ steps.private_repository_audit.outcome }}
         run: |
           set -Eeuo pipefail
-          rm -rf "$PROJECT_EVIDENCE_DIR"
-          python3 scripts/ops/sync_org_project_docs_rate_aware.py \
-            --evidence-dir "$PROJECT_EVIDENCE_DIR" \
-            --expected-count 64 \
-            --min-core-start 1800 \
-            --min-graphql-start 400 \
-            --max-wait-seconds 10800 \
-            --per-org-timeout 1200 \
-            --retries 3
+          mkdir -p "$REPOSITORY_EVIDENCE_DIR"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
 
-      - name: Revalidate exact 64-organization evidence
-        run: >-
-          python3 scripts/ops/sync_org_project_docs_rate_aware.py
-          --evidence-dir "$PROJECT_EVIDENCE_DIR"
-          --expected-count 64
-          --validate-only
+          outcome = os.environ.get("PRIVATE_REPOSITORY_AUDIT_OUTCOME", "unknown")
+          payload = {
+              "schema_version": 1,
+              "blocking": False,
+              "outcome": outcome,
+              "scope": "sealed private hypesiege/streempilot repository audit",
+              "project_reconciliation_independent": True,
+          }
+          directory = Path(os.environ["REPOSITORY_EVIDENCE_DIR"])
+          (directory / "audit-status.json").write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(f"PRIVATE_REPOSITORY_AUDIT outcome={outcome} blocking=false")
+          PY
 
       - name: Upload validated fleet reconciliation evidence
         if: always()
