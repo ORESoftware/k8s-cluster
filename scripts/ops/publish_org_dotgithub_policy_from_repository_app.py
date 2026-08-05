@@ -47,10 +47,14 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def normalize_private_key(value: str) -> str:
+def expand_literal_newlines(value: str) -> str:
     if "\\n" in value and "\n" not in value.strip():
-        value = value.replace("\\n", "\n")
-    normalized = value.strip() + "\n"
+        return value.replace("\\n", "\n")
+    return value
+
+
+def normalize_private_key(value: str) -> str:
+    normalized = expand_literal_newlines(value).strip() + "\n"
     if PRIVATE_KEY_PATTERN.fullmatch(normalized) is None:
         raise RuntimeError("repository Actions App private key is not a PEM private key")
     if len(normalized.encode("utf-8")) > 1_048_576:
@@ -142,9 +146,8 @@ def self_test() -> None:
         "contents": "write",
         "metadata": "read",
     }
-    assert normalize_private_key(
-        "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----\\n"
-    ).startswith("-----BEGIN PRIVATE KEY-----\n")
+    assert expand_literal_newlines("alpha\\nbeta") == "alpha\nbeta"
+    assert expand_literal_newlines("alpha\nbeta") == "alpha\nbeta"
     assert "greater than 99.1%" in publisher.POLICY_BLOCK
     assert "greater than 99.7%" in publisher.POLICY_BLOCK
     assert "`dev` is the integration branch" in publisher.POLICY_BLOCK
