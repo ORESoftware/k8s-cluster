@@ -1,0 +1,121 @@
+name: Semantically reconcile PR 946 onto current main
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened]
+    paths:
+      - '.github/workflows/agent-reconcile-pr-946.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: agent-reconcile-pr-946
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/org-dotgithub-gitflow-gitops-policy-20260805'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out exact PR branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/org-dotgithub-gitflow-gitops-policy-20260805
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Merge current main and replay the reviewed intent over conflict paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          original_base='272a68dc7df695edcda1d8d0121640de20f5ffe7'
+          original_head='85a942f2543d854c5ff8af6a61b23ab23cc2fa85'
+          reviewed_paths=(
+            '.github/workflows/ops-publish-org-dotgithub-policy.yml'
+            '.github/workflows/repo-checks.yml'
+            'config/ci/k8s-submodule-github-app-allowlist.json'
+            'docs/remote-libs-submodule.md'
+            'remote/tests/general/private-submodule-ci-contract.test.ts'
+            'remote/tests/general/remote-libs-submodule-contract.test.ts'
+          )
+
+          git fetch --no-tags origin main
+          test "$(git merge-base "$original_base" "$original_head")" = "$original_base"
+
+          set +e
+          git merge --no-ff --no-commit origin/main
+          merge_status=$?
+          set -e
+
+          mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+          if (( merge_status != 0 )) && (( ${#conflicts[@]} == 0 )); then
+            echo 'merge failed without ordinary file conflicts' >&2
+            exit 1
+          fi
+
+          if (( ${#conflicts[@]} > 0 )); then
+            printf 'semantic conflict paths:\n%s\n' "${conflicts[*]}"
+            for path in "${conflicts[@]}"; do
+              allowed=false
+              for reviewed in "${reviewed_paths[@]}"; do
+                if [[ "$path" == "$reviewed" ]]; then allowed=true; break; fi
+              done
+              if [[ "$allowed" != true ]]; then
+                echo "unexpected conflict outside reviewed scope: $path" >&2
+                exit 1
+              fi
+            done
+
+            git diff --binary "$original_base" "$original_head" -- "${conflicts[@]}" > "$RUNNER_TEMP/pr-946-conflicts.patch"
+            git checkout origin/main -- "${conflicts[@]}"
+            git add -- "${conflicts[@]}"
+            git apply --3way --index "$RUNNER_TEMP/pr-946-conflicts.patch"
+          fi
+
+          if [[ -n "$(git diff --name-only --diff-filter=U)" ]]; then
+            echo 'unresolved conflict markers remain' >&2
+            git diff --name-only --diff-filter=U >&2
+            exit 1
+          fi
+
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'merge: semantically reconcile GitFlow policy with current main'
+
+      - name: Validate the semantic union
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m json.tool config/ci/k8s-submodule-github-app-allowlist.json >/dev/null
+          ruby -e "require 'yaml'; YAML.load_file('.github/workflows/ops-publish-org-dotgithub-policy.yml'); YAML.load_file('.github/workflows/repo-checks.yml')"
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/ops-publish-org-dotgithub-policy.yml')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          start = next(i for i, line in enumerate(lines) if "python3 - <<'PY'" in line)
+          end = next(i for i in range(start + 1, len(lines)) if lines[i] == '          PY')
+          body = lines[start + 1:end]
+          code = '\n'.join(line[10:] if line.startswith('          ') else line for line in body) + '\n'
+          compile(code, str(path), 'exec')
+          text = path.read_text(encoding='utf-8')
+          assert 'greater than 99.1%' in text
+          assert 'greater than 99.7%' in text
+          assert "'us-east-1'" in text
+          PY
+          node --experimental-strip-types --test \
+            remote/tests/general/private-submodule-ci-contract.test.ts \
+            remote/tests/general/remote-libs-submodule-contract.test.ts
+          git diff --check
+
+      - name: Push reconciled branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin HEAD:agent/org-dotgithub-gitflow-gitops-policy-20260805
