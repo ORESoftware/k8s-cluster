@@ -11,7 +11,7 @@ allow_unknown = false
 
 # These may hold secrets — flags-2-env must never surface them in help/echo.
 [env]
-ignore = ["AUTH_SIGNING_KEY_PEM", "AUTH_SIGNING_KEY_FILE", "AUTH_DATABASE_URL", "AUTH_REDIS_URL", "AUTH_WEBHOOK_SECRET", "AUTH_INTROSPECT_SECRET", "AUTH_SUPABASE_PROJECTS", "SUPABASE_ACCESS_TOKEN", "AUTH_SUPABASE_PUBLISHABLE_KEY", "AUTH_SUPABASE_SECRET_KEY", "AUTH_SUPABASE_SERVICE_ROLE_KEY", "AUTH_SUPABASE_JWT_SECRET", "AUTH_SENDGRID_API_KEY", "AUTH_OTP_PEPPER", "AUTH_TWILIO_ACCOUNT_SID", "AUTH_TWILIO_AUTH_TOKEN", "AUTH_TWILIO_VERIFY_SERVICE_SID"]
+ignore = ["AUTH_SIGNING_KEY_PEM", "AUTH_SIGNING_KEY_FILE", "AUTH_DATABASE_URL", "AUTH_APPLICATION_DATABASE_URL", "AUTH_REDIS_URL", "AUTH_WEBHOOK_SECRET", "AUTH_INTROSPECT_SECRET", "AUTH_SUPABASE_PROJECTS", "SUPABASE_ACCESS_TOKEN", "AUTH_SUPABASE_PUBLISHABLE_KEY", "AUTH_SUPABASE_SECRET_KEY", "AUTH_SUPABASE_SERVICE_ROLE_KEY", "AUTH_SUPABASE_JWT_SECRET", "AUTH_SENDGRID_API_KEY", "AUTH_OTP_PEPPER", "AUTH_TWILIO_ACCOUNT_SID", "AUTH_TWILIO_AUTH_TOKEN", "AUTH_TWILIO_VERIFY_SERVICE_SID"]
 
 [flags.bind-addr]
 env = "AUTH_BIND_ADDR"
@@ -21,12 +21,61 @@ type = "string"
 default = "0.0.0.0:8120"
 help = "HTTP listen address."
 
+[flags.realm]
+env = "AUTH_REALM"
+aliases = ["realm"]
+type = "string"
+help = "Authentication realm: admin or customer. Required for every DB-backed server."
+
+[flags.realm-deployment]
+env = "AUTH_REALM_DEPLOYMENT"
+aliases = ["realm-deployment"]
+type = "string"
+help = "Non-secret deployment identity; it must visibly name the selected realm."
+
+[flags.database-resource-ref]
+env = "AUTH_DATABASE_RESOURCE_REF"
+aliases = ["database-resource-ref", "db-resource-ref"]
+type = "string"
+help = "Non-secret RDS resource reference used to detect cross-realm wiring."
+
+[flags.database-secret-ref]
+env = "AUTH_DATABASE_SECRET_REF"
+aliases = ["database-secret-ref", "db-secret-ref"]
+type = "string"
+help = "Non-secret secret-manager path naming the realm-specific database DSN."
+
+[flags.signing-key-ref]
+env = "AUTH_SIGNING_KEY_REF"
+aliases = ["signing-key-ref"]
+type = "string"
+help = "Non-secret secret-manager path naming the realm-specific signing key."
+
+[flags.session-cookie-name]
+env = "AUTH_SESSION_COOKIE_NAME"
+aliases = ["session-cookie-name"]
+type = "string"
+help = "Realm-specific __Host- browser session cookie name."
+
+[flags.realm-supabase-project-ref]
+env = "AUTH_REALM_SUPABASE_PROJECT_REF"
+aliases = ["realm-supabase-project-ref"]
+type = "string"
+help = "Dedicated Supabase project ref expected for the selected realm."
+
+[flags.realm-allow-loopback]
+env = "AUTH_REALM_ALLOW_LOOPBACK"
+aliases = ["realm-allow-loopback"]
+type = "bool"
+default = false
+help = "Development/test only: allow an all-loopback HTTP issuer and PostgreSQL endpoint."
+
 [flags.issuer]
 env = "AUTH_ISSUER"
 aliases = ["issuer"]
 type = "string"
 default = "https://auth.oresoftware.dev"
-help = "iss claim on minted OreSoftware JWTs."
+help = "iss claim on minted OreSoftware JWTs. Admin deployments must override this."
 
 [flags.audience]
 env = "AUTH_AUDIENCE"
