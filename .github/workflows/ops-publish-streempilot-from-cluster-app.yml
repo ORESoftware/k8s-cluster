@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/ops-publish-streempilot-from-cluster-app.yml
+      - scripts/ops/install_pinned_github_cli.sh
       - scripts/ops/select_hypesiege_github_app_from_protected_sources.py
       - scripts/ops/publish_streempilot_sp_fleet_with_app.sh
       - scripts/ops/streempilot-generator/generate_streempilot_sp_fleet.py.xz.b64.part*
@@ -13,6 +14,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/ops-publish-streempilot-from-cluster-app.yml
+      - scripts/ops/install_pinned_github_cli.sh
       - scripts/ops/select_hypesiege_github_app_from_protected_sources.py
       - scripts/ops/publish_streempilot_sp_fleet_with_app.sh
       - scripts/ops/streempilot-generator/generate_streempilot_sp_fleet.py.xz.b64.part*
@@ -29,7 +31,7 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - name: Check out the exact reviewed revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -42,12 +44,26 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Validate the selector, full fleet, and App-only publisher
+      - name: Validate the selector, pinned CLI installer, and App-only publisher
         shell: bash
         run: |
           set -Eeuo pipefail
           selector=scripts/ops/select_hypesiege_github_app_from_protected_sources.py
+          installer=scripts/ops/install_pinned_github_cli.sh
           publisher=scripts/ops/publish_streempilot_sp_fleet_with_app.sh
+
+          bash -n "$installer"
+          bash -n "$publisher"
+          metadata="$(bash "$installer" --metadata)"
+          grep -qF 'version=2.94.0' <<<"$metadata"
+          grep -Eq 'architecture=(amd64|arm64)' <<<"$metadata"
+          grep -Eq 'sha256=[0-9a-f]{64}' <<<"$metadata"
+          grep -qF 'https://github.com/cli/cli/releases/download/v2.94.0/' <<<"$metadata"
+
+          gh_binary="$(bash "$installer" --install-dir "$RUNNER_TEMP/pinned-gh")"
+          test -x "$gh_binary"
+          "$gh_binary" --version | grep -qF 'gh version 2.94.0'
+
           python3 -m py_compile "$selector"
           python3 "$selector" \
             --organization StreemPilot \
@@ -55,7 +71,7 @@ jobs:
             --private-key-out "$RUNNER_TEMP/self-test-key" \
             --evidence-out "$RUNNER_TEMP/self-test-evidence" \
             --self-test
-          bash -n "$publisher"
+
           grep -qF "readonly ORG='StreemPilot'" "$publisher"
           grep -qF 'EXPECTED_REPOSITORIES=8' "$publisher"
           grep -qF 'EXPECTED_PULL_REQUESTS=8' "$publisher"
@@ -76,8 +92,6 @@ jobs:
             "$encoded" \
             | sha256sum --check --strict
           python3 - "$encoded" "$generator" <<'PY'
-          from __future__ import annotations
-
           import base64
           import lzma
           import sys
@@ -85,8 +99,9 @@ jobs:
 
           encoded_path = Path(sys.argv[1])
           generator_path = Path(sys.argv[2])
-          compressed = base64.b64decode(encoded_path.read_bytes(), validate=True)
-          generator_path.write_bytes(lzma.decompress(compressed))
+          generator_path.write_bytes(
+              lzma.decompress(base64.b64decode(encoded_path.read_bytes(), validate=True))
+          )
           PY
           printf '%s  %s\n' \
             '10188d2d4018dec7a28ff3e85a6779f67517864d7d85b5d03d769402a3a55fd7' \
@@ -95,11 +110,11 @@ jobs:
           python3 -m py_compile "$generator"
 
           fleet_root="$RUNNER_TEMP/streempilot-sp-validated-fleet"
-          python3 "$generator" --output "$fleet_root"
+          python3 "$generator" --output "$fleet_root" >/dev/null
           [[ "$(jq -er '.repository_count' "$fleet_root/REPOSITORY_MANIFEST.json")" == 8 ]]
           [[ "$(find "$fleet_root/StreemPilot" -mindepth 2 -maxdepth 2 -type d -name .git | wc -l | tr -d '[:space:]')" == 8 ]]
           while IFS= read -r repo; do
-            git -C "$repo" fsck --full
+            git -C "$repo" fsck --full >/dev/null
           done < <(find "$fleet_root/StreemPilot" -mindepth 1 -maxdepth 1 -type d | LC_ALL=C sort)
           python3 "$fleet_root/StreemPilot/sp-interfaces/scripts/validate_contracts.py"
           npm test --prefix "$fleet_root/StreemPilot/sp-infra/cloudflare-worker"
@@ -159,24 +174,18 @@ jobs:
           work="$(mktemp -d /tmp/streempilot-protected-app-publisher.XXXXXX)"
           cleanup() {
             unset K8S_SUBMODULE_APP_ID K8S_SUBMODULE_APP_PRIVATE_KEY GH_TOKEN
-            python3 - "$work" <<'PY'
-          import shutil
-          import sys
-          from pathlib import Path
-          path = Path(sys.argv[1])
-          if path.exists():
-              shutil.rmtree(path)
-          PY
+            rm -rf "$work"
           }
           on_error() {
             local status=$?
-            printf 'streempilot-remote-wrapper status=failed line=%s exit=%s\n' "${BASH_LINENO[0]:-unknown}" "$status" >&2
+            printf 'streempilot-remote-wrapper status=failed line=%s exit=%s\n' \
+              "${BASH_LINENO[0]:-unknown}" "$status" >&2
             exit "$status"
           }
           trap cleanup EXIT
           trap on_error ERR
 
-          for command in aws base64 curl gh git jq kubectl openssl python3 sha256sum; do
+          for command in aws base64 curl git jq kubectl mktemp openssl python3 sha256sum tar uname; do
             command -v "$command" >/dev/null || {
               printf 'streempilot-remote-wrapper missing-command=%s\n' "$command" >&2
               exit 70
@@ -189,6 +198,15 @@ jobs:
           git -C "$work/k8s-cluster" fetch --quiet --depth=1 origin "$trusted_sha"
           git -C "$work/k8s-cluster" switch --quiet --detach FETCH_HEAD
           test "$(git -C "$work/k8s-cluster" rev-parse HEAD)" = "$trusted_sha"
+
+          printf 'streempilot-remote-wrapper stage=install-pinned-gh\n'
+          installer="$work/k8s-cluster/scripts/ops/install_pinned_github_cli.sh"
+          test -f "$installer"
+          gh_binary="$(bash "$installer" --install-dir "$work/pinned-gh")"
+          test -x "$gh_binary"
+          export PATH="$(dirname "$gh_binary"):$PATH"
+          test "$(command -v gh)" = "$gh_binary"
+          gh --version | grep -qF 'gh version 2.94.0'
 
           printf 'streempilot-remote-wrapper stage=select-app\n'
           app_id_file="$work/github-app-id"
@@ -208,8 +226,9 @@ jobs:
           export K8S_SUBMODULE_APP_ID="$(tr -d '\r\n' < "$app_id_file")"
           export K8S_SUBMODULE_APP_PRIVATE_KEY="$(cat "$private_key_file")"
           export RUNNER_TEMP="$work"
-          chmod 700 "$work/k8s-cluster/scripts/ops/publish_streempilot_sp_fleet_with_app.sh"
-          "$work/k8s-cluster/scripts/ops/publish_streempilot_sp_fleet_with_app.sh"
+          publisher="$work/k8s-cluster/scripts/ops/publish_streempilot_sp_fleet_with_app.sh"
+          chmod 700 "$publisher"
+          "$publisher"
           unset K8S_SUBMODULE_APP_ID K8S_SUBMODULE_APP_PRIVATE_KEY GH_TOKEN
 
           report="$work/streempilot-sp-app-publication.json"
@@ -235,7 +254,7 @@ jobs:
             aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
               --document-name AWS-RunShellScript \
-              --comment 'Publish StreemPilot sp repositories from protected GitHub App sources' \
+              --comment 'Publish StreemPilot sp repositories from a protected GitHub App' \
               --parameters "file://$parameters" \
               --query 'Command.CommandId' \
               --output text
