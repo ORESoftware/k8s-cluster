@@ -22,6 +22,13 @@ class MarketingPublisherTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.sites = publisher.load_specs()
 
+    def test_loader_has_reviewable_integrity_checked_parts(self) -> None:
+        source_parts = sorted((ROOT / "scripts/ops").glob("publish_zed_pkg_marketing_sites.py.part*"))
+        spec_parts = sorted((ROOT / "scripts/ops").glob("zed_pkg_marketing_sites.json.bz2.b64.part*"))
+        self.assertGreaterEqual(len(source_parts), 2)
+        self.assertGreaterEqual(len(spec_parts), 2)
+        self.assertTrue(all(part.stat().st_size < 20_000 for part in source_parts + spec_parts))
+
     def test_exact_non_test_target_set(self) -> None:
         self.assertEqual(tuple(site["slug"] for site in self.sites), publisher.EXPECTED_SLUGS)
         self.assertEqual(len(self.sites), 14)
@@ -91,6 +98,7 @@ class MarketingPublisherTests(unittest.TestCase):
             self.assertIn("actions/deploy-pages@cd2ce8f", files[".github/workflows/pages.yml"])
             self.assertNotIn("uses: actions/checkout@v", files[".github/workflows/ci.yml"])
             self.assertNotIn("package-lock.json", files)
+
 
     def test_branch_upsert_uses_the_correct_git_ref_endpoints(self) -> None:
         class Client:
