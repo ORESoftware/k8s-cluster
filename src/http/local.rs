@@ -89,15 +89,14 @@ pub async fn login(
 ) -> Result<Json<SessionResponse>, AuthError> {
     let db = state.db.as_ref().ok_or(AuthError::Unavailable)?;
     let email = normalize_email(&request.email)?;
-    // Bound the password length before the Argon2 verify below. Registration
-    // caps passwords at 1024 bytes, so anything longer can never match — reject
-    // it up front rather than paying attacker-controlled hashing cost (a login
-    // DoS otherwise bounded only by the 64KB body limit). The check depends only
-    // on the submitted length, never on whether the account exists, so it adds
-    // no user-enumeration signal.
+
+    // Registration never accepts more than MAX_PASSWORD_BYTES. Reject a value
+    // that can never match before entering Argon2, while making the decision
+    // solely from caller-supplied length so account existence is not disclosed.
     if request.password.len() > MAX_PASSWORD_BYTES {
         return Err(AuthError::BadRequest("password exceeds maximum length"));
     }
+
     enforce_limit(&state, "login", &email, 10, 900).await?;
 
     let credential = db.local_credential(&email).await?;
@@ -217,7 +216,7 @@ pub(crate) async fn response_from_issued_with_assurance(
     })
 }
 
-async fn enforce_limit(
+pub(crate) async fn enforce_limit(
     state: &AppState,
     bucket: &str,
     identifier: &str,

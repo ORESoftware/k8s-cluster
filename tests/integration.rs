@@ -158,7 +158,7 @@ async fn jwks_exposes_our_signing_key() {
 // out, which then introspects as active.
 #[tokio::test]
 async fn exchange_then_introspect_roundtrip() {
-    let app = app().await;
+    let app = app_with_introspect_secret(INTROSPECT_SECRET).await;
     let supa = supabase_token("supa-user-1", "user@example.com");
 
     let resp = app
@@ -180,6 +180,7 @@ async fn exchange_then_introspect_roundtrip() {
         .oneshot(
             Request::post("/auth/introspect")
                 .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {INTROSPECT_SECRET}"))
                 .body(Body::from(serde_json::json!({ "token": ore }).to_string()))
                 .unwrap(),
         )
@@ -195,7 +196,7 @@ async fn exchange_then_introspect_roundtrip() {
 
 #[tokio::test]
 async fn exchange_preserves_supabase_aal2() {
-    let app = app().await;
+    let app = app_with_introspect_secret(INTROSPECT_SECRET).await;
     let supa = supabase_aal2_token("supa-mfa-user", "mfa@example.com");
 
     let resp = app
@@ -215,6 +216,7 @@ async fn exchange_preserves_supabase_aal2() {
         .oneshot(
             Request::post("/auth/introspect")
                 .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {INTROSPECT_SECRET}"))
                 .body(Body::from(
                     serde_json::json!({ "token": out["access_token"] }).to_string(),
                 ))
@@ -285,6 +287,95 @@ async fn ui_exchange_returns_success_fragment() {
     let frag = body_string(resp).await;
     assert!(frag.contains("exchanged"));
     assert!(frag.contains("fiducia-cloud"));
+}
+
+#[tokio::test]
+async fn ui_exchange_empty_token_returns_error_fragment() {
+    let resp = app()
+        .await
+        .oneshot(
+            Request::post("/ui/exchange")
+                .header("content-type", "application/x-www-form-urlencoded")
+                .body(Body::from("access_token="))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let frag = body_string(resp).await;
+    // Fail-closed: the static error fragment, never a minted token, and never a
+    // reflection of the submitted field.
+    assert!(
+        frag.contains("unauthorized"),
+        "expected error fragment, got: {frag}"
+    );
+    assert!(!frag.contains("exchanged"));
+    assert!(!frag.contains("access_token"));
+}
+
+#[tokio::test]
+async fn security_headers_present_on_responses() {
+    let resp = app()
+        .await
+        .oneshot(Request::get("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let h = resp.headers();
+    let get = |name: &str| h.get(name).unwrap().to_str().unwrap().to_string();
+    // Baseline headers (pre-existing).
+    assert_eq!(get("x-content-type-options"), "nosniff");
+    assert_eq!(get("x-frame-options"), "DENY");
+    assert_eq!(get("referrer-policy"), "no-referrer");
+    assert!(get("content-security-policy").contains("default-src 'none'"));
+    assert!(get("strict-transport-security").contains("max-age="));
+    // Hardening added alongside these tests.
+    assert_eq!(get("cache-control"), "no-store");
+    assert!(get("permissions-policy").contains("camera=()"));
+    assert_eq!(get("cross-origin-opener-policy"), "same-origin");
+}
+
+#[tokio::test]
+async fn jwks_keeps_public_cache_not_no_store() {
+    // The global no-store layer is `if_not_present`; the JWKS handler sets its
+    // own `public, max-age=300` (public key material), which must survive.
+    let resp = app()
+        .await
+        .oneshot(
+            Request::get("/.well-known/jwks.json")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let cc = resp
+        .headers()
+        .get("cache-control")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        cc.contains("public"),
+        "jwks must stay publicly cacheable, got: {cc}"
+    );
+    assert!(cc.contains("max-age=300"));
+    assert!(!cc.contains("no-store"));
+}
+
+#[tokio::test]
+async fn webhook_fails_closed_without_secret() {
+    // The default test config has webhook_secret: None, so the sync route must
+    // reject every request regardless of body.
+    let resp = app()
+        .await
+        .oneshot(
+            Request::post("/internal/webhook/sync")
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
@@ -386,11 +477,12 @@ async fn verify_endpoint_rejects_missing_and_bad_tokens() {
 #[tokio::test]
 async fn introspect_non_ore_token_is_inactive() {
     let supa = supabase_token("x", "x@example.com");
-    let resp = app()
+    let resp = app_with_introspect_secret(INTROSPECT_SECRET)
         .await
         .oneshot(
             Request::post("/auth/introspect")
                 .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {INTROSPECT_SECRET}"))
                 .body(Body::from(serde_json::json!({ "token": supa }).to_string()))
                 .unwrap(),
         )
@@ -478,11 +570,12 @@ async fn introspect_authorized_caller_invalid_token_is_inactive() {
     assert_eq!(intro["active"], false);
 }
 
-// Backward compatibility: with no secret configured, introspection stays open.
+// Without the independent service credential configured, introspection is
+// disabled before the submitted token is parsed or verified.
 #[tokio::test]
-async fn introspect_open_when_secret_unset() {
+async fn introspect_fails_closed_when_secret_unset() {
     let app = app().await;
-    let ore = mint_ore_token(&app, "open-user").await;
+    let ore = mint_ore_token(&app, "closed-user").await;
     let resp = app
         .oneshot(
             Request::post("/auth/introspect")
@@ -492,9 +585,8 @@ async fn introspect_open_when_secret_unset() {
         )
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let intro: serde_json::Value = serde_json::from_str(&body_string(resp).await).unwrap();
-    assert_eq!(intro["active"], true);
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    assert!(!body_string(resp).await.contains("fiducia-cloud"));
 }
 
 // Exchange accepts the token in the JSON body too, not only the header.
