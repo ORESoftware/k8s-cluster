@@ -1,0 +1,57 @@
+name: Sync DEN-2242 repair with current main
+
+on:
+  push:
+    branches:
+      - fix/den-2242-fail-closed-org-reconciler-20260805
+    paths:
+      - .github/workflows/sync-pr-990-with-main-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-pr-990-with-main-once
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Check out pull-request branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/den-2242-fail-closed-org-reconciler-20260805
+          fetch-depth: 0
+
+      - name: Merge current main, remove generated files, and verify
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git merge --no-edit --no-ff origin/main
+
+          rm -rf scripts/ops/__pycache__ scripts/ops/tests/__pycache__ tests/ops/__pycache__
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.gitignore')
+          text = path.read_text(encoding='utf-8')
+          block = '\n# Python bytecode / test caches\n__pycache__/\n*.py[cod]\n'
+          if '__pycache__/' not in text:
+              text = text.rstrip() + block
+              path.write_text(text, encoding='utf-8')
+          PY
+
+          bash -n scripts/ops/sync_org_project_docs.sh
+          python3 -m unittest scripts/ops/tests/test_validate_org_project_docs_evidence.py
+          python3 -m unittest tests/ops/test_audit_org_project_docs_evidence.py
+
+          rm -f .github/workflows/sync-pr-990-with-main-once.yml
+          git add -A
+          git commit -m "merge: sync DEN-2242 evidence repair with current main"
+          git push origin HEAD:fix/den-2242-fail-closed-org-reconciler-20260805
