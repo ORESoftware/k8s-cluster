@@ -3,7 +3,8 @@ set -Eeuo pipefail
 umask 077
 
 readonly REGION="${1:?AWS region is required}"
-readonly ROOT="$(git rev-parse --show-toplevel)"
+readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 readonly SELECTOR="$ROOT/scripts/ops/select_hypesiege_github_app_from_protected_sources.py"
 readonly PUBLISHER="$ROOT/scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh"
 
@@ -60,6 +61,17 @@ if (( ${#missing[@]} > 0 )); then
     "$diagnostic" \
     prerequisites \
     "required commands unavailable: ${missing[*]}" \
+    1
+  emit_base64 HSG_SELECTOR_DIAGNOSTIC_BASE64 "$diagnostic"
+  exit 1
+fi
+
+if [[ ! -f "$SELECTOR" || ! -f "$PUBLISHER" ]]; then
+  diagnostic="$work/hsg-selector-diagnostic.json"
+  write_failure_diagnostic \
+    "$diagnostic" \
+    resolve-reviewed-runtime \
+    "reviewed selector or publisher is missing beneath ${ROOT}" \
     1
   emit_base64 HSG_SELECTOR_DIAGNOSTIC_BASE64 "$diagnostic"
   exit 1
