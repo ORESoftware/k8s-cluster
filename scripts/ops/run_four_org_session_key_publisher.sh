@@ -18,17 +18,17 @@ target_path = Path(sys.argv[2])
 source = source_path.read_text(encoding="utf-8")
 
 public_key = """-----BEGIN PUBLIC KEY-----
-MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAtJisU8rOdO9CMXbDi/XH
-aW3+aJwcxMymZm+qjt2WBU44UlszpQzbXqhp6N186w6jMQifVBalnigtSmASw7EV
-+R6CYZYl8hry9jvFmJ8Qd/VJdV+6UXXD1h/xswS5Icup44bB5J3+Uiu5Eh2bexbT
-pe73ipN29KsiG/u+pODH8tJhEq2L+2xeZ+YDmIQDDbM7fDfAqZsWY0fYz5eHkoYr
-A/ww0Xa4zOZoxQWhpTCAZJgxy/TFNhOFYHuwP2IW/chLX/6wIECU/nefSbkxHzza
-jyvAqbwC3VWQT3czAJ0FIO5rRUwO3h5foikaTv1jMJVmUMzQi5dMlFgC+cnrRFjG
-Oyy3ekZfni2VR+HBNgG6ygf2uJMUoy09DoNWGbaAJccc1gW9OF99a9mbbowa6q5F
-zAy6JGpSOjs6Czi8YBkU8E1RrRCZkLooJGapY6Tf7DrH/dFmZfAbf4WuMj2MnkNZ
-yWp3Z19nopBaN2SMAjwBzFK/7DbeYZCcZqJVrlCE2gdlAgMBAAE=
+MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAs/AEBSv+XPPG41Wpr4wH
+yu2fYx9f84iJDDtDjvWrTE4cojzkeEeMFamXgB7xm8yEhRPnY5z+HYLdgqqs0DRR
+r/9m50PpQVjGg1Nv4WJ7I+qAI6Myjnr0cW26z1cJg7SOYNxiWb5xq2Dsj1b5Kq+M
+7caER0VrInMpgJgk5pfTBayPCwq+NUnY+kTwohNvWGVifLorIVcxj+qTi146P85Y
+VhRpO143mC4EM0ld3WDg2iITOcGSV+NW2hTH4rwQlRDLgI886kpZREgJIm+sPXu6
+G6CGukE7ZU7AaO9O+5tmRJIvypBUoOvmZRstHPpw3CzU5Sci0a+jVUg0lT65aPOA
+Q4hTqRXp2V5WeLM6ACERpNlsrp2Hi6GBpPYk9VWLbYRAvFcWyoGS6Q+pxFNEcq4A
+TPVNPxRcEsL6srCO5kP3QhkXZNQqddrJm1jtwxgRwOdihgl5bz70vstJ3Etuou/I
+TuvPIs+302HcV784dDLOP8UeW3s1i9YnestOOST0mziTAgMBAAE=
 -----END PUBLIC KEY-----"""
-fingerprint = "c62b2beed529242a4e2db359750ea6d1d470779b213ceca7f28b03a76c9fdcd8"
+fingerprint = "0a43ada96c0502be63c36c3fbdcb6977c3ded5289a8993d3c5427894fdd6d0a2"
 
 
 def replace_once(old: str, new: str, label: str) -> None:
