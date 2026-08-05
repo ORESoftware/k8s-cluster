@@ -1,16 +1,21 @@
-name: Reconcile organization Projects and docs with rate-aware evidence once
+name: Reconcile organization Projects, docs, and sealed repository gaps once
 
 on:
   push:
     branches: [main]
     paths:
       - .github/workflows/ops-sync-org-project-docs-rate-aware-once.yml
+      - .github/workflows/encrypted-credential-handoff-contract.yml
+      - scripts/ops/receive_encrypted_github_credential.sh
+      - scripts/ops/test_receive_encrypted_github_credential.py
       - scripts/ops/sync_org_project_docs_rate_aware.py
       - scripts/ops/test_sync_org_project_docs_rate_aware.py
       - scripts/ops/sync_org_project_docs.sh
       - scripts/ops/upsert_managed_markdown_block.py
       - scripts/ops/prepare_org_project_docs_reconciler.py
       - scripts/ops/test_upsert_managed_markdown_block.py
+      - scripts/ops/publish_missing_org_repositories_current.py
+      - scripts/ops/test_private_fleet_publisher_contract.py
       - ops/portfolio/github-linear-project-registry.tsv
   workflow_dispatch:
 
@@ -33,10 +38,14 @@ jobs:
     env:
       REPOSITORY: ${{ github.repository }}
       DEFAULT_BRANCH: main
-      HANDSHAKE_NONCE: 8d5af9c2f0ed4eb59114af267691037a
-      PUBLIC_KEY_PATH: .github/tmp/org-project-docs-rate-aware-8d5af9c2f0ed4eb59114af267691037a.pub.pem
-      CIPHERTEXT_PATH: .github/tmp/org-project-docs-rate-aware-8d5af9c2f0ed4eb59114af267691037a.enc.b64
-      EVIDENCE_DIR: ops/evidence/org-project-docs-rate-aware
+      HANDSHAKE_NONCE: 8e756ec3c4fe4a4ca780bc9774d99aa1
+      PUBLIC_KEY_PATH: .github/tmp/fleet-reconcile-8e756ec3c4fe4a4ca780bc9774d99aa1.pub.pem
+      CIPHERTEXT_PATH: .github/tmp/fleet-reconcile-8e756ec3c4fe4a4ca780bc9774d99aa1.enc.b64
+      PROJECT_EVIDENCE_DIR: ops/evidence/org-project-docs-rate-aware
+      REPOSITORY_EVIDENCE_DIR: ops/evidence/missing-organization-repositories
+      MIN_CORE_REMAINING: 2500
+      MIN_GRAPHQL_REMAINING: 500
+      MAX_RATE_WAIT_SECONDS: 10800
 
     steps:
       - name: Check out exact trusted main commit
@@ -51,147 +60,97 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          python3 scripts/ops/prepare_org_project_docs_reconciler.py
-          bash -n scripts/ops/sync_org_project_docs.sh
-          python3 scripts/ops/test_upsert_managed_markdown_block.py -v
-
-      - name: Bind exact trusted main to one-time encrypted credential
-        shell: bash
-        env:
-          GITHUB_TOKEN_VALUE: ${{ github.token }}
-        run: |
-          set -Eeuo pipefail
-          umask 077
-
           test "$GITHUB_REPOSITORY" = ORESoftware/k8s-cluster
           test "$GITHUB_REF" = refs/heads/main
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 scripts/ops/prepare_org_project_docs_reconciler.py
+          bash -n scripts/ops/sync_org_project_docs.sh
+          bash -n scripts/ops/receive_encrypted_github_credential.sh
+          python3 scripts/ops/test_upsert_managed_markdown_block.py -v
 
-          repo_api="https://api.github.com/repos/${REPOSITORY}"
+      - name: Receive encrypted credential after GitHub API quota recovers
+        shell: bash
+        env:
+          GITHUB_TOKEN_VALUE: ${{ github.token }}
+        run: bash scripts/ops/receive_encrypted_github_credential.sh
 
-          repo_api_call() {
-            local method="$1"
-            local url="$2"
-            local data="${3:-}"
-            if [[ -n "$data" ]]; then
-              curl --fail-with-body --silent --show-error \
-                --request "$method" \
-                --url "$url" \
-                --header "Accept: application/vnd.github+json" \
-                --header "Authorization: Bearer ${GITHUB_TOKEN_VALUE}" \
-                --header "X-GitHub-Api-Version: 2022-11-28" \
-                --data-binary "$data"
-            else
-              curl --fail-with-body --silent --show-error \
-                --request "$method" \
-                --url "$url" \
-                --header "Accept: application/vnd.github+json" \
-                --header "Authorization: Bearer ${GITHUB_TOKEN_VALUE}" \
-                --header "X-GitHub-Api-Version: 2022-11-28"
-            fi
-          }
-
-          put_file() {
-            local path="$1"
-            local source_file="$2"
-            local message="$3"
-            local content payload
-            content="$(base64 -w0 "$source_file")"
-            payload="$(jq -nc \
-              --arg message "$message" \
-              --arg content "$content" \
-              --arg branch "$DEFAULT_BRANCH" \
-              '{message:$message,content:$content,branch:$branch}')"
-            repo_api_call PUT "${repo_api}/contents/${path}" "$payload" >/dev/null
-          }
-
-          delete_file_if_present() {
-            local path="$1"
-            local message="$2"
-            local metadata sha payload
-            if metadata="$(repo_api_call GET "${repo_api}/contents/${path}?ref=${DEFAULT_BRANCH}" 2>/dev/null)"; then
-              sha="$(jq -r '.sha // empty' <<<"$metadata")"
-              if [[ -n "$sha" ]]; then
-                payload="$(jq -nc \
-                  --arg message "$message" \
-                  --arg sha "$sha" \
-                  --arg branch "$DEFAULT_BRANCH" \
-                  '{message:$message,sha:$sha,branch:$branch}')"
-                repo_api_call DELETE "${repo_api}/contents/${path}" "$payload" >/dev/null || true
-              fi
-            fi
-          }
-
-          cleanup_credentials() {
-            delete_file_if_present "$PUBLIC_KEY_PATH" "ci: remove expired rate-aware Project key"
-            delete_file_if_present "$CIPHERTEXT_PATH" "ci: remove encrypted rate-aware Project credential"
-            rm -f \
-              /tmp/org-project-rate-aware-private.pem \
-              /tmp/org-project-rate-aware-public.pem \
-              /tmp/org-project-rate-aware-token.enc \
-              /tmp/org-project-rate-aware-token.txt
-          }
-          trap cleanup_credentials EXIT
-
-          openssl genpkey \
-            -algorithm RSA \
-            -pkeyopt rsa_keygen_bits:4096 \
-            -out /tmp/org-project-rate-aware-private.pem >/dev/null 2>&1
-          openssl pkey \
-            -in /tmp/org-project-rate-aware-private.pem \
-            -pubout \
-            -out /tmp/org-project-rate-aware-public.pem >/dev/null 2>&1
-
-          put_file \
-            "$PUBLIC_KEY_PATH" \
-            /tmp/org-project-rate-aware-public.pem \
-            "ci: publish ephemeral rate-aware Project key"
-
-          ciphertext=""
-          for _ in $(seq 1 360); do
-            if metadata="$(repo_api_call GET "${repo_api}/contents/${CIPHERTEXT_PATH}?ref=${DEFAULT_BRANCH}" 2>/dev/null)"; then
-              ciphertext="$(jq -r '.content // empty' <<<"$metadata" \
-                | tr -d '\n' \
-                | base64 -d \
-                | tr -d '\r\n')"
-              [[ -z "$ciphertext" ]] || break
-            fi
-            sleep 5
-          done
-
-          if [[ -z "$ciphertext" ]]; then
-            printf 'encrypted credential was not received for handshake %s\n' "$HANDSHAKE_NONCE" >&2
-            exit 1
-          fi
-
-          printf '%s' "$ciphertext" | base64 -d > /tmp/org-project-rate-aware-token.enc
-          openssl pkeyutl \
-            -decrypt \
-            -inkey /tmp/org-project-rate-aware-private.pem \
-            -in /tmp/org-project-rate-aware-token.enc \
-            -pkeyopt rsa_padding_mode:oaep \
-            -pkeyopt rsa_oaep_md:sha256 \
-            -pkeyopt rsa_mgf1_md:sha256 \
-            > /tmp/org-project-rate-aware-token.txt
-
-          USER_TOKEN="$(tr -d '\r\n' < /tmp/org-project-rate-aware-token.txt)"
-          test -n "$USER_TOKEN"
-          test "${#USER_TOKEN}" -ge 20
-          echo "::add-mask::$USER_TOKEN"
-          printf 'GH_TOKEN=%s\n' "$USER_TOKEN" >> "$GITHUB_ENV"
-
-          cleanup_credentials
-          trap - EXIT
-
-      - name: Run fail-closed reconciliation contract tests
-        run: python3 scripts/ops/test_sync_org_project_docs_rate_aware.py -v
-
-      - name: Reconcile all registered organizations
+      - name: Run fail-closed Project and repository publication contracts
         shell: bash
         run: |
           set -Eeuo pipefail
-          rm -rf "$EVIDENCE_DIR"
+          python3 scripts/ops/test_receive_encrypted_github_credential.py -v
+          python3 scripts/ops/test_sync_org_project_docs_rate_aware.py -v
+          python3 -m py_compile \
+            scripts/ops/sync_org_project_docs_rate_aware.py \
+            scripts/ops/publish_missing_org_repositories.py \
+            scripts/ops/publish_missing_org_repositories_current.py \
+            scripts/ops/private_repository_creation.py \
+            scripts/ops/repository_fleet_visibility.py \
+            scripts/ops/repository_fleet_remote_state.py
+          python3 scripts/ops/test_repository_fleet_visibility.py -v
+          python3 scripts/ops/test_repository_fleet_remote_state.py -v
+          python3 scripts/ops/test_private_fleet_publisher_contract.py -v
+
+      - name: Publish only sealed missing repositories and verify preserved histories
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf "$REPOSITORY_EVIDENCE_DIR"
+          mkdir -p "$REPOSITORY_EVIDENCE_DIR"
+          python3 scripts/ops/publish_missing_org_repositories_current.py \
+            2>&1 | tee "$REPOSITORY_EVIDENCE_DIR/publisher.log"
+          grep -F 'VERIFIED private canonical fleet remote state' \
+            "$REPOSITORY_EVIDENCE_DIR/publisher.log"
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          targets = [
+              "StreemPilot/streempilot-media-router.rs",
+              "hypesiege/hypesiege-scheduler.rs",
+              "hypesiege/hypesiege-publishing-worker.rs",
+              "hypesiege/hypesiege-analytics.rs",
+          ]
+          evidence = []
+          for full_name in targets:
+              repository = json.loads(subprocess.check_output(
+                  ["gh", "api", f"repos/{full_name}"], text=True
+              ))
+              if repository.get("private") is not True:
+                  raise SystemExit(f"{full_name} is not private")
+              if repository.get("visibility") != "private":
+                  raise SystemExit(f"{full_name} visibility is not private")
+              if repository.get("default_branch") != "main":
+                  raise SystemExit(f"{full_name} default branch is not main")
+              ref = json.loads(subprocess.check_output(
+                  ["gh", "api", f"repos/{full_name}/git/ref/heads/main"], text=True
+              ))
+              head = ref.get("object", {}).get("sha")
+              if not isinstance(head, str) or len(head) != 40:
+                  raise SystemExit(f"{full_name} has no exact main SHA")
+              evidence.append({
+                  "full_name": full_name,
+                  "repository_id": repository.get("id"),
+                  "visibility": repository.get("visibility"),
+                  "default_branch": repository.get("default_branch"),
+                  "main_sha": head,
+                  "html_url": repository.get("html_url"),
+              })
+
+          output = Path(os.environ["REPOSITORY_EVIDENCE_DIR"]) / "requested-gaps.json"
+          output.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")
+          print(f"VERIFIED_REQUESTED_GAPS {len(evidence)}/4")
+          PY
+
+      - name: Reconcile all registered organization Projects and docs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf "$PROJECT_EVIDENCE_DIR"
           python3 scripts/ops/sync_org_project_docs_rate_aware.py \
+            --evidence-dir "$PROJECT_EVIDENCE_DIR" \
             --expected-count 64 \
             --min-core-start 1800 \
             --min-graphql-start 400 \
@@ -202,15 +161,18 @@ jobs:
       - name: Revalidate exact 64-organization evidence
         run: >-
           python3 scripts/ops/sync_org_project_docs_rate_aware.py
+          --evidence-dir "$PROJECT_EVIDENCE_DIR"
           --expected-count 64
           --validate-only
 
-      - name: Upload validated reconciliation evidence
+      - name: Upload validated fleet reconciliation evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: organization-project-docs-rate-aware-${{ github.run_id }}
-          path: ops/evidence/org-project-docs-rate-aware
+          name: fleet-reconciliation-${{ github.run_id }}
+          path: |
+            ops/evidence/org-project-docs-rate-aware
+            ops/evidence/missing-organization-repositories
           if-no-files-found: warn
           retention-days: 30
           include-hidden-files: true
