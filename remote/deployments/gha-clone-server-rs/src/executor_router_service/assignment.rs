@@ -1,4 +1,12 @@
+#[path = "../indie_dispatch.rs"]
+mod indie_dispatch;
+
 use super::{security, upstream, *};
+
+struct PreparedBuildRequest {
+    validated: ValidatedBuildRequest,
+    upstream_request: Value,
+}
 
 pub(super) async fn submit_build(
     State(state): State<AppState>,
@@ -31,8 +39,8 @@ pub(super) async fn submit_build(
                 .into_response();
         }
     };
-    let validated = match validate_build_request(&request) {
-        Ok(validated) => validated,
+    let prepared = match prepare_build_request(&request) {
+        Ok(prepared) => prepared,
         Err(error) => {
             state.metrics.rejected_total.fetch_add(1, Ordering::Relaxed);
             return (
@@ -44,12 +52,16 @@ pub(super) async fn submit_build(
                 .into_response();
         }
     };
+    let PreparedBuildRequest {
+        validated,
+        upstream_request,
+    } = prepared;
     info!(
         request_id = %validated.request_id,
         repository = %validated.repository,
         revision = %validated.revision,
         profile = %validated.profile,
-        "validated fixed-profile executor request"
+        "validated immutable fixed-profile executor request"
     );
 
     if let Some(existing) = assignment_for(&state, &validated.request_id).await {
@@ -102,11 +114,30 @@ pub(super) async fn submit_build(
     let task_state = state.clone();
     let task_assignment = assignment.clone();
     tokio::spawn(async move {
-        let outcome = submit_to_executor(&task_state, &executor, &request).await;
+        let outcome = submit_to_executor(&task_state, &executor, &upstream_request).await;
         *task_assignment.outcome.lock().await = Some(outcome);
         task_assignment.notify.notify_waiters();
     });
     wait_for_outcome(assignment).await
+}
+
+fn prepare_build_request(request: &Value) -> Result<PreparedBuildRequest, String> {
+    if let Some(adapted) = indie_dispatch::adapt_dispatch(request)? {
+        return Ok(PreparedBuildRequest {
+            validated: ValidatedBuildRequest {
+                request_id: adapted.request_id,
+                repository: adapted.repository,
+                revision: adapted.revision,
+                profile: adapted.profile,
+            },
+            upstream_request: adapted.upstream_request,
+        });
+    }
+
+    Ok(PreparedBuildRequest {
+        validated: validate_build_request(request)?,
+        upstream_request: request.clone(),
+    })
 }
 
 async fn assignment_for(state: &AppState, request_id: &str) -> Option<Arc<Assignment>> {
