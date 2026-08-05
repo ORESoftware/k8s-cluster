@@ -59,11 +59,7 @@ pub struct MeshyJobError {
 }
 
 impl MeshyJobError {
-    pub fn new(
-        code: impl Into<String>,
-        message: impl Into<String>,
-        retryable: bool,
-    ) -> Self {
+    pub fn new(code: impl Into<String>, message: impl Into<String>, retryable: bool) -> Self {
         Self {
             code: code.into(),
             message: truncate_chars(&message.into(), MAX_PROVIDER_ERROR_CHARS),
@@ -244,9 +240,7 @@ impl MeshyJobRequest {
             ));
         }
         validate_object_key(&self.archive_prefix)?;
-        if !(MIN_MAX_ARTIFACT_BYTES..=MAX_MAX_ARTIFACT_BYTES)
-            .contains(&self.max_artifact_bytes)
-        {
+        if !(MIN_MAX_ARTIFACT_BYTES..=MAX_MAX_ARTIFACT_BYTES).contains(&self.max_artifact_bytes) {
             return Err(MeshyJobError::new(
                 "invalid_artifact_limit",
                 format!(
@@ -486,12 +480,8 @@ pub enum SubmissionOutcome {
 
 #[derive(Debug)]
 pub enum PollOutcome {
-    Waiting {
-        checkpoint: MeshyJobCheckpoint,
-    },
-    Succeeded {
-        checkpoint: MeshyJobCheckpoint,
-    },
+    Waiting { checkpoint: MeshyJobCheckpoint },
+    Succeeded { checkpoint: MeshyJobCheckpoint },
 }
 
 #[derive(Debug)]
@@ -760,11 +750,10 @@ impl MeshyJobEngine {
             ));
         }
 
-        let next = request.target_formats.iter().find(|format| {
-            !checkpoint
-                .archived_artifacts
-                .contains_key(format.as_key())
-        });
+        let next = request
+            .target_formats
+            .iter()
+            .find(|format| !checkpoint.archived_artifacts.contains_key(format.as_key()));
         let Some(format) = next.copied() else {
             return Ok(ArchiveOutcome::Complete {
                 result: self.result(identity, request, &checkpoint)?,
@@ -836,10 +825,7 @@ impl MeshyJobEngine {
             ));
         }
         for format in &request.target_formats {
-            if !checkpoint
-                .archived_artifacts
-                .contains_key(format.as_key())
-            {
+            if !checkpoint.archived_artifacts.contains_key(format.as_key()) {
                 return Err(MeshyJobError::new(
                     "artifact_archive_incomplete",
                     format!("artifact {} has not been archived", format.as_key()),
@@ -1018,11 +1004,7 @@ fn map_meshy_error(error: MeshyError, during_submit: bool) -> MeshyJobError {
             false,
         ),
         MeshyError::Transport(_) => {
-            let error = MeshyJobError::new(
-                "meshy_transport_error",
-                "Meshy transport failed",
-                true,
-            );
+            let error = MeshyJobError::new("meshy_transport_error", "Meshy transport failed", true);
             if during_submit {
                 error.ambiguous()
             } else {
@@ -1061,11 +1043,7 @@ fn map_meshy_error(error: MeshyError, during_submit: bool) -> MeshyJobError {
             }
         }
         MeshyError::Timeout { .. } => {
-            let error = MeshyJobError::new(
-                "meshy_timeout",
-                "Meshy task operation timed out",
-                true,
-            );
+            let error = MeshyJobError::new("meshy_timeout", "Meshy task operation timed out", true);
             if during_submit {
                 error.ambiguous()
             } else {
@@ -1116,9 +1094,9 @@ impl ArtifactUrlPolicy {
                 .to_ascii_lowercase();
             if suffix.is_empty()
                 || suffix.len() > 253
-                || suffix.bytes().any(|byte| {
-                    !(byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.'))
-                })
+                || suffix
+                    .bytes()
+                    .any(|byte| !(byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.')))
             {
                 return Err(MeshyJobError::new(
                     "invalid_artifact_host_policy",
@@ -1195,9 +1173,10 @@ impl ArtifactUrlPolicy {
             ));
         }
         let host = host.to_ascii_lowercase();
-        let allowed = self.allowed_host_suffixes.iter().any(|suffix| {
-            host == *suffix || host.ends_with(&format!(".{suffix}"))
-        });
+        let allowed = self
+            .allowed_host_suffixes
+            .iter()
+            .any(|suffix| host == *suffix || host.ends_with(&format!(".{suffix}")));
         if !allowed {
             return Err(MeshyJobError::new(
                 "artifact_host_not_allowed",
@@ -1325,7 +1304,14 @@ impl ArtifactFetcher for BoundedHttpFetcher {
             .headers()
             .get(CONTENT_TYPE)
             .and_then(|value| value.to_str().ok())
-            .map(|value| value.split(';').next().unwrap_or(value).trim().to_ascii_lowercase())
+            .map(|value| {
+                value
+                    .split(';')
+                    .next()
+                    .unwrap_or(value)
+                    .trim()
+                    .to_ascii_lowercase()
+            })
             .filter(|value| !value.is_empty());
 
         let staging_name = format!(
@@ -1352,15 +1338,13 @@ impl ArtifactFetcher for BoundedHttpFetcher {
                     true,
                 )
             })?;
-            byte_count = byte_count
-                .checked_add(chunk.len() as u64)
-                .ok_or_else(|| {
-                    MeshyJobError::new(
-                        "artifact_size_overflow",
-                        "artifact byte count overflowed",
-                        false,
-                    )
-                })?;
+            byte_count = byte_count.checked_add(chunk.len() as u64).ok_or_else(|| {
+                MeshyJobError::new(
+                    "artifact_size_overflow",
+                    "artifact byte count overflowed",
+                    false,
+                )
+            })?;
             if byte_count > request.max_bytes {
                 return Err(MeshyJobError::new(
                     "artifact_too_large",
@@ -1428,9 +1412,7 @@ impl DirectoryArchive {
         uri_prefix: impl Into<String>,
     ) -> MeshyJobResultValue<Self> {
         let uri_prefix = uri_prefix.into();
-        if uri_prefix.trim().is_empty()
-            || uri_prefix.bytes().any(|byte| byte.is_ascii_control())
-        {
+        if uri_prefix.trim().is_empty() || uri_prefix.bytes().any(|byte| byte.is_ascii_control()) {
             return Err(MeshyJobError::new(
                 "invalid_archive_uri_prefix",
                 "archive URI prefix must not be empty or contain control characters",
@@ -1451,11 +1433,7 @@ impl DirectoryArchive {
         Self::new(root, uri_prefix)
     }
 
-    fn receipt(
-        &self,
-        object_key: &str,
-        artifact: &FetchedArtifact,
-    ) -> ArchivedArtifact {
+    fn receipt(&self, object_key: &str, artifact: &FetchedArtifact) -> ArchivedArtifact {
         ArchivedArtifact {
             object_key: object_key.to_string(),
             archive_uri: format!("{}/{}", self.uri_prefix, object_key),
@@ -1501,10 +1479,8 @@ impl ArtifactArchive for DirectoryArchive {
                     false,
                 )
             })?;
-        let temporary = final_path.with_file_name(format!(
-            ".{file_name}.{}.partial",
-            &artifact.sha256[..16]
-        ));
+        let temporary =
+            final_path.with_file_name(format!(".{file_name}.{}.partial", &artifact.sha256[..16]));
         tokio::fs::copy(&artifact.path, &temporary)
             .await
             .map_err(|_| {
@@ -1551,10 +1527,7 @@ impl ArtifactArchive for DirectoryArchive {
     }
 }
 
-async fn verify_existing_file(
-    path: &Path,
-    expected: &FetchedArtifact,
-) -> MeshyJobResultValue<()> {
+async fn verify_existing_file(path: &Path, expected: &FetchedArtifact) -> MeshyJobResultValue<()> {
     let (sha256, byte_count) = hash_file(path).await?;
     if sha256 != expected.sha256 || byte_count != expected.byte_count {
         return Err(MeshyJobError::new(
@@ -1644,9 +1617,7 @@ async fn validate_fetched_artifact(
     let valid = match format {
         TargetFormat::Glb => prefix.starts_with(b"glTF"),
         TargetFormat::ThreeMf | TargetFormat::Usdz => prefix.starts_with(b"PK"),
-        TargetFormat::Stl => {
-            artifact.byte_count >= 84 || prefix.starts_with(b"solid")
-        }
+        TargetFormat::Stl => artifact.byte_count >= 84 || prefix.starts_with(b"solid"),
         TargetFormat::Obj | TargetFormat::Fbx => !prefix.is_empty(),
     };
     if !valid {
@@ -1902,11 +1873,7 @@ mod tests {
                 .path()
                 .join(format!("{}.bin", request.format.as_key()));
             tokio::fs::write(&path, bytes).await.map_err(|error| {
-                MeshyJobError::new(
-                    "mock_artifact_write_failed",
-                    error.to_string(),
-                    false,
-                )
+                MeshyJobError::new("mock_artifact_write_failed", error.to_string(), false)
             })?;
             Ok(FetchedArtifact {
                 path,
@@ -1958,10 +1925,22 @@ mod tests {
             status: ProviderTaskStatus::Succeeded,
             progress: 100,
             artifacts: BTreeMap::from([
-                ("glb".to_string(), "https://cdn.meshy.example/model.glb".to_string()),
-                ("stl".to_string(), "https://cdn.meshy.example/model.stl".to_string()),
-                ("3mf".to_string(), "https://cdn.meshy.example/model.3mf".to_string()),
-                ("obj".to_string(), "https://cdn.meshy.example/unrequested.obj".to_string()),
+                (
+                    "glb".to_string(),
+                    "https://cdn.meshy.example/model.glb".to_string(),
+                ),
+                (
+                    "stl".to_string(),
+                    "https://cdn.meshy.example/model.stl".to_string(),
+                ),
+                (
+                    "3mf".to_string(),
+                    "https://cdn.meshy.example/model.3mf".to_string(),
+                ),
+                (
+                    "obj".to_string(),
+                    "https://cdn.meshy.example/unrequested.obj".to_string(),
+                ),
             ]),
             thumbnail_url: None,
             expires_at: Some(1_800_000_000),
@@ -1973,7 +1952,9 @@ mod tests {
     #[tokio::test]
     async fn persisted_intent_cannot_be_resubmitted_after_process_loss() {
         let engine = MeshyJobEngine;
-        let preparation = engine.prepare(&identity(), &request(), 100).expect("prepare");
+        let preparation = engine
+            .prepare(&identity(), &request(), 100)
+            .expect("prepare");
         let checkpoint = match preparation {
             Preparation::Submit { checkpoint, .. } => checkpoint,
             Preparation::Adopted { .. } => panic!("unexpected adopted task"),
@@ -2006,8 +1987,7 @@ mod tests {
         let provider = MockProvider {
             submits: Arc::new(AtomicUsize::new(0)),
             submit_error: Some(
-                MeshyJobError::new("meshy_transport_error", "transport failed", true)
-                    .ambiguous(),
+                MeshyJobError::new("meshy_transport_error", "transport failed", true).ambiguous(),
             ),
             snapshot: succeeded_snapshot(),
         };
@@ -2054,7 +2034,11 @@ mod tests {
             SubmissionOutcome::Submitted { checkpoint } => checkpoint,
             SubmissionOutcome::Ambiguous { .. } => panic!("unexpected ambiguity"),
         };
-        let mut checkpoint = match engine.poll(&provider, &request(), checkpoint).await.unwrap() {
+        let mut checkpoint = match engine
+            .poll(&provider, &request(), checkpoint)
+            .await
+            .unwrap()
+        {
             PollOutcome::Succeeded { checkpoint } => checkpoint,
             PollOutcome::Waiting { .. } => panic!("unexpected waiting"),
         };
@@ -2124,7 +2108,9 @@ mod tests {
         assert_eq!(first, second);
 
         let different = staging.path().join("different.glb");
-        tokio::fs::write(&different, b"glTF different").await.unwrap();
+        tokio::fs::write(&different, b"glTF different")
+            .await
+            .unwrap();
         let conflict = FetchedArtifact {
             path: different,
             sha256: sha256_hex(b"glTF different"),
@@ -2144,7 +2130,9 @@ mod tests {
         assert!(policy
             .validate("https://cdn.meshy.example/model.glb")
             .is_ok());
-        assert!(policy.validate("http://cdn.meshy.example/model.glb").is_err());
+        assert!(policy
+            .validate("http://cdn.meshy.example/model.glb")
+            .is_err());
         assert!(policy.validate("https://127.0.0.1/model.glb").is_err());
         assert!(policy
             .validate("https://cdn.meshy.example@127.0.0.1/model.glb")
