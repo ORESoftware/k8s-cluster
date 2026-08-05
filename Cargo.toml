@@ -37,7 +37,7 @@ fiducia-client = { git = "https://github.com/fiducia-cloud/fiducia-clients.git",
 hex = "0.4.3"
 hmac = "0.13.0"
 rand = "0.10.1"
-reqwest = { version = "0.13.3", default-features = false, features = ["json", "rustls", "http2"] }
+reqwest = { version = "0.13.3", default-features = false, features = ["json", "rustls", "http2", "form"] }
 serde_urlencoded = "0.7"
 rust_decimal = { version = "1.42.0", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
