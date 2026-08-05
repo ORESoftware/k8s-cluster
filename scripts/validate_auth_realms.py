@@ -35,8 +35,10 @@ REQUIRED_REALM_SOURCE_TOKENS = {
     'required_env("AUTH_SIGNING_KEY_REF")',
     'required_env("AUTH_SESSION_COOKIE_NAME")',
     'required_env("AUTH_REALM_SUPABASE_PROJECT_REF")',
+    'parse_bool("AUTH_REALM_ALLOW_LOOPBACK", false)',
     "AUTH_APPLICATION_DATABASE_URL is forbidden in shared-auth",
-    "provider_refs.len() != 1",
+    "provider_refs.len() == 1",
+    "let loopback_without_provider = development_loopback && provider_refs.is_empty();",
     "AUTH_DATABASE_URL must target the selected realm PostgreSQL endpoint",
 }
 
@@ -53,6 +55,8 @@ def validate_contract(
         errors.append("schemaVersion must equal 1")
     if contract.get("applicationDatabaseFallbackAllowed") is not False:
         errors.append("applicationDatabaseFallbackAllowed must be false")
+    if contract.get("loopbackAllowedInProduction") is not False:
+        errors.append("loopbackAllowedInProduction must be false")
     if contract.get("providerProjectsPerRealm") != 1:
         errors.append("providerProjectsPerRealm must equal 1")
     if contract.get("productAuthorizationOwner") != "application-databases":
