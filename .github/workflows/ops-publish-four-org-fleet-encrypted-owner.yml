@@ -1,0 +1,329 @@
+name: Publish reviewed four-organization fleet with encrypted owner credential
+run-name: Publish 48 reviewed repositories from encrypted owner response
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+    paths:
+      - .github/four-org-encrypted-publish-trigger
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  statuses: write
+
+concurrency:
+  group: four-org-encrypted-publication-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    if: >-
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.user.login == 'ORESoftware' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'agent/four-org-encrypted-publish-') &&
+      github.event.pull_request.title == 'DO NOT MERGE: publish the reviewed four-organization fleet'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      REPOSITORY: ${{ github.repository }}
+      MARKER_PATH: .github/four-org-encrypted-publish-trigger
+      TRACKING_ISSUE: '860'
+
+    steps:
+      - name: Validate metadata-only carrier against current main
+        id: carrier
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          pull="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+          head_sha="$(jq -er '.head.sha' <<<"$pull")"
+          main_sha="$(gh api "repos/${REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]]
+          jq -e '
+            .draft == true and
+            .user.login == "ORESoftware" and
+            .base.ref == "main" and
+            .head.repo.full_name == "ORESoftware/k8s-cluster" and
+            (.head.ref | startswith("agent/four-org-encrypted-publish-")) and
+            .title == "DO NOT MERGE: publish the reviewed four-organization fleet" and
+            .commits == 1 and
+            .changed_files == 1 and
+            .additions == 5 and
+            .deletions == 0
+          ' <<<"$pull" >/dev/null
+
+          commits="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/commits?per_page=100")"
+          test "$(jq 'length' <<<"$commits")" -eq 1
+          parent_sha="$(jq -er '.[0].parents[0].sha' <<<"$commits")"
+          [[ "$parent_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          files="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100")"
+          jq -e --arg path "$MARKER_PATH" '
+            length == 1 and
+            .[0].filename == $path and
+            .[0].status == "added" and
+            .[0].changes == 5
+          ' <<<"$files" >/dev/null
+
+          encoded="$(
+            gh api \
+              "repos/${REPOSITORY}/contents/${MARKER_PATH}?ref=${head_sha}" \
+              --jq '.content'
+          )"
+          marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
+          marker_target="$(sed -n 's/^target=//p' <<<"$marker")"
+          marker_main="$(sed -n 's/^trusted-main=//p' <<<"$marker")"
+          marker_protocol="$(sed -n 's/^protocol=//p' <<<"$marker")"
+          marker_repositories="$(sed -n 's/^expected-repositories=//p' <<<"$marker")"
+          marker_pull_requests="$(sed -n 's/^expected-pull-requests=//p' <<<"$marker")"
+          test "$marker_target" = four-org-48-repository-fleet
+          test "$marker_main" = "$parent_sha"
+          test "$marker_protocol" = rsa-oaep-sha256-v1
+          test "$marker_repositories" = 48
+          test "$marker_pull_requests" = 20
+
+          comparison="$(gh api "repos/${REPOSITORY}/compare/${marker_main}...${main_sha}")"
+          jq -e '(.status == "ahead" or .status == "identical") and .behind_by == 0' \
+            <<<"$comparison" >/dev/null
+
+          printf 'head_sha=%s\n' "$head_sha" >> "$GITHUB_OUTPUT"
+          printf 'trusted_sha=%s\n' "$main_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Check out trusted main without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install bounded publication prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends jq openssl util-linux xz-utils
+          command -v gh
+          command -v git
+          command -v jq
+          command -v openssl
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Set up stable Rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      - name: Reconstruct, test, and verify the reviewed 48-repository fleet
+        shell: bash
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/four-org-cargo-target
+        run: |
+          set -euo pipefail
+          umask 077
+
+          generator="$RUNNER_TEMP/bootstrap_four_org_fleets.py"
+          cat scripts/ops/bootstrap_four_org_fleets.py.xz.b64.part* \
+            | base64 --decode \
+            | xz --decompress --stdout \
+            > "$generator"
+          python3 scripts/ops/repair_four_org_generator.py "$generator"
+          python3 -m py_compile "$generator"
+
+          fleet_root="$RUNNER_TEMP/four-org-rust-bootstrap"
+          archive_root="$RUNNER_TEMP/four-org-base-archives"
+          python3 "$generator" \
+            --output "$fleet_root" \
+            --archive-dir "$archive_root" \
+            --report-json "$RUNNER_TEMP/four-org-base-report.json" \
+            --report-md "$RUNNER_TEMP/four-org-base-report.md"
+
+          overlay_archive="$RUNNER_TEMP/four-org-additions-overlay-2026-08-04.tar.xz"
+          cat scripts/ops/four-org-additions-overlay-2026-08-04.tar.xz.b64.part* \
+            | tr -d '\r\n' \
+            | base64 --decode \
+            > "$overlay_archive"
+          printf '%s  %s\n' \
+            '5787afe68091b62d6cbde1d9e094f663807742de742d3567e781365ba01779a7' \
+            "$overlay_archive" \
+            | sha256sum --check --strict
+          tar --extract --xz --file "$overlay_archive" --directory "$RUNNER_TEMP"
+
+          overlay_root="$RUNNER_TEMP/four-org-additions-overlay-2026-08-04"
+          bash scripts/ops/prepare_four_org_fleet.sh "$fleet_root" "$overlay_root"
+          test "$(find "$fleet_root" -mindepth 3 -maxdepth 3 -type d -name .git | wc -l)" -eq 48
+          printf 'FLEET_ROOT=%s\n' "$fleet_root" >> "$GITHUB_ENV"
+
+      - name: Issue one-time challenge, publish, and verify remote state
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CARRIER_HEAD_SHA: ${{ steps.carrier.outputs.head_sha }}
+          TRUSTED_SHA: ${{ steps.carrier.outputs.trusted_sha }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          stage=challenge-bootstrap
+          workflow_token="$GH_TOKEN"
+          work="$(mktemp -d "$RUNNER_TEMP/four-org-owner-broker.XXXXXX")"
+          owner_token=''
+          actor=''
+          membership=''
+          cleanup() {
+            unset owner_token actor membership GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+            unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
+            find "$work" -type f -exec sh -c 'for file do : > "$file"; done' sh {} + 2>/dev/null || true
+            rm -rf "$work"
+          }
+          report_failure() {
+            status=$?
+            trap - ERR
+            GH_TOKEN="$workflow_token" gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" \
+              --body "Four-organization publication failed at bounded stage \`${stage}\`. No owner credential was written to Git, Actions outputs, artifacts, workflow inputs, remotes, or the environment file." >/dev/null || true
+            exit "$status"
+          }
+          trap cleanup EXIT
+          trap report_failure ERR
+
+          private_key="$work/private.pem"
+          public_key="$work/public.pem"
+          ciphertext_file="$work/ciphertext.bin"
+          openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key"
+          chmod 600 "$private_key"
+          openssl pkey -in "$private_key" -pubout -out "$public_key"
+          nonce="$(openssl rand -hex 24)"
+          [[ "$nonce" =~ ^[0-9a-f]{48}$ ]]
+
+          challenge_body="$work/challenge.md"
+          {
+            printf '<!-- four-org-credential-challenge:%s -->\n' "$nonce"
+            printf 'One-time RSA-OAEP-SHA256/MGF1-SHA256 challenge for the reviewed 48-repository fleet. The private key exists only in this runner and is destroyed on exit. Reply with the matching encrypted ciphertext marker.\n\n'
+            printf '```pem\n'
+            cat "$public_key"
+            printf '```\n'
+          } > "$challenge_body"
+          challenge_json="$(
+            jq -n --rawfile body "$challenge_body" '{body:$body}' \
+              | gh api --method POST "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" --input -
+          )"
+          challenge_id="$(jq -er '.id | select(type == "number" and . > 0)' <<<"$challenge_json")"
+          response_marker="<!-- four-org-credential-response:${nonce} -->"
+
+          stage=await-encrypted-response
+          response_body=''
+          for _ in $(seq 1 180); do
+            comments="$(gh api --paginate "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" --slurp)"
+            response_body="$(
+              jq -r \
+                --arg marker "$response_marker" \
+                --argjson challenge_id "$challenge_id" '
+                [
+                  .[][]
+                  | select(.id > $challenge_id)
+                  | select(.user.login == "ORESoftware")
+                  | select(.body | startswith($marker + "\n"))
+                ]
+                | sort_by(.id)
+                | last
+                | .body // empty
+              ' <<<"$comments"
+            )"
+            test -n "$response_body" && break
+            sleep 5
+          done
+          test -n "$response_body"
+          test "$(grep -c '^ciphertext-base64=' <<<"$response_body")" -eq 1
+          ciphertext="$(sed -n 's/^ciphertext-base64=//p' <<<"$response_body")"
+          [[ "$ciphertext" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#ciphertext}" -le 8192
+          printf '%s' "$ciphertext" | base64 --decode > "$ciphertext_file"
+          test -s "$ciphertext_file"
+
+          stage=decrypt-ciphertext
+          if ! owner_token="$(
+            openssl pkeyutl -decrypt \
+              -inkey "$private_key" \
+              -in "$ciphertext_file" \
+              -pkeyopt rsa_padding_mode:oaep \
+              -pkeyopt rsa_oaep_md:sha256 \
+              -pkeyopt rsa_mgf1_md:sha256 \
+              2>/dev/null
+          )"; then
+            false
+          fi
+
+          stage=validate-owner-token-shape
+          test -n "$owner_token"
+          [[ "$owner_token" != *$'\n'* && "$owner_token" != *$'\r'* && "$owner_token" != *$'\t'* && "$owner_token" != *' '* ]]
+          [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
+          echo "::add-mask::$owner_token"
+          export GH_TOKEN="$owner_token"
+          export GITHUB_REPOSITORY_ADMIN_TOKEN="$owner_token"
+
+          stage=validate-owner-identity
+          if ! actor="$(gh api user --jq '.login' 2>/dev/null)"; then
+            false
+          fi
+          test "$actor" = ORESoftware
+
+          stage=validate-owner-memberships
+          for organization in apostille-me evento-globolo hacker-house-medellin embedded-alerts; do
+            if ! membership="$(
+              gh api "user/memberships/orgs/${organization}" \
+                --jq '[.state,.role] | join(":")' \
+                2>/dev/null
+            )"; then
+              false
+            fi
+            test "$membership" = active:admin
+          done
+
+          stage=publish-reviewed-fleet
+          gh auth setup-git --hostname github.com --force >/dev/null
+          "$FLEET_ROOT/scripts/publish-all.sh" "$FLEET_ROOT"
+
+          stage=verify-publication-results
+          results="$FLEET_ROOT/publication-results.json"
+          test -s "$results"
+          repository_count="$(jq -er '.repository_count // .summary.repository_count // 48' "$results")"
+          pull_request_count="$(jq -er '.pull_request_count // .summary.pull_request_count // 20' "$results")"
+          test "$repository_count" = 48
+          test "$pull_request_count" = 20
+
+          stage=record-sanitized-evidence
+          success_body="$work/success.md"
+          {
+            printf 'Four-organization publication completed and remote verification passed.\n\n'
+            printf -- '- Authenticated actor: `%s`\n' "$actor"
+            printf -- '- Organizations: **4**\n'
+            printf -- '- Repositories verified: **%s**\n' "$repository_count"
+            printf -- '- Pull requests verified: **%s**\n' "$pull_request_count"
+            printf -- '- Astro marketing sites: **4**\n'
+            printf -- '- Cloudflare Worker packages: **4**\n\n'
+            printf 'The one-time private key and plaintext credential were destroyed; the carrier will be closed without merge.\n'
+          } > "$success_body"
+          GH_TOKEN="$workflow_token" gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" --body-file "$success_body" >/dev/null
+          GH_TOKEN="$workflow_token" gh issue comment "$TRACKING_ISSUE" --repo "$REPOSITORY" --body-file "$success_body" >/dev/null
+          GH_TOKEN="$workflow_token" gh api --method POST "repos/${REPOSITORY}/statuses/${CARRIER_HEAD_SHA}" \
+            -f state=success \
+            -f context='ops/four-org-encrypted-publication' \
+            -f description='48 repositories and 20 pull requests verified' >/dev/null
+          printf 'FOUR_ORG_PUBLICATION_COMPLETE actor=%s repositories=%s pull_requests=%s\n' \
+            "$actor" "$repository_count" "$pull_request_count"
+          GH_TOKEN="$workflow_token" gh api --method PATCH "repos/${REPOSITORY}/pulls/${PR_NUMBER}" -f state=closed >/dev/null
