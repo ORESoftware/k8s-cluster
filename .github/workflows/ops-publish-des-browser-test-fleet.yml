@@ -1,0 +1,75 @@
+name: Publish DES browser test fleet
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ops-publish-des-browser-test-fleet.yml'
+      - 'scripts/ops/publish_des_browser_test_fleet.py'
+      - 'scripts/ops/des-browser-test-fleet-template.tar.gz.b64'
+      - 'docs/des-browser-test-fleet.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ops-publish-des-browser-test-fleet
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out the reviewed publisher
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Configure trusted main-branch AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Load and mask the protected GitHub publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret_json="$(aws secretsmanager get-secret-value \
+            --secret-id dd/remote-dev/agent-secrets \
+            --query SecretString \
+            --output text)"
+          token="$(jq -er '.GH_PAT | select(type == "string" and length > 0)' <<<"$secret_json")"
+          echo "::add-mask::$token"
+          printf 'GH_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+          unset token secret_json
+
+      - name: Validate publisher source and retained template
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ops/publish_des_browser_test_fleet.py
+          python3 scripts/ops/publish_des_browser_test_fleet.py
+          base64 --decode scripts/ops/des-browser-test-fleet-template.tar.gz.b64 > "$RUNNER_TEMP/des-browser-template.tar.gz"
+          echo '6622398aef1fcd6de496459cd45decfdf87daadbb51d049eb5fa27368ed49d47  '"$RUNNER_TEMP/des-browser-template.tar.gz" | sha256sum --check
+          tar -tzf "$RUNNER_TEMP/des-browser-template.tar.gz" >/dev/null
+
+      - name: Create repositories, push commits, open PRs, merge PRs, and synchronize tracking
+        run: python3 scripts/ops/publish_des_browser_test_fleet.py --execute
+
+      - name: Publish fleet summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## DES browser automation fleet'
+            echo
+            echo '- organization: `discrete-event-systems-test`'
+            echo '- repositories: `.github`, `des-route-smoke`, `des-browser-flows`, `des-gateway-compat`'
+            echo '- production owner: `discrete-event-systems/des-web.rs`'
+            echo '- execution: GitHub Actions plus `gha-indie-worker`'
+            echo '- evidence: Playwright HTML, JUnit, traces, screenshots, and videos'
+          } >> "$GITHUB_STEP_SUMMARY"
