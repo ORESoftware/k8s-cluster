@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/ops-bootstrap-des-browser-test-fleet.yml
+      - scripts/ops/bootstrap_des_browser_test_fleet.sh
   workflow_dispatch:
 
 permissions:
@@ -46,106 +47,66 @@ jobs:
           trusted_sha="$(git rev-parse HEAD)"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
 
-          remote_script="$RUNNER_TEMP/bootstrap-des-browser-test-repositories.sh"
-          cat > "$remote_script" <<'REMOTE_EOF'
-          #!/usr/bin/env bash
-          set -Eeuo pipefail
-          umask 077
-          stage=initialization
+          publisher='scripts/ops/bootstrap_des_browser_test_fleet.sh'
+          test -x "$publisher"
+          encoded_publisher="$(base64 --wrap=0 "$publisher")"
+
+          remote_command=$(cat <<REMOTE_COMMAND
+          set -euo pipefail
           readonly GH_VERSION=2.93.0
           readonly GH_ARCHIVE_SHA256=02d1290eba130e0b896f3709ffff22e1c75a51475ddb70476a85abc6b5807af0
-
           cleanup() {
-            unset GH_TOKEN GITHUB_TOKEN DES_GATEWAY_AUTH encoded_pat encoded_auth
-            rm -rf "/tmp/gh_${GH_VERSION}_linux_amd64" /tmp/gh-des-bootstrap.tar.gz
+            rm -rf "/tmp/gh_\${GH_VERSION}_linux_amd64" /tmp/gh-des-bootstrap.tar.gz \
+              /tmp/bootstrap-des-browser-test-fleet.sh /tmp/bootstrap-des-browser-test-fleet.log
           }
           trap cleanup EXIT
-          trap 'rc=$?; printf "bootstrap-stage=%s status=failed rc=%s\n" "$stage" "$rc" >&2; exit "$rc"' ERR
-
-          stage=tool-preflight
-          command -v kubectl >/dev/null
-          test -r /etc/kubernetes/admin.conf
           if ! command -v gh >/dev/null 2>&1; then
-            command -v curl >/dev/null
-            command -v sha256sum >/dev/null
-            command -v tar >/dev/null
             curl --fail --silent --show-error --location \
               --output /tmp/gh-des-bootstrap.tar.gz \
-              "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz"
-            printf '%s  %s\n' "$GH_ARCHIVE_SHA256" /tmp/gh-des-bootstrap.tar.gz | sha256sum --check --status
+              "https://github.com/cli/cli/releases/download/v\${GH_VERSION}/gh_\${GH_VERSION}_linux_amd64.tar.gz"
+            printf '%s  %s\n' "\$GH_ARCHIVE_SHA256" /tmp/gh-des-bootstrap.tar.gz | sha256sum --check --status
             tar -xzf /tmp/gh-des-bootstrap.tar.gz -C /tmp
-            export PATH="/tmp/gh_${GH_VERSION}_linux_amd64/bin:$PATH"
+            export PATH="/tmp/gh_\${GH_VERSION}_linux_amd64/bin:\$PATH"
           fi
-          gh --version >/dev/null
-          printf 'bootstrap-stage=%s status=passed\n' "$stage"
+          printf '%s' '$encoded_publisher' | base64 --decode > /tmp/bootstrap-des-browser-test-fleet.sh
+          chmod 700 /tmp/bootstrap-des-browser-test-fleet.sh
+          set +e
+          /tmp/bootstrap-des-browser-test-fleet.sh > /tmp/bootstrap-des-browser-test-fleet.log 2>&1
+          status=\$?
+          set -e
+          tail -c 20000 /tmp/bootstrap-des-browser-test-fleet.log 2>/dev/null || true
+          exit \$status
+          REMOTE_COMMAND
+          )
 
-          stage=protected-credentials
-          encoded_pat="$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}')"
-          encoded_auth="$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n default get secret dd-remote-auth-secrets -o jsonpath='{.data.DD_AUTH_COOKIE_VALUE}')"
-          test -n "$encoded_pat"
-          test -n "$encoded_auth"
-          GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode)"
-          DES_GATEWAY_AUTH="$(printf '%s' "$encoded_auth" | base64 --decode)"
-          unset encoded_pat encoded_auth
-          test -n "$GH_TOKEN"
-          test -n "$DES_GATEWAY_AUTH"
-          export GH_TOKEN GITHUB_TOKEN="$GH_TOKEN"
-          printf 'bootstrap-stage=%s status=passed\n' "$stage"
-
-          stage=github-identity
-          test "$(gh api user --jq .login)" = ORESoftware
-          test "$(gh api user/memberships/orgs/discrete-event-systems-test --jq '.role + ":" + .state')" = admin:active
-          printf 'bootstrap-stage=%s status=passed\n' "$stage"
-
-          ensure_repo() {
-            local name="$1"
-            local description="$2"
-            local full="discrete-event-systems-test/$name"
-            stage="repository:$full"
-            if ! gh repo view "$full" >/dev/null 2>&1; then
-              gh repo create "$full" --public --description "$description" --add-readme
-            fi
-            gh api -X PATCH "repos/$full" -f has_issues=true -f has_projects=true -f has_wiki=false -f delete_branch_on_merge=true >/dev/null
-            if [[ "$name" != .github ]]; then
-              gh secret set DES_GATEWAY_AUTH --repo "$full" --body "$DES_GATEWAY_AUTH"
-            fi
-            printf 'bootstrap-stage=%s status=passed\n' "$stage"
-          }
-
-          ensure_project() {
-            local owner="$1"
-            local number
-            stage="project:$owner"
-            number="$(gh project list --owner "$owner" --format json --jq '.projects[] | select(.title == "DES Browser Automation") | .number' | head -1)"
-            if [[ -z "$number" ]]; then
-              number="$(gh project create --owner "$owner" --title 'DES Browser Automation' --format json --jq .number)"
-            fi
-            printf 'bootstrap-stage=%s status=passed url=https://github.com/orgs/%s/projects/%s\n' "$stage" "$owner" "$number"
-          }
-
-          ensure_repo des-web-playwright-e2e 'Playwright browser contracts for des-web across GitHub Actions and gha-indie-worker.'
-          ensure_repo des-web-puppeteer-e2e 'Puppeteer browser contracts for des-web across GitHub Actions and gha-indie-worker.'
-          ensure_repo .github 'Organization profile and DES browser-test fleet documentation.'
-          ensure_project discrete-event-systems
-          ensure_project discrete-event-systems-test
-          stage=complete
-          printf 'bootstrap-stage=%s status=success\n' "$stage"
-          REMOTE_EOF
-          chmod 700 "$remote_script"
-
-          encoded_script="$(base64 --wrap=0 "$remote_script")"
-          remote_command="printf '%s' '$encoded_script' | base64 --decode > /tmp/bootstrap-des-browser-test-repositories.sh; chmod 700 /tmp/bootstrap-des-browser-test-repositories.sh; set +e; bash /tmp/bootstrap-des-browser-test-repositories.sh > /tmp/bootstrap-des-browser-test-repositories.log 2>&1; status=\$?; set -e; tail -c 20000 /tmp/bootstrap-des-browser-test-repositories.log 2>/dev/null || true; rm -f /tmp/bootstrap-des-browser-test-repositories.sh /tmp/bootstrap-des-browser-test-repositories.log; exit \$status"
           parameters="$RUNNER_TEMP/ssm-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
-
-          command_id="$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --comment "Bootstrap DES browser test repositories from $trusted_sha" --parameters "file://$parameters" --query 'Command.CommandId' --output text)"
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "Bootstrap DES browser test repositories from $trusted_sha" \
+              --parameters "file://$parameters" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
           echo "ssm_command_id=$command_id"
 
           status=Pending
           for _ in $(seq 1 480); do
-            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query Status \
+                --output text 2>/dev/null || true
+            )"
             case "$status" in Success|Failed|Cancelled|TimedOut|Cancelling) break ;; esac
             sleep 3
           done
-          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' --output json
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json
           test "$status" = Success
