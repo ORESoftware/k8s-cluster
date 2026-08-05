@@ -35,6 +35,39 @@ git config --global user.name "github-actions[bot]"
 git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 gh auth setup-git >/dev/null
 
+gh_api_json() {
+  local output="" attempt reset now delay
+  for attempt in 1 2 3 4 5 6; do
+    if output="$(gh api "$@" 2>&1)"; then
+      if jq -e 'type == "object" and (((.message? // "") | test("rate limit"; "i")) | not) and (((.status? // "") | tostring) != "403")' <<<"$output" >/dev/null 2>&1; then
+        printf '%s\n' "$output"
+        return 0
+      fi
+    fi
+
+    if grep -Eqi 'rate limit|secondary rate limit|abuse detection' <<<"$output"; then
+      reset="$(gh api rate_limit --jq '.resources.core.reset // empty' 2>/dev/null || true)"
+      now="$(date +%s)"
+      if [[ "$reset" =~ ^[0-9]+$ && "$reset" -gt "$now" ]]; then
+        delay=$((reset - now + 5))
+      else
+        delay=$((attempt * 30))
+      fi
+      (( delay < 5 )) && delay=5
+      (( delay > 900 )) && delay=900
+      printf 'GitHub API rate limited; retrying in %s seconds (attempt %s/6)\n' "$delay" "$attempt" >&2
+      sleep "$delay"
+      continue
+    fi
+
+    printf '%s\n' "$output" >&2
+    return 1
+  done
+
+  printf 'GitHub API remained rate limited after 6 attempts\n' >&2
+  return 1
+}
+
 upsert_managed_block() {
   local path="$1"
   local marker="$2"
@@ -158,11 +191,11 @@ reconcile_org() (
   trap cleanup EXIT
   trap on_error ERR
 
-  local org_response org_message
-  org_response="$(gh api "orgs/${requested_org}")"
-  org_message="$(jq -r '.message // empty' <<<"$org_response")"
-  [[ -z "$org_message" ]]
-  canonical_org="$(jq -er '.login | select(type == "string" and length > 0)' <<<"$org_response")"
+  local organization_response organization_message
+  organization_response="$(gh_api_json "orgs/${requested_org}")"
+  organization_message="$(jq -r '.message // empty' <<<"$organization_response")"
+  [[ -z "$organization_message" ]]
+  canonical_org="$(jq -er '.login | select(type == "string" and length > 0)' <<<"$organization_response")"
   [[ "$canonical_org" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$ ]]
   [[ "$canonical_org" != *--* ]]
   [[ "${canonical_org,,}" == "${requested_org,,}" ]]
@@ -470,8 +503,8 @@ while IFS=$'\t' read -r organization linear_url; do
   [[ "$organization" == "organization" ]] && continue
   [[ -z "$organization" ]] && continue
   processed=$((processed + 1))
-  # Never call reconcile_org in if/while/&&/||. Bash suppresses errexit
-  # inside commands whose status is being tested, including function bodies.
+  # Never invoke reconcile_org in an if/while/&&/|| condition. Bash suppresses
+  # errexit inside commands whose status is being tested, including function bodies.
   reconcile_org "$organization" "$linear_url"
   reconcile_rc=$?
   if (( reconcile_rc == 0 )); then
@@ -484,9 +517,16 @@ done < "$REGISTRY_FILE"
 jq -s 'sort_by(.canonical_org // .requested_org)' "$RESULTS_JSONL" > "$RESULTS_JSON"
 
 validation_failed=0
-if ! python3 "$SCRIPT_DIR/validate_org_project_docs_evidence.py" "$RESULTS_JSON" "$processed"; then
-  validation_failed=1
-fi
+  if ! python3 "$SCRIPT_DIR/validate_org_project_docs_evidence.py" "$RESULTS_JSON" "$processed"; then
+    validation_failed=1
+  fi
+
+  if ! python3 "$SCRIPT_DIR/audit_org_project_docs_evidence.py" \
+    --registry "$REGISTRY_FILE" \
+    --evidence "$RESULTS_JSON" \
+    --output "$EVIDENCE_DIR/audit.json"; then
+    validation_failed=1
+  fi
 
 jq -r '
   "# Organization Project and documentation reconciliation\n\n" +

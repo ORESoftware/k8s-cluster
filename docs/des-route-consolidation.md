@@ -1,6 +1,9 @@
 # DES web route consolidation
 
-Tracking: [Linear DEN-1936](https://linear.app/denman/issue/DEN-1936/des-webrsk8s-cluster-consolidate-public-des-pages-under-des)  
+Implementation: [Linear DEN-1936](https://linear.app/denman/issue/DEN-1936/des-webrsk8s-cluster-consolidate-public-des-pages-under-des)  
+Operational rollout: [Linear DEN-2280](https://linear.app/denman/issue/DEN-2280/k8s-clusterdes-webrs-verify-the-canonical-des-rollout-in-aws-and)  
+DES tracker: [discrete-event-systems/des-web.rs#11](https://github.com/discrete-event-systems/des-web.rs/issues/11)  
+GitOps tracker: [ORESoftware/k8s-cluster#991](https://github.com/ORESoftware/k8s-cluster/issues/991)  
 Application PR: [discrete-event-systems/des-web.rs#10](https://github.com/discrete-event-systems/des-web.rs/pull/10)  
 GitOps PR: [ORESoftware/k8s-cluster#872](https://github.com/ORESoftware/k8s-cluster/pull/872)
 
@@ -27,6 +30,31 @@ browser /des/*
 ```
 
 `dd-des-web` is the canonical workload and Service. `dd-des-simulator` is now only a compatibility Service alias because the existing gateway already names it in both AWS and Hetzner deployments. This cuts over the implementation without changing a public URL or copying another large nginx location block.
+
+## Delivery status
+
+The implementation and GitOps changes were merged on August 5, 2026.
+
+- `discrete-event-systems/des-web.rs#10`
+  - final source head: `77741ec8b5331617f71416748ef5f06846e43a5d`
+  - merge commit: `e7d8b284dd796826bc09120bbd10295b0bf2783f`
+  - application CI and immutable image publication passed
+- `ORESoftware/k8s-cluster#872`
+  - final source head: `16b9ecbad319a5433f5a58dec6e386ea48605f05`
+  - merge commit: `7b77b48dcb347a0c474da1831e09f27338db43c1`
+  - focused DES route contract and full kustomize render passed
+
+The PR merge-reference catalog job reported drift against its older base. The current `main` state was subsequently regenerated through the repository's locked Nix toolchain with:
+
+```text
+python3 tools/application_catalog.py generate catalog/applications.json
+```
+
+The generator wrote 86 application records from 121 tracked documents and produced no diff: `catalog/applications.json is already current`. No catalog commit is required.
+
+Private-source jobs still could not initialize `ORESoftware/k8s-libs-and-shared-defs` through the configured deploy key. That authentication failure is independent of the DES route contract and requires repository-secret or deploy-key repair rather than a DES manifest change.
+
+Implementation delivery is complete. Live rollout remains open in [k8s-cluster#991](https://github.com/ORESoftware/k8s-cluster/issues/991) and [DEN-2280](https://linear.app/denman/issue/DEN-2280/k8s-clusterdes-webrs-verify-the-canonical-des-rollout-in-aws-and) until AWS and Hetzner synchronization, public verification, and compatibility-traffic evidence are recorded.
 
 ## Canonical public routes
 
@@ -76,16 +104,23 @@ The Deployment is pinned to the exact successful application head, not a mutable
 
 The repository contract test rejects mutable `main` and `latest` image tags and verifies that the source annotation, SHA tag, and digest-pinned image remain internally consistent.
 
-## Rollout
+## Operational rollout
 
-1. `des-web.rs#10` passes Rust, schema, Playwright, and immutable-image checks at the pinned source revision.
-2. The exact image digest is pinned in `dd-des-web.deployment.yaml`.
-3. Rebase this GitOps change semantically onto current `main`, then run route/manifest tests and render the `dd-next-runtime` kustomization.
-4. Merge the application PR before, or atomically with, this GitOps PR.
-5. Sync `dd-next-runtime` in the AWS and Hetzner Argo CD control planes.
-6. Verify `/des/`, every canonical page above, `/des/api/v1/catalog`, `/des/healthz`, and `/des/readyz` from both public entry points.
-7. Verify planner/solve delegation to `dd-des-rs`, database-backed fragments, and degraded operation when no database URL is configured.
-8. Record request counts for `/des-rs/*`, `/out/*`, and `/des/music` before scheduling compatibility removal.
+Completed delivery gates:
+
+- [x] Application CI, route tests, and immutable image publication passed at the pinned source revision.
+- [x] The exact image digest was pinned in `dd-des-web.deployment.yaml`.
+- [x] The application PR was merged before the GitOps PR.
+- [x] The focused DES route contract and `dd-next-runtime` kustomize render passed.
+- [x] The current Argo application catalog was regenerated with the locked toolchain and verified current with no diff.
+
+Remaining operational gates are tracked in [k8s-cluster#991](https://github.com/ORESoftware/k8s-cluster/issues/991) and [DEN-2280](https://linear.app/denman/issue/DEN-2280/k8s-clusterdes-webrs-verify-the-canonical-des-rollout-in-aws-and):
+
+1. sync `dd-next-runtime` in the AWS and Hetzner Argo CD control planes;
+2. verify `/des/`, every canonical page above, `/des/api/v1/catalog`, `/des/healthz`, and `/des/readyz` from both public entry points;
+3. verify planner/solve delegation to `dd-des-rs`, database-backed fragments, and degraded operation when no database URL is configured;
+4. record request counts for `/des-rs/*`, `/out/*`, and `/des/music` before scheduling compatibility removal;
+5. repair the independent private-submodule deploy-key configuration so repository-wide private-source checks can initialize `remote/libs`.
 
 ## Rollback
 
