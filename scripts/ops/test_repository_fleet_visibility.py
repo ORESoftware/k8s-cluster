@@ -14,30 +14,41 @@ class FleetVisibilityProjectionTests(unittest.TestCase):
     def manifest(self) -> dict[str, object]:
         return {
             "schema_version": 2,
+            "default_branch": "main",
             "repository_count": 2,
             "organizations": {"example": 2},
             "total_tracked_files": 32,
             "total_gitlinks": 1,
             "repositories": [
                 {
+                    "org": "example",
+                    "name": "api.rs",
                     "full_name": "example/api.rs",
+                    "kind": "rust-api",
                     "commit": "a" * 40,
                     "files": 12,
-                    "gitlinks": 0,
+                    "remote": "https://github.com/example/api.rs.git",
                     "description": "API",
                     "visibility": "public",
+                    "default_branch": "main",
+                    "gitlinks": 0,
                     "metadata": {
                         "owners": ["api-team"],
                         "nested": {"enabled": True},
                     },
                 },
                 {
+                    "org": "example",
+                    "name": "monorepo",
                     "full_name": "example/monorepo",
+                    "kind": "monorepo",
                     "commit": "b" * 40,
                     "files": 20,
-                    "gitlinks": 1,
+                    "remote": "https://github.com/example/monorepo.git",
                     "description": "Monorepo",
                     "visibility": "private",
+                    "default_branch": "main",
+                    "gitlinks": 1,
                     "metadata": {
                         "owners": ["platform-team"],
                         "nested": {"enabled": False},
@@ -103,6 +114,16 @@ class FleetVisibilityProjectionTests(unittest.TestCase):
                 reviewed["schema_version"] = invalid_version
                 with self.assertRaisesRegex(
                     VisibilityProjectionError, "schema version 2"
+                ):
+                    project_private_execution_manifest(reviewed)
+
+    def test_fleet_default_branch_must_be_main(self) -> None:
+        for invalid_branch in (None, "", "dev", True):
+            with self.subTest(default_branch=invalid_branch):
+                reviewed = self.manifest()
+                reviewed["default_branch"] = invalid_branch
+                with self.assertRaisesRegex(
+                    VisibilityProjectionError, "default_branch must be main"
                 ):
                     project_private_execution_manifest(reviewed)
 
@@ -210,6 +231,65 @@ class FleetVisibilityProjectionTests(unittest.TestCase):
                 self.repositories(reviewed)[0]["full_name"] = invalid_name
                 with self.assertRaisesRegex(
                     VisibilityProjectionError, "invalid full_name"
+                ):
+                    project_private_execution_manifest(reviewed)
+
+    def test_org_and_name_must_exactly_match_full_name(self) -> None:
+        for field, invalid_value, message in (
+            ("org", None, "org does not match full_name"),
+            ("org", "EXAMPLE", "org does not match full_name"),
+            ("name", None, "name does not match full_name"),
+            ("name", "other.rs", "name does not match full_name"),
+        ):
+            with self.subTest(field=field, value=invalid_value):
+                reviewed = self.manifest()
+                self.repositories(reviewed)[0][field] = invalid_value
+                with self.assertRaisesRegex(VisibilityProjectionError, message):
+                    project_private_execution_manifest(reviewed)
+
+    def test_remote_must_be_exact_https_origin_for_full_name(self) -> None:
+        for invalid_remote in (
+            None,
+            "",
+            "git@github.com:example/api.rs.git",
+            "https://github.com/example/other.rs.git",
+            "https://github.com/example/api.rs",
+        ):
+            with self.subTest(remote=invalid_remote):
+                reviewed = self.manifest()
+                self.repositories(reviewed)[0]["remote"] = invalid_remote
+                with self.assertRaisesRegex(
+                    VisibilityProjectionError, "remote does not match full_name"
+                ):
+                    project_private_execution_manifest(reviewed)
+
+    def test_repository_default_branch_must_match_fleet(self) -> None:
+        for invalid_branch in (None, "", "dev", True):
+            with self.subTest(default_branch=invalid_branch):
+                reviewed = self.manifest()
+                self.repositories(reviewed)[0]["default_branch"] = invalid_branch
+                with self.assertRaisesRegex(
+                    VisibilityProjectionError, "default_branch does not match fleet"
+                ):
+                    project_private_execution_manifest(reviewed)
+
+    def test_kind_must_be_a_lowercase_slug(self) -> None:
+        for invalid_kind in (None, "", "Rust API", "rust_api", "Rust-api", True):
+            with self.subTest(kind=invalid_kind):
+                reviewed = self.manifest()
+                self.repositories(reviewed)[0]["kind"] = invalid_kind
+                with self.assertRaisesRegex(
+                    VisibilityProjectionError, "invalid kind"
+                ):
+                    project_private_execution_manifest(reviewed)
+
+    def test_description_must_be_nonempty_trimmed_and_single_line(self) -> None:
+        for invalid_description in (None, "", " ", " API", "API ", "API\nserver"):
+            with self.subTest(description=invalid_description):
+                reviewed = self.manifest()
+                self.repositories(reviewed)[0]["description"] = invalid_description
+                with self.assertRaisesRegex(
+                    VisibilityProjectionError, "invalid description"
                 ):
                     project_private_execution_manifest(reviewed)
 
