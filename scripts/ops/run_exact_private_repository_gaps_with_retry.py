@@ -43,6 +43,7 @@ TRANSIENT_MARKERS = (
     "gateway timeout",
     "connection reset",
     "remote end hung up",
+    "no commit found for sha: main",
     "timed out",
     "timeout",
     "http 429",
