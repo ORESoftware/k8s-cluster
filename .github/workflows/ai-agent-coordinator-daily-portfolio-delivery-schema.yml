@@ -1,0 +1,132 @@
+name: ai-agent-coordinator daily portfolio delivery schema
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ai-agent-coordinator-daily-portfolio-delivery-schema.yml'
+      - 'pg-defs/schema/databases/ai_agent_coordinator/schema.sql'
+      - 'pg-defs/schema/databases/ai_agent_coordinator/daily-portfolio-delivery.test.sql'
+      - 'pg-defs/schema/databases/ai_agent_coordinator/daily-portfolio-delivery.md'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ai-agent-coordinator-daily-portfolio-delivery-schema.yml'
+      - 'pg-defs/schema/databases/ai_agent_coordinator/schema.sql'
+      - 'pg-defs/schema/databases/ai_agent_coordinator/daily-portfolio-delivery.test.sql'
+      - 'pg-defs/schema/databases/ai_agent_coordinator/daily-portfolio-delivery.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-agent-coordinator-daily-portfolio-delivery-schema-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postgres-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/daily_portfolio_delivery_contract
+      PGPASSWORD: postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/ai-agent-coordinator-daily-portfolio-delivery-schema.yml
+
+      - name: Create isolated contract database
+        run: createdb -h localhost -U postgres daily_portfolio_delivery_contract
+
+      - name: Apply the declarative coordinator schema
+        run: >-
+          psql "$DATABASE_URL"
+          -v ON_ERROR_STOP=1
+          -q
+          -f pg-defs/schema/databases/ai_agent_coordinator/schema.sql
+
+      - name: Exercise accepted, rejected, receipt, baseline, and fence cases
+        run: >-
+          psql "$DATABASE_URL"
+          -v ON_ERROR_STOP=1
+          -q
+          -f pg-defs/schema/databases/ai_agent_coordinator/daily-portfolio-delivery.test.sql
+
+      - name: Verify exact schema objects and constraints
+        shell: bash
+        run: |
+          set -euo pipefail
+          for object in \
+            daily_portfolio_delivery_runs \
+            daily_portfolio_delivery_baseline
+          do
+            test "$(psql "$DATABASE_URL" -Atc "select to_regclass('ai_agent_coordinator.${object}') is not null")" = t
+          done
+          test "$(psql "$DATABASE_URL" -Atc "select to_regclass('ai_agent_coordinator.daily_portfolio_delivery_fence_seq') is not null")" = t
+
+          constraints="$(
+            psql "$DATABASE_URL" -Atc \
+              "select conname from pg_constraint where connamespace = 'ai_agent_coordinator'::regnamespace and conrelid in ('ai_agent_coordinator.daily_portfolio_delivery_runs'::regclass, 'ai_agent_coordinator.daily_portfolio_delivery_baseline'::regclass) order by conname"
+          )"
+          for name in \
+            daily_portfolio_delivery_runs_identity_chk \
+            daily_portfolio_delivery_runs_lease_chk \
+            daily_portfolio_delivery_runs_state_chk \
+            daily_portfolio_delivery_runs_receipt_chk \
+            daily_portfolio_delivery_baseline_singleton_chk
+          do
+            grep -qx "$name" <<<"$constraints"
+          done
+
+          indexes="$(
+            psql "$DATABASE_URL" -Atc \
+              "select indexname from pg_indexes where schemaname = 'ai_agent_coordinator' and tablename = 'daily_portfolio_delivery_runs' order by indexname"
+          )"
+          grep -qx daily_portfolio_delivery_runs_status_idx <<<"$indexes"
+          grep -qx daily_portfolio_delivery_runs_lease_expiry_idx <<<"$indexes"
+
+      - name: Prove no inconsistent terminal rows survived
+        shell: bash
+        run: |
+          set -euo pipefail
+          invalid="$(
+            psql "$DATABASE_URL" -Atc \
+              "select count(*) from ai_agent_coordinator.daily_portfolio_delivery_runs where (status = 'delivered') <> (receipt_id is not null) or (status = 'delivering' and lease_fence is null) or (status in ('failed','ambiguous') and last_error is null)"
+          )"
+          test "$invalid" = 0
+
+      - name: Publish bounded schema evidence
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Daily portfolio delivery database contract'
+            echo
+            echo '- PostgreSQL: `17`'
+            echo '- schema: `ai_agent_coordinator`'
+            echo '- run identity: scheduled, recovery, and manual'
+            echo '- mutation guard: expected generation plus fenced lease'
+            echo '- receipt: exact destination and body digest'
+            echo '- baseline: one confirmed scheduled row'
+            echo '- sensitive source bodies and credentials: not stored'
+          } >> "$GITHUB_STEP_SUMMARY"

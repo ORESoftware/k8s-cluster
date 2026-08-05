@@ -284,3 +284,158 @@ create table if not exists ai_agent_coordinator.email_attention_leases (
 
 create index if not exists email_attention_leases_expiry_idx
   on ai_agent_coordinator.email_attention_leases (expires_at);
+
+-- Durable daily portfolio briefing delivery state.
+create sequence if not exists ai_agent_coordinator.daily_portfolio_delivery_fence_seq
+  as bigint minvalue 1 no cycle;
+
+create table if not exists ai_agent_coordinator.daily_portfolio_delivery_runs (
+  run_key text primary key,
+  scheduled_run_key text not null,
+  mode text not null,
+  source_digest text not null,
+  plan_digest text not null,
+  delivery_digest text not null,
+  destination text not null,
+  idempotency_key text not null,
+  status text not null default 'planned',
+  generation bigint not null default 0,
+  attempts bigint not null default 0,
+  last_error text,
+  lease_owner text,
+  lease_fence bigint,
+  lease_expires_at timestamptz,
+  receipt_id text,
+  receipt_destination text,
+  receipt_body_digest text,
+  delivered_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint daily_portfolio_delivery_runs_idempotency_unique
+    unique (idempotency_key),
+  constraint daily_portfolio_delivery_runs_identifier_chk check (
+    char_length(run_key) between 1 and 256
+    and char_length(scheduled_run_key) between 1 and 256
+    and char_length(destination) between 1 and 256
+    and char_length(idempotency_key) between 1 and 256
+    and run_key !~ '[[:cntrl:]]'
+    and scheduled_run_key !~ '[[:cntrl:]]'
+    and destination !~ '[[:cntrl:]]'
+    and idempotency_key !~ '[[:cntrl:]]'
+    and lower(run_key) !~ '(^gh[pousr]_|^github_pat_|^sk-|token=|password=|secret=)'
+    and lower(destination) !~ '(^gh[pousr]_|^github_pat_|^sk-|token=|password=|secret=)'
+  ),
+  constraint daily_portfolio_delivery_runs_digest_chk check (
+    source_digest ~ '^[0-9a-f]{64}$'
+    and plan_digest ~ '^[0-9a-f]{64}$'
+    and delivery_digest ~ '^[0-9a-f]{64}$'
+  ),
+  constraint daily_portfolio_delivery_runs_mode_chk
+    check (mode in ('scheduled', 'recovery', 'manual')),
+  constraint daily_portfolio_delivery_runs_status_chk
+    check (status in ('planned', 'delivering', 'ambiguous', 'failed', 'delivered')),
+  constraint daily_portfolio_delivery_runs_identity_chk check (
+    scheduled_run_key ~ '^daily-portfolio:scheduled:[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+    and idempotency_key = run_key
+    and (
+      (mode = 'scheduled' and run_key = scheduled_run_key)
+      or (
+        mode = 'recovery'
+        and run_key ~ '^daily-portfolio:recovery:[A-Za-z0-9._:/-]{1,220}$'
+        and run_key <> scheduled_run_key
+      )
+      or (
+        mode = 'manual'
+        and run_key ~ '^daily-portfolio:manual:[A-Za-z0-9._:/-]{1,222}$'
+        and run_key <> scheduled_run_key
+      )
+    )
+  ),
+  constraint daily_portfolio_delivery_runs_counter_chk
+    check (generation >= 0 and attempts >= 0),
+  constraint daily_portfolio_delivery_runs_error_chk check (
+    last_error is null
+    or (
+      char_length(last_error) between 1 and 512
+      and last_error !~ '[[:cntrl:]]'
+    )
+  ),
+  constraint daily_portfolio_delivery_runs_lease_chk check (
+    (
+      lease_owner is null
+      and lease_fence is null
+      and lease_expires_at is null
+    )
+    or (
+      lease_owner is not null
+      and char_length(lease_owner) between 1 and 256
+      and lease_owner !~ '[[:cntrl:]]'
+      and lower(lease_owner) !~ '(^gh[pousr]_|^github_pat_|^sk-|token=|password=|secret=)'
+      and lease_fence > 0
+      and lease_expires_at is not null
+    )
+  ),
+  constraint daily_portfolio_delivery_runs_state_chk check (
+    (status = 'delivering') = (lease_owner is not null)
+    or status in ('planned', 'failed', 'ambiguous')
+  ),
+  constraint daily_portfolio_delivery_runs_error_state_chk check (
+    (status in ('failed', 'ambiguous')) = (last_error is not null)
+  ),
+  constraint daily_portfolio_delivery_runs_receipt_chk check (
+    (
+      receipt_id is null
+      and receipt_destination is null
+      and receipt_body_digest is null
+      and delivered_at is null
+    )
+    or (
+      receipt_id is not null
+      and char_length(receipt_id) between 1 and 256
+      and receipt_id !~ '[[:cntrl:]]'
+      and receipt_destination = destination
+      and receipt_body_digest = delivery_digest
+      and delivered_at is not null
+    )
+  ),
+  constraint daily_portfolio_delivery_runs_terminal_chk check (
+    (status = 'delivered') = (receipt_id is not null)
+    and (status <> 'delivered' or lease_owner is null)
+    and (status <> 'delivered' or last_error is null)
+  ),
+  constraint daily_portfolio_delivery_runs_time_chk
+    check (updated_at >= created_at)
+);
+
+create index if not exists daily_portfolio_delivery_runs_status_idx
+  on ai_agent_coordinator.daily_portfolio_delivery_runs
+  (status, updated_at, created_at);
+
+create index if not exists daily_portfolio_delivery_runs_lease_expiry_idx
+  on ai_agent_coordinator.daily_portfolio_delivery_runs (lease_expires_at)
+  where lease_expires_at is not null;
+
+create table if not exists ai_agent_coordinator.daily_portfolio_delivery_baseline (
+  singleton_key text primary key default 'scheduled',
+  source_run_key text not null references ai_agent_coordinator.daily_portfolio_delivery_runs (run_key) on delete restrict,
+  scheduled_run_key text not null,
+  plan_digest text not null,
+  delivery_digest text not null,
+  receipt_id text not null,
+  delivered_at timestamptz not null,
+  updated_at timestamptz not null default now(),
+  constraint daily_portfolio_delivery_baseline_singleton_chk
+    check (singleton_key = 'scheduled'),
+  constraint daily_portfolio_delivery_baseline_scheduled_key_chk
+    check (scheduled_run_key ~ '^daily-portfolio:scheduled:[0-9]{4}-[0-9]{2}-[0-9]{2}$'),
+  constraint daily_portfolio_delivery_baseline_digest_chk check (
+    plan_digest ~ '^[0-9a-f]{64}$'
+    and delivery_digest ~ '^[0-9a-f]{64}$'
+  ),
+  constraint daily_portfolio_delivery_baseline_receipt_chk check (
+    char_length(receipt_id) between 1 and 256
+    and receipt_id !~ '[[:cntrl:]]'
+  ),
+  constraint daily_portfolio_delivery_baseline_time_chk
+    check (updated_at >= delivered_at)
+);
