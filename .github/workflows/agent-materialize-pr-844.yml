@@ -1,0 +1,114 @@
+name: Export validated PR 844 product files
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [synchronize, reopened]
+    paths:
+      - '.github/workflows/agent-materialize-pr-844.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-materialize-pr-844
+  cancel-in-progress: false
+
+jobs:
+  export:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-1550-raw-policy-current-dev-v2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - name: Check out exact PR branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1550-raw-policy-current-dev-v2
+          fetch-depth: 0
+          persist-credentials: false
+          show-progress: false
+
+      - name: Execute the reviewed materialization step
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/den-1550-raw-policy-current-dev-v2-finalize.yml')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          step = lines.index('      - name: Materialize the reviewed hardening with corrected static assertions')
+          run_line = lines.index('        run: |', step + 1)
+          next_step = next(
+              index for index in range(run_line + 1, len(lines))
+              if lines[index].startswith('      - name: Check out the exact private remote/libs gitlink')
+          )
+          prefix = '          '
+          block = lines[run_line + 1:next_step]
+          if any(line.strip() and not line.startswith(prefix) for line in block):
+              raise SystemExit('materialization indentation drifted')
+          script = '\n'.join(
+              line[len(prefix):] if line.startswith(prefix) else ''
+              for line in block
+          ).lstrip('\n') + '\n'
+          Path('/tmp/materialize-pr-844.sh').write_text(script, encoding='utf-8')
+          PY
+          bash /tmp/materialize-pr-844.sh
+
+      - name: Check out exact private shared-library gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate complete build-server surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd remote/deployments/build-server-rs
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo check --locked --all-targets
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+          cd ../../..
+          node --test remote/tests/general/build-server-profile-repository-policy.test.mjs
+
+          git restore --source=HEAD -- \
+            remote/deployments/build-server-rs/src/ecr.rs \
+            remote/deployments/build-server-rs/src/exec.rs \
+            remote/deployments/build-server-rs/src/gh_secrets.rs \
+            remote/deployments/build-server-rs/src/http.rs \
+            remote/deployments/build-server-rs/tests/profile_policy_http.rs
+          git diff --check
+
+      - name: Stage a product-only export
+        shell: bash
+        run: |
+          set -euo pipefail
+          export_root="$RUNNER_TEMP/pr-844-product"
+          files=(
+            'remote/deployments/build-server-rs/src/config.rs'
+            'remote/deployments/build-server-rs/src/config/profile_policy.rs'
+            'remote/tests/general/build-server-profile-repository-policy.test.mjs'
+          )
+          mkdir -p "$export_root"
+          for file in "${files[@]}"; do
+            install -D -m 0644 "$file" "$export_root/$file"
+          done
+          printf '%s\n' "${files[@]}" > "$export_root/MANIFEST.txt"
+
+      - name: Upload validated product files
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr-844-product
+          path: ${{ runner.temp }}/pr-844-product
+          if-no-files-found: error
+          retention-days: 2
