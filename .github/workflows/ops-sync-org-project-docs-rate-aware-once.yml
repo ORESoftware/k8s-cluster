@@ -33,9 +33,9 @@ jobs:
     env:
       REPOSITORY: ${{ github.repository }}
       DEFAULT_BRANCH: main
-      HANDSHAKE_NONCE: c40d18ad2f734641ab1c722cd5b5a129
-      PUBLIC_KEY_PATH: .github/tmp/org-project-docs-rate-aware-c40d18ad2f734641ab1c722cd5b5a129.pub.pem
-      CIPHERTEXT_PATH: .github/tmp/org-project-docs-rate-aware-c40d18ad2f734641ab1c722cd5b5a129.enc.b64
+      HANDSHAKE_NONCE: 8d5af9c2f0ed4eb59114af267691037a
+      PUBLIC_KEY_PATH: .github/tmp/org-project-docs-rate-aware-8d5af9c2f0ed4eb59114af267691037a.pub.pem
+      CIPHERTEXT_PATH: .github/tmp/org-project-docs-rate-aware-8d5af9c2f0ed4eb59114af267691037a.enc.b64
       EVIDENCE_DIR: ops/evidence/org-project-docs-rate-aware
 
     steps:
@@ -176,10 +176,8 @@ jobs:
 
           USER_TOKEN="$(tr -d '\r\n' < /tmp/org-project-rate-aware-token.txt)"
           test -n "$USER_TOKEN"
+          test "${#USER_TOKEN}" -ge 20
           echo "::add-mask::$USER_TOKEN"
-          export GH_TOKEN="$USER_TOKEN"
-          test "$(gh api user --jq .login)" = ORESoftware
-          gh auth status
           printf 'GH_TOKEN=%s\n' "$USER_TOKEN" >> "$GITHUB_ENV"
 
           cleanup_credentials

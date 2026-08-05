@@ -6,6 +6,7 @@ REGISTRY_FILE="${REGISTRY_FILE:-ops/portfolio/github-linear-project-registry.tsv
 EVIDENCE_DIR="${EVIDENCE_DIR:-ops/evidence/org-project-docs}"
 RUN_STAMP="${RUN_STAMP:-$(date -u +%Y%m%dT%H%M%SZ)}"
 MANAGED_MARKER="org-project-routing"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ -z "${GH_TOKEN:-}" ]]; then
   printf 'GH_TOKEN is required\n' >&2
@@ -190,10 +191,13 @@ reconcile_org() (
   trap cleanup EXIT
   trap on_error ERR
 
-  local organization_response
+  local organization_response organization_message
   organization_response="$(gh_api_json "orgs/${requested_org}")"
-  canonical_org="$(jq -er '.login | strings' <<<"$organization_response")"
-  [[ "$canonical_org" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,38})$ ]]
+  organization_message="$(jq -r '.message // empty' <<<"$organization_response")"
+  [[ -z "$organization_message" ]]
+  canonical_org="$(jq -er '.login | select(type == "string" and length > 0)' <<<"$organization_response")"
+  [[ "$canonical_org" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$ ]]
+  [[ "$canonical_org" != *--* ]]
   [[ "${canonical_org,,}" == "${requested_org,,}" ]]
   project_title="${canonical_org}-project"
 
@@ -465,6 +469,27 @@ ISSUE
     false
   fi
 
+  current_step="final evidence validation"
+  [[ "$canonical_org" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$ ]]
+  [[ "$canonical_org" != *--* ]]
+  [[ "${canonical_org,,}" == "${requested_org,,}" ]]
+  [[ "$linear_url" == https://linear.app/* ]]
+  [[ "$project_number" =~ ^[1-9][0-9]*$ ]]
+  [[ "$project_title" == "${canonical_org}-project" ]]
+  [[ "$project_url" == "https://github.com/orgs/${canonical_org}/projects/${project_number}" ]]
+  [[ -n "$repo_action" && "$repo_action" != "unknown" ]]
+  [[ "$docs_action" == "unchanged" || "$docs_action" == "updated" ]]
+  if [[ "$docs_action" == "updated" ]]; then
+    [[ "$pr_number" =~ ^[1-9][0-9]*$ ]]
+    [[ "$pr_url" == "https://github.com/${canonical_org}/.github/pull/${pr_number}" ]]
+    [[ "$pr_state" == merged-* ]]
+  else
+    [[ -z "$pr_number" && -z "$pr_url" && "$pr_state" == "not-needed" ]]
+  fi
+  [[ "$issue_number" =~ ^[1-9][0-9]*$ ]]
+  [[ "$issue_url" == "https://github.com/${canonical_org}/.github/issues/${issue_number}" ]]
+  [[ "$project_item_action" == "added" || "$project_item_action" == "existing" ]]
+
   trap - ERR
   record_result "ok" "$requested_org" "$canonical_org" "$linear_url" "$project_title" "$project_number" "$project_url" "$project_action" "$repo_action" "$docs_action" "$pr_number" "$pr_url" "$pr_state" "$issue_number" "$issue_url" "$project_item_action" ""
   printf 'OK %s -> %s (%s)\n' "$canonical_org" "$project_url" "$pr_state"
@@ -478,7 +503,11 @@ while IFS=$'\t' read -r organization linear_url; do
   [[ "$organization" == "organization" ]] && continue
   [[ -z "$organization" ]] && continue
   processed=$((processed + 1))
-  if reconcile_org "$organization" "$linear_url"; then
+  # Never invoke reconcile_org in an if/while/&&/|| condition. Bash suppresses
+  # errexit inside commands whose status is being tested, including function bodies.
+  reconcile_org "$organization" "$linear_url"
+  reconcile_rc=$?
+  if (( reconcile_rc == 0 )); then
     successes=$((successes + 1))
   else
     failures=$((failures + 1))
@@ -487,10 +516,17 @@ done < "$REGISTRY_FILE"
 
 jq -s 'sort_by(.canonical_org // .requested_org)' "$RESULTS_JSONL" > "$RESULTS_JSON"
 
-python3 scripts/ops/audit_org_project_docs_evidence.py \
-  --registry "$REGISTRY_FILE" \
-  --evidence "$RESULTS_JSON" \
-  --output "$EVIDENCE_DIR/audit.json"
+validation_failed=0
+  if ! python3 "$SCRIPT_DIR/validate_org_project_docs_evidence.py" "$RESULTS_JSON" "$processed"; then
+    validation_failed=1
+  fi
+
+  if ! python3 "$SCRIPT_DIR/audit_org_project_docs_evidence.py" \
+    --registry "$REGISTRY_FILE" \
+    --evidence "$RESULTS_JSON" \
+    --output "$EVIDENCE_DIR/audit.json"; then
+    validation_failed=1
+  fi
 
 jq -r '
   "# Organization Project and documentation reconciliation\n\n" +
@@ -513,6 +549,6 @@ jq -r '
 
 printf 'processed=%d successes=%d failures=%d\n' "$processed" "$successes" "$failures"
 
-if (( failures > 0 )); then
+if (( failures > 0 || validation_failed > 0 )); then
   exit 1
 fi
