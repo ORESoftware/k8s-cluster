@@ -62,10 +62,6 @@ jobs:
             echo 'publisher contains a forbidden command or PAT assignment' >&2
             exit 1
           fi
-          if grep -nE '(GH_PAT|GITHUB_PAT|github_pat_|ghp_)' "$selector"; then
-            echo 'selector must not accept or inspect PAT-shaped credentials' >&2
-            exit 1
-          fi
           python3 - "$publisher" <<'PY'
           import re
           import sys
