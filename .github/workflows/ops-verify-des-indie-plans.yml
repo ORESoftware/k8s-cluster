@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/ops-verify-des-indie-plans.yml
+      - scripts/ops/run_des_indie_browser_workflows.sh
       - remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml
       - remote/deployments/build-server-rs/src/gha_workflow.rs
       - remote/deployments/build-server-rs/src/profiles.rs
@@ -46,210 +47,39 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${INSTANCE_ID:-}"
+          trusted_sha="$(git rev-parse HEAD)"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          script='scripts/ops/run_des_indie_browser_workflows.sh'
+          test -f "$script"
+          script_sha256="$(sha256sum "$script" | awk '{print $1}')"
 
-          playwright_yaml=$(cat <<'PLAYWRIGHT_YAML'
-          name: DES Playwright continuity
-          on: [workflow_dispatch]
-          jobs:
-            browser:
-              runs-on: ubuntu-latest
-              steps:
-                - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-                - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-                  with:
-                    node-version: '22'
-                - run: npm ci
-                - run: npx playwright test
-          PLAYWRIGHT_YAML
-          )
-          puppeteer_yaml=$(cat <<'PUPPETEER_YAML'
-          name: DES Puppeteer continuity
-          on: [workflow_dispatch]
-          jobs:
-            browser:
-              runs-on: ubuntu-latest
-              steps:
-                - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-                - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-                  with:
-                    node-version: '22'
-                - run: npm ci
-                - run: npm run test:puppeteer
-          PUPPETEER_YAML
-          )
-
-          remote_script="$RUNNER_TEMP/run-des-indie-workflows.sh"
-          cat > "$remote_script" <<REMOTE_SCRIPT
-          #!/usr/bin/env bash
-          set -Eeuo pipefail
-          umask 077
-
-          readonly PLAYWRIGHT_REPO='discrete-event-systems-test/des-web-playwright-e2e'
-          readonly PLAYWRIGHT_SHA='1e1116ef6811c4e3e6be34ad3e1def39bc20ef59'
-          readonly PLAYWRIGHT_PATH='.gha/workflows/playwright.yml'
-          readonly PLAYWRIGHT_YAML_B64='$(printf '%s' "$playwright_yaml" | base64 --wrap=0)'
-          readonly PUPPETEER_REPO='discrete-event-systems-test/des-web-puppeteer-e2e'
-          readonly PUPPETEER_SHA='0547548429d937023a124de37afca7659a85c3dd'
-          readonly PUPPETEER_PATH='.gha/workflows/puppeteer.yml'
-          readonly PUPPETEER_YAML_B64='$(printf '%s' "$puppeteer_yaml" | base64 --wrap=0)'
-          readonly REQUEST_SUFFIX='${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}'
-
-          kubeconfig=''
-          for candidate in /etc/kubernetes/admin.conf /root/.kube/config /home/ec2-user/.kube/config; do
-            if [[ -r "\$candidate" ]]; then
-              kubeconfig="\$candidate"
-              break
-            fi
-          done
-          test -n "\$kubeconfig"
-          export KUBECONFIG="\$kubeconfig"
-
+          remote_command=$(cat <<REMOTE_COMMAND
+          set -euo pipefail
+          readonly TRUSTED_SHA='$trusted_sha'
+          readonly SCRIPT_SHA256='$script_sha256'
+          readonly SCRIPT_URL="https://raw.githubusercontent.com/ORESoftware/k8s-cluster/\$TRUSTED_SHA/scripts/ops/run_des_indie_browser_workflows.sh"
           cleanup() {
-            unset server_auth encoded_auth
-            if [[ -n "\${port_forward_pid:-}" ]]; then
-              kill "\$port_forward_pid" 2>/dev/null || true
-              wait "\$port_forward_pid" 2>/dev/null || true
-            fi
-            rm -rf /tmp/des-indie-browser-execution
+            rm -f /tmp/run-des-indie-browser-workflows.sh /tmp/run-des-indie-browser-workflows.log
           }
           trap cleanup EXIT
-          mkdir -p /tmp/des-indie-browser-execution
+          curl --fail --silent --show-error --location \
+            --output /tmp/run-des-indie-browser-workflows.sh \
+            "\$SCRIPT_URL"
+          printf '%s  %s\n' "\$SCRIPT_SHA256" /tmp/run-des-indie-browser-workflows.sh | sha256sum --check --status
+          chmod 700 /tmp/run-des-indie-browser-workflows.sh
+          set +e
+          DES_REQUEST_SUFFIX='${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}' \
+            /tmp/run-des-indie-browser-workflows.sh \
+              > /tmp/run-des-indie-browser-workflows.log 2>&1
+          status=\$?
+          set -e
+          tail -c 30000 /tmp/run-des-indie-browser-workflows.log 2>/dev/null || true
+          exit \$status
+          REMOTE_COMMAND
+          )
 
-          policy_ready=false
-          for _ in \$(seq 1 240); do
-            env_json="\$(kubectl -n default get deployment dd-build-server -o json 2>/dev/null || true)"
-            if jq -e --arg p "\$PLAYWRIGHT_REPO" --arg u "\$PUPPETEER_REPO" '
-              [.spec.template.spec.containers[] | select(.name == "build-server") | .env[]?]
-              | (any(.name == "BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES" and (.value | contains(\$p) and contains(\$u))))
-                and (any(.name == "BUILD_SERVER_GHA_WORKFLOW_EXECUTION_ENABLED" and .value == "true"))
-            ' <<<"\$env_json" >/dev/null 2>&1; then
-              policy_ready=true
-              break
-            fi
-            sleep 3
-          done
-          test "\$policy_ready" = true
-          kubectl -n default rollout status deployment/dd-build-server --timeout=600s >/dev/null
-
-          encoded_auth="\$(kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.SERVER_AUTH_SECRET}')"
-          test -n "\$encoded_auth"
-          server_auth="\$(printf '%s' "\$encoded_auth" | base64 --decode)"
-          unset encoded_auth
-          test -n "\$server_auth"
-
-          kubectl -n default port-forward service/dd-build-server 18100:8100 --address 127.0.0.1 \
-            > /tmp/des-indie-browser-execution/port-forward.log 2>&1 &
-          port_forward_pid=\$!
-          ready=false
-          for _ in \$(seq 1 90); do
-            if curl --fail --silent --header "x-server-auth: \$server_auth" \
-              http://127.0.0.1:18100/gha/workflows/capabilities \
-              > /tmp/des-indie-browser-execution/capabilities.json; then
-              ready=true
-              break
-            fi
-            sleep 1
-          done
-          test "\$ready" = true
-          jq -e '
-            .executionEnabled == true and
-            (.profiles | index("playwright") != null) and
-            (.profiles | index("puppeteer") != null)
-          ' /tmp/des-indie-browser-execution/capabilities.json >/dev/null
-
-          run_one() {
-            local repository="\$1"
-            local revision="\$2"
-            local workflow_path="\$3"
-            local expected_profile="\$4"
-            local yaml_b64="\$5"
-            local slug="\$6"
-            local workflow_yaml run_id status
-            workflow_yaml="\$(printf '%s' "\$yaml_b64" | base64 --decode)"
-            jq -nc \
-              --arg repository "\$repository" \
-              --arg revision "\$revision" \
-              --arg workflowPath "\$workflow_path" \
-              --arg workflowYaml "\$workflow_yaml" \
-              --arg requestId "des-browser-\$slug-\$revision-\$REQUEST_SUFFIX" \
-              '{
-                schemaVersion:"gha-indie-workflow.v1",
-                repository:\$repository,
-                revision:\$revision,
-                workflowPath:\$workflowPath,
-                workflowYaml:\$workflowYaml,
-                requestId:\$requestId
-              }' > "/tmp/des-indie-browser-execution/\$slug-request.json"
-
-            curl --fail --silent --show-error \
-              --header "x-server-auth: \$server_auth" \
-              --header 'content-type: application/json' \
-              --data-binary "@/tmp/des-indie-browser-execution/\$slug-request.json" \
-              http://127.0.0.1:18100/gha/workflows/plan \
-              > "/tmp/des-indie-browser-execution/\$slug-plan.json"
-            jq -e --arg repository "\$repository" --arg revision "\$revision" --arg profile "\$expected_profile" '
-              .schemaVersion == "gha-indie-plan.v1" and
-              .repository == \$repository and
-              .revision == \$revision and
-              .immutableRevision == true and
-              .executable == true and
-              (.jobs | length == 1) and
-              .jobs[0].supported == true and
-              .jobs[0].profile == \$profile
-            ' "/tmp/des-indie-browser-execution/\$slug-plan.json" >/dev/null
-
-            curl --fail --silent --show-error \
-              --header "x-server-auth: \$server_auth" \
-              --header 'content-type: application/json' \
-              --data-binary "@/tmp/des-indie-browser-execution/\$slug-request.json" \
-              http://127.0.0.1:18100/gha/workflows/runs \
-              > "/tmp/des-indie-browser-execution/\$slug-run.json"
-            run_id="\$(jq -er '.id' "/tmp/des-indie-browser-execution/\$slug-run.json")"
-            [[ "\$run_id" =~ ^gha-[A-Za-z0-9._-]+$ ]]
-
-            status=queued
-            for _ in \$(seq 1 960); do
-              curl --fail --silent --show-error \
-                --header "x-server-auth: \$server_auth" \
-                "http://127.0.0.1:18100/gha/workflows/runs/\$run_id" \
-                > "/tmp/des-indie-browser-execution/\$slug-final.json"
-              status="\$(jq -r '.status' "/tmp/des-indie-browser-execution/\$slug-final.json")"
-              case "\$status" in succeeded|failed) break ;; esac
-              sleep 3
-            done
-            jq -e --arg repository "\$repository" --arg revision "\$revision" '
-              .status == "succeeded" and
-              .plan.repository == \$repository and
-              .plan.revision == \$revision and
-              (.jobs | length == 1) and
-              (all(.jobs[]; .status == "succeeded" and (.buildId | type == "string" and length > 0)))
-            ' "/tmp/des-indie-browser-execution/\$slug-final.json" >/dev/null
-            jq -c '{
-              id,
-              requestId,
-              status,
-              repository:.plan.repository,
-              revision:.plan.revision,
-              profile:.jobs[0].profile,
-              buildId:.jobs[0].buildId,
-              createdAtMs,
-              startedAtMs,
-              finishedAtMs
-            }' "/tmp/des-indie-browser-execution/\$slug-final.json"
-          }
-
-          echo 'DES_INDIE_EVIDENCE_BEGIN'
-          run_one "\$PLAYWRIGHT_REPO" "\$PLAYWRIGHT_SHA" "\$PLAYWRIGHT_PATH" playwright "\$PLAYWRIGHT_YAML_B64" playwright
-          run_one "\$PUPPETEER_REPO" "\$PUPPETEER_SHA" "\$PUPPETEER_PATH" puppeteer "\$PUPPETEER_YAML_B64" puppeteer
-          echo 'DES_INDIE_EVIDENCE_END'
-          REMOTE_SCRIPT
-          chmod 700 "$remote_script"
-
-          encoded_script="$(base64 --wrap=0 "$remote_script")"
-          remote_command="printf '%s' '$encoded_script' | base64 --decode > /tmp/run-des-indie-workflows.sh; chmod 700 /tmp/run-des-indie-workflows.sh; set +e; /tmp/run-des-indie-workflows.sh > /tmp/run-des-indie-workflows.log 2>&1; status=\$?; set -e; tail -c 30000 /tmp/run-des-indie-workflows.log 2>/dev/null || true; rm -f /tmp/run-des-indie-workflows.sh /tmp/run-des-indie-workflows.log; exit \$status"
           parameters="$RUNNER_TEMP/ssm-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
-
           command_id="$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name AWS-RunShellScript \
@@ -293,9 +123,9 @@ jobs:
           {
             echo '## DES browser continuity'
             echo
-            echo '- Playwright repository: `discrete-event-systems-test/des-web-playwright-e2e@1e1116ef6811c4e3e6be34ad3e1def39bc20ef59`'
-            echo '- Puppeteer repository: `discrete-event-systems-test/des-web-puppeteer-e2e@0547548429d937023a124de37afca7659a85c3dd`'
+            echo '- Playwright: `discrete-event-systems-test/des-web-playwright-e2e@1e1116ef6811c4e3e6be34ad3e1def39bc20ef59`'
+            echo '- Puppeteer: `discrete-event-systems-test/des-web-puppeteer-e2e@0547548429d937023a124de37afca7659a85c3dd`'
             echo '- executor: `gha-indie-worker` through `dd-build-server`'
             echo '- policy: immutable revisions, exact repository allowlist, fail-closed static planner, fixed reviewed profiles'
-            echo '- evidence artifact retention: 30 days'
+            echo '- evidence retention: 30 days'
           } >> "$GITHUB_STEP_SUMMARY"
