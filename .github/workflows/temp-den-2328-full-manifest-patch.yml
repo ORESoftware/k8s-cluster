@@ -1,0 +1,84 @@
+name: TEMP DEN-2328 apply full-manifest publisher repair
+
+on:
+  push:
+    branches:
+      - fix/den-2328-full-fleet-manifest-20260805
+    paths:
+      - .github/workflows/temp-den-2328-full-manifest-patch.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: temp-den-2328-full-manifest-patch
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact repair branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/den-2328-full-fleet-manifest-20260805
+          persist-credentials: true
+          fetch-depth: 2
+
+      - name: Preserve full fleet ledger while selecting exact mutations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/ops/publish_exact_private_repository_gaps.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''        exact_manifest = {
+              **execution_manifest,
+              "repository_count": len(selected),
+              "total_tracked_files": sum(int(record["files"]) for record in selected),
+              "total_gitlinks": sum(int(record["gitlinks"]) for record in selected),
+              "organizations": {organization.casefold(): len(selected)},
+              "repositories": selected,
+          }
+          exact_manifest_path = work / f"{organization.casefold()}-exact-private-gaps.json"
+          exact_manifest_path.write_text(
+              json.dumps(exact_manifest, indent=2, sort_keys=True) + "\\n",
+              encoding="utf-8",
+          )
+          '''
+          new = '''        # The sealed publisher validates the complete 32-repository topology even
+          # when --repository selects exactly one mutation. Keep the projected
+          # private execution ledger complete; the allowlist and missing_records
+          # loop below remain the sole mutation boundary.
+          full_private_manifest_path = (
+              work / f"{organization.casefold()}-full-private-fleet.json"
+          )
+          full_private_manifest_path.write_text(
+              json.dumps(execution_manifest, indent=2, sort_keys=True) + "\\n",
+              encoding="utf-8",
+          )
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one subset-manifest block, found {text.count(old)}')
+          text = text.replace(old, new, 1)
+          old_argument = '                    str(exact_manifest_path),\n'
+          new_argument = '                    str(full_private_manifest_path),\n'
+          if text.count(old_argument) != 1:
+              raise SystemExit(
+                  f'expected one publisher manifest argument, found {text.count(old_argument)}'
+              )
+          text = text.replace(old_argument, new_argument, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+          python3 -m py_compile scripts/ops/publish_exact_private_repository_gaps.py
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/ops/publish_exact_private_repository_gaps.py
+          git commit -m 'fix(DEN-2328): pass full sealed manifest to publisher'
+          git push origin HEAD:fix/den-2328-full-fleet-manifest-20260805
+
+# Trigger after definition.
