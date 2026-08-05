@@ -31,6 +31,22 @@ class PrivateFleetPublisherContractTests(unittest.TestCase):
         )
         self.assertIn("push:\n    branches:\n      - main", self.workflow)
 
+    def test_retrigger_is_serial_and_preserves_gap_aware_verification(self) -> None:
+        self.assertIn(
+            "group: ops-publish-missing-organization-repositories",
+            self.workflow,
+        )
+        self.assertIn("cancel-in-progress: false", self.workflow)
+        publication = self.workflow.index("stage=bounded-repository-publication")
+        verification = self.workflow.index("stage=gap-aware-publication-verification")
+        completion = self.workflow.index("stage=complete")
+        self.assertLess(publication, verification)
+        self.assertLess(verification, completion)
+        self.assertIn(
+            "created-exact-preserved-unchanged",
+            self.workflow,
+        )
+
     def test_publisher_observer_uses_exact_workflow_and_bounded_evidence(self) -> None:
         self.assertIn(
             "- Publish missing organization repositories from protected gh profile",
