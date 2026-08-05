@@ -31,6 +31,7 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
+          from textwrap import dedent, indent
 
           workflow = Path('.github/workflows/ops-publish-four-org-fleet-encrypted-owner.yml')
           source = workflow.read_text(encoding='utf-8')
@@ -119,9 +120,9 @@ jobs:
 
           tests = Path('scripts/ops/test_four_org_encrypted_publisher.py')
           source = tests.read_text(encoding='utf-8')
-          marker = '''    def test_remote_result_counts_and_carrier_cleanup_are_required(self) -> None:
-          '''
-          addition = '''    def test_membership_failures_name_only_the_fixed_org_and_safe_role_state(self) -> None:
+          marker = '    def test_remote_result_counts_and_carrier_cleanup_are_required(self) -> None:\n'
+          addition = indent(dedent('''\
+          def test_membership_failures_name_only_the_fixed_org_and_safe_role_state(self) -> None:
               for snippet in (
                   "failed_organization=''",
                   "observed_membership=''",
@@ -130,8 +131,6 @@ jobs:
                   'observed_membership="$membership"',
                   "FOUR_ORG_MEMBERSHIP organization=%s observed=%s",
                   'diagnostic=" Organization \\`${failed_organization}\\` reported \\`${observed_membership}\\`."',
-                  "failed_organization=''",
-                  "observed_membership=''",
               ):
                   with self.subTest(snippet=snippet):
                       self.assertIn(snippet, self.workflow)
@@ -144,7 +143,7 @@ jobs:
               self.assertNotIn("response_body", diagnostics)
               self.assertNotIn("owner_token", diagnostics)
 
-          '''
+          '''), '    ')
           if source.count(marker) != 1:
               raise SystemExit('membership test insertion marker is not unique')
           if 'test_membership_failures_name_only_the_fixed_org' in source:
