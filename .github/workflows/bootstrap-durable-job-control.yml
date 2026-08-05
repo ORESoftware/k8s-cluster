@@ -1,0 +1,40 @@
+name: Bootstrap durable fabrication job control
+
+on:
+  push:
+    branches:
+      - feature/durable-job-control-rds-nats
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Materialize durable job control
+        shell: bash
+        run: cat .bootstrap/durable-job-control.part-* | base64 --decode | tar -xz
+      - name: Format Rust
+        run: cargo fmt --all
+      - name: Commit implementation and remove bootstrap
+        shell: bash
+        run: |
+          rm -rf .bootstrap
+          rm -f .github/workflows/bootstrap-durable-job-control.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/job_control.rs src/bin/fabrication-job-control.rs \
+            doc/database/durable-job-control.sql \
+            doc/architecture/adr-durable-job-execution.md \
+            doc/runbooks/job-recovery.md \
+            .bootstrap .github/workflows/bootstrap-durable-job-control.yml
+          git commit -m "feat: add durable fabrication job control"
+          git push
