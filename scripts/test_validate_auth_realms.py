@@ -93,6 +93,18 @@ class AuthRealmContractTests(unittest.TestCase):
             )
         )
 
+    def test_runtime_source_must_match_the_exact_database_host(self) -> None:
+        source = self.realm_source.replace(
+            "actual_host.eq_ignore_ascii_case(expected_host)",
+            "true",
+        )
+        self.assertTrue(
+            any(
+                "actual_host.eq_ignore_ascii_case(expected_host)" in error
+                for error in self.validate(realm_source=source)
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
