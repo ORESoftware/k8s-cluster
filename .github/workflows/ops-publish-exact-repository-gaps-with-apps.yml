@@ -96,11 +96,13 @@ jobs:
             scripts/ops/publish_exact_private_repository_gaps_via_apps.sh
             scripts/ops/test_publish_exact_private_repository_gaps.py
           )
-          if grep -nE 'ghp_|github_pat_|-----BEGIN (RSA )?PRIVATE KEY-----' "${targets[@]}"; then
+          credential_pattern='gh''p_|github_''pat_|-----BEGIN (RSA )?PRIVATE KEY-----'
+          unsafe_pattern='git push --''force|--visibility[ =]+public|"private"[[:space:]]*:[[:space:]]*false'
+          if grep -nE "$credential_pattern" "${targets[@]}"; then
             echo 'credential-shaped source material detected' >&2
             exit 1
           fi
-          if grep -nE 'git push --force|--visibility[ =]+public|"private"[[:space:]]*:[[:space:]]*false' "${targets[@]}"; then
+          if grep -nE "$unsafe_pattern" "${targets[@]}"; then
             echo 'unsafe repository mutation path detected' >&2
             exit 1
           fi
