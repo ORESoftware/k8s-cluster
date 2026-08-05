@@ -1,0 +1,92 @@
+name: Finalize DEN-1757 StreemPilot media-router continuity
+
+on:
+  push:
+    branches:
+      - agent/den-1757-streempilot-media-router-continuity
+    paths:
+      - scripts/finalize-den-1757-streempilot-media-router-continuity.py
+      - .github/workflows/finalize-den-1757-streempilot-media-router-continuity.yml
+      - remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-den-1757-streempilot-media-router-continuity
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/agent/den-1757-streempilot-media-router-continuity'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout the exact same-repository branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: agent/den-1757-streempilot-media-router-continuity
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: true
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22.16.0
+
+      - name: Apply only the deterministic reviewed transformation
+        run: python3 scripts/finalize-den-1757-streempilot-media-router-continuity.py
+
+      - name: Validate Rust formatting and contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all -- --check
+          cargo clippy --locked --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all-targets -- -D warnings
+          cargo test --locked --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all-targets
+          cargo fmt --manifest-path remote/deployments/build-server-rs/Cargo.toml --all -- --check
+          cargo clippy --locked --manifest-path remote/deployments/build-server-rs/Cargo.toml --all-targets -- -D warnings
+          cargo test --locked --manifest-path remote/deployments/build-server-rs/Cargo.toml profiles::tests
+
+      - name: Validate exact repository/profile admission and inert deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test remote/tests/general/streempilot-media-router-continuity.test.mjs
+          grep -F 'replicas: 0' remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml
+          grep -F 'GHA_CLONE_EXECUTION_ENABLED' remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml
+          grep -F 'value: "false"' remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml
+          test ! -e scripts/finalize-den-1757-streempilot-media-router-continuity.py
+          test ! -e .github/workflows/finalize-den-1757-streempilot-media-router-continuity.yml
+          git diff --check
+
+      - name: Commit only tested permanent product files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git status --short | awk '{print $2}' | sort)
+          expected=(
+            remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml
+            remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml
+            remote/deployments/build-server-rs/src/profiles.rs
+            remote/deployments/gha-clone-server-rs/README.md
+            remote/deployments/gha-clone-server-rs/src/lib.rs
+            remote/tests/general/streempilot-media-router-continuity.test.mjs
+          )
+          if [[ "${changed[*]}" != "${expected[*]}" ]]; then
+            printf 'unexpected final file set:\n' >&2
+            printf '  %s\n' "${changed[@]}" >&2
+            exit 1
+          fi
+          git config user.name 'ore-ci-finalizer'
+          git config user.email 'ore-ci-finalizer@users.noreply.github.com'
+          git add -- "${expected[@]}"
+          git commit -m 'feat(DEN-1757): add fixed StreemPilot media-router continuity profile'
+          git push origin HEAD:agent/den-1757-streempilot-media-router-continuity
