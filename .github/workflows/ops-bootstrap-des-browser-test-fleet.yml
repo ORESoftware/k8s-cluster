@@ -6,6 +6,8 @@ on:
     paths:
       - .github/workflows/ops-bootstrap-des-browser-test-fleet.yml
       - scripts/ops/bootstrap_des_browser_test_fleet.sh
+      - scripts/ops/mint_repository_admin_app_token.py
+      - scripts/ops/select_hypesiege_github_app_from_protected_sources.py
   workflow_dispatch:
 
 permissions:
@@ -19,7 +21,7 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Check out trusted main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -48,18 +50,38 @@ jobs:
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
 
           publisher='scripts/ops/bootstrap_des_browser_test_fleet.sh'
-          test -f "$publisher"
-          encoded_publisher="$(base64 --wrap=0 "$publisher")"
+          selector='scripts/ops/select_hypesiege_github_app_from_protected_sources.py'
+          app_token_helper='scripts/ops/mint_repository_admin_app_token.py'
+          for path in "$publisher" "$selector" "$app_token_helper"; do
+            test -f "$path"
+          done
+          publisher_sha256="$(sha256sum "$publisher" | awk '{print $1}')"
+          selector_sha256="$(sha256sum "$selector" | awk '{print $1}')"
+          app_token_helper_sha256="$(sha256sum "$app_token_helper" | awk '{print $1}')"
 
           remote_command=$(cat <<REMOTE_COMMAND
           set -euo pipefail
           readonly GH_VERSION=2.93.0
           readonly GH_ARCHIVE_SHA256=02d1290eba130e0b896f3709ffff22e1c75a51475ddb70476a85abc6b5807af0
+          readonly TRUSTED_SHA='$trusted_sha'
+          readonly RAW_BASE="https://raw.githubusercontent.com/ORESoftware/k8s-cluster/\$TRUSTED_SHA"
           cleanup() {
             rm -rf "/tmp/gh_\${GH_VERSION}_linux_amd64" /tmp/gh-des-bootstrap.tar.gz \
-              /tmp/bootstrap-des-browser-test-fleet.sh /tmp/bootstrap-des-browser-test-fleet.log
+              /tmp/bootstrap-des-browser-test-fleet.sh \
+              /tmp/select-repository-admin-github-app.py \
+              /tmp/mint-repository-admin-app-token.py \
+              /tmp/bootstrap-des-browser-test-fleet.log
           }
           trap cleanup EXIT
+          download_checked() {
+            local relative="\$1"
+            local destination="\$2"
+            local expected="\$3"
+            curl --fail --silent --show-error --location \
+              --output "\$destination" "\$RAW_BASE/\$relative"
+            printf '%s  %s\n' "\$expected" "\$destination" | sha256sum --check --status
+            chmod 700 "\$destination"
+          }
           if ! command -v gh >/dev/null 2>&1; then
             curl --fail --silent --show-error --location \
               --output /tmp/gh-des-bootstrap.tar.gz \
@@ -68,13 +90,17 @@ jobs:
             tar -xzf /tmp/gh-des-bootstrap.tar.gz -C /tmp
             export PATH="/tmp/gh_\${GH_VERSION}_linux_amd64/bin:\$PATH"
           fi
-          printf '%s' '$encoded_publisher' | base64 --decode > /tmp/bootstrap-des-browser-test-fleet.sh
-          chmod 700 /tmp/bootstrap-des-browser-test-fleet.sh
+          download_checked '$publisher' /tmp/bootstrap-des-browser-test-fleet.sh '$publisher_sha256'
+          download_checked '$selector' /tmp/select-repository-admin-github-app.py '$selector_sha256'
+          download_checked '$app_token_helper' /tmp/mint-repository-admin-app-token.py '$app_token_helper_sha256'
           set +e
-          /tmp/bootstrap-des-browser-test-fleet.sh > /tmp/bootstrap-des-browser-test-fleet.log 2>&1
+          DES_APP_SELECTOR=/tmp/select-repository-admin-github-app.py \
+          DES_APP_TOKEN_HELPER=/tmp/mint-repository-admin-app-token.py \
+            /tmp/bootstrap-des-browser-test-fleet.sh \
+              > /tmp/bootstrap-des-browser-test-fleet.log 2>&1
           status=\$?
           set -e
-          tail -c 20000 /tmp/bootstrap-des-browser-test-fleet.log 2>/dev/null || true
+          tail -c 30000 /tmp/bootstrap-des-browser-test-fleet.log 2>/dev/null || true
           exit \$status
           REMOTE_COMMAND
           )
@@ -93,7 +119,7 @@ jobs:
           echo "ssm_command_id=$command_id"
 
           status=Pending
-          for _ in $(seq 1 480); do
+          for _ in $(seq 1 880); do
             status="$(
               aws ssm get-command-invocation \
                 --command-id "$command_id" \
