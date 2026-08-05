@@ -50,18 +50,9 @@ async fn main() -> JobControlResult<()> {
     let store = JobStore::connect_from_env().await?;
     store.ensure_schema().await?;
     let fiducia = FiduciaClient::from_env()?;
-    let lease_seconds = bounded_env_u64(
-        "FABRICATION_JOB_LEASE_SECS",
-        DEFAULT_LEASE_SECS,
-        15,
-        86_400,
-    )?;
-    let wait_seconds = bounded_env_u64(
-        "FIDUCIA_WAIT_SECS",
-        DEFAULT_FIDUCIA_WAIT_SECS,
-        0,
-        300,
-    )?;
+    let lease_seconds =
+        bounded_env_u64("FABRICATION_JOB_LEASE_SECS", DEFAULT_LEASE_SECS, 15, 86_400)?;
+    let wait_seconds = bounded_env_u64("FIDUCIA_WAIT_SECS", DEFAULT_FIDUCIA_WAIT_SECS, 0, 300)?;
     let lease = ClaimedJobLease::acquire(
         store,
         fiducia,
@@ -104,9 +95,7 @@ async fn run_claimed_job(mut lease: ClaimedJobLease) -> JobControlResult<()> {
     }
 }
 
-async fn process_job(
-    lease: &mut ClaimedJobLease,
-) -> Result<MeshyJobResult, WorkerFailure> {
+async fn process_job(lease: &mut ClaimedJobLease) -> Result<MeshyJobResult, WorkerFailure> {
     let job = lease.job().clone();
     if job.kind != JOB_KIND {
         return Err(MeshyJobError::new(
@@ -117,15 +106,14 @@ async fn process_job(
         .into());
     }
 
-    let request: MeshyJobRequest = serde_json::from_value(job.request_payload.clone()).map_err(
-        |error| {
+    let request: MeshyJobRequest =
+        serde_json::from_value(job.request_payload.clone()).map_err(|error| {
             MeshyJobError::new(
                 "invalid_meshy_job_request",
                 format!("could not decode Meshy request payload: {error}"),
                 false,
             )
-        },
-    )?;
+        })?;
     request.validate()?;
     let identity = JobIdentity {
         tenant_id: job.tenant_id.clone(),
@@ -345,16 +333,12 @@ impl From<MeshyJobError> for WorkerFailure {
     }
 }
 
-fn bounded_env_u64(
-    name: &str,
-    default: u64,
-    minimum: u64,
-    maximum: u64,
-) -> JobControlResult<u64> {
+fn bounded_env_u64(name: &str, default: u64, minimum: u64, maximum: u64) -> JobControlResult<u64> {
     let value = match env::var(name) {
-        Ok(value) => value.trim().parse::<u64>().map_err(|error| {
-            invalid(format!("{name} must be an unsigned integer: {error}"))
-        })?,
+        Ok(value) => value
+            .trim()
+            .parse::<u64>()
+            .map_err(|error| invalid(format!("{name} must be an unsigned integer: {error}")))?,
         Err(_) => default,
     };
     if value < minimum || value > maximum {
