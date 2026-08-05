@@ -7,11 +7,14 @@ on:
       - '.github/workflows/ops-bootstrap-org-dotgithub-direct.yml'
       - 'scripts/ops/bootstrap_org_dotgithub_repositories.py'
       - 'scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py'
+      - 'scripts/ops/bootstrap_org_dotgithub_repositories_all.py'
       - 'scripts/ops/run_direct_org_dotgithub_publisher.sh'
       - 'scripts/ops/run_protected_org_dotgithub_publisher.sh'
+      - 'scripts/ops/run_protected_org_dotgithub_all_publisher.sh'
       - 'tests/ops/test_bootstrap_org_dotgithub_direct.py'
       - 'tests/ops/test_bootstrap_org_dotgithub_repositories.py'
       - 'tests/ops/test_bootstrap_org_dotgithub_repositories_hardened.py'
+      - 'tests/ops/test_bootstrap_org_dotgithub_repositories_all.py'
       - 'tests/ops/test_bootstrap_org_dotgithub_protected_runner.py'
   push:
     branches:
@@ -20,11 +23,14 @@ on:
       - '.github/workflows/ops-bootstrap-org-dotgithub-direct.yml'
       - 'scripts/ops/bootstrap_org_dotgithub_repositories.py'
       - 'scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py'
+      - 'scripts/ops/bootstrap_org_dotgithub_repositories_all.py'
       - 'scripts/ops/run_direct_org_dotgithub_publisher.sh'
       - 'scripts/ops/run_protected_org_dotgithub_publisher.sh'
+      - 'scripts/ops/run_protected_org_dotgithub_all_publisher.sh'
       - 'tests/ops/test_bootstrap_org_dotgithub_direct.py'
       - 'tests/ops/test_bootstrap_org_dotgithub_repositories.py'
       - 'tests/ops/test_bootstrap_org_dotgithub_repositories_hardened.py'
+      - 'tests/ops/test_bootstrap_org_dotgithub_repositories_all.py'
       - 'tests/ops/test_bootstrap_org_dotgithub_protected_runner.py'
   workflow_dispatch:
 
@@ -63,9 +69,11 @@ jobs:
           set -euo pipefail
           bash -n scripts/ops/run_direct_org_dotgithub_publisher.sh
           bash -n scripts/ops/run_protected_org_dotgithub_publisher.sh
+          bash -n scripts/ops/run_protected_org_dotgithub_all_publisher.sh
           python3 -m py_compile \
             scripts/ops/bootstrap_org_dotgithub_repositories.py \
-            scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py
+            scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py \
+            scripts/ops/bootstrap_org_dotgithub_repositories_all.py
           python3 -m unittest discover \
             -s tests/ops \
             -p 'test_bootstrap_org_dotgithub*.py' \
@@ -101,9 +109,11 @@ jobs:
           set -euo pipefail
           bash -n scripts/ops/run_direct_org_dotgithub_publisher.sh
           bash -n scripts/ops/run_protected_org_dotgithub_publisher.sh
+          bash -n scripts/ops/run_protected_org_dotgithub_all_publisher.sh
           python3 -m py_compile \
             scripts/ops/bootstrap_org_dotgithub_repositories.py \
-            scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py
+            scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py \
+            scripts/ops/bootstrap_org_dotgithub_repositories_all.py
           python3 -m unittest discover \
             -s tests/ops \
             -p 'test_bootstrap_org_dotgithub*.py' \
@@ -118,7 +128,7 @@ jobs:
           retry-max-attempts: 2
           mask-aws-account-id: true
 
-      - name: Publish and verify the fixed 36-organization fleet
+      - name: Publish and verify the fixed 61-organization fleet
         id: publish
         continue-on-error: true
         shell: bash
@@ -165,7 +175,7 @@ jobs:
               echo
               echo "Direct trusted-main workflow run: ${run_url}"
               echo
-              echo "The fixed 36-organization fleet was verified. Follow-up pull requests may now add repository conventions that GitHub does not inherit automatically."
+              echo "The fixed 61-organization fleet was verified. Existing unmanaged notes were preserved while the organization-wide baseline was reconciled."
             } >> "$body"
           else
             STDOUT="$report" STDERR="$error_log" python3 - <<'PY' > "$RUNNER_TEMP/org-dotgithub-redacted.log"
