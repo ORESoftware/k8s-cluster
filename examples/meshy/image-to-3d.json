@@ -1,0 +1,13 @@
+{
+  "image_url": "https://example.com/object-front.png",
+  "model_type": "standard",
+  "ai_model": "meshy-6",
+  "should_texture": true,
+  "enable_pbr": true,
+  "texture_resolution": "2k",
+  "should_remesh": true,
+  "topology": "triangle",
+  "target_polycount": 10000,
+  "moderation": true,
+  "target_formats": ["glb", "stl", "3mf"]
+}
