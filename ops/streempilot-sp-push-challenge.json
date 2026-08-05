@@ -1,6 +1,11 @@
 {
-  "state": "pending",
-  "purpose": "push prepared StreemPilot histories without workflow-file scope",
+  "state": "awaiting-encrypted-response",
+  "purpose": "push-reviewed-streempilot-feature-histories",
+  "nonce": "4abdca9796ac516e38bcbf50b882a52019be61bb90e29436",
+  "publicKey": "-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAtWsjFg5yWfvmrqx+ucMh\nMWJwh5ZkxNtxr8GJwypdqsqvfk5utEa895HbD/cA7SavXhjBk/8RZo7wBkLl44z2\nOyS8O0yNkiJ4cg05EYWkdmGv1iSxQvQG+tQFRvGxGgjkQnNkwX333nh2mXZ+IcTz\nuxqkbuU2VG4uGJgeC/qqYRQbWVqYVBzk87XePbHMUQgrD8hunekHrTsOBL8rk9iX\n3eNSFH76/ZY95UXWOgfqshQGzwvaNg3BNYectfSacmQaSANK7eJuzqBTtv0O1m3P\nHgW/2HpeuTb6wiOUoatQvoLVmwCdnkLYDp18yeL9MhhPnr3NDguHe2lh1Y0cyQxV\np380I3L/sEThfbW/+0+7zdP23KHa56z/QjR6wsTz0iQfiDV1/Sie5C/Aox6pIEZF\n3IUIOQIO+GI4GyQ2BaHc1+JHWraXa9OF4KSybA+9MxPE/aTnSfthWBsWHxqT+tQN\nWk8out1LnHWHoLcWKto4h0soSOX8YcZG1Hi3nvVCu7XjAgMBAAE=\n-----END PUBLIC KEY-----\n",
+  "algorithm": "RSA-OAEP-SHA256-MGF1-SHA256",
+  "runId": "30975154768",
+  "sourceCommit": "552cd1ed87ba5cac3df73b50cd7f03fd4d812c2f",
   "privateKeyStored": false,
   "plaintextCredentialStored": false
 }
