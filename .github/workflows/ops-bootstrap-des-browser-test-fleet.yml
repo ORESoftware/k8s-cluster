@@ -48,7 +48,7 @@ jobs:
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
 
           publisher='scripts/ops/bootstrap_des_browser_test_fleet.sh'
-          test -x "$publisher"
+          test -f "$publisher"
           encoded_publisher="$(base64 --wrap=0 "$publisher")"
 
           remote_command=$(cat <<REMOTE_COMMAND
