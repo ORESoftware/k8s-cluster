@@ -167,7 +167,7 @@ jobs:
             aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
               --document-name AWS-RunShellScript \
-              --comment "Publish organization .github policy from $TRUSTED_SHA with protected Apps" \
+              --comment "Org .github policy $TRUSTED_SHA" \
               --parameters "file://$parameters" \
               --query 'Command.CommandId' \
               --output text
