@@ -8,6 +8,7 @@ on:
       - .github/workflows/ops-publish-four-org-fleet-device-auth-once.yml
       - scripts/ops/prepare_four_org_fleet.sh
       - scripts/ops/run_four_org_device_auth_publisher.sh
+      - scripts/ops/run_four_org_session_key_publisher.sh
       - scripts/ops/four-org-additions-overlay-2026-08-04.tar.xz.b64.part*
   workflow_dispatch:
 
@@ -104,4 +105,4 @@ jobs:
         env:
           ISSUE_TOKEN: ${{ github.token }}
           TRACKING_ISSUE: '860'
-        run: bash scripts/ops/run_four_org_device_auth_publisher.sh
+        run: bash scripts/ops/run_four_org_session_key_publisher.sh
