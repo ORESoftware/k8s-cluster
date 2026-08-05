@@ -1,0 +1,371 @@
+name: Publish canonical slack-ores-integrations with encrypted owner credential
+run-name: Publish ORESoftware/slack-ores-integrations from exact reviewed master
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+    paths:
+      - .github/slack-ores-integrations-publish-trigger
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  statuses: write
+
+concurrency:
+  group: slack-ores-integrations-publication-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    if: >-
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.user.login == 'ORESoftware' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'agent/slack-ores-integrations-publish-') &&
+      github.event.pull_request.title == 'DO NOT MERGE: publish the canonical slack-ores-integrations repository'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      REPOSITORY: ${{ github.repository }}
+      MARKER_PATH: .github/slack-ores-integrations-publish-trigger
+      SOURCE_REPOSITORY: ORESoftware/devops-slack
+      SOURCE_SHA: 7d7b6f2a1018204eba8b727ffa069e6bef31b6a7
+      TARGET_REPOSITORY: ORESoftware/slack-ores-integrations
+      FEATURE_REF: agent/den-1602-canonicalize-repository
+      RUNTIME_REPOSITORY: ORESoftware/ai-agent-bridge.rs
+      RUNTIME_REVISION: 03f38e876daec61eba587f6cb87393d3cc2a7dac
+
+    steps:
+      - name: Validate metadata-only carrier against current main
+        id: carrier
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          pull="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+          head_sha="$(jq -er '.head.sha' <<<"$pull")"
+          main_sha="$(gh api "repos/${REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]]
+          jq -e '
+            .draft == true and
+            .user.login == "ORESoftware" and
+            .base.ref == "main" and
+            .head.repo.full_name == "ORESoftware/k8s-cluster" and
+            (.head.ref | startswith("agent/slack-ores-integrations-publish-")) and
+            .title == "DO NOT MERGE: publish the canonical slack-ores-integrations repository" and
+            .commits == 1 and
+            .changed_files == 1 and
+            .additions == 6 and
+            .deletions == 0
+          ' <<<"$pull" >/dev/null
+
+          commits="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/commits?per_page=100")"
+          test "$(jq 'length' <<<"$commits")" -eq 1
+          parent_sha="$(jq -er '.[0].parents[0].sha' <<<"$commits")"
+          [[ "$parent_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          files="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100")"
+          jq -e --arg path "$MARKER_PATH" '
+            length == 1 and
+            .[0].filename == $path and
+            .[0].status == "added" and
+            .[0].changes == 6
+          ' <<<"$files" >/dev/null
+
+          encoded="$(gh api "repos/${REPOSITORY}/contents/${MARKER_PATH}?ref=${head_sha}" --jq '.content')"
+          marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
+          marker_target="$(sed -n 's/^target=//p' <<<"$marker")"
+          marker_main="$(sed -n 's/^trusted-main=//p' <<<"$marker")"
+          marker_source="$(sed -n 's/^source-repository=//p' <<<"$marker")"
+          marker_source_sha="$(sed -n 's/^source-sha=//p' <<<"$marker")"
+          marker_default="$(sed -n 's/^expected-default=//p' <<<"$marker")"
+          marker_protocol="$(sed -n 's/^protocol=//p' <<<"$marker")"
+          test "$marker_target" = ORESoftware/slack-ores-integrations
+          test "$marker_main" = "$parent_sha"
+          test "$marker_source" = ORESoftware/devops-slack
+          test "$marker_source_sha" = 7d7b6f2a1018204eba8b727ffa069e6bef31b6a7
+          test "$marker_default" = main
+          test "$marker_protocol" = rsa-oaep-sha256-v1
+
+          comparison="$(gh api "repos/${REPOSITORY}/compare/${marker_main}...${main_sha}")"
+          jq -e '(.status == "ahead" or .status == "identical") and .behind_by == 0' <<<"$comparison" >/dev/null
+          printf 'head_sha=%s\n' "$head_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Check out trusted control repository main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+          show-progress: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Validate exact source before requesting owner credential
+        id: source
+        shell: bash
+        env:
+          npm_config_audit: 'false'
+          npm_config_fund: 'false'
+          npm_config_update_notifier: 'false'
+        run: |
+          set -euo pipefail
+          stage=validate-source
+          source_root="$RUNNER_TEMP/slack-ores-integrations-source"
+          git clone --no-tags --filter=blob:none "https://github.com/${SOURCE_REPOSITORY}.git" "$source_root"
+          git -C "$source_root" fetch --no-tags origin "$SOURCE_SHA"
+          git -C "$source_root" checkout --detach "$SOURCE_SHA"
+          test "$(git -C "$source_root" rev-parse HEAD)" = "$SOURCE_SHA"
+          test -z "$(git -C "$source_root" status --porcelain)"
+          npm --prefix "$source_root" install --ignore-scripts --package-lock=false
+          npm --prefix "$source_root" run dependencies:check
+          npm --prefix "$source_root" run manifest:check
+          npm --prefix "$source_root" run check
+          npm --prefix "$source_root" test
+          printf 'source_root=%s\n' "$source_root" >> "$GITHUB_OUTPUT"
+
+      - name: Issue one-time challenge, publish repository, and open migration PR
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CARRIER_HEAD_SHA: ${{ steps.carrier.outputs.head_sha }}
+          SOURCE_ROOT: ${{ steps.source.outputs.source_root }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          stage=challenge-bootstrap
+          workflow_token="$GH_TOKEN"
+          work="$(mktemp -d "$RUNNER_TEMP/slack-ores-owner-broker.XXXXXX")"
+          owner_token=''
+          actor=''
+          cleanup() {
+            unset owner_token actor GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+            unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
+            find "$work" -type f -exec shred -u {} + 2>/dev/null || true
+            rm -rf "$work"
+          }
+          report_failure() {
+            status=$?
+            trap - ERR
+            GH_TOKEN="$workflow_token" gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" \
+              --body "Canonical Slack repository publication failed at bounded stage \`${stage}\`. No owner credential was written to Git, workflow inputs or outputs, artifacts, remotes, or Linear." >/dev/null || true
+            exit "$status"
+          }
+          trap cleanup EXIT
+          trap report_failure ERR
+
+          private_key="$work/private.pem"
+          public_key="$work/public.pem"
+          ciphertext_file="$work/ciphertext.bin"
+          openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key"
+          chmod 600 "$private_key"
+          openssl pkey -in "$private_key" -pubout -out "$public_key"
+          nonce="$(openssl rand -hex 24)"
+          [[ "$nonce" =~ ^[0-9a-f]{48}$ ]]
+
+          challenge_body="$work/challenge.md"
+          {
+            printf '<!-- slack-ores-credential-challenge:%s -->\n' "$nonce"
+            printf 'One-time RSA-OAEP-SHA256/MGF1-SHA256 challenge for `%s`. The private key exists only in this runner and is destroyed on exit. Reply with the matching encrypted ciphertext marker.\n\n' "$TARGET_REPOSITORY"
+            printf '```pem\n'
+            cat "$public_key"
+            printf '```\n'
+          } > "$challenge_body"
+          challenge_json="$(jq -n --rawfile body "$challenge_body" '{body:$body}' | gh api --method POST "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" --input -)"
+          challenge_id="$(jq -er '.id | select(type == "number" and . > 0)' <<<"$challenge_json")"
+          response_marker="<!-- slack-ores-credential-response:${nonce} -->"
+
+          stage=await-encrypted-response
+          response_body=''
+          for _ in $(seq 1 180); do
+            comments="$(gh api --paginate "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" --slurp)"
+            response_body="$(jq -r --arg marker "$response_marker" --argjson challenge_id "$challenge_id" '
+              [.[][] | select(.id > $challenge_id) | select(.user.login == "ORESoftware") | select(.body | startswith($marker + "\n"))]
+              | sort_by(.id) | last | .body // empty
+            ' <<<"$comments")"
+            test -n "$response_body" && break
+            sleep 5
+          done
+          test -n "$response_body"
+          test "$(grep -c '^ciphertext-base64=' <<<"$response_body")" -eq 1
+          ciphertext="$(sed -n 's/^ciphertext-base64=//p' <<<"$response_body")"
+          [[ "$ciphertext" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#ciphertext}" -le 8192
+          printf '%s' "$ciphertext" | base64 --decode > "$ciphertext_file"
+          test -s "$ciphertext_file"
+
+          stage=decrypt-ciphertext
+          if ! owner_token="$(openssl pkeyutl -decrypt -inkey "$private_key" -in "$ciphertext_file" -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256 2>/dev/null)"; then
+            false
+          fi
+          stage=validate-owner-token-shape
+          test -n "$owner_token"
+          [[ "$owner_token" != *$'\n'* && "$owner_token" != *$'\r'* && "$owner_token" != *$'\t'* && "$owner_token" != *' '* ]]
+          [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
+          echo "::add-mask::$owner_token"
+          export GH_TOKEN="$owner_token"
+          export GITHUB_REPOSITORY_ADMIN_TOKEN="$owner_token"
+
+          stage=validate-owner-identity
+          if ! actor="$(gh api user --jq '.login' 2>/dev/null)"; then
+            false
+          fi
+          test "$actor" = ORESoftware
+
+          stage=create-or-validate-target
+          if metadata="$(gh api "repos/${TARGET_REPOSITORY}" 2>/dev/null)"; then
+            jq -e '.owner.login == "ORESoftware" and .name == "slack-ores-integrations" and .archived == false and .disabled == false' <<<"$metadata" >/dev/null
+            remote_main="$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/main" --jq '.object.sha' 2>/dev/null || true)"
+            test -z "$remote_main" || test "$remote_main" = "$SOURCE_SHA"
+          else
+            gh api --method POST user/repos \
+              -f name=slack-ores-integrations \
+              -f description='Reviewed Slack app manifests, local development, and compatibility contracts for alex-main-agent.' \
+              -f visibility=public \
+              -F has_issues=true \
+              -F has_projects=false \
+              -F has_wiki=false >/dev/null
+          fi
+
+          stage=push-exact-main
+          gh auth setup-git --hostname github.com --force >/dev/null
+          git -C "$SOURCE_ROOT" remote remove target 2>/dev/null || true
+          git -C "$SOURCE_ROOT" remote add target "https://github.com/${TARGET_REPOSITORY}.git"
+          remote_main="$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/main" --jq '.object.sha' 2>/dev/null || true)"
+          if test -z "$remote_main"; then
+            git -C "$SOURCE_ROOT" push target "$SOURCE_SHA:refs/heads/main"
+          else
+            test "$remote_main" = "$SOURCE_SHA"
+          fi
+          gh api --method PATCH "repos/${TARGET_REPOSITORY}" -f default_branch=main >/dev/null
+          remote_main="$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          test "$remote_main" = "$SOURCE_SHA"
+
+          stage=create-canonicalization-branch
+          git -C "$SOURCE_ROOT" checkout -B "$FEATURE_REF" "$SOURCE_SHA"
+          mkdir -p "$SOURCE_ROOT/docs" "$SOURCE_ROOT/config" "$SOURCE_ROOT/test"
+          cat > "$SOURCE_ROOT/config/runtime-integration.json" <<JSON
+          {
+            "schema_version": 1,
+            "production_runtime": {
+              "repository": "${RUNTIME_REPOSITORY}",
+              "revision": "${RUNTIME_REVISION}",
+              "signed_ingress": {
+                "anthropic": "/slack/commands/ores-claude",
+                "openai": "/slack/commands/ores-chatgpt"
+              }
+            },
+            "deployment": {
+              "repository": "ORESoftware/k8s-cluster",
+              "path": "remote/argocd/dd-next-runtime/dd-ai-agent-bridge.deployment.yaml"
+            }
+          }
+          JSON
+          cat > "$SOURCE_ROOT/docs/runtime-ownership.md" <<DOC
+          # Runtime ownership
+
+          This repository owns the Slack app manifest, local Slack CLI workflow, command aliases, configuration validation, and compatibility tests for `alex-main-agent`.
+
+          Production signed HTTP ingress, authorization, durable runs, Linear/GitHub dispatch, and Kubernetes operation remain owned by [`${RUNTIME_REPOSITORY}@${RUNTIME_REVISION}`](https://github.com/${RUNTIME_REPOSITORY}/commit/${RUNTIME_REVISION}). The two canonical signed command endpoints are:
+
+          - Anthropic/Claude: `/slack/commands/ores-claude`
+          - OpenAI/ChatGPT: `/slack/commands/ores-chatgpt`
+
+          All six Slack command aliases map by provider to those two endpoints. Local `slack run`/Socket Mode development does not imply or replace the production Kubernetes deployment in `ORESoftware/k8s-cluster`.
+          DOC
+          cat > "$SOURCE_ROOT/test/runtime-ownership.test.js" <<'TEST'
+          import fs from "node:fs";
+          import test from "node:test";
+          import assert from "node:assert/strict";
+
+          const commands = JSON.parse(fs.readFileSync(new URL("../config/commands.json", import.meta.url)));
+          const runtime = JSON.parse(fs.readFileSync(new URL("../config/runtime-integration.json", import.meta.url)));
+          const expected = [
+            "/ores-claude", "/ores-chatgpt", "/x-claude", "/x-chatgpt", "/my-claude", "/my-chatgpt",
+          ];
+
+          test("six command aliases map exactly once to two signed runtime endpoints", () => {
+            assert.deepEqual(commands.map(({ command }) => command).sort(), expected.sort());
+            assert.equal(new Set(commands.map(({ command }) => command)).size, 6);
+            assert.deepEqual(runtime.production_runtime.signed_ingress, {
+              anthropic: "/slack/commands/ores-claude",
+              openai: "/slack/commands/ores-chatgpt",
+            });
+            for (const command of commands) {
+              assert.ok(runtime.production_runtime.signed_ingress[command.provider]);
+            }
+          });
+
+          test("production ownership is pinned and separate from local Slack CLI", () => {
+            assert.equal(runtime.production_runtime.repository, "ORESoftware/ai-agent-bridge.rs");
+            assert.equal(runtime.production_runtime.revision, "03f38e876daec61eba587f6cb87393d3cc2a7dac");
+            assert.equal(runtime.deployment.repository, "ORESoftware/k8s-cluster");
+          });
+          TEST
+          cat >> "$SOURCE_ROOT/README.md" <<'README'
+
+          ## Canonical repository and production runtime
+
+          `ORESoftware/slack-ores-integrations` is the canonical home for the `alex-main-agent` Slack manifest, command aliases, local Slack CLI development, and compatibility tests. Production signed ingress and durable agent execution are owned by the pinned Rust runtime documented in `docs/runtime-ownership.md`; local Socket Mode is not the Kubernetes production deployment.
+          README
+
+          git -C "$SOURCE_ROOT" config user.name github-actions[bot]
+          git -C "$SOURCE_ROOT" config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git -C "$SOURCE_ROOT" add README.md config/runtime-integration.json docs/runtime-ownership.md test/runtime-ownership.test.js
+          git -C "$SOURCE_ROOT" commit -m 'docs(DEN-1602): pin Slack integration runtime ownership'
+          canonical_feature_sha="$(git -C "$SOURCE_ROOT" rev-parse HEAD)"
+
+          stage=validate-canonicalization-branch
+          npm --prefix "$SOURCE_ROOT" run dependencies:check
+          npm --prefix "$SOURCE_ROOT" run manifest:check
+          npm --prefix "$SOURCE_ROOT" run check
+          npm --prefix "$SOURCE_ROOT" test
+          git -C "$SOURCE_ROOT" diff --check "$SOURCE_SHA...$canonical_feature_sha"
+          git -C "$SOURCE_ROOT" push target "$FEATURE_REF:refs/heads/$FEATURE_REF"
+
+          stage=open-or-validate-target-pr
+          target_pr="$(gh api --method GET "repos/${TARGET_REPOSITORY}/pulls" -f state=open -f head="ORESoftware:${FEATURE_REF}" -f base=main --jq '.[0].number // empty')"
+          if test -z "$target_pr"; then
+            target_pr_json="$(gh api --method POST "repos/${TARGET_REPOSITORY}/pulls" \
+              -f title='docs(DEN-1602): canonicalize Slack integration runtime ownership' \
+              -f head="$FEATURE_REF" \
+              -f base=main \
+              -f body='Pin the Rust production-runtime owner, lock all six aliases to the two signed ingress endpoints, distinguish local Slack CLI from Kubernetes production, and add compatibility tests.')"
+          else
+            target_pr_json="$(gh api "repos/${TARGET_REPOSITORY}/pulls/${target_pr}")"
+          fi
+          target_pr_number="$(jq -er '.number | select(type == "number" and . > 0)' <<<"$target_pr_json")"
+          target_pr_url="$(jq -er '.html_url' <<<"$target_pr_json")"
+
+          stage=verify-live-target
+          metadata="$(gh api "repos/${TARGET_REPOSITORY}")"
+          jq -e '.owner.login == "ORESoftware" and .name == "slack-ores-integrations" and .visibility == "public" and .private == false and .archived == false and .disabled == false and .default_branch == "main"' <<<"$metadata" >/dev/null
+          main_sha="$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          feature_sha="$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/${FEATURE_REF}" --jq '.object.sha')"
+          test "$main_sha" = "$SOURCE_SHA"
+          test "$feature_sha" = "$canonical_feature_sha"
+          pr_state="$(gh api "repos/${TARGET_REPOSITORY}/pulls/${target_pr_number}" --jq '.state + ":" + .base.ref + ":" + .head.ref')"
+          test "$pr_state" = "open:main:${FEATURE_REF}"
+
+          stage=record-evidence
+          success_body="$work/success.md"
+          {
+            printf 'Created and verified `%s`.\n\n' "$TARGET_REPOSITORY"
+            printf -- '- `main`: `%s`\n' "$main_sha"
+            printf -- '- canonicalization branch: `%s`\n' "$feature_sha"
+            printf -- '- review PR: %s\n' "$target_pr_url"
+            printf -- '- production runtime: `%s@%s`\n' "$RUNTIME_REPOSITORY" "$RUNTIME_REVISION"
+            printf '\nThe one-time private key and plaintext credential were destroyed; this carrier is closed without merge.\n'
+          } > "$success_body"
+          GH_TOKEN="$workflow_token" gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" --body-file "$success_body" >/dev/null
+          GH_TOKEN="$workflow_token" gh api --method POST "repos/${REPOSITORY}/statuses/${CARRIER_HEAD_SHA}" \
+            -f state=success -f context='ops/slack-ores-integrations-publication' -f description='canonical repository and review PR verified' >/dev/null
+          GH_TOKEN="$workflow_token" gh api --method PATCH "repos/${REPOSITORY}/pulls/${PR_NUMBER}" -f state=closed >/dev/null
