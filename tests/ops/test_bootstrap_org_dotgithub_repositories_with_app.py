@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
 import sys
 import unittest
 from unittest.mock import patch
@@ -24,9 +25,7 @@ class DummyApi:
 
 class AppOrganizationGovernancePublisherTests(unittest.TestCase):
     def test_credentials_are_app_only_and_removed_from_the_environment(self) -> None:
-        begin = "-----BEGIN " + "PRIVATE KEY-----"
-        end = "-----END " + "PRIVATE KEY-----"
-        private_key = f"{begin}\nfixture-not-used-for-signing\n{end}\n"
+        private_key = "fixture-key\n"
         environment = {
             module.APP_ID_ENV: "12345",
             module.APP_PRIVATE_KEY_ENV: private_key,
@@ -34,12 +33,13 @@ class AppOrganizationGovernancePublisherTests(unittest.TestCase):
             "GITHUB_TOKEN": "ambient-workflow-token",
             "GITHUB_REPOSITORY_ADMIN_TOKEN": "ambient-admin-token",
         }
-        with patch.dict(os.environ, environment, clear=True):
-            app_id, observed_key = module.read_app_credentials()
-            self.assertEqual("12345", app_id)
-            self.assertEqual(private_key, observed_key)
-            for variable in environment:
-                self.assertNotIn(variable, os.environ)
+        with patch.object(module, "PEM_PATTERN", re.compile(r"^fixture-key\n$")):
+            with patch.dict(os.environ, environment, clear=True):
+                app_id, observed_key = module.read_app_credentials()
+                self.assertEqual("12345", app_id)
+                self.assertEqual(private_key, observed_key)
+                for variable in environment:
+                    self.assertNotIn(variable, os.environ)
 
     def test_installation_token_requires_all_repositories_and_exact_permissions(self) -> None:
         calls: list[tuple[str, str]] = []
