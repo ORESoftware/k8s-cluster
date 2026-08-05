@@ -1,11 +1,13 @@
 {
-  "state": "awaiting-encrypted-response",
+  "state": "completed",
   "purpose": "migrate-preserved-streempilot-repositories-to-canonical-sp-names",
-  "nonce": "a6ec230096405de1233d94fb01049b50983ec760090374a9",
-  "publicKey": "-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAzmo5n/jiT8623eAKmxtr\nS+bCgg3XrqbVWkFLaK9g1hUege9pdIYTwtwbVNnj3JTrqJspXVwHjiZD98/Y7Mp6\nHDsbqVXVLPPnpdcyvu0/zNKvkhbMa8qkGPzyH/nyjULVize2pvqWumP1aKK4JS4r\nCtgCBxpuNQ+JvyoC/9IzCjYSOR+ym5jgfv3/xXUrNffOu9F+Pxisx0Xf5pO4uZbo\nkrZx1hj6e4cyOkjzYrKIjAtGUB9FM2FkoCnuJnJWlVDQBzTGjUhBK3vaSpaM2WSA\nLltbsrId1PMJR02fFYRcXXUGmvySBHgLzV54KzP8pN5yyw3qPDlZEPY6efwdR4+Z\n+2pbDLbtEL3Mzf7hg7Mil5KyZ6lfwiULtnJ3f9AE0QWLC/q9hIv9eqbuoGaZpHO1\nCkE3VBh2dQ4VB34bLl7H//UlNncSOzSfDGRQ+5rAJpYCaVosIdCAfBJ0fsH380OP\nYkDeI+9uNxHPiu77+YFKq9KrOcpsjc8EzSXeLWTO7eMBAgMBAAE=\n-----END PUBLIC KEY-----\n",
-  "algorithm": "RSA-OAEP-SHA256-MGF1-SHA256",
   "runId": "30974625142",
   "sourceCommit": "cfc094b8eec296181c132fcb7cc3dcaf7b4dcdc7",
+  "authenticatedActor": "ORESoftware",
+  "legacyBranch": "legacy/pre-sp-migration-20260805",
+  "repositoriesMigrated": 7,
+  "repositoriesAlreadyPresent": 0,
+  "canonicalRepositoriesVerified": 8,
   "privateKeyStored": false,
   "plaintextCredentialStored": false
 }
