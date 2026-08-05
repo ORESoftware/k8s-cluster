@@ -145,12 +145,16 @@ test('CI and repository documentation preserve recursive pinned checkout semanti
 
   const staticJob = repoChecks.slice(
     repoChecks.indexOf('  static-contracts:'),
-    repoChecks.indexOf('  backend-contracts:'),
+    repoChecks.indexOf('  fiducia-secret-contract:'),
   );
-  assert.match(staticJob, /K8S_LIBS_DEPLOY_KEY:\s*\$\{\{ secrets\.K8S_LIBS_DEPLOY_KEY \}\}/);
-  assert.match(staticJob, /ssh-key:\s*\$\{\{ secrets\.K8S_LIBS_DEPLOY_KEY \}\}/);
-  assert.match(staticJob, /SUBMODULE_AUTH_MODE:\s*ssh/);
-  assert.match(staticJob, /init-submodules-with-report\.sh remote\/libs/);
+  assert.match(staticJob, /K8S_SUBMODULE_APP_ID:\s*\$\{\{ secrets\.K8S_SUBMODULE_APP_ID \}\}/);
+  assert.match(
+    staticJob,
+    /K8S_SUBMODULE_APP_PRIVATE_KEY:\s*\$\{\{ secrets\.K8S_SUBMODULE_APP_PRIVATE_KEY \}\}/,
+  );
+  assert.match(staticJob, /SUBMODULE_REPORT_PATH:\s*\$\{\{ runner\.temp \}\}\/static-submodule-access\.tsv/);
+  assert.match(staticJob, /init-submodules-with-github-app\.sh remote\/libs/);
+  assert.doesNotMatch(staticJob, /K8S_LIBS_DEPLOY_KEY/);
   assert.doesNotMatch(staticJob, /REMOTE_DEV_GH_PAT/);
 
   assert.match(helper, /git "\$\{git_config\[@\]\}" submodule update --init --recursive --depth 1 -- "\$path"/);
@@ -158,9 +162,11 @@ test('CI and repository documentation preserve recursive pinned checkout semanti
   assert.match(helper, /git -C "\$path" rev-parse HEAD/);
   assert.match(helper, /pinned-commit-mismatch/);
 
-  assert.match(docs, /K8S_LIBS_DEPLOY_KEY/);
-  assert.match(docs, /init-submodules-with-report\.sh remote\/libs/);
+  assert.match(docs, /K8S_SUBMODULE_APP_ID/);
+  assert.match(docs, /K8S_SUBMODULE_APP_PRIVATE_KEY/);
+  assert.match(docs, /init-submodules-with-github-app\.sh remote\/libs/);
   assert.match(docs, /git submodule update --init --recursive remote\/libs/);
+  assert.doesNotMatch(docs, /K8S_LIBS_DEPLOY_KEY/);
   assert.doesNotMatch(docs, /repo-checks\.yml` uses the[\s\S]{0,80}REMOTE_DEV_GH_PAT/);
   assert.match(
     submodules,

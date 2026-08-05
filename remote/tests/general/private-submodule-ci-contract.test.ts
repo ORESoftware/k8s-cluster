@@ -48,6 +48,16 @@ function normalizeRepository(url: string): string {
     .replace(/\.git$/, '');
 }
 
+function gitmoduleRepository(expectedPath: string): string {
+  const blocks = gitmodules.split(/^\[submodule /m).slice(1);
+  for (const block of blocks) {
+    const path = block.match(/^\s*path\s*=\s*(\S+)\s*$/m)?.[1];
+    const url = block.match(/^\s*url\s*=\s*(\S+)\s*$/m)?.[1];
+    if (path === expectedPath && url) return normalizeRepository(url);
+  }
+  throw new Error(`Missing gitmodule repository for ${expectedPath}`);
+}
+
 function deploymentRepositories(): string[] {
   const repositories: string[] = [];
   const blocks = gitmodules.split(/^\[submodule /m).slice(1);
@@ -80,16 +90,28 @@ test('repo checks never place private-submodule credentials in Git URLs', () => 
   assert.doesNotMatch(tokenMinter, /set -x/);
 });
 
-test('the narrow remote-libs job uses the dedicated read-only deploy key', () => {
+test('the narrow remote-libs job uses a repository-restricted GitHub App token', () => {
   const staticJob = workflow.slice(
     workflow.indexOf('  static-contracts:'),
-    workflow.indexOf('  backend-contracts:'),
+    workflow.indexOf('  fiducia-secret-contract:'),
   );
-  assert.match(staticJob, /K8S_LIBS_DEPLOY_KEY:\s*\$\{\{ secrets\.K8S_LIBS_DEPLOY_KEY \}\}/);
-  assert.match(staticJob, /ssh-key:\s*\$\{\{ secrets\.K8S_LIBS_DEPLOY_KEY \}\}/);
-  assert.match(staticJob, /SUBMODULE_AUTH_MODE:\s*ssh/);
-  assert.match(staticJob, /init-submodules-with-report\.sh remote\/libs/);
-  assert.doesNotMatch(staticJob, /K8S_SUBMODULE_APP_PRIVATE_KEY/);
+  assert.match(staticJob, /K8S_SUBMODULE_APP_ID:\s*\$\{\{ secrets\.K8S_SUBMODULE_APP_ID \}\}/);
+  assert.match(
+    staticJob,
+    /K8S_SUBMODULE_APP_PRIVATE_KEY:\s*\$\{\{ secrets\.K8S_SUBMODULE_APP_PRIVATE_KEY \}\}/,
+  );
+  assert.match(staticJob, /GITHUB_API_VERSION:\s*'2026-03-10'/);
+  assert.match(staticJob, /SUBMODULE_REPORT_PATH:\s*\$\{\{ runner\.temp \}\}\/static-submodule-access\.tsv/);
+  assert.match(staticJob, /init-submodules-with-github-app\.sh remote\/libs/);
+  assert.match(staticJob, /continue-on-error:\s*true/);
+  assert.match(
+    staticJob,
+    /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\.0\.1/,
+  );
+  assert.match(staticJob, /name:\s*static-submodule-access-report/);
+  assert.match(staticJob, /steps\.static-submodules\.outcome == 'failure'/);
+  assert.doesNotMatch(staticJob, /K8S_LIBS_DEPLOY_KEY/);
+  assert.doesNotMatch(staticJob, /REMOTE_DEV_GH_PAT/);
 });
 
 test('private deployment source readers run only after the App-backed checkout', () => {
@@ -107,7 +129,9 @@ test('private deployment source readers run only after the App-backed checkout',
     assert.ok(backendJob.includes(testFile), `${testFile} must run in the App-backed job`);
   }
 
-  const appCheckout = backendJob.indexOf('init-submodules-with-github-app.sh remote/deployments');
+  const appCheckout = backendJob.indexOf(
+    'init-submodules-with-github-app.sh remote/libs remote/deployments',
+  );
   const privateTests = backendJob.indexOf('Verify contracts that read private deployment sources');
   assert.ok(appCheckout >= 0, 'backend job must initialize private deployment gitlinks');
   assert.ok(privateTests > appCheckout, 'private source tests must run only after App checkout');
@@ -125,7 +149,10 @@ test('the cross-org backend job requires a GitHub App and produces a sanitized r
   );
   assert.match(backendJob, /GITHUB_API_VERSION:\s*'2026-03-10'/);
   assert.match(backendJob, /SUBMODULE_REPORT_PATH:\s*\$\{\{ runner\.temp \}\}\/backend-submodule-access\.tsv/);
-  assert.match(backendJob, /init-submodules-with-github-app\.sh remote\/deployments/);
+  assert.match(
+    backendJob,
+    /init-submodules-with-github-app\.sh remote\/libs remote\/deployments/,
+  );
   assert.match(backendJob, /continue-on-error:\s*true/);
   assert.match(
     backendJob,
@@ -133,10 +160,11 @@ test('the cross-org backend job requires a GitHub App and produces a sanitized r
   );
   assert.match(backendJob, /name:\s*backend-submodule-access-report/);
   assert.match(backendJob, /steps\.backend-submodules\.outcome == 'failure'/);
+  assert.doesNotMatch(backendJob, /K8S_LIBS_DEPLOY_KEY/);
   assert.doesNotMatch(backendJob, /K8S_SUBMODULE_TOKEN:\s*\$\{\{ secrets\./);
 });
 
-test('the App repository allowlist exactly matches every deployment gitlink', () => {
+test('the App repository allowlist exactly matches every selected private gitlink', () => {
   assert.equal(allowlist.schema_version, 1);
   assert.deepEqual(allowlist.required_permissions, {
     contents: 'read',
@@ -156,13 +184,13 @@ test('the App repository allowlist exactly matches every deployment gitlink', ()
     }
   }
 
-  const declared = deploymentRepositories();
+  const declared = [...deploymentRepositories(), gitmoduleRepository('remote/libs')].sort();
   const approved = allowlistedRepositories();
-  assert.equal(declared.length, 30, 'expected the complete pinned deployment fleet');
+  assert.equal(declared.length, 31, 'expected the complete pinned private submodule fleet');
   assert.deepEqual(
     approved,
     declared,
-    'Update the reviewed GitHub App allowlist in the same PR as any deployment gitlink change.',
+    'Update the reviewed GitHub App allowlist in the same PR as any selected private gitlink change.',
   );
   assert.match(appInitializer, /K8S_SUBMODULE_ALLOWLIST/);
   assert.match(appInitializer, /Repository not allowlisted/);
