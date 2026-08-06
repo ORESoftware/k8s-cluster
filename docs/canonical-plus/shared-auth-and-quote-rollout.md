@@ -20,7 +20,8 @@ sealed relative path `/u/quote`.
 | Browser application | `canonical-cloud/canonical-web-server.rs` | Maud/HTMX pages, origin-side Shared Auth verification, owner-scoped REST/WebSockets, SeaORM persistence, and the in-process quote analysis path |
 | Durable quote API | `canonical-cloud/canonical-api-server.rs` | Standalone Axum REST/WebSocket service, durable PostgreSQL work claiming, model calls, retries, and strict response validation |
 | Browser identity authority | `shared-auth/shared-auth-server.rs` | Magic-link/OTP ceremony, host-only cookies, JWT verification, refresh, and revocation |
-| Edge enforcement | `shared-auth/shared-auth-infra` | Protected-prefix routing, token verification, caller-header stripping, and sanitized identity forwarding |
+| Edge implementation | `shared-auth/shared-auth-infra` | Generic protected-prefix routing, token verification, caller-header stripping, and sanitized identity forwarding |
+| Canonical edge deployment | `canonical-cloud/canonical-infra` | Byte-verified Worker source/test mirror, Canonical routes/realm variables, render-only workload seed, and fail-closed activation policy |
 | GitOps | `ORESoftware/k8s-cluster` | ArgoCD project/application and tenant boundary |
 | Product data plane | Canonical Supabase + PostgreSQL | Independent Canonical identity, session, context, and quote records |
 
@@ -37,7 +38,9 @@ The reviewed application changes are merged:
 - `canonical-cloud/canonical-api-server.rs#6` — squash commit
   `91ac093bf6c3d0958918fc8678af95dd13975f1e`;
 - `canonical-cloud/canonical-api-server.rs#8` — squash commit
-  `e3a7cc79b3ceac0e455b9d7822a29d4154c9584b`.
+  `e3a7cc79b3ceac0e455b9d7822a29d4154c9584b`;
+- `canonical-cloud/canonical-infra#4` — squash commit
+  `03d37469a6ea5ee075a89c064ee60017ae4ebf23`.
 
 The web and standalone API services now agree on:
 
@@ -45,8 +48,15 @@ The web and standalone API services now agree on:
 - explicit runtime override: `GEMINI_MODEL`;
 - PostgreSQL context key: `quote-analysis`.
 
-Competing branches that used a different model or authorization boundary were
-closed as superseded.
+Canonical infra carries byte-for-byte copies of the reviewed Worker source and
+Node test blobs from Shared Auth infra commit
+`6234f1ee72349f84652c85a5a957b2982ea471bf`; provenance and Git blob hashes are
+validated as a single contract. This avoids a second behavioral Worker fork
+while also avoiding an unavailable cross-organization private-submodule token.
+
+Competing branches that used `gemini-3.1-pro-preview`, removed durable lease
+recovery, reintroduced the divergent local Worker, or claimed overlapping
+Kubernetes/Argo objects were closed as superseded.
 
 ## Trust flow
 
@@ -151,15 +161,19 @@ endpoints are intentionally excluded from Git.
 
 ## Cloudflare reference contract
 
-The merged edge repository contains a reviewed reference configuration with:
+`canonical-cloud/canonical-infra` contains the Canonical deployment contract:
 
 - Worker name `canonical-plus-auth-edge`;
 - zone name `canonical.plus`;
 - protected route patterns for `app.canonical.plus/u/*`, the quote REST paths,
   and quote WebSockets;
-- same-origin Shared Auth issuer and login paths.
+- same-origin Shared Auth issuer and login paths;
+- host-only access and refresh cookie namespaces;
+- byte-verified copies of the exact reviewed Shared Auth Worker source and test
+  blobs;
+- no committed account identifier, token, DNS target, or R2 binding.
 
-That file is a source contract, not evidence that the Worker, routes, DNS
+That repository is a source contract, not evidence that the Worker, routes, DNS
 records, or production environment currently exist in the authorized Cloudflare
 account. Before any Cloudflare write, an authenticated inventory must prove:
 
@@ -170,6 +184,10 @@ account. Before any Cloudflare write, an authenticated inventory must prove:
 5. the exact `app.canonical.plus` and `api.canonical.plus` DNS records;
 6. the exact Kubernetes gateway, load balancer, or tunnel origin;
 7. origin health and TLS before enabling proxying.
+
+The current execution runtime has neither DNS nor direct-IP egress to the
+Cloudflare API. The supplied token was therefore not sent, and no authenticated
+Cloudflare state was read or changed.
 
 No R2 bucket is part of the quote architecture. Do not create, modify, or bind an
 R2 bucket unless a separate Canonical use case and exact bucket are approved.
@@ -206,14 +224,17 @@ Completed:
 
 - public CTA and exact signed-in destination;
 - Shared Auth browser-session implementation;
-- Canonical edge Worker implementation and local Worker contract tests;
+- reviewed generic edge Worker implementation and 12/12 Node 22 contract tests;
+- Canonical edge deployment contract with byte-verified Worker provenance,
+  exact routes, realm variables, cookie namespaces, and no credentials;
 - signed-in web quote application and embedded API;
 - standalone durable quote API;
 - shared model and `quote-analysis` context-key contracts;
 - PostgreSQL and CockroachDB RLS tests, declarative schema convergence, browser
   E2E, RustSec active-graph validation, and non-root image contracts;
 - manual-only ArgoCD application policy;
-- Linear activation tracking.
+- Linear activation tracking;
+- closure of conflicting wrong-model and duplicate-Worker branches.
 
 Remaining fail-closed gates:
 
