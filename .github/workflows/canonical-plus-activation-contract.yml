@@ -1,0 +1,109 @@
+name: Canonical Plus activation contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/canonical-plus-activation-contract.yml"
+      - "remote/argocd/canonical-cloud/**"
+      - "remote/argocd/apps/canonical-cloud.application.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: canonical-plus-activation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the reviewed GitOps source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate realm, image, route, and network boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          root = Path('remote/argocd/canonical-cloud')
+          files = {path.name: path.read_text() for path in root.glob('*.yaml')}
+          combined = '\n'.join(files.values())
+
+          for forbidden in (
+              'auth.oresoftware.dev',
+              'fiducia.cloud',
+              'oresoftware.com',
+              '__Host-ore_',
+              '__Host-fiducia',
+          ):
+              assert forbidden not in combined, f'cross-realm value remains: {forbidden}'
+
+          web = files['web.deployment.yaml']
+          web_policy = files['web.networkpolicy.yaml']
+          api = files['api.deployment.yaml']
+          api_service = files['api.service.yaml']
+
+          assert 'value: http://canonical-cloud-api.canonical-cloud.svc.cluster.local:8080' in web
+          assert (
+              'value: http://dd-shared-auth-canonical-plus.shared-auth.svc.cluster.local:8120/auth/verify'
+              in web
+          )
+          assert 'value: __Host-canonical-customer-auth' in web
+
+          assert re.search(
+              r'app\.kubernetes\.io/name: canonical-api-server[\s\S]*?port: 8080',
+              web_policy,
+          )
+          assert re.search(
+              r'kubernetes\.io/metadata\.name: shared-auth[\s\S]*?'
+              r'app: dd-shared-auth[\s\S]*?'
+              r'app\.kubernetes\.io/instance: canonical-plus[\s\S]*?port: 8120',
+              web_policy,
+          )
+          assert not re.search(
+              r'app\.kubernetes\.io/name: canonical-api-server[\s\S]{0,240}?port: 8081',
+              web_policy,
+          )
+          assert 'port: 8080' in api_service
+
+          assert re.search(
+              r'image: ghcr\.io/canonical-cloud/canonical-web-server@sha256:[0-9a-f]{64}',
+              web,
+          )
+          assert re.search(
+              r'image: ghcr\.io/canonical-cloud/canonical-api-server\.rs@sha256:[0-9a-f]{64}',
+              api,
+          )
+          assert 'name: GEMINI_MODEL\n              value: gemini-3.6-pro' in api
+          assert 'name: QUOTE_CONTEXT_KEY\n              value: quote-analysis' in api
+
+          for secret_file in ('web.externalsecret.yaml', 'api.externalsecret.yaml'):
+              secret = files[secret_file]
+              assert 'SERVICE_ROLE' not in secret
+              assert 'MIGRATION_DATABASE_URL' not in secret
+              assert 'dataFrom:' not in secret
+          PY
+
+      - name: Install kubectl
+        uses: Azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
+        with:
+          version: v1.32.2
+
+      - name: Render without applying
+        run: kubectl kustomize remote/argocd/canonical-cloud >/tmp/canonical-plus.yaml
+
+      - name: Prove this workflow has no deployment authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow=.github/workflows/canonical-plus-activation-contract.yml
+          ! grep -Eq 'kubectl[[:space:]]+(apply|create|replace|patch|delete)|argocd[[:space:]]+app[[:space:]]+sync|wrangler[[:space:]]+deploy' "$workflow"
+          ! grep -Fq 'secrets.' "$workflow"
