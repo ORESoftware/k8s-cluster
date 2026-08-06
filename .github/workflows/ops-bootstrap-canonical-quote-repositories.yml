@@ -65,7 +65,7 @@ jobs:
           retry-max-attempts: 2
           mask-aws-account-id: true
 
-      - name: Run through the protected ORESoftware GitHub profile
+      - name: Run through the protected ORESoftware GitHub credential resolver
         env:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
         run: |
@@ -74,15 +74,53 @@ jobs:
           trusted_sha="$(git rev-parse HEAD)"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
 
-          payload="$(base64 --wrap=0 scripts/ops/bootstrap_canonical_quote_repositories_20260805.py)"
-          remote_command="printf '%s' '$payload' | base64 --decode > /tmp/bootstrap-canonical-quote-repositories.py && chown ec2-user:ec2-user /tmp/bootstrap-canonical-quote-repositories.py && chmod 700 /tmp/bootstrap-canonical-quote-repositories.py; log=/tmp/bootstrap-canonical-quote-repositories.log; status=0; sudo -u ec2-user -H bash -lc 'unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS; exec python3 /tmp/bootstrap-canonical-quote-repositories.py --trusted-sha \"\$1\"' _ '$trusted_sha' >\"\$log\" 2>&1 || status=\$?; tail -c 32000 \"\$log\"; rm -f /tmp/bootstrap-canonical-quote-repositories.py \"\$log\"; exit \$status"
+          remote_script="$RUNNER_TEMP/remote-canonical-quote-bootstrap.sh"
+          cat >"$remote_script" <<'REMOTE_EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          umask 077
+
+          trusted_sha="${1:?trusted source SHA is required}"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          work="$(mktemp -d /tmp/canonical-quote-bootstrap.XXXXXX)"
+          cleanup() { rm -rf "$work"; }
+          trap cleanup EXIT
+
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/ORESoftware/k8s-cluster.git "$work/k8s-cluster"
+          git -C "$work/k8s-cluster" fetch --depth=1 origin "$trusted_sha"
+          git -C "$work/k8s-cluster" checkout --detach "$trusted_sha"
+          test "$(git -C "$work/k8s-cluster" rev-parse HEAD)" = "$trusted_sha"
+
+          launcher="$work/launch-canonical-quote-bootstrap.sh"
+          cat >"$launcher" <<'LAUNCH_EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          bootstrap="${1:?bootstrap path is required}"
+          trusted_sha="${2:?trusted source SHA is required}"
+          python3 "$bootstrap" \
+            --trusted-sha "$trusted_sha" \
+            --hosts-file <(printf 'github.com:\n  oauth_token: %s\n' \
+              "${PROTECTED_GITHUB_TOKEN:?protected credential is required}")
+          LAUNCH_EOF
+          chmod 700 "$launcher"
+
+          bash "$work/k8s-cluster/scripts/ops/run_with_protected_github_token.sh" \
+            "$launcher" \
+            "$work/k8s-cluster/scripts/ops/bootstrap_canonical_quote_repositories_20260805.py" \
+            "$trusted_sha"
+          REMOTE_EOF
+          chmod 700 "$remote_script"
+
+          payload="$(base64 --wrap=0 "$remote_script")"
+          remote_command="printf '%s' '$payload' | base64 --decode > /tmp/remote-canonical-quote-bootstrap.sh && chown ec2-user:ec2-user /tmp/remote-canonical-quote-bootstrap.sh && chmod 700 /tmp/remote-canonical-quote-bootstrap.sh; log=/tmp/canonical-quote-bootstrap.log; status=0; sudo -u ec2-user -H bash -lc 'unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN PROTECTED_GITHUB_TOKEN GIT_ASKPASS; exec bash /tmp/remote-canonical-quote-bootstrap.sh \"\$1\"' _ '$trusted_sha' >\"\$log\" 2>&1 || status=\$?; tail -c 32000 \"\$log\"; rm -f /tmp/remote-canonical-quote-bootstrap.sh \"\$log\"; exit \$status"
           parameters="$RUNNER_TEMP/ssm-canonical-quote-bootstrap.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' >"$parameters"
 
           command_id="$(aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name AWS-RunShellScript \
-            --comment 'Bootstrap Canonical quote repositories through protected gh profile' \
+            --comment 'Bootstrap Canonical quote repositories through protected credential resolver' \
             --parameters "file://$parameters" \
             --query 'Command.CommandId' \
             --output text)"
