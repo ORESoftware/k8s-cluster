@@ -1,0 +1,36 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: canonical-plus-shared-auth
+  namespace: canonical-cloud
+  labels:
+    app.kubernetes.io/name: canonical-shared-auth-origin
+    app.kubernetes.io/component: identity-origin
+    app.kubernetes.io/part-of: canonical-cloud
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    # The Shared Auth service mounts /auth, /.well-known, /healthz, and /readyz
+    # at its root. Preserve the public first-party /shared-auth boundary while
+    # forwarding only the suffix to the internal Canonical realm service.
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - app.canonical.plus
+      secretName: canonical-plus-app-tls
+  rules:
+    - host: app.canonical.plus
+      http:
+        paths:
+          - path: /shared-auth(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: canonical-shared-auth-origin
+                port:
+                  number: 8120
