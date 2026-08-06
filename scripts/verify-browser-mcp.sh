@@ -451,7 +451,7 @@ submit_payload="$(
       name: "browser_act",
       arguments: {
         session_id: $session_id,
-        expected_revision: $revision,
+        expected_revision: $post_fill_revision,
         intent: "verify submit approval boundary",
         actions: [{type: "submit", target: {ref: $submit_ref}}]
       }
