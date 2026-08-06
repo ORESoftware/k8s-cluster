@@ -15,3 +15,7 @@ tmp/
 # Python repository-contract test caches.
 __pycache__/
 *.py[cod]
+tmp
+temp
+tmp/worktrees
+temp/worktrees
