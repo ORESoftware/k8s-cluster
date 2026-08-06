@@ -23,7 +23,7 @@ jobs:
       SENDGRID_CANARY_REGION: ${{ vars.SENDGRID_CANARY_REGION }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
       - name: Run SendGrid sandbox canary when configured
         shell: bash
@@ -45,7 +45,7 @@ jobs:
       TWILIO_TEST_TO_NUMBER: ${{ secrets.TWILIO_TEST_TO_NUMBER }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
       - name: Run Twilio test-credential canary when configured
         shell: bash

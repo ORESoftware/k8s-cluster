@@ -83,7 +83,7 @@ jobs:
       - uses: actions/checkout@v7
       # Pinned to rust-toolchain.toml's channel so a new stable release cannot
       # break gating fmt/clippy output (see the DEN-331 rustfmt churn).
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
@@ -140,7 +140,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
         with:
           key: docs
