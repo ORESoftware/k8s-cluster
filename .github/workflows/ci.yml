@@ -165,6 +165,26 @@ jobs:
             echo 'explicit policy path leaked into diagnostics'
             exit 1
           fi
+      - name: Relative explicit contract override fails closed
+        run: |
+          # A relative override would resolve against whatever CWD the container
+          # happens to have, so it is rejected before it can name a file at all —
+          # and, like the missing case, the rejected path never reaches the logs.
+          set +e
+          output=$(docker run --rm \
+            --env THREEFA_FLAGS_CONFIG=reviewed.toml \
+            threefa-backend:flags-test \
+            /usr/local/bin/threefa-sync-server \
+            --bind-addr=127.0.0.1:18080 2>&1)
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          test "$status" -eq 2
+          grep -q 'THREEFA_FLAGS_CONFIG must be an absolute path' <<<"$output"
+          if grep -q 'reviewed.toml' <<<"$output"; then
+            echo 'relative explicit policy path leaked into diagnostics'
+            exit 1
+          fi
       - name: Accept declared operational flags before typed config
         run: |
           set +e

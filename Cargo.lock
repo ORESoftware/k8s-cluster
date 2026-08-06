@@ -3352,7 +3352,6 @@ dependencies = [
  "axum",
  "base64 0.23.0",
  "flags2env",
- "getrandom 0.3.4",
  "hex",
  "http-body-util",
  "opentelemetry",
