@@ -112,14 +112,25 @@ test('unsupported GitHub Actions semantics fail closed instead of being approxim
   assert.match(source, /validate_setup_inputs/);
 });
 
-test('execution is deployment-disabled by default and resource bounded', async () => {
+test('reviewed execution activation is exact-repository and resource bounded', async () => {
   const patch = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml',
   );
 
   assert.match(
     patch,
-    /name:\s*BUILD_SERVER_GHA_WORKFLOW_EXECUTION_ENABLED\s+value:\s*'false'/,
+    /name:\s*BUILD_SERVER_GHA_WORKFLOW_EXECUTION_ENABLED\s+value:\s*'true'/,
+  );
+  assert.match(patch, /https:\/\/github\.com\/discrete-event-systems-test\/des-web-playwright-e2e/);
+  assert.match(patch, /https:\/\/github\.com\/discrete-event-systems-test\/des-web-puppeteer-e2e/);
+  assert.doesNotMatch(
+    patch,
+    /https:\/\/github\.com\/discrete-event-systems-test\/(?:,|\s|$)/,
+    'the entire DES test organization must not be executable',
+  );
+  assert.match(
+    patch,
+    /name:\s*BUILD_SERVER_ALLOWED_PROFILES\s+value:[^\n]*playwright[^\n]*puppeteer/,
   );
   for (const name of [
     'BUILD_SERVER_GHA_MAX_YAML_BYTES',
@@ -132,6 +143,22 @@ test('execution is deployment-disabled by default and resource bounded', async (
   ]) {
     assert.match(patch, new RegExp(`name:\\s*${name}`));
   }
+});
+
+test('the activation harness pins both repositories and drives plan then run', async () => {
+  const harness = await readRepoFile(
+    'scripts/ops/run_des_indie_browser_workflows.sh',
+  );
+
+  assert.match(harness, /PLAYWRIGHT_REPO='discrete-event-systems-test\/des-web-playwright-e2e'/);
+  assert.match(harness, /PLAYWRIGHT_SHA='1e1116ef6811c4e3e6be34ad3e1def39bc20ef59'/);
+  assert.match(harness, /PUPPETEER_REPO='discrete-event-systems-test\/des-web-puppeteer-e2e'/);
+  assert.match(harness, /PUPPETEER_SHA='0547548429d937023a124de37afca7659a85c3dd'/);
+  assert.match(harness, /DES_REQUEST_SUFFIX:\?DES_REQUEST_SUFFIX is required/);
+  assert.match(harness, /\/gha\/workflows\/plan/);
+  assert.match(harness, /\/gha\/workflows\/runs/);
+  assert.match(harness, /\.status == "succeeded"/);
+  assert.match(harness, /all\(\.jobs\[\]; \.status == "succeeded"/);
 });
 
 test('unit tests cover valid DAGs, authenticated HTTP, and adversarial structures', async () => {

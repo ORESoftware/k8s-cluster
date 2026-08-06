@@ -15,11 +15,11 @@ spec:
             # entire test organization, to reach executable browser profiles.
             - name: BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES
               value: https://github.com/ORESoftware/,https://github.com/sonus-auris/,https://github.com/discrete-event-systems-test/des-web-playwright-e2e,https://github.com/discrete-event-systems-test/des-web-puppeteer-e2e,git@github.com:ORESoftware/,git@github.com:sonus-auris/,git@github.com:discrete-event-systems-test/des-web-playwright-e2e,git@github.com:discrete-event-systems-test/des-web-puppeteer-e2e
-            # GHA indie-worker: planning is available after authentication, but
-            # execution remains opt-in until live container capacity and the
-            # end-to-end network boundary are certified.
+            # Execution is enabled only for workflows that pass the fail-closed
+            # static planner, immutable-revision check, exact repository
+            # allowlist, and fixed reviewed browser profiles above.
             - name: BUILD_SERVER_GHA_WORKFLOW_EXECUTION_ENABLED
-              value: 'false'
+              value: 'true'
             - name: BUILD_SERVER_GHA_MAX_YAML_BYTES
               value: '262144'
             - name: BUILD_SERVER_GHA_MAX_JOBS
