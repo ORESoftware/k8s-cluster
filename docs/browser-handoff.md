@@ -49,6 +49,7 @@ Required secret values:
 Optional `AUTH_HANDOFF_CODE_TTL_SECS` is constrained to 30–300 seconds and
 defaults to 90.
 
-Apply `db/migrations/20260805_browser_authorization_codes.sql` through the
-normal pg-defs/deployment migration path before enabling a browser client.
-Expired and consumed rows may be deleted by a low-priority maintenance job.
+The schema is declarative. Apply the updated `db/schema.sql` through the normal
+pg-defs/dpm deployment path before enabling a browser client; the server itself
+runs no DDL. Expired and consumed rows may be deleted by a low-priority
+maintenance job.
