@@ -13,7 +13,7 @@ use aes_gcm::{
 use axum::{
     extract::{Query, State},
     http::{header, HeaderMap, HeaderValue},
-    response::{IntoResponse, Redirect, Response},
+    response::{Html, IntoResponse, Redirect, Response},
     Form,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
@@ -90,10 +90,13 @@ pub async fn sign_in(
     };
     let return_to = safe_return_path(query.return_to.as_deref()).to_owned();
     let remembered = remembered_emails(&headers, &config);
-    views::browser_sign_in(
-        &remembered,
-        &return_to,
-        &format!("{}/auth/browser/sign-in", config.public_prefix),
+    Html(
+        views::browser_sign_in(
+            &remembered,
+            &return_to,
+            &format!("{}/auth/browser/sign-in", config.public_prefix),
+        )
+        .into_string(),
     )
     .into_response()
 }
@@ -114,11 +117,14 @@ pub async fn request_link(
         },
     )?;
     let email = passwordless::request_magic_link(&state, &form.email, Some(&sealed_state)).await?;
-    Ok(views::browser_link_sent(
-        &email,
-        &sealed_state,
-        &format!("{}/auth/browser/otp", config.public_prefix),
-        &format!("{}/auth/browser/sign-in", config.public_prefix),
+    Ok(Html(
+        views::browser_link_sent(
+            &email,
+            &sealed_state,
+            &format!("{}/auth/browser/otp", config.public_prefix),
+            &format!("{}/auth/browser/sign-in", config.public_prefix),
+        )
+        .into_string(),
     )
     .into_response())
 }
