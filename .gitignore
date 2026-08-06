@@ -10,3 +10,7 @@ e2e/node_modules/
 
 # scratch / git worktrees
 tmp/
+tmp
+temp
+tmp/worktrees
+temp/worktrees
