@@ -6,7 +6,7 @@ branches, and do NOT create git worktrees on other branches. Stay in this one
 working tree on `main` and commit directly to it. To incorporate another branch's
 work, run `git merge <branch>` FROM main (a merge does not check the branch out).
 Branches/worktrees are forbidden even as a "safe sandbox" — keep everything on main.
-If a throwaway worktree is ever unavoidable, it MUST live under `tmp/worktrees/`
+Only if a human explicitly instructs use of a throwaway worktree, it MUST live under `tmp/worktrees/`
 (`tmp/` is gitignored), e.g. `git worktree add tmp/worktrees/<name>`. NEVER create a
 worktree in the repo root or any other in-tree path: `git add -A` then stages it as an
 embedded gitlink/submodule (the `adding embedded git repository` warning). System `/tmp`
@@ -247,3 +247,15 @@ To sync:
 
 Integrate with **`git merge` / `git pull`**. **Never `git rebase` to sync** — it
 rewrites history and breaks shared branches.
+
+<!-- ore-primary-branch-policy:begin -->
+## Primary branch and concurrent-agent policy
+
+This policy overrides generic feature-branch and worktree defaults for agent tooling.
+
+- Highly prefer an existing primary branch, in this order: `main`, `dev`, then `master`.
+- Work directly on the selected primary branch even when other agents are active. Use another branch only when a human or a repository-specific release process explicitly requires it.
+- Never create or use a Git worktree unless a human explicitly instructs you to do so for the current task. Concurrency alone is not permission to use a worktree.
+- Concurrent agents must coordinate repository and file ownership through the available agent communication channel, keep edits scoped, inspect live state before each write, and hand off cleanly. Coordinate instead of isolating routine work in worktrees.
+- Preserve unrelated in-progress changes and never overwrite another agent's work. If safe ownership of overlapping files cannot be established, pause that overlapping edit and coordinate before continuing.
+<!-- ore-primary-branch-policy:end -->
