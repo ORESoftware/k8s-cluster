@@ -4,9 +4,11 @@ on:
   pull_request:
     paths:
       - '.github/workflows/browser-test-dsl-contract.yml'
+      - 'docs/benefactor-node-browser-automation.md'
       - 'remote/deployments/browser-test-server/src/**'
       - 'remote/deployments/browser-test-server/package.json'
       - 'remote/deployments/browser-test-server/Dockerfile'
+      - 'remote/deployments/browser-test-server/README.md'
       - 'remote/deployments/browser-test-server/readme.md'
       - 'remote/argocd/dd-next-runtime/dd-browser-test-server.*'
       - 'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml'
@@ -16,9 +18,11 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/browser-test-dsl-contract.yml'
+      - 'docs/benefactor-node-browser-automation.md'
       - 'remote/deployments/browser-test-server/src/**'
       - 'remote/deployments/browser-test-server/package.json'
       - 'remote/deployments/browser-test-server/Dockerfile'
+      - 'remote/deployments/browser-test-server/README.md'
       - 'remote/deployments/browser-test-server/readme.md'
       - 'remote/argocd/dd-next-runtime/dd-browser-test-server.*'
       - 'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml'
