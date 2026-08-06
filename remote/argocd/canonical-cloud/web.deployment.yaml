@@ -75,6 +75,10 @@ spec:
               value: "10"
             - name: APP_SESSION_TTL_DAYS
               value: "30"
+            - name: CANONICAL_API_URL
+              value: http://canonical-cloud-api.canonical-cloud.svc.cluster.local:8081
+            - name: ORIGIN_ASSERTION_MAX_AGE_SECONDS
+              value: "30"
             - name: RUST_LOG
               value: canonical_web_server=info,tower_http=info,hyper=warn,h2=warn,reqwest=warn,sea_orm=warn
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
