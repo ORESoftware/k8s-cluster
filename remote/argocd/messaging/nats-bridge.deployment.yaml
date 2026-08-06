@@ -79,10 +79,21 @@ spec:
               value: /etc/nats-bridge/routes.json
             - name: BRIDGE_CLIENTS_FILE
               value: /var/run/secrets/nats-bridge/clients.json
-            # Preserve the bounded pressure limit proven by the bridge/DLQ
-            # resilience suite; widen only with measured broker and pod headroom.
+            # 128 — matches DEFAULT_MAX_IN_FLIGHT in src/bin/nats_http_ingress.rs,
+            # which is the binary this pod actually execs (see `--bin
+            # nats_http_ingress` above). Excess requests get HTTP 429.
+            #
+            # Do NOT "restore" 64. The crate ships two binaries with different
+            # concurrency profiles: the older src/main.rs bridge documents and
+            # defaults to 64, while DEN-440's nats_http_ingress defaults to 128. A
+            # 2026-07-31 main/dev merge conflict was resolved to 64 on the reasoning
+            # that only that side had a resilience suite — but that applied the old
+            # binary's tuning to the new ingress, silently halving its ceiling.
+            # Corrected 2026-08-01. Asserted by
+            # remote/tests/general/nats-bridge-in-flight.test.ts so a future merge
+            # cannot flip it unnoticed.
             - name: BRIDGE_MAX_IN_FLIGHT
-              value: '64'
+              value: '128'
             - name: BRIDGE_PUBLISH_TIMEOUT_MS
               value: '5000'
           ports:

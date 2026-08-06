@@ -44,10 +44,24 @@ function envBlock(name) {
 }
 
 test('bridge deployment executes the current Rust binary', () => {
+  // The deployment resolves the binary through bin_name and execs
+  // "${CARGO_TARGET_DIR:-target}/release/${bin_name}". Assert the name is the
+  // current binary, that the built path is what gets exec'd, and that the
+  // retired binary name cannot return.
   assert.match(
     deployment,
+    // \b anchors so a substring match on the retired name cannot pass.
     /\bbin_name="fiducia-ai-agent-bridge"/,
-    'the deployment must select fiducia-ai-agent-bridge',
+    'bin_name must resolve to the current fiducia-ai-agent-bridge binary',
+  );
+  // Both halves of the contract, kept from the two branches that wrote this test
+  // concurrently — they check different things and neither implies the other:
+  //   1. the exec path is COMPOSED from bin_name (not a hardcoded literal), and
+  //   2. the variable that was existence-checked is what actually becomes PID 1.
+  assert.match(
+    deployment,
+    /\/release\/\$\{bin_name\}/,
+    'the built path must be composed from ${bin_name}',
   );
   assert.match(
     deployment,

@@ -4,7 +4,25 @@
 # deployed nothing). The manifests live at quaestor-ledger/billing-server.rs
 # `k8s/ec2` (verified to render). See docs/app-deploy-contract.md.
 #
-# PREREQ: ArgoCD needs a read cred for git@github.com:quaestor-ledger/billing-server.rs.git
+# NOTE (2026-08-01): switched from the git@ SSH URL to HTTPS.
+#
+# This does NOT remove the credential requirement - the repo is PRIVATE. (An
+# earlier check appeared to show anonymous HTTPS access; that was wrong, the
+# macOS keychain helper was silently supplying credentials. With helpers
+# disabled GitHub answers "could not read Username", i.e. private.)
+#
+# HTTPS is still the right form: ArgoCD's only working non-k8s-cluster
+# credential (repo-benefactor-backend-rs) is HTTPS, and a PAT in a repository
+# Secret is simpler to provision than a deploy key + SSH agent - the SSH form
+# failed with `error creating SSH agent: SSH_AUTH_SOCK not-specified`.
+#
+# STILL BLOCKED until an ArgoCD repository Secret exists for this repo:
+#   kubectl -n argocd create secret generic repo-<name> \
+#     --from-literal=type=git \
+#     --from-literal=url=https://github.com/<org>/<repo>.git \
+#     --from-literal=username=<user> --from-literal=password=<PAT> \
+#     && kubectl -n argocd label secret repo-<name> \
+#        argocd.argoproj.io/secret-type=repository
 # on the AWS cluster before this can sync (same as the threefa precedent).
 #
 # STILL A DUPLICATE: also declared inline in clusters/aws/applications.yaml; both
@@ -19,7 +37,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git@github.com:quaestor-ledger/billing-server.rs.git
+    repoURL: https://github.com/quaestor-ledger/billing-server.rs.git
     targetRevision: main
     path: k8s/ec2
   destination:
