@@ -1,3 +1,7 @@
 target/
 .env
 .env.*
+tmp
+temp
+tmp/worktrees
+temp/worktrees
