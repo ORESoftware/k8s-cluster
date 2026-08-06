@@ -1,9 +1,28 @@
-name: Canonical browser branch validation
+name: Canonical browser validation
 
 on:
+  pull_request:
+    paths:
+      - ".github/workflows/canonical-browser-branch-validation.yml"
+      - "deploy/k8s/**"
+      - "src/email.rs"
+      - "src/email_tests.rs"
+      - "src/http/browser.rs"
+      - "src/http/mod.rs"
+      - "src/http/passwordless.rs"
+      - "src/views.rs"
   push:
-    branches:
-      - feat/browser-magic-link-sessions
+    branches: [main]
+    paths:
+      - ".github/workflows/canonical-browser-branch-validation.yml"
+      - "deploy/k8s/**"
+      - "src/email.rs"
+      - "src/email_tests.rs"
+      - "src/http/browser.rs"
+      - "src/http/mod.rs"
+      - "src/http/passwordless.rs"
+      - "src/views.rs"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -38,6 +57,8 @@ jobs:
       AUTH_TEST_REDIS_URL: redis://127.0.0.1:6379/
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: stable
@@ -49,6 +70,33 @@ jobs:
             --contract config/auth-realms.contract.json \
             --schema db/schema.sql \
             --realm-source src/realm.rs
+      - name: Install pinned Kustomize
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive=/tmp/kustomize.tar.gz
+          curl --fail --location --silent --show-error \
+            https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.8.1/kustomize_v5.8.1_linux_amd64.tar.gz \
+            --output "$archive"
+          echo "029a7f0f4e1932c52a0476cf02a0fd855c0bb85694b82c338fc648dcb53a819d  $archive" | sha256sum --check
+          tar -xzf "$archive" -C /tmp kustomize
+          /tmp/kustomize version
+      - name: Render Canonical overlay and verify secret wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          rendered=/tmp/canonical-plus-auth.yaml
+          /tmp/kustomize build deploy/k8s/overlays/canonical-plus > "$rendered"
+          expected_secret=dd-shared-auth-secrets-canonical-plus
+          references="$(grep -Ec "^[[:space:]]*name: ${expected_secret}$" "$rendered")"
+          if [ "$references" -ne 3 ]; then
+            echo "expected ExternalSecret metadata, target, and Deployment envFrom to agree on ${expected_secret}; found ${references} exact references" >&2
+            cat "$rendered" >&2
+            exit 1
+          fi
+          grep -Fq 'value: https://app.canonical.plus/shared-auth' "$rendered"
+          grep -Fq 'value: canonical-plus-web' "$rendered"
+          grep -Fq 'value: __Host-canonical-customer-auth' "$rendered"
       - name: Format
         run: cargo fmt --all --check
       - name: Schema
