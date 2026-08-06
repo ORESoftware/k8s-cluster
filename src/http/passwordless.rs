@@ -15,7 +15,7 @@ use crate::session::{
 };
 use crate::state::AppState;
 
-use super::local::{normalize_email, response_from_issued, SessionResponse};
+use super::local::{enforce_limit, normalize_email, response_from_issued, SessionResponse};
 
 #[derive(Deserialize)]
 pub struct PasswordlessRequest {
@@ -58,6 +58,10 @@ pub(crate) async fn request_magic_link(
     }
     let db = state.db.as_ref().ok_or(AuthError::Unavailable)?;
     let email = normalize_email(raw_email)?;
+    // The identifier is hashed inside the limiter. This throttles repeated mail
+    // sends without disclosing account existence or placing raw email addresses
+    // in Redis keys/logs.
+    enforce_limit(state, "passwordless", &email, 5, 900).await?;
     let token = MagicLinkToken::generate();
     let identifier_hash = hashed_identifier(&email);
     let pepper = state
