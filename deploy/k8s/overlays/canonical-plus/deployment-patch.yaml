@@ -26,3 +26,9 @@ spec:
             - { name: AUTH_SIGNING_KEY_REF, value: "dd/shared-auth/customer/canonical-plus/signing-key-pem" }
             - { name: AUTH_CORS_ALLOW_ORIGINS, value: "https://app.canonical.plus" }
             - { name: OTEL_SERVICE_NAME, value: "shared-auth-canonical-plus" }
+          # ExternalSecret.spec.target.name is not a standard Kustomize name
+          # reference. Pin the Deployment to the exact generated Secret rather
+          # than relying on nameSuffix inference that may not occur for this CRD.
+          envFrom:
+            - secretRef:
+                name: dd-shared-auth-secrets-canonical-plus
