@@ -24,7 +24,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-07-26-browser-mcp-oauth'
+        dd.dev/telemetry-revision: '2026-07-26-browser-mcp-noauth'
       labels:
         app: dd-browser-mcp-rs
         app.kubernetes.io/name: dd-browser-mcp-rs
