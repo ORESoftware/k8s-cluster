@@ -236,6 +236,21 @@ WHERE account_id = $1
 FOR UPDATE
 "#;
 
+const LOCK_DEVICE_STATE_SQL: &str = r#"
+SELECT revoked, lifecycle_state
+FROM threefa.devices
+WHERE account_id = $1
+  AND id = $2
+FOR UPDATE
+"#;
+
+const CURRENT_DEVICE_REVISION_SQL: &str = r#"
+SELECT signal_device_revision
+FROM threefa.accounts
+WHERE id = $1
+FOR UPDATE
+"#;
+
 const CAS_DEVICE_REVISION_SQL: &str = r#"
 UPDATE threefa.accounts
 SET signal_device_revision = signal_device_revision + 1
@@ -293,6 +308,8 @@ pub enum SignalStoreError {
     InvalidUuid(&'static str),
     #[error("device is unavailable")]
     DeviceUnavailable,
+    #[error("recipient device is unavailable")]
+    RecipientUnavailable,
     #[error("device-list revision conflict")]
     RevisionConflict,
     #[error("envelope idempotency conflict")]
@@ -550,10 +567,35 @@ pub async fn enqueue_envelope(
         });
     }
 
+    // A filtered INSERT has two distinct terminal outcomes: the recipient is
+    // no longer active, or the envelope id already belongs to another payload.
+    // Keep them distinct so clients stop retrying a revoked recipient but may
+    // safely replace an id that genuinely collided.
+    if db
+        .query_one_raw(postgres(
+            ACTIVE_DEVICE_SQL,
+            vec![account_id.into(), recipient_device_id.into()],
+        ))
+        .await?
+        .is_none()
+    {
+        return Err(SignalStoreError::RecipientUnavailable);
+    }
+    if db
+        .query_one_raw(postgres(
+            ACTIVE_DEVICE_SQL,
+            vec![account_id.into(), sender_device_id.into()],
+        ))
+        .await?
+        .is_none()
+    {
+        return Err(SignalStoreError::DeviceUnavailable);
+    }
+
     // PostgreSQL may detect a concurrently committed ON CONFLICT row that was
     // invisible to the INSERT statement's initial READ COMMITTED snapshot.
     // Match in a fresh statement so an exact concurrent retry remains
-    // idempotent; a missing or non-identical row still fails closed.
+    // idempotent; a missing or non-identical row is a genuine id collision.
     let row = db
         .query_one_raw(postgres(MATCH_ENVELOPE_SQL, values))
         .await?
@@ -612,9 +654,9 @@ pub async fn revoke_device(
     account_id: Uuid,
     actor_device_id: Uuid,
     subject_device_id: Uuid,
-    expected_revision: i64,
+    expected_revision: Option<i64>,
 ) -> Result<i64, SignalStoreError> {
-    if expected_revision < 0 {
+    if expected_revision.is_some_and(|revision| revision < 0) {
         return Err(SignalStoreError::RevisionConflict);
     }
     let transaction = db.begin().await?;
@@ -628,13 +670,41 @@ pub async fn revoke_device(
         return Err(SignalStoreError::DeviceUnavailable);
     }
 
-    let revision = transaction
+    let subject = transaction
         .query_one_raw(postgres(
-            CAS_DEVICE_REVISION_SQL,
-            vec![account_id.into(), expected_revision.into()],
+            LOCK_DEVICE_STATE_SQL,
+            vec![account_id.into(), subject_device_id.into()],
         ))
         .await?
-        .ok_or(SignalStoreError::RevisionConflict)?;
+        .ok_or(SignalStoreError::DeviceUnavailable)?;
+    let already_revoked = subject.try_get::<bool>("", "revoked")?
+        && subject.try_get::<String>("", "lifecycle_state")? == "revoked";
+    if already_revoked {
+        let revision = transaction
+            .query_one_raw(postgres(
+                CURRENT_DEVICE_REVISION_SQL,
+                vec![account_id.into()],
+            ))
+            .await?
+            .ok_or(SignalStoreError::RevisionConflict)?;
+        let revision = required_i64(&revision, "signal_device_revision")?;
+        transaction.commit().await?;
+        return Ok(revision);
+    }
+
+    let revision = match expected_revision {
+        Some(expected_revision) => transaction
+            .query_one_raw(postgres(
+                CAS_DEVICE_REVISION_SQL,
+                vec![account_id.into(), expected_revision.into()],
+            ))
+            .await?
+            .ok_or(SignalStoreError::RevisionConflict)?,
+        None => transaction
+            .query_one_raw(postgres(BUMP_DEVICE_REVISION_SQL, vec![account_id.into()]))
+            .await?
+            .ok_or(SignalStoreError::RevisionConflict)?,
+    };
     let new_revision = required_i64(&revision, "signal_device_revision")?;
 
     let revoked = transaction

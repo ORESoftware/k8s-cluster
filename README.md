@@ -32,7 +32,7 @@ seeds or your password. Written in Rust (axum + SeaORM/Postgres).
 | GET    | `/v1/devices`         | ✓    | List this account's devices (id, name, created, last-seen, revoked) |
 | GET    | `/v1/vault`           | ✓    | Pull the sealed vault blob           |
 | POST   | `/v1/vault`           | ✓    | Push a sealed vault blob (version-vector reconciled) |
-| POST   | `/v1/devices/revoke`  | ✓    | Revoke a device's sync token         |
+| POST   | `/v1/devices/revoke`  | ✓    | Atomically revoke device and Signal state |
 | GET    | `/healthz`            | —    | Liveness                             |
 | GET    | `/readyz`             | —    | Postgres readiness                   |
 | GET    | `/metrics`            | —    | Prometheus metrics — **separate listener**, see below |
@@ -60,7 +60,10 @@ and exchange; this service never verifies human login credentials itself.
   The retired local password endpoints are not mounted.
 - **Device lifecycle.** Live devices per account are capped
   (`MAX_DEVICES_PER_ACCOUNT`), each authenticated request stamps `last_seen_at`,
-  and `GET /v1/devices` lets an owner audit and revoke enrollments.
+  and `GET /v1/devices` lets an owner audit and revoke enrollments. Revocation
+  atomically advances the account's Signal device revision, removes public
+  prekeys and undelivered mail, and records a redacted lifecycle event. Callers
+  may include `expected_revision` for optimistic concurrency control.
 - **Sync.** Per-device version vectors give last-writer-wins-with-merge; a stale
   push gets a `Conflict` and must pull/merge/retry. A push is accepted only if
   its base vector is *causally reachable* — a device may advance only its own
