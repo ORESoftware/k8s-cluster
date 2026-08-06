@@ -13,4 +13,12 @@ spec:
               value: rust-verify,rust-generated-verify,node-verify,node-hardened-verify,node-hardened-test,python-verify,flutter-verify,flutter-android-debug,flutter-web-release,flutter-linux-release,flutter-linux-desktop-entrypoint,flutter-web-e2e,playwright,puppeteer,browser-e2e
             - name: BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON
               value: >-
-                [{"repository":"https://github.com/ORESoftware/k8s-cluster.git","profiles":["rust-verify"]},{"repository":"https://github.com/messaging-intel/msgint-connectors.git","profiles":["node-hardened-verify","node-hardened-test"]},{"repository":"https://github.com/3FA-app/3fa-interfaces.git","profiles":["node-hardened-test","rust-generated-verify"]}]
+                [{"repository":"https://github.com/ORESoftware/k8s-cluster.git","profiles":["rust-verify"]},{"repository":"https://github.com/messaging-intel/msgint-connectors.git","profiles":["node-hardened-verify","node-hardened-test"]},{"repository":"https://github.com/3FA-app/3fa-interfaces.git","profiles":["node-hardened-test","rust-generated-verify"]},{"repository":"https://github.com/discrete-event-systems-test/des-web-playwright-e2e.git","profiles":["playwright"]},{"repository":"https://github.com/discrete-event-systems-test/des-web-puppeteer-e2e.git","profiles":["puppeteer"]}]
+            - name: BUILD_SERVER_GIT_BIN
+              value: /etc/dd-build-server/git-wrapper.sh
+      volumes:
+        - name: rules
+          configMap:
+            name: dd-build-server-rules
+            optional: true
+            defaultMode: 0555
