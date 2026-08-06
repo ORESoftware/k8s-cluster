@@ -4,6 +4,10 @@
 //! - `GET  /`                           status landing (HTML)
 //! - `GET  /ui`                         token-exchange helper (HTML)
 //! - `POST /ui/exchange`                exchange result (HTML)
+//! - `GET  /auth/browser/sign-in`       first-party magic-link sign-in UI
+//! - `POST /auth/browser/sign-in`       send magic link + email OTP
+//! - `GET  /auth/browser/consume`       consume magic link and set browser session
+//! - `POST /auth/browser/otp`           consume email OTP and set browser session
 //! - `GET  /healthz`                    liveness
 //! - `GET  /readyz`                     readiness (DB ping if configured)
 //! - `GET  /.well-known/jwks.json`      our public JWKS (downstream verifiers)
@@ -13,6 +17,7 @@
 //! - `GET  /auth/verify`                bearer check (gateway auth_request)
 //! - `GET  /metrics`                    Prometheus
 
+mod browser;
 mod delegate;
 mod docs;
 mod exchange;
@@ -56,6 +61,15 @@ pub fn router(state: AppState) -> Router {
         .route("/docs/api", get(docs::api_docs))
         .route("/api/docs", get(docs::api_docs))
         .route("/api/docs.json", get(docs::openapi))
+        // First-party browser ceremony. Product gateways expose this under a
+        // path such as `/shared-auth/`, keeping all __Host- cookies scoped to
+        // the product origin instead of sharing them across domains.
+        .route(
+            "/auth/browser/sign-in",
+            get(browser::sign_in).post(browser::request_link),
+        )
+        .route("/auth/browser/consume", get(browser::consume_link))
+        .route("/auth/browser/otp", post(browser::consume_otp))
         // JSON API
         .route("/healthz", get(health::healthz))
         .route("/readyz", get(health::readyz))
