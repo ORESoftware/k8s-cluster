@@ -10,7 +10,7 @@ metadata:
   annotations:
     # Draft staging value. The promotion helper must replace both annotations
     # and the image tag with the exact monorepo release SHA + immutable digest.
-    canonical.cloud/release-sha: "47b8e1cce07d1a21689cba461325b9365877f080"
+    canonical.cloud/release-sha: "e09bb95160aaf95a836e810eb20b65e74f6317a6"
 spec:
   replicas: 2
   revisionHistoryLimit: 3
@@ -29,7 +29,7 @@ spec:
         app.kubernetes.io/component: api
         app.kubernetes.io/part-of: canonical-cloud
       annotations:
-        canonical.cloud/release-sha: "47b8e1cce07d1a21689cba461325b9365877f080"
+        canonical.cloud/release-sha: "e09bb95160aaf95a836e810eb20b65e74f6317a6"
     spec:
       automountServiceAccountToken: false
       imagePullSecrets:
@@ -50,7 +50,7 @@ spec:
               app.kubernetes.io/name: canonical-api-server
       containers:
         - name: api
-          image: ghcr.io/canonical-cloud/canonical-api-server:47b8e1cce07d1a21689cba461325b9365877f080
+          image: ghcr.io/canonical-cloud/canonical-api-server:e09bb95160aaf95a836e810eb20b65e74f6317a6
           imagePullPolicy: IfNotPresent
           envFrom:
             - secretRef:
