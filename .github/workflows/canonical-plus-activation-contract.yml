@@ -105,8 +105,11 @@ jobs:
         run: |
           set -euo pipefail
           workflow=.github/workflows/canonical-plus-activation-contract.yml
+          secret_reference='sec''rets.'
+          contents_write='contents:' 'write'
+          oidc_write='id-token:' 'write'
           grep -Fq 'permissions:' "$workflow"
           grep -Fq 'contents: read' "$workflow"
-          ! grep -Fq 'secrets.' "$workflow"
-          ! grep -Fq 'contents: write' "$workflow"
-          ! grep -Fq 'id-token: write' "$workflow"
+          ! grep -Fq "$secret_reference" "$workflow"
+          ! grep -Fq "$contents_write" "$workflow"
+          ! grep -Fq "$oidc_write" "$workflow"
