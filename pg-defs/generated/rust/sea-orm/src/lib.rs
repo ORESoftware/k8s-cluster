@@ -8,23 +8,22 @@ use serde::{Deserialize, Serialize};
 pub mod accounts {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "threefa", table_name = "accounts")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub username: String,
-    #[sea_orm(column_name = "auth_secret")]
-    pub auth_secret: String,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "threefa", table_name = "accounts")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub username: String,
+        #[sea_orm(column_name = "auth_secret")]
+        pub auth_secret: String,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use accounts::Entity as AccountsEntity;
@@ -33,27 +32,26 @@ pub use accounts::Model as AccountsModel;
 pub mod devices {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "threefa", table_name = "devices")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "account_id")]
-    pub account_id: Uuid,
-    #[sea_orm(column_name = "device_name")]
-    pub device_name: String,
-    #[sea_orm(column_name = "sync_token_hash")]
-    pub sync_token_hash: String,
-    pub revoked: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "threefa", table_name = "devices")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "account_id")]
+        pub account_id: Uuid,
+        #[sea_orm(column_name = "device_name")]
+        pub device_name: String,
+        #[sea_orm(column_name = "sync_token_hash")]
+        pub sync_token_hash: String,
+        pub revoked: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use devices::Entity as DevicesEntity;
@@ -62,27 +60,26 @@ pub use devices::Model as DevicesModel;
 pub mod vault_blobs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "threefa", table_name = "vault_blobs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false, column_name = "account_id")]
-    pub account_id: Uuid,
-    pub ciphertext: String,
-    pub nonce: String,
-    #[sea_orm(column_name = "kdf_salt")]
-    pub kdf_salt: String,
-    #[sea_orm(column_name = "kdf_params")]
-    pub kdf_params: Json,
-    pub version: Json,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "threefa", table_name = "vault_blobs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false, column_name = "account_id")]
+        pub account_id: Uuid,
+        pub ciphertext: String,
+        pub nonce: String,
+        #[sea_orm(column_name = "kdf_salt")]
+        pub kdf_salt: String,
+        #[sea_orm(column_name = "kdf_params")]
+        pub kdf_params: Json,
+        pub version: Json,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use vault_blobs::Entity as VaultBlobsEntity;
@@ -91,36 +88,35 @@ pub use vault_blobs::Model as VaultBlobsModel;
 pub mod app_config {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "app_config")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub scope: String,
-    pub key: String,
-    pub value: Json,
-    pub version: i32,
-    pub status: String,
-    pub labels: Json,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "app_config")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub scope: String,
+        pub key: String,
+        pub value: Json,
+        pub version: i32,
+        pub status: String,
+        pub labels: Json,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use app_config::Entity as AppConfigEntity;
@@ -129,36 +125,35 @@ pub use app_config::Model as AppConfigModel;
 pub mod vapi_phone_call_events {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "vapi_phone_call_events")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "call_id")]
-    pub call_id: String,
-    #[sea_orm(column_name = "event_type")]
-    pub event_type: String,
-    #[sea_orm(column_name = "payload_hash")]
-    pub payload_hash: String,
-    #[sea_orm(column_name = "caller_hash")]
-    pub caller_hash: Option<String>,
-    #[sea_orm(column_name = "called_number_hash")]
-    pub called_number_hash: Option<String>,
-    #[sea_orm(column_name = "ended_reason")]
-    pub ended_reason: Option<String>,
-    #[sea_orm(column_name = "duration_seconds")]
-    pub duration_seconds: Option<i32>,
-    pub summary: Option<String>,
-    pub payload: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "vapi_phone_call_events")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "call_id")]
+        pub call_id: String,
+        #[sea_orm(column_name = "event_type")]
+        pub event_type: String,
+        #[sea_orm(column_name = "payload_hash")]
+        pub payload_hash: String,
+        #[sea_orm(column_name = "caller_hash")]
+        pub caller_hash: Option<String>,
+        #[sea_orm(column_name = "called_number_hash")]
+        pub called_number_hash: Option<String>,
+        #[sea_orm(column_name = "ended_reason")]
+        pub ended_reason: Option<String>,
+        #[sea_orm(column_name = "duration_seconds")]
+        pub duration_seconds: Option<i32>,
+        pub summary: Option<String>,
+        pub payload: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use vapi_phone_call_events::Entity as VapiPhoneCallEventsEntity;
@@ -167,66 +162,65 @@ pub use vapi_phone_call_events::Model as VapiPhoneCallEventsModel;
 pub mod music_songs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "music_songs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub title: String,
-    pub slug: String,
-    pub status: String,
-    pub seed: i64,
-    #[sea_orm(column_name = "generation_date")]
-    pub generation_date: String,
-    #[sea_orm(column_name = "storage_provider")]
-    pub storage_provider: Option<String>,
-    #[sea_orm(column_name = "storage_bucket")]
-    pub storage_bucket: Option<String>,
-    #[sea_orm(column_name = "storage_key")]
-    pub storage_key: Option<String>,
-    #[sea_orm(column_name = "audio_url")]
-    pub audio_url: Option<String>,
-    #[sea_orm(column_name = "content_type")]
-    pub content_type: Option<String>,
-    #[sea_orm(column_name = "duration_millis")]
-    pub duration_millis: i32,
-    #[sea_orm(column_name = "sample_rate")]
-    pub sample_rate: i32,
-    #[sea_orm(column_name = "bpm_millis")]
-    pub bpm_millis: i32,
-    pub genre: String,
-    #[sea_orm(column_name = "peak_micros")]
-    pub peak_micros: i32,
-    #[sea_orm(column_name = "rms_micros")]
-    pub rms_micros: i32,
-    #[sea_orm(column_name = "spectral_centroid_millihz")]
-    pub spectral_centroid_millihz: i64,
-    #[sea_orm(column_name = "listenability_score_micros")]
-    pub listenability_score_micros: i32,
-    #[sea_orm(column_name = "vote_score")]
-    pub vote_score: i32,
-    #[sea_orm(column_name = "up_votes")]
-    pub up_votes: i32,
-    #[sea_orm(column_name = "down_votes")]
-    pub down_votes: i32,
-    #[sea_orm(column_name = "play_count")]
-    pub play_count: i32,
-    pub summary: Json,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "published_at")]
-    pub published_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "music_songs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub title: String,
+        pub slug: String,
+        pub status: String,
+        pub seed: i64,
+        #[sea_orm(column_name = "generation_date")]
+        pub generation_date: String,
+        #[sea_orm(column_name = "storage_provider")]
+        pub storage_provider: Option<String>,
+        #[sea_orm(column_name = "storage_bucket")]
+        pub storage_bucket: Option<String>,
+        #[sea_orm(column_name = "storage_key")]
+        pub storage_key: Option<String>,
+        #[sea_orm(column_name = "audio_url")]
+        pub audio_url: Option<String>,
+        #[sea_orm(column_name = "content_type")]
+        pub content_type: Option<String>,
+        #[sea_orm(column_name = "duration_millis")]
+        pub duration_millis: i32,
+        #[sea_orm(column_name = "sample_rate")]
+        pub sample_rate: i32,
+        #[sea_orm(column_name = "bpm_millis")]
+        pub bpm_millis: i32,
+        pub genre: String,
+        #[sea_orm(column_name = "peak_micros")]
+        pub peak_micros: i32,
+        #[sea_orm(column_name = "rms_micros")]
+        pub rms_micros: i32,
+        #[sea_orm(column_name = "spectral_centroid_millihz")]
+        pub spectral_centroid_millihz: i64,
+        #[sea_orm(column_name = "listenability_score_micros")]
+        pub listenability_score_micros: i32,
+        #[sea_orm(column_name = "vote_score")]
+        pub vote_score: i32,
+        #[sea_orm(column_name = "up_votes")]
+        pub up_votes: i32,
+        #[sea_orm(column_name = "down_votes")]
+        pub down_votes: i32,
+        #[sea_orm(column_name = "play_count")]
+        pub play_count: i32,
+        pub summary: Json,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "published_at")]
+        pub published_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use music_songs::Entity as MusicSongsEntity;
@@ -235,30 +229,29 @@ pub use music_songs::Model as MusicSongsModel;
 pub mod music_song_votes {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "music_song_votes")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "song_id")]
-    pub song_id: Uuid,
-    #[sea_orm(column_name = "visitor_hash")]
-    pub visitor_hash: String,
-    #[sea_orm(column_name = "user_agent_hash")]
-    pub user_agent_hash: Option<String>,
-    #[sea_orm(column_name = "vote_value")]
-    pub vote_value: i32,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "music_song_votes")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "song_id")]
+        pub song_id: Uuid,
+        #[sea_orm(column_name = "visitor_hash")]
+        pub visitor_hash: String,
+        #[sea_orm(column_name = "user_agent_hash")]
+        pub user_agent_hash: Option<String>,
+        #[sea_orm(column_name = "vote_value")]
+        pub vote_value: i32,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use music_song_votes::Entity as MusicSongVotesEntity;
@@ -267,33 +260,32 @@ pub use music_song_votes::Model as MusicSongVotesModel;
 pub mod sound_recorder_accounts {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "sound_recorder_accounts")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub status: String,
-    #[sea_orm(column_name = "external_subject")]
-    pub external_subject: Option<String>,
-    #[sea_orm(column_name = "display_name")]
-    pub display_name: Option<String>,
-    #[sea_orm(column_name = "legal_region")]
-    pub legal_region: Option<String>,
-    #[sea_orm(column_name = "retention_hours")]
-    pub retention_hours: i32,
-    #[sea_orm(column_name = "retention_policy_version")]
-    pub retention_policy_version: String,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "sound_recorder_accounts")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub status: String,
+        #[sea_orm(column_name = "external_subject")]
+        pub external_subject: Option<String>,
+        #[sea_orm(column_name = "display_name")]
+        pub display_name: Option<String>,
+        #[sea_orm(column_name = "legal_region")]
+        pub legal_region: Option<String>,
+        #[sea_orm(column_name = "retention_hours")]
+        pub retention_hours: i32,
+        #[sea_orm(column_name = "retention_policy_version")]
+        pub retention_policy_version: String,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use sound_recorder_accounts::Entity as SoundRecorderAccountsEntity;
@@ -302,57 +294,56 @@ pub use sound_recorder_accounts::Model as SoundRecorderAccountsModel;
 pub mod sound_recorder_devices {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "sound_recorder_devices")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "account_id")]
-    pub account_id: Uuid,
-    pub platform: String,
-    pub status: String,
-    #[sea_orm(column_name = "install_id")]
-    pub install_id: String,
-    #[sea_orm(column_name = "device_label")]
-    pub device_label: Option<String>,
-    #[sea_orm(column_name = "app_version")]
-    pub app_version: Option<String>,
-    #[sea_orm(column_name = "os_version")]
-    pub os_version: Option<String>,
-    #[sea_orm(column_name = "token_hash")]
-    pub token_hash: String,
-    #[sea_orm(column_name = "token_last4")]
-    pub token_last4: String,
-    #[sea_orm(column_name = "consent_version")]
-    pub consent_version: String,
-    #[sea_orm(column_name = "consent_accepted_at")]
-    pub consent_accepted_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "recording_indicator_acknowledged")]
-    pub recording_indicator_acknowledged: bool,
-    #[sea_orm(column_name = "last_seen_at")]
-    pub last_seen_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "transfer_paused")]
-    pub transfer_paused: bool,
-    #[sea_orm(column_name = "transfer_pause_reason")]
-    pub transfer_pause_reason: Option<String>,
-    #[sea_orm(column_name = "network_policy")]
-    pub network_policy: String,
-    #[sea_orm(column_name = "battery_level")]
-    pub battery_level: Option<i16>,
-    pub charging: Option<bool>,
-    #[sea_orm(column_name = "transfer_state_updated_at")]
-    pub transfer_state_updated_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "sound_recorder_devices")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "account_id")]
+        pub account_id: Uuid,
+        pub platform: String,
+        pub status: String,
+        #[sea_orm(column_name = "install_id")]
+        pub install_id: String,
+        #[sea_orm(column_name = "device_label")]
+        pub device_label: Option<String>,
+        #[sea_orm(column_name = "app_version")]
+        pub app_version: Option<String>,
+        #[sea_orm(column_name = "os_version")]
+        pub os_version: Option<String>,
+        #[sea_orm(column_name = "token_hash")]
+        pub token_hash: String,
+        #[sea_orm(column_name = "token_last4")]
+        pub token_last4: String,
+        #[sea_orm(column_name = "consent_version")]
+        pub consent_version: String,
+        #[sea_orm(column_name = "consent_accepted_at")]
+        pub consent_accepted_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "recording_indicator_acknowledged")]
+        pub recording_indicator_acknowledged: bool,
+        #[sea_orm(column_name = "last_seen_at")]
+        pub last_seen_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "transfer_paused")]
+        pub transfer_paused: bool,
+        #[sea_orm(column_name = "transfer_pause_reason")]
+        pub transfer_pause_reason: Option<String>,
+        #[sea_orm(column_name = "network_policy")]
+        pub network_policy: String,
+        #[sea_orm(column_name = "battery_level")]
+        pub battery_level: Option<i16>,
+        pub charging: Option<bool>,
+        #[sea_orm(column_name = "transfer_state_updated_at")]
+        pub transfer_state_updated_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use sound_recorder_devices::Entity as SoundRecorderDevicesEntity;
@@ -361,60 +352,59 @@ pub use sound_recorder_devices::Model as SoundRecorderDevicesModel;
 pub mod sound_recorder_upload_sessions {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "sound_recorder_upload_sessions")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "account_id")]
-    pub account_id: Uuid,
-    #[sea_orm(column_name = "device_id")]
-    pub device_id: Uuid,
-    pub status: String,
-    #[sea_orm(column_name = "storage_provider")]
-    pub storage_provider: String,
-    #[sea_orm(column_name = "storage_bucket")]
-    pub storage_bucket: String,
-    #[sea_orm(column_name = "storage_prefix")]
-    pub storage_prefix: String,
-    #[sea_orm(column_name = "content_type")]
-    pub content_type: String,
-    pub codec: Option<String>,
-    #[sea_orm(column_name = "sample_rate")]
-    pub sample_rate: Option<i32>,
-    #[sea_orm(column_name = "channel_count")]
-    pub channel_count: i32,
-    #[sea_orm(column_name = "segment_duration_seconds")]
-    pub segment_duration_seconds: i32,
-    #[sea_orm(column_name = "max_segment_bytes")]
-    pub max_segment_bytes: i32,
-    #[sea_orm(column_name = "started_at")]
-    pub started_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "last_heartbeat_at")]
-    pub last_heartbeat_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "closed_at")]
-    pub closed_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "expires_at")]
-    pub expires_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "client_timezone")]
-    pub client_timezone: Option<String>,
-    #[sea_orm(column_name = "legal_region")]
-    pub legal_region: Option<String>,
-    #[sea_orm(column_name = "use_case")]
-    pub use_case: String,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "sound_recorder_upload_sessions")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "account_id")]
+        pub account_id: Uuid,
+        #[sea_orm(column_name = "device_id")]
+        pub device_id: Uuid,
+        pub status: String,
+        #[sea_orm(column_name = "storage_provider")]
+        pub storage_provider: String,
+        #[sea_orm(column_name = "storage_bucket")]
+        pub storage_bucket: String,
+        #[sea_orm(column_name = "storage_prefix")]
+        pub storage_prefix: String,
+        #[sea_orm(column_name = "content_type")]
+        pub content_type: String,
+        pub codec: Option<String>,
+        #[sea_orm(column_name = "sample_rate")]
+        pub sample_rate: Option<i32>,
+        #[sea_orm(column_name = "channel_count")]
+        pub channel_count: i32,
+        #[sea_orm(column_name = "segment_duration_seconds")]
+        pub segment_duration_seconds: i32,
+        #[sea_orm(column_name = "max_segment_bytes")]
+        pub max_segment_bytes: i32,
+        #[sea_orm(column_name = "started_at")]
+        pub started_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "last_heartbeat_at")]
+        pub last_heartbeat_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "closed_at")]
+        pub closed_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "expires_at")]
+        pub expires_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "client_timezone")]
+        pub client_timezone: Option<String>,
+        #[sea_orm(column_name = "legal_region")]
+        pub legal_region: Option<String>,
+        #[sea_orm(column_name = "use_case")]
+        pub use_case: String,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use sound_recorder_upload_sessions::Entity as SoundRecorderUploadSessionsEntity;
@@ -423,61 +413,60 @@ pub use sound_recorder_upload_sessions::Model as SoundRecorderUploadSessionsMode
 pub mod sound_recorder_segments {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "sound_recorder_segments")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "account_id")]
-    pub account_id: Uuid,
-    #[sea_orm(column_name = "device_id")]
-    pub device_id: Uuid,
-    #[sea_orm(column_name = "session_id")]
-    pub session_id: Uuid,
-    #[sea_orm(column_name = "sequence_number")]
-    pub sequence_number: i32,
-    pub status: String,
-    #[sea_orm(column_name = "storage_provider")]
-    pub storage_provider: String,
-    #[sea_orm(column_name = "storage_bucket")]
-    pub storage_bucket: String,
-    #[sea_orm(column_name = "storage_key")]
-    pub storage_key: String,
-    #[sea_orm(column_name = "content_type")]
-    pub content_type: String,
-    pub codec: Option<String>,
-    #[sea_orm(column_name = "captured_started_at")]
-    pub captured_started_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "captured_ended_at")]
-    pub captured_ended_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "duration_millis")]
-    pub duration_millis: i32,
-    #[sea_orm(column_name = "byte_count")]
-    pub byte_count: Option<i32>,
-    #[sea_orm(column_name = "sha256_hex")]
-    pub sha256_hex: Option<String>,
-    #[sea_orm(column_name = "upload_url_expires_at")]
-    pub upload_url_expires_at: Option<DateTimeWithTimeZone>,
-    pub etag: Option<String>,
-    #[sea_orm(column_name = "uploaded_at")]
-    pub uploaded_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "expires_at")]
-    pub expires_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "pinned_at")]
-    pub pinned_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "sound_recorder_segments")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "account_id")]
+        pub account_id: Uuid,
+        #[sea_orm(column_name = "device_id")]
+        pub device_id: Uuid,
+        #[sea_orm(column_name = "session_id")]
+        pub session_id: Uuid,
+        #[sea_orm(column_name = "sequence_number")]
+        pub sequence_number: i32,
+        pub status: String,
+        #[sea_orm(column_name = "storage_provider")]
+        pub storage_provider: String,
+        #[sea_orm(column_name = "storage_bucket")]
+        pub storage_bucket: String,
+        #[sea_orm(column_name = "storage_key")]
+        pub storage_key: String,
+        #[sea_orm(column_name = "content_type")]
+        pub content_type: String,
+        pub codec: Option<String>,
+        #[sea_orm(column_name = "captured_started_at")]
+        pub captured_started_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "captured_ended_at")]
+        pub captured_ended_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "duration_millis")]
+        pub duration_millis: i32,
+        #[sea_orm(column_name = "byte_count")]
+        pub byte_count: Option<i32>,
+        #[sea_orm(column_name = "sha256_hex")]
+        pub sha256_hex: Option<String>,
+        #[sea_orm(column_name = "upload_url_expires_at")]
+        pub upload_url_expires_at: Option<DateTimeWithTimeZone>,
+        pub etag: Option<String>,
+        #[sea_orm(column_name = "uploaded_at")]
+        pub uploaded_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "expires_at")]
+        pub expires_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "pinned_at")]
+        pub pinned_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use sound_recorder_segments::Entity as SoundRecorderSegmentsEntity;
@@ -486,42 +475,41 @@ pub use sound_recorder_segments::Model as SoundRecorderSegmentsModel;
 pub mod sound_recorder_evidence_exports {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "sound_recorder_evidence_exports")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "account_id")]
-    pub account_id: Uuid,
-    #[sea_orm(column_name = "device_id")]
-    pub device_id: Option<Uuid>,
-    #[sea_orm(column_name = "created_by_device_id")]
-    pub created_by_device_id: Option<Uuid>,
-    pub status: String,
-    #[sea_orm(column_name = "requested_from")]
-    pub requested_from: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "requested_to")]
-    pub requested_to: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "segment_count")]
-    pub segment_count: i32,
-    pub manifest: Json,
-    #[sea_orm(column_name = "download_url_expires_at")]
-    pub download_url_expires_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "requested_at")]
-    pub requested_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "ready_at")]
-    pub ready_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "expires_at")]
-    pub expires_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "sound_recorder_evidence_exports")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "account_id")]
+        pub account_id: Uuid,
+        #[sea_orm(column_name = "device_id")]
+        pub device_id: Option<Uuid>,
+        #[sea_orm(column_name = "created_by_device_id")]
+        pub created_by_device_id: Option<Uuid>,
+        pub status: String,
+        #[sea_orm(column_name = "requested_from")]
+        pub requested_from: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "requested_to")]
+        pub requested_to: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "segment_count")]
+        pub segment_count: i32,
+        pub manifest: Json,
+        #[sea_orm(column_name = "download_url_expires_at")]
+        pub download_url_expires_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "requested_at")]
+        pub requested_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "ready_at")]
+        pub ready_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "expires_at")]
+        pub expires_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use sound_recorder_evidence_exports::Entity as SoundRecorderEvidenceExportsEntity;
@@ -530,29 +518,28 @@ pub use sound_recorder_evidence_exports::Model as SoundRecorderEvidenceExportsMo
 pub mod sound_recorder_audit_events {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "sound_recorder_audit_events")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "account_id")]
-    pub account_id: Option<Uuid>,
-    #[sea_orm(column_name = "device_id")]
-    pub device_id: Option<Uuid>,
-    #[sea_orm(column_name = "event_type")]
-    pub event_type: String,
-    #[sea_orm(column_name = "event_hash")]
-    pub event_hash: String,
-    pub payload: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "sound_recorder_audit_events")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "account_id")]
+        pub account_id: Option<Uuid>,
+        #[sea_orm(column_name = "device_id")]
+        pub device_id: Option<Uuid>,
+        #[sea_orm(column_name = "event_type")]
+        pub event_type: String,
+        #[sea_orm(column_name = "event_hash")]
+        pub event_hash: String,
+        pub payload: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use sound_recorder_audit_events::Entity as SoundRecorderAuditEventsEntity;
@@ -561,40 +548,39 @@ pub use sound_recorder_audit_events::Model as SoundRecorderAuditEventsModel;
 pub mod sound_recorder_oauth_states {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "sound_recorder_oauth_states")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "account_id")]
-    pub account_id: Uuid,
-    #[sea_orm(column_name = "device_id")]
-    pub device_id: Uuid,
-    pub provider: String,
-    #[sea_orm(column_name = "state_hash")]
-    pub state_hash: String,
-    #[sea_orm(column_name = "redirect_uri")]
-    pub redirect_uri: String,
-    #[sea_orm(column_name = "folder_path")]
-    pub folder_path: Option<String>,
-    pub status: String,
-    #[sea_orm(column_name = "expires_at")]
-    pub expires_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "consumed_at")]
-    pub consumed_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "sound_recorder_oauth_states")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "account_id")]
+        pub account_id: Uuid,
+        #[sea_orm(column_name = "device_id")]
+        pub device_id: Uuid,
+        pub provider: String,
+        #[sea_orm(column_name = "state_hash")]
+        pub state_hash: String,
+        #[sea_orm(column_name = "redirect_uri")]
+        pub redirect_uri: String,
+        #[sea_orm(column_name = "folder_path")]
+        pub folder_path: Option<String>,
+        pub status: String,
+        #[sea_orm(column_name = "expires_at")]
+        pub expires_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "consumed_at")]
+        pub consumed_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use sound_recorder_oauth_states::Entity as SoundRecorderOauthStatesEntity;
@@ -603,56 +589,55 @@ pub use sound_recorder_oauth_states::Model as SoundRecorderOauthStatesModel;
 pub mod sound_recorder_cloud_connections {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "sound_recorder_cloud_connections")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "account_id")]
-    pub account_id: Uuid,
-    #[sea_orm(column_name = "created_by_device_id")]
-    pub created_by_device_id: Option<Uuid>,
-    pub provider: String,
-    #[sea_orm(column_name = "link_mode")]
-    pub link_mode: String,
-    pub status: String,
-    #[sea_orm(column_name = "display_name")]
-    pub display_name: Option<String>,
-    #[sea_orm(column_name = "provider_account_id")]
-    pub provider_account_id: Option<String>,
-    #[sea_orm(column_name = "provider_subject_hash")]
-    pub provider_subject_hash: Option<String>,
-    #[sea_orm(column_name = "root_folder_id")]
-    pub root_folder_id: Option<String>,
-    #[sea_orm(column_name = "folder_path")]
-    pub folder_path: String,
-    #[sea_orm(column_name = "oauth_scope")]
-    pub oauth_scope: Option<String>,
-    #[sea_orm(column_name = "token_ciphertext")]
-    pub token_ciphertext: Option<String>,
-    #[sea_orm(column_name = "token_nonce")]
-    pub token_nonce: Option<String>,
-    #[sea_orm(column_name = "token_aad")]
-    pub token_aad: Option<String>,
-    #[sea_orm(column_name = "token_version")]
-    pub token_version: Option<i32>,
-    #[sea_orm(column_name = "token_expires_at")]
-    pub token_expires_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_sync_at")]
-    pub last_sync_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "sound_recorder_cloud_connections")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "account_id")]
+        pub account_id: Uuid,
+        #[sea_orm(column_name = "created_by_device_id")]
+        pub created_by_device_id: Option<Uuid>,
+        pub provider: String,
+        #[sea_orm(column_name = "link_mode")]
+        pub link_mode: String,
+        pub status: String,
+        #[sea_orm(column_name = "display_name")]
+        pub display_name: Option<String>,
+        #[sea_orm(column_name = "provider_account_id")]
+        pub provider_account_id: Option<String>,
+        #[sea_orm(column_name = "provider_subject_hash")]
+        pub provider_subject_hash: Option<String>,
+        #[sea_orm(column_name = "root_folder_id")]
+        pub root_folder_id: Option<String>,
+        #[sea_orm(column_name = "folder_path")]
+        pub folder_path: String,
+        #[sea_orm(column_name = "oauth_scope")]
+        pub oauth_scope: Option<String>,
+        #[sea_orm(column_name = "token_ciphertext")]
+        pub token_ciphertext: Option<String>,
+        #[sea_orm(column_name = "token_nonce")]
+        pub token_nonce: Option<String>,
+        #[sea_orm(column_name = "token_aad")]
+        pub token_aad: Option<String>,
+        #[sea_orm(column_name = "token_version")]
+        pub token_version: Option<i32>,
+        #[sea_orm(column_name = "token_expires_at")]
+        pub token_expires_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_sync_at")]
+        pub last_sync_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use sound_recorder_cloud_connections::Entity as SoundRecorderCloudConnectionsEntity;
@@ -661,33 +646,32 @@ pub use sound_recorder_cloud_connections::Model as SoundRecorderCloudConnections
 pub mod sound_recorder_cloud_connection_projection_outbox {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "sound_recorder_cloud_connection_projection_outbox")]
-pub struct Model {
-    #[sea_orm(primary_key)]
-    pub seq: i64,
-    #[sea_orm(column_name = "connection_id")]
-    pub connection_id: Uuid,
-    pub attempts: i32,
-    #[sea_orm(column_name = "available_at")]
-    pub available_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "locked_until")]
-    pub locked_until: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "processed_at")]
-    pub processed_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_error")]
-    pub last_error: Option<String>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "sound_recorder_cloud_connection_projection_outbox")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub seq: i64,
+        #[sea_orm(column_name = "connection_id")]
+        pub connection_id: Uuid,
+        pub attempts: i32,
+        #[sea_orm(column_name = "available_at")]
+        pub available_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "locked_until")]
+        pub locked_until: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "processed_at")]
+        pub processed_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_error")]
+        pub last_error: Option<String>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use sound_recorder_cloud_connection_projection_outbox::Entity as SoundRecorderCloudConnectionProjectionOutboxEntity;
@@ -696,45 +680,44 @@ pub use sound_recorder_cloud_connection_projection_outbox::Model as SoundRecorde
 pub mod sound_recorder_cloud_copy_jobs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "sound_recorder_cloud_copy_jobs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "account_id")]
-    pub account_id: Uuid,
-    #[sea_orm(column_name = "connection_id")]
-    pub connection_id: Uuid,
-    #[sea_orm(column_name = "segment_id")]
-    pub segment_id: Uuid,
-    pub provider: String,
-    pub status: String,
-    #[sea_orm(column_name = "destination_key")]
-    pub destination_key: String,
-    #[sea_orm(column_name = "provider_file_id")]
-    pub provider_file_id: Option<String>,
-    pub attempts: i32,
-    #[sea_orm(column_name = "locked_until")]
-    pub locked_until: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "started_at")]
-    pub started_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "completed_at")]
-    pub completed_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_error")]
-    pub last_error: Option<String>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "sound_recorder_cloud_copy_jobs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "account_id")]
+        pub account_id: Uuid,
+        #[sea_orm(column_name = "connection_id")]
+        pub connection_id: Uuid,
+        #[sea_orm(column_name = "segment_id")]
+        pub segment_id: Uuid,
+        pub provider: String,
+        pub status: String,
+        #[sea_orm(column_name = "destination_key")]
+        pub destination_key: String,
+        #[sea_orm(column_name = "provider_file_id")]
+        pub provider_file_id: Option<String>,
+        pub attempts: i32,
+        #[sea_orm(column_name = "locked_until")]
+        pub locked_until: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "started_at")]
+        pub started_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "completed_at")]
+        pub completed_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_error")]
+        pub last_error: Option<String>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use sound_recorder_cloud_copy_jobs::Entity as SoundRecorderCloudCopyJobsEntity;
@@ -743,56 +726,55 @@ pub use sound_recorder_cloud_copy_jobs::Model as SoundRecorderCloudCopyJobsModel
 pub mod container_pool_configs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "container_pool_configs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub slug: String,
-    #[sea_orm(column_name = "display_name")]
-    pub display_name: String,
-    pub image: String,
-    pub command: Json,
-    pub env: Json,
-    #[sea_orm(column_name = "request_path")]
-    pub request_path: String,
-    #[sea_orm(column_name = "health_path")]
-    pub health_path: String,
-    #[sea_orm(column_name = "container_port")]
-    pub container_port: i32,
-    #[sea_orm(column_name = "min_warm")]
-    pub min_warm: i32,
-    #[sea_orm(column_name = "max_warm")]
-    pub max_warm: i32,
-    #[sea_orm(column_name = "max_concurrency_per_container")]
-    pub max_concurrency_per_container: i32,
-    #[sea_orm(column_name = "request_timeout_ms")]
-    pub request_timeout_ms: i32,
-    #[sea_orm(column_name = "idle_ttl_seconds")]
-    pub idle_ttl_seconds: i32,
-    #[sea_orm(column_name = "nats_subject")]
-    pub nats_subject: Option<String>,
-    pub status: String,
-    pub labels: Json,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "container_pool_configs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub slug: String,
+        #[sea_orm(column_name = "display_name")]
+        pub display_name: String,
+        pub image: String,
+        pub command: Json,
+        pub env: Json,
+        #[sea_orm(column_name = "request_path")]
+        pub request_path: String,
+        #[sea_orm(column_name = "health_path")]
+        pub health_path: String,
+        #[sea_orm(column_name = "container_port")]
+        pub container_port: i32,
+        #[sea_orm(column_name = "min_warm")]
+        pub min_warm: i32,
+        #[sea_orm(column_name = "max_warm")]
+        pub max_warm: i32,
+        #[sea_orm(column_name = "max_concurrency_per_container")]
+        pub max_concurrency_per_container: i32,
+        #[sea_orm(column_name = "request_timeout_ms")]
+        pub request_timeout_ms: i32,
+        #[sea_orm(column_name = "idle_ttl_seconds")]
+        pub idle_ttl_seconds: i32,
+        #[sea_orm(column_name = "nats_subject")]
+        pub nats_subject: Option<String>,
+        pub status: String,
+        pub labels: Json,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use container_pool_configs::Entity as ContainerPoolConfigsEntity;
@@ -801,40 +783,39 @@ pub use container_pool_configs::Model as ContainerPoolConfigsModel;
 pub mod known_git_repos {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "known_git_repos")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "repo_url")]
-    pub repo_url: String,
-    #[sea_orm(column_name = "display_name")]
-    pub display_name: String,
-    pub provider: String,
-    #[sea_orm(column_name = "default_branch")]
-    pub default_branch: String,
-    pub status: String,
-    #[sea_orm(column_name = "last_verified_at")]
-    pub last_verified_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "known_git_repos")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "repo_url")]
+        pub repo_url: String,
+        #[sea_orm(column_name = "display_name")]
+        pub display_name: String,
+        pub provider: String,
+        #[sea_orm(column_name = "default_branch")]
+        pub default_branch: String,
+        pub status: String,
+        #[sea_orm(column_name = "last_verified_at")]
+        pub last_verified_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use known_git_repos::Entity as KnownGitRepoEntity;
@@ -843,42 +824,41 @@ pub use known_git_repos::Model as KnownGitRepoModel;
 pub mod agent_context_blobs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "agent_context_blobs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "project_id")]
-    pub project_id: String,
-    #[sea_orm(column_name = "repo_id")]
-    pub repo_id: Option<Uuid>,
-    #[sea_orm(column_name = "context_id")]
-    pub context_id: String,
-    #[sea_orm(column_name = "context_title")]
-    pub context_title: String,
-    #[sea_orm(column_name = "context_blob")]
-    pub context_blob: String,
-    pub status: String,
-    pub labels: Json,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "agent_context_blobs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "project_id")]
+        pub project_id: String,
+        #[sea_orm(column_name = "repo_id")]
+        pub repo_id: Option<Uuid>,
+        #[sea_orm(column_name = "context_id")]
+        pub context_id: String,
+        #[sea_orm(column_name = "context_title")]
+        pub context_title: String,
+        #[sea_orm(column_name = "context_blob")]
+        pub context_blob: String,
+        pub status: String,
+        pub labels: Json,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use agent_context_blobs::Entity as AgentContextBlobsEntity;
@@ -887,29 +867,28 @@ pub use agent_context_blobs::Model as AgentContextBlobsModel;
 pub mod agent_context_embeddings {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "agent_context_embeddings")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "context_blob_id")]
-    pub context_blob_id: Uuid,
-    #[sea_orm(column_name = "embedding_model")]
-    pub embedding_model: String,
-    pub embedding: Json,
-    #[sea_orm(column_name = "embedding_dimensions")]
-    pub embedding_dimensions: i32,
-    #[sea_orm(column_name = "content_sha256")]
-    pub content_sha256: String,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "agent_context_embeddings")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "context_blob_id")]
+        pub context_blob_id: Uuid,
+        #[sea_orm(column_name = "embedding_model")]
+        pub embedding_model: String,
+        pub embedding: Json,
+        #[sea_orm(column_name = "embedding_dimensions")]
+        pub embedding_dimensions: i32,
+        #[sea_orm(column_name = "content_sha256")]
+        pub content_sha256: String,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use agent_context_embeddings::Entity as AgentContextEmbeddingsEntity;
@@ -918,39 +897,38 @@ pub use agent_context_embeddings::Model as AgentContextEmbeddingsModel;
 pub mod agent_remote_dev_threads {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "agent_remote_dev_threads")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "user_id")]
-    pub user_id: Uuid,
-    #[sea_orm(column_name = "known_git_repo_id")]
-    pub known_git_repo_id: Option<Uuid>,
-    pub title: String,
-    pub repo: String,
-    #[sea_orm(column_name = "base_branch")]
-    pub base_branch: String,
-    pub meta: Json,
-    #[sea_orm(column_name = "archived_at")]
-    pub archived_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "agent_remote_dev_threads")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "user_id")]
+        pub user_id: Uuid,
+        #[sea_orm(column_name = "known_git_repo_id")]
+        pub known_git_repo_id: Option<Uuid>,
+        pub title: String,
+        pub repo: String,
+        #[sea_orm(column_name = "base_branch")]
+        pub base_branch: String,
+        pub meta: Json,
+        #[sea_orm(column_name = "archived_at")]
+        pub archived_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use agent_remote_dev_threads::Entity as AgentRemoteDevThreadEntity;
@@ -959,52 +937,51 @@ pub use agent_remote_dev_threads::Model as AgentRemoteDevThreadModel;
 pub mod agent_remote_dev_tasks {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "agent_remote_dev_tasks")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "thread_id")]
-    pub thread_id: Uuid,
-    #[sea_orm(column_name = "user_id")]
-    pub user_id: Uuid,
-    #[sea_orm(column_name = "docker_task_id")]
-    pub docker_task_id: Uuid,
-    pub prompt: String,
-    pub status: String,
-    pub branch: Option<String>,
-    #[sea_orm(column_name = "pr_url")]
-    pub pr_url: Option<String>,
-    #[sea_orm(column_name = "pr_state")]
-    pub pr_state: Option<String>,
-    #[sea_orm(column_name = "exit_reason")]
-    pub exit_reason: Option<String>,
-    #[sea_orm(column_name = "error_message")]
-    pub error_message: Option<String>,
-    #[sea_orm(column_name = "last_event_seq")]
-    pub last_event_seq: i32,
-    pub meta: Json,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "started_at")]
-    pub started_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "finished_at")]
-    pub finished_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "agent_remote_dev_tasks")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "thread_id")]
+        pub thread_id: Uuid,
+        #[sea_orm(column_name = "user_id")]
+        pub user_id: Uuid,
+        #[sea_orm(column_name = "docker_task_id")]
+        pub docker_task_id: Uuid,
+        pub prompt: String,
+        pub status: String,
+        pub branch: Option<String>,
+        #[sea_orm(column_name = "pr_url")]
+        pub pr_url: Option<String>,
+        #[sea_orm(column_name = "pr_state")]
+        pub pr_state: Option<String>,
+        #[sea_orm(column_name = "exit_reason")]
+        pub exit_reason: Option<String>,
+        #[sea_orm(column_name = "error_message")]
+        pub error_message: Option<String>,
+        #[sea_orm(column_name = "last_event_seq")]
+        pub last_event_seq: i32,
+        pub meta: Json,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "started_at")]
+        pub started_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "finished_at")]
+        pub finished_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use agent_remote_dev_tasks::Entity as AgentRemoteDevTaskEntity;
@@ -1013,28 +990,27 @@ pub use agent_remote_dev_tasks::Model as AgentRemoteDevTaskModel;
 pub mod agent_remote_dev_events {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "agent_remote_dev_events")]
-pub struct Model {
-    #[sea_orm(primary_key)]
-    pub id: i64,
-    #[sea_orm(column_name = "task_id")]
-    pub task_id: Uuid,
-    #[sea_orm(column_name = "thread_id")]
-    pub thread_id: Option<Uuid>,
-    pub seq: i32,
-    #[sea_orm(column_name = "event_kind")]
-    pub event_kind: String,
-    pub payload: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "agent_remote_dev_events")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        #[sea_orm(column_name = "task_id")]
+        pub task_id: Uuid,
+        #[sea_orm(column_name = "thread_id")]
+        pub thread_id: Option<Uuid>,
+        pub seq: i32,
+        #[sea_orm(column_name = "event_kind")]
+        pub event_kind: String,
+        pub payload: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use agent_remote_dev_events::Entity as AgentRemoteDevEventEntity;
@@ -1043,30 +1019,29 @@ pub use agent_remote_dev_events::Model as AgentRemoteDevEventModel;
 pub mod agent_remote_dev_breadcrumbs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "agent_remote_dev_breadcrumbs")]
-pub struct Model {
-    #[sea_orm(primary_key)]
-    pub id: i64,
-    #[sea_orm(column_name = "thread_id")]
-    pub thread_id: Uuid,
-    #[sea_orm(column_name = "task_id")]
-    pub task_id: Option<Uuid>,
-    pub kind: String,
-    pub payload: Json,
-    #[sea_orm(column_name = "emitted_at")]
-    pub emitted_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "pod_name")]
-    pub pod_name: Option<String>,
-    pub branch: Option<String>,
-    pub provider: Option<String>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "agent_remote_dev_breadcrumbs")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        #[sea_orm(column_name = "thread_id")]
+        pub thread_id: Uuid,
+        #[sea_orm(column_name = "task_id")]
+        pub task_id: Option<Uuid>,
+        pub kind: String,
+        pub payload: Json,
+        #[sea_orm(column_name = "emitted_at")]
+        pub emitted_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "pod_name")]
+        pub pod_name: Option<String>,
+        pub branch: Option<String>,
+        pub provider: Option<String>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use agent_remote_dev_breadcrumbs::Entity as AgentRemoteDevBreadcrumbEntity;
@@ -1075,40 +1050,39 @@ pub use agent_remote_dev_breadcrumbs::Model as AgentRemoteDevBreadcrumbModel;
 pub mod agent_remote_dev_artifacts {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "agent_remote_dev_artifacts")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "task_id")]
-    pub task_id: Uuid,
-    #[sea_orm(column_name = "thread_id")]
-    pub thread_id: Uuid,
-    pub filename: String,
-    #[sea_orm(column_name = "content_type")]
-    pub content_type: Option<String>,
-    #[sea_orm(column_name = "size_bytes")]
-    pub size_bytes: Option<i64>,
-    #[sea_orm(column_name = "storage_provider")]
-    pub storage_provider: String,
-    #[sea_orm(column_name = "storage_bucket")]
-    pub storage_bucket: Option<String>,
-    #[sea_orm(column_name = "storage_key")]
-    pub storage_key: Option<String>,
-    pub url: String,
-    #[sea_orm(column_name = "signed_url_expires_at")]
-    pub signed_url_expires_at: Option<DateTimeWithTimeZone>,
-    pub sha256: Option<String>,
-    pub meta: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "agent_remote_dev_artifacts")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "task_id")]
+        pub task_id: Uuid,
+        #[sea_orm(column_name = "thread_id")]
+        pub thread_id: Uuid,
+        pub filename: String,
+        #[sea_orm(column_name = "content_type")]
+        pub content_type: Option<String>,
+        #[sea_orm(column_name = "size_bytes")]
+        pub size_bytes: Option<i64>,
+        #[sea_orm(column_name = "storage_provider")]
+        pub storage_provider: String,
+        #[sea_orm(column_name = "storage_bucket")]
+        pub storage_bucket: Option<String>,
+        #[sea_orm(column_name = "storage_key")]
+        pub storage_key: Option<String>,
+        pub url: String,
+        #[sea_orm(column_name = "signed_url_expires_at")]
+        pub signed_url_expires_at: Option<DateTimeWithTimeZone>,
+        pub sha256: Option<String>,
+        pub meta: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use agent_remote_dev_artifacts::Entity as AgentRemoteDevArtifactEntity;
@@ -1117,30 +1091,29 @@ pub use agent_remote_dev_artifacts::Model as AgentRemoteDevArtifactModel;
 pub mod agent_remote_dev_runtime_locks {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "agent_remote_dev_runtime_locks")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "thread_id")]
-    pub thread_id: Uuid,
-    pub owner: String,
-    pub status: String,
-    #[sea_orm(column_name = "fencing_token")]
-    pub fencing_token: i32,
-    #[sea_orm(column_name = "lease_expires_at")]
-    pub lease_expires_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "agent_remote_dev_runtime_locks")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "thread_id")]
+        pub thread_id: Uuid,
+        pub owner: String,
+        pub status: String,
+        #[sea_orm(column_name = "fencing_token")]
+        pub fencing_token: i32,
+        #[sea_orm(column_name = "lease_expires_at")]
+        pub lease_expires_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use agent_remote_dev_runtime_locks::Entity as AgentRemoteDevRuntimeLockEntity;
@@ -1149,24 +1122,23 @@ pub use agent_remote_dev_runtime_locks::Model as AgentRemoteDevRuntimeLockModel;
 pub mod mip_solver_sessions {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "mip_solver_sessions")]
-pub struct Model {
-    #[sea_orm(primary_key, column_name = "session_id")]
-    pub session_id: String,
-    pub revision: i64,
-    pub problem: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "mip_solver_sessions")]
+    pub struct Model {
+        #[sea_orm(primary_key, column_name = "session_id")]
+        pub session_id: String,
+        pub revision: i64,
+        pub problem: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use mip_solver_sessions::Entity as MipSolverSessionsEntity;
@@ -1175,49 +1147,48 @@ pub use mip_solver_sessions::Model as MipSolverSessionsModel;
 pub mod mip_solver_solves {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "mip_solver_solves")]
-pub struct Model {
-    #[sea_orm(primary_key, column_name = "solve_id")]
-    pub solve_id: String,
-    #[sea_orm(column_name = "request_id")]
-    pub request_id: String,
-    pub revision: i64,
-    pub status: String,
-    #[sea_orm(column_name = "node_id")]
-    pub node_id: String,
-    #[sea_orm(column_name = "node_role")]
-    pub node_role: String,
-    pub problem: Json,
-    pub options: Json,
-    pub response: Json,
-    #[sea_orm(column_name = "jobs_expected")]
-    pub jobs_expected: i32,
-    #[sea_orm(column_name = "jobs_published")]
-    pub jobs_published: i32,
-    #[sea_orm(column_name = "jobs_completed")]
-    pub jobs_completed: i32,
-    #[sea_orm(column_name = "jobs_redelegated")]
-    pub jobs_redelegated: i32,
-    #[sea_orm(column_name = "jobs_split")]
-    pub jobs_split: i32,
-    #[sea_orm(column_name = "timed_out")]
-    pub timed_out: bool,
-    pub distributed: bool,
-    pub warnings: Json,
-    #[sea_orm(column_name = "started_at")]
-    pub started_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "finished_at")]
-    pub finished_at: Option<DateTimeWithTimeZone>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "mip_solver_solves")]
+    pub struct Model {
+        #[sea_orm(primary_key, column_name = "solve_id")]
+        pub solve_id: String,
+        #[sea_orm(column_name = "request_id")]
+        pub request_id: String,
+        pub revision: i64,
+        pub status: String,
+        #[sea_orm(column_name = "node_id")]
+        pub node_id: String,
+        #[sea_orm(column_name = "node_role")]
+        pub node_role: String,
+        pub problem: Json,
+        pub options: Json,
+        pub response: Json,
+        #[sea_orm(column_name = "jobs_expected")]
+        pub jobs_expected: i32,
+        #[sea_orm(column_name = "jobs_published")]
+        pub jobs_published: i32,
+        #[sea_orm(column_name = "jobs_completed")]
+        pub jobs_completed: i32,
+        #[sea_orm(column_name = "jobs_redelegated")]
+        pub jobs_redelegated: i32,
+        #[sea_orm(column_name = "jobs_split")]
+        pub jobs_split: i32,
+        #[sea_orm(column_name = "timed_out")]
+        pub timed_out: bool,
+        pub distributed: bool,
+        pub warnings: Json,
+        #[sea_orm(column_name = "started_at")]
+        pub started_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "finished_at")]
+        pub finished_at: Option<DateTimeWithTimeZone>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use mip_solver_solves::Entity as MipSolverSolvesEntity;
@@ -1226,38 +1197,37 @@ pub use mip_solver_solves::Model as MipSolverSolvesModel;
 pub mod mip_solver_jobs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "mip_solver_jobs")]
-pub struct Model {
-    #[sea_orm(primary_key, column_name = "job_id")]
-    pub job_id: String,
-    #[sea_orm(column_name = "solve_id")]
-    pub solve_id: String,
-    #[sea_orm(column_name = "root_job_id")]
-    pub root_job_id: String,
-    #[sea_orm(column_name = "retry_index")]
-    pub retry_index: i32,
-    pub depth: i32,
-    pub status: String,
-    #[sea_orm(column_name = "worker_node")]
-    pub worker_node: Option<String>,
-    #[sea_orm(column_name = "job_payload")]
-    pub job_payload: Json,
-    #[sea_orm(column_name = "result_payload")]
-    pub result_payload: Json,
-    #[sea_orm(column_name = "submitted_at")]
-    pub submitted_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "finished_at")]
-    pub finished_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "mip_solver_jobs")]
+    pub struct Model {
+        #[sea_orm(primary_key, column_name = "job_id")]
+        pub job_id: String,
+        #[sea_orm(column_name = "solve_id")]
+        pub solve_id: String,
+        #[sea_orm(column_name = "root_job_id")]
+        pub root_job_id: String,
+        #[sea_orm(column_name = "retry_index")]
+        pub retry_index: i32,
+        pub depth: i32,
+        pub status: String,
+        #[sea_orm(column_name = "worker_node")]
+        pub worker_node: Option<String>,
+        #[sea_orm(column_name = "job_payload")]
+        pub job_payload: Json,
+        #[sea_orm(column_name = "result_payload")]
+        pub result_payload: Json,
+        #[sea_orm(column_name = "submitted_at")]
+        pub submitted_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "finished_at")]
+        pub finished_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use mip_solver_jobs::Entity as MipSolverJobsEntity;
@@ -1266,29 +1236,28 @@ pub use mip_solver_jobs::Model as MipSolverJobsModel;
 pub mod mip_solver_events {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "mip_solver_events")]
-pub struct Model {
-    #[sea_orm(primary_key)]
-    pub id: i64,
-    #[sea_orm(column_name = "solve_id")]
-    pub solve_id: Option<String>,
-    #[sea_orm(column_name = "session_id")]
-    pub session_id: Option<String>,
-    #[sea_orm(column_name = "job_id")]
-    pub job_id: Option<String>,
-    #[sea_orm(column_name = "event_kind")]
-    pub event_kind: String,
-    pub payload: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "mip_solver_events")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        #[sea_orm(column_name = "solve_id")]
+        pub solve_id: Option<String>,
+        #[sea_orm(column_name = "session_id")]
+        pub session_id: Option<String>,
+        #[sea_orm(column_name = "job_id")]
+        pub job_id: Option<String>,
+        #[sea_orm(column_name = "event_kind")]
+        pub event_kind: String,
+        pub payload: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use mip_solver_events::Entity as MipSolverEventsEntity;
@@ -1297,59 +1266,58 @@ pub use mip_solver_events::Model as MipSolverEventsModel;
 pub mod lambda_functions {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "lambda_functions")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub slug: String,
-    #[sea_orm(column_name = "display_name")]
-    pub display_name: String,
-    pub description: String,
-    pub runtime: String,
-    #[sea_orm(column_name = "entry_command")]
-    pub entry_command: String,
-    #[sea_orm(column_name = "function_body")]
-    pub function_body: String,
-    #[sea_orm(column_name = "reuse_key")]
-    pub reuse_key: Option<String>,
-    #[sea_orm(column_name = "idle_timeout_seconds")]
-    pub idle_timeout_seconds: i32,
-    #[sea_orm(column_name = "max_run_ms")]
-    pub max_run_ms: i32,
-    pub containerized: bool,
-    #[sea_orm(column_name = "container_image")]
-    pub container_image: Option<String>,
-    #[sea_orm(column_name = "container_build_status")]
-    pub container_build_status: String,
-    #[sea_orm(column_name = "container_build_error")]
-    pub container_build_error: Option<String>,
-    #[sea_orm(column_name = "container_built_at")]
-    pub container_built_at: Option<DateTimeWithTimeZone>,
-    pub status: String,
-    pub env: Json,
-    pub labels: Json,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "last_invoked_at")]
-    pub last_invoked_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "lambda_functions")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub slug: String,
+        #[sea_orm(column_name = "display_name")]
+        pub display_name: String,
+        pub description: String,
+        pub runtime: String,
+        #[sea_orm(column_name = "entry_command")]
+        pub entry_command: String,
+        #[sea_orm(column_name = "function_body")]
+        pub function_body: String,
+        #[sea_orm(column_name = "reuse_key")]
+        pub reuse_key: Option<String>,
+        #[sea_orm(column_name = "idle_timeout_seconds")]
+        pub idle_timeout_seconds: i32,
+        #[sea_orm(column_name = "max_run_ms")]
+        pub max_run_ms: i32,
+        pub containerized: bool,
+        #[sea_orm(column_name = "container_image")]
+        pub container_image: Option<String>,
+        #[sea_orm(column_name = "container_build_status")]
+        pub container_build_status: String,
+        #[sea_orm(column_name = "container_build_error")]
+        pub container_build_error: Option<String>,
+        #[sea_orm(column_name = "container_built_at")]
+        pub container_built_at: Option<DateTimeWithTimeZone>,
+        pub status: String,
+        pub env: Json,
+        pub labels: Json,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "last_invoked_at")]
+        pub last_invoked_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use lambda_functions::Entity as LambdaFunctionEntity;
@@ -1358,53 +1326,52 @@ pub use lambda_functions::Model as LambdaFunctionModel;
 pub mod lambda_function_revisions {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "lambda_function_revisions")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "function_id")]
-    pub function_id: Uuid,
-    #[sea_orm(column_name = "revision_number")]
-    pub revision_number: i64,
-    #[sea_orm(column_name = "definition_digest")]
-    pub definition_digest: String,
-    pub description: String,
-    pub runtime: String,
-    #[sea_orm(column_name = "entry_command")]
-    pub entry_command: String,
-    #[sea_orm(column_name = "function_body")]
-    pub function_body: String,
-    #[sea_orm(column_name = "reuse_key")]
-    pub reuse_key: Option<String>,
-    #[sea_orm(column_name = "idle_timeout_seconds")]
-    pub idle_timeout_seconds: i32,
-    #[sea_orm(column_name = "max_run_ms")]
-    pub max_run_ms: i32,
-    pub containerized: bool,
-    #[sea_orm(column_name = "container_image")]
-    pub container_image: Option<String>,
-    #[sea_orm(column_name = "container_build_status")]
-    pub container_build_status: String,
-    #[sea_orm(column_name = "container_build_error")]
-    pub container_build_error: Option<String>,
-    #[sea_orm(column_name = "container_built_at")]
-    pub container_built_at: Option<DateTimeWithTimeZone>,
-    pub env: Json,
-    pub labels: Json,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "lambda_function_revisions")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "function_id")]
+        pub function_id: Uuid,
+        #[sea_orm(column_name = "revision_number")]
+        pub revision_number: i64,
+        #[sea_orm(column_name = "definition_digest")]
+        pub definition_digest: String,
+        pub description: String,
+        pub runtime: String,
+        #[sea_orm(column_name = "entry_command")]
+        pub entry_command: String,
+        #[sea_orm(column_name = "function_body")]
+        pub function_body: String,
+        #[sea_orm(column_name = "reuse_key")]
+        pub reuse_key: Option<String>,
+        #[sea_orm(column_name = "idle_timeout_seconds")]
+        pub idle_timeout_seconds: i32,
+        #[sea_orm(column_name = "max_run_ms")]
+        pub max_run_ms: i32,
+        pub containerized: bool,
+        #[sea_orm(column_name = "container_image")]
+        pub container_image: Option<String>,
+        #[sea_orm(column_name = "container_build_status")]
+        pub container_build_status: String,
+        #[sea_orm(column_name = "container_build_error")]
+        pub container_build_error: Option<String>,
+        #[sea_orm(column_name = "container_built_at")]
+        pub container_built_at: Option<DateTimeWithTimeZone>,
+        pub env: Json,
+        pub labels: Json,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use lambda_function_revisions::Entity as LambdaFunctionRevisionEntity;
@@ -1413,33 +1380,32 @@ pub use lambda_function_revisions::Model as LambdaFunctionRevisionModel;
 pub mod lambda_function_aliases {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "lambda_function_aliases")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "function_id")]
-    pub function_id: Uuid,
-    pub name: String,
-    pub description: String,
-    pub traffic: Json,
-    #[sea_orm(column_name = "routing_version")]
-    pub routing_version: i64,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "lambda_function_aliases")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "function_id")]
+        pub function_id: Uuid,
+        pub name: String,
+        pub description: String,
+        pub traffic: Json,
+        #[sea_orm(column_name = "routing_version")]
+        pub routing_version: i64,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use lambda_function_aliases::Entity as LambdaFunctionAliasEntity;
@@ -1448,41 +1414,40 @@ pub use lambda_function_aliases::Model as LambdaFunctionAliasModel;
 pub mod lambda_actor_instances {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "lambda_actor_instances")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "function_id")]
-    pub function_id: Uuid,
-    #[sea_orm(column_name = "actor_key")]
-    pub actor_key: String,
-    pub state: Json,
-    #[sea_orm(column_name = "state_version")]
-    pub state_version: i64,
-    #[sea_orm(column_name = "alarm_at")]
-    pub alarm_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "alarm_attempt")]
-    pub alarm_attempt: i32,
-    #[sea_orm(column_name = "lease_owner")]
-    pub lease_owner: Option<String>,
-    #[sea_orm(column_name = "lease_until")]
-    pub lease_until: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_invoked_at")]
-    pub last_invoked_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_error")]
-    pub last_error: Option<String>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "lambda_actor_instances")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "function_id")]
+        pub function_id: Uuid,
+        #[sea_orm(column_name = "actor_key")]
+        pub actor_key: String,
+        pub state: Json,
+        #[sea_orm(column_name = "state_version")]
+        pub state_version: i64,
+        #[sea_orm(column_name = "alarm_at")]
+        pub alarm_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "alarm_attempt")]
+        pub alarm_attempt: i32,
+        #[sea_orm(column_name = "lease_owner")]
+        pub lease_owner: Option<String>,
+        #[sea_orm(column_name = "lease_until")]
+        pub lease_until: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_invoked_at")]
+        pub last_invoked_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_error")]
+        pub last_error: Option<String>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use lambda_actor_instances::Entity as LambdaActorInstanceEntity;
@@ -1491,39 +1456,38 @@ pub use lambda_actor_instances::Model as LambdaActorInstanceModel;
 pub mod workflow_definitions {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "workflow_definitions")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub slug: String,
-    #[sea_orm(column_name = "display_name")]
-    pub display_name: String,
-    pub description: String,
-    pub steps: Json,
-    #[sea_orm(column_name = "default_retry")]
-    pub default_retry: Json,
-    pub status: String,
-    pub labels: Json,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "workflow_definitions")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub slug: String,
+        #[sea_orm(column_name = "display_name")]
+        pub display_name: String,
+        pub description: String,
+        pub steps: Json,
+        #[sea_orm(column_name = "default_retry")]
+        pub default_retry: Json,
+        pub status: String,
+        pub labels: Json,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use workflow_definitions::Entity as WorkflowDefinitionsEntity;
@@ -1532,50 +1496,49 @@ pub use workflow_definitions::Model as WorkflowDefinitionsModel;
 pub mod workflow_runs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "workflow_runs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "definition_id")]
-    pub definition_id: Uuid,
-    #[sea_orm(column_name = "definition_slug")]
-    pub definition_slug: String,
-    pub status: String,
-    #[sea_orm(column_name = "current_step_index")]
-    pub current_step_index: i32,
-    pub attempt: i32,
-    pub input: Json,
-    pub context: Json,
-    pub output: Option<Json>,
-    #[sea_orm(column_name = "last_error")]
-    pub last_error: Option<String>,
-    #[sea_orm(column_name = "wake_at")]
-    pub wake_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "wait_deadline")]
-    pub wait_deadline: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "lease_until")]
-    pub lease_until: Option<DateTimeWithTimeZone>,
-    pub signals: Json,
-    #[sea_orm(column_name = "idempotency_key")]
-    pub idempotency_key: Option<String>,
-    #[sea_orm(column_name = "started_at")]
-    pub started_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "finished_at")]
-    pub finished_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "workflow_runs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "definition_id")]
+        pub definition_id: Uuid,
+        #[sea_orm(column_name = "definition_slug")]
+        pub definition_slug: String,
+        pub status: String,
+        #[sea_orm(column_name = "current_step_index")]
+        pub current_step_index: i32,
+        pub attempt: i32,
+        pub input: Json,
+        pub context: Json,
+        pub output: Option<Json>,
+        #[sea_orm(column_name = "last_error")]
+        pub last_error: Option<String>,
+        #[sea_orm(column_name = "wake_at")]
+        pub wake_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "wait_deadline")]
+        pub wait_deadline: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "lease_until")]
+        pub lease_until: Option<DateTimeWithTimeZone>,
+        pub signals: Json,
+        #[sea_orm(column_name = "idempotency_key")]
+        pub idempotency_key: Option<String>,
+        #[sea_orm(column_name = "started_at")]
+        pub started_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "finished_at")]
+        pub finished_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use workflow_runs::Entity as WorkflowRunsEntity;
@@ -1584,39 +1547,38 @@ pub use workflow_runs::Model as WorkflowRunsModel;
 pub mod workflow_step_runs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "workflow_step_runs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "run_id")]
-    pub run_id: Uuid,
-    #[sea_orm(column_name = "step_index")]
-    pub step_index: i32,
-    #[sea_orm(column_name = "step_name")]
-    pub step_name: String,
-    #[sea_orm(column_name = "step_type")]
-    pub step_type: String,
-    #[sea_orm(column_name = "function_ref")]
-    pub function_ref: String,
-    pub attempt: i32,
-    pub status: String,
-    pub input: Option<Json>,
-    pub output: Option<Json>,
-    pub error: Option<String>,
-    #[sea_orm(column_name = "duration_ms")]
-    pub duration_ms: Option<i32>,
-    #[sea_orm(column_name = "started_at")]
-    pub started_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "finished_at")]
-    pub finished_at: Option<DateTimeWithTimeZone>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "workflow_step_runs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "run_id")]
+        pub run_id: Uuid,
+        #[sea_orm(column_name = "step_index")]
+        pub step_index: i32,
+        #[sea_orm(column_name = "step_name")]
+        pub step_name: String,
+        #[sea_orm(column_name = "step_type")]
+        pub step_type: String,
+        #[sea_orm(column_name = "function_ref")]
+        pub function_ref: String,
+        pub attempt: i32,
+        pub status: String,
+        pub input: Option<Json>,
+        pub output: Option<Json>,
+        pub error: Option<String>,
+        #[sea_orm(column_name = "duration_ms")]
+        pub duration_ms: Option<i32>,
+        #[sea_orm(column_name = "started_at")]
+        pub started_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "finished_at")]
+        pub finished_at: Option<DateTimeWithTimeZone>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use workflow_step_runs::Entity as WorkflowStepRunsEntity;
@@ -1625,45 +1587,44 @@ pub use workflow_step_runs::Model as WorkflowStepRunsModel;
 pub mod container_pool_image_revisions {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "container_pool_image_revisions")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "image_slug")]
-    pub image_slug: String,
-    #[sea_orm(column_name = "image_ref")]
-    pub image_ref: String,
-    #[sea_orm(column_name = "dockerfile_path")]
-    pub dockerfile_path: String,
-    #[sea_orm(column_name = "build_context")]
-    pub build_context: String,
-    #[sea_orm(column_name = "dockerfile_text")]
-    pub dockerfile_text: String,
-    #[sea_orm(column_name = "dockerfile_sha256")]
-    pub dockerfile_sha256: String,
-    pub source: String,
-    pub notes: String,
-    pub status: String,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "container_pool_image_revisions")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "image_slug")]
+        pub image_slug: String,
+        #[sea_orm(column_name = "image_ref")]
+        pub image_ref: String,
+        #[sea_orm(column_name = "dockerfile_path")]
+        pub dockerfile_path: String,
+        #[sea_orm(column_name = "build_context")]
+        pub build_context: String,
+        #[sea_orm(column_name = "dockerfile_text")]
+        pub dockerfile_text: String,
+        #[sea_orm(column_name = "dockerfile_sha256")]
+        pub dockerfile_sha256: String,
+        pub source: String,
+        pub notes: String,
+        pub status: String,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use container_pool_image_revisions::Entity as ContainerPoolImageRevisionsEntity;
@@ -1672,58 +1633,57 @@ pub use container_pool_image_revisions::Model as ContainerPoolImageRevisionsMode
 pub mod container_pool_build_runs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "container_pool_build_runs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "image_slug")]
-    pub image_slug: String,
-    #[sea_orm(column_name = "revision_id")]
-    pub revision_id: Uuid,
-    #[sea_orm(column_name = "image_ref")]
-    pub image_ref: String,
-    #[sea_orm(column_name = "candidate_tag")]
-    pub candidate_tag: String,
-    #[sea_orm(column_name = "build_status")]
-    pub build_status: String,
-    #[sea_orm(column_name = "test_status")]
-    pub test_status: String,
-    #[sea_orm(column_name = "overall_status")]
-    pub overall_status: String,
-    #[sea_orm(column_name = "test_command")]
-    pub test_command: String,
-    #[sea_orm(column_name = "build_started_at")]
-    pub build_started_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "build_finished_at")]
-    pub build_finished_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "test_started_at")]
-    pub test_started_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "test_finished_at")]
-    pub test_finished_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "build_log_excerpt")]
-    pub build_log_excerpt: String,
-    #[sea_orm(column_name = "test_log_excerpt")]
-    pub test_log_excerpt: String,
-    #[sea_orm(column_name = "error_message")]
-    pub error_message: Option<String>,
-    #[sea_orm(column_name = "triggered_by")]
-    pub triggered_by: Option<Uuid>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "container_pool_build_runs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "image_slug")]
+        pub image_slug: String,
+        #[sea_orm(column_name = "revision_id")]
+        pub revision_id: Uuid,
+        #[sea_orm(column_name = "image_ref")]
+        pub image_ref: String,
+        #[sea_orm(column_name = "candidate_tag")]
+        pub candidate_tag: String,
+        #[sea_orm(column_name = "build_status")]
+        pub build_status: String,
+        #[sea_orm(column_name = "test_status")]
+        pub test_status: String,
+        #[sea_orm(column_name = "overall_status")]
+        pub overall_status: String,
+        #[sea_orm(column_name = "test_command")]
+        pub test_command: String,
+        #[sea_orm(column_name = "build_started_at")]
+        pub build_started_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "build_finished_at")]
+        pub build_finished_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "test_started_at")]
+        pub test_started_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "test_finished_at")]
+        pub test_finished_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "build_log_excerpt")]
+        pub build_log_excerpt: String,
+        #[sea_orm(column_name = "test_log_excerpt")]
+        pub test_log_excerpt: String,
+        #[sea_orm(column_name = "error_message")]
+        pub error_message: Option<String>,
+        #[sea_orm(column_name = "triggered_by")]
+        pub triggered_by: Option<Uuid>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use container_pool_build_runs::Entity as ContainerPoolBuildRunsEntity;
@@ -1732,34 +1692,33 @@ pub use container_pool_build_runs::Model as ContainerPoolBuildRunsModel;
 pub mod presence_convs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "presence_convs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub slug: String,
-    #[sea_orm(column_name = "display_name")]
-    pub display_name: String,
-    pub status: String,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "presence_convs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub slug: String,
+        #[sea_orm(column_name = "display_name")]
+        pub display_name: String,
+        pub status: String,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use presence_convs::Entity as PresenceConvsEntity;
@@ -1768,40 +1727,39 @@ pub use presence_convs::Model as PresenceConvsModel;
 pub mod presence_conv_members {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "presence_conv_members")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "conv_id")]
-    pub conv_id: Uuid,
-    #[sea_orm(column_name = "user_id")]
-    pub user_id: Uuid,
-    pub role: String,
-    pub status: String,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "joined_at")]
-    pub joined_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "left_at")]
-    pub left_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "presence_conv_members")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "conv_id")]
+        pub conv_id: Uuid,
+        #[sea_orm(column_name = "user_id")]
+        pub user_id: Uuid,
+        pub role: String,
+        pub status: String,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "joined_at")]
+        pub joined_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "left_at")]
+        pub left_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use presence_conv_members::Entity as PresenceConvMembersEntity;
@@ -1810,21 +1768,20 @@ pub use presence_conv_members::Model as PresenceConvMembersModel;
 pub mod presence_users {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "presence_users")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub slug: String,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "presence_users")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub slug: String,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use presence_users::Entity as PresenceUsersEntity;
@@ -1833,35 +1790,34 @@ pub use presence_users::Model as PresenceUsersModel;
 pub mod presence_events {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "presence_events")]
-pub struct Model {
-    #[sea_orm(primary_key)]
-    pub seq: i64,
-    #[sea_orm(column_name = "event_at")]
-    pub event_at: DateTimeWithTimeZone,
-    pub op: String,
-    #[sea_orm(column_name = "conv_id")]
-    pub conv_id: Uuid,
-    #[sea_orm(column_name = "user_id")]
-    pub user_id: Uuid,
-    #[sea_orm(column_name = "conv_slug")]
-    pub conv_slug: String,
-    #[sea_orm(column_name = "user_slug")]
-    pub user_slug: String,
-    #[sea_orm(column_name = "conv_shard")]
-    pub conv_shard: i32,
-    #[sea_orm(column_name = "user_shard")]
-    pub user_shard: i32,
-    #[sea_orm(column_name = "soft_deleted")]
-    pub soft_deleted: bool,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "presence_events")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub seq: i64,
+        #[sea_orm(column_name = "event_at")]
+        pub event_at: DateTimeWithTimeZone,
+        pub op: String,
+        #[sea_orm(column_name = "conv_id")]
+        pub conv_id: Uuid,
+        #[sea_orm(column_name = "user_id")]
+        pub user_id: Uuid,
+        #[sea_orm(column_name = "conv_slug")]
+        pub conv_slug: String,
+        #[sea_orm(column_name = "user_slug")]
+        pub user_slug: String,
+        #[sea_orm(column_name = "conv_shard")]
+        pub conv_shard: i32,
+        #[sea_orm(column_name = "user_shard")]
+        pub user_shard: i32,
+        #[sea_orm(column_name = "soft_deleted")]
+        pub soft_deleted: bool,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use presence_events::Entity as PresenceEventsEntity;
@@ -1870,22 +1826,21 @@ pub use presence_events::Model as PresenceEventsModel;
 pub mod presence_consumer_checkpoints {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "presence_consumer_checkpoints")]
-pub struct Model {
-    #[sea_orm(primary_key, column_name = "consumer_id")]
-    pub consumer_id: String,
-    #[sea_orm(column_name = "last_seq")]
-    pub last_seq: i64,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "presence_consumer_checkpoints")]
+    pub struct Model {
+        #[sea_orm(primary_key, column_name = "consumer_id")]
+        pub consumer_id: String,
+        #[sea_orm(column_name = "last_seq")]
+        pub last_seq: i64,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use presence_consumer_checkpoints::Entity as PresenceConsumerCheckpointsEntity;
@@ -1894,37 +1849,36 @@ pub use presence_consumer_checkpoints::Model as PresenceConsumerCheckpointsModel
 pub mod des_soccer_learning_experiments {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "des_soccer_learning_experiments")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub slug: String,
-    #[sea_orm(column_name = "display_name")]
-    pub display_name: String,
-    pub description: String,
-    pub status: String,
-    pub config: Json,
-    pub labels: Json,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "des_soccer_learning_experiments")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub slug: String,
+        #[sea_orm(column_name = "display_name")]
+        pub display_name: String,
+        pub description: String,
+        pub status: String,
+        pub config: Json,
+        pub labels: Json,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use des_soccer_learning_experiments::Entity as DesSoccerLearningExperimentsEntity;
@@ -1933,56 +1887,55 @@ pub use des_soccer_learning_experiments::Model as DesSoccerLearningExperimentsMo
 pub mod des_soccer_learning_policy_versions {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "des_soccer_learning_policy_versions")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "experiment_id")]
-    pub experiment_id: Uuid,
-    #[sea_orm(column_name = "parent_policy_version_id")]
-    pub parent_policy_version_id: Option<Uuid>,
-    pub generation: i32,
-    #[sea_orm(column_name = "version_label")]
-    pub version_label: String,
-    #[sea_orm(column_name = "source_kind")]
-    pub source_kind: String,
-    pub status: String,
-    pub options: Json,
-    pub config: Json,
-    pub lineage: Json,
-    pub metrics: Json,
-    #[sea_orm(column_name = "entry_count")]
-    pub entry_count: i32,
-    #[sea_orm(column_name = "target_entry_count")]
-    pub target_entry_count: i32,
-    #[sea_orm(column_name = "visit_count")]
-    pub visit_count: i64,
-    #[sea_orm(column_name = "fitness_micros")]
-    pub fitness_micros: i64,
-    #[sea_orm(column_name = "branch_key")]
-    pub branch_key: Uuid,
-    #[sea_orm(column_name = "retention_kind")]
-    pub retention_kind: String,
-    #[sea_orm(column_name = "full_entries_retained")]
-    pub full_entries_retained: bool,
-    #[sea_orm(column_name = "full_entries_pruned_at")]
-    pub full_entries_pruned_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "des_soccer_learning_policy_versions")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "experiment_id")]
+        pub experiment_id: Uuid,
+        #[sea_orm(column_name = "parent_policy_version_id")]
+        pub parent_policy_version_id: Option<Uuid>,
+        pub generation: i32,
+        #[sea_orm(column_name = "version_label")]
+        pub version_label: String,
+        #[sea_orm(column_name = "source_kind")]
+        pub source_kind: String,
+        pub status: String,
+        pub options: Json,
+        pub config: Json,
+        pub lineage: Json,
+        pub metrics: Json,
+        #[sea_orm(column_name = "entry_count")]
+        pub entry_count: i32,
+        #[sea_orm(column_name = "target_entry_count")]
+        pub target_entry_count: i32,
+        #[sea_orm(column_name = "visit_count")]
+        pub visit_count: i64,
+        #[sea_orm(column_name = "fitness_micros")]
+        pub fitness_micros: i64,
+        #[sea_orm(column_name = "branch_key")]
+        pub branch_key: Uuid,
+        #[sea_orm(column_name = "retention_kind")]
+        pub retention_kind: String,
+        #[sea_orm(column_name = "full_entries_retained")]
+        pub full_entries_retained: bool,
+        #[sea_orm(column_name = "full_entries_pruned_at")]
+        pub full_entries_pruned_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use des_soccer_learning_policy_versions::Entity as DesSoccerLearningPolicyVersionsEntity;
@@ -1991,45 +1944,44 @@ pub use des_soccer_learning_policy_versions::Model as DesSoccerLearningPolicyVer
 pub mod des_soccer_learning_policy_entries {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "des_soccer_learning_policy_entries")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "policy_version_id")]
-    pub policy_version_id: Uuid,
-    pub team: String,
-    #[sea_orm(column_name = "entry_kind")]
-    pub entry_kind: String,
-    #[sea_orm(column_name = "state_hash")]
-    pub state_hash: String,
-    #[sea_orm(column_name = "state_key")]
-    pub state_key: Json,
-    pub action: String,
-    #[sea_orm(column_name = "target_fine_cell_id")]
-    pub target_fine_cell_id: i32,
-    #[sea_orm(column_name = "target_tactical_cell_id")]
-    pub target_tactical_cell_id: i32,
-    #[sea_orm(column_name = "target_macro_cell_id")]
-    pub target_macro_cell_id: i32,
-    #[sea_orm(column_name = "target_root_cell_id")]
-    pub target_root_cell_id: i32,
-    #[sea_orm(column_name = "receiver_descriptor")]
-    pub receiver_descriptor: i32,
-    #[sea_orm(column_name = "value_micros")]
-    pub value_micros: i64,
-    pub visits: i32,
-    #[sea_orm(column_name = "source_run_id")]
-    pub source_run_id: Option<Uuid>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "des_soccer_learning_policy_entries")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "policy_version_id")]
+        pub policy_version_id: Uuid,
+        pub team: String,
+        #[sea_orm(column_name = "entry_kind")]
+        pub entry_kind: String,
+        #[sea_orm(column_name = "state_hash")]
+        pub state_hash: String,
+        #[sea_orm(column_name = "state_key")]
+        pub state_key: Json,
+        pub action: String,
+        #[sea_orm(column_name = "target_fine_cell_id")]
+        pub target_fine_cell_id: i32,
+        #[sea_orm(column_name = "target_tactical_cell_id")]
+        pub target_tactical_cell_id: i32,
+        #[sea_orm(column_name = "target_macro_cell_id")]
+        pub target_macro_cell_id: i32,
+        #[sea_orm(column_name = "target_root_cell_id")]
+        pub target_root_cell_id: i32,
+        #[sea_orm(column_name = "receiver_descriptor")]
+        pub receiver_descriptor: i32,
+        #[sea_orm(column_name = "value_micros")]
+        pub value_micros: i64,
+        pub visits: i32,
+        #[sea_orm(column_name = "source_run_id")]
+        pub source_run_id: Option<Uuid>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use des_soccer_learning_policy_entries::Entity as DesSoccerLearningPolicyEntriesEntity;
@@ -2038,48 +1990,47 @@ pub use des_soccer_learning_policy_entries::Model as DesSoccerLearningPolicyEntr
 pub mod des_soccer_learning_jobs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "des_soccer_learning_jobs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "experiment_id")]
-    pub experiment_id: Uuid,
-    #[sea_orm(column_name = "base_policy_version_id")]
-    pub base_policy_version_id: Option<Uuid>,
-    #[sea_orm(column_name = "spawn_strategy")]
-    pub spawn_strategy: String,
-    pub status: String,
-    pub priority: i32,
-    pub seed: i64,
-    pub attempt: i32,
-    #[sea_orm(column_name = "max_attempts")]
-    pub max_attempts: i32,
-    #[sea_orm(column_name = "lease_owner")]
-    pub lease_owner: Option<String>,
-    #[sea_orm(column_name = "lease_expires_at")]
-    pub lease_expires_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "started_at")]
-    pub started_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "finished_at")]
-    pub finished_at: Option<DateTimeWithTimeZone>,
-    pub config: Json,
-    #[sea_orm(column_name = "runner_config")]
-    pub runner_config: Json,
-    #[sea_orm(column_name = "result_run_id")]
-    pub result_run_id: Option<Uuid>,
-    pub error: Option<String>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "des_soccer_learning_jobs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "experiment_id")]
+        pub experiment_id: Uuid,
+        #[sea_orm(column_name = "base_policy_version_id")]
+        pub base_policy_version_id: Option<Uuid>,
+        #[sea_orm(column_name = "spawn_strategy")]
+        pub spawn_strategy: String,
+        pub status: String,
+        pub priority: i32,
+        pub seed: i64,
+        pub attempt: i32,
+        #[sea_orm(column_name = "max_attempts")]
+        pub max_attempts: i32,
+        #[sea_orm(column_name = "lease_owner")]
+        pub lease_owner: Option<String>,
+        #[sea_orm(column_name = "lease_expires_at")]
+        pub lease_expires_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "started_at")]
+        pub started_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "finished_at")]
+        pub finished_at: Option<DateTimeWithTimeZone>,
+        pub config: Json,
+        #[sea_orm(column_name = "runner_config")]
+        pub runner_config: Json,
+        #[sea_orm(column_name = "result_run_id")]
+        pub result_run_id: Option<Uuid>,
+        pub error: Option<String>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use des_soccer_learning_jobs::Entity as DesSoccerLearningJobsEntity;
@@ -2088,64 +2039,63 @@ pub use des_soccer_learning_jobs::Model as DesSoccerLearningJobsModel;
 pub mod des_soccer_learning_runs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "des_soccer_learning_runs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "job_id")]
-    pub job_id: Option<Uuid>,
-    #[sea_orm(column_name = "experiment_id")]
-    pub experiment_id: Uuid,
-    #[sea_orm(column_name = "base_policy_version_id")]
-    pub base_policy_version_id: Option<Uuid>,
-    #[sea_orm(column_name = "output_policy_version_id")]
-    pub output_policy_version_id: Option<Uuid>,
-    #[sea_orm(column_name = "runner_id")]
-    pub runner_id: String,
-    pub seed: i64,
-    #[sea_orm(column_name = "episode_index")]
-    pub episode_index: i32,
-    pub status: String,
-    #[sea_orm(column_name = "score_home")]
-    pub score_home: i32,
-    #[sea_orm(column_name = "score_away")]
-    pub score_away: i32,
-    #[sea_orm(column_name = "home_goal_diff")]
-    pub home_goal_diff: i32,
-    #[sea_orm(column_name = "away_goal_diff")]
-    pub away_goal_diff: i32,
-    #[sea_orm(column_name = "home_outcome")]
-    pub home_outcome: String,
-    #[sea_orm(column_name = "away_outcome")]
-    pub away_outcome: String,
-    #[sea_orm(column_name = "home_merge_weight_micros")]
-    pub home_merge_weight_micros: i64,
-    #[sea_orm(column_name = "away_merge_weight_micros")]
-    pub away_merge_weight_micros: i64,
-    #[sea_orm(column_name = "fitness_micros")]
-    pub fitness_micros: i64,
-    #[sea_orm(column_name = "duration_ticks")]
-    pub duration_ticks: i64,
-    #[sea_orm(column_name = "simulated_seconds_micros")]
-    pub simulated_seconds_micros: i64,
-    #[sea_orm(column_name = "elapsed_millis")]
-    pub elapsed_millis: i64,
-    pub transitions: i32,
-    pub summary: Json,
-    pub stats: Json,
-    pub error: Option<String>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "des_soccer_learning_runs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "job_id")]
+        pub job_id: Option<Uuid>,
+        #[sea_orm(column_name = "experiment_id")]
+        pub experiment_id: Uuid,
+        #[sea_orm(column_name = "base_policy_version_id")]
+        pub base_policy_version_id: Option<Uuid>,
+        #[sea_orm(column_name = "output_policy_version_id")]
+        pub output_policy_version_id: Option<Uuid>,
+        #[sea_orm(column_name = "runner_id")]
+        pub runner_id: String,
+        pub seed: i64,
+        #[sea_orm(column_name = "episode_index")]
+        pub episode_index: i32,
+        pub status: String,
+        #[sea_orm(column_name = "score_home")]
+        pub score_home: i32,
+        #[sea_orm(column_name = "score_away")]
+        pub score_away: i32,
+        #[sea_orm(column_name = "home_goal_diff")]
+        pub home_goal_diff: i32,
+        #[sea_orm(column_name = "away_goal_diff")]
+        pub away_goal_diff: i32,
+        #[sea_orm(column_name = "home_outcome")]
+        pub home_outcome: String,
+        #[sea_orm(column_name = "away_outcome")]
+        pub away_outcome: String,
+        #[sea_orm(column_name = "home_merge_weight_micros")]
+        pub home_merge_weight_micros: i64,
+        #[sea_orm(column_name = "away_merge_weight_micros")]
+        pub away_merge_weight_micros: i64,
+        #[sea_orm(column_name = "fitness_micros")]
+        pub fitness_micros: i64,
+        #[sea_orm(column_name = "duration_ticks")]
+        pub duration_ticks: i64,
+        #[sea_orm(column_name = "simulated_seconds_micros")]
+        pub simulated_seconds_micros: i64,
+        #[sea_orm(column_name = "elapsed_millis")]
+        pub elapsed_millis: i64,
+        pub transitions: i32,
+        pub summary: Json,
+        pub stats: Json,
+        pub error: Option<String>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use des_soccer_learning_runs::Entity as DesSoccerLearningRunsEntity;
@@ -2154,52 +2104,51 @@ pub use des_soccer_learning_runs::Model as DesSoccerLearningRunsModel;
 pub mod des_soccer_learning_run_deltas {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "des_soccer_learning_run_deltas")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "run_id")]
-    pub run_id: Uuid,
-    pub team: String,
-    #[sea_orm(column_name = "entry_kind")]
-    pub entry_kind: String,
-    #[sea_orm(column_name = "state_hash")]
-    pub state_hash: String,
-    #[sea_orm(column_name = "state_key")]
-    pub state_key: Json,
-    pub action: String,
-    #[sea_orm(column_name = "target_fine_cell_id")]
-    pub target_fine_cell_id: i32,
-    #[sea_orm(column_name = "target_tactical_cell_id")]
-    pub target_tactical_cell_id: i32,
-    #[sea_orm(column_name = "target_macro_cell_id")]
-    pub target_macro_cell_id: i32,
-    #[sea_orm(column_name = "target_root_cell_id")]
-    pub target_root_cell_id: i32,
-    #[sea_orm(column_name = "receiver_descriptor")]
-    pub receiver_descriptor: i32,
-    #[sea_orm(column_name = "before_value_micros")]
-    pub before_value_micros: i64,
-    #[sea_orm(column_name = "after_value_micros")]
-    pub after_value_micros: i64,
-    #[sea_orm(column_name = "value_delta_micros")]
-    pub value_delta_micros: i64,
-    #[sea_orm(column_name = "visit_delta")]
-    pub visit_delta: i32,
-    #[sea_orm(column_name = "merge_weight_micros")]
-    pub merge_weight_micros: i64,
-    #[sea_orm(column_name = "effective_visit_micros")]
-    pub effective_visit_micros: i64,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "des_soccer_learning_run_deltas")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "run_id")]
+        pub run_id: Uuid,
+        pub team: String,
+        #[sea_orm(column_name = "entry_kind")]
+        pub entry_kind: String,
+        #[sea_orm(column_name = "state_hash")]
+        pub state_hash: String,
+        #[sea_orm(column_name = "state_key")]
+        pub state_key: Json,
+        pub action: String,
+        #[sea_orm(column_name = "target_fine_cell_id")]
+        pub target_fine_cell_id: i32,
+        #[sea_orm(column_name = "target_tactical_cell_id")]
+        pub target_tactical_cell_id: i32,
+        #[sea_orm(column_name = "target_macro_cell_id")]
+        pub target_macro_cell_id: i32,
+        #[sea_orm(column_name = "target_root_cell_id")]
+        pub target_root_cell_id: i32,
+        #[sea_orm(column_name = "receiver_descriptor")]
+        pub receiver_descriptor: i32,
+        #[sea_orm(column_name = "before_value_micros")]
+        pub before_value_micros: i64,
+        #[sea_orm(column_name = "after_value_micros")]
+        pub after_value_micros: i64,
+        #[sea_orm(column_name = "value_delta_micros")]
+        pub value_delta_micros: i64,
+        #[sea_orm(column_name = "visit_delta")]
+        pub visit_delta: i32,
+        #[sea_orm(column_name = "merge_weight_micros")]
+        pub merge_weight_micros: i64,
+        #[sea_orm(column_name = "effective_visit_micros")]
+        pub effective_visit_micros: i64,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use des_soccer_learning_run_deltas::Entity as DesSoccerLearningRunDeltasEntity;
@@ -2208,34 +2157,33 @@ pub use des_soccer_learning_run_deltas::Model as DesSoccerLearningRunDeltasModel
 pub mod des_soccer_learning_merge_events {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "des_soccer_learning_merge_events")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "experiment_id")]
-    pub experiment_id: Uuid,
-    #[sea_orm(column_name = "base_policy_version_id")]
-    pub base_policy_version_id: Option<Uuid>,
-    #[sea_orm(column_name = "output_policy_version_id")]
-    pub output_policy_version_id: Uuid,
-    pub strategy: String,
-    #[sea_orm(column_name = "input_run_count")]
-    pub input_run_count: i32,
-    #[sea_orm(column_name = "input_delta_count")]
-    pub input_delta_count: i32,
-    #[sea_orm(column_name = "decay_micros")]
-    pub decay_micros: i64,
-    pub metrics: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "des_soccer_learning_merge_events")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "experiment_id")]
+        pub experiment_id: Uuid,
+        #[sea_orm(column_name = "base_policy_version_id")]
+        pub base_policy_version_id: Option<Uuid>,
+        #[sea_orm(column_name = "output_policy_version_id")]
+        pub output_policy_version_id: Uuid,
+        pub strategy: String,
+        #[sea_orm(column_name = "input_run_count")]
+        pub input_run_count: i32,
+        #[sea_orm(column_name = "input_delta_count")]
+        pub input_delta_count: i32,
+        #[sea_orm(column_name = "decay_micros")]
+        pub decay_micros: i64,
+        pub metrics: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use des_soccer_learning_merge_events::Entity as DesSoccerLearningMergeEventsEntity;
@@ -2244,47 +2192,46 @@ pub use des_soccer_learning_merge_events::Model as DesSoccerLearningMergeEventsM
 pub mod des_soccer_tournaments {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "des_soccer_tournaments")]
-pub struct Model {
-    #[sea_orm(primary_key)]
-    pub id: i64,
-    #[sea_orm(column_name = "experiment_id")]
-    pub experiment_id: Uuid,
-    #[sea_orm(column_name = "tournament_date")]
-    pub tournament_date: String,
-    pub seed: i64,
-    #[sea_orm(column_name = "learning_mode")]
-    pub learning_mode: String,
-    pub format: Json,
-    #[sea_orm(column_name = "team_count")]
-    pub team_count: i32,
-    #[sea_orm(column_name = "match_count")]
-    pub match_count: i32,
-    #[sea_orm(column_name = "matches_played")]
-    pub matches_played: i32,
-    #[sea_orm(column_name = "champion_team_id")]
-    pub champion_team_id: Option<i32>,
-    #[sea_orm(column_name = "runner_up_team_id")]
-    pub runner_up_team_id: Option<i32>,
-    #[sea_orm(column_name = "third_place_team_id")]
-    pub third_place_team_id: Option<i32>,
-    #[sea_orm(column_name = "wall_time_seconds")]
-    pub wall_time_seconds: Option<f64>,
-    pub status: String,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "finished_at")]
-    pub finished_at: Option<DateTimeWithTimeZone>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "des_soccer_tournaments")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        #[sea_orm(column_name = "experiment_id")]
+        pub experiment_id: Uuid,
+        #[sea_orm(column_name = "tournament_date")]
+        pub tournament_date: String,
+        pub seed: i64,
+        #[sea_orm(column_name = "learning_mode")]
+        pub learning_mode: String,
+        pub format: Json,
+        #[sea_orm(column_name = "team_count")]
+        pub team_count: i32,
+        #[sea_orm(column_name = "match_count")]
+        pub match_count: i32,
+        #[sea_orm(column_name = "matches_played")]
+        pub matches_played: i32,
+        #[sea_orm(column_name = "champion_team_id")]
+        pub champion_team_id: Option<i32>,
+        #[sea_orm(column_name = "runner_up_team_id")]
+        pub runner_up_team_id: Option<i32>,
+        #[sea_orm(column_name = "third_place_team_id")]
+        pub third_place_team_id: Option<i32>,
+        #[sea_orm(column_name = "wall_time_seconds")]
+        pub wall_time_seconds: Option<f64>,
+        pub status: String,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "finished_at")]
+        pub finished_at: Option<DateTimeWithTimeZone>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use des_soccer_tournaments::Entity as DesSoccerTournamentsEntity;
@@ -2293,39 +2240,38 @@ pub use des_soccer_tournaments::Model as DesSoccerTournamentsModel;
 pub mod des_soccer_tournament_matches {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "des_soccer_tournament_matches")]
-pub struct Model {
-    #[sea_orm(primary_key)]
-    pub id: i64,
-    #[sea_orm(column_name = "tournament_id")]
-    pub tournament_id: i64,
-    #[sea_orm(column_name = "match_index")]
-    pub match_index: i32,
-    pub stage: String,
-    #[sea_orm(column_name = "home_team_id")]
-    pub home_team_id: i32,
-    #[sea_orm(column_name = "away_team_id")]
-    pub away_team_id: i32,
-    #[sea_orm(column_name = "home_goals")]
-    pub home_goals: i32,
-    #[sea_orm(column_name = "away_goals")]
-    pub away_goals: i32,
-    #[sea_orm(column_name = "shootout_winner_team_id")]
-    pub shootout_winner_team_id: Option<i32>,
-    #[sea_orm(column_name = "home_training_steps")]
-    pub home_training_steps: i64,
-    #[sea_orm(column_name = "away_training_steps")]
-    pub away_training_steps: i64,
-    #[sea_orm(column_name = "recorded_at")]
-    pub recorded_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "des_soccer_tournament_matches")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        #[sea_orm(column_name = "tournament_id")]
+        pub tournament_id: i64,
+        #[sea_orm(column_name = "match_index")]
+        pub match_index: i32,
+        pub stage: String,
+        #[sea_orm(column_name = "home_team_id")]
+        pub home_team_id: i32,
+        #[sea_orm(column_name = "away_team_id")]
+        pub away_team_id: i32,
+        #[sea_orm(column_name = "home_goals")]
+        pub home_goals: i32,
+        #[sea_orm(column_name = "away_goals")]
+        pub away_goals: i32,
+        #[sea_orm(column_name = "shootout_winner_team_id")]
+        pub shootout_winner_team_id: Option<i32>,
+        #[sea_orm(column_name = "home_training_steps")]
+        pub home_training_steps: i64,
+        #[sea_orm(column_name = "away_training_steps")]
+        pub away_training_steps: i64,
+        #[sea_orm(column_name = "recorded_at")]
+        pub recorded_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use des_soccer_tournament_matches::Entity as DesSoccerTournamentMatchesEntity;
@@ -2334,42 +2280,41 @@ pub use des_soccer_tournament_matches::Model as DesSoccerTournamentMatchesModel;
 pub mod des_soccer_tournament_team_brains {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "des_soccer_tournament_team_brains")]
-pub struct Model {
-    #[sea_orm(primary_key)]
-    pub id: i64,
-    #[sea_orm(column_name = "tournament_id")]
-    pub tournament_id: i64,
-    #[sea_orm(column_name = "team_id")]
-    pub team_id: i32,
-    #[sea_orm(column_name = "team_name")]
-    pub team_name: String,
-    pub seed: i64,
-    #[sea_orm(column_name = "matches_learned")]
-    pub matches_learned: i32,
-    #[sea_orm(column_name = "training_steps")]
-    pub training_steps: i64,
-    pub played: i32,
-    pub wins: i32,
-    pub draws: i32,
-    pub losses: i32,
-    #[sea_orm(column_name = "goals_for")]
-    pub goals_for: i32,
-    #[sea_orm(column_name = "goals_against")]
-    pub goals_against: i32,
-    #[sea_orm(column_name = "neural_snapshot")]
-    pub neural_snapshot: Option<Json>,
-    pub genome: Option<Json>,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "des_soccer_tournament_team_brains")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        #[sea_orm(column_name = "tournament_id")]
+        pub tournament_id: i64,
+        #[sea_orm(column_name = "team_id")]
+        pub team_id: i32,
+        #[sea_orm(column_name = "team_name")]
+        pub team_name: String,
+        pub seed: i64,
+        #[sea_orm(column_name = "matches_learned")]
+        pub matches_learned: i32,
+        #[sea_orm(column_name = "training_steps")]
+        pub training_steps: i64,
+        pub played: i32,
+        pub wins: i32,
+        pub draws: i32,
+        pub losses: i32,
+        #[sea_orm(column_name = "goals_for")]
+        pub goals_for: i32,
+        #[sea_orm(column_name = "goals_against")]
+        pub goals_against: i32,
+        #[sea_orm(column_name = "neural_snapshot")]
+        pub neural_snapshot: Option<Json>,
+        pub genome: Option<Json>,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use des_soccer_tournament_team_brains::Entity as DesSoccerTournamentTeamBrainsEntity;
@@ -2378,42 +2323,41 @@ pub use des_soccer_tournament_team_brains::Model as DesSoccerTournamentTeamBrain
 pub mod des_soccer_learning_set_play_runs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "des_soccer_learning_set_play_runs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false, column_name = "run_id")]
-    pub run_id: Uuid,
-    #[sea_orm(column_name = "policy_version_id")]
-    pub policy_version_id: Uuid,
-    #[sea_orm(column_name = "primary_restart")]
-    pub primary_restart: String,
-    pub team: String,
-    #[sea_orm(column_name = "spot_x_micros")]
-    pub spot_x_micros: i64,
-    #[sea_orm(column_name = "spot_y_micros")]
-    pub spot_y_micros: i64,
-    #[sea_orm(column_name = "duration_seconds_micros")]
-    pub duration_seconds_micros: i64,
-    #[sea_orm(column_name = "episode_count")]
-    pub episode_count: i32,
-    pub goals: i32,
-    #[sea_orm(column_name = "goal_rate_micros")]
-    pub goal_rate_micros: i64,
-    #[sea_orm(column_name = "first_window_goal_rate_micros")]
-    pub first_window_goal_rate_micros: i64,
-    #[sea_orm(column_name = "last_window_goal_rate_micros")]
-    pub last_window_goal_rate_micros: i64,
-    #[sea_orm(column_name = "goal_rate_delta_micros")]
-    pub goal_rate_delta_micros: i64,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "des_soccer_learning_set_play_runs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false, column_name = "run_id")]
+        pub run_id: Uuid,
+        #[sea_orm(column_name = "policy_version_id")]
+        pub policy_version_id: Uuid,
+        #[sea_orm(column_name = "primary_restart")]
+        pub primary_restart: String,
+        pub team: String,
+        #[sea_orm(column_name = "spot_x_micros")]
+        pub spot_x_micros: i64,
+        #[sea_orm(column_name = "spot_y_micros")]
+        pub spot_y_micros: i64,
+        #[sea_orm(column_name = "duration_seconds_micros")]
+        pub duration_seconds_micros: i64,
+        #[sea_orm(column_name = "episode_count")]
+        pub episode_count: i32,
+        pub goals: i32,
+        #[sea_orm(column_name = "goal_rate_micros")]
+        pub goal_rate_micros: i64,
+        #[sea_orm(column_name = "first_window_goal_rate_micros")]
+        pub first_window_goal_rate_micros: i64,
+        #[sea_orm(column_name = "last_window_goal_rate_micros")]
+        pub last_window_goal_rate_micros: i64,
+        #[sea_orm(column_name = "goal_rate_delta_micros")]
+        pub goal_rate_delta_micros: i64,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use des_soccer_learning_set_play_runs::Entity as DesSoccerLearningSetPlayRunsEntity;
@@ -2422,21 +2366,20 @@ pub use des_soccer_learning_set_play_runs::Model as DesSoccerLearningSetPlayRuns
 pub mod des_soccer_learning_set_play_restart_mix {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "des_soccer_learning_set_play_restart_mix")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false, column_name = "run_id")]
-    pub run_id: Uuid,
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub ordinal: i32,
-    pub restart: String,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "des_soccer_learning_set_play_restart_mix")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false, column_name = "run_id")]
+        pub run_id: Uuid,
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub ordinal: i32,
+        pub restart: String,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use des_soccer_learning_set_play_restart_mix::Entity as DesSoccerLearningSetPlayRestartMixEntity;
@@ -2445,51 +2388,50 @@ pub use des_soccer_learning_set_play_restart_mix::Model as DesSoccerLearningSetP
 pub mod des_soccer_learning_set_play_episode_metrics {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "des_soccer_learning_set_play_episode_metrics")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false, column_name = "run_id")]
-    pub run_id: Uuid,
-    #[sea_orm(primary_key, auto_increment = false, column_name = "episode_index")]
-    pub episode_index: i32,
-    pub seed: i64,
-    pub restart: String,
-    pub routine: Option<String>,
-    pub scored: bool,
-    #[sea_orm(column_name = "score_delta_for_team")]
-    pub score_delta_for_team: i32,
-    pub ticks: i64,
-    #[sea_orm(column_name = "simulated_seconds_micros")]
-    pub simulated_seconds_micros: i64,
-    #[sea_orm(column_name = "policy_updates")]
-    pub policy_updates: i64,
-    #[sea_orm(column_name = "home_policy_entries")]
-    pub home_policy_entries: i32,
-    #[sea_orm(column_name = "home_policy_target_entries")]
-    pub home_policy_target_entries: i32,
-    #[sea_orm(column_name = "away_policy_entries")]
-    pub away_policy_entries: i32,
-    #[sea_orm(column_name = "away_policy_target_entries")]
-    pub away_policy_target_entries: i32,
-    #[sea_orm(column_name = "neural_training_steps")]
-    pub neural_training_steps: i32,
-    #[sea_orm(column_name = "neural_samples")]
-    pub neural_samples: i64,
-    #[sea_orm(column_name = "neural_replay_samples")]
-    pub neural_replay_samples: i32,
-    #[sea_orm(column_name = "neural_last_loss_micros")]
-    pub neural_last_loss_micros: Option<i64>,
-    #[sea_orm(column_name = "cumulative_goals")]
-    pub cumulative_goals: i32,
-    #[sea_orm(column_name = "goal_rate_so_far_micros")]
-    pub goal_rate_so_far_micros: i64,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "des_soccer_learning_set_play_episode_metrics")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false, column_name = "run_id")]
+        pub run_id: Uuid,
+        #[sea_orm(primary_key, auto_increment = false, column_name = "episode_index")]
+        pub episode_index: i32,
+        pub seed: i64,
+        pub restart: String,
+        pub routine: Option<String>,
+        pub scored: bool,
+        #[sea_orm(column_name = "score_delta_for_team")]
+        pub score_delta_for_team: i32,
+        pub ticks: i64,
+        #[sea_orm(column_name = "simulated_seconds_micros")]
+        pub simulated_seconds_micros: i64,
+        #[sea_orm(column_name = "policy_updates")]
+        pub policy_updates: i64,
+        #[sea_orm(column_name = "home_policy_entries")]
+        pub home_policy_entries: i32,
+        #[sea_orm(column_name = "home_policy_target_entries")]
+        pub home_policy_target_entries: i32,
+        #[sea_orm(column_name = "away_policy_entries")]
+        pub away_policy_entries: i32,
+        #[sea_orm(column_name = "away_policy_target_entries")]
+        pub away_policy_target_entries: i32,
+        #[sea_orm(column_name = "neural_training_steps")]
+        pub neural_training_steps: i32,
+        #[sea_orm(column_name = "neural_samples")]
+        pub neural_samples: i64,
+        #[sea_orm(column_name = "neural_replay_samples")]
+        pub neural_replay_samples: i32,
+        #[sea_orm(column_name = "neural_last_loss_micros")]
+        pub neural_last_loss_micros: Option<i64>,
+        #[sea_orm(column_name = "cumulative_goals")]
+        pub cumulative_goals: i32,
+        #[sea_orm(column_name = "goal_rate_so_far_micros")]
+        pub goal_rate_so_far_micros: i64,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use des_soccer_learning_set_play_episode_metrics::Entity as DesSoccerLearningSetPlayEpisodeMetricsEntity;
@@ -2498,43 +2440,42 @@ pub use des_soccer_learning_set_play_episode_metrics::Model as DesSoccerLearning
 pub mod des_soccer_learning_neural_run_metrics {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "des_soccer_learning_neural_run_metrics")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false, column_name = "run_id")]
-    pub run_id: Uuid,
-    #[sea_orm(column_name = "policy_version_id")]
-    pub policy_version_id: Uuid,
-    pub enabled: bool,
-    pub backend: String,
-    #[sea_orm(column_name = "training_steps")]
-    pub training_steps: i32,
-    pub samples: i64,
-    #[sea_orm(column_name = "pending_batches")]
-    pub pending_batches: i32,
-    #[sea_orm(column_name = "dropped_batches")]
-    pub dropped_batches: i32,
-    #[sea_orm(column_name = "replay_samples")]
-    pub replay_samples: i32,
-    #[sea_orm(column_name = "replay_capacity")]
-    pub replay_capacity: i32,
-    #[sea_orm(column_name = "parameter_count")]
-    pub parameter_count: i32,
-    #[sea_orm(column_name = "target_clip_micros")]
-    pub target_clip_micros: i64,
-    #[sea_orm(column_name = "last_loss_micros")]
-    pub last_loss_micros: Option<i64>,
-    #[sea_orm(column_name = "average_loss_micros")]
-    pub average_loss_micros: Option<i64>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "des_soccer_learning_neural_run_metrics")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false, column_name = "run_id")]
+        pub run_id: Uuid,
+        #[sea_orm(column_name = "policy_version_id")]
+        pub policy_version_id: Uuid,
+        pub enabled: bool,
+        pub backend: String,
+        #[sea_orm(column_name = "training_steps")]
+        pub training_steps: i32,
+        pub samples: i64,
+        #[sea_orm(column_name = "pending_batches")]
+        pub pending_batches: i32,
+        #[sea_orm(column_name = "dropped_batches")]
+        pub dropped_batches: i32,
+        #[sea_orm(column_name = "replay_samples")]
+        pub replay_samples: i32,
+        #[sea_orm(column_name = "replay_capacity")]
+        pub replay_capacity: i32,
+        #[sea_orm(column_name = "parameter_count")]
+        pub parameter_count: i32,
+        #[sea_orm(column_name = "target_clip_micros")]
+        pub target_clip_micros: i64,
+        #[sea_orm(column_name = "last_loss_micros")]
+        pub last_loss_micros: Option<i64>,
+        #[sea_orm(column_name = "average_loss_micros")]
+        pub average_loss_micros: Option<i64>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use des_soccer_learning_neural_run_metrics::Entity as DesSoccerLearningNeuralRunMetricsEntity;
@@ -2543,39 +2484,38 @@ pub use des_soccer_learning_neural_run_metrics::Model as DesSoccerLearningNeural
 pub mod des_soccer_learning_pass_metrics {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "des_soccer_learning_pass_metrics")]
-pub struct Model {
-    #[sea_orm(primary_key, column_name = "git_commit")]
-    pub git_commit: String,
-    pub runs: i64,
-    #[sea_orm(column_name = "passes_attempted")]
-    pub passes_attempted: i64,
-    #[sea_orm(column_name = "passes_completed")]
-    pub passes_completed: i64,
-    #[sea_orm(column_name = "completed_pass_gain_yards_micros")]
-    pub completed_pass_gain_yards_micros: i64,
-    #[sea_orm(column_name = "pass_chains")]
-    pub pass_chains: i64,
-    #[sea_orm(column_name = "pass_chain_gain_yards_micros")]
-    pub pass_chain_gain_yards_micros: i64,
-    #[sea_orm(column_name = "pass_chains_net_loss")]
-    pub pass_chains_net_loss: i64,
-    #[sea_orm(column_name = "shots_on_target")]
-    pub shots_on_target: i64,
-    #[sea_orm(column_name = "shots_after_pass")]
-    pub shots_after_pass: i64,
-    #[sea_orm(column_name = "first_seen_at")]
-    pub first_seen_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "des_soccer_learning_pass_metrics")]
+    pub struct Model {
+        #[sea_orm(primary_key, column_name = "git_commit")]
+        pub git_commit: String,
+        pub runs: i64,
+        #[sea_orm(column_name = "passes_attempted")]
+        pub passes_attempted: i64,
+        #[sea_orm(column_name = "passes_completed")]
+        pub passes_completed: i64,
+        #[sea_orm(column_name = "completed_pass_gain_yards_micros")]
+        pub completed_pass_gain_yards_micros: i64,
+        #[sea_orm(column_name = "pass_chains")]
+        pub pass_chains: i64,
+        #[sea_orm(column_name = "pass_chain_gain_yards_micros")]
+        pub pass_chain_gain_yards_micros: i64,
+        #[sea_orm(column_name = "pass_chains_net_loss")]
+        pub pass_chains_net_loss: i64,
+        #[sea_orm(column_name = "shots_on_target")]
+        pub shots_on_target: i64,
+        #[sea_orm(column_name = "shots_after_pass")]
+        pub shots_after_pass: i64,
+        #[sea_orm(column_name = "first_seen_at")]
+        pub first_seen_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use des_soccer_learning_pass_metrics::Entity as DesSoccerLearningPassMetricsEntity;
@@ -2584,58 +2524,57 @@ pub use des_soccer_learning_pass_metrics::Model as DesSoccerLearningPassMetricsM
 pub mod des_fel_elevator_learning_runs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "des_fel_elevator_learning_runs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "run_label")]
-    pub run_label: String,
-    #[sea_orm(column_name = "scenario_slug")]
-    pub scenario_slug: String,
-    pub status: String,
-    #[sea_orm(column_name = "dispatch_policy")]
-    pub dispatch_policy: String,
-    pub seed: i64,
-    pub floors: i32,
-    pub shafts: i32,
-    pub capacity: i32,
-    #[sea_orm(column_name = "travel_seconds_micros")]
-    pub travel_seconds_micros: i64,
-    #[sea_orm(column_name = "dwell_seconds_micros")]
-    pub dwell_seconds_micros: i64,
-    #[sea_orm(column_name = "arrival_rate_micros")]
-    pub arrival_rate_micros: i64,
-    #[sea_orm(column_name = "horizon_seconds_micros")]
-    pub horizon_seconds_micros: i64,
-    pub events: i64,
-    pub arrivals: i64,
-    pub boarded: i64,
-    pub served: i64,
-    #[sea_orm(column_name = "mean_wait_micros")]
-    pub mean_wait_micros: i64,
-    #[sea_orm(column_name = "dispatch_decisions")]
-    pub dispatch_decisions: i32,
-    #[sea_orm(column_name = "pomdp_belief_updates")]
-    pub pomdp_belief_updates: i32,
-    #[sea_orm(column_name = "online_learning_updates")]
-    pub online_learning_updates: i64,
-    #[sea_orm(column_name = "online_learning_loss_last_micros")]
-    pub online_learning_loss_last_micros: Option<i64>,
-    pub config: Json,
-    pub metrics: Json,
-    pub artifact: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "des_fel_elevator_learning_runs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "run_label")]
+        pub run_label: String,
+        #[sea_orm(column_name = "scenario_slug")]
+        pub scenario_slug: String,
+        pub status: String,
+        #[sea_orm(column_name = "dispatch_policy")]
+        pub dispatch_policy: String,
+        pub seed: i64,
+        pub floors: i32,
+        pub shafts: i32,
+        pub capacity: i32,
+        #[sea_orm(column_name = "travel_seconds_micros")]
+        pub travel_seconds_micros: i64,
+        #[sea_orm(column_name = "dwell_seconds_micros")]
+        pub dwell_seconds_micros: i64,
+        #[sea_orm(column_name = "arrival_rate_micros")]
+        pub arrival_rate_micros: i64,
+        #[sea_orm(column_name = "horizon_seconds_micros")]
+        pub horizon_seconds_micros: i64,
+        pub events: i64,
+        pub arrivals: i64,
+        pub boarded: i64,
+        pub served: i64,
+        #[sea_orm(column_name = "mean_wait_micros")]
+        pub mean_wait_micros: i64,
+        #[sea_orm(column_name = "dispatch_decisions")]
+        pub dispatch_decisions: i32,
+        #[sea_orm(column_name = "pomdp_belief_updates")]
+        pub pomdp_belief_updates: i32,
+        #[sea_orm(column_name = "online_learning_updates")]
+        pub online_learning_updates: i64,
+        #[sea_orm(column_name = "online_learning_loss_last_micros")]
+        pub online_learning_loss_last_micros: Option<i64>,
+        pub config: Json,
+        pub metrics: Json,
+        pub artifact: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use des_fel_elevator_learning_runs::Entity as DesFelElevatorLearningRunsEntity;
@@ -2644,37 +2583,36 @@ pub use des_fel_elevator_learning_runs::Model as DesFelElevatorLearningRunsModel
 pub mod des_fel_elevator_policy_states {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "des_fel_elevator_policy_states")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "run_id")]
-    pub run_id: Uuid,
-    #[sea_orm(column_name = "policy_kind")]
-    pub policy_kind: String,
-    #[sea_orm(column_name = "source_kind")]
-    pub source_kind: String,
-    #[sea_orm(column_name = "feature_dim")]
-    pub feature_dim: i32,
-    #[sea_orm(column_name = "output_dim")]
-    pub output_dim: i32,
-    #[sea_orm(column_name = "parameter_count")]
-    pub parameter_count: i32,
-    #[sea_orm(column_name = "online_learning_updates")]
-    pub online_learning_updates: i64,
-    #[sea_orm(column_name = "loss_history")]
-    pub loss_history: Json,
-    pub state: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "des_fel_elevator_policy_states")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "run_id")]
+        pub run_id: Uuid,
+        #[sea_orm(column_name = "policy_kind")]
+        pub policy_kind: String,
+        #[sea_orm(column_name = "source_kind")]
+        pub source_kind: String,
+        #[sea_orm(column_name = "feature_dim")]
+        pub feature_dim: i32,
+        #[sea_orm(column_name = "output_dim")]
+        pub output_dim: i32,
+        #[sea_orm(column_name = "parameter_count")]
+        pub parameter_count: i32,
+        #[sea_orm(column_name = "online_learning_updates")]
+        pub online_learning_updates: i64,
+        #[sea_orm(column_name = "loss_history")]
+        pub loss_history: Json,
+        pub state: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use des_fel_elevator_policy_states::Entity as DesFelElevatorPolicyStatesEntity;
@@ -2683,34 +2621,33 @@ pub use des_fel_elevator_policy_states::Model as DesFelElevatorPolicyStatesModel
 pub mod des_fel_elevator_dispatch_decisions {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "des_fel_elevator_dispatch_decisions")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "run_id")]
-    pub run_id: Uuid,
-    #[sea_orm(column_name = "decision_index")]
-    pub decision_index: i32,
-    #[sea_orm(column_name = "sim_time_micros")]
-    pub sim_time_micros: i64,
-    #[sea_orm(column_name = "call_floor")]
-    pub call_floor: i32,
-    #[sea_orm(column_name = "car_index")]
-    pub car_index: i32,
-    #[sea_orm(column_name = "policy_kind")]
-    pub policy_kind: String,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "des_fel_elevator_dispatch_decisions")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "run_id")]
+        pub run_id: Uuid,
+        #[sea_orm(column_name = "decision_index")]
+        pub decision_index: i32,
+        #[sea_orm(column_name = "sim_time_micros")]
+        pub sim_time_micros: i64,
+        #[sea_orm(column_name = "call_floor")]
+        pub call_floor: i32,
+        #[sea_orm(column_name = "car_index")]
+        pub car_index: i32,
+        #[sea_orm(column_name = "policy_kind")]
+        pub policy_kind: String,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use des_fel_elevator_dispatch_decisions::Entity as DesFelElevatorDispatchDecisionsEntity;
@@ -2719,36 +2656,35 @@ pub use des_fel_elevator_dispatch_decisions::Model as DesFelElevatorDispatchDeci
 pub mod des_fel_elevator_pomdp_beliefs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "des_fel_elevator_pomdp_beliefs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "run_id")]
-    pub run_id: Uuid,
-    #[sea_orm(column_name = "belief_index")]
-    pub belief_index: i32,
-    #[sea_orm(column_name = "sim_time_micros")]
-    pub sim_time_micros: i64,
-    pub floor: i32,
-    pub action: String,
-    pub observation: String,
-    #[sea_orm(column_name = "empty_prob_micros")]
-    pub empty_prob_micros: i32,
-    #[sea_orm(column_name = "waiting_prob_micros")]
-    pub waiting_prob_micros: i32,
-    #[sea_orm(column_name = "crowded_prob_micros")]
-    pub crowded_prob_micros: i32,
-    pub belief: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "des_fel_elevator_pomdp_beliefs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "run_id")]
+        pub run_id: Uuid,
+        #[sea_orm(column_name = "belief_index")]
+        pub belief_index: i32,
+        #[sea_orm(column_name = "sim_time_micros")]
+        pub sim_time_micros: i64,
+        pub floor: i32,
+        pub action: String,
+        pub observation: String,
+        #[sea_orm(column_name = "empty_prob_micros")]
+        pub empty_prob_micros: i32,
+        #[sea_orm(column_name = "waiting_prob_micros")]
+        pub waiting_prob_micros: i32,
+        #[sea_orm(column_name = "crowded_prob_micros")]
+        pub crowded_prob_micros: i32,
+        pub belief: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use des_fel_elevator_pomdp_beliefs::Entity as DesFelElevatorPomdpBeliefsEntity;
@@ -2757,40 +2693,39 @@ pub use des_fel_elevator_pomdp_beliefs::Model as DesFelElevatorPomdpBeliefsModel
 pub mod benefactor_marketing_clients {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_clients")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub status: String,
-    pub name: String,
-    pub slug: String,
-    pub industry: Option<String>,
-    #[sea_orm(column_name = "website_url")]
-    pub website_url: Option<String>,
-    #[sea_orm(column_name = "billing_email")]
-    pub billing_email: Option<String>,
-    #[sea_orm(column_name = "owner_user_id")]
-    pub owner_user_id: Option<Uuid>,
-    #[sea_orm(column_name = "service_package")]
-    pub service_package: Option<String>,
-    #[sea_orm(column_name = "onboarding_stage")]
-    pub onboarding_stage: String,
-    #[sea_orm(column_name = "portal_enabled")]
-    pub portal_enabled: bool,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_clients")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub status: String,
+        pub name: String,
+        pub slug: String,
+        pub industry: Option<String>,
+        #[sea_orm(column_name = "website_url")]
+        pub website_url: Option<String>,
+        #[sea_orm(column_name = "billing_email")]
+        pub billing_email: Option<String>,
+        #[sea_orm(column_name = "owner_user_id")]
+        pub owner_user_id: Option<Uuid>,
+        #[sea_orm(column_name = "service_package")]
+        pub service_package: Option<String>,
+        #[sea_orm(column_name = "onboarding_stage")]
+        pub onboarding_stage: String,
+        #[sea_orm(column_name = "portal_enabled")]
+        pub portal_enabled: bool,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_clients::Entity as BenefactorMarketingClientsEntity;
@@ -2799,39 +2734,38 @@ pub use benefactor_marketing_clients::Model as BenefactorMarketingClientsModel;
 pub mod benefactor_marketing_contacts {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_contacts")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    pub status: String,
-    #[sea_orm(column_name = "first_name")]
-    pub first_name: Option<String>,
-    #[sea_orm(column_name = "last_name")]
-    pub last_name: Option<String>,
-    pub email: Option<String>,
-    pub phone: Option<String>,
-    #[sea_orm(column_name = "job_title")]
-    pub job_title: Option<String>,
-    #[sea_orm(column_name = "lifecycle_role")]
-    pub lifecycle_role: String,
-    #[sea_orm(column_name = "consent_status")]
-    pub consent_status: String,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_contacts")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        pub status: String,
+        #[sea_orm(column_name = "first_name")]
+        pub first_name: Option<String>,
+        #[sea_orm(column_name = "last_name")]
+        pub last_name: Option<String>,
+        pub email: Option<String>,
+        pub phone: Option<String>,
+        #[sea_orm(column_name = "job_title")]
+        pub job_title: Option<String>,
+        #[sea_orm(column_name = "lifecycle_role")]
+        pub lifecycle_role: String,
+        #[sea_orm(column_name = "consent_status")]
+        pub consent_status: String,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_contacts::Entity as BenefactorMarketingContactsEntity;
@@ -2840,34 +2774,33 @@ pub use benefactor_marketing_contacts::Model as BenefactorMarketingContactsModel
 pub mod benefactor_marketing_service_packages {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_service_packages")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub status: String,
-    pub code: String,
-    pub name: String,
-    #[sea_orm(column_name = "channel_mix")]
-    pub channel_mix: Json,
-    pub deliverables: Json,
-    #[sea_orm(column_name = "monthly_budget_cents")]
-    pub monthly_budget_cents: i32,
-    #[sea_orm(column_name = "retainer_cents")]
-    pub retainer_cents: i32,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_service_packages")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub status: String,
+        pub code: String,
+        pub name: String,
+        #[sea_orm(column_name = "channel_mix")]
+        pub channel_mix: Json,
+        pub deliverables: Json,
+        #[sea_orm(column_name = "monthly_budget_cents")]
+        pub monthly_budget_cents: i32,
+        #[sea_orm(column_name = "retainer_cents")]
+        pub retainer_cents: i32,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_service_packages::Entity as BenefactorMarketingServicePackagesEntity;
@@ -2876,39 +2809,38 @@ pub use benefactor_marketing_service_packages::Model as BenefactorMarketingServi
 pub mod benefactor_marketing_contracts {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_contracts")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "package_id")]
-    pub package_id: Option<Uuid>,
-    pub status: String,
-    #[sea_orm(column_name = "contract_number")]
-    pub contract_number: Option<String>,
-    #[sea_orm(column_name = "starts_on")]
-    pub starts_on: Option<String>,
-    #[sea_orm(column_name = "ends_on")]
-    pub ends_on: Option<String>,
-    #[sea_orm(column_name = "billing_terms")]
-    pub billing_terms: Json,
-    #[sea_orm(column_name = "total_value_cents")]
-    pub total_value_cents: i32,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_contracts")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "package_id")]
+        pub package_id: Option<Uuid>,
+        pub status: String,
+        #[sea_orm(column_name = "contract_number")]
+        pub contract_number: Option<String>,
+        #[sea_orm(column_name = "starts_on")]
+        pub starts_on: Option<String>,
+        #[sea_orm(column_name = "ends_on")]
+        pub ends_on: Option<String>,
+        #[sea_orm(column_name = "billing_terms")]
+        pub billing_terms: Json,
+        #[sea_orm(column_name = "total_value_cents")]
+        pub total_value_cents: i32,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_contracts::Entity as BenefactorMarketingContractsEntity;
@@ -2917,39 +2849,38 @@ pub use benefactor_marketing_contracts::Model as BenefactorMarketingContractsMod
 pub mod benefactor_marketing_invoices {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_invoices")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "contract_id")]
-    pub contract_id: Option<Uuid>,
-    pub status: String,
-    #[sea_orm(column_name = "invoice_number")]
-    pub invoice_number: Option<String>,
-    #[sea_orm(column_name = "due_on")]
-    pub due_on: Option<String>,
-    #[sea_orm(column_name = "amount_cents")]
-    pub amount_cents: i32,
-    #[sea_orm(column_name = "paid_at")]
-    pub paid_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "line_items")]
-    pub line_items: Json,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_invoices")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "contract_id")]
+        pub contract_id: Option<Uuid>,
+        pub status: String,
+        #[sea_orm(column_name = "invoice_number")]
+        pub invoice_number: Option<String>,
+        #[sea_orm(column_name = "due_on")]
+        pub due_on: Option<String>,
+        #[sea_orm(column_name = "amount_cents")]
+        pub amount_cents: i32,
+        #[sea_orm(column_name = "paid_at")]
+        pub paid_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "line_items")]
+        pub line_items: Json,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_invoices::Entity as BenefactorMarketingInvoicesEntity;
@@ -2958,35 +2889,34 @@ pub use benefactor_marketing_invoices::Model as BenefactorMarketingInvoicesModel
 pub mod benefactor_marketing_integrations {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_integrations")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Option<Uuid>,
-    pub platform: String,
-    pub status: String,
-    #[sea_orm(column_name = "auth_kind")]
-    pub auth_kind: String,
-    #[sea_orm(column_name = "external_account_id")]
-    pub external_account_id: Option<String>,
-    #[sea_orm(column_name = "sync_cursor")]
-    pub sync_cursor: Option<String>,
-    pub config: Json,
-    #[sea_orm(column_name = "last_sync_at")]
-    pub last_sync_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_integrations")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Option<Uuid>,
+        pub platform: String,
+        pub status: String,
+        #[sea_orm(column_name = "auth_kind")]
+        pub auth_kind: String,
+        #[sea_orm(column_name = "external_account_id")]
+        pub external_account_id: Option<String>,
+        #[sea_orm(column_name = "sync_cursor")]
+        pub sync_cursor: Option<String>,
+        pub config: Json,
+        #[sea_orm(column_name = "last_sync_at")]
+        pub last_sync_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_integrations::Entity as BenefactorMarketingIntegrationsEntity;
@@ -2995,51 +2925,50 @@ pub use benefactor_marketing_integrations::Model as BenefactorMarketingIntegrati
 pub mod benefactor_marketing_leads {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_leads")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "source_integration_id")]
-    pub source_integration_id: Option<Uuid>,
-    pub status: String,
-    #[sea_orm(column_name = "company_name")]
-    pub company_name: String,
-    pub domain: Option<String>,
-    #[sea_orm(column_name = "contact_name")]
-    pub contact_name: Option<String>,
-    #[sea_orm(column_name = "contact_email")]
-    pub contact_email: Option<String>,
-    #[sea_orm(column_name = "contact_title")]
-    pub contact_title: Option<String>,
-    #[sea_orm(column_name = "country_code")]
-    pub country_code: Option<String>,
-    #[sea_orm(column_name = "lead_score")]
-    pub lead_score: i32,
-    #[sea_orm(column_name = "icp_fit_score")]
-    pub icp_fit_score: i32,
-    #[sea_orm(column_name = "verification_status")]
-    pub verification_status: String,
-    #[sea_orm(column_name = "enrichment_status")]
-    pub enrichment_status: String,
-    #[sea_orm(column_name = "company_profile")]
-    pub company_profile: Json,
-    pub signals: Json,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_leads")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "source_integration_id")]
+        pub source_integration_id: Option<Uuid>,
+        pub status: String,
+        #[sea_orm(column_name = "company_name")]
+        pub company_name: String,
+        pub domain: Option<String>,
+        #[sea_orm(column_name = "contact_name")]
+        pub contact_name: Option<String>,
+        #[sea_orm(column_name = "contact_email")]
+        pub contact_email: Option<String>,
+        #[sea_orm(column_name = "contact_title")]
+        pub contact_title: Option<String>,
+        #[sea_orm(column_name = "country_code")]
+        pub country_code: Option<String>,
+        #[sea_orm(column_name = "lead_score")]
+        pub lead_score: i32,
+        #[sea_orm(column_name = "icp_fit_score")]
+        pub icp_fit_score: i32,
+        #[sea_orm(column_name = "verification_status")]
+        pub verification_status: String,
+        #[sea_orm(column_name = "enrichment_status")]
+        pub enrichment_status: String,
+        #[sea_orm(column_name = "company_profile")]
+        pub company_profile: Json,
+        pub signals: Json,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_leads::Entity as BenefactorMarketingLeadsEntity;
@@ -3048,43 +2977,42 @@ pub use benefactor_marketing_leads::Model as BenefactorMarketingLeadsModel;
 pub mod benefactor_marketing_enrichment_jobs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_enrichment_jobs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "lead_id")]
-    pub lead_id: Option<Uuid>,
-    #[sea_orm(column_name = "job_kind")]
-    pub job_kind: String,
-    pub status: String,
-    #[sea_orm(column_name = "external_job_id")]
-    pub external_job_id: Option<String>,
-    #[sea_orm(column_name = "scraper_handoff_url")]
-    pub scraper_handoff_url: Option<String>,
-    pub input: Json,
-    pub result: Json,
-    #[sea_orm(column_name = "error_summary")]
-    pub error_summary: Option<String>,
-    #[sea_orm(column_name = "queued_at")]
-    pub queued_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "started_at")]
-    pub started_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "completed_at")]
-    pub completed_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_enrichment_jobs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "lead_id")]
+        pub lead_id: Option<Uuid>,
+        #[sea_orm(column_name = "job_kind")]
+        pub job_kind: String,
+        pub status: String,
+        #[sea_orm(column_name = "external_job_id")]
+        pub external_job_id: Option<String>,
+        #[sea_orm(column_name = "scraper_handoff_url")]
+        pub scraper_handoff_url: Option<String>,
+        pub input: Json,
+        pub result: Json,
+        #[sea_orm(column_name = "error_summary")]
+        pub error_summary: Option<String>,
+        #[sea_orm(column_name = "queued_at")]
+        pub queued_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "started_at")]
+        pub started_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "completed_at")]
+        pub completed_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_enrichment_jobs::Entity as BenefactorMarketingEnrichmentJobsEntity;
@@ -3093,40 +3021,39 @@ pub use benefactor_marketing_enrichment_jobs::Model as BenefactorMarketingEnrich
 pub mod benefactor_marketing_campaigns {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_campaigns")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    pub status: String,
-    #[sea_orm(column_name = "campaign_kind")]
-    pub campaign_kind: String,
-    pub name: String,
-    pub objective: Option<String>,
-    #[sea_orm(column_name = "budget_cents")]
-    pub budget_cents: i32,
-    #[sea_orm(column_name = "starts_on")]
-    pub starts_on: Option<String>,
-    #[sea_orm(column_name = "ends_on")]
-    pub ends_on: Option<String>,
-    #[sea_orm(column_name = "target_segments")]
-    pub target_segments: Json,
-    pub kpis: Json,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_campaigns")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        pub status: String,
+        #[sea_orm(column_name = "campaign_kind")]
+        pub campaign_kind: String,
+        pub name: String,
+        pub objective: Option<String>,
+        #[sea_orm(column_name = "budget_cents")]
+        pub budget_cents: i32,
+        #[sea_orm(column_name = "starts_on")]
+        pub starts_on: Option<String>,
+        #[sea_orm(column_name = "ends_on")]
+        pub ends_on: Option<String>,
+        #[sea_orm(column_name = "target_segments")]
+        pub target_segments: Json,
+        pub kpis: Json,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_campaigns::Entity as BenefactorMarketingCampaignsEntity;
@@ -3135,32 +3062,31 @@ pub use benefactor_marketing_campaigns::Model as BenefactorMarketingCampaignsMod
 pub mod benefactor_marketing_campaign_channels {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_campaign_channels")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "campaign_id")]
-    pub campaign_id: Uuid,
-    pub channel: String,
-    pub status: String,
-    #[sea_orm(column_name = "external_campaign_id")]
-    pub external_campaign_id: Option<String>,
-    pub strategy: Json,
-    pub schedule: Json,
-    #[sea_orm(column_name = "metrics_snapshot")]
-    pub metrics_snapshot: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_campaign_channels")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "campaign_id")]
+        pub campaign_id: Uuid,
+        pub channel: String,
+        pub status: String,
+        #[sea_orm(column_name = "external_campaign_id")]
+        pub external_campaign_id: Option<String>,
+        pub strategy: Json,
+        pub schedule: Json,
+        #[sea_orm(column_name = "metrics_snapshot")]
+        pub metrics_snapshot: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_campaign_channels::Entity as BenefactorMarketingCampaignChannelsEntity;
@@ -3169,37 +3095,36 @@ pub use benefactor_marketing_campaign_channels::Model as BenefactorMarketingCamp
 pub mod benefactor_marketing_campaign_experiments {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_campaign_experiments")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "campaign_id")]
-    pub campaign_id: Uuid,
-    pub status: String,
-    #[sea_orm(column_name = "experiment_kind")]
-    pub experiment_kind: String,
-    pub hypothesis: Option<String>,
-    pub variants: Json,
-    #[sea_orm(column_name = "winning_variant")]
-    pub winning_variant: Option<String>,
-    #[sea_orm(column_name = "result_summary")]
-    pub result_summary: Json,
-    #[sea_orm(column_name = "started_at")]
-    pub started_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "ended_at")]
-    pub ended_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_campaign_experiments")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "campaign_id")]
+        pub campaign_id: Uuid,
+        pub status: String,
+        #[sea_orm(column_name = "experiment_kind")]
+        pub experiment_kind: String,
+        pub hypothesis: Option<String>,
+        pub variants: Json,
+        #[sea_orm(column_name = "winning_variant")]
+        pub winning_variant: Option<String>,
+        #[sea_orm(column_name = "result_summary")]
+        pub result_summary: Json,
+        #[sea_orm(column_name = "started_at")]
+        pub started_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "ended_at")]
+        pub ended_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_campaign_experiments::Entity as BenefactorMarketingCampaignExperimentsEntity;
@@ -3208,34 +3133,33 @@ pub use benefactor_marketing_campaign_experiments::Model as BenefactorMarketingC
 pub mod benefactor_marketing_automation_workflows {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_automation_workflows")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    pub status: String,
-    pub name: String,
-    #[sea_orm(column_name = "trigger_kind")]
-    pub trigger_kind: String,
-    #[sea_orm(column_name = "trigger_config")]
-    pub trigger_config: Json,
-    #[sea_orm(column_name = "action_graph")]
-    pub action_graph: Json,
-    #[sea_orm(column_name = "last_run_at")]
-    pub last_run_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_automation_workflows")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        pub status: String,
+        pub name: String,
+        #[sea_orm(column_name = "trigger_kind")]
+        pub trigger_kind: String,
+        #[sea_orm(column_name = "trigger_config")]
+        pub trigger_config: Json,
+        #[sea_orm(column_name = "action_graph")]
+        pub action_graph: Json,
+        #[sea_orm(column_name = "last_run_at")]
+        pub last_run_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_automation_workflows::Entity as BenefactorMarketingAutomationWorkflowsEntity;
@@ -3244,32 +3168,31 @@ pub use benefactor_marketing_automation_workflows::Model as BenefactorMarketingA
 pub mod benefactor_marketing_automation_events {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_automation_events")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "workflow_id")]
-    pub workflow_id: Option<Uuid>,
-    #[sea_orm(column_name = "lead_id")]
-    pub lead_id: Option<Uuid>,
-    #[sea_orm(column_name = "event_kind")]
-    pub event_kind: String,
-    pub status: String,
-    pub payload: Json,
-    #[sea_orm(column_name = "error_summary")]
-    pub error_summary: Option<String>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_automation_events")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "workflow_id")]
+        pub workflow_id: Option<Uuid>,
+        #[sea_orm(column_name = "lead_id")]
+        pub lead_id: Option<Uuid>,
+        #[sea_orm(column_name = "event_kind")]
+        pub event_kind: String,
+        pub status: String,
+        pub payload: Json,
+        #[sea_orm(column_name = "error_summary")]
+        pub error_summary: Option<String>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_automation_events::Entity as BenefactorMarketingAutomationEventsEntity;
@@ -3278,39 +3201,38 @@ pub use benefactor_marketing_automation_events::Model as BenefactorMarketingAuto
 pub mod benefactor_marketing_reports {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_reports")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "campaign_id")]
-    pub campaign_id: Option<Uuid>,
-    #[sea_orm(column_name = "report_kind")]
-    pub report_kind: String,
-    pub status: String,
-    #[sea_orm(column_name = "period_start")]
-    pub period_start: Option<String>,
-    #[sea_orm(column_name = "period_end")]
-    pub period_end: Option<String>,
-    pub metrics: Json,
-    pub narrative: Option<String>,
-    #[sea_orm(column_name = "delivery_targets")]
-    pub delivery_targets: Json,
-    #[sea_orm(column_name = "generated_at")]
-    pub generated_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_reports")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "campaign_id")]
+        pub campaign_id: Option<Uuid>,
+        #[sea_orm(column_name = "report_kind")]
+        pub report_kind: String,
+        pub status: String,
+        #[sea_orm(column_name = "period_start")]
+        pub period_start: Option<String>,
+        #[sea_orm(column_name = "period_end")]
+        pub period_end: Option<String>,
+        pub metrics: Json,
+        pub narrative: Option<String>,
+        #[sea_orm(column_name = "delivery_targets")]
+        pub delivery_targets: Json,
+        #[sea_orm(column_name = "generated_at")]
+        pub generated_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_reports::Entity as BenefactorMarketingReportsEntity;
@@ -3319,37 +3241,36 @@ pub use benefactor_marketing_reports::Model as BenefactorMarketingReportsModel;
 pub mod benefactor_marketing_attribution_events {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_attribution_events")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "campaign_id")]
-    pub campaign_id: Option<Uuid>,
-    #[sea_orm(column_name = "lead_id")]
-    pub lead_id: Option<Uuid>,
-    #[sea_orm(column_name = "event_type")]
-    pub event_type: String,
-    #[sea_orm(column_name = "source_platform")]
-    pub source_platform: Option<String>,
-    #[sea_orm(column_name = "source_event_id")]
-    pub source_event_id: Option<String>,
-    #[sea_orm(column_name = "occurred_at")]
-    pub occurred_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "value_cents")]
-    pub value_cents: i32,
-    pub payload: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_attribution_events")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "campaign_id")]
+        pub campaign_id: Option<Uuid>,
+        #[sea_orm(column_name = "lead_id")]
+        pub lead_id: Option<Uuid>,
+        #[sea_orm(column_name = "event_type")]
+        pub event_type: String,
+        #[sea_orm(column_name = "source_platform")]
+        pub source_platform: Option<String>,
+        #[sea_orm(column_name = "source_event_id")]
+        pub source_event_id: Option<String>,
+        #[sea_orm(column_name = "occurred_at")]
+        pub occurred_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "value_cents")]
+        pub value_cents: i32,
+        pub payload: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_attribution_events::Entity as BenefactorMarketingAttributionEventsEntity;
@@ -3358,39 +3279,38 @@ pub use benefactor_marketing_attribution_events::Model as BenefactorMarketingAtt
 pub mod benefactor_marketing_opportunities {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_opportunities")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "lead_id")]
-    pub lead_id: Option<Uuid>,
-    pub status: String,
-    pub stage: String,
-    pub name: String,
-    #[sea_orm(column_name = "amount_cents")]
-    pub amount_cents: i32,
-    #[sea_orm(column_name = "probability_micros")]
-    pub probability_micros: i32,
-    #[sea_orm(column_name = "expected_close_on")]
-    pub expected_close_on: Option<String>,
-    #[sea_orm(column_name = "owner_user_id")]
-    pub owner_user_id: Option<Uuid>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_opportunities")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "lead_id")]
+        pub lead_id: Option<Uuid>,
+        pub status: String,
+        pub stage: String,
+        pub name: String,
+        #[sea_orm(column_name = "amount_cents")]
+        pub amount_cents: i32,
+        #[sea_orm(column_name = "probability_micros")]
+        pub probability_micros: i32,
+        #[sea_orm(column_name = "expected_close_on")]
+        pub expected_close_on: Option<String>,
+        #[sea_orm(column_name = "owner_user_id")]
+        pub owner_user_id: Option<Uuid>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_opportunities::Entity as BenefactorMarketingOpportunitiesEntity;
@@ -3399,42 +3319,41 @@ pub use benefactor_marketing_opportunities::Model as BenefactorMarketingOpportun
 pub mod benefactor_marketing_content_assets {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_content_assets")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "campaign_id")]
-    pub campaign_id: Option<Uuid>,
-    pub status: String,
-    #[sea_orm(column_name = "asset_kind")]
-    pub asset_kind: String,
-    pub title: String,
-    pub channel: Option<String>,
-    pub body: Option<String>,
-    #[sea_orm(column_name = "asset_uri")]
-    pub asset_uri: Option<String>,
-    #[sea_orm(column_name = "seo_keywords")]
-    pub seo_keywords: Json,
-    #[sea_orm(column_name = "approval_status")]
-    pub approval_status: String,
-    #[sea_orm(column_name = "publish_at")]
-    pub publish_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_content_assets")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "campaign_id")]
+        pub campaign_id: Option<Uuid>,
+        pub status: String,
+        #[sea_orm(column_name = "asset_kind")]
+        pub asset_kind: String,
+        pub title: String,
+        pub channel: Option<String>,
+        pub body: Option<String>,
+        #[sea_orm(column_name = "asset_uri")]
+        pub asset_uri: Option<String>,
+        #[sea_orm(column_name = "seo_keywords")]
+        pub seo_keywords: Json,
+        #[sea_orm(column_name = "approval_status")]
+        pub approval_status: String,
+        #[sea_orm(column_name = "publish_at")]
+        pub publish_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_content_assets::Entity as BenefactorMarketingContentAssetsEntity;
@@ -3443,42 +3362,41 @@ pub use benefactor_marketing_content_assets::Model as BenefactorMarketingContent
 pub mod benefactor_marketing_project_tasks {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_project_tasks")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "campaign_id")]
-    pub campaign_id: Option<Uuid>,
-    #[sea_orm(column_name = "content_asset_id")]
-    pub content_asset_id: Option<Uuid>,
-    pub status: String,
-    pub priority: String,
-    pub title: String,
-    pub description: Option<String>,
-    #[sea_orm(column_name = "assigned_to")]
-    pub assigned_to: Option<Uuid>,
-    #[sea_orm(column_name = "due_on")]
-    pub due_on: Option<String>,
-    #[sea_orm(column_name = "sla_due_at")]
-    pub sla_due_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "time_spent_minutes")]
-    pub time_spent_minutes: i32,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_project_tasks")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "campaign_id")]
+        pub campaign_id: Option<Uuid>,
+        #[sea_orm(column_name = "content_asset_id")]
+        pub content_asset_id: Option<Uuid>,
+        pub status: String,
+        pub priority: String,
+        pub title: String,
+        pub description: Option<String>,
+        #[sea_orm(column_name = "assigned_to")]
+        pub assigned_to: Option<Uuid>,
+        #[sea_orm(column_name = "due_on")]
+        pub due_on: Option<String>,
+        #[sea_orm(column_name = "sla_due_at")]
+        pub sla_due_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "time_spent_minutes")]
+        pub time_spent_minutes: i32,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_project_tasks::Entity as BenefactorMarketingProjectTasksEntity;
@@ -3487,42 +3405,41 @@ pub use benefactor_marketing_project_tasks::Model as BenefactorMarketingProjectT
 pub mod benefactor_marketing_client_approvals {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_client_approvals")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "campaign_id")]
-    pub campaign_id: Option<Uuid>,
-    #[sea_orm(column_name = "content_asset_id")]
-    pub content_asset_id: Option<Uuid>,
-    #[sea_orm(column_name = "requested_by")]
-    pub requested_by: Option<Uuid>,
-    pub status: String,
-    #[sea_orm(column_name = "approval_kind")]
-    pub approval_kind: String,
-    pub title: String,
-    #[sea_orm(column_name = "request_payload")]
-    pub request_payload: Json,
-    #[sea_orm(column_name = "response_note")]
-    pub response_note: Option<String>,
-    #[sea_orm(column_name = "due_at")]
-    pub due_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "decided_at")]
-    pub decided_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_client_approvals")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "campaign_id")]
+        pub campaign_id: Option<Uuid>,
+        #[sea_orm(column_name = "content_asset_id")]
+        pub content_asset_id: Option<Uuid>,
+        #[sea_orm(column_name = "requested_by")]
+        pub requested_by: Option<Uuid>,
+        pub status: String,
+        #[sea_orm(column_name = "approval_kind")]
+        pub approval_kind: String,
+        pub title: String,
+        #[sea_orm(column_name = "request_payload")]
+        pub request_payload: Json,
+        #[sea_orm(column_name = "response_note")]
+        pub response_note: Option<String>,
+        #[sea_orm(column_name = "due_at")]
+        pub due_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "decided_at")]
+        pub decided_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_client_approvals::Entity as BenefactorMarketingClientApprovalsEntity;
@@ -3531,35 +3448,34 @@ pub use benefactor_marketing_client_approvals::Model as BenefactorMarketingClien
 pub mod benefactor_marketing_tickets {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_tickets")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    pub status: String,
-    pub priority: String,
-    pub subject: String,
-    pub description: Option<String>,
-    pub source: String,
-    #[sea_orm(column_name = "assigned_to")]
-    pub assigned_to: Option<Uuid>,
-    #[sea_orm(column_name = "last_activity_at")]
-    pub last_activity_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_tickets")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        pub status: String,
+        pub priority: String,
+        pub subject: String,
+        pub description: Option<String>,
+        pub source: String,
+        #[sea_orm(column_name = "assigned_to")]
+        pub assigned_to: Option<Uuid>,
+        #[sea_orm(column_name = "last_activity_at")]
+        pub last_activity_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_tickets::Entity as BenefactorMarketingTicketsEntity;
@@ -3568,41 +3484,40 @@ pub use benefactor_marketing_tickets::Model as BenefactorMarketingTicketsModel;
 pub mod benefactor_marketing_meetings {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_meetings")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "lead_id")]
-    pub lead_id: Option<Uuid>,
-    #[sea_orm(column_name = "opportunity_id")]
-    pub opportunity_id: Option<Uuid>,
-    pub status: String,
-    #[sea_orm(column_name = "meeting_kind")]
-    pub meeting_kind: String,
-    pub title: String,
-    #[sea_orm(column_name = "scheduled_at")]
-    pub scheduled_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "duration_minutes")]
-    pub duration_minutes: i32,
-    pub notes: Option<String>,
-    #[sea_orm(column_name = "recording_uri")]
-    pub recording_uri: Option<String>,
-    #[sea_orm(column_name = "transcript_summary")]
-    pub transcript_summary: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_meetings")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "lead_id")]
+        pub lead_id: Option<Uuid>,
+        #[sea_orm(column_name = "opportunity_id")]
+        pub opportunity_id: Option<Uuid>,
+        pub status: String,
+        #[sea_orm(column_name = "meeting_kind")]
+        pub meeting_kind: String,
+        pub title: String,
+        #[sea_orm(column_name = "scheduled_at")]
+        pub scheduled_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "duration_minutes")]
+        pub duration_minutes: i32,
+        pub notes: Option<String>,
+        #[sea_orm(column_name = "recording_uri")]
+        pub recording_uri: Option<String>,
+        #[sea_orm(column_name = "transcript_summary")]
+        pub transcript_summary: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_meetings::Entity as BenefactorMarketingMeetingsEntity;
@@ -3611,36 +3526,35 @@ pub use benefactor_marketing_meetings::Model as BenefactorMarketingMeetingsModel
 pub mod benefactor_marketing_team_allocations {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_team_allocations")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Option<Uuid>,
-    #[sea_orm(column_name = "campaign_id")]
-    pub campaign_id: Option<Uuid>,
-    #[sea_orm(column_name = "user_id")]
-    pub user_id: Uuid,
-    pub role: String,
-    #[sea_orm(column_name = "allocation_percent")]
-    pub allocation_percent: i32,
-    #[sea_orm(column_name = "starts_on")]
-    pub starts_on: Option<String>,
-    #[sea_orm(column_name = "ends_on")]
-    pub ends_on: Option<String>,
-    pub billable: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_team_allocations")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Option<Uuid>,
+        #[sea_orm(column_name = "campaign_id")]
+        pub campaign_id: Option<Uuid>,
+        #[sea_orm(column_name = "user_id")]
+        pub user_id: Uuid,
+        pub role: String,
+        #[sea_orm(column_name = "allocation_percent")]
+        pub allocation_percent: i32,
+        #[sea_orm(column_name = "starts_on")]
+        pub starts_on: Option<String>,
+        #[sea_orm(column_name = "ends_on")]
+        pub ends_on: Option<String>,
+        pub billable: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_team_allocations::Entity as BenefactorMarketingTeamAllocationsEntity;
@@ -3649,45 +3563,44 @@ pub use benefactor_marketing_team_allocations::Model as BenefactorMarketingTeamA
 pub mod benefactor_marketing_integration_sync_runs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_integration_sync_runs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "integration_id")]
-    pub integration_id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Option<Uuid>,
-    #[sea_orm(column_name = "sync_kind")]
-    pub sync_kind: String,
-    pub direction: String,
-    pub status: String,
-    #[sea_orm(column_name = "records_seen")]
-    pub records_seen: i32,
-    #[sea_orm(column_name = "records_changed")]
-    pub records_changed: i32,
-    #[sea_orm(column_name = "cursor_before")]
-    pub cursor_before: Option<String>,
-    #[sea_orm(column_name = "cursor_after")]
-    pub cursor_after: Option<String>,
-    pub payload: Json,
-    #[sea_orm(column_name = "error_summary")]
-    pub error_summary: Option<String>,
-    #[sea_orm(column_name = "started_at")]
-    pub started_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "completed_at")]
-    pub completed_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_integration_sync_runs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "integration_id")]
+        pub integration_id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Option<Uuid>,
+        #[sea_orm(column_name = "sync_kind")]
+        pub sync_kind: String,
+        pub direction: String,
+        pub status: String,
+        #[sea_orm(column_name = "records_seen")]
+        pub records_seen: i32,
+        #[sea_orm(column_name = "records_changed")]
+        pub records_changed: i32,
+        #[sea_orm(column_name = "cursor_before")]
+        pub cursor_before: Option<String>,
+        #[sea_orm(column_name = "cursor_after")]
+        pub cursor_after: Option<String>,
+        pub payload: Json,
+        #[sea_orm(column_name = "error_summary")]
+        pub error_summary: Option<String>,
+        #[sea_orm(column_name = "started_at")]
+        pub started_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "completed_at")]
+        pub completed_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_integration_sync_runs::Entity as BenefactorMarketingIntegrationSyncRunsEntity;
@@ -3696,34 +3609,33 @@ pub use benefactor_marketing_integration_sync_runs::Model as BenefactorMarketing
 pub mod benefactor_marketing_outreach_sequences {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_outreach_sequences")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "campaign_id")]
-    pub campaign_id: Option<Uuid>,
-    pub status: String,
-    pub channel: String,
-    pub name: String,
-    #[sea_orm(column_name = "audience_filter")]
-    pub audience_filter: Json,
-    pub cadence: Json,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_outreach_sequences")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "campaign_id")]
+        pub campaign_id: Option<Uuid>,
+        pub status: String,
+        pub channel: String,
+        pub name: String,
+        #[sea_orm(column_name = "audience_filter")]
+        pub audience_filter: Json,
+        pub cadence: Json,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_outreach_sequences::Entity as BenefactorMarketingOutreachSequencesEntity;
@@ -3732,37 +3644,36 @@ pub use benefactor_marketing_outreach_sequences::Model as BenefactorMarketingOut
 pub mod benefactor_marketing_outreach_steps {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_outreach_steps")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "sequence_id")]
-    pub sequence_id: Uuid,
-    pub status: String,
-    #[sea_orm(column_name = "step_order")]
-    pub step_order: i32,
-    pub channel: String,
-    #[sea_orm(column_name = "delay_minutes")]
-    pub delay_minutes: i32,
-    pub subject: Option<String>,
-    #[sea_orm(column_name = "body_template")]
-    pub body_template: Option<String>,
-    #[sea_orm(column_name = "personalization_hints")]
-    pub personalization_hints: Json,
-    #[sea_orm(column_name = "experiment_key")]
-    pub experiment_key: Option<String>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_outreach_steps")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "sequence_id")]
+        pub sequence_id: Uuid,
+        pub status: String,
+        #[sea_orm(column_name = "step_order")]
+        pub step_order: i32,
+        pub channel: String,
+        #[sea_orm(column_name = "delay_minutes")]
+        pub delay_minutes: i32,
+        pub subject: Option<String>,
+        #[sea_orm(column_name = "body_template")]
+        pub body_template: Option<String>,
+        #[sea_orm(column_name = "personalization_hints")]
+        pub personalization_hints: Json,
+        #[sea_orm(column_name = "experiment_key")]
+        pub experiment_key: Option<String>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_outreach_steps::Entity as BenefactorMarketingOutreachStepsEntity;
@@ -3771,40 +3682,39 @@ pub use benefactor_marketing_outreach_steps::Model as BenefactorMarketingOutreac
 pub mod benefactor_marketing_outreach_enrollments {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_outreach_enrollments")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "sequence_id")]
-    pub sequence_id: Uuid,
-    #[sea_orm(column_name = "lead_id")]
-    pub lead_id: Option<Uuid>,
-    #[sea_orm(column_name = "contact_id")]
-    pub contact_id: Option<Uuid>,
-    pub status: String,
-    #[sea_orm(column_name = "current_step_order")]
-    pub current_step_order: i32,
-    #[sea_orm(column_name = "enrollment_context")]
-    pub enrollment_context: Json,
-    #[sea_orm(column_name = "last_touch_at")]
-    pub last_touch_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "next_touch_at")]
-    pub next_touch_at: Option<DateTimeWithTimeZone>,
-    pub outcome: Option<String>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_outreach_enrollments")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "sequence_id")]
+        pub sequence_id: Uuid,
+        #[sea_orm(column_name = "lead_id")]
+        pub lead_id: Option<Uuid>,
+        #[sea_orm(column_name = "contact_id")]
+        pub contact_id: Option<Uuid>,
+        pub status: String,
+        #[sea_orm(column_name = "current_step_order")]
+        pub current_step_order: i32,
+        #[sea_orm(column_name = "enrollment_context")]
+        pub enrollment_context: Json,
+        #[sea_orm(column_name = "last_touch_at")]
+        pub last_touch_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "next_touch_at")]
+        pub next_touch_at: Option<DateTimeWithTimeZone>,
+        pub outcome: Option<String>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_outreach_enrollments::Entity as BenefactorMarketingOutreachEnrollmentsEntity;
@@ -3813,43 +3723,42 @@ pub use benefactor_marketing_outreach_enrollments::Model as BenefactorMarketingO
 pub mod benefactor_marketing_outreach_touchpoints {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_outreach_touchpoints")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "sequence_id")]
-    pub sequence_id: Option<Uuid>,
-    #[sea_orm(column_name = "enrollment_id")]
-    pub enrollment_id: Option<Uuid>,
-    #[sea_orm(column_name = "campaign_id")]
-    pub campaign_id: Option<Uuid>,
-    #[sea_orm(column_name = "lead_id")]
-    pub lead_id: Option<Uuid>,
-    #[sea_orm(column_name = "contact_id")]
-    pub contact_id: Option<Uuid>,
-    pub channel: String,
-    pub direction: String,
-    pub status: String,
-    pub subject: Option<String>,
-    #[sea_orm(column_name = "body_excerpt")]
-    pub body_excerpt: Option<String>,
-    #[sea_orm(column_name = "external_message_id")]
-    pub external_message_id: Option<String>,
-    #[sea_orm(column_name = "occurred_at")]
-    pub occurred_at: DateTimeWithTimeZone,
-    pub payload: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_outreach_touchpoints")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "sequence_id")]
+        pub sequence_id: Option<Uuid>,
+        #[sea_orm(column_name = "enrollment_id")]
+        pub enrollment_id: Option<Uuid>,
+        #[sea_orm(column_name = "campaign_id")]
+        pub campaign_id: Option<Uuid>,
+        #[sea_orm(column_name = "lead_id")]
+        pub lead_id: Option<Uuid>,
+        #[sea_orm(column_name = "contact_id")]
+        pub contact_id: Option<Uuid>,
+        pub channel: String,
+        pub direction: String,
+        pub status: String,
+        pub subject: Option<String>,
+        #[sea_orm(column_name = "body_excerpt")]
+        pub body_excerpt: Option<String>,
+        #[sea_orm(column_name = "external_message_id")]
+        pub external_message_id: Option<String>,
+        #[sea_orm(column_name = "occurred_at")]
+        pub occurred_at: DateTimeWithTimeZone,
+        pub payload: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_outreach_touchpoints::Entity as BenefactorMarketingOutreachTouchpointsEntity;
@@ -3858,40 +3767,39 @@ pub use benefactor_marketing_outreach_touchpoints::Model as BenefactorMarketingO
 pub mod benefactor_marketing_prospect_research_briefs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_prospect_research_briefs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "lead_id")]
-    pub lead_id: Option<Uuid>,
-    pub status: String,
-    #[sea_orm(column_name = "research_kind")]
-    pub research_kind: String,
-    pub source: String,
-    pub summary: Option<String>,
-    pub findings: Json,
-    #[sea_orm(column_name = "recommended_actions")]
-    pub recommended_actions: Json,
-    #[sea_orm(column_name = "confidence_micros")]
-    pub confidence_micros: i32,
-    #[sea_orm(column_name = "model_name")]
-    pub model_name: Option<String>,
-    #[sea_orm(column_name = "generated_at")]
-    pub generated_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_prospect_research_briefs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "lead_id")]
+        pub lead_id: Option<Uuid>,
+        pub status: String,
+        #[sea_orm(column_name = "research_kind")]
+        pub research_kind: String,
+        pub source: String,
+        pub summary: Option<String>,
+        pub findings: Json,
+        #[sea_orm(column_name = "recommended_actions")]
+        pub recommended_actions: Json,
+        #[sea_orm(column_name = "confidence_micros")]
+        pub confidence_micros: i32,
+        #[sea_orm(column_name = "model_name")]
+        pub model_name: Option<String>,
+        #[sea_orm(column_name = "generated_at")]
+        pub generated_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_prospect_research_briefs::Entity as BenefactorMarketingProspectResearchBriefsEntity;
@@ -3900,44 +3808,43 @@ pub use benefactor_marketing_prospect_research_briefs::Model as BenefactorMarket
 pub mod benefactor_marketing_conversion_events {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_conversion_events")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "campaign_id")]
-    pub campaign_id: Option<Uuid>,
-    #[sea_orm(column_name = "lead_id")]
-    pub lead_id: Option<Uuid>,
-    #[sea_orm(column_name = "content_asset_id")]
-    pub content_asset_id: Option<Uuid>,
-    #[sea_orm(column_name = "event_type")]
-    pub event_type: String,
-    #[sea_orm(column_name = "source_platform")]
-    pub source_platform: Option<String>,
-    #[sea_orm(column_name = "source_event_id")]
-    pub source_event_id: Option<String>,
-    #[sea_orm(column_name = "session_id")]
-    pub session_id: Option<String>,
-    #[sea_orm(column_name = "visitor_key")]
-    pub visitor_key: Option<String>,
-    #[sea_orm(column_name = "occurred_at")]
-    pub occurred_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "value_cents")]
-    pub value_cents: i32,
-    pub utm: Json,
-    pub payload: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_conversion_events")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "campaign_id")]
+        pub campaign_id: Option<Uuid>,
+        #[sea_orm(column_name = "lead_id")]
+        pub lead_id: Option<Uuid>,
+        #[sea_orm(column_name = "content_asset_id")]
+        pub content_asset_id: Option<Uuid>,
+        #[sea_orm(column_name = "event_type")]
+        pub event_type: String,
+        #[sea_orm(column_name = "source_platform")]
+        pub source_platform: Option<String>,
+        #[sea_orm(column_name = "source_event_id")]
+        pub source_event_id: Option<String>,
+        #[sea_orm(column_name = "session_id")]
+        pub session_id: Option<String>,
+        #[sea_orm(column_name = "visitor_key")]
+        pub visitor_key: Option<String>,
+        #[sea_orm(column_name = "occurred_at")]
+        pub occurred_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "value_cents")]
+        pub value_cents: i32,
+        pub utm: Json,
+        pub payload: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_conversion_events::Entity as BenefactorMarketingConversionEventsEntity;
@@ -3946,39 +3853,38 @@ pub use benefactor_marketing_conversion_events::Model as BenefactorMarketingConv
 pub mod benefactor_marketing_portal_members {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_portal_members")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "contact_id")]
-    pub contact_id: Option<Uuid>,
-    #[sea_orm(column_name = "user_id")]
-    pub user_id: Option<Uuid>,
-    pub email: String,
-    pub status: String,
-    pub role: String,
-    #[sea_orm(column_name = "access_scope")]
-    pub access_scope: Json,
-    #[sea_orm(column_name = "last_seen_at")]
-    pub last_seen_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "invited_at")]
-    pub invited_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "accepted_at")]
-    pub accepted_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_portal_members")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "contact_id")]
+        pub contact_id: Option<Uuid>,
+        #[sea_orm(column_name = "user_id")]
+        pub user_id: Option<Uuid>,
+        pub email: String,
+        pub status: String,
+        pub role: String,
+        #[sea_orm(column_name = "access_scope")]
+        pub access_scope: Json,
+        #[sea_orm(column_name = "last_seen_at")]
+        pub last_seen_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "invited_at")]
+        pub invited_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "accepted_at")]
+        pub accepted_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_portal_members::Entity as BenefactorMarketingPortalMembersEntity;
@@ -3987,41 +3893,40 @@ pub use benefactor_marketing_portal_members::Model as BenefactorMarketingPortalM
 pub mod benefactor_marketing_shared_documents {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_shared_documents")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "campaign_id")]
-    pub campaign_id: Option<Uuid>,
-    #[sea_orm(column_name = "content_asset_id")]
-    pub content_asset_id: Option<Uuid>,
-    pub status: String,
-    #[sea_orm(column_name = "document_kind")]
-    pub document_kind: String,
-    pub title: String,
-    #[sea_orm(column_name = "storage_uri")]
-    pub storage_uri: String,
-    #[sea_orm(column_name = "mime_type")]
-    pub mime_type: Option<String>,
-    pub visibility: String,
-    #[sea_orm(column_name = "uploaded_by")]
-    pub uploaded_by: Option<Uuid>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_shared_documents")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "campaign_id")]
+        pub campaign_id: Option<Uuid>,
+        #[sea_orm(column_name = "content_asset_id")]
+        pub content_asset_id: Option<Uuid>,
+        pub status: String,
+        #[sea_orm(column_name = "document_kind")]
+        pub document_kind: String,
+        pub title: String,
+        #[sea_orm(column_name = "storage_uri")]
+        pub storage_uri: String,
+        #[sea_orm(column_name = "mime_type")]
+        pub mime_type: Option<String>,
+        pub visibility: String,
+        #[sea_orm(column_name = "uploaded_by")]
+        pub uploaded_by: Option<Uuid>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_shared_documents::Entity as BenefactorMarketingSharedDocumentsEntity;
@@ -4030,39 +3935,38 @@ pub use benefactor_marketing_shared_documents::Model as BenefactorMarketingShare
 pub mod benefactor_marketing_collaboration_comments {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_collaboration_comments")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "parent_comment_id")]
-    pub parent_comment_id: Option<Uuid>,
-    #[sea_orm(column_name = "resource_type")]
-    pub resource_type: String,
-    #[sea_orm(column_name = "resource_id")]
-    pub resource_id: Option<Uuid>,
-    #[sea_orm(column_name = "author_user_id")]
-    pub author_user_id: Option<Uuid>,
-    #[sea_orm(column_name = "author_contact_id")]
-    pub author_contact_id: Option<Uuid>,
-    pub body: String,
-    pub status: String,
-    pub visibility: String,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_collaboration_comments")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "parent_comment_id")]
+        pub parent_comment_id: Option<Uuid>,
+        #[sea_orm(column_name = "resource_type")]
+        pub resource_type: String,
+        #[sea_orm(column_name = "resource_id")]
+        pub resource_id: Option<Uuid>,
+        #[sea_orm(column_name = "author_user_id")]
+        pub author_user_id: Option<Uuid>,
+        #[sea_orm(column_name = "author_contact_id")]
+        pub author_contact_id: Option<Uuid>,
+        pub body: String,
+        pub status: String,
+        pub visibility: String,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_collaboration_comments::Entity as BenefactorMarketingCollaborationCommentsEntity;
@@ -4071,39 +3975,38 @@ pub use benefactor_marketing_collaboration_comments::Model as BenefactorMarketin
 pub mod benefactor_marketing_notifications {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_notifications")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "recipient_user_id")]
-    pub recipient_user_id: Option<Uuid>,
-    #[sea_orm(column_name = "recipient_contact_id")]
-    pub recipient_contact_id: Option<Uuid>,
-    pub channel: String,
-    pub status: String,
-    #[sea_orm(column_name = "notification_kind")]
-    pub notification_kind: String,
-    pub title: String,
-    pub body: Option<String>,
-    pub payload: Json,
-    #[sea_orm(column_name = "scheduled_at")]
-    pub scheduled_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "sent_at")]
-    pub sent_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_notifications")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "recipient_user_id")]
+        pub recipient_user_id: Option<Uuid>,
+        #[sea_orm(column_name = "recipient_contact_id")]
+        pub recipient_contact_id: Option<Uuid>,
+        pub channel: String,
+        pub status: String,
+        #[sea_orm(column_name = "notification_kind")]
+        pub notification_kind: String,
+        pub title: String,
+        pub body: Option<String>,
+        pub payload: Json,
+        #[sea_orm(column_name = "scheduled_at")]
+        pub scheduled_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "sent_at")]
+        pub sent_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_notifications::Entity as BenefactorMarketingNotificationsEntity;
@@ -4112,41 +4015,40 @@ pub use benefactor_marketing_notifications::Model as BenefactorMarketingNotifica
 pub mod benefactor_marketing_time_entries {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_time_entries")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Option<Uuid>,
-    #[sea_orm(column_name = "campaign_id")]
-    pub campaign_id: Option<Uuid>,
-    #[sea_orm(column_name = "project_task_id")]
-    pub project_task_id: Option<Uuid>,
-    #[sea_orm(column_name = "user_id")]
-    pub user_id: Uuid,
-    #[sea_orm(column_name = "entry_date")]
-    pub entry_date: String,
-    pub minutes: i32,
-    pub billable: bool,
-    #[sea_orm(column_name = "rate_cents")]
-    pub rate_cents: i32,
-    #[sea_orm(column_name = "cost_cents")]
-    pub cost_cents: i32,
-    pub notes: Option<String>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_time_entries")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Option<Uuid>,
+        #[sea_orm(column_name = "campaign_id")]
+        pub campaign_id: Option<Uuid>,
+        #[sea_orm(column_name = "project_task_id")]
+        pub project_task_id: Option<Uuid>,
+        #[sea_orm(column_name = "user_id")]
+        pub user_id: Uuid,
+        #[sea_orm(column_name = "entry_date")]
+        pub entry_date: String,
+        pub minutes: i32,
+        pub billable: bool,
+        #[sea_orm(column_name = "rate_cents")]
+        pub rate_cents: i32,
+        #[sea_orm(column_name = "cost_cents")]
+        pub cost_cents: i32,
+        pub notes: Option<String>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_time_entries::Entity as BenefactorMarketingTimeEntriesEntity;
@@ -4155,38 +4057,37 @@ pub use benefactor_marketing_time_entries::Model as BenefactorMarketingTimeEntri
 pub mod benefactor_marketing_vendor_costs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_vendor_costs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Option<Uuid>,
-    #[sea_orm(column_name = "campaign_id")]
-    pub campaign_id: Option<Uuid>,
-    #[sea_orm(column_name = "vendor_name")]
-    pub vendor_name: String,
-    pub category: String,
-    pub status: String,
-    #[sea_orm(column_name = "amount_cents")]
-    pub amount_cents: i32,
-    #[sea_orm(column_name = "incurred_on")]
-    pub incurred_on: Option<String>,
-    #[sea_orm(column_name = "invoice_ref")]
-    pub invoice_ref: Option<String>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_vendor_costs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Option<Uuid>,
+        #[sea_orm(column_name = "campaign_id")]
+        pub campaign_id: Option<Uuid>,
+        #[sea_orm(column_name = "vendor_name")]
+        pub vendor_name: String,
+        pub category: String,
+        pub status: String,
+        #[sea_orm(column_name = "amount_cents")]
+        pub amount_cents: i32,
+        #[sea_orm(column_name = "incurred_on")]
+        pub incurred_on: Option<String>,
+        #[sea_orm(column_name = "invoice_ref")]
+        pub invoice_ref: Option<String>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_vendor_costs::Entity as BenefactorMarketingVendorCostsEntity;
@@ -4195,43 +4096,42 @@ pub use benefactor_marketing_vendor_costs::Model as BenefactorMarketingVendorCos
 pub mod benefactor_marketing_commission_entries {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_commission_entries")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Option<Uuid>,
-    #[sea_orm(column_name = "opportunity_id")]
-    pub opportunity_id: Option<Uuid>,
-    #[sea_orm(column_name = "user_id")]
-    pub user_id: Uuid,
-    pub status: String,
-    #[sea_orm(column_name = "commission_kind")]
-    pub commission_kind: String,
-    #[sea_orm(column_name = "basis_cents")]
-    pub basis_cents: i32,
-    #[sea_orm(column_name = "rate_micros")]
-    pub rate_micros: i32,
-    #[sea_orm(column_name = "amount_cents")]
-    pub amount_cents: i32,
-    #[sea_orm(column_name = "earned_on")]
-    pub earned_on: Option<String>,
-    #[sea_orm(column_name = "paid_at")]
-    pub paid_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_commission_entries")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Option<Uuid>,
+        #[sea_orm(column_name = "opportunity_id")]
+        pub opportunity_id: Option<Uuid>,
+        #[sea_orm(column_name = "user_id")]
+        pub user_id: Uuid,
+        pub status: String,
+        #[sea_orm(column_name = "commission_kind")]
+        pub commission_kind: String,
+        #[sea_orm(column_name = "basis_cents")]
+        pub basis_cents: i32,
+        #[sea_orm(column_name = "rate_micros")]
+        pub rate_micros: i32,
+        #[sea_orm(column_name = "amount_cents")]
+        pub amount_cents: i32,
+        #[sea_orm(column_name = "earned_on")]
+        pub earned_on: Option<String>,
+        #[sea_orm(column_name = "paid_at")]
+        pub paid_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_commission_entries::Entity as BenefactorMarketingCommissionEntriesEntity;
@@ -4240,44 +4140,43 @@ pub use benefactor_marketing_commission_entries::Model as BenefactorMarketingCom
 pub mod benefactor_marketing_budget_forecasts {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_budget_forecasts")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "campaign_id")]
-    pub campaign_id: Option<Uuid>,
-    #[sea_orm(column_name = "forecast_kind")]
-    pub forecast_kind: String,
-    #[sea_orm(column_name = "period_start")]
-    pub period_start: String,
-    #[sea_orm(column_name = "period_end")]
-    pub period_end: String,
-    pub status: String,
-    #[sea_orm(column_name = "revenue_cents")]
-    pub revenue_cents: i32,
-    #[sea_orm(column_name = "media_spend_cents")]
-    pub media_spend_cents: i32,
-    #[sea_orm(column_name = "labor_cost_cents")]
-    pub labor_cost_cents: i32,
-    #[sea_orm(column_name = "vendor_cost_cents")]
-    pub vendor_cost_cents: i32,
-    #[sea_orm(column_name = "gross_margin_cents")]
-    pub gross_margin_cents: i32,
-    pub assumptions: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_budget_forecasts")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "campaign_id")]
+        pub campaign_id: Option<Uuid>,
+        #[sea_orm(column_name = "forecast_kind")]
+        pub forecast_kind: String,
+        #[sea_orm(column_name = "period_start")]
+        pub period_start: String,
+        #[sea_orm(column_name = "period_end")]
+        pub period_end: String,
+        pub status: String,
+        #[sea_orm(column_name = "revenue_cents")]
+        pub revenue_cents: i32,
+        #[sea_orm(column_name = "media_spend_cents")]
+        pub media_spend_cents: i32,
+        #[sea_orm(column_name = "labor_cost_cents")]
+        pub labor_cost_cents: i32,
+        #[sea_orm(column_name = "vendor_cost_cents")]
+        pub vendor_cost_cents: i32,
+        #[sea_orm(column_name = "gross_margin_cents")]
+        pub gross_margin_cents: i32,
+        pub assumptions: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_budget_forecasts::Entity as BenefactorMarketingBudgetForecastsEntity;
@@ -4286,45 +4185,44 @@ pub use benefactor_marketing_budget_forecasts::Model as BenefactorMarketingBudge
 pub mod benefactor_marketing_call_insights {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "benefactor_marketing_call_insights")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "client_id")]
-    pub client_id: Uuid,
-    #[sea_orm(column_name = "meeting_id")]
-    pub meeting_id: Option<Uuid>,
-    #[sea_orm(column_name = "lead_id")]
-    pub lead_id: Option<Uuid>,
-    #[sea_orm(column_name = "opportunity_id")]
-    pub opportunity_id: Option<Uuid>,
-    pub status: String,
-    pub provider: Option<String>,
-    #[sea_orm(column_name = "transcript_uri")]
-    pub transcript_uri: Option<String>,
-    pub summary: Option<String>,
-    pub sentiment: Option<String>,
-    #[sea_orm(column_name = "action_items")]
-    pub action_items: Json,
-    pub objections: Json,
-    #[sea_orm(column_name = "next_steps")]
-    pub next_steps: Json,
-    #[sea_orm(column_name = "confidence_micros")]
-    pub confidence_micros: i32,
-    #[sea_orm(column_name = "analyzed_at")]
-    pub analyzed_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "benefactor_marketing_call_insights")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "client_id")]
+        pub client_id: Uuid,
+        #[sea_orm(column_name = "meeting_id")]
+        pub meeting_id: Option<Uuid>,
+        #[sea_orm(column_name = "lead_id")]
+        pub lead_id: Option<Uuid>,
+        #[sea_orm(column_name = "opportunity_id")]
+        pub opportunity_id: Option<Uuid>,
+        pub status: String,
+        pub provider: Option<String>,
+        #[sea_orm(column_name = "transcript_uri")]
+        pub transcript_uri: Option<String>,
+        pub summary: Option<String>,
+        pub sentiment: Option<String>,
+        #[sea_orm(column_name = "action_items")]
+        pub action_items: Json,
+        pub objections: Json,
+        #[sea_orm(column_name = "next_steps")]
+        pub next_steps: Json,
+        #[sea_orm(column_name = "confidence_micros")]
+        pub confidence_micros: i32,
+        #[sea_orm(column_name = "analyzed_at")]
+        pub analyzed_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_marketing_call_insights::Entity as BenefactorMarketingCallInsightsEntity;
@@ -4333,40 +4231,39 @@ pub use benefactor_marketing_call_insights::Model as BenefactorMarketingCallInsi
 pub mod usacc_users {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "usacc_users")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "external_subject")]
-    pub external_subject: Option<String>,
-    #[sea_orm(column_name = "email_hash")]
-    pub email_hash: Option<String>,
-    #[sea_orm(column_name = "display_name")]
-    pub display_name: String,
-    #[sea_orm(column_name = "user_kind")]
-    pub user_kind: String,
-    pub status: String,
-    #[sea_orm(column_name = "kyc_level")]
-    pub kyc_level: String,
-    pub roles: Json,
-    #[sea_orm(column_name = "is_legal_entity")]
-    pub is_legal_entity: bool,
-    #[sea_orm(column_name = "legal_region")]
-    pub legal_region: Option<String>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "usacc_users")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "external_subject")]
+        pub external_subject: Option<String>,
+        #[sea_orm(column_name = "email_hash")]
+        pub email_hash: Option<String>,
+        #[sea_orm(column_name = "display_name")]
+        pub display_name: String,
+        #[sea_orm(column_name = "user_kind")]
+        pub user_kind: String,
+        pub status: String,
+        #[sea_orm(column_name = "kyc_level")]
+        pub kyc_level: String,
+        pub roles: Json,
+        #[sea_orm(column_name = "is_legal_entity")]
+        pub is_legal_entity: bool,
+        #[sea_orm(column_name = "legal_region")]
+        pub legal_region: Option<String>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use usacc_users::Entity as UsaccUsersEntity;
@@ -4375,48 +4272,47 @@ pub use usacc_users::Model as UsaccUsersModel;
 pub mod usacc_cases {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "usacc_cases")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "case_number")]
-    pub case_number: String,
-    pub title: String,
-    pub status: String,
-    #[sea_orm(column_name = "filing_tier")]
-    pub filing_tier: String,
-    #[sea_orm(column_name = "plaintiff_user_id")]
-    pub plaintiff_user_id: Option<Uuid>,
-    #[sea_orm(column_name = "defendant_summary")]
-    pub defendant_summary: String,
-    #[sea_orm(column_name = "conduct_summary")]
-    pub conduct_summary: String,
-    #[sea_orm(column_name = "conduct_fingerprint")]
-    pub conduct_fingerprint: Option<String>,
-    #[sea_orm(column_name = "conduct_window_start")]
-    pub conduct_window_start: Option<String>,
-    #[sea_orm(column_name = "conduct_window_end")]
-    pub conduct_window_end: Option<String>,
-    #[sea_orm(column_name = "priority_score_micros")]
-    pub priority_score_micros: i32,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "opened_at")]
-    pub opened_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "closed_at")]
-    pub closed_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "usacc_cases")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "case_number")]
+        pub case_number: String,
+        pub title: String,
+        pub status: String,
+        #[sea_orm(column_name = "filing_tier")]
+        pub filing_tier: String,
+        #[sea_orm(column_name = "plaintiff_user_id")]
+        pub plaintiff_user_id: Option<Uuid>,
+        #[sea_orm(column_name = "defendant_summary")]
+        pub defendant_summary: String,
+        #[sea_orm(column_name = "conduct_summary")]
+        pub conduct_summary: String,
+        #[sea_orm(column_name = "conduct_fingerprint")]
+        pub conduct_fingerprint: Option<String>,
+        #[sea_orm(column_name = "conduct_window_start")]
+        pub conduct_window_start: Option<String>,
+        #[sea_orm(column_name = "conduct_window_end")]
+        pub conduct_window_end: Option<String>,
+        #[sea_orm(column_name = "priority_score_micros")]
+        pub priority_score_micros: i32,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "opened_at")]
+        pub opened_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "closed_at")]
+        pub closed_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use usacc_cases::Entity as UsaccCasesEntity;
@@ -4425,38 +4321,37 @@ pub use usacc_cases::Model as UsaccCasesModel;
 pub mod usacc_case_participants {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "usacc_case_participants")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "case_id")]
-    pub case_id: Uuid,
-    #[sea_orm(column_name = "user_id")]
-    pub user_id: Uuid,
-    pub role: String,
-    pub status: String,
-    #[sea_orm(column_name = "granted_by")]
-    pub granted_by: Option<Uuid>,
-    #[sea_orm(column_name = "granted_by_policy_version")]
-    pub granted_by_policy_version: Option<String>,
-    #[sea_orm(column_name = "ended_at")]
-    pub ended_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "ended_reason")]
-    pub ended_reason: Option<String>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "usacc_case_participants")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "case_id")]
+        pub case_id: Uuid,
+        #[sea_orm(column_name = "user_id")]
+        pub user_id: Uuid,
+        pub role: String,
+        pub status: String,
+        #[sea_orm(column_name = "granted_by")]
+        pub granted_by: Option<Uuid>,
+        #[sea_orm(column_name = "granted_by_policy_version")]
+        pub granted_by_policy_version: Option<String>,
+        #[sea_orm(column_name = "ended_at")]
+        pub ended_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "ended_reason")]
+        pub ended_reason: Option<String>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use usacc_case_participants::Entity as UsaccCaseParticipantsEntity;
@@ -4465,42 +4360,41 @@ pub use usacc_case_participants::Model as UsaccCaseParticipantsModel;
 pub mod usacc_case_stages {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "usacc_case_stages")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "case_id")]
-    pub case_id: Uuid,
-    #[sea_orm(column_name = "stage_key")]
-    pub stage_key: String,
-    #[sea_orm(column_name = "stage_order")]
-    pub stage_order: i32,
-    pub title: String,
-    pub status: String,
-    #[sea_orm(column_name = "assigned_user_id")]
-    pub assigned_user_id: Option<Uuid>,
-    #[sea_orm(column_name = "opened_at")]
-    pub opened_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "due_at")]
-    pub due_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "closed_at")]
-    pub closed_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "decision_summary")]
-    pub decision_summary: Option<String>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "usacc_case_stages")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "case_id")]
+        pub case_id: Uuid,
+        #[sea_orm(column_name = "stage_key")]
+        pub stage_key: String,
+        #[sea_orm(column_name = "stage_order")]
+        pub stage_order: i32,
+        pub title: String,
+        pub status: String,
+        #[sea_orm(column_name = "assigned_user_id")]
+        pub assigned_user_id: Option<Uuid>,
+        #[sea_orm(column_name = "opened_at")]
+        pub opened_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "due_at")]
+        pub due_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "closed_at")]
+        pub closed_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "decision_summary")]
+        pub decision_summary: Option<String>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use usacc_case_stages::Entity as UsaccCaseStagesEntity;
@@ -4509,43 +4403,42 @@ pub use usacc_case_stages::Model as UsaccCaseStagesModel;
 pub mod usacc_elections {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "usacc_elections")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "case_id")]
-    pub case_id: Option<Uuid>,
-    #[sea_orm(column_name = "stage_id")]
-    pub stage_id: Option<Uuid>,
-    #[sea_orm(column_name = "election_kind")]
-    pub election_kind: String,
-    pub title: String,
-    pub status: String,
-    #[sea_orm(column_name = "quorum_count")]
-    pub quorum_count: i32,
-    #[sea_orm(column_name = "threshold_micros")]
-    pub threshold_micros: i32,
-    #[sea_orm(column_name = "opens_at")]
-    pub opens_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "closes_at")]
-    pub closes_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "sealed_until")]
-    pub sealed_until: Option<DateTimeWithTimeZone>,
-    pub tally: Json,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "usacc_elections")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "case_id")]
+        pub case_id: Option<Uuid>,
+        #[sea_orm(column_name = "stage_id")]
+        pub stage_id: Option<Uuid>,
+        #[sea_orm(column_name = "election_kind")]
+        pub election_kind: String,
+        pub title: String,
+        pub status: String,
+        #[sea_orm(column_name = "quorum_count")]
+        pub quorum_count: i32,
+        #[sea_orm(column_name = "threshold_micros")]
+        pub threshold_micros: i32,
+        #[sea_orm(column_name = "opens_at")]
+        pub opens_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "closes_at")]
+        pub closes_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "sealed_until")]
+        pub sealed_until: Option<DateTimeWithTimeZone>,
+        pub tally: Json,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use usacc_elections::Entity as UsaccElectionsEntity;
@@ -4554,44 +4447,43 @@ pub use usacc_elections::Model as UsaccElectionsModel;
 pub mod usacc_votes {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "usacc_votes")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "election_id")]
-    pub election_id: Uuid,
-    #[sea_orm(column_name = "case_id")]
-    pub case_id: Option<Uuid>,
-    #[sea_orm(column_name = "voter_user_id")]
-    pub voter_user_id: Uuid,
-    #[sea_orm(column_name = "vote_kind")]
-    pub vote_kind: String,
-    #[sea_orm(column_name = "vote_value")]
-    pub vote_value: String,
-    #[sea_orm(column_name = "weight_micros")]
-    pub weight_micros: i32,
-    #[sea_orm(column_name = "commitment_hash")]
-    pub commitment_hash: Option<String>,
-    #[sea_orm(column_name = "sealed_payload")]
-    pub sealed_payload: Option<Json>,
-    #[sea_orm(column_name = "revealed_at")]
-    pub revealed_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "contract_digest")]
-    pub contract_digest: Option<String>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "usacc_votes")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "election_id")]
+        pub election_id: Uuid,
+        #[sea_orm(column_name = "case_id")]
+        pub case_id: Option<Uuid>,
+        #[sea_orm(column_name = "voter_user_id")]
+        pub voter_user_id: Uuid,
+        #[sea_orm(column_name = "vote_kind")]
+        pub vote_kind: String,
+        #[sea_orm(column_name = "vote_value")]
+        pub vote_value: String,
+        #[sea_orm(column_name = "weight_micros")]
+        pub weight_micros: i32,
+        #[sea_orm(column_name = "commitment_hash")]
+        pub commitment_hash: Option<String>,
+        #[sea_orm(column_name = "sealed_payload")]
+        pub sealed_payload: Option<Json>,
+        #[sea_orm(column_name = "revealed_at")]
+        pub revealed_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "contract_digest")]
+        pub contract_digest: Option<String>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use usacc_votes::Entity as UsaccVotesEntity;
@@ -4600,39 +4492,38 @@ pub use usacc_votes::Model as UsaccVotesModel;
 pub mod usacc_escrow_accounts {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "usacc_escrow_accounts")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "case_id")]
-    pub case_id: Uuid,
-    pub status: String,
-    pub provider: String,
-    #[sea_orm(column_name = "provider_account_ref")]
-    pub provider_account_ref: Option<String>,
-    pub currency: String,
-    #[sea_orm(column_name = "target_amount_cents")]
-    pub target_amount_cents: i64,
-    #[sea_orm(column_name = "committed_amount_cents")]
-    pub committed_amount_cents: i64,
-    #[sea_orm(column_name = "captured_amount_cents")]
-    pub captured_amount_cents: i64,
-    #[sea_orm(column_name = "disbursed_amount_cents")]
-    pub disbursed_amount_cents: i64,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "usacc_escrow_accounts")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "case_id")]
+        pub case_id: Uuid,
+        pub status: String,
+        pub provider: String,
+        #[sea_orm(column_name = "provider_account_ref")]
+        pub provider_account_ref: Option<String>,
+        pub currency: String,
+        #[sea_orm(column_name = "target_amount_cents")]
+        pub target_amount_cents: i64,
+        #[sea_orm(column_name = "committed_amount_cents")]
+        pub committed_amount_cents: i64,
+        #[sea_orm(column_name = "captured_amount_cents")]
+        pub captured_amount_cents: i64,
+        #[sea_orm(column_name = "disbursed_amount_cents")]
+        pub disbursed_amount_cents: i64,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use usacc_escrow_accounts::Entity as UsaccEscrowAccountsEntity;
@@ -4641,38 +4532,37 @@ pub use usacc_escrow_accounts::Model as UsaccEscrowAccountsModel;
 pub mod usacc_ledger_entries {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "usacc_ledger_entries")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "case_id")]
-    pub case_id: Option<Uuid>,
-    #[sea_orm(column_name = "escrow_account_id")]
-    pub escrow_account_id: Option<Uuid>,
-    #[sea_orm(column_name = "user_id")]
-    pub user_id: Option<Uuid>,
-    #[sea_orm(column_name = "entry_kind")]
-    pub entry_kind: String,
-    pub direction: String,
-    #[sea_orm(column_name = "amount_cents")]
-    pub amount_cents: i64,
-    pub currency: String,
-    #[sea_orm(column_name = "provider_ref")]
-    pub provider_ref: Option<String>,
-    #[sea_orm(column_name = "contract_digest")]
-    pub contract_digest: Option<String>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "usacc_ledger_entries")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "case_id")]
+        pub case_id: Option<Uuid>,
+        #[sea_orm(column_name = "escrow_account_id")]
+        pub escrow_account_id: Option<Uuid>,
+        #[sea_orm(column_name = "user_id")]
+        pub user_id: Option<Uuid>,
+        #[sea_orm(column_name = "entry_kind")]
+        pub entry_kind: String,
+        pub direction: String,
+        #[sea_orm(column_name = "amount_cents")]
+        pub amount_cents: i64,
+        pub currency: String,
+        #[sea_orm(column_name = "provider_ref")]
+        pub provider_ref: Option<String>,
+        #[sea_orm(column_name = "contract_digest")]
+        pub contract_digest: Option<String>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use usacc_ledger_entries::Entity as UsaccLedgerEntriesEntity;
@@ -4681,38 +4571,37 @@ pub use usacc_ledger_entries::Model as UsaccLedgerEntriesModel;
 pub mod usacc_contract_operations {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "usacc_contract_operations")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "case_id")]
-    pub case_id: Option<Uuid>,
-    #[sea_orm(column_name = "election_id")]
-    pub election_id: Option<Uuid>,
-    #[sea_orm(column_name = "vote_id")]
-    pub vote_id: Option<Uuid>,
-    #[sea_orm(column_name = "request_id")]
-    pub request_id: String,
-    #[sea_orm(column_name = "operation_kind")]
-    pub operation_kind: String,
-    pub status: String,
-    #[sea_orm(column_name = "program_id")]
-    pub program_id: Option<String>,
-    pub digest: Option<String>,
-    pub envelope: Json,
-    pub response: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "usacc_contract_operations")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "case_id")]
+        pub case_id: Option<Uuid>,
+        #[sea_orm(column_name = "election_id")]
+        pub election_id: Option<Uuid>,
+        #[sea_orm(column_name = "vote_id")]
+        pub vote_id: Option<Uuid>,
+        #[sea_orm(column_name = "request_id")]
+        pub request_id: String,
+        #[sea_orm(column_name = "operation_kind")]
+        pub operation_kind: String,
+        pub status: String,
+        #[sea_orm(column_name = "program_id")]
+        pub program_id: Option<String>,
+        pub digest: Option<String>,
+        pub envelope: Json,
+        pub response: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use usacc_contract_operations::Entity as UsaccContractOperationsEntity;
@@ -4721,40 +4610,39 @@ pub use usacc_contract_operations::Model as UsaccContractOperationsModel;
 pub mod usacc_simulation_runs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "usacc_simulation_runs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "case_id")]
-    pub case_id: Option<Uuid>,
-    pub status: String,
-    pub mode: String,
-    pub seed: i64,
-    #[sea_orm(column_name = "horizon_days")]
-    pub horizon_days: i32,
-    #[sea_orm(column_name = "actor_count")]
-    pub actor_count: i32,
-    #[sea_orm(column_name = "event_count")]
-    pub event_count: i32,
-    pub metrics: Json,
-    pub trace: Json,
-    pub input: Json,
-    #[sea_orm(column_name = "started_at")]
-    pub started_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "finished_at")]
-    pub finished_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "usacc_simulation_runs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "case_id")]
+        pub case_id: Option<Uuid>,
+        pub status: String,
+        pub mode: String,
+        pub seed: i64,
+        #[sea_orm(column_name = "horizon_days")]
+        pub horizon_days: i32,
+        #[sea_orm(column_name = "actor_count")]
+        pub actor_count: i32,
+        #[sea_orm(column_name = "event_count")]
+        pub event_count: i32,
+        pub metrics: Json,
+        pub trace: Json,
+        pub input: Json,
+        #[sea_orm(column_name = "started_at")]
+        pub started_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "finished_at")]
+        pub finished_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use usacc_simulation_runs::Entity as UsaccSimulationRunsEntity;
@@ -4763,30 +4651,29 @@ pub use usacc_simulation_runs::Model as UsaccSimulationRunsModel;
 pub mod usacc_audit_events {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "usacc_audit_events")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "case_id")]
-    pub case_id: Option<Uuid>,
-    #[sea_orm(column_name = "actor_user_id")]
-    pub actor_user_id: Option<Uuid>,
-    #[sea_orm(column_name = "event_type")]
-    pub event_type: String,
-    #[sea_orm(column_name = "event_hash")]
-    pub event_hash: String,
-    pub source: String,
-    pub payload: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "usacc_audit_events")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "case_id")]
+        pub case_id: Option<Uuid>,
+        #[sea_orm(column_name = "actor_user_id")]
+        pub actor_user_id: Option<Uuid>,
+        #[sea_orm(column_name = "event_type")]
+        pub event_type: String,
+        #[sea_orm(column_name = "event_hash")]
+        pub event_hash: String,
+        pub source: String,
+        pub payload: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use usacc_audit_events::Entity as UsaccAuditEventsEntity;
@@ -4795,77 +4682,76 @@ pub use usacc_audit_events::Model as UsaccAuditEventsModel;
 pub mod benefactor_leads {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "benefactor", table_name = "benefactor_leads")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "business_name")]
-    pub business_name: String,
-    #[sea_orm(column_name = "owner_first_name")]
-    pub owner_first_name: String,
-    #[sea_orm(column_name = "owner_last_name")]
-    pub owner_last_name: String,
-    #[sea_orm(column_name = "primary_email")]
-    pub primary_email: String,
-    #[sea_orm(column_name = "secondary_email")]
-    pub secondary_email: Option<String>,
-    #[sea_orm(column_name = "primary_phone")]
-    pub primary_phone: Option<String>,
-    #[sea_orm(column_name = "website_url")]
-    pub website_url: Option<String>,
-    #[sea_orm(column_name = "service_category")]
-    pub service_category: String,
-    #[sea_orm(column_name = "service_subcategories")]
-    pub service_subcategories: Json,
-    pub city: Option<String>,
-    pub state: Option<String>,
-    #[sea_orm(column_name = "zip_code")]
-    pub zip_code: Option<String>,
-    pub country: String,
-    #[sea_orm(column_name = "service_area")]
-    pub service_area: Option<String>,
-    #[sea_orm(column_name = "lead_status")]
-    pub lead_status: String,
-    #[sea_orm(column_name = "outreach_status")]
-    pub outreach_status: String,
-    #[sea_orm(column_name = "total_outreach_attempts")]
-    pub total_outreach_attempts: i32,
-    #[sea_orm(column_name = "last_outreach_at")]
-    pub last_outreach_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "contact_attempts")]
-    pub contact_attempts: Json,
-    #[sea_orm(column_name = "source_url")]
-    pub source_url: Option<String>,
-    #[sea_orm(column_name = "source_query")]
-    pub source_query: Option<String>,
-    #[sea_orm(column_name = "source_tool")]
-    pub source_tool: Option<String>,
-    #[sea_orm(column_name = "source_engine")]
-    pub source_engine: Option<String>,
-    #[sea_orm(column_name = "is_verified")]
-    pub is_verified: bool,
-    pub tags: Json,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    pub notes: Option<String>,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "benefactor", table_name = "benefactor_leads")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "business_name")]
+        pub business_name: String,
+        #[sea_orm(column_name = "owner_first_name")]
+        pub owner_first_name: String,
+        #[sea_orm(column_name = "owner_last_name")]
+        pub owner_last_name: String,
+        #[sea_orm(column_name = "primary_email")]
+        pub primary_email: String,
+        #[sea_orm(column_name = "secondary_email")]
+        pub secondary_email: Option<String>,
+        #[sea_orm(column_name = "primary_phone")]
+        pub primary_phone: Option<String>,
+        #[sea_orm(column_name = "website_url")]
+        pub website_url: Option<String>,
+        #[sea_orm(column_name = "service_category")]
+        pub service_category: String,
+        #[sea_orm(column_name = "service_subcategories")]
+        pub service_subcategories: Json,
+        pub city: Option<String>,
+        pub state: Option<String>,
+        #[sea_orm(column_name = "zip_code")]
+        pub zip_code: Option<String>,
+        pub country: String,
+        #[sea_orm(column_name = "service_area")]
+        pub service_area: Option<String>,
+        #[sea_orm(column_name = "lead_status")]
+        pub lead_status: String,
+        #[sea_orm(column_name = "outreach_status")]
+        pub outreach_status: String,
+        #[sea_orm(column_name = "total_outreach_attempts")]
+        pub total_outreach_attempts: i32,
+        #[sea_orm(column_name = "last_outreach_at")]
+        pub last_outreach_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "contact_attempts")]
+        pub contact_attempts: Json,
+        #[sea_orm(column_name = "source_url")]
+        pub source_url: Option<String>,
+        #[sea_orm(column_name = "source_query")]
+        pub source_query: Option<String>,
+        #[sea_orm(column_name = "source_tool")]
+        pub source_tool: Option<String>,
+        #[sea_orm(column_name = "source_engine")]
+        pub source_engine: Option<String>,
+        #[sea_orm(column_name = "is_verified")]
+        pub is_verified: bool,
+        pub tags: Json,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        pub notes: Option<String>,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_leads::Entity as BenefactorLeadsEntity;
@@ -4874,72 +4760,71 @@ pub use benefactor_leads::Model as BenefactorLeadsModel;
 pub mod benefactor_leads_domains {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "benefactor", table_name = "benefactor_leads_domains")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub domain: String,
-    #[sea_orm(column_name = "domain_kind")]
-    pub domain_kind: String,
-    pub status: String,
-    pub reason: Option<String>,
-    pub source: String,
-    #[sea_orm(column_name = "is_blacklisted")]
-    pub is_blacklisted: bool,
-    #[sea_orm(column_name = "is_blocked")]
-    pub is_blocked: bool,
-    #[sea_orm(column_name = "is_permanently_blocked")]
-    pub is_permanently_blocked: bool,
-    #[sea_orm(column_name = "blocked_reason")]
-    pub blocked_reason: Option<String>,
-    #[sea_orm(column_name = "blocked_until")]
-    pub blocked_until: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "skip_until")]
-    pub skip_until: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "scrape_count")]
-    pub scrape_count: i32,
-    #[sea_orm(column_name = "skip_count")]
-    pub skip_count: i32,
-    #[sea_orm(column_name = "skipped_count")]
-    pub skipped_count: i32,
-    #[sea_orm(column_name = "email_found_count")]
-    pub email_found_count: i32,
-    #[sea_orm(column_name = "lead_inserted_count")]
-    pub lead_inserted_count: i32,
-    #[sea_orm(column_name = "last_seen_at")]
-    pub last_seen_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_scraped_at")]
-    pub last_scraped_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_skipped_at")]
-    pub last_skipped_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_email_found_at")]
-    pub last_email_found_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_lead_inserted_at")]
-    pub last_lead_inserted_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_seen_url")]
-    pub last_seen_url: Option<String>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "is_active")]
-    pub is_active: bool,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "benefactor", table_name = "benefactor_leads_domains")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub domain: String,
+        #[sea_orm(column_name = "domain_kind")]
+        pub domain_kind: String,
+        pub status: String,
+        pub reason: Option<String>,
+        pub source: String,
+        #[sea_orm(column_name = "is_blacklisted")]
+        pub is_blacklisted: bool,
+        #[sea_orm(column_name = "is_blocked")]
+        pub is_blocked: bool,
+        #[sea_orm(column_name = "is_permanently_blocked")]
+        pub is_permanently_blocked: bool,
+        #[sea_orm(column_name = "blocked_reason")]
+        pub blocked_reason: Option<String>,
+        #[sea_orm(column_name = "blocked_until")]
+        pub blocked_until: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "skip_until")]
+        pub skip_until: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "scrape_count")]
+        pub scrape_count: i32,
+        #[sea_orm(column_name = "skip_count")]
+        pub skip_count: i32,
+        #[sea_orm(column_name = "skipped_count")]
+        pub skipped_count: i32,
+        #[sea_orm(column_name = "email_found_count")]
+        pub email_found_count: i32,
+        #[sea_orm(column_name = "lead_inserted_count")]
+        pub lead_inserted_count: i32,
+        #[sea_orm(column_name = "last_seen_at")]
+        pub last_seen_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_scraped_at")]
+        pub last_scraped_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_skipped_at")]
+        pub last_skipped_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_email_found_at")]
+        pub last_email_found_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_lead_inserted_at")]
+        pub last_lead_inserted_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_seen_url")]
+        pub last_seen_url: Option<String>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "is_active")]
+        pub is_active: bool,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_leads_domains::Entity as BenefactorLeadsDomainsEntity;
@@ -4948,67 +4833,66 @@ pub use benefactor_leads_domains::Model as BenefactorLeadsDomainsModel;
 pub mod benefactor_search_locations {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "benefactor", table_name = "benefactor_search_locations")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub slug: String,
-    pub city: String,
-    pub state: String,
-    #[sea_orm(column_name = "state_code")]
-    pub state_code: Option<String>,
-    pub country: String,
-    #[sea_orm(column_name = "metro_area")]
-    pub metro_area: Option<String>,
-    #[sea_orm(column_name = "military_area")]
-    pub military_area: Option<String>,
-    #[sea_orm(column_name = "primary_installation")]
-    pub primary_installation: Option<String>,
-    #[sea_orm(column_name = "installation_aliases")]
-    pub installation_aliases: Json,
-    #[sea_orm(column_name = "location_type")]
-    pub location_type: String,
-    pub priority: i32,
-    #[sea_orm(column_name = "search_weight")]
-    pub search_weight: i32,
-    #[sea_orm(column_name = "total_query_runs")]
-    pub total_query_runs: i32,
-    #[sea_orm(column_name = "total_emails_inserted")]
-    pub total_emails_inserted: i32,
-    #[sea_orm(column_name = "success_count")]
-    pub success_count: i32,
-    #[sea_orm(column_name = "failure_count")]
-    pub failure_count: i32,
-    #[sea_orm(column_name = "last_run_at")]
-    pub last_run_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_success_at")]
-    pub last_success_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_failure_at")]
-    pub last_failure_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "cooldown_until")]
-    pub cooldown_until: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "is_active")]
-    pub is_active: bool,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "benefactor", table_name = "benefactor_search_locations")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub slug: String,
+        pub city: String,
+        pub state: String,
+        #[sea_orm(column_name = "state_code")]
+        pub state_code: Option<String>,
+        pub country: String,
+        #[sea_orm(column_name = "metro_area")]
+        pub metro_area: Option<String>,
+        #[sea_orm(column_name = "military_area")]
+        pub military_area: Option<String>,
+        #[sea_orm(column_name = "primary_installation")]
+        pub primary_installation: Option<String>,
+        #[sea_orm(column_name = "installation_aliases")]
+        pub installation_aliases: Json,
+        #[sea_orm(column_name = "location_type")]
+        pub location_type: String,
+        pub priority: i32,
+        #[sea_orm(column_name = "search_weight")]
+        pub search_weight: i32,
+        #[sea_orm(column_name = "total_query_runs")]
+        pub total_query_runs: i32,
+        #[sea_orm(column_name = "total_emails_inserted")]
+        pub total_emails_inserted: i32,
+        #[sea_orm(column_name = "success_count")]
+        pub success_count: i32,
+        #[sea_orm(column_name = "failure_count")]
+        pub failure_count: i32,
+        #[sea_orm(column_name = "last_run_at")]
+        pub last_run_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_success_at")]
+        pub last_success_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_failure_at")]
+        pub last_failure_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "cooldown_until")]
+        pub cooldown_until: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "is_active")]
+        pub is_active: bool,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_search_locations::Entity as BenefactorSearchLocationsEntity;
@@ -5017,97 +4901,96 @@ pub use benefactor_search_locations::Model as BenefactorSearchLocationsModel;
 pub mod benefactor_scrape_queries {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "benefactor", table_name = "benefactor_scrape_queries")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "query_text")]
-    pub query_text: String,
-    #[sea_orm(column_name = "query_hash")]
-    pub query_hash: String,
-    #[sea_orm(column_name = "benefactor_icp_slug")]
-    pub benefactor_icp_slug: Option<String>,
-    #[sea_orm(column_name = "benefactor_icp_name")]
-    pub benefactor_icp_name: Option<String>,
-    #[sea_orm(column_name = "benefactor_search_location_id")]
-    pub benefactor_search_location_id: Option<Uuid>,
-    #[sea_orm(column_name = "service_category")]
-    pub service_category: String,
-    #[sea_orm(column_name = "target_city")]
-    pub target_city: Option<String>,
-    #[sea_orm(column_name = "target_state")]
-    pub target_state: Option<String>,
-    #[sea_orm(column_name = "target_country")]
-    pub target_country: String,
-    #[sea_orm(column_name = "target_military_area")]
-    pub target_military_area: Option<String>,
-    #[sea_orm(column_name = "target_installation")]
-    pub target_installation: Option<String>,
-    #[sea_orm(column_name = "query_variant")]
-    pub query_variant: String,
-    #[sea_orm(column_name = "search_page_depth")]
-    pub search_page_depth: i32,
-    pub priority: i32,
-    #[sea_orm(column_name = "total_runs")]
-    pub total_runs: i32,
-    #[sea_orm(column_name = "total_urls_visited")]
-    pub total_urls_visited: i32,
-    #[sea_orm(column_name = "total_emails_found")]
-    pub total_emails_found: i32,
-    #[sea_orm(column_name = "total_emails_inserted")]
-    pub total_emails_inserted: i32,
-    #[sea_orm(column_name = "total_emails_duplicate")]
-    pub total_emails_duplicate: i32,
-    #[sea_orm(column_name = "total_errors")]
-    pub total_errors: i32,
-    #[sea_orm(column_name = "success_count")]
-    pub success_count: i32,
-    #[sea_orm(column_name = "failure_count")]
-    pub failure_count: i32,
-    #[sea_orm(column_name = "last_run_at")]
-    pub last_run_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_success_at")]
-    pub last_success_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_failure_at")]
-    pub last_failure_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_run_emails_found")]
-    pub last_run_emails_found: i32,
-    #[sea_orm(column_name = "last_run_emails_inserted")]
-    pub last_run_emails_inserted: i32,
-    #[sea_orm(column_name = "last_run_success")]
-    pub last_run_success: bool,
-    #[sea_orm(column_name = "last_run_duration_ms")]
-    pub last_run_duration_ms: i32,
-    #[sea_orm(column_name = "last_run_error")]
-    pub last_run_error: Option<String>,
-    #[sea_orm(column_name = "cooldown_until")]
-    pub cooldown_until: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "consecutive_zero_new_runs")]
-    pub consecutive_zero_new_runs: i32,
-    #[sea_orm(column_name = "last_zero_new_run_at")]
-    pub last_zero_new_run_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "is_active")]
-    pub is_active: bool,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "benefactor", table_name = "benefactor_scrape_queries")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "query_text")]
+        pub query_text: String,
+        #[sea_orm(column_name = "query_hash")]
+        pub query_hash: String,
+        #[sea_orm(column_name = "benefactor_icp_slug")]
+        pub benefactor_icp_slug: Option<String>,
+        #[sea_orm(column_name = "benefactor_icp_name")]
+        pub benefactor_icp_name: Option<String>,
+        #[sea_orm(column_name = "benefactor_search_location_id")]
+        pub benefactor_search_location_id: Option<Uuid>,
+        #[sea_orm(column_name = "service_category")]
+        pub service_category: String,
+        #[sea_orm(column_name = "target_city")]
+        pub target_city: Option<String>,
+        #[sea_orm(column_name = "target_state")]
+        pub target_state: Option<String>,
+        #[sea_orm(column_name = "target_country")]
+        pub target_country: String,
+        #[sea_orm(column_name = "target_military_area")]
+        pub target_military_area: Option<String>,
+        #[sea_orm(column_name = "target_installation")]
+        pub target_installation: Option<String>,
+        #[sea_orm(column_name = "query_variant")]
+        pub query_variant: String,
+        #[sea_orm(column_name = "search_page_depth")]
+        pub search_page_depth: i32,
+        pub priority: i32,
+        #[sea_orm(column_name = "total_runs")]
+        pub total_runs: i32,
+        #[sea_orm(column_name = "total_urls_visited")]
+        pub total_urls_visited: i32,
+        #[sea_orm(column_name = "total_emails_found")]
+        pub total_emails_found: i32,
+        #[sea_orm(column_name = "total_emails_inserted")]
+        pub total_emails_inserted: i32,
+        #[sea_orm(column_name = "total_emails_duplicate")]
+        pub total_emails_duplicate: i32,
+        #[sea_orm(column_name = "total_errors")]
+        pub total_errors: i32,
+        #[sea_orm(column_name = "success_count")]
+        pub success_count: i32,
+        #[sea_orm(column_name = "failure_count")]
+        pub failure_count: i32,
+        #[sea_orm(column_name = "last_run_at")]
+        pub last_run_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_success_at")]
+        pub last_success_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_failure_at")]
+        pub last_failure_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_run_emails_found")]
+        pub last_run_emails_found: i32,
+        #[sea_orm(column_name = "last_run_emails_inserted")]
+        pub last_run_emails_inserted: i32,
+        #[sea_orm(column_name = "last_run_success")]
+        pub last_run_success: bool,
+        #[sea_orm(column_name = "last_run_duration_ms")]
+        pub last_run_duration_ms: i32,
+        #[sea_orm(column_name = "last_run_error")]
+        pub last_run_error: Option<String>,
+        #[sea_orm(column_name = "cooldown_until")]
+        pub cooldown_until: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "consecutive_zero_new_runs")]
+        pub consecutive_zero_new_runs: i32,
+        #[sea_orm(column_name = "last_zero_new_run_at")]
+        pub last_zero_new_run_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "is_active")]
+        pub is_active: bool,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_scrape_queries::Entity as BenefactorScrapeQueriesEntity;
@@ -5116,71 +4999,73 @@ pub use benefactor_scrape_queries::Model as BenefactorScrapeQueriesModel;
 pub mod benefactor_domain_search_tracking {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "benefactor", table_name = "benefactor_domain_search_tracking")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub domain: String,
-    #[sea_orm(column_name = "for_what")]
-    pub for_what: String,
-    #[sea_orm(column_name = "search_result_appearances")]
-    pub search_result_appearances: i32,
-    #[sea_orm(column_name = "queued_visit_count")]
-    pub queued_visit_count: i32,
-    #[sea_orm(column_name = "visit_count")]
-    pub visit_count: i32,
-    #[sea_orm(column_name = "good_result_count")]
-    pub good_result_count: i32,
-    #[sea_orm(column_name = "bad_result_count")]
-    pub bad_result_count: i32,
-    #[sea_orm(column_name = "email_found_count")]
-    pub email_found_count: i32,
-    #[sea_orm(column_name = "lead_inserted_count")]
-    pub lead_inserted_count: i32,
-    #[sea_orm(column_name = "last_queued_at")]
-    pub last_queued_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_visited_at")]
-    pub last_visited_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_good_result_at")]
-    pub last_good_result_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_bad_result_at")]
-    pub last_bad_result_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_email_found_at")]
-    pub last_email_found_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_lead_inserted_at")]
-    pub last_lead_inserted_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_good_url")]
-    pub last_good_url: Option<String>,
-    #[sea_orm(column_name = "last_bad_url")]
-    pub last_bad_url: Option<String>,
-    #[sea_orm(column_name = "blocked_until")]
-    pub blocked_until: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "is_permanently_blocked")]
-    pub is_permanently_blocked: bool,
-    #[sea_orm(column_name = "blocked_reason")]
-    pub blocked_reason: Option<String>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "is_active")]
-    pub is_active: bool,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(
+        schema_name = "benefactor",
+        table_name = "benefactor_domain_search_tracking"
+    )]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub domain: String,
+        #[sea_orm(column_name = "for_what")]
+        pub for_what: String,
+        #[sea_orm(column_name = "search_result_appearances")]
+        pub search_result_appearances: i32,
+        #[sea_orm(column_name = "queued_visit_count")]
+        pub queued_visit_count: i32,
+        #[sea_orm(column_name = "visit_count")]
+        pub visit_count: i32,
+        #[sea_orm(column_name = "good_result_count")]
+        pub good_result_count: i32,
+        #[sea_orm(column_name = "bad_result_count")]
+        pub bad_result_count: i32,
+        #[sea_orm(column_name = "email_found_count")]
+        pub email_found_count: i32,
+        #[sea_orm(column_name = "lead_inserted_count")]
+        pub lead_inserted_count: i32,
+        #[sea_orm(column_name = "last_queued_at")]
+        pub last_queued_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_visited_at")]
+        pub last_visited_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_good_result_at")]
+        pub last_good_result_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_bad_result_at")]
+        pub last_bad_result_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_email_found_at")]
+        pub last_email_found_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_lead_inserted_at")]
+        pub last_lead_inserted_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_good_url")]
+        pub last_good_url: Option<String>,
+        #[sea_orm(column_name = "last_bad_url")]
+        pub last_bad_url: Option<String>,
+        #[sea_orm(column_name = "blocked_until")]
+        pub blocked_until: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "is_permanently_blocked")]
+        pub is_permanently_blocked: bool,
+        #[sea_orm(column_name = "blocked_reason")]
+        pub blocked_reason: Option<String>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "is_active")]
+        pub is_active: bool,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_domain_search_tracking::Entity as BenefactorDomainSearchTrackingEntity;
@@ -5189,57 +5074,56 @@ pub use benefactor_domain_search_tracking::Model as BenefactorDomainSearchTracki
 pub mod benefactor_icps {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "benefactor", table_name = "benefactor_icps")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub slug: String,
-    pub name: String,
-    pub category: String,
-    #[sea_orm(column_name = "service_category")]
-    pub service_category: String,
-    pub description: String,
-    #[sea_orm(column_name = "outcall_fit_score")]
-    pub outcall_fit_score: i32,
-    pub priority: i32,
-    #[sea_orm(column_name = "search_terms")]
-    pub search_terms: Json,
-    #[sea_orm(column_name = "search_signals")]
-    pub search_signals: Json,
-    #[sea_orm(column_name = "target_home_services")]
-    pub target_home_services: bool,
-    #[sea_orm(column_name = "target_medical")]
-    pub target_medical: bool,
-    #[sea_orm(column_name = "target_legal")]
-    pub target_legal: bool,
-    #[sea_orm(column_name = "target_events")]
-    pub target_events: bool,
-    #[sea_orm(column_name = "target_corporate")]
-    pub target_corporate: bool,
-    #[sea_orm(column_name = "target_industrial")]
-    pub target_industrial: bool,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "is_active")]
-    pub is_active: bool,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "benefactor", table_name = "benefactor_icps")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub slug: String,
+        pub name: String,
+        pub category: String,
+        #[sea_orm(column_name = "service_category")]
+        pub service_category: String,
+        pub description: String,
+        #[sea_orm(column_name = "outcall_fit_score")]
+        pub outcall_fit_score: i32,
+        pub priority: i32,
+        #[sea_orm(column_name = "search_terms")]
+        pub search_terms: Json,
+        #[sea_orm(column_name = "search_signals")]
+        pub search_signals: Json,
+        #[sea_orm(column_name = "target_home_services")]
+        pub target_home_services: bool,
+        #[sea_orm(column_name = "target_medical")]
+        pub target_medical: bool,
+        #[sea_orm(column_name = "target_legal")]
+        pub target_legal: bool,
+        #[sea_orm(column_name = "target_events")]
+        pub target_events: bool,
+        #[sea_orm(column_name = "target_corporate")]
+        pub target_corporate: bool,
+        #[sea_orm(column_name = "target_industrial")]
+        pub target_industrial: bool,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "is_active")]
+        pub is_active: bool,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_icps::Entity as BenefactorIcpsEntity;
@@ -5248,47 +5132,46 @@ pub use benefactor_icps::Model as BenefactorIcpsModel;
 pub mod benefactor_leads_throttling {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "benefactor", table_name = "benefactor_leads_throttling")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "benefactor_lead_id")]
-    pub benefactor_lead_id: Option<Uuid>,
-    pub email: String,
-    #[sea_orm(column_name = "request_type")]
-    pub request_type: String,
-    #[sea_orm(column_name = "last_request_at")]
-    pub last_request_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "next_allowed_at")]
-    pub next_allowed_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "request_count")]
-    pub request_count: i32,
-    #[sea_orm(column_name = "throttle_window_days")]
-    pub throttle_window_days: i32,
-    #[sea_orm(column_name = "last_request_source")]
-    pub last_request_source: Option<String>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "is_active")]
-    pub is_active: bool,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "benefactor", table_name = "benefactor_leads_throttling")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "benefactor_lead_id")]
+        pub benefactor_lead_id: Option<Uuid>,
+        pub email: String,
+        #[sea_orm(column_name = "request_type")]
+        pub request_type: String,
+        #[sea_orm(column_name = "last_request_at")]
+        pub last_request_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "next_allowed_at")]
+        pub next_allowed_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "request_count")]
+        pub request_count: i32,
+        #[sea_orm(column_name = "throttle_window_days")]
+        pub throttle_window_days: i32,
+        #[sea_orm(column_name = "last_request_source")]
+        pub last_request_source: Option<String>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "is_active")]
+        pub is_active: bool,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_leads_throttling::Entity as BenefactorLeadsThrottlingEntity;
@@ -5297,58 +5180,57 @@ pub use benefactor_leads_throttling::Model as BenefactorLeadsThrottlingModel;
 pub mod benefactor_leads_reminders {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "benefactor", table_name = "benefactor_leads_reminders")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "benefactor_lead_id")]
-    pub benefactor_lead_id: Option<Uuid>,
-    #[sea_orm(column_name = "reminder_type")]
-    pub reminder_type: String,
-    pub channel: String,
-    pub email: String,
-    #[sea_orm(column_name = "first_name")]
-    pub first_name: Option<String>,
-    #[sea_orm(column_name = "last_name")]
-    pub last_name: Option<String>,
-    pub subject: Option<String>,
-    #[sea_orm(column_name = "original_request_sent_at")]
-    pub original_request_sent_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "original_request_message_id")]
-    pub original_request_message_id: Option<String>,
-    #[sea_orm(column_name = "sent_at")]
-    pub sent_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "last_reminder_sent_at")]
-    pub last_reminder_sent_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "reminder_count")]
-    pub reminder_count: i32,
-    #[sea_orm(column_name = "last_reminder_message_id")]
-    pub last_reminder_message_id: Option<String>,
-    #[sea_orm(column_name = "message_id")]
-    pub message_id: Option<String>,
-    pub tags: Json,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "is_active")]
-    pub is_active: bool,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "benefactor", table_name = "benefactor_leads_reminders")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "benefactor_lead_id")]
+        pub benefactor_lead_id: Option<Uuid>,
+        #[sea_orm(column_name = "reminder_type")]
+        pub reminder_type: String,
+        pub channel: String,
+        pub email: String,
+        #[sea_orm(column_name = "first_name")]
+        pub first_name: Option<String>,
+        #[sea_orm(column_name = "last_name")]
+        pub last_name: Option<String>,
+        pub subject: Option<String>,
+        #[sea_orm(column_name = "original_request_sent_at")]
+        pub original_request_sent_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "original_request_message_id")]
+        pub original_request_message_id: Option<String>,
+        #[sea_orm(column_name = "sent_at")]
+        pub sent_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "last_reminder_sent_at")]
+        pub last_reminder_sent_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "reminder_count")]
+        pub reminder_count: i32,
+        #[sea_orm(column_name = "last_reminder_message_id")]
+        pub last_reminder_message_id: Option<String>,
+        #[sea_orm(column_name = "message_id")]
+        pub message_id: Option<String>,
+        pub tags: Json,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "is_active")]
+        pub is_active: bool,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use benefactor_leads_reminders::Entity as BenefactorLeadsRemindersEntity;
@@ -5357,52 +5239,51 @@ pub use benefactor_leads_reminders::Model as BenefactorLeadsRemindersModel;
 pub mod vcs_repositories {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "vcs_repositories")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub slug: String,
-    #[sea_orm(column_name = "display_name")]
-    pub display_name: String,
-    #[sea_orm(column_name = "vcs_kind")]
-    pub vcs_kind: String,
-    #[sea_orm(column_name = "remote_url")]
-    pub remote_url: String,
-    #[sea_orm(column_name = "default_branch")]
-    pub default_branch: String,
-    #[sea_orm(column_name = "mirror_path")]
-    pub mirror_path: Option<String>,
-    #[sea_orm(column_name = "mirror_status")]
-    pub mirror_status: String,
-    pub visibility: String,
-    #[sea_orm(column_name = "last_synced_at")]
-    pub last_synced_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "last_error")]
-    pub last_error: Option<String>,
-    #[sea_orm(column_name = "size_bytes")]
-    pub size_bytes: i64,
-    #[sea_orm(column_name = "ref_count")]
-    pub ref_count: i32,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "is_soft_deleted")]
-    pub is_soft_deleted: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: Option<Uuid>,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "vcs_repositories")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub slug: String,
+        #[sea_orm(column_name = "display_name")]
+        pub display_name: String,
+        #[sea_orm(column_name = "vcs_kind")]
+        pub vcs_kind: String,
+        #[sea_orm(column_name = "remote_url")]
+        pub remote_url: String,
+        #[sea_orm(column_name = "default_branch")]
+        pub default_branch: String,
+        #[sea_orm(column_name = "mirror_path")]
+        pub mirror_path: Option<String>,
+        #[sea_orm(column_name = "mirror_status")]
+        pub mirror_status: String,
+        pub visibility: String,
+        #[sea_orm(column_name = "last_synced_at")]
+        pub last_synced_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "last_error")]
+        pub last_error: Option<String>,
+        #[sea_orm(column_name = "size_bytes")]
+        pub size_bytes: i64,
+        #[sea_orm(column_name = "ref_count")]
+        pub ref_count: i32,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "is_soft_deleted")]
+        pub is_soft_deleted: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: Option<Uuid>,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use vcs_repositories::Entity as VcsRepositoriesEntity;
@@ -5411,34 +5292,33 @@ pub use vcs_repositories::Model as VcsRepositoriesModel;
 pub mod vcs_refs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "vcs_refs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "repository_id")]
-    pub repository_id: Uuid,
-    #[sea_orm(column_name = "ref_name")]
-    pub ref_name: String,
-    #[sea_orm(column_name = "ref_type")]
-    pub ref_type: String,
-    #[sea_orm(column_name = "target_revision")]
-    pub target_revision: String,
-    #[sea_orm(column_name = "is_default")]
-    pub is_default: bool,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "vcs_refs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "repository_id")]
+        pub repository_id: Uuid,
+        #[sea_orm(column_name = "ref_name")]
+        pub ref_name: String,
+        #[sea_orm(column_name = "ref_type")]
+        pub ref_type: String,
+        #[sea_orm(column_name = "target_revision")]
+        pub target_revision: String,
+        #[sea_orm(column_name = "is_default")]
+        pub is_default: bool,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use vcs_refs::Entity as VcsRefsEntity;
@@ -5447,37 +5327,36 @@ pub use vcs_refs::Model as VcsRefsModel;
 pub mod vcs_operations {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "vcs_operations")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "repository_id")]
-    pub repository_id: Option<Uuid>,
-    #[sea_orm(column_name = "vcs_kind")]
-    pub vcs_kind: String,
-    #[sea_orm(column_name = "op_type")]
-    pub op_type: String,
-    pub status: String,
-    pub params: Json,
-    #[sea_orm(column_name = "result_summary")]
-    pub result_summary: Json,
-    pub error: Option<String>,
-    #[sea_orm(column_name = "duration_ms")]
-    pub duration_ms: Option<i32>,
-    #[sea_orm(column_name = "requested_by")]
-    pub requested_by: Option<String>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "vcs_operations")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "repository_id")]
+        pub repository_id: Option<Uuid>,
+        #[sea_orm(column_name = "vcs_kind")]
+        pub vcs_kind: String,
+        #[sea_orm(column_name = "op_type")]
+        pub op_type: String,
+        pub status: String,
+        pub params: Json,
+        #[sea_orm(column_name = "result_summary")]
+        pub result_summary: Json,
+        pub error: Option<String>,
+        #[sea_orm(column_name = "duration_ms")]
+        pub duration_ms: Option<i32>,
+        #[sea_orm(column_name = "requested_by")]
+        pub requested_by: Option<String>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use vcs_operations::Entity as VcsOperationsEntity;
@@ -5486,30 +5365,29 @@ pub use vcs_operations::Model as VcsOperationsModel;
 pub mod agents {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "ai_agent_bridge", table_name = "agents")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "agent_key")]
-    pub agent_key: String,
-    #[sea_orm(column_name = "display_name")]
-    pub display_name: String,
-    pub kind: String,
-    pub host: Option<String>,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "ai_agent_bridge", table_name = "agents")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "agent_key")]
+        pub agent_key: String,
+        #[sea_orm(column_name = "display_name")]
+        pub display_name: String,
+        pub kind: String,
+        pub host: Option<String>,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use agents::Entity as AgentsEntity;
@@ -5518,36 +5396,35 @@ pub use agents::Model as AgentsModel;
 pub mod channels {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "ai_agent_bridge", table_name = "channels")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub slug: String,
-    pub topic: String,
-    #[sea_orm(column_name = "topic_summary")]
-    pub topic_summary: Option<String>,
-    #[sea_orm(column_name = "embedding_model")]
-    pub embedding_model: String,
-    pub embedding: Json,
-    #[sea_orm(column_name = "embedding_dimensions")]
-    pub embedding_dimensions: i32,
-    pub status: String,
-    #[sea_orm(column_name = "created_by")]
-    pub created_by: String,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "ai_agent_bridge", table_name = "channels")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub slug: String,
+        pub topic: String,
+        #[sea_orm(column_name = "topic_summary")]
+        pub topic_summary: Option<String>,
+        #[sea_orm(column_name = "embedding_model")]
+        pub embedding_model: String,
+        pub embedding: Json,
+        #[sea_orm(column_name = "embedding_dimensions")]
+        pub embedding_dimensions: i32,
+        pub status: String,
+        #[sea_orm(column_name = "created_by")]
+        pub created_by: String,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use channels::Entity as ChannelsEntity;
@@ -5556,31 +5433,30 @@ pub use channels::Model as ChannelsModel;
 pub mod messages {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "ai_agent_bridge", table_name = "messages")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "channel_slug")]
-    pub channel_slug: String,
-    #[sea_orm(column_name = "channel_id")]
-    pub channel_id: Option<Uuid>,
-    pub seq: i64,
-    #[sea_orm(column_name = "from_agent_key")]
-    pub from_agent_key: String,
-    pub role: String,
-    pub content: String,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "ai_agent_bridge", table_name = "messages")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "channel_slug")]
+        pub channel_slug: String,
+        #[sea_orm(column_name = "channel_id")]
+        pub channel_id: Option<Uuid>,
+        pub seq: i64,
+        #[sea_orm(column_name = "from_agent_key")]
+        pub from_agent_key: String,
+        pub role: String,
+        pub content: String,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use messages::Entity as MessagesEntity;
@@ -5589,31 +5465,30 @@ pub use messages::Model as MessagesModel;
 pub mod channel_members {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "ai_agent_bridge", table_name = "channel_members")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "channel_slug")]
-    pub channel_slug: String,
-    #[sea_orm(column_name = "channel_id")]
-    pub channel_id: Option<Uuid>,
-    #[sea_orm(column_name = "agent_key")]
-    pub agent_key: String,
-    pub role: String,
-    #[sea_orm(column_name = "joined_at")]
-    pub joined_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "last_seen_at")]
-    pub last_seen_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "meta_data")]
-    pub meta_data: Json,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "ai_agent_bridge", table_name = "channel_members")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "channel_slug")]
+        pub channel_slug: String,
+        #[sea_orm(column_name = "channel_id")]
+        pub channel_id: Option<Uuid>,
+        #[sea_orm(column_name = "agent_key")]
+        pub agent_key: String,
+        pub role: String,
+        #[sea_orm(column_name = "joined_at")]
+        pub joined_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "last_seen_at")]
+        pub last_seen_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "meta_data")]
+        pub meta_data: Json,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use channel_members::Entity as ChannelMembersEntity;
@@ -5622,32 +5497,31 @@ pub use channel_members::Model as ChannelMembersModel;
 pub mod shared_context {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "ai_agent_bridge", table_name = "shared_context")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "channel_slug")]
-    pub channel_slug: Option<String>,
-    #[sea_orm(column_name = "channel_id")]
-    pub channel_id: Option<Uuid>,
-    #[sea_orm(column_name = "ctx_key")]
-    pub ctx_key: String,
-    pub value: Json,
-    pub version: i32,
-    #[sea_orm(column_name = "updated_by")]
-    pub updated_by: String,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "ai_agent_bridge", table_name = "shared_context")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "channel_slug")]
+        pub channel_slug: Option<String>,
+        #[sea_orm(column_name = "channel_id")]
+        pub channel_id: Option<Uuid>,
+        #[sea_orm(column_name = "ctx_key")]
+        pub ctx_key: String,
+        pub value: Json,
+        pub version: i32,
+        #[sea_orm(column_name = "updated_by")]
+        pub updated_by: String,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use shared_context::Entity as SharedContextEntity;
@@ -5656,20 +5530,19 @@ pub use shared_context::Model as SharedContextModel;
 pub mod sync_clock {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "fiducia", table_name = "sync_clock")]
-pub struct Model {
-    #[sea_orm(primary_key)]
-    pub singleton: bool,
-    #[sea_orm(column_name = "last_sequence")]
-    pub last_sequence: i64,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "fiducia", table_name = "sync_clock")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub singleton: bool,
+        #[sea_orm(column_name = "last_sequence")]
+        pub last_sequence: i64,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use sync_clock::Entity as SyncClockEntity;
@@ -5678,30 +5551,29 @@ pub use sync_clock::Model as SyncClockModel;
 pub mod sync_tombstones {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "fiducia", table_name = "sync_tombstones")]
-pub struct Model {
-    #[sea_orm(primary_key)]
-    pub sequence: i64,
-    #[sea_orm(column_name = "table_name")]
-    pub table_name: String,
-    #[sea_orm(column_name = "row_id")]
-    pub row_id: String,
-    #[sea_orm(column_name = "tenant_id")]
-    pub tenant_id: Option<Uuid>,
-    #[sea_orm(column_name = "owner_user_id")]
-    pub owner_user_id: Option<Uuid>,
-    #[sea_orm(column_name = "row_version")]
-    pub row_version: i64,
-    #[sea_orm(column_name = "deleted_at")]
-    pub deleted_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "fiducia", table_name = "sync_tombstones")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub sequence: i64,
+        #[sea_orm(column_name = "table_name")]
+        pub table_name: String,
+        #[sea_orm(column_name = "row_id")]
+        pub row_id: String,
+        #[sea_orm(column_name = "tenant_id")]
+        pub tenant_id: Option<Uuid>,
+        #[sea_orm(column_name = "owner_user_id")]
+        pub owner_user_id: Option<Uuid>,
+        #[sea_orm(column_name = "row_version")]
+        pub row_version: i64,
+        #[sea_orm(column_name = "deleted_at")]
+        pub deleted_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use sync_tombstones::Entity as SyncTombstonesEntity;
@@ -5710,27 +5582,26 @@ pub use sync_tombstones::Model as SyncTombstonesModel;
 pub mod orgs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "fiducia", table_name = "orgs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub slug: String,
-    pub name: String,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    pub version: i64,
-    #[sea_orm(column_name = "sync_sequence")]
-    pub sync_sequence: i64,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "fiducia", table_name = "orgs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub slug: String,
+        pub name: String,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        pub version: i64,
+        #[sea_orm(column_name = "sync_sequence")]
+        pub sync_sequence: i64,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use orgs::Entity as OrgsEntity;
@@ -5739,29 +5610,28 @@ pub use orgs::Model as OrgsModel;
 pub mod projects {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "fiducia", table_name = "projects")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "org_id")]
-    pub org_id: Uuid,
-    pub slug: String,
-    pub name: String,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    pub version: i64,
-    #[sea_orm(column_name = "sync_sequence")]
-    pub sync_sequence: i64,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "fiducia", table_name = "projects")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "org_id")]
+        pub org_id: Uuid,
+        pub slug: String,
+        pub name: String,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        pub version: i64,
+        #[sea_orm(column_name = "sync_sequence")]
+        pub sync_sequence: i64,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use projects::Entity as ProjectsEntity;
@@ -5770,23 +5640,22 @@ pub use projects::Model as ProjectsModel;
 pub mod users {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "fiducia", table_name = "users")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "supabase_user_id")]
-    pub supabase_user_id: Uuid,
-    pub email: String,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "fiducia", table_name = "users")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "supabase_user_id")]
+        pub supabase_user_id: Uuid,
+        pub email: String,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use users::Entity as UsersEntity;
@@ -5795,23 +5664,22 @@ pub use users::Model as UsersModel;
 pub mod org_members {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "fiducia", table_name = "org_members")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false, column_name = "org_id")]
-    pub org_id: Uuid,
-    #[sea_orm(primary_key, auto_increment = false, column_name = "user_id")]
-    pub user_id: Uuid,
-    pub role: String,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "fiducia", table_name = "org_members")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false, column_name = "org_id")]
+        pub org_id: Uuid,
+        #[sea_orm(primary_key, auto_increment = false, column_name = "user_id")]
+        pub user_id: Uuid,
+        pub role: String,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use org_members::Entity as OrgMembersEntity;
@@ -5820,23 +5688,22 @@ pub use org_members::Model as OrgMembersModel;
 pub mod project_members {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "fiducia", table_name = "project_members")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false, column_name = "project_id")]
-    pub project_id: Uuid,
-    #[sea_orm(primary_key, auto_increment = false, column_name = "user_id")]
-    pub user_id: Uuid,
-    pub role: String,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "fiducia", table_name = "project_members")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false, column_name = "project_id")]
+        pub project_id: Uuid,
+        #[sea_orm(primary_key, auto_increment = false, column_name = "user_id")]
+        pub user_id: Uuid,
+        pub role: String,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use project_members::Entity as ProjectMembersEntity;
@@ -5845,47 +5712,46 @@ pub use project_members::Model as ProjectMembersModel;
 pub mod api_keys {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "fiducia", table_name = "api_keys")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "key_id")]
-    pub key_id: String,
-    #[sea_orm(column_name = "org_id")]
-    pub org_id: Uuid,
-    #[sea_orm(column_name = "project_id")]
-    pub project_id: Option<Uuid>,
-    #[sea_orm(column_name = "created_by_user_id")]
-    pub created_by_user_id: Option<Uuid>,
-    pub name: String,
-    #[sea_orm(column_name = "secret_hash")]
-    pub secret_hash: String,
-    pub scopes: Json,
-    pub env: String,
-    #[sea_orm(column_name = "require_idempotency")]
-    pub require_idempotency: bool,
-    #[sea_orm(column_name = "mtls_required")]
-    pub mtls_required: bool,
-    pub revoked: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    pub version: i64,
-    #[sea_orm(column_name = "sync_sequence")]
-    pub sync_sequence: i64,
-    #[sea_orm(column_name = "last_used_at")]
-    pub last_used_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "expires_at")]
-    pub expires_at: Option<DateTimeWithTimeZone>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "fiducia", table_name = "api_keys")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "key_id")]
+        pub key_id: String,
+        #[sea_orm(column_name = "org_id")]
+        pub org_id: Uuid,
+        #[sea_orm(column_name = "project_id")]
+        pub project_id: Option<Uuid>,
+        #[sea_orm(column_name = "created_by_user_id")]
+        pub created_by_user_id: Option<Uuid>,
+        pub name: String,
+        #[sea_orm(column_name = "secret_hash")]
+        pub secret_hash: String,
+        pub scopes: Json,
+        pub env: String,
+        #[sea_orm(column_name = "require_idempotency")]
+        pub require_idempotency: bool,
+        #[sea_orm(column_name = "mtls_required")]
+        pub mtls_required: bool,
+        pub revoked: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        pub version: i64,
+        #[sea_orm(column_name = "sync_sequence")]
+        pub sync_sequence: i64,
+        #[sea_orm(column_name = "last_used_at")]
+        pub last_used_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "expires_at")]
+        pub expires_at: Option<DateTimeWithTimeZone>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use api_keys::Entity as ApiKeysEntity;
@@ -5894,38 +5760,37 @@ pub use api_keys::Model as ApiKeysModel;
 pub mod mtls_client_certs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "fiducia", table_name = "mtls_client_certs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "org_id")]
-    pub org_id: Uuid,
-    #[sea_orm(column_name = "project_id")]
-    pub project_id: Option<Uuid>,
-    pub name: String,
-    pub subject: String,
-    #[sea_orm(column_name = "sha256_fingerprint")]
-    pub sha256_fingerprint: String,
-    #[sea_orm(column_name = "not_before")]
-    pub not_before: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "not_after")]
-    pub not_after: Option<DateTimeWithTimeZone>,
-    pub revoked: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    pub version: i64,
-    #[sea_orm(column_name = "sync_sequence")]
-    pub sync_sequence: i64,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "fiducia", table_name = "mtls_client_certs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "org_id")]
+        pub org_id: Uuid,
+        #[sea_orm(column_name = "project_id")]
+        pub project_id: Option<Uuid>,
+        pub name: String,
+        pub subject: String,
+        #[sea_orm(column_name = "sha256_fingerprint")]
+        pub sha256_fingerprint: String,
+        #[sea_orm(column_name = "not_before")]
+        pub not_before: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "not_after")]
+        pub not_after: Option<DateTimeWithTimeZone>,
+        pub revoked: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        pub version: i64,
+        #[sea_orm(column_name = "sync_sequence")]
+        pub sync_sequence: i64,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use mtls_client_certs::Entity as MtlsClientCertsEntity;
@@ -5934,32 +5799,31 @@ pub use mtls_client_certs::Model as MtlsClientCertsModel;
 pub mod customer_preferences {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "fiducia", table_name = "customer_preferences")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false, column_name = "user_id")]
-    pub user_id: Uuid,
-    pub density: String,
-    pub timezone: String,
-    pub region: String,
-    #[sea_orm(column_name = "notify_key_rotation")]
-    pub notify_key_rotation: bool,
-    #[sea_orm(column_name = "notify_lock_contention")]
-    pub notify_lock_contention: bool,
-    #[sea_orm(column_name = "notify_mfa")]
-    pub notify_mfa: bool,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    pub version: i64,
-    #[sea_orm(column_name = "sync_sequence")]
-    pub sync_sequence: i64,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "fiducia", table_name = "customer_preferences")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false, column_name = "user_id")]
+        pub user_id: Uuid,
+        pub density: String,
+        pub timezone: String,
+        pub region: String,
+        #[sea_orm(column_name = "notify_key_rotation")]
+        pub notify_key_rotation: bool,
+        #[sea_orm(column_name = "notify_lock_contention")]
+        pub notify_lock_contention: bool,
+        #[sea_orm(column_name = "notify_mfa")]
+        pub notify_mfa: bool,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        pub version: i64,
+        #[sea_orm(column_name = "sync_sequence")]
+        pub sync_sequence: i64,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use customer_preferences::Entity as CustomerPreferencesEntity;
@@ -5968,30 +5832,29 @@ pub use customer_preferences::Model as CustomerPreferencesModel;
 pub mod customer_sessions {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "fiducia", table_name = "customer_sessions")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "user_id")]
-    pub user_id: Uuid,
-    pub device: String,
-    pub location: Option<String>,
-    #[sea_orm(column_name = "last_seen")]
-    pub last_seen: DateTimeWithTimeZone,
-    pub status: String,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    pub version: i64,
-    #[sea_orm(column_name = "sync_sequence")]
-    pub sync_sequence: i64,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "fiducia", table_name = "customer_sessions")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "user_id")]
+        pub user_id: Uuid,
+        pub device: String,
+        pub location: Option<String>,
+        #[sea_orm(column_name = "last_seen")]
+        pub last_seen: DateTimeWithTimeZone,
+        pub status: String,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        pub version: i64,
+        #[sea_orm(column_name = "sync_sequence")]
+        pub sync_sequence: i64,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use customer_sessions::Entity as CustomerSessionsEntity;
@@ -6000,40 +5863,39 @@ pub use customer_sessions::Model as CustomerSessionsModel;
 pub mod audit_log {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "fiducia", table_name = "audit_log")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "org_id")]
-    pub org_id: Option<Uuid>,
-    #[sea_orm(column_name = "project_id")]
-    pub project_id: Option<Uuid>,
-    #[sea_orm(column_name = "actor_user_id")]
-    pub actor_user_id: Option<Uuid>,
-    #[sea_orm(column_name = "actor_key_id")]
-    pub actor_key_id: Option<Uuid>,
-    pub actor: Option<String>,
-    pub action: String,
-    pub target: Option<String>,
-    #[sea_orm(column_name = "request_id")]
-    pub request_id: Option<String>,
-    #[sea_orm(column_name = "source_ip")]
-    pub source_ip: Option<String>,
-    #[sea_orm(column_name = "user_agent")]
-    pub user_agent: Option<String>,
-    pub meta: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "retention_expires_at")]
-    pub retention_expires_at: Option<DateTimeWithTimeZone>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "fiducia", table_name = "audit_log")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "org_id")]
+        pub org_id: Option<Uuid>,
+        #[sea_orm(column_name = "project_id")]
+        pub project_id: Option<Uuid>,
+        #[sea_orm(column_name = "actor_user_id")]
+        pub actor_user_id: Option<Uuid>,
+        #[sea_orm(column_name = "actor_key_id")]
+        pub actor_key_id: Option<Uuid>,
+        pub actor: Option<String>,
+        pub action: String,
+        pub target: Option<String>,
+        #[sea_orm(column_name = "request_id")]
+        pub request_id: Option<String>,
+        #[sea_orm(column_name = "source_ip")]
+        pub source_ip: Option<String>,
+        #[sea_orm(column_name = "user_agent")]
+        pub user_agent: Option<String>,
+        pub meta: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "retention_expires_at")]
+        pub retention_expires_at: Option<DateTimeWithTimeZone>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use audit_log::Entity as AuditLogEntity;
@@ -6042,36 +5904,35 @@ pub use audit_log::Model as AuditLogModel;
 pub mod customer_notifications {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "fiducia", table_name = "customer_notifications")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "user_id")]
-    pub user_id: Uuid,
-    #[sea_orm(column_name = "org_id")]
-    pub org_id: Option<Uuid>,
-    pub kind: String,
-    pub severity: String,
-    pub title: String,
-    pub body: String,
-    pub link: Option<String>,
-    #[sea_orm(column_name = "read_at")]
-    pub read_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    pub version: i64,
-    #[sea_orm(column_name = "sync_sequence")]
-    pub sync_sequence: i64,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "fiducia", table_name = "customer_notifications")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "user_id")]
+        pub user_id: Uuid,
+        #[sea_orm(column_name = "org_id")]
+        pub org_id: Option<Uuid>,
+        pub kind: String,
+        pub severity: String,
+        pub title: String,
+        pub body: String,
+        pub link: Option<String>,
+        #[sea_orm(column_name = "read_at")]
+        pub read_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        pub version: i64,
+        #[sea_orm(column_name = "sync_sequence")]
+        pub sync_sequence: i64,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use customer_notifications::Entity as CustomerNotificationsEntity;
@@ -6080,24 +5941,23 @@ pub use customer_notifications::Model as CustomerNotificationsModel;
 pub mod sync_idempotency_keys {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "fiducia", table_name = "sync_idempotency_keys")]
-pub struct Model {
-    #[sea_orm(primary_key)]
-    pub key: String,
-    #[sea_orm(column_name = "request_fingerprint")]
-    pub request_fingerprint: String,
-    #[sea_orm(column_name = "committed_version")]
-    pub committed_version: Option<i64>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "fiducia", table_name = "sync_idempotency_keys")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub key: String,
+        #[sea_orm(column_name = "request_fingerprint")]
+        pub request_fingerprint: String,
+        #[sea_orm(column_name = "committed_version")]
+        pub committed_version: Option<i64>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use sync_idempotency_keys::Entity as SyncIdempotencyKeysEntity;
@@ -6106,28 +5966,27 @@ pub use sync_idempotency_keys::Model as SyncIdempotencyKeysModel;
 pub mod billing_customers {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "fiducia", table_name = "billing_customers")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "org_id")]
-    pub org_id: Uuid,
-    pub provider: String,
-    #[sea_orm(column_name = "provider_customer_id")]
-    pub provider_customer_id: String,
-    pub email: Option<String>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "fiducia", table_name = "billing_customers")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "org_id")]
+        pub org_id: Uuid,
+        pub provider: String,
+        #[sea_orm(column_name = "provider_customer_id")]
+        pub provider_customer_id: String,
+        pub email: Option<String>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use billing_customers::Entity as BillingCustomersEntity;
@@ -6136,38 +5995,37 @@ pub use billing_customers::Model as BillingCustomersModel;
 pub mod payment_methods {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "fiducia", table_name = "payment_methods")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "org_id")]
-    pub org_id: Uuid,
-    #[sea_orm(column_name = "billing_customer_id")]
-    pub billing_customer_id: Uuid,
-    pub provider: String,
-    #[sea_orm(column_name = "provider_payment_method_id")]
-    pub provider_payment_method_id: String,
-    pub kind: String,
-    pub brand: Option<String>,
-    pub last4: Option<String>,
-    #[sea_orm(column_name = "exp_month")]
-    pub exp_month: Option<i16>,
-    #[sea_orm(column_name = "exp_year")]
-    pub exp_year: Option<i16>,
-    #[sea_orm(column_name = "is_default")]
-    pub is_default: bool,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "fiducia", table_name = "payment_methods")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "org_id")]
+        pub org_id: Uuid,
+        #[sea_orm(column_name = "billing_customer_id")]
+        pub billing_customer_id: Uuid,
+        pub provider: String,
+        #[sea_orm(column_name = "provider_payment_method_id")]
+        pub provider_payment_method_id: String,
+        pub kind: String,
+        pub brand: Option<String>,
+        pub last4: Option<String>,
+        #[sea_orm(column_name = "exp_month")]
+        pub exp_month: Option<i16>,
+        #[sea_orm(column_name = "exp_year")]
+        pub exp_year: Option<i16>,
+        #[sea_orm(column_name = "is_default")]
+        pub is_default: bool,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use payment_methods::Entity as PaymentMethodsEntity;
@@ -6176,39 +6034,38 @@ pub use payment_methods::Model as PaymentMethodsModel;
 pub mod billing_subscriptions {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "fiducia", table_name = "billing_subscriptions")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "org_id")]
-    pub org_id: Uuid,
-    #[sea_orm(column_name = "billing_customer_id")]
-    pub billing_customer_id: Uuid,
-    pub provider: String,
-    #[sea_orm(column_name = "provider_subscription_id")]
-    pub provider_subscription_id: String,
-    pub plan: String,
-    pub status: String,
-    #[sea_orm(column_name = "current_period_start")]
-    pub current_period_start: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "current_period_end")]
-    pub current_period_end: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "cancel_at_period_end")]
-    pub cancel_at_period_end: bool,
-    #[sea_orm(column_name = "canceled_at")]
-    pub canceled_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "fiducia", table_name = "billing_subscriptions")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "org_id")]
+        pub org_id: Uuid,
+        #[sea_orm(column_name = "billing_customer_id")]
+        pub billing_customer_id: Uuid,
+        pub provider: String,
+        #[sea_orm(column_name = "provider_subscription_id")]
+        pub provider_subscription_id: String,
+        pub plan: String,
+        pub status: String,
+        #[sea_orm(column_name = "current_period_start")]
+        pub current_period_start: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "current_period_end")]
+        pub current_period_end: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "cancel_at_period_end")]
+        pub cancel_at_period_end: bool,
+        #[sea_orm(column_name = "canceled_at")]
+        pub canceled_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use billing_subscriptions::Entity as BillingSubscriptionsEntity;
@@ -6217,43 +6074,42 @@ pub use billing_subscriptions::Model as BillingSubscriptionsModel;
 pub mod invoices {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "fiducia", table_name = "invoices")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "org_id")]
-    pub org_id: Uuid,
-    #[sea_orm(column_name = "billing_customer_id")]
-    pub billing_customer_id: Option<Uuid>,
-    #[sea_orm(column_name = "subscription_id")]
-    pub subscription_id: Option<Uuid>,
-    pub provider: String,
-    #[sea_orm(column_name = "provider_invoice_id")]
-    pub provider_invoice_id: String,
-    pub status: String,
-    #[sea_orm(column_name = "amount_due_cents")]
-    pub amount_due_cents: i64,
-    #[sea_orm(column_name = "amount_paid_cents")]
-    pub amount_paid_cents: i64,
-    pub currency: String,
-    #[sea_orm(column_name = "period_start")]
-    pub period_start: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "period_end")]
-    pub period_end: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "hosted_invoice_url")]
-    pub hosted_invoice_url: Option<String>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "fiducia", table_name = "invoices")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "org_id")]
+        pub org_id: Uuid,
+        #[sea_orm(column_name = "billing_customer_id")]
+        pub billing_customer_id: Option<Uuid>,
+        #[sea_orm(column_name = "subscription_id")]
+        pub subscription_id: Option<Uuid>,
+        pub provider: String,
+        #[sea_orm(column_name = "provider_invoice_id")]
+        pub provider_invoice_id: String,
+        pub status: String,
+        #[sea_orm(column_name = "amount_due_cents")]
+        pub amount_due_cents: i64,
+        #[sea_orm(column_name = "amount_paid_cents")]
+        pub amount_paid_cents: i64,
+        pub currency: String,
+        #[sea_orm(column_name = "period_start")]
+        pub period_start: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "period_end")]
+        pub period_end: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "hosted_invoice_url")]
+        pub hosted_invoice_url: Option<String>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use invoices::Entity as InvoicesEntity;
@@ -6262,37 +6118,36 @@ pub use invoices::Model as InvoicesModel;
 pub mod payments {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "fiducia", table_name = "payments")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "org_id")]
-    pub org_id: Uuid,
-    #[sea_orm(column_name = "invoice_id")]
-    pub invoice_id: Option<Uuid>,
-    #[sea_orm(column_name = "payment_method_id")]
-    pub payment_method_id: Option<Uuid>,
-    pub provider: String,
-    #[sea_orm(column_name = "provider_payment_id")]
-    pub provider_payment_id: String,
-    pub status: String,
-    #[sea_orm(column_name = "amount_cents")]
-    pub amount_cents: i64,
-    pub currency: String,
-    #[sea_orm(column_name = "failure_code")]
-    pub failure_code: Option<String>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "fiducia", table_name = "payments")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "org_id")]
+        pub org_id: Uuid,
+        #[sea_orm(column_name = "invoice_id")]
+        pub invoice_id: Option<Uuid>,
+        #[sea_orm(column_name = "payment_method_id")]
+        pub payment_method_id: Option<Uuid>,
+        pub provider: String,
+        #[sea_orm(column_name = "provider_payment_id")]
+        pub provider_payment_id: String,
+        pub status: String,
+        #[sea_orm(column_name = "amount_cents")]
+        pub amount_cents: i64,
+        pub currency: String,
+        #[sea_orm(column_name = "failure_code")]
+        pub failure_code: Option<String>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use payments::Entity as PaymentsEntity;
@@ -6301,33 +6156,32 @@ pub use payments::Model as PaymentsModel;
 pub mod billing_webhook_events {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "fiducia", table_name = "billing_webhook_events")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub provider: String,
-    #[sea_orm(column_name = "provider_event_id")]
-    pub provider_event_id: String,
-    #[sea_orm(column_name = "event_type")]
-    pub event_type: String,
-    #[sea_orm(column_name = "signature_verified")]
-    pub signature_verified: bool,
-    #[sea_orm(column_name = "payload_sha256")]
-    pub payload_sha256: String,
-    #[sea_orm(column_name = "received_at")]
-    pub received_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "processed_at")]
-    pub processed_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "process_error")]
-    pub process_error: Option<String>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "fiducia", table_name = "billing_webhook_events")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub provider: String,
+        #[sea_orm(column_name = "provider_event_id")]
+        pub provider_event_id: String,
+        #[sea_orm(column_name = "event_type")]
+        pub event_type: String,
+        #[sea_orm(column_name = "signature_verified")]
+        pub signature_verified: bool,
+        #[sea_orm(column_name = "payload_sha256")]
+        pub payload_sha256: String,
+        #[sea_orm(column_name = "received_at")]
+        pub received_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "processed_at")]
+        pub processed_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "process_error")]
+        pub process_error: Option<String>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use billing_webhook_events::Entity as BillingWebhookEventsEntity;
@@ -6336,29 +6190,28 @@ pub use billing_webhook_events::Model as BillingWebhookEventsModel;
 pub mod transcriptions {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "t2v", table_name = "transcriptions")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub source: String,
-    pub provider: String,
-    pub model: String,
-    pub text: String,
-    pub language: Option<String>,
-    #[sea_orm(column_name = "sample_rate")]
-    pub sample_rate: Option<i32>,
-    #[sea_orm(column_name = "duration_ms")]
-    pub duration_ms: Option<i64>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "t2v", table_name = "transcriptions")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub source: String,
+        pub provider: String,
+        pub model: String,
+        pub text: String,
+        pub language: Option<String>,
+        #[sea_orm(column_name = "sample_rate")]
+        pub sample_rate: Option<i32>,
+        #[sea_orm(column_name = "duration_ms")]
+        pub duration_ms: Option<i64>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use transcriptions::Entity as TranscriptionsEntity;
@@ -6367,27 +6220,26 @@ pub use transcriptions::Model as TranscriptionsModel;
 pub mod syntheses {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "t2v", table_name = "syntheses")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    pub text: String,
-    pub voice: String,
-    pub provider: String,
-    pub model: String,
-    pub format: String,
-    #[sea_orm(column_name = "audio_bytes")]
-    pub audio_bytes: i64,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "t2v", table_name = "syntheses")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        pub text: String,
+        pub voice: String,
+        pub provider: String,
+        pub model: String,
+        pub format: String,
+        #[sea_orm(column_name = "audio_bytes")]
+        pub audio_bytes: i64,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use syntheses::Entity as SynthesesEntity;
@@ -6396,32 +6248,31 @@ pub use syntheses::Model as SynthesesModel;
 pub mod translations {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "t2v", table_name = "translations")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "source_text")]
-    pub source_text: String,
-    #[sea_orm(column_name = "translated_text")]
-    pub translated_text: String,
-    #[sea_orm(column_name = "source_lang")]
-    pub source_lang: Option<String>,
-    #[sea_orm(column_name = "target_lang")]
-    pub target_lang: String,
-    pub provider: String,
-    pub model: String,
-    #[sea_orm(column_name = "latency_ms")]
-    pub latency_ms: i64,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "t2v", table_name = "translations")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "source_text")]
+        pub source_text: String,
+        #[sea_orm(column_name = "translated_text")]
+        pub translated_text: String,
+        #[sea_orm(column_name = "source_lang")]
+        pub source_lang: Option<String>,
+        #[sea_orm(column_name = "target_lang")]
+        pub target_lang: String,
+        pub provider: String,
+        pub model: String,
+        #[sea_orm(column_name = "latency_ms")]
+        pub latency_ms: i64,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use translations::Entity as TranslationsEntity;
@@ -6430,29 +6281,28 @@ pub use translations::Model as TranslationsModel;
 pub mod vapi_calls {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "t2v", table_name = "vapi_calls")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "vapi_call_id")]
-    pub vapi_call_id: String,
-    pub status: String,
-    #[sea_orm(column_name = "ended_reason")]
-    pub ended_reason: Option<String>,
-    pub transcript: Option<String>,
-    pub summary: Option<String>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "t2v", table_name = "vapi_calls")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "vapi_call_id")]
+        pub vapi_call_id: String,
+        pub status: String,
+        #[sea_orm(column_name = "ended_reason")]
+        pub ended_reason: Option<String>,
+        pub transcript: Option<String>,
+        pub summary: Option<String>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use vapi_calls::Entity as VapiCallsEntity;
@@ -6461,25 +6311,24 @@ pub use vapi_calls::Model as VapiCallsModel;
 pub mod vapi_events {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "t2v", table_name = "vapi_events")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "vapi_call_id")]
-    pub vapi_call_id: Option<String>,
-    #[sea_orm(column_name = "event_type")]
-    pub event_type: String,
-    pub payload: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "t2v", table_name = "vapi_events")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "vapi_call_id")]
+        pub vapi_call_id: Option<String>,
+        #[sea_orm(column_name = "event_type")]
+        pub event_type: String,
+        pub payload: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use vapi_events::Entity as VapiEventsEntity;
@@ -6488,30 +6337,29 @@ pub use vapi_events::Model as VapiEventsModel;
 pub mod fab_plans {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "daedalus", table_name = "fab_plans")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "owner_email")]
-    pub owner_email: String,
-    pub title: String,
-    pub goal: String,
-    #[sea_orm(column_name = "process_family")]
-    pub process_family: String,
-    pub status: String,
-    pub document: Option<Json>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "daedalus", table_name = "fab_plans")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "owner_email")]
+        pub owner_email: String,
+        pub title: String,
+        pub goal: String,
+        #[sea_orm(column_name = "process_family")]
+        pub process_family: String,
+        pub status: String,
+        pub document: Option<Json>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use fab_plans::Entity as FabPlansEntity;
@@ -6520,31 +6368,30 @@ pub use fab_plans::Model as FabPlansModel;
 pub mod fab_designs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "daedalus", table_name = "fab_designs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "plan_id")]
-    pub plan_id: Uuid,
-    pub filename: String,
-    pub format: String,
-    #[sea_orm(column_name = "storage_uri")]
-    pub storage_uri: String,
-    #[sea_orm(column_name = "size_bytes")]
-    pub size_bytes: i64,
-    #[sea_orm(column_name = "content_hash")]
-    pub content_hash: Option<String>,
-    pub geometry: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "daedalus", table_name = "fab_designs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "plan_id")]
+        pub plan_id: Uuid,
+        pub filename: String,
+        pub format: String,
+        #[sea_orm(column_name = "storage_uri")]
+        pub storage_uri: String,
+        #[sea_orm(column_name = "size_bytes")]
+        pub size_bytes: i64,
+        #[sea_orm(column_name = "content_hash")]
+        pub content_hash: Option<String>,
+        pub geometry: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use fab_designs::Entity as FabDesignsEntity;
@@ -6553,36 +6400,35 @@ pub use fab_designs::Model as FabDesignsModel;
 pub mod fab_instructions {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "daedalus", table_name = "fab_instructions")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "plan_id")]
-    pub plan_id: Uuid,
-    pub revision: i32,
-    #[sea_orm(column_name = "machine_profile")]
-    pub machine_profile: String,
-    pub dialect: String,
-    #[sea_orm(column_name = "storage_uri")]
-    pub storage_uri: String,
-    #[sea_orm(column_name = "content_hash")]
-    pub content_hash: Option<String>,
-    pub validated: bool,
-    pub validation: Json,
-    #[sea_orm(column_name = "released_by_email")]
-    pub released_by_email: Option<String>,
-    #[sea_orm(column_name = "released_at")]
-    pub released_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "daedalus", table_name = "fab_instructions")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "plan_id")]
+        pub plan_id: Uuid,
+        pub revision: i32,
+        #[sea_orm(column_name = "machine_profile")]
+        pub machine_profile: String,
+        pub dialect: String,
+        #[sea_orm(column_name = "storage_uri")]
+        pub storage_uri: String,
+        #[sea_orm(column_name = "content_hash")]
+        pub content_hash: Option<String>,
+        pub validated: bool,
+        pub validation: Json,
+        #[sea_orm(column_name = "released_by_email")]
+        pub released_by_email: Option<String>,
+        #[sea_orm(column_name = "released_at")]
+        pub released_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use fab_instructions::Entity as FabInstructionsEntity;
@@ -6591,35 +6437,34 @@ pub use fab_instructions::Model as FabInstructionsModel;
 pub mod fab_runs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "daedalus", table_name = "fab_runs")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "instructions_id")]
-    pub instructions_id: Uuid,
-    pub status: String,
-    #[sea_orm(column_name = "machine_id")]
-    pub machine_id: String,
-    #[sea_orm(column_name = "operator_email")]
-    pub operator_email: Option<String>,
-    pub progress: i16,
-    #[sea_orm(column_name = "as_built")]
-    pub as_built: Json,
-    pub error: Option<String>,
-    #[sea_orm(column_name = "started_at")]
-    pub started_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "finished_at")]
-    pub finished_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "daedalus", table_name = "fab_runs")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "instructions_id")]
+        pub instructions_id: Uuid,
+        pub status: String,
+        #[sea_orm(column_name = "machine_id")]
+        pub machine_id: String,
+        #[sea_orm(column_name = "operator_email")]
+        pub operator_email: Option<String>,
+        pub progress: i16,
+        #[sea_orm(column_name = "as_built")]
+        pub as_built: Json,
+        pub error: Option<String>,
+        #[sea_orm(column_name = "started_at")]
+        pub started_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "finished_at")]
+        pub finished_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use fab_runs::Entity as FabRunsEntity;
@@ -6628,42 +6473,41 @@ pub use fab_runs::Model as FabRunsModel;
 pub mod web_sessions {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "daedalus", table_name = "web_sessions")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub id: Uuid,
-    #[sea_orm(column_name = "token_hash")]
-    pub token_hash: String,
-    #[sea_orm(column_name = "user_id")]
-    pub user_id: Uuid,
-    #[sea_orm(column_name = "owner_email")]
-    pub owner_email: String,
-    #[sea_orm(column_name = "access_ciphertext")]
-    pub access_ciphertext: String,
-    #[sea_orm(column_name = "access_nonce")]
-    pub access_nonce: String,
-    #[sea_orm(column_name = "refresh_ciphertext")]
-    pub refresh_ciphertext: String,
-    #[sea_orm(column_name = "refresh_nonce")]
-    pub refresh_nonce: String,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "last_seen_at")]
-    pub last_seen_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "idle_expires_at")]
-    pub idle_expires_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "absolute_expires_at")]
-    pub absolute_expires_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "revoked_at")]
-    pub revoked_at: Option<DateTimeWithTimeZone>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "daedalus", table_name = "web_sessions")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: Uuid,
+        #[sea_orm(column_name = "token_hash")]
+        pub token_hash: String,
+        #[sea_orm(column_name = "user_id")]
+        pub user_id: Uuid,
+        #[sea_orm(column_name = "owner_email")]
+        pub owner_email: String,
+        #[sea_orm(column_name = "access_ciphertext")]
+        pub access_ciphertext: String,
+        #[sea_orm(column_name = "access_nonce")]
+        pub access_nonce: String,
+        #[sea_orm(column_name = "refresh_ciphertext")]
+        pub refresh_ciphertext: String,
+        #[sea_orm(column_name = "refresh_nonce")]
+        pub refresh_nonce: String,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "last_seen_at")]
+        pub last_seen_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "idle_expires_at")]
+        pub idle_expires_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "absolute_expires_at")]
+        pub absolute_expires_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "revoked_at")]
+        pub revoked_at: Option<DateTimeWithTimeZone>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use web_sessions::Entity as WebSessionsEntity;
@@ -6672,32 +6516,31 @@ pub use web_sessions::Model as WebSessionsModel;
 pub mod principals {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "shared_auth", table_name = "principals")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false, column_name = "shared_user_id")]
-    pub shared_user_id: Uuid,
-    pub email: Option<String>,
-    #[sea_orm(column_name = "email_verified")]
-    pub email_verified: bool,
-    pub phone: Option<String>,
-    #[sea_orm(column_name = "display_name")]
-    pub display_name: Option<String>,
-    pub status: String,
-    pub profile: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "last_seen_at")]
-    pub last_seen_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "shared_auth", table_name = "principals")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false, column_name = "shared_user_id")]
+        pub shared_user_id: Uuid,
+        pub email: Option<String>,
+        #[sea_orm(column_name = "email_verified")]
+        pub email_verified: bool,
+        pub phone: Option<String>,
+        #[sea_orm(column_name = "display_name")]
+        pub display_name: Option<String>,
+        pub status: String,
+        pub profile: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "last_seen_at")]
+        pub last_seen_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use principals::Entity as PrincipalsEntity;
@@ -6706,35 +6549,38 @@ pub use principals::Model as PrincipalsModel;
 pub mod provider_identities {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "shared_auth", table_name = "provider_identities")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false, column_name = "provider_identity_id")]
-    pub provider_identity_id: Uuid,
-    #[sea_orm(column_name = "shared_user_id")]
-    pub shared_user_id: Uuid,
-    pub provider: String,
-    #[sea_orm(column_name = "provider_tenant")]
-    pub provider_tenant: String,
-    #[sea_orm(column_name = "provider_subject")]
-    pub provider_subject: String,
-    pub email: Option<String>,
-    #[sea_orm(column_name = "email_verified")]
-    pub email_verified: bool,
-    pub metadata: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "last_seen_at")]
-    pub last_seen_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "shared_auth", table_name = "provider_identities")]
+    pub struct Model {
+        #[sea_orm(
+            primary_key,
+            auto_increment = false,
+            column_name = "provider_identity_id"
+        )]
+        pub provider_identity_id: Uuid,
+        #[sea_orm(column_name = "shared_user_id")]
+        pub shared_user_id: Uuid,
+        pub provider: String,
+        #[sea_orm(column_name = "provider_tenant")]
+        pub provider_tenant: String,
+        #[sea_orm(column_name = "provider_subject")]
+        pub provider_subject: String,
+        pub email: Option<String>,
+        #[sea_orm(column_name = "email_verified")]
+        pub email_verified: bool,
+        pub metadata: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "last_seen_at")]
+        pub last_seen_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use provider_identities::Entity as ProviderIdentitiesEntity;
@@ -6743,30 +6589,29 @@ pub use provider_identities::Model as ProviderIdentitiesModel;
 pub mod local_credentials {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "shared_auth", table_name = "local_credentials")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false, column_name = "shared_user_id")]
-    pub shared_user_id: Uuid,
-    #[sea_orm(column_name = "password_hash")]
-    pub password_hash: String,
-    #[sea_orm(column_name = "password_changed_at")]
-    pub password_changed_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "failed_attempts")]
-    pub failed_attempts: i32,
-    #[sea_orm(column_name = "locked_until")]
-    pub locked_until: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "shared_auth", table_name = "local_credentials")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false, column_name = "shared_user_id")]
+        pub shared_user_id: Uuid,
+        #[sea_orm(column_name = "password_hash")]
+        pub password_hash: String,
+        #[sea_orm(column_name = "password_changed_at")]
+        pub password_changed_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "failed_attempts")]
+        pub failed_attempts: i32,
+        #[sea_orm(column_name = "locked_until")]
+        pub locked_until: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use local_credentials::Entity as LocalCredentialsEntity;
@@ -6775,43 +6620,42 @@ pub use local_credentials::Model as LocalCredentialsModel;
 pub mod sessions {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "shared_auth", table_name = "sessions")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false, column_name = "session_id")]
-    pub session_id: Uuid,
-    #[sea_orm(column_name = "shared_user_id")]
-    pub shared_user_id: Uuid,
-    #[sea_orm(column_name = "refresh_token_hash")]
-    pub refresh_token_hash: String,
-    pub provider: String,
-    #[sea_orm(column_name = "provider_tenant")]
-    pub provider_tenant: String,
-    #[sea_orm(column_name = "provider_subject")]
-    pub provider_subject: String,
-    #[sea_orm(column_name = "auth_level")]
-    pub auth_level: i16,
-    #[sea_orm(column_name = "auth_methods")]
-    pub auth_methods: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "last_seen_at")]
-    pub last_seen_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "expires_at")]
-    pub expires_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "revoked_at")]
-    pub revoked_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_name = "rotated_from")]
-    pub rotated_from: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "shared_auth", table_name = "sessions")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false, column_name = "session_id")]
+        pub session_id: Uuid,
+        #[sea_orm(column_name = "shared_user_id")]
+        pub shared_user_id: Uuid,
+        #[sea_orm(column_name = "refresh_token_hash")]
+        pub refresh_token_hash: String,
+        pub provider: String,
+        #[sea_orm(column_name = "provider_tenant")]
+        pub provider_tenant: String,
+        #[sea_orm(column_name = "provider_subject")]
+        pub provider_subject: String,
+        #[sea_orm(column_name = "auth_level")]
+        pub auth_level: i16,
+        #[sea_orm(column_name = "auth_methods")]
+        pub auth_methods: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "last_seen_at")]
+        pub last_seen_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "expires_at")]
+        pub expires_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "revoked_at")]
+        pub revoked_at: Option<DateTimeWithTimeZone>,
+        #[sea_orm(column_name = "rotated_from")]
+        pub rotated_from: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use sessions::Entity as SessionsEntity;
@@ -6820,32 +6664,31 @@ pub use sessions::Model as SessionsModel;
 pub mod magic_link_tokens {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "shared_auth", table_name = "magic_link_tokens")]
-pub struct Model {
-    #[sea_orm(primary_key, column_name = "token_hash")]
-    pub token_hash: String,
-    #[sea_orm(column_name = "otp_hash")]
-    pub otp_hash: String,
-    #[sea_orm(column_name = "shared_user_id")]
-    pub shared_user_id: Uuid,
-    #[sea_orm(column_name = "identifier_hash")]
-    pub identifier_hash: String,
-    #[sea_orm(column_name = "failed_attempts")]
-    pub failed_attempts: i32,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "expires_at")]
-    pub expires_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "consumed_at")]
-    pub consumed_at: Option<DateTimeWithTimeZone>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "shared_auth", table_name = "magic_link_tokens")]
+    pub struct Model {
+        #[sea_orm(primary_key, column_name = "token_hash")]
+        pub token_hash: String,
+        #[sea_orm(column_name = "otp_hash")]
+        pub otp_hash: String,
+        #[sea_orm(column_name = "shared_user_id")]
+        pub shared_user_id: Uuid,
+        #[sea_orm(column_name = "identifier_hash")]
+        pub identifier_hash: String,
+        #[sea_orm(column_name = "failed_attempts")]
+        pub failed_attempts: i32,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "expires_at")]
+        pub expires_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "consumed_at")]
+        pub consumed_at: Option<DateTimeWithTimeZone>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use magic_link_tokens::Entity as MagicLinkTokensEntity;
@@ -6854,28 +6697,27 @@ pub use magic_link_tokens::Model as MagicLinkTokensModel;
 pub mod mfa_sms_challenges {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "shared_auth", table_name = "mfa_sms_challenges")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false, column_name = "challenge_id")]
-    pub challenge_id: Uuid,
-    #[sea_orm(column_name = "shared_user_id")]
-    pub shared_user_id: Uuid,
-    #[sea_orm(column_name = "phone_e164")]
-    pub phone_e164: String,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "expires_at")]
-    pub expires_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "verified_at")]
-    pub verified_at: Option<DateTimeWithTimeZone>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "shared_auth", table_name = "mfa_sms_challenges")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false, column_name = "challenge_id")]
+        pub challenge_id: Uuid,
+        #[sea_orm(column_name = "shared_user_id")]
+        pub shared_user_id: Uuid,
+        #[sea_orm(column_name = "phone_e164")]
+        pub phone_e164: String,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "expires_at")]
+        pub expires_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "verified_at")]
+        pub verified_at: Option<DateTimeWithTimeZone>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use mfa_sms_challenges::Entity as MfaSmsChallengesEntity;
@@ -6884,26 +6726,25 @@ pub use mfa_sms_challenges::Model as MfaSmsChallengesModel;
 pub mod roles {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "shared_auth", table_name = "roles")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false, column_name = "role_id")]
-    pub role_id: Uuid,
-    #[sea_orm(column_name = "shared_user_id")]
-    pub shared_user_id: Uuid,
-    #[sea_orm(column_name = "role_name")]
-    pub role_name: String,
-    #[sea_orm(column_name = "granted_at")]
-    pub granted_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "granted_by")]
-    pub granted_by: Option<Uuid>,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "shared_auth", table_name = "roles")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false, column_name = "role_id")]
+        pub role_id: Uuid,
+        #[sea_orm(column_name = "shared_user_id")]
+        pub shared_user_id: Uuid,
+        #[sea_orm(column_name = "role_name")]
+        pub role_name: String,
+        #[sea_orm(column_name = "granted_at")]
+        pub granted_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "granted_by")]
+        pub granted_by: Option<Uuid>,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use roles::Entity as RolesEntity;
@@ -6912,25 +6753,24 @@ pub use roles::Model as RolesModel;
 pub mod webhook_events {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "shared_auth", table_name = "webhook_events")]
-pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false, column_name = "event_id")]
-    pub event_id: Uuid,
-    pub provider: String,
-    #[sea_orm(column_name = "event_type")]
-    pub event_type: String,
-    #[sea_orm(column_name = "received_at")]
-    pub received_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "payload_sha256")]
-    pub payload_sha256: String,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "shared_auth", table_name = "webhook_events")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false, column_name = "event_id")]
+        pub event_id: Uuid,
+        pub provider: String,
+        #[sea_orm(column_name = "event_type")]
+        pub event_type: String,
+        #[sea_orm(column_name = "received_at")]
+        pub received_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "payload_sha256")]
+        pub payload_sha256: String,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use webhook_events::Entity as WebhookEventsEntity;
@@ -6939,32 +6779,31 @@ pub use webhook_events::Model as WebhookEventsModel;
 pub mod fab_jobs {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "daedalus", table_name = "fab_jobs")]
-pub struct Model {
-    #[sea_orm(primary_key, column_name = "job_id")]
-    pub job_id: String,
-    #[sea_orm(column_name = "request_id")]
-    pub request_id: String,
-    pub kind: String,
-    pub status: String,
-    pub ok: bool,
-    pub severity: String,
-    pub summary: String,
-    #[sea_orm(column_name = "artifact_count")]
-    pub artifact_count: i32,
-    pub payload: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-    #[sea_orm(column_name = "updated_at")]
-    pub updated_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "daedalus", table_name = "fab_jobs")]
+    pub struct Model {
+        #[sea_orm(primary_key, column_name = "job_id")]
+        pub job_id: String,
+        #[sea_orm(column_name = "request_id")]
+        pub request_id: String,
+        pub kind: String,
+        pub status: String,
+        pub ok: bool,
+        pub severity: String,
+        pub summary: String,
+        #[sea_orm(column_name = "artifact_count")]
+        pub artifact_count: i32,
+        pub payload: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+        #[sea_orm(column_name = "updated_at")]
+        pub updated_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use fab_jobs::Entity as FabJobsEntity;
@@ -6973,32 +6812,31 @@ pub use fab_jobs::Model as FabJobsModel;
 pub mod fab_learning_outcomes {
     use super::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(schema_name = "daedalus", table_name = "fab_learning_outcomes")]
-pub struct Model {
-    #[sea_orm(primary_key, column_name = "outcome_id")]
-    pub outcome_id: String,
-    #[sea_orm(column_name = "request_id")]
-    pub request_id: String,
-    #[sea_orm(column_name = "job_id")]
-    pub job_id: Option<String>,
-    pub objective: Option<String>,
-    #[sea_orm(column_name = "machine_kind")]
-    pub machine_kind: Option<String>,
-    #[sea_orm(column_name = "assembly_strategy")]
-    pub assembly_strategy: Option<String>,
-    pub success: bool,
-    pub reward: f64,
-    pub payload: Json,
-    #[sea_orm(column_name = "created_at")]
-    pub created_at: DateTimeWithTimeZone,
-}
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(schema_name = "daedalus", table_name = "fab_learning_outcomes")]
+    pub struct Model {
+        #[sea_orm(primary_key, column_name = "outcome_id")]
+        pub outcome_id: String,
+        #[sea_orm(column_name = "request_id")]
+        pub request_id: String,
+        #[sea_orm(column_name = "job_id")]
+        pub job_id: Option<String>,
+        pub objective: Option<String>,
+        #[sea_orm(column_name = "machine_kind")]
+        pub machine_kind: Option<String>,
+        #[sea_orm(column_name = "assembly_strategy")]
+        pub assembly_strategy: Option<String>,
+        pub success: bool,
+        pub reward: f64,
+        pub payload: Json,
+        #[sea_orm(column_name = "created_at")]
+        pub created_at: DateTimeWithTimeZone,
+    }
 
-#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
 
-impl ActiveModelBehavior for ActiveModel {}
-
+    impl ActiveModelBehavior for ActiveModel {}
 }
 
 pub use fab_learning_outcomes::Entity as FabLearningOutcomesEntity;
