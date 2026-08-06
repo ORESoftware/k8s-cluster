@@ -77,6 +77,16 @@ resources:
   - dd-email-sms-contact-rs.deployment.yaml
   - dd-email-sms-contact-rs.externalsecret.yaml
   - dd-email-sms-contact-rs.service.yaml
+  # push-notification-server: dedicated hardened push (FCM/APNs/Expo/WebPush)
+  # + optional SendGrid/Twilio contact lanes (HTTP :8121). Built in-pod from
+  # the pinned remote/deployments/push-notification-server.rs submodule.
+  # DEN-263 rollout: shadows dd-email-sms-contact-rs above during migration;
+  # the legacy service keeps ownership until cutover (DEN-795).
+  - dd-push-notification-server.deployment.yaml
+  - dd-push-notification-server.externalsecret.yaml
+  - dd-push-notification-server.networkpolicy.yaml
+  - dd-push-notification-server.pdb.yaml
+  - dd-push-notification-server.service.yaml
   - dd-happy-wakey-gateway.deployment.yaml
   - dd-happy-wakey-gateway.externalsecret.yaml
   - dd-happy-wakey-gateway.networkpolicy.yaml
