@@ -23,6 +23,10 @@ then reconciles that commit from `k8s-cluster@dev`.
   8081 through a ClusterIP Service, and is reachable only from
   `dd-remote-gateway` in the `default` namespace (plus the observability
   namespace). Its HTTP connection supports HTMX, REST, and WebSocket upgrades.
+- `canonical-cloud-api` runs `canonical-api-server.rs` on 8081. It accepts
+  only Worker/web HMAC assertions, persists owner-scoped quote records, combines
+  the reviewed Markdown playbook with `canonical_context`, calls Gemini, and
+  exposes owner-scoped REST and WebSocket updates.
 - `canonical-cloud-revoker` runs `canonical-session-revoker run`. It declares no
   port, Service, Ingress, or accepted NetworkPolicy ingress.
 - `canonical-cloud-web-runtime` and `canonical-cloud-revoker-runtime` are
@@ -44,6 +48,13 @@ The web AWS object `dd/remote-dev/canonical-cloud-web` must contain:
 - `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`;
 - exact HTTPS origins in `APP_BASE_URL` and `APP_ALLOWED_ORIGINS` (no wildcard).
 
+The quote AWS object `dd/remote-dev/canonical-cloud-quote` must contain:
+
+- `DATABASE_URL` for the quote API's Canonical Supabase/PostgreSQL database;
+- `GEMINI_API_KEY`;
+- one random `ORIGIN_ASSERTION_SECRET` shared only by the Canonical Worker,
+  web server, and quote API.
+
 The worker AWS object `dd/remote-dev/canonical-cloud-revoker` must contain:
 
 - `SESSION_REVOCATION_DATABASE_URL` for the isolated
@@ -54,6 +65,16 @@ The worker AWS object `dd/remote-dev/canonical-cloud-revoker` must contain:
 The registry AWS object `dd/remote-dev/canonical-cloud-ghcr-pull` must contain a
 `dockerconfigjson` property whose value is a valid Docker config JSON document
 for `ghcr.io`. Do not commit the document or token.
+
+## Shared authentication
+
+The Canonical Worker exposes the existing shared-auth customer deployment under
+`/shared-auth/` on `app.canonical.plus`. The browser ceremony issues
+Canonical host-only `__Host-` cookies, then returns only to a validated relative
+path such as `/u/quote`. The shared-auth binary is reused across products, but
+production project/database authority remains one reviewed deployment per realm
+and Supabase project; Canonical does not receive Fiducia or OreSoftware cookies,
+tables, or provider credentials.
 
 ## Promotion
 
@@ -90,10 +111,12 @@ gate below is satisfied:
 3. A human has reviewed and applied the schema migration plus the separate
    runtime and revoker role bootstraps. Migrations are never an Argo sync hook,
    init container, GitHub Actions step, or server-startup side effect.
-4. A dedicated HTTPS backend origin, DNS record, and valid certificate exist.
-   The gateway route must preserve `Authorization`, cookies, and WebSocket
-   `Upgrade`/`Connection` headers. The exact origin must match both application
-   origin settings.
+4. DNS-only `canonical-web-origin.canonical.plus` and
+   `canonical-api-origin.canonical.plus` records resolve to the ingress, and
+   cert-manager has issued `canonical-cloud-origin-tls`. Only then may
+   `app.canonical.plus` and `api.canonical.plus` be proxied through the Worker.
+   The Worker must preserve cookies and WebSocket upgrade headers while stripping
+   all caller-supplied `x-canonical-edge-*` headers.
 5. The new Service has been exercised directly in-cluster for `/healthz`,
    `/readyz`, REST authentication, session cookies, and WebSocket reconnects.
 
