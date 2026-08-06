@@ -55,7 +55,8 @@ jobs:
           grep -qF 'benefactor-infra|' "$script"
           test "$(grep -cE '^  .+\|.+$' "$script")" -eq 3
           grep -qF 'candidate-personal-access-token-rejected' "$script"
-          grep -qF '"$gh_binary" auth token' "$script"
+          pinned_gh_auth='"$''gh_binary" auth token'
+          grep -qF "$pinned_gh_auth" "$script"
           grep -qF -- '--private' "$script"
           grep -qF -- '--add-readme' "$script"
           grep -qF 'repository must be private' "$script"
