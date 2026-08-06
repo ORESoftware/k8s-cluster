@@ -3,3 +3,7 @@ local/Cargo.lock
 Cargo.lock.bak
 *.log
 .DS_Store
+tmp
+temp
+tmp/worktrees
+temp/worktrees
