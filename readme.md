@@ -115,3 +115,41 @@ Develop and validate in this standalone clone. After the canonical change is
 merged, bump `remote/deployments/3fa-web-server-rs` in `k8s-cluster`; never edit
 the secondary checkout directly. The Kubernetes manifest builds/runs from that
 submodule path and exposes OTLP, Prometheus, and health configuration explicitly.
+
+## Cross-surface delivery
+
+A user-visible, contract, authentication, enrollment, recovery, notification,
+permission, navigation, or deep-link change in this Rust web server must also be
+evaluated for:
+
+- the current Flutter mobile/mobile-web implementation
+  [`ORESoftware/3fa-client-ui.dart`](https://github.com/ORESoftware/3fa-client-ui.dart)
+  and its planned organization-local target `3FA-app/3fa-flutter`;
+- the Flutter desktop targets in that same Flutter application;
+- the native Rust desktop app
+  [`3FA-app/3FA-desktop.rs`](https://github.com/3FA-app/3FA-desktop.rs);
+- `3FA-app` shared interfaces, clients, route types, and conformance fixtures.
+
+This is a judgment call, not a requirement to duplicate every server-rendered
+page. SEO, public-web presentation, and server operations may remain web-only.
+Changes to authentication semantics, TOTP/HOTP behavior, vault or device state,
+validation, errors, or user navigation normally require coordinated client work.
+Every issue and pull request must record which surfaces were evaluated, which
+change now, why any surface does not change, and any accepted parity gap.
+
+Deep links are HTTPS-first and share one versioned route model across web,
+Android/iOS, Flutter Web, Flutter desktop, and Rust desktop:
+
+```text
+https://<verified-3fa-owned-host>/open/<route>?<bounded-query>
+```
+
+Fallback navigation uses `threefa://`. The production HTTPS host must not be
+guessed. Both app implementations must support cold start, already-running
+single-instance delivery, authentication resume, and browser fallback. TOTP
+seeds, recovery secrets, vault material, bearer/refresh tokens, credentials,
+and private account data are prohibited in URLs; sensitive handoffs use
+short-lived, single-use, audience-bound codes.
+
+See [`docs/CROSS_SURFACE_DELIVERY.md`](docs/CROSS_SURFACE_DELIVERY.md) and the
+[portfolio policy](https://github.com/ORESoftware/project-registry/blob/main/docs/cross-surface-delivery.md).
