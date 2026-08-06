@@ -21,6 +21,7 @@
 //! - [`supabase`] — per-project JWKS verification, issuer routing, Management API
 //! - [`db`] — the realm RDS identity store (`shared_auth.principals`)
 //! - [`token`] — minting unified and delegated OreSoftware JWTs + JWKS
+//! - [`handoff`] — PKCE-bound browser authorization-code broker
 //! - [`http`] — the axum surface
 //! - [`state`] — shared application state
 //! - [`error`], [`telemetry`]
@@ -32,6 +33,7 @@ pub mod email;
 pub mod error;
 pub mod factors;
 pub mod flags;
+pub mod handoff;
 pub mod http;
 pub mod metrics;
 pub mod password;
@@ -96,6 +98,7 @@ async fn serve() -> anyhow::Result<()> {
         realm_loopback = realm.development_loopback,
         projects = state.supabase.len(),
         db = state.db.is_some(),
+        browser_handoff = state.handoff.is_some(),
         "shared-auth-server listening"
     );
 
