@@ -16,8 +16,18 @@ pub async fn send_magic_link(
     recipient: &str,
     token: &str,
     otp: &str,
+    link_state: Option<&str>,
 ) -> Result<(), AuthError> {
-    send_magic_link_to(http, config, SENDGRID_MAIL_SEND_URL, recipient, token, otp).await
+    send_magic_link_to(
+        http,
+        config,
+        SENDGRID_MAIL_SEND_URL,
+        recipient,
+        token,
+        otp,
+        link_state,
+    )
+    .await
 }
 
 async fn send_magic_link_to(
@@ -27,13 +37,14 @@ async fn send_magic_link_to(
     recipient: &str,
     token: &str,
     otp: &str,
+    link_state: Option<&str>,
 ) -> Result<(), AuthError> {
     let api_key = config
         .sendgrid_api_key
         .as_deref()
         .ok_or(AuthError::Unavailable)?;
     let from_email = config.from_email.as_deref().ok_or(AuthError::Unavailable)?;
-    let link = magic_link_url(config, token)?;
+    let link = magic_link_url(config, token, link_state)?;
     let escaped_link = escape_html(&link);
     let text = format!(
         "Use this one-time link or six-digit code to sign in. They expire in {} minutes:\n\n\
@@ -87,13 +98,22 @@ async fn send_magic_link_to(
     Ok(())
 }
 
-fn magic_link_url(config: &MagicLinkConfig, token: &str) -> Result<String, AuthError> {
+fn magic_link_url(
+    config: &MagicLinkConfig,
+    token: &str,
+    link_state: Option<&str>,
+) -> Result<String, AuthError> {
     let base = config
         .link_base_url
         .as_deref()
         .ok_or(AuthError::Unavailable)?;
     let mut url = reqwest::Url::parse(base).map_err(|_| AuthError::Internal)?;
-    url.query_pairs_mut().append_pair("token", token);
+    let mut query = url.query_pairs_mut();
+    query.append_pair("token", token);
+    if let Some(state) = link_state {
+        query.append_pair("state", state);
+    }
+    drop(query);
     Ok(url.into())
 }
 
