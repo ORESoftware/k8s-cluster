@@ -6,3 +6,9 @@
 *.pem
 *.key
 .DS_Store
+
+# Playwright browser e2e (e2e/) — deps and generated artifacts.
+node_modules/
+e2e/test-results/
+e2e/playwright-report/
+e2e/.e2e.sqlite

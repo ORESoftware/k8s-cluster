@@ -1,10 +1,10 @@
-//! Claims for the unified OreSoftware JWT.
+//! Claims for unified and delegated OreSoftware JWTs.
 
 use serde::{Deserialize, Serialize};
 
 /// The token this server mints. `sub` is the stable OreSoftware `shared_user_id`
-/// (not the Supabase `sub`), so downstream services get one identity namespace
-/// regardless of which Supabase project the user came from.
+/// (not a provider-specific subject), so downstream services get one identity
+/// namespace regardless of the authority that authenticated the user.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OreClaims {
     /// Stable OreSoftware user id (`shared_user_id`).
@@ -46,6 +46,21 @@ pub struct OreClaims {
     /// Authentication context. Missing legacy claims fail closed for LOA2.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acr: Option<String>,
+    /// Time of the user authentication ceremony. Delegation preserves this
+    /// value instead of making a token exchange look like a fresh step-up.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_time: Option<u64>,
+    /// Space-delimited OAuth scopes. Base identity tokens intentionally carry
+    /// no product scopes; delegated tokens receive only an allow-listed subset.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub scope: String,
+    /// OAuth authorized party. Present only on a delegated product token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub azp: Option<String>,
+    /// Parent token identifier. This provides lineage without embedding or
+    /// logging the parent bearer token itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_jti: Option<String>,
 }
 
 impl OreClaims {
@@ -55,6 +70,16 @@ impl OreClaims {
 
     pub fn used_method(&self, method: &str) -> bool {
         self.amr.iter().any(|candidate| candidate == method)
+    }
+
+    pub fn has_scope(&self, required: &str) -> bool {
+        self.scope
+            .split_ascii_whitespace()
+            .any(|candidate| candidate == required)
+    }
+
+    pub fn is_delegated(&self) -> bool {
+        self.azp.is_some() || self.parent_jti.is_some() || !self.scope.is_empty()
     }
 }
 

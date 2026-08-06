@@ -1,23 +1,28 @@
 //! Centralized OreSoftware auth server.
 //!
-//! Verifies Supabase access tokens issued by any of several configured
-//! Supabase projects (one per org: 3fa-app, athlet-o-store, fiducia-cloud,
-//! sonus-auris, …), mirrors the verified identity into a local `shared_auth`
-//! Postgres schema on AWS RDS, and mints a single unified OreSoftware JWT that
-//! every downstream service trusts via this server's published JWKS.
+//! Verifies Supabase access tokens issued by the configured realm project,
+//! mirrors the verified identity into the realm's `shared_auth` Postgres schema
+//! on AWS RDS, and mints OreSoftware JWTs for downstream services.
 //!
-//! It runs *alongside* Supabase's built-in auth — Supabase stays the identity
-//! provider; this server is the verifier + re-issuer, never a mirror of
-//! Supabase's password store. The account-level Supabase credential is used
-//! only by the offline `discover` subcommand, never on the request path.
+//! The same binary is deployed independently as the privileged admin realm and
+//! customer realm. Runtime startup validates that issuer, database endpoint and
+//! references, secret paths, signing-key reference, cookie namespace, and
+//! Supabase project all belong to the selected realm.
+//!
+//! It runs *alongside* Supabase's built-in auth — Supabase stays an upstream
+//! credential authority; this server is the verifier + session/token authority,
+//! never a mirror of Supabase's password store. The account-level Supabase
+//! credential is used only by the offline `discover` subcommand, never on the
+//! request path.
 //!
 //! ## Module map
-//! - [`config`]  — environment-driven configuration
+//! - [`config`] — environment-driven configuration
+//! - [`realm`] — fail-closed admin/customer runtime boundary
 //! - [`supabase`] — per-project JWKS verification, issuer routing, Management API
-//! - [`db`]      — the RDS identity store (`shared_auth.principals`)
-//! - [`token`]   — minting unified OreSoftware JWTs and publishing our JWKS
-//! - [`http`]    — the axum surface
-//! - [`state`]   — shared application state
+//! - [`db`] — the realm RDS identity store (`shared_auth.principals`)
+//! - [`token`] — minting unified and delegated OreSoftware JWTs + JWKS
+//! - [`http`] — the axum surface
+//! - [`state`] — shared application state
 //! - [`error`], [`telemetry`]
 
 pub mod cache;
@@ -30,6 +35,7 @@ pub mod flags;
 pub mod http;
 pub mod metrics;
 pub mod password;
+pub mod realm;
 pub mod session;
 pub mod state;
 pub mod supabase;
@@ -70,6 +76,8 @@ pub async fn run() -> anyhow::Result<()> {
 
 async fn serve() -> anyhow::Result<()> {
     let config = config::AppConfig::from_env().context("loading configuration")?;
+    let realm = realm::RealmConfig::from_env(&config)
+        .context("validating authentication realm boundary")?;
     let bind_addr = config.bind_addr;
     let state = state::AppState::build(config)
         .await
@@ -82,6 +90,10 @@ async fn serve() -> anyhow::Result<()> {
 
     tracing::info!(
         %bind_addr,
+        realm = %realm.realm,
+        deployment = %realm.deployment,
+        realm_dbless = realm.development_dbless,
+        realm_loopback = realm.development_loopback,
         projects = state.supabase.len(),
         db = state.db.is_some(),
         "shared-auth-server listening"

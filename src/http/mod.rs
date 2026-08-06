@@ -2,16 +2,23 @@
 //!
 //! JSON API + a small script-free Maud HTML UI. No websockets.
 //! - `GET  /`                           status landing (HTML)
-//! - `GET  /ui`                          token-exchange helper (HTML)
-//! - `POST /ui/exchange`                 exchange result (HTML)
-//! - `GET  /healthz`                     liveness
-//! - `GET  /readyz`                      readiness (DB ping if configured)
-//! - `GET  /.well-known/jwks.json`       our public JWKS (downstream verifiers)
-//! - `POST /auth/exchange`               Supabase access token → OreSoftware JWT
-//! - `POST /auth/introspect`             validate an OreSoftware JWT → claims
-//! - `GET  /auth/verify`                 bearer check (gateway auth_request)
-//! - `GET  /metrics`                     Prometheus
+//! - `GET  /ui`                         token-exchange helper (HTML)
+//! - `POST /ui/exchange`                exchange result (HTML)
+//! - `GET  /auth/browser/sign-in`       first-party magic-link sign-in UI
+//! - `POST /auth/browser/sign-in`       send magic link + email OTP
+//! - `GET  /auth/browser/consume`       consume magic link and set browser session
+//! - `POST /auth/browser/otp`           consume email OTP and set browser session
+//! - `GET  /healthz`                    liveness
+//! - `GET  /readyz`                     readiness (DB ping if configured)
+//! - `GET  /.well-known/jwks.json`      our public JWKS (downstream verifiers)
+//! - `POST /auth/exchange`              provider access token → OreSoftware JWT
+//! - `POST /auth/delegate`              OreSoftware JWT → narrow product JWT
+//! - `POST /auth/introspect`            validate an OreSoftware JWT → claims
+//! - `GET  /auth/verify`                bearer check (gateway auth_request)
+//! - `GET  /metrics`                    Prometheus
 
+mod browser;
+mod delegate;
 mod docs;
 mod exchange;
 mod health;
@@ -28,7 +35,7 @@ pub mod webhook;
 use std::time::Duration;
 
 use axum::{
-    http::{header, HeaderValue, Method},
+    http::{header, HeaderName, HeaderValue, Method},
     routing::{delete, get, post},
     Router,
 };
@@ -54,11 +61,21 @@ pub fn router(state: AppState) -> Router {
         .route("/docs/api", get(docs::api_docs))
         .route("/api/docs", get(docs::api_docs))
         .route("/api/docs.json", get(docs::openapi))
+        // First-party browser ceremony. Product gateways expose this under a
+        // path such as `/shared-auth/`, keeping all __Host- cookies scoped to
+        // the product origin instead of sharing them across domains.
+        .route(
+            "/auth/browser/sign-in",
+            get(browser::sign_in).post(browser::request_link),
+        )
+        .route("/auth/browser/consume", get(browser::consume_link))
+        .route("/auth/browser/otp", post(browser::consume_otp))
         // JSON API
         .route("/healthz", get(health::healthz))
         .route("/readyz", get(health::readyz))
         .route("/.well-known/jwks.json", get(jwks::jwks))
         .route("/auth/exchange", post(exchange::exchange))
+        .route("/auth/delegate", post(delegate::delegate))
         .route("/auth/register", post(local::register))
         .route("/auth/login", post(local::login))
         .route("/auth/passwordless/request", post(passwordless::request))
@@ -135,6 +152,24 @@ pub fn router(state: AppState) -> Router {
             header::STRICT_TRANSPORT_SECURITY,
             HeaderValue::from_static("max-age=31536000; includeSubDomains"),
         ))
+        // Token-bearing responses must not enter shared or browser caches.
+        // if_not_present preserves the explicit public JWKS cache policy.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-store"),
+        ))
+        // The script-free UI needs no powerful browser capabilities.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("permissions-policy"),
+            HeaderValue::from_static(
+                "accelerometer=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()",
+            ),
+        ))
+        // Isolate authentication UI from cross-origin opener relationships.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("cross-origin-opener-policy"),
+            HeaderValue::from_static("same-origin"),
+        ))
         .layer(cors)
         .with_state(state)
 }
@@ -147,7 +182,7 @@ fn build_cors(state: &AppState) -> CorsLayer {
         .config
         .cors_allow_origins
         .iter()
-        .filter_map(|o| o.parse().ok())
+        .filter_map(|origin| origin.parse().ok())
         .collect::<Vec<_>>();
     CorsLayer::new()
         .allow_origin(origins)
@@ -163,5 +198,5 @@ pub(crate) fn bearer(headers: &axum::http::HeaderMap) -> Option<&str> {
         .ok()?
         .strip_prefix("Bearer ")
         .map(str::trim)
-        .filter(|t| !t.is_empty())
+        .filter(|token| !token.is_empty())
 }

@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-shared-auth
+spec:
+  template:
+    metadata:
+      annotations:
+        canonical.plus/auth-path: /shared-auth
+    spec:
+      containers:
+        - name: shared-auth
+          env:
+            - { name: AUTH_REALM, value: "customer" }
+            - { name: AUTH_REALM_DEPLOYMENT, value: "shared-auth-customer-canonical-plus" }
+            - { name: AUTH_ISSUER, value: "https://app.canonical.plus/shared-auth" }
+            - { name: AUTH_AUDIENCE, value: "canonical-plus-web" }
+            - { name: AUTH_SESSION_COOKIE_NAME, value: "__Host-canonical-customer-auth" }
+            - { name: AUTH_BROWSER_PUBLIC_PREFIX, value: "/shared-auth" }
+            - { name: AUTH_MAGIC_LINK_BASE_URL, value: "https://app.canonical.plus/shared-auth/auth/browser/consume" }
+            - { name: AUTH_MAGIC_LINK_ALLOW_SIGNUP, value: "true" }
+            - { name: AUTH_ALLOW_REGISTRATION, value: "false" }
+            - { name: AUTH_EMAIL_FROM_NAME, value: "Canonical Cloud" }
+            - { name: AUTH_REDIS_KEY_PREFIX, value: "shared-auth:canonical-plus:v1" }
+            - { name: AUTH_DATABASE_SECRET_REF, value: "dd/shared-auth/customer/canonical-plus/database-url" }
+            - { name: AUTH_SIGNING_KEY_REF, value: "dd/shared-auth/customer/canonical-plus/signing-key-pem" }
+            - { name: AUTH_CORS_ALLOW_ORIGINS, value: "https://app.canonical.plus" }
+            - { name: OTEL_SERVICE_NAME, value: "shared-auth-canonical-plus" }
+          # ExternalSecret.spec.target.name is not a standard Kustomize name
+          # reference. Pin the Deployment to the exact generated Secret rather
+          # than relying on nameSuffix inference that may not occur for this CRD.
+          envFrom:
+            - secretRef:
+                name: dd-shared-auth-secrets-canonical-plus

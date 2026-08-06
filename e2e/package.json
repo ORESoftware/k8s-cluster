@@ -1,11 +1,13 @@
 {
-  "name": "shared-auth-browser-e2e",
+  "name": "shared-auth-server-e2e",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Playwright browser end-to-end tests for the shared-auth-server MASH (Maud/Axum/Supabase/htmx) HTTP UI.",
   "scripts": {
-    "test": "playwright test"
+    "test": "playwright test",
+    "install-browsers": "playwright install --with-deps chromium"
   },
   "devDependencies": {
-    "@playwright/test": "1.55.0"
+    "@playwright/test": "^1.48.0"
   }
 }

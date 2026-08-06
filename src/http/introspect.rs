@@ -24,27 +24,36 @@ use super::bearer;
 #[derive(Debug, Deserialize)]
 pub struct IntrospectRequest {
     token: String,
+    /// Exact expected audience for a delegated product token. When omitted,
+    /// introspection verifies the normal shared-auth audience.
+    #[serde(default)]
+    audience: Option<String>,
 }
 
 /// Enforce caller authentication before introspection reveals full token claims.
 ///
-/// Backward-compatible by design: when `introspect_secret` is unset the endpoint
-/// stays open (its historical behaviour) and logs a one-time deprecation warning.
-/// When the secret is configured, callers must present it as a bearer credential;
-/// unauthenticated callers are rejected with `401` before any claims are returned.
+/// Introspection is disabled unless `AUTH_INTROSPECT_SECRET` is configured. This
+/// is intentionally fail-closed: possessing an end-user token must not also grant
+/// permission to recover its complete identity, provider, role, session, email,
+/// and assurance claim set. Authorized service callers present the independent
+/// credential as `Authorization: Bearer <secret>`.
 fn authorize_caller(state: &AppState, headers: &HeaderMap) -> Result<(), AuthError> {
     let Some(expected) = state.config.introspect_secret.as_deref() else {
         static WARN_ONCE: Once = Once::new();
         WARN_ONCE.call_once(|| {
-            tracing::warn!(
-                "/auth/introspect is unauthenticated and returns full token claims to any \
-                 caller; set AUTH_INTROSPECT_SECRET to require a service credential. This \
-                 open behaviour is deprecated."
-            );
+            tracing::warn!("/auth/introspect is disabled because AUTH_INTROSPECT_SECRET is unset");
         });
-        return Ok(());
+        return Err(AuthError::Unauthorized);
     };
-    let presented = bearer(headers).ok_or(AuthError::Unauthorized)?;
+    authorize_service_credential(Some(expected), bearer(headers))
+}
+
+fn authorize_service_credential(
+    expected: Option<&str>,
+    presented: Option<&str>,
+) -> Result<(), AuthError> {
+    let expected = expected.ok_or(AuthError::Unauthorized)?;
+    let presented = presented.ok_or(AuthError::Unauthorized)?;
     if credentials_match(expected, presented) {
         Ok(())
     } else {
@@ -77,8 +86,12 @@ pub async fn introspect(
     if let Err(error) = authorize_caller(&state, &headers) {
         return error.into_response();
     }
-    let verified = if request.token.len() <= 16 * 1024 {
-        active_claims(&state, &request.token).await
+    let expected_audience = request
+        .audience
+        .as_deref()
+        .unwrap_or(state.config.signing.audience.as_str());
+    let verified = if request.token.len() <= 16 * 1024 && valid_audience(expected_audience) {
+        active_claims_for_audience(&state, &request.token, expected_audience).await
     } else {
         Err(AuthError::Unauthorized)
     };
@@ -99,6 +112,9 @@ pub async fn introspect(
             "aud": claims.aud,
             "exp": claims.exp,
             "iat": claims.iat,
+            "nbf": claims.nbf,
+            "jti": claims.jti,
+            "auth_time": claims.auth_time,
             "sid": claims.sid,
             "provider": claims.provider,
             "provider_tenant": claims.provider_tenant,
@@ -111,6 +127,9 @@ pub async fn introspect(
             "aal": claims.aal,
             "amr": claims.amr,
             "acr": claims.acr,
+            "scope": claims.scope,
+            "azp": claims.azp,
+            "parent_jti": claims.parent_jti,
         }))
         .into_response(),
         Err(_) => Json(json!({ "active": false })).into_response(),
@@ -145,6 +164,12 @@ pub async fn verify(State(state): State<AppState>, headers: HeaderMap) -> impl I
             if let Some(email) = &claims.email {
                 insert_header(&mut output, "x-auth-email", email);
             }
+            if !claims.scope.is_empty() {
+                insert_header(&mut output, "x-auth-scope", &claims.scope);
+            }
+            if let Some(authorized_party) = &claims.azp {
+                insert_header(&mut output, "x-auth-azp", authorized_party);
+            }
             (StatusCode::OK, output).into_response()
         }
         Err(error) => error.into_response(),
@@ -152,7 +177,22 @@ pub async fn verify(State(state): State<AppState>, headers: HeaderMap) -> impl I
 }
 
 pub(crate) async fn active_claims(state: &AppState, token: &str) -> Result<OreClaims, AuthError> {
-    let claims = state.minter.verify(token)?;
+    active_claims_for_audience(state, token, state.config.signing.audience.as_str()).await
+}
+
+pub(crate) async fn active_claims_for_audience(
+    state: &AppState,
+    token: &str,
+    expected_audience: &str,
+) -> Result<OreClaims, AuthError> {
+    let claims = state
+        .minter
+        .verify_for_audience(token, expected_audience)?;
+    enforce_session_revocation(state, &claims).await?;
+    Ok(claims)
+}
+
+async fn enforce_session_revocation(state: &AppState, claims: &OreClaims) -> Result<(), AuthError> {
     match (&state.db, claims.sid.as_deref()) {
         (Some(db), Some(raw_session_id)) => {
             let session_id =
@@ -175,11 +215,47 @@ pub(crate) async fn active_claims(state: &AppState, token: &str) -> Result<OreCl
         (Some(_), None) => return Err(AuthError::Unauthorized),
         (None, _) => {}
     }
-    Ok(claims)
+    Ok(())
+}
+
+fn valid_audience(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'/' | b'-')
+        })
 }
 
 fn insert_header(map: &mut HeaderMap, name: &'static str, value: &str) {
     if let Ok(value) = axum::http::HeaderValue::from_str(value) {
         map.insert(name, value);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::authorize_service_credential;
+
+    const SECRET: &str = "0123456789abcdef0123456789abcdef";
+
+    #[test]
+    fn introspection_fails_closed_without_a_configured_service_secret() {
+        assert!(authorize_service_credential(None, None).is_err());
+        assert!(authorize_service_credential(None, Some(SECRET)).is_err());
+    }
+
+    #[test]
+    fn introspection_rejects_missing_or_incorrect_service_credentials() {
+        assert!(authorize_service_credential(Some(SECRET), None).is_err());
+        assert!(authorize_service_credential(
+            Some(SECRET),
+            Some("fedcba9876543210fedcba9876543210")
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn introspection_accepts_only_the_independent_service_credential() {
+        assert!(authorize_service_credential(Some(SECRET), Some(SECRET)).is_ok());
     }
 }

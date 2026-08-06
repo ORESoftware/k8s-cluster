@@ -1,0 +1,34 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-shared-auth
+  namespace: shared-auth
+spec:
+  ingress:
+    # Canonical's public /shared-auth path terminates at ingress-nginx. Limit
+    # admission to that namespace; origin-side authentication remains active.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - { protocol: TCP, port: 8120 }
+    # Preserve the existing internal remote-gateway path for cluster operations.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+          podSelector:
+            matchLabels:
+              app: dd-remote-gateway
+      ports:
+        - { protocol: TCP, port: 8120 }
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app: dd-prometheus
+      ports:
+        - { protocol: TCP, port: 8120 }

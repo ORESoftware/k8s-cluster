@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "program": "DEN-2189",
+  "applicationDatabaseFallbackAllowed": false,
+  "loopbackAllowedInProduction": false,
+  "providerProjectsPerRealm": 1,
+  "productAuthorizationOwner": "application-databases",
+  "profiles": [
+    {
+      "realm": "admin",
+      "deployment": "shared-auth-admin",
+      "issuer": "https://admin-auth.oresoftware.dev",
+      "databaseEndpointHost": "shared-auth-admin-prod.cluster.example.rds.amazonaws.com",
+      "databaseResourceRef": "aws:rds:shared-auth-admin-prod",
+      "databaseSecretRef": "dd/shared-auth/admin/database-url",
+      "signingKeyRef": "dd/shared-auth/admin/signing-key",
+      "sessionCookieName": "__Host-shared-auth-admin",
+      "supabaseProjectRef": "adminsupabaseproject01"
+    },
+    {
+      "realm": "customer",
+      "deployment": "shared-auth-customer",
+      "issuer": "https://auth.oresoftware.dev",
+      "databaseEndpointHost": "shared-auth-customer-prod.cluster.example.rds.amazonaws.com",
+      "databaseResourceRef": "aws:rds:shared-auth-customer-prod",
+      "databaseSecretRef": "dd/shared-auth/customer/database-url",
+      "signingKeyRef": "dd/shared-auth/customer/signing-key",
+      "sessionCookieName": "__Host-shared-auth-customer",
+      "supabaseProjectRef": "customersupabaseproj01"
+    }
+  ]
+}

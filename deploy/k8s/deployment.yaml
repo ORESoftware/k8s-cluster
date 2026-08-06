@@ -55,7 +55,7 @@ spec:
             matchLabels: { app: dd-shared-auth }
       containers:
         - name: shared-auth
-          image: ghcr.io/shared-auth/shared-auth-server@sha256:ec6b6f66a1f2f08f1829ee88187cd58bab3890a20450a6ca1d62ffe06d9695ec
+          image: ghcr.io/shared-auth/shared-auth-server@sha256:51715b09881a501048fbab5f798d3a76b883037571fabd6354073c73bc5347b6
           imagePullPolicy: IfNotPresent
           args: ["serve"]
           ports:
