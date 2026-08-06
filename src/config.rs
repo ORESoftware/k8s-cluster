@@ -87,17 +87,43 @@ pub(crate) fn supabase_config(
     Some(SupabaseConfig { url, anon_key })
 }
 
+/// Accept a shared-auth base URL, requiring TLS off-cluster.
+///
+/// Plaintext `http://` is permitted only for loopback (local development) and
+/// for in-cluster hops — any `*.svc.cluster.local` host, not one specific
+/// service name. The hop has moved before (direct `dd-shared-auth` → the
+/// `dd-remote-gateway` front door) and a per-hostname allow-list silently
+/// disabled authentication when it did; matching the cluster DNS suffix keeps
+/// the "no plaintext to the public internet" property without re-breaking on
+/// the next reroute.
 pub(crate) fn shared_auth_config(base_url: Option<String>) -> Option<SharedAuthConfig> {
     let base_url = base_url?.trim().trim_end_matches('/').to_owned();
-    if base_url.is_empty()
-        || !(base_url.starts_with("https://")
-            || base_url.starts_with("http://127.0.0.1:")
-            || base_url.starts_with("http://localhost:")
-            || base_url.starts_with("http://dd-shared-auth."))
-    {
+    if base_url.is_empty() {
+        return None;
+    }
+    let accepted = base_url.starts_with("https://")
+        || base_url
+            .strip_prefix("http://")
+            .is_some_and(in_cluster_or_loopback);
+    if !accepted {
+        // A rejected URL leaves `shared_auth` unset, which turns every login
+        // into a 503. Say so at startup instead of failing silently at request
+        // time. The value is an internal service address, not a credential.
+        tracing::error!(
+            shared_auth.base_url = %base_url,
+            "SHARED_AUTH_BASE_URL rejected: plaintext http:// is only allowed for \
+             loopback or *.svc.cluster.local hosts — authentication is DISABLED"
+        );
         return None;
     }
     Some(SharedAuthConfig { base_url })
+}
+
+/// True for `host[:port][/path]` authorities that stay inside the cluster.
+fn in_cluster_or_loopback(after_scheme: &str) -> bool {
+    let authority = after_scheme.split('/').next().unwrap_or_default();
+    let host = authority.rsplit_once(':').map_or(authority, |(host, _)| host);
+    host == "127.0.0.1" || host == "localhost" || host.ends_with(".svc.cluster.local")
 }
 
 #[cfg(test)]
@@ -194,9 +220,42 @@ mod tests {
         );
         assert!(shared_auth_config(Some("http://auth.example.test".into())).is_none());
         assert!(shared_auth_config(Some("http://127.0.0.1:8120".into())).is_some());
+        assert!(shared_auth_config(Some("http://localhost:8120".into())).is_some());
         assert!(shared_auth_config(Some(
             "http://dd-shared-auth.shared-auth.svc.cluster.local:8120".into()
         ))
         .is_some());
+    }
+
+    /// Both deployment manifests must survive this function. 3fa-infra routes
+    /// through the default-namespace gateway; the EC2 manifest still dials the
+    /// service directly. Rejecting either one disables authentication silently.
+    #[test]
+    fn every_deployed_shared_auth_hop_is_accepted() {
+        for url in [
+            "http://dd-remote-gateway.default.svc.cluster.local/shared-auth",
+            "http://dd-shared-auth.shared-auth.svc.cluster.local:8120",
+        ] {
+            assert!(
+                shared_auth_config(Some(url.into())).is_some(),
+                "deployed hop rejected: {url}"
+            );
+        }
+    }
+
+    #[test]
+    fn plaintext_off_cluster_hosts_are_rejected() {
+        for url in [
+            "http://evil.test",
+            // Suffix lookalikes must not pass as in-cluster hosts.
+            "http://attacker.test/.svc.cluster.local",
+            "http://notsvc.cluster.local:8120",
+            "ftp://dd-shared-auth.shared-auth.svc.cluster.local",
+        ] {
+            assert!(
+                shared_auth_config(Some(url.into())).is_none(),
+                "off-cluster plaintext accepted: {url}"
+            );
+        }
     }
 }

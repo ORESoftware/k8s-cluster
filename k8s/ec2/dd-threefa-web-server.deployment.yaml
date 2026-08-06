@@ -55,8 +55,13 @@ spec:
               value: info,tower_http=info,hyper=warn
             - name: DEPLOYMENT_ENVIRONMENT
               value: production
+            # Reach shared-auth through the default-namespace gateway, not by
+            # dialing dd-shared-auth:8120 directly. The shared-auth ingress
+            # NetworkPolicy admits only `app: dd-remote-gateway` from this
+            # namespace, so the direct address is dropped on arrival and every
+            # login degrades to a 503. Same hop 3fa-infra uses.
             - name: SHARED_AUTH_BASE_URL
-              value: http://dd-shared-auth.shared-auth.svc.cluster.local:8120
+              value: http://dd-remote-gateway.default.svc.cluster.local/shared-auth
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: http://dd-otel-collector.observability.svc.cluster.local:4318
             - name: POD_NAME

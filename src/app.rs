@@ -302,10 +302,19 @@ mod tests {
             "OTEL_EXPORTER_OTLP_ENDPOINT",
             "DEPLOYMENT_ENVIRONMENT",
             "SHARED_AUTH_BASE_URL",
-            "dd-shared-auth.shared-auth.svc.cluster.local:8120",
+            // The sanctioned hop. Pinning the direct dd-shared-auth address
+            // here is what kept the NetworkPolicy-denied value in CI.
+            "http://dd-remote-gateway.default.svc.cluster.local/shared-auth",
         ] {
             assert!(manifest.contains(required), "manifest missing {required}");
         }
         assert!(!manifest.contains("remote/deployments/threefa-web-server-rs"));
+        // Regression guard: shared-auth's ingress NetworkPolicy drops traffic
+        // that is not from dd-remote-gateway, so a direct dial silently breaks
+        // every login.
+        assert!(
+            !manifest.contains("value: http://dd-shared-auth."),
+            "manifest dials shared-auth directly instead of via the gateway"
+        );
     }
 }
