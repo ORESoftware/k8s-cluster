@@ -2,3 +2,7 @@ node_modules/
 .direnv/
 .env
 result
+tmp
+temp
+tmp/worktrees
+temp/worktrees
