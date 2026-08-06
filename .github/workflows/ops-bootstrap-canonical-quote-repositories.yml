@@ -15,7 +15,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: bootstrap-canonical-quote-repositories
@@ -23,7 +22,7 @@ concurrency:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Check out reviewed source
@@ -31,117 +30,202 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
+
       - name: Validate bounded repository scope
+        shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/ops/bootstrap_canonical_quote_repositories_20260805.py
-          python3 scripts/ops/bootstrap_canonical_quote_repositories_20260805.py --validate-only
+          bootstrap=scripts/ops/bootstrap_canonical_quote_repositories_20260805.py
+          python3 -m py_compile "$bootstrap"
+          python3 "$bootstrap" \
+            --validate-only \
+            --repository canonical-lib \
+            --repository canonical-api-server.rs
+          grep -q 'action="append"' "$bootstrap"
+          grep -q 'duplicate repository selections are not allowed' "$bootstrap"
+          git diff --check
 
   bootstrap:
     if: github.event_name != 'pull_request'
     needs: validate
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    permissions:
+      contents: write
+    env:
+      REPOSITORY: ${{ github.repository }}
+      DEFAULT_BRANCH: main
+      HANDSHAKE_NONCE: canonical-core-20260805-f92ac7d4c31b4c849f5c356bda4d7e10
+      PUBLIC_KEY_PATH: .github/tmp/canonical-core-f92ac7d4c31b4c849f5c356bda4d7e10.pub.pem
+      CIPHERTEXT_PATH: .github/tmp/canonical-core-f92ac7d4c31b4c849f5c356bda4d7e10.enc.b64
+
     steps:
-      - name: Check out exact trusted main revision
+      - name: Check out exact trusted revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Bind publication to trusted main
-        run: |
-          set -euo pipefail
-          test "$GITHUB_REF" = refs/heads/main
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-
-      - name: Configure trusted main-ref AWS OIDC credentials
-        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
-          role-session-name: canonical-quote-repository-bootstrap
-          retry-max-attempts: 2
-          mask-aws-account-id: true
-
-      - name: Run through the protected ORESoftware GitHub credential resolver
+      - name: Create exact repositories through a one-time encrypted credential handoff
+        shell: bash
         env:
-          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+          GITHUB_TOKEN_VALUE: ${{ github.token }}
         run: |
-          set -euo pipefail
-          test -n "${INSTANCE_ID:-}"
-          trusted_sha="$(git rev-parse HEAD)"
-          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
-
-          remote_script="$RUNNER_TEMP/remote-canonical-quote-bootstrap.sh"
-          cat >"$remote_script" <<'REMOTE_EOF'
-          #!/usr/bin/env bash
           set -Eeuo pipefail
           umask 077
 
-          trusted_sha="${1:?trusted source SHA is required}"
-          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
-          work="$(mktemp -d /tmp/canonical-quote-bootstrap.XXXXXX)"
-          cleanup() { rm -rf "$work"; }
-          trap cleanup EXIT
+          test "$GITHUB_REPOSITORY" = ORESoftware/k8s-cluster
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
 
-          git clone --filter=blob:none --no-checkout \
-            https://github.com/ORESoftware/k8s-cluster.git "$work/k8s-cluster"
-          git -C "$work/k8s-cluster" fetch --depth=1 origin "$trusted_sha"
-          git -C "$work/k8s-cluster" checkout --detach "$trusted_sha"
-          test "$(git -C "$work/k8s-cluster" rev-parse HEAD)" = "$trusted_sha"
+          repo_api="https://api.github.com/repos/${REPOSITORY}"
+          repo_api_call() {
+            local method="$1"
+            local url="$2"
+            local data="${3:-}"
+            if [[ -n "$data" ]]; then
+              curl --fail-with-body --silent --show-error \
+                --request "$method" \
+                --url "$url" \
+                --header 'Accept: application/vnd.github+json' \
+                --header "Authorization: Bearer ${GITHUB_TOKEN_VALUE}" \
+                --header 'X-GitHub-Api-Version: 2022-11-28' \
+                --header 'Content-Type: application/json' \
+                --data-binary "$data"
+            else
+              curl --fail-with-body --silent --show-error \
+                --request "$method" \
+                --url "$url" \
+                --header 'Accept: application/vnd.github+json' \
+                --header "Authorization: Bearer ${GITHUB_TOKEN_VALUE}" \
+                --header 'X-GitHub-Api-Version: 2022-11-28'
+            fi
+          }
 
-          launcher="$work/launch-canonical-quote-bootstrap.sh"
-          cat >"$launcher" <<'LAUNCH_EOF'
-          #!/usr/bin/env bash
-          set -Eeuo pipefail
-          bootstrap="${1:?bootstrap path is required}"
-          trusted_sha="${2:?trusted source SHA is required}"
-          python3 "$bootstrap" \
-            --trusted-sha "$trusted_sha" \
-            --hosts-file <(printf 'github.com:\n  oauth_token: %s\n' \
-              "${PROTECTED_GITHUB_TOKEN:?protected credential is required}")
-          LAUNCH_EOF
-          chmod 700 "$launcher"
+          put_file() {
+            local path="$1"
+            local source_file="$2"
+            local message="$3"
+            local content payload
+            content="$(base64 -w0 "$source_file")"
+            payload="$(jq -nc \
+              --arg message "$message" \
+              --arg content "$content" \
+              --arg branch "$DEFAULT_BRANCH" \
+              '{message:$message,content:$content,branch:$branch}')"
+            repo_api_call PUT "${repo_api}/contents/${path}" "$payload" >/dev/null
+          }
 
-          bash "$work/k8s-cluster/scripts/ops/run_with_protected_github_token.sh" \
-            "$launcher" \
-            "$work/k8s-cluster/scripts/ops/bootstrap_canonical_quote_repositories_20260805.py" \
-            "$trusted_sha"
-          REMOTE_EOF
-          chmod 700 "$remote_script"
+          delete_file_if_present() {
+            local path="$1"
+            local message="$2"
+            local metadata sha payload
+            if metadata="$(repo_api_call GET "${repo_api}/contents/${path}?ref=${DEFAULT_BRANCH}" 2>/dev/null)"; then
+              sha="$(jq -r '.sha // empty' <<<"$metadata")"
+              if [[ -n "$sha" ]]; then
+                payload="$(jq -nc \
+                  --arg message "$message" \
+                  --arg sha "$sha" \
+                  --arg branch "$DEFAULT_BRANCH" \
+                  '{message:$message,sha:$sha,branch:$branch}')"
+                repo_api_call DELETE "${repo_api}/contents/${path}" "$payload" >/dev/null || true
+              fi
+            fi
+          }
 
-          payload="$(base64 --wrap=0 "$remote_script")"
-          remote_command="printf '%s' '$payload' | base64 --decode > /tmp/remote-canonical-quote-bootstrap.sh && chown ec2-user:ec2-user /tmp/remote-canonical-quote-bootstrap.sh && chmod 700 /tmp/remote-canonical-quote-bootstrap.sh; log=/tmp/canonical-quote-bootstrap.log; status=0; sudo -u ec2-user -H bash -lc 'unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN PROTECTED_GITHUB_TOKEN GIT_ASKPASS; exec bash /tmp/remote-canonical-quote-bootstrap.sh \"\$1\"' _ '$trusted_sha' >\"\$log\" 2>&1 || status=\$?; tail -c 32000 \"\$log\"; rm -f /tmp/remote-canonical-quote-bootstrap.sh \"\$log\"; exit \$status"
-          parameters="$RUNNER_TEMP/ssm-canonical-quote-bootstrap.json"
-          jq -nc --arg command "$remote_command" '{commands:[$command]}' >"$parameters"
+          cleanup_credentials() {
+            delete_file_if_present "$PUBLIC_KEY_PATH" 'ci: remove expired Canonical bootstrap key'
+            delete_file_if_present "$CIPHERTEXT_PATH" 'ci: remove encrypted Canonical bootstrap credential'
+            unset USER_TOKEN GH_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+            shred -u \
+              /tmp/canonical-bootstrap-private.pem \
+              /tmp/canonical-bootstrap-public.pem \
+              /tmp/canonical-bootstrap-token.enc \
+              /tmp/canonical-bootstrap-token.txt \
+              /tmp/canonical-bootstrap-hosts.yml \
+              2>/dev/null || true
+          }
+          trap cleanup_credentials EXIT
 
-          command_id="$(aws ssm send-command \
-            --instance-ids "$INSTANCE_ID" \
-            --document-name AWS-RunShellScript \
-            --comment 'Bootstrap Canonical quote repositories through protected credential resolver' \
-            --parameters "file://$parameters" \
-            --query 'Command.CommandId' \
-            --output text)"
-          echo "ssm_command_id=$command_id"
+          delete_file_if_present "$PUBLIC_KEY_PATH" 'ci: remove stale Canonical bootstrap key'
+          delete_file_if_present "$CIPHERTEXT_PATH" 'ci: remove stale encrypted Canonical bootstrap credential'
 
-          status=Pending
-          for _ in $(seq 1 480); do
-            status="$(aws ssm get-command-invocation \
-              --command-id "$command_id" \
-              --instance-id "$INSTANCE_ID" \
-              --query Status \
-              --output text 2>/dev/null || true)"
-            case "$status" in
-              Success|Failed|Cancelled|TimedOut|Cancelling) break ;;
-            esac
-            sleep 3
+          openssl genpkey \
+            -algorithm RSA \
+            -pkeyopt rsa_keygen_bits:4096 \
+            -out /tmp/canonical-bootstrap-private.pem >/dev/null 2>&1
+          openssl pkey \
+            -in /tmp/canonical-bootstrap-private.pem \
+            -pubout \
+            -out /tmp/canonical-bootstrap-public.pem >/dev/null 2>&1
+          put_file \
+            "$PUBLIC_KEY_PATH" \
+            /tmp/canonical-bootstrap-public.pem \
+            'ci: publish ephemeral Canonical bootstrap key'
+          echo "HANDSHAKE_READY nonce=${HANDSHAKE_NONCE} path=${PUBLIC_KEY_PATH}"
+
+          ciphertext=''
+          for _ in $(seq 1 720); do
+            if metadata="$(repo_api_call GET "${repo_api}/contents/${CIPHERTEXT_PATH}?ref=${DEFAULT_BRANCH}" 2>/dev/null)"; then
+              ciphertext="$(jq -r '.content // empty' <<<"$metadata" \
+                | tr -d '\n' \
+                | base64 -d \
+                | tr -d '\r\n')"
+              [[ -z "$ciphertext" ]] || break
+            fi
+            sleep 5
+          done
+          if [[ -z "$ciphertext" ]]; then
+            echo "encrypted credential was not received for handshake ${HANDSHAKE_NONCE}" >&2
+            exit 1
+          fi
+
+          printf '%s' "$ciphertext" | base64 -d > /tmp/canonical-bootstrap-token.enc
+          openssl pkeyutl \
+            -decrypt \
+            -inkey /tmp/canonical-bootstrap-private.pem \
+            -in /tmp/canonical-bootstrap-token.enc \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256 \
+            > /tmp/canonical-bootstrap-token.txt
+
+          USER_TOKEN="$(tr -d '\r\n' < /tmp/canonical-bootstrap-token.txt)"
+          test -n "$USER_TOKEN"
+          test "${#USER_TOKEN}" -ge 20
+          [[ "$USER_TOKEN" != *[[:space:]]* ]]
+          echo "::add-mask::$USER_TOKEN"
+          export USER_TOKEN
+          export GH_TOKEN="$USER_TOKEN"
+          export GITHUB_REPOSITORY_ADMIN_TOKEN="$USER_TOKEN"
+
+          printf 'github.com:\n  oauth_token: %s\n' "$USER_TOKEN" \
+            > /tmp/canonical-bootstrap-hosts.yml
+          chmod 600 /tmp/canonical-bootstrap-hosts.yml
+
+          python3 scripts/ops/bootstrap_canonical_quote_repositories_20260805.py \
+            --trusted-sha "$GITHUB_SHA" \
+            --hosts-file /tmp/canonical-bootstrap-hosts.yml \
+            --repository canonical-lib \
+            --repository canonical-api-server.rs
+
+          for full_name in \
+            canonical-cloud/canonical-lib \
+            canonical-cloud/canonical-api-server.rs
+          do
+            repository_json="$(curl --fail-with-body --silent --show-error \
+              --header 'Accept: application/vnd.github+json' \
+              --header "Authorization: Bearer ${USER_TOKEN}" \
+              --header 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/${full_name}")"
+            test "$(jq -r '.full_name' <<<"$repository_json")" = "$full_name"
+            test "$(jq -r '.private' <<<"$repository_json")" = true
+            test "$(jq -r '.default_branch' <<<"$repository_json")" = main
+            echo "VERIFIED_REPOSITORY ${full_name} private=true default_branch=main"
           done
 
-          aws ssm get-command-invocation \
-            --command-id "$command_id" \
-            --instance-id "$INSTANCE_ID" \
-            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
-            --output json
-          test "$status" = Success
+          cleanup_credentials
+          trap - EXIT
+          echo 'VERIFIED_CANONICAL_CORE_REPOSITORIES 2/2'

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Create the exact four missing Canonical quote repositories.
+"""Create the bounded missing Canonical quote repositories.
 
-This runs only on the protected SSM host and reads the existing GitHub CLI
-profile without requiring the `gh` binary. Existing repositories are preserved.
+This runs only after a reviewed workflow obtains a short-lived or one-use
+repository-administration credential. Existing repositories are preserved.
 """
 from __future__ import annotations
 
@@ -46,6 +46,18 @@ def validate_scope() -> None:
     for name, description in REPOSITORIES.items():
         if re.fullmatch(r"canonical-[A-Za-z0-9._-]+", name) is None or not description:
             fail(f"invalid bounded repository record: {name!r}")
+
+
+def selected_repositories(values: list[str] | None) -> list[str]:
+    selected = list(REPOSITORIES) if values is None else values
+    if not selected:
+        fail("at least one repository must be selected")
+    if len(selected) != len(set(selected)):
+        fail("duplicate repository selections are not allowed")
+    unexpected = set(selected) - set(REPOSITORIES)
+    if unexpected:
+        fail(f"repository selection escaped bounded scope: {sorted(unexpected)}")
+    return selected
 
 
 def token_from_hosts(path: Path) -> str:
@@ -191,23 +203,37 @@ def main() -> int:
     parser.add_argument("--validate-only", action="store_true")
     parser.add_argument("--trusted-sha")
     parser.add_argument(
+        "--repository",
+        action="append",
+        choices=sorted(REPOSITORIES),
+        dest="repositories",
+        help="Create or reconcile only this bounded repository (repeatable).",
+    )
+    parser.add_argument(
         "--hosts-file",
         type=Path,
         default=Path.home() / ".config" / "gh" / "hosts.yml",
     )
     args = parser.parse_args()
     validate_scope()
+    targets = selected_repositories(args.repositories)
     if args.validate_only:
-        print("VERIFIED bounded Canonical quote repository bootstrap (4 repositories)")
+        print(
+            "VERIFIED bounded Canonical quote repository bootstrap "
+            f"available={len(REPOSITORIES)} selected={len(targets)}"
+        )
         return 0
     if not args.trusted_sha or re.fullmatch(r"[0-9a-f]{40}", args.trusted_sha) is None:
         fail("--trusted-sha must be a full lowercase commit SHA")
     api = GitHubApi(token_from_hosts(args.hosts_file))
     verify_identity(api)
     print(f"VERIFIED trusted_source={args.trusted_sha}")
-    for name, description in REPOSITORIES.items():
-        ensure_repository(api, name, description)
-    print("VERIFIED Canonical quote repository bootstrap total=4 overwrite=0")
+    for name in targets:
+        ensure_repository(api, name, REPOSITORIES[name])
+    print(
+        "VERIFIED Canonical quote repository bootstrap "
+        f"selected={len(targets)} overwrite=0"
+    )
     return 0
 
 
