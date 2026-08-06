@@ -1,0 +1,4 @@
+Contact: mailto:alexander.d.mills@gmail.com
+Expires: 2027-07-31T23:59:59Z
+Preferred-Languages: en
+Canonical: https://sonusauris.app/.well-known/security.txt

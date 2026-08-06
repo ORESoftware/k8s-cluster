@@ -1,7 +1,7 @@
 ---
 // Base HTML document layout. Renders <head> (title, description, favicon,
 // Open Graph tags, self-hosted font preload) and a <body><slot/> for page
-// content. Public asset URLs are prefixed with the GitHub Pages base path.
+// content. Public asset URLs are prefixed with the configured Astro base path.
 import "../styles/global.css";
 
 interface Props {
@@ -20,6 +20,35 @@ const {
 const base = import.meta.env.BASE_URL.replace(/\/+$/, "");
 const ogImage = new URL(`${base}/og.svg`, Astro.site);
 const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
+
+// GitHub Pages ignores `public/_headers`, so enforce the active-content policy
+// browsers support in markup. Header-only controls such as HSTS,
+// frame-ancestors, COOP, CORP, nosniff, and Permissions-Policy remain documented
+// in `_headers` for a future CDN/origin migration and must not be represented as
+// active response headers today.
+//
+// The generated site intentionally has no client JavaScript, remote connections,
+// frames, workers, plugins, or document base override. Keep this policy aligned
+// with `public/_headers`, `tests/security-metadata.test.mjs`, and the independent
+// deployed-runtime browser gates in sonus-auris-e2e.
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "base-uri 'none'",
+  "object-src 'none'",
+  "script-src 'none'",
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self'",
+  "img-src 'self' data:",
+  "media-src 'self' blob:",
+  "connect-src 'none'",
+  "frame-src 'none'",
+  "worker-src 'none'",
+  "manifest-src 'self'",
+  "form-action 'self'",
+  "upgrade-insecure-requests",
+].join("; ");
+const enforceMetaCsp = import.meta.env.PROD;
+
 const fontFaceCss = `@font-face {
   font-family: "Baloo 2";
   font-style: normal;
@@ -34,6 +63,11 @@ const fontFaceCss = `@font-face {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    {enforceMetaCsp && (
+      <meta http-equiv="Content-Security-Policy" content={contentSecurityPolicy} />
+    )}
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta name="robots" content="index,follow,max-image-preview:large" />
     <link rel="icon" type="image/svg+xml" href={`${base}/favicon.svg`} />
     <meta name="generator" content={Astro.generator} />
 

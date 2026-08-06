@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,6 +14,7 @@ const pointers = new Map([
 
 assert.ok(existsSync(canonical), "missing lowercase agents.md");
 const text = readFileSync(canonical, "utf8");
+const canonicalStat = statSync(canonical);
 for (const phrase of [
   "github.com/sonus-auris",
   "Linear project: `github.com/sonus-auris`",
@@ -29,7 +30,16 @@ for (const phrase of [
 for (const [relative, expected] of pointers) {
   const file = path.join(root, relative);
   assert.ok(existsSync(file), `missing pointer ${relative}`);
-  assert.equal(readFileSync(file, "utf8"), expected, `${relative} duplicates or diverges from canonical instructions`);
+  const fileText = readFileSync(file, "utf8");
+  const fileStat = statSync(file);
+  const aliasesCanonicalFile = relative === "AGENTS.md"
+    && fileStat.dev === canonicalStat.dev
+    && fileStat.ino === canonicalStat.ino;
+  if (aliasesCanonicalFile) {
+    assert.equal(fileText, text, `${relative} must expose canonical instructions on a case-insensitive filesystem`);
+  } else {
+    assert.equal(fileText, expected, `${relative} duplicates or diverges from canonical instructions`);
+  }
 }
 
 function discover(start) {

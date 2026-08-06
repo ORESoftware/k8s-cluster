@@ -1,6 +1,8 @@
 # build output
 dist/
 .output/
+artifacts/
+artifacts/
 
 # dependencies
 node_modules/
@@ -21,7 +23,16 @@ pnpm-debug.log*
 
 # macOS
 .DS_Store
+
+# agent scratch space; worktrees remain human-directed only
 tmp
 temp
 tmp/worktrees
 temp/worktrees
+
+# playwright
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+.playwright-hostile-build/

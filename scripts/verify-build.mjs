@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 
+import {
+  publicEnvForNamedStep,
+  publicKeysFromDotenv,
+  resolveBuildPath,
+  resolveSameOriginBuildTarget,
+} from "./deploy-contract.mjs";
+
 const dist = path.resolve("dist");
 assert.ok(existsSync(dist), "dist/ is missing; run the Astro build first");
 
@@ -125,12 +132,98 @@ for (const file of htmlFiles) {
     if (/^(?:https?:|mailto:|tel:|data:|javascript:|#)/i.test(href)) continue;
     const target = href.split(/[?#]/, 1)[0];
     if (!target.startsWith("/")) continue;
-    const relative = target.replace(/^\/+/, "");
-    const candidate = target.endsWith("/")
-      ? path.join(dist, relative, "index.html")
-      : path.join(dist, relative || "index.html");
+    const candidate = resolveBuildPath(target, dist);
     assert.ok(existsSync(candidate), `${path.relative(dist, file)}: broken internal link ${href}`);
   }
 }
+
+// Absolute same-origin asset references that live in `content=` attributes
+// rather than `href=`/`src=`. The walk above only follows `href=`, and
+// tests/build-security.test.mjs matches only <a|form|iframe|link|script ...
+// action|href|src>, so a <meta property="og:image"> pointing at a deleted file
+// is invisible to every other gate: the build succeeds and ships a 404 to every
+// link unfurler. Resolve by exact origin and keep decoded paths inside dist/.
+for (const file of htmlFiles) {
+  const html = readFileSync(file, "utf8");
+  for (const match of html.matchAll(/<meta\b[^>]*\bcontent=["']([^"']+)["'][^>]*>/gi)) {
+    const value = match[1];
+    const candidate = resolveSameOriginBuildTarget(value, productionHost, dist);
+    if (candidate === null) continue;
+    assert.ok(
+      existsSync(candidate),
+      `${path.relative(dist, file)}: <meta> references ${value}, which is not in the build`,
+    );
+  }
+}
+
+// Astro inlines PUBLIC_* variables at build time, so a value the deployment
+// workflow forgets does not error — the component silently renders its
+// unconfigured fallback and the site ships dead CTAs. The release workflow now
+// has exactly one framework build; scope the variable contract to that uniquely
+// named step and reject any return of a second Astro action/build path.
+const deployWorkflow = path.resolve(".github/workflows/deploy.yml");
+const envExample = path.resolve(".env.example");
+assert.ok(existsSync(deployWorkflow), ".github/workflows/deploy.yml is missing");
+assert.ok(existsSync(envExample), ".env.example is missing");
+
+const workflow = readFileSync(deployWorkflow, "utf8");
+const productionEnvironment = publicEnvForNamedStep(
+  workflow,
+  "Build and verify the exact production-root static site",
+);
+assert.equal(
+  (workflow.match(/\bnpm run check\b/g) ?? []).length,
+  1,
+  "deploy workflow must run exactly one production framework build and verification path",
+);
+assert.equal(
+  (workflow.match(/\bnpm run evidence:pages\b/g) ?? []).length,
+  1,
+  "deploy workflow must seal the verified Pages tree exactly once",
+);
+assert.ok(
+  !workflow.includes("withastro/action@"),
+  "deploy workflow must not rebuild after verification with withastro/action",
+);
+
+const forwarded = new Set(productionEnvironment.keys());
+const documented = publicKeysFromDotenv(readFileSync(envExample, "utf8"));
+const srcDir = path.resolve("src");
+const referenced = new Set();
+for (const file of walk(srcDir)) {
+  if (!/\.(astro|ts|tsx|js|mjs)$/.test(file)) continue;
+  for (const match of readFileSync(file, "utf8").matchAll(/PUBLIC_[A-Z0-9_]+/g)) {
+    referenced.add(match[0]);
+  }
+}
+
+const missingFromWorkflow = [...referenced].filter((name) => !forwarded.has(name)).sort();
+assert.deepEqual(
+  missingFromWorkflow,
+  [],
+  `.github/workflows/deploy.yml does not forward ${missingFromWorkflow.join(", ")} in the ` +
+    "single production build. src/ reads these, so production would render an unconfigured fallback.",
+);
+
+const unreferencedWorkflowKeys = [...forwarded].filter((name) => !referenced.has(name)).sort();
+assert.deepEqual(
+  unreferencedWorkflowKeys,
+  [],
+  `deploy workflow forwards unreferenced variables: ${unreferencedWorkflowKeys.join(", ")}`,
+);
+
+const missingFromExample = [...referenced].filter((name) => !documented.has(name)).sort();
+assert.deepEqual(
+  missingFromExample,
+  [],
+  `.env.example does not document source variables: ${missingFromExample.join(", ")}`,
+);
+
+const staleExampleKeys = [...documented].filter((name) => !referenced.has(name)).sort();
+assert.deepEqual(
+  staleExampleKeys,
+  [],
+  `.env.example documents unreferenced variables: ${staleExampleKeys.join(", ")}`,
+);
 
 console.log(`Verified ${htmlFiles.length} generated HTML pages for ${productionHost}.`);
