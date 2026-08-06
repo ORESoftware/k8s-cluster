@@ -59,3 +59,39 @@ stdout logs to Loki, and set `OTEL_EXPORTER_OTLP_ENDPOINT` to the collector's
 OTLP/HTTP base URL. The server derives `/v1/traces` and `/v1/metrics`, exports
 both signals, and records request count, active requests, and duration using
 route templates rather than raw URLs.
+
+## Cross-surface delivery
+
+User-visible, scenario, model, run, replay, result, authorization, notification,
+navigation, or deep-link changes in this Rust web portal must be evaluated for:
+
+- the planned Flutter app `akrion-sim/akrion-flutter` on Android, iOS, Flutter
+  Web/mobile web, and Flutter desktop;
+- the planned native Rust workbench `akrion-sim/akrion-desktop.rs`; and
+- Akrion interfaces, generated clients, scenario/run schemas, deterministic
+  seeds, route types, result bundles, and conformance fixtures.
+
+This is judgment-based coordination. SEO, server-rendered portal presentation,
+and web-only administration may remain web-only. Native local datasets,
+large-batch execution, GPU visualization, file dialogs, and offline replay may
+be native-specific. Scenario/model semantics, run state, deterministic replay,
+result interpretation, permissions, errors, and navigation normally require
+coordinated changes or an explicit no-change rationale and parity follow-up.
+
+Deep links are HTTPS-first:
+
+```text
+https://<verified-akrion-owned-host>/open/<route>?<bounded-query>
+```
+
+A custom-scheme fallback must be assigned through a reviewed ADR before it is
+registered; do not invent or ship an unowned scheme. Web, Flutter, and Rust
+desktop must share versioned route types and fixtures and support cold start,
+already-running delivery, authentication resume, replay/expiry rejection, and
+browser fallback. Private datasets, result payloads, credentials, tokens,
+absolute local paths, and sensitive simulation inputs are prohibited in URLs;
+use bounded identifiers or short-lived, single-use, audience-bound handoff
+codes.
+
+See [`docs/CROSS_SURFACE_DELIVERY.md`](docs/CROSS_SURFACE_DELIVERY.md) and the
+[portfolio policy](https://github.com/ORESoftware/project-registry/blob/main/docs/cross-surface-delivery.md).
