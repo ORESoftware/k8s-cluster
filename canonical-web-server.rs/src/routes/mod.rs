@@ -1,6 +1,7 @@
 mod auth;
 mod health;
 mod pages;
+mod quote;
 mod websocket;
 
 pub mod api;
@@ -30,6 +31,8 @@ pub fn router(state: AppState) -> Router {
     let private_application = Router::new()
         .route("/login", get(auth::login_page))
         .route("/ws", axum::routing::any(websocket::upgrade))
+        .route("/u/quote", get(quote::page).post(quote::submit))
+        .route("/u/quote/{id}", get(quote::detail))
         .nest("/api", api::router())
         .nest("/auth", auth::router())
         .nest("/app", pages::router())
@@ -66,6 +69,33 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .merge(application)
         .fallback_service(marketing)
+        .with_state(state)
+}
+
+/// Router for the separately deployed `canonical-api-server` process.
+///
+/// It deliberately has no marketing fallback, password-login page, or account
+/// UI. Session-cookie REST and WebSocket calls still pass through the same
+/// origin/CSRF/session validation used by the combined web process.
+pub fn api_only_router(state: AppState) -> Router {
+    let content_security_policy =
+        application_content_security_policy(&state.config.allowed_origins);
+    let private_api = Router::new()
+        .route("/ws", axum::routing::any(websocket::upgrade))
+        .nest("/api", api::router())
+        .layer(SetResponseHeaderLayer::overriding(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-store"),
+        ));
+    Router::new()
+        .route("/healthz", get(health::healthz))
+        .route("/readyz", get(health::readyz))
+        .route("/metrics", get(metrics::endpoint))
+        .merge(private_api)
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CONTENT_SECURITY_POLICY,
+            content_security_policy,
+        ))
         .with_state(state)
 }
 

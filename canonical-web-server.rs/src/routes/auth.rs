@@ -8,7 +8,7 @@ use crate::{
 };
 use axum::{
     extract::{DefaultBodyLimit, Form, State},
-    http::{HeaderMap, HeaderValue, StatusCode},
+    http::{HeaderMap, HeaderName, HeaderValue, StatusCode},
     response::{IntoResponse, Redirect, Response},
     routing::post,
     Router,
@@ -174,7 +174,18 @@ async fn logout(
         state.config.session_cookie.clone(),
         state.config.cookie_secure,
     ));
-    Ok((jar, Redirect::to("/login")).into_response())
+    let mut response = (jar, Redirect::to("/login")).into_response();
+    // The application intentionally stores offline customer drafts in
+    // IndexedDB. Revoking only the server session would leave that origin data
+    // available to the next person using the browser profile. Clear the
+    // application cache, cookies, and storage at the same security boundary as
+    // session revocation. The explicit Set-Cookie deletion remains for clients
+    // that do not implement Clear-Site-Data.
+    response.headers_mut().insert(
+        HeaderName::from_static("clear-site-data"),
+        HeaderValue::from_static("\"cache\", \"cookies\", \"storage\""),
+    );
+    Ok(response)
 }
 
 async fn auth_not_found() -> Response {

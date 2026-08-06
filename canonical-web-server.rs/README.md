@@ -41,6 +41,9 @@ credentials or the server's Supabase token pair.
   HTTP spans and low-cardinality metrics for the collector/Prometheus.
 - `src/routes/` — probes, Maud/HTMX pages, versioned REST, and authenticated
   WebSocket upgrade handling.
+- `src/quote_api.rs` — bounded client and Maud views for the separately deployed
+  `canonical-api-server.rs`; it sends a verified user id under a dedicated
+  service credential and never exposes Gemini or database credentials.
 - `src/sync/` — compare-and-swap mutations, durable idempotency, tombstones,
   owner-bound encrypted cursors, and pull pagination.
 - `src/ws/` — owner-scoped in-process fanout plus a bounded PostgreSQL
@@ -66,6 +69,8 @@ new kind only with matching validation, authorization, schema, and merge rules.
 | `POST` | `/auth/login` | Supabase password login and opaque session creation |
 | `POST` | `/auth/logout` | CSRF-protected local/Supabase logout |
 | `GET` | `/app` | Authenticated Maud application shell |
+| `GET`, `POST` | `/u/quote` | Shared-auth-protected compliance quote workflow |
+| `GET` | `/u/quote/{quote_id}` | Owner-scoped quote status/detail |
 | `GET` | `/app/fragments/session` | HTMX session fragment |
 | `GET` | `/api/v1/{health,info,me}` | Versioned REST metadata/current user |
 | `GET` | `/api/v1/sync/changes` | Incremental authoritative pull |

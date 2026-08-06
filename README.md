@@ -1,41 +1,58 @@
-<!-- BEGIN do-not-work-here-notice -->
-> [!CAUTION]
-> **Do not do development in this checkout. Use `~/codes/canonical-cloud/` instead.**
->
-> This repo is a *mirror*. The `canonical-interfaces/`,
-> `canonical-marketing-site.web/`, `canonical-web-server.rs/` and
-> `canonical-monorepo/` directories inside it are **not** git repositories and
-> **not** submodules — they are plain copies of those repos' files, committed
-> here as ordinary tracked files (see the `Mirror …` commits in `git log`).
-> Editing them here does not touch the real repos, cannot be pushed to them,
-> and silently diverges from upstream.
->
-> Real source of truth, one clone per repo:
->
-> ```
-> ~/codes/canonical-cloud/canonical-monorepo/          <- superproject; deploy from here
-> ~/codes/canonical-cloud/canonical-web-server.rs/
-> ~/codes/canonical-cloud/canonical-marketing-site.web/
-> ~/codes/canonical-cloud/canonical-interfaces/
-> ~/codes/canonical-cloud/canonical-mcp-server.rs/
-> ~/codes/canonical-cloud/canonical.cloud/             <- this repo (mirror only)
-> ```
->
-> `canonical-monorepo` is the one that wires the apps together *properly*, via
-> real submodule gitlinks under `apps/`. `canonical-mcp-server.rs/` is the only
-> genuine submodule in this repo.
->
-> Note the two confusingly similar names: the **directory**
-> `~/codes/canonical-cloud/` (a plain folder holding all the clones) vs. the
-> **repo** `canonical.cloud` (this one, nested inside it).
-<!-- END do-not-work-here-notice -->
+# canonical.cloud — legacy mirror
 
-<!-- BEGIN k8s-cluster-submodule-notice -->
-> [!NOTE]
-> **Canonical source.** This repository is the source of truth for its code. It
-> is also vendored as a **secondary** git submodule of
-> [ORESoftware/k8s-cluster](https://github.com/ORESoftware/k8s-cluster) at
-> `remote/deployments/canonical-cloud` — make changes here, not in that submodule checkout.
->
-> On disk: source clone `~/codes/canonical-cloud/canonical.cloud` · submodule checkout `~/codes/ores/k8s-cluster/remote/deployments/canonical-cloud`.
-<!-- END k8s-cluster-submodule-notice -->
+> [!CAUTION]
+> **This repository is superseded by [`canonical-cloud/canonical-monorepo`](https://github.com/canonical-cloud/canonical-monorepo). Do not add application code, package manifests, releases, or deployment work here.**
+
+`canonical.cloud` is a historical copied snapshot, not the Canonical Cloud
+monorepo. Most directories in this repository are ordinary tracked copies of
+other repositories; editing them does not update their real upstream source and
+creates silent divergence.
+
+## Active source topology
+
+The active superproject is `canonical-monorepo`:
+
+- deployable application and service repositories are real Git submodules under
+  `canonical-monorepo/apps/`;
+- reusable source dependencies such as `canonical-interfaces`,
+  `canonical-lib`, and `canonical-clients` are declared through Zed package
+  manifests where appropriate;
+- `canonical-cli` consumes `canonical-lib` and `canonical-clients` through Zed;
+- this legacy mirror intentionally has no `.zpkg.toml` and must not become a
+  package.
+
+Current source repositories include:
+
+```text
+canonical-monorepo
+canonical-api-server.rs
+canonical-web-server.rs
+canonical-marketing-site.web
+canonical-mcp-server.rs
+canonical-interfaces
+canonical-lib
+canonical-clients
+canonical-cli
+```
+
+Clone and work in those repositories directly. A typical local layout is:
+
+```text
+~/codes/canonical-cloud/canonical-monorepo/
+~/codes/canonical-cloud/canonical-api-server.rs/
+~/codes/canonical-cloud/canonical-web-server.rs/
+~/codes/canonical-cloud/canonical-marketing-site.web/
+~/codes/canonical-cloud/canonical-mcp-server.rs/
+~/codes/canonical-cloud/canonical-interfaces/
+~/codes/canonical-cloud/canonical-lib/
+~/codes/canonical-cloud/canonical-clients/
+~/codes/canonical-cloud/canonical-cli/
+~/codes/canonical-cloud/canonical.cloud/   # legacy mirror only
+```
+
+## Deployment migration note
+
+Any deployment or infrastructure reference that still checks out
+`canonical.cloud` should be migrated to `canonical-monorepo` and its real
+`apps/` gitlinks. Until that migration is complete, treat this repository as a
+read-only compatibility snapshot.

@@ -15,3 +15,7 @@ tmp/
 
 # Browser e2e dependencies (installed on demand by CI / local runs).
 tests/browser/node_modules/
+tmp
+temp
+tmp/worktrees
+temp/worktrees

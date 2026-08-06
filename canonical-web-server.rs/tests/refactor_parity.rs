@@ -150,10 +150,17 @@ fn workspace_metadata_has_exact_members_and_process_targets() {
     ]);
     assert_eq!(packages.keys().cloned().collect::<BTreeSet<_>>(), expected);
 
-    for (package_name, expected_binary) in [
-        ("canonical-web-server", "canonical-web-server"),
-        ("canonical-session-revoker", "canonical-session-revoker"),
-    ] {
+    let expected_process_targets = BTreeMap::from([
+        (
+            "canonical-web-server",
+            vec!["canonical-api-server", "canonical-web-server"],
+        ),
+        (
+            "canonical-session-revoker",
+            vec!["canonical-session-revoker"],
+        ),
+    ]);
+    for (package_name, expected_binaries) in expected_process_targets {
         let binaries = packages[package_name]["targets"]
             .as_array()
             .expect("package targets must be an array")
@@ -165,7 +172,7 @@ fn workspace_metadata_has_exact_members_and_process_targets() {
             })
             .filter_map(|target| target["name"].as_str())
             .collect::<Vec<_>>();
-        assert_eq!(binaries, [expected_binary]);
+        assert_eq!(binaries, expected_binaries);
     }
 }
 

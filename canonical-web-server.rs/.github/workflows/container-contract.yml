@@ -46,16 +46,22 @@ jobs:
       - name: Enforce application-repository release boundary
         run: node tests/release-boundary.mjs
 
-      - name: Build both production targets without publishing
+      - name: Build all production targets without publishing
         run: |
           set -euo pipefail
           docker build --pull --target web --tag canonical-web-server:pr .
+          docker build --pull --target api --tag canonical-api-server:pr .
           docker build --pull --target revoker --tag canonical-session-revoker:pr .
 
       - name: Verify non-root image users and entrypoints
         run: |
           set -euo pipefail
           test "$(docker image inspect canonical-web-server:pr --format '{{.Config.User}}')" = '65532:65532'
+          test "$(docker image inspect canonical-api-server:pr --format '{{.Config.User}}')" = '65532:65532'
           test "$(docker image inspect canonical-session-revoker:pr --format '{{.Config.User}}')" = '65532:65532'
           test "$(docker image inspect canonical-web-server:pr --format '{{json .Config.Entrypoint}}')" = '["/usr/local/bin/canonical-web-server"]'
+          test "$(docker image inspect canonical-api-server:pr --format '{{json .Config.Entrypoint}}')" = '["/usr/local/bin/canonical-api-server"]'
           test "$(docker image inspect canonical-session-revoker:pr --format '{{json .Config.Entrypoint}}')" = '["/usr/local/bin/canonical-session-revoker"]'
+          test "$(docker image inspect canonical-web-server:pr --format '{{json .Config.ExposedPorts}}')" = '{"8081/tcp":{}}'
+          test "$(docker image inspect canonical-api-server:pr --format '{{json .Config.ExposedPorts}}')" = '{"8081/tcp":{}}'
+          test "$(docker image inspect canonical-session-revoker:pr --format '{{json .Config.ExposedPorts}}')" = 'null'

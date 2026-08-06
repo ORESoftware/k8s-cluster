@@ -353,3 +353,51 @@ CREATE POLICY user_profile_owner ON public.user_profile USING ((user_id = auth.u
 ALTER TABLE public.web_session ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY web_session_process_boundary ON public.web_session USING (((CURRENT_USER = 'canonical_web_server'::name) OR ((CURRENT_USER = 'canonical_session_revoker'::name) AND (current_setting('canonical.system_task'::text, true) = 'session_revocation'::text)))) WITH CHECK (((CURRENT_USER = 'canonical_web_server'::name) OR ((CURRENT_USER = 'canonical_session_revoker'::name) AND (current_setting('canonical.system_task'::text, true) = 'session_revocation'::text))));
+
+-- Compliance quote desired state. Runtime grants are deliberately
+-- maintained in bootstrap_runtime_role.sql because dpm does not diff grants.
+CREATE TABLE public.canonical_context (
+  id uuid PRIMARY KEY,
+  context_key text NOT NULL,
+  version integer NOT NULL CHECK (version > 0),
+  context_markdown text NOT NULL CHECK (octet_length(context_markdown) <= 65536),
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (context_key, version)
+);
+
+CREATE INDEX canonical_context_active_key_idx
+  ON public.canonical_context (context_key, active, version DESC);
+
+CREATE TABLE public.compliance_quote (
+  id uuid PRIMARY KEY,
+  owner_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  status text NOT NULL CHECK (status IN ('queued', 'analyzing', 'ready', 'failed')),
+  request jsonb NOT NULL CHECK (jsonb_typeof(request) = 'object'),
+  analysis jsonb CHECK (analysis IS NULL OR jsonb_typeof(analysis) = 'object'),
+  model text NOT NULL CHECK (length(model) BETWEEN 1 AND 128),
+  failure_code text CHECK (failure_code IS NULL OR length(failure_code) <= 100),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK ((status = 'ready') = (analysis IS NOT NULL)),
+  CHECK (status = 'failed' OR failure_code IS NULL)
+);
+
+CREATE INDEX compliance_quote_owner_created_idx
+  ON public.compliance_quote (owner_id, created_at DESC);
+CREATE INDEX compliance_quote_owner_status_idx
+  ON public.compliance_quote (owner_id, status, updated_at DESC);
+
+ALTER TABLE public.canonical_context ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.canonical_context FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.compliance_quote ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.compliance_quote FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY canonical_context_runtime_read ON public.canonical_context
+  FOR SELECT
+  USING (current_user = 'canonical_web_server' AND active = true);
+
+CREATE POLICY compliance_quote_owner ON public.compliance_quote
+  USING (owner_id = auth.uid())
+  WITH CHECK (owner_id = auth.uid());

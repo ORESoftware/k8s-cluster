@@ -25,3 +25,7 @@ pnpm-debug.log*
 
 # scratch / git worktrees (tmp/worktrees/*)
 tmp/
+tmp
+temp
+tmp/worktrees
+temp/worktrees

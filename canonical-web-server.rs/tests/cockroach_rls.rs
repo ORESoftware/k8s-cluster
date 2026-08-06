@@ -78,8 +78,8 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
         .ok_or_else(|| io::Error::other("policy count returned no row"))?
         .try_get::<i64>("", "count")?;
     assert_eq!(
-        policy_count, 8,
-        "expected seven owner policies plus the web-session process boundary"
+        policy_count, 10,
+        "expected nine owner policies plus the web-session process boundary"
     );
 
     let admin_policy_count = privileged
@@ -147,8 +147,8 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
             WHERE relname IN (
               'user_profile', 'sync_record', 'sync_clock',
               'sync_change', 'sync_receipt', 'audit_engagement',
-              'engagement_note', 'admin_role_assignment', 'admin_audit_event'
-              , 'web_session'
+              'engagement_note', 'admin_role_assignment', 'admin_audit_event',
+              'web_session', 'canonical_context', 'compliance_quote'
             )
               AND NOT (relrowsecurity AND relforcerowsecurity)
             "#,

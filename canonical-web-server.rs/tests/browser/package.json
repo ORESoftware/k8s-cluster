@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Puppeteer + Playwright end-to-end tests that drive the axum server in a real browser.",
   "scripts": {
-    "test:browser": "node --test --test-concurrency=1 --test-timeout=120000 app-playwright.test.mjs app-puppeteer.test.mjs"
+    "test:browser": "node --test --test-concurrency=1 --test-timeout=120000 app-playwright.test.mjs app-puppeteer.test.mjs auth-hardening-playwright.test.mjs"
   },
   "devDependencies": {
     "playwright": "^1.56.0",

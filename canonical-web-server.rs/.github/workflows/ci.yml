@@ -100,13 +100,44 @@ jobs:
               exit 1
             fi
           fi
+      - name: Assert vulnerable rkyv is not in the active Linux build graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          # RUSTSEC-2026-0235 affects rkyv 0.7.46. Cargo retains optional
+          # packages in Cargo.lock even when their activating feature is
+          # disabled. Prove that no normal, build, or dev edge reaches it for
+          # the production Linux target before applying the narrow audit ignore.
+          active_path="$(cargo tree \
+            --workspace \
+            --locked \
+            --target x86_64-unknown-linux-gnu \
+            --invert rkyv@0.7.46 \
+            --edges normal,build,dev \
+            --prefix none 2>/dev/null || true)"
+          if [ -n "$active_path" ]; then
+            printf '%s\n' "$active_path" >&2
+            echo "vulnerable rkyv entered the active Linux dependency graph" >&2
+            exit 1
+          fi
+          echo "rkyv 0.7.46 is absent from the active Linux dependency graph"
       - name: Audit Rust dependencies
         shell: bash
         run: |
           # RUSTSEC-2026-0173: unmaintained (not vulnerable) compile-time-only
           # proc-macro-error2, currently required by SeaORM's derive macros.
-          cargo audit --deny warnings \
-            --ignore RUSTSEC-2026-0173
+          # RUSTSEC-2026-0235: inactive lockfile-only rkyv entry, guarded by
+          # the active Linux graph assertion above. Do not use `--deny warnings`:
+          # cargo-audit intentionally reports accepted `--ignore` entries as
+          # allowed warnings, so that catch-all would reject the reviewed
+          # exceptions themselves. Unignored vulnerabilities still fail by
+          # default, while the explicit categories below retain strict policy.
+          cargo audit \
+            --deny unmaintained \
+            --deny unsound \
+            --deny yanked \
+            --ignore RUSTSEC-2026-0173 \
+            --ignore RUSTSEC-2026-0235
 
   postgres-rls:
     runs-on: ubuntu-latest
@@ -331,6 +362,8 @@ jobs:
             --env DATABASE_MAX_CONNECTIONS=1 \
             --env SUPABASE_URL=http://127.0.0.1:54321 \
             --env SUPABASE_PUBLISHABLE_KEY=sb_publishable_ci_only \
+            --env CANONICAL_API_URL=http://127.0.0.1:18080 \
+            --env CANONICAL_WEB_SERVICE_TOKEN=ci-only-canonical-web-service-token-00000000000000000000000000000000 \
             canonical-web-server:ci
           test "$(docker inspect --format '{{.Config.User}}' canonical-web-server-ci)" = "65532:65532"
           for attempt in {1..30}; do

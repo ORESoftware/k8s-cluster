@@ -27,7 +27,7 @@ pub async fn run(config: Config) -> Result<(), AppError> {
     Ok(())
 }
 
-async fn shutdown_signal() {
+pub(crate) async fn shutdown_signal() {
     let ctrl_c = async {
         if let Err(error) = tokio::signal::ctrl_c().await {
             tracing::error!(%error, "failed to install Ctrl+C handler");

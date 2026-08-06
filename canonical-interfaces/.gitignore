@@ -17,3 +17,7 @@ tmp/
 # zed-pkg local state
 /zed_modules/
 /.zed/pack/
+tmp
+temp
+tmp/worktrees
+temp/worktrees

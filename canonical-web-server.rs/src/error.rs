@@ -20,6 +20,8 @@ pub enum AppError {
     NotFound,
     #[error("upstream authentication service failed")]
     AuthUpstream,
+    #[error("upstream application service failed")]
+    ServiceUpstream,
     #[error("request rate limit exceeded")]
     RateLimited { retry_after_seconds: u64 },
     #[error("password authentication capacity is temporarily exhausted")]
@@ -79,6 +81,11 @@ impl IntoResponse for AppError {
                 StatusCode::SERVICE_UNAVAILABLE,
                 "auth_upstream_unavailable",
                 "authentication service is temporarily unavailable",
+            ),
+            Self::ServiceUpstream => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "service_upstream_unavailable",
+                "quote analysis is temporarily unavailable",
             ),
             Self::RateLimited { .. } => (
                 StatusCode::TOO_MANY_REQUESTS,

@@ -1,0 +1,48 @@
+name: Agent instruction hierarchy
+
+on:
+  workflow_call:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agents-hierarchy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository under validation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Check out the immutable validator implementation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: canonical-cloud/canonical.cloud
+          ref: 5598aec6873e1a16b7e6785acff6092229b82bae
+          path: .agents-validator
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Validate canonical files and pointers
+        run: >-
+          python3 .agents-validator/scripts/resolve_agents.py
+          --repo-root "$GITHUB_WORKSPACE"
+          --check-layout
+      - name: Exercise ancestor discovery and diagnostics
+        run: python3 .agents-validator/scripts/resolve_agents.py --self-test
+      - name: Print repository chain from a nested directory
+        run: |
+          mkdir -p .agents-ci/nested/path
+          python3 .agents-validator/scripts/resolve_agents.py \
+            --cwd .agents-ci/nested/path \
+            --print-chain

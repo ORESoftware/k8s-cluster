@@ -30,6 +30,8 @@ pub struct AppState {
     pub login_rate_limiter: auth::LoginRateLimiter,
     pub(crate) login_auth_semaphore: Arc<Semaphore>,
     pub sessions: auth::SessionService,
+    pub shared_auth: auth::SharedAuthVerifier,
+    pub(crate) quote_api: Option<Arc<crate::quote_api::QuoteApiClient>>,
     pub hub: ws::Hub,
     pub(crate) bearer_auth_semaphore: Arc<Semaphore>,
 }
@@ -40,6 +42,7 @@ impl AppState {
         db: sea_orm::DatabaseConnection,
         auth: Arc<dyn AuthProvider>,
     ) -> Result<Self, AppError> {
+        let shared_auth = auth::SharedAuthVerifier::from_env(&config)?;
         let config = Arc::new(config);
         let sessions = auth::SessionService::new(
             db.clone(),
@@ -63,6 +66,8 @@ impl AppState {
             login_rate_limiter,
             login_auth_semaphore,
             sessions,
+            shared_auth,
+            quote_api: None,
             hub: ws::Hub::new(256),
             bearer_auth_semaphore,
         })
@@ -86,13 +91,23 @@ pub async fn build_state(config: Config) -> Result<AppState, AppError> {
         config.supabase_url.clone(),
         config.supabase_publishable_key.clone(),
     )?);
-    AppState::new(config, db, auth)
+    let mut state = AppState::new(config, db, auth)?;
+    state.quote_api = Some(Arc::new(crate::quote_api::QuoteApiClient::from_env()?));
+    Ok(state)
 }
 
 pub fn build_app(state: AppState) -> Router {
+    decorate_http(routes::router(state))
+}
+
+pub fn build_api_app(state: AppState) -> Router {
+    decorate_http(routes::api_only_router(state))
+}
+
+fn decorate_http(app: Router) -> Router {
     let request_id_header = HeaderName::from_static("x-request-id");
-    let app = telemetry::instrument_http(routes::router(state))
-        .layer(axum::middleware::from_fn(metrics::record_http));
+    let app =
+        telemetry::instrument_http(app).layer(axum::middleware::from_fn(metrics::record_http));
 
     app.layer((
         SetSensitiveRequestHeadersLayer::new([header::AUTHORIZATION, header::COOKIE]),

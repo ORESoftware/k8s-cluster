@@ -168,6 +168,15 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
   public.engagement_note
 TO canonical_web_server;
 
+
+GRANT SELECT ON TABLE
+  public.canonical_context
+TO canonical_web_server;
+
+GRANT SELECT, INSERT, UPDATE ON TABLE
+  public.compliance_quote
+TO canonical_web_server;
+
 -- No current customer table uses a sequence. A future sequence must be
 -- reviewed and granted by exact name; never grant every current/future public
 -- sequence to the customer process.
