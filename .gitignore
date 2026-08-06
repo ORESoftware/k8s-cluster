@@ -6,3 +6,7 @@ env/
 
 # Scratch space (git worktrees, build scratch, etc.) — see agents.md
 tmp/
+tmp
+temp
+tmp/worktrees
+temp/worktrees
