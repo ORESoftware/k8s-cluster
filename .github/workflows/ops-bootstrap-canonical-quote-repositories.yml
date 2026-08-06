@@ -5,12 +5,12 @@ on:
   pull_request:
     paths:
       - .github/workflows/ops-bootstrap-canonical-quote-repositories.yml
-      - scripts/ops/bootstrap_canonical_quote_repositories_20260805.sh
+      - scripts/ops/bootstrap_canonical_quote_repositories_20260805.py
   push:
     branches: [main]
     paths:
       - .github/workflows/ops-bootstrap-canonical-quote-repositories.yml
-      - scripts/ops/bootstrap_canonical_quote_repositories_20260805.sh
+      - scripts/ops/bootstrap_canonical_quote_repositories_20260805.py
   workflow_dispatch:
 
 permissions:
@@ -34,8 +34,8 @@ jobs:
       - name: Validate bounded repository scope
         run: |
           set -euo pipefail
-          bash -n scripts/ops/bootstrap_canonical_quote_repositories_20260805.sh
-          bash scripts/ops/bootstrap_canonical_quote_repositories_20260805.sh --validate-only
+          python3 -m py_compile scripts/ops/bootstrap_canonical_quote_repositories_20260805.py
+          python3 scripts/ops/bootstrap_canonical_quote_repositories_20260805.py --validate-only
 
   bootstrap:
     if: github.event_name != 'pull_request'
@@ -74,8 +74,8 @@ jobs:
           trusted_sha="$(git rev-parse HEAD)"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
 
-          payload="$(base64 --wrap=0 scripts/ops/bootstrap_canonical_quote_repositories_20260805.sh)"
-          remote_command="printf '%s' '$payload' | base64 --decode > /tmp/bootstrap-canonical-quote-repositories.sh && chown ec2-user:ec2-user /tmp/bootstrap-canonical-quote-repositories.sh && chmod 700 /tmp/bootstrap-canonical-quote-repositories.sh; log=/tmp/bootstrap-canonical-quote-repositories.log; status=0; sudo -u ec2-user -H bash -lc 'unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS; exec bash /tmp/bootstrap-canonical-quote-repositories.sh \"\$1\"' _ '$trusted_sha' >\"\$log\" 2>&1 || status=\$?; tail -c 32000 \"\$log\"; rm -f /tmp/bootstrap-canonical-quote-repositories.sh \"\$log\"; exit \$status"
+          payload="$(base64 --wrap=0 scripts/ops/bootstrap_canonical_quote_repositories_20260805.py)"
+          remote_command="printf '%s' '$payload' | base64 --decode > /tmp/bootstrap-canonical-quote-repositories.py && chown ec2-user:ec2-user /tmp/bootstrap-canonical-quote-repositories.py && chmod 700 /tmp/bootstrap-canonical-quote-repositories.py; log=/tmp/bootstrap-canonical-quote-repositories.log; status=0; sudo -u ec2-user -H bash -lc 'unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS; exec python3 /tmp/bootstrap-canonical-quote-repositories.py --trusted-sha \"\$1\"' _ '$trusted_sha' >\"\$log\" 2>&1 || status=\$?; tail -c 32000 \"\$log\"; rm -f /tmp/bootstrap-canonical-quote-repositories.py \"\$log\"; exit \$status"
           parameters="$RUNNER_TEMP/ssm-canonical-quote-bootstrap.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' >"$parameters"
 
