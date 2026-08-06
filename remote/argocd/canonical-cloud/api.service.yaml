@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: canonical-cloud-api
+  namespace: canonical-cloud
+  labels:
+    app.kubernetes.io/name: canonical-api-server
+    app.kubernetes.io/component: api
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: canonical-api-server
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: 8081
+      targetPort: http
+      protocol: TCP
+      appProtocol: http
