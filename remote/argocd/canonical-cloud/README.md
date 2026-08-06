@@ -5,10 +5,11 @@ backend. It is deliberately separate from `dd-next-runtime`: the legacy
 `dd-canonical-cloud` workload remains untouched until this prebuilt-image path
 has been activated and verified.
 
-`canonical-cloud/canonical-monorepo` is the only deployable source of truth.
-Its exact tested commit produces both release images; this overlay consumes
-only those immutable digests and never deploys the umbrella `canonical.cloud`
-repository or an individual application repository. The existing
+`canonical-cloud/canonical-monorepo` remains the deployable source of truth for
+the web and revoker images. The dedicated quote API is released from
+`canonical-cloud/canonical-api-server.rs` because that repository owns its
+runtime, container contract, and immutable digest artifact. This overlay
+consumes only reviewed immutable digests and never builds source in-cluster. The existing
 `remote/deployments/canonical-cloud` secondary submodule is legacy operational
 context and is not an input to this overlay.
 
@@ -23,10 +24,12 @@ then reconciles that commit from `k8s-cluster@dev`.
   8081 through a ClusterIP Service, and is reachable only from
   `dd-remote-gateway` in the `default` namespace (plus the observability
   namespace). Its HTTP connection supports HTMX, REST, and WebSocket upgrades.
-- `canonical-cloud-api` runs `canonical-api-server.rs` on 8081. It accepts
-  only Worker/web HMAC assertions, persists owner-scoped quote records, combines
-  the reviewed Markdown playbook with `canonical_context`, calls Gemini, and
-  exposes owner-scoped REST and WebSocket updates.
+- `canonical-cloud-api` runs `canonical-api-server.rs` on 8080. Direct clients
+  authenticate with a Canonical Supabase bearer token; the web process uses a
+  separate random service credential plus its already verified shared-auth user
+  id. The API persists owner-scoped quote records, combines the reviewed
+  Markdown playbook with `canonical_context`, calls Gemini, and exposes
+  owner-scoped REST and WebSocket updates.
 - `canonical-cloud-revoker` runs `canonical-session-revoker run`. It declares no
   port, Service, Ingress, or accepted NetworkPolicy ingress.
 - `canonical-cloud-web-runtime` and `canonical-cloud-revoker-runtime` are
@@ -51,9 +54,9 @@ The web AWS object `dd/remote-dev/canonical-cloud-web` must contain:
 The quote AWS object `dd/remote-dev/canonical-cloud-quote` must contain:
 
 - `DATABASE_URL` for the quote API's Canonical Supabase/PostgreSQL database;
+- `SUPABASE_URL` and a non-privileged `SUPABASE_PUBLISHABLE_KEY`;
 - `GEMINI_API_KEY`;
-- one random `ORIGIN_ASSERTION_SECRET` shared only by the Canonical Worker,
-  web server, and quote API.
+- one random `CANONICAL_WEB_SERVICE_TOKEN` shared only by the web and quote API.
 
 The worker AWS object `dd/remote-dev/canonical-cloud-revoker` must contain:
 
@@ -104,10 +107,11 @@ automation and secondary-submodule cleanup are tracked in
 Do not apply `remote/argocd/apps/canonical-cloud.application.yaml` until every
 gate below is satisfied:
 
-1. CI has passed for the exact monorepo SHA, both GHCR images and attestations
-   exist, and this overlay is pinned to the reported digests.
-2. The three AWS Secrets Manager objects above exist and External Secrets can
-   materialize all three Kubernetes Secrets.
+1. CI has passed for the exact monorepo web/revoker SHA and the exact API SHA,
+   all GHCR images and attestations exist, and this overlay is pinned to their
+   reported digests.
+2. Every AWS Secrets Manager object above exists and External Secrets can
+   materialize the web, API, revoker, and registry Kubernetes Secrets.
 3. A human has reviewed and applied the schema migration plus the separate
    runtime and revoker role bootstraps. Migrations are never an Argo sync hook,
    init container, GitHub Actions step, or server-startup side effect.
@@ -116,7 +120,8 @@ gate below is satisfied:
    cert-manager has issued `canonical-cloud-origin-tls`. Only then may
    `app.canonical.plus` and `api.canonical.plus` be proxied through the Worker.
    The Worker must preserve cookies and WebSocket upgrade headers while stripping
-   all caller-supplied `x-canonical-edge-*` headers.
+   all caller-supplied `x-canonical-edge-*`, `x-auth-*`, and internal
+   `x-canonical-service-*` / user-identity headers.
 5. The new Service has been exercised directly in-cluster for `/healthz`,
    `/readyz`, REST authentication, session cookies, and WebSocket reconnects.
 
