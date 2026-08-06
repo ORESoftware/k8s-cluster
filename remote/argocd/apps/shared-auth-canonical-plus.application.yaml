@@ -26,6 +26,11 @@
 #   5. The app.canonical.plus edge routes /shared-auth/* to the generated
 #      dd-shared-auth-canonical-plus Service and strips caller x-auth-* headers.
 #
+# Automated sync is intentionally disabled. An operator must verify the exact
+# cluster, namespace, secret objects, image digest, edge origin, and rollback
+# plan before manually syncing this Application. A later activation PR may add
+# automated reconciliation only after deployed certification is complete.
+#
 # Never point this overlay at the Fiducia, oresoftware.com, or generic
 # shared-auth data plane. Realm separation is a security boundary, not only a
 # branding choice.
@@ -38,6 +43,7 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
   annotations:
     canonical.plus/dependency: shared-auth-server.rs#41
+    canonical.plus/activation: manual-after-secret-and-origin-verification
 spec:
   project: shared-auth
   source:
@@ -48,9 +54,6 @@ spec:
     server: https://kubernetes.default.svc
     namespace: shared-auth
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
     syncOptions:
       - ServerSideApply=true
       - CreateNamespace=false
