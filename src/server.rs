@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -55,9 +55,7 @@ fn read_env_or_file(env_key: &str, file_key: &str) -> Result<Option<String>> {
     if let Ok(path) = std::env::var(file_key) {
         let contents = std::fs::read_to_string(&path)
             .with_context(|| format!("reading secret file {path}"))?;
-        return Ok(Some(
-            contents.trim_end_matches(['\n', '\r']).to_string(),
-        ));
+        return Ok(Some(contents.trim_end_matches(['\n', '\r']).to_string()));
     }
     Ok(None)
 }
@@ -65,10 +63,7 @@ fn read_env_or_file(env_key: &str, file_key: &str) -> Result<Option<String>> {
 /// Dispatch one process role while keeping OpenAPI export free of runtime side
 /// effects and retaining telemetry until every runtime mode exits.
 pub(crate) async fn run() -> Result<()> {
-    let role = resolve_role(
-        std::env::args().nth(1),
-        std::env::var("TOR_ROLE").ok(),
-    );
+    let role = resolve_role(std::env::args().nth(1), std::env::var("TOR_ROLE").ok());
     if let Some(scope) = role.strip_prefix("--export-openapi=") {
         print!("{}", web::export_openapi(scope)?);
         return Ok(());

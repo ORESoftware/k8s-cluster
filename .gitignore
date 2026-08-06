@@ -9,3 +9,7 @@ k8s/directory-configmap.yaml
 # `relay-keys.secret.yaml` and `tor-network-secret.secret.yaml`.
 k8s/*.secret.yaml
 !k8s/*.example.secret.yaml
+tmp
+temp
+tmp/worktrees
+temp/worktrees

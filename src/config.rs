@@ -128,7 +128,10 @@ pub fn load_or_create_static_secret(path: &Path) -> Result<(StaticSecret, [u8; 3
             let meta = std::fs::symlink_metadata(path)
                 .with_context(|| format!("stat key file {}", path.display()))?;
             if meta.file_type().is_symlink() {
-                bail!("key file {} is a symlink; refusing to follow it", path.display());
+                bail!(
+                    "key file {} is a symlink; refusing to follow it",
+                    path.display()
+                );
             }
         }
         let text = std::fs::read_to_string(path)
@@ -160,7 +163,8 @@ pub fn load_or_create_static_secret(path: &Path) -> Result<(StaticSecret, [u8; 3
                 .with_context(|| format!("creating key dir {}", parent.display()))?;
         }
     }
-    let encoded = Zeroizing::new(base64::engine::general_purpose::STANDARD.encode(secret.to_bytes()));
+    let encoded =
+        Zeroizing::new(base64::engine::general_purpose::STANDARD.encode(secret.to_bytes()));
     // Create atomically and refuse to follow/overwrite an existing path. On
     // Unix the owner-only mode is applied at creation, eliminating the window
     // where a newly written identity key inherited a permissive umask.

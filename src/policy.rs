@@ -179,7 +179,7 @@ fn is_blocked_v4(v4: Ipv4Addr) -> bool {
     let is_this_network = o[0] == 0; // 0.0.0.0/8
     let is_benchmark = o[0] == 198 && (o[1] == 18 || o[1] == 19); // 198.18.0.0/15
     let is_reserved = o[0] >= 240; // 240.0.0.0/4
-    // 192.0.0.0/24 IETF protocol assignments (incl. 192.0.0.170/171 NAT64/DS-Lite).
+                                   // 192.0.0.0/24 IETF protocol assignments (incl. 192.0.0.170/171 NAT64/DS-Lite).
     let is_ietf_proto = o[0] == 192 && o[1] == 0 && o[2] == 0;
     // 192.88.99.0/24 deprecated 6to4 anycast relay.
     let is_6to4_relay = o[0] == 192 && o[1] == 88 && o[2] == 99;
@@ -319,7 +319,7 @@ mod tests {
         assert!(!is_blocked("192.88.98.1".parse().unwrap()));
         // IPv4-translated (::ffff:0:0/96) wrapping loopback.
         assert!(is_blocked("::ffff:0:7f00:1".parse().unwrap())); // 127.0.0.1
-        // Teredo (2001:0000::/32) with a bit-inverted private client v4 (10.0.0.1).
+                                                                 // Teredo (2001:0000::/32) with a bit-inverted private client v4 (10.0.0.1).
         assert!(is_blocked("2001:0:0:0:0:0:f5ff:fffe".parse().unwrap()));
         // Teredo wrapping a public client v4 (1.1.1.1) stays allowed.
         assert!(!is_blocked("2001:0:0:0:0:0:fefe:fefe".parse().unwrap()));
