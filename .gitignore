@@ -13,3 +13,7 @@
 
 # Cloudflare Wrangler's local account/build cache (may contain account metadata).
 .wrangler/
+tmp
+temp
+tmp/worktrees
+temp/worktrees
