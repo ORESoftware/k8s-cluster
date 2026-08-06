@@ -92,6 +92,21 @@ pub(crate) async fn resolve_repo_path(
     Ok(resolved)
 }
 
+fn is_full_commit_oid(value: &str) -> bool {
+    matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn restricted_git_args() -> Vec<String> {
+    vec![
+        "-c".to_string(),
+        "protocol.ext.allow=never".to_string(),
+        "-c".to_string(),
+        "protocol.file.allow=never".to_string(),
+        "-c".to_string(),
+        "protocol.local.allow=never".to_string(),
+    ]
+}
+
 pub(crate) async fn clone_repository(
     config: &Config,
     request: &BuildRequest,
@@ -99,19 +114,77 @@ pub(crate) async fn clone_repository(
     repo_dir: &Path,
     log_path: &Path,
 ) -> Result<(), String> {
-    let mut clone_args = vec![
-        "-c".to_string(),
-        "protocol.ext.allow=never".to_string(),
-        "-c".to_string(),
-        "protocol.file.allow=never".to_string(),
-        "-c".to_string(),
-        "protocol.local.allow=never".to_string(),
+    let git_ref = clean_optional(request.git_ref.as_deref());
+
+    // `git clone --branch` accepts branch and tag names, not a raw object ID.
+    // Webhook and gha-indie-worker requests intentionally carry an immutable
+    // commit OID, so initialize a repository, fetch exactly that object, and
+    // detach HEAD at FETCH_HEAD. This prevents a moving branch from changing
+    // the code after a webhook or workflow plan has been accepted.
+    if let Some(commit_oid) = git_ref.as_deref().filter(|value| is_full_commit_oid(value)) {
+        let mut init_args = restricted_git_args();
+        init_args.extend([
+            "init".to_string(),
+            "--".to_string(),
+            repo_dir.to_string_lossy().to_string(),
+        ]);
+        run_logged_command(config, log_path, job_dir, &config.git_bin, init_args).await?;
+
+        run_logged_command(
+            config,
+            log_path,
+            job_dir,
+            &config.git_bin,
+            vec![
+                "-C".to_string(),
+                repo_dir.to_string_lossy().to_string(),
+                "remote".to_string(),
+                "add".to_string(),
+                "origin".to_string(),
+                request.repo_url.clone(),
+            ],
+        )
+        .await?;
+
+        let mut fetch_args = restricted_git_args();
+        fetch_args.extend([
+            "-C".to_string(),
+            repo_dir.to_string_lossy().to_string(),
+            "fetch".to_string(),
+            "--depth".to_string(),
+            "1".to_string(),
+            "--no-tags".to_string(),
+            "--no-recurse-submodules".to_string(),
+            "origin".to_string(),
+            commit_oid.to_string(),
+        ]);
+        run_logged_command(config, log_path, job_dir, &config.git_bin, fetch_args).await?;
+
+        return run_logged_command(
+            config,
+            log_path,
+            job_dir,
+            &config.git_bin,
+            vec![
+                "-C".to_string(),
+                repo_dir.to_string_lossy().to_string(),
+                "checkout".to_string(),
+                "--detach".to_string(),
+                "--force".to_string(),
+                "FETCH_HEAD".to_string(),
+            ],
+        )
+        .await;
+    }
+
+    let mut clone_args = restricted_git_args();
+    clone_args.extend([
         "clone".to_string(),
         "--depth".to_string(),
         "1".to_string(),
         "--no-tags".to_string(),
-    ];
-    if let Some(git_ref) = clean_optional(request.git_ref.as_deref()) {
+    ]);
+    if let Some(git_ref) = git_ref {
         clone_args.push("--branch".to_string());
         clone_args.push(git_ref);
     }
@@ -645,5 +718,27 @@ pub(crate) async fn submit_from_nats(state: &AppState, payload: &[u8]) -> Result
         }
         Err((StatusCode::SERVICE_UNAVAILABLE, message)) => Err(NatsSubmitError::Transient(message)),
         Err((_, message)) => Err(NatsSubmitError::Invalid(message)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_full_commit_oid;
+
+    #[test]
+    fn immutable_commit_detection_accepts_only_full_hex_object_ids() {
+        assert!(is_full_commit_oid(
+            "0123456789abcdef0123456789abcdef01234567"
+        ));
+        assert!(is_full_commit_oid(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        ));
+        assert!(!is_full_commit_oid("0123456"));
+        assert!(!is_full_commit_oid(
+            "0123456789abcdef0123456789abcdef0123456"
+        ));
+        assert!(!is_full_commit_oid(
+            "0123456789abcdef0123456789abcdef0123456z"
+        ));
     }
 }
