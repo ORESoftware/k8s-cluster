@@ -1,0 +1,74 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Canonical Plus runs the same hardened Shared Auth binary as every other
+# product authority, but with independent issuer, Supabase project, RDS
+# identity/session plane, signing key, browser-state key, and cookie namespace.
+namespace: shared-auth
+
+resources:
+  - ../..
+
+nameSuffix: -canonical-plus
+
+labels:
+  - pairs:
+      app.kubernetes.io/instance: canonical-plus
+      app.kubernetes.io/part-of: canonical-cloud
+    includeSelectors: true
+    includeTemplates: true
+
+patches:
+  - path: deployment-patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: dd-shared-auth
+  - target:
+      group: external-secrets.io
+      version: v1beta1
+      kind: ExternalSecret
+      name: dd-shared-auth-secrets
+    patch: |-
+      - op: replace
+        path: /spec/target/name
+        value: dd-shared-auth-secrets-canonical-plus
+      - op: replace
+        path: /spec/data
+        value:
+          - secretKey: AUTH_SUPABASE_PROJECTS
+            remoteRef:
+              key: dd/shared-auth/customer/canonical-plus/supabase-projects
+          - secretKey: AUTH_SIGNING_KEY_PEM
+            remoteRef:
+              key: dd/shared-auth/customer/canonical-plus/signing-key-pem
+          - secretKey: AUTH_DATABASE_URL
+            remoteRef:
+              key: dd/shared-auth/customer/canonical-plus/database-url
+          - secretKey: AUTH_DATABASE_ENDPOINT_HOST
+            remoteRef:
+              key: dd/shared-auth/customer/canonical-plus/database-endpoint-host
+          - secretKey: AUTH_DATABASE_RESOURCE_REF
+            remoteRef:
+              key: dd/shared-auth/customer/canonical-plus/database-resource-ref
+          - secretKey: AUTH_REALM_SUPABASE_PROJECT_REF
+            remoteRef:
+              key: dd/shared-auth/customer/canonical-plus/supabase-project-ref
+          - secretKey: AUTH_REDIS_URL
+            remoteRef:
+              key: dd/shared-auth/customer/canonical-plus/redis-url
+          - secretKey: AUTH_WEBHOOK_SECRET
+            remoteRef:
+              key: dd/shared-auth/customer/canonical-plus/webhook-secret
+          - secretKey: AUTH_INTROSPECT_SECRET
+            remoteRef:
+              key: dd/shared-auth/customer/canonical-plus/introspect-secret
+          - secretKey: AUTH_BROWSER_SEAL_SECRET
+            remoteRef:
+              key: dd/shared-auth/customer/canonical-plus/browser-seal-secret
+      - op: replace
+        path: /spec/dataFrom
+        value:
+          - extract:
+              key: dd/shared-auth/customer/canonical-plus/provider-credentials
