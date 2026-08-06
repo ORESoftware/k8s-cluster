@@ -259,6 +259,10 @@ resources:
   - dd-idle-reaper-rbac.yaml
   - dd-idle-reaper.deployment.yaml
   - dd-headlamp-cron-sentinel.cronjob.yaml
+  # Runtime hygiene: hourly reap of Evicted pod tombstones older than 3 days so
+  # node-eviction debris can't pile up (default ns; least-priv pod delete).
+  - dd-evicted-pod-reaper-rbac.yaml
+  - dd-evicted-pod-reaper.cronjob.yaml
   # ai-agent-bridge: inter-agent conversation bus (HTTP :8142 + TCP :8143).
   # Built in-pod from the remote/deployments/ai-agent-bridge submodule; synced on
   # both AWS and Hetzner via the dd-next-runtime app.
