@@ -102,7 +102,7 @@ pub(crate) async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
         supabase_enabled,
         verifier,
     };
-    let app = app(state, hub).merge(dd_runtime_config_client::router());
+    let app = app(state, hub);
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let http_address = config.http_address()?;
@@ -141,6 +141,19 @@ fn app(state: WebState, hub: EventHub) -> Router {
         .merge(protected)
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
         .with_state(state)
+        // The runtime-config client owns its own state, so it can only be merged
+        // after `with_state` — which means the body limit above does not reach
+        // it. Applying the limit to that router directly is what keeps
+        // /internal/* from accepting an unbounded request body. It used to be
+        // merged in `run_web`, outside this function and after the layer, so the
+        // control-plane surface was unbounded here even though the API binary
+        // had already been fixed.
+        .merge(dd_runtime_config_client::router().layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES)))
+        // Last, so it wraps everything above including /internal/* and the 404
+        // fallback. This is the browser-facing binary — it serves /mash, the one
+        // HTML surface a browser actually loads — so it needs the policy at
+        // least as much as the JSON API does.
+        .layer(middleware::from_fn(crate::security_headers))
 }
 
 #[tracing::instrument(
@@ -321,6 +334,72 @@ mod tests {
                 StatusCode::OK
             );
         }
+    }
+
+    /// This binary is the one a browser actually loads `/mash` from, so the
+    /// policy has to reach it — and reach the surfaces that are easy to miss.
+    ///
+    /// The headers are applied as the outermost layer: `Router::layer` only
+    /// wraps routes added before it, so a layer placed before the `/internal/*`
+    /// merge would skip that surface, and error responses would go bare. A
+    /// sniffed or framed 401/404 body is still an attack surface.
+    #[tokio::test]
+    async fn every_web_surface_carries_the_security_headers() {
+        let app = test_app(EventHub::new(ServiceSurface::Web, 8));
+
+        let cases = [
+            ("/healthz", "public route"),
+            ("/mash", "authenticated HTML surface"),
+            (dd_runtime_config_client::SNAPSHOT_ROUTE_PATH, "/internal/*"),
+            ("/not-a-route-at-all", "404 fallback"),
+        ];
+        for (path, description) in cases {
+            let response = request(&app, Method::GET, path).await;
+            let headers = response.headers();
+            for header in [
+                "content-security-policy",
+                "x-content-type-options",
+                "x-frame-options",
+                "referrer-policy",
+                "cache-control",
+                "permissions-policy",
+            ] {
+                assert!(
+                    headers.contains_key(header),
+                    "{description} ({path}) is missing {header}"
+                );
+            }
+            assert_eq!(
+                headers["content-security-policy"],
+                transport::CSP,
+                "{description} ({path}) must carry the shared policy"
+            );
+            assert_eq!(headers["x-content-type-options"], "nosniff");
+            assert_eq!(headers["x-frame-options"], "DENY");
+        }
+    }
+
+    /// Regression test: `/internal/*` used to be merged in `run_web`, *after*
+    /// `app()` had already applied `DefaultBodyLimit`, so the control-plane
+    /// surface on this binary accepted unbounded request bodies. The API binary
+    /// had the identical bug and was fixed; this one was missed because the
+    /// merge happened in a different function.
+    #[tokio::test]
+    async fn the_control_plane_surface_is_covered_by_the_body_limit() {
+        let app = test_app(EventHub::new(ServiceSurface::Web, 8));
+        let oversized = vec![b'a'; MAX_HTTP_BODY_BYTES + 1];
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri(dd_runtime_config_client::APPLY_ROUTE_PATH)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(oversized))
+                    .expect("build oversized request"),
+            )
+            .await
+            .expect("web router is infallible");
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 
     #[tokio::test]

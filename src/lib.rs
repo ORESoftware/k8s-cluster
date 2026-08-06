@@ -124298,14 +124298,22 @@ fn build_router(state: AppState, realtime_hub: EventHub) -> Router {
         .layer(middleware::from_fn(security_headers))
 }
 
-/// Response headers that reduce the blast radius of any HTML this service
-/// returns. `daedalus-web-server` sets the same set via `tower-http`; this
-/// service has no `tower-http` dependency, so it uses a plain axum middleware
-/// rather than adding one for four headers.
+/// Response headers that reduce the blast radius of any HTML these services
+/// return. `daedalus-web-server` sets the same set via `tower-http`; this crate
+/// has no `tower-http` dependency, so it uses a plain axum middleware rather
+/// than adding one for five headers.
+///
+/// Shared by both binaries on purpose. `dd-fabrication-web-server` is the more
+/// browser-exposed of the two — it is the one that actually serves `/mash` to a
+/// browser — so a policy that lived only in [`build_router`] would protect the
+/// JSON API and miss the HTML. `web_server::app` applies the same layer.
 ///
 /// Only inserted when absent, so a handler that needs something looser stays in
 /// control — the same `if_not_present` semantics the web server relies on.
-async fn security_headers(request: axum::extract::Request, next: middleware::Next) -> Response {
+pub(crate) async fn security_headers(
+    request: axum::extract::Request,
+    next: middleware::Next,
+) -> Response {
     use axum::http::header::{
         HeaderName, HeaderValue, CACHE_CONTROL, CONTENT_SECURITY_POLICY, REFERRER_POLICY,
         X_CONTENT_TYPE_OPTIONS, X_FRAME_OPTIONS,
