@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: canonical-cloud-api
+  namespace: canonical-cloud
+  labels:
+    app.kubernetes.io/name: canonical-api-server
+    app.kubernetes.io/component: api
+  annotations:
+    canonical.cloud/release-sha: "064187591433b10671b467467a506bf414d3d441"
+spec:
+  replicas: 2
+  minReadySeconds: 5
+  progressDeadlineSeconds: 300
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: canonical-api-server
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: canonical-api-server
+        app.kubernetes.io/component: api
+      annotations:
+        canonical.cloud/release-sha: "064187591433b10671b467467a506bf414d3d441"
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: canonical-cloud-ghcr-pull
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: ghcr.io/canonical-cloud/canonical-api-server.rs@sha256:2545abdb95d3cef734edb1229343a56a419a8a6368f52812e526a4a065b79f7b
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          envFrom:
+            - secretRef:
+                name: canonical-cloud-api-runtime
+          env:
+            - name: PORT
+              value: "8080"
+            - name: GEMINI_MODEL
+              value: gemini-3.6-pro
+            - name: QUOTE_CONTEXT_KEY
+              value: quote_analysis
+            - name: RUST_LOG
+              value: canonical_api_server=info,tower_http=info,hyper=warn,h2=warn,reqwest=warn,sea_orm=warn
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
