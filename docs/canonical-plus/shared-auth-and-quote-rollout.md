@@ -79,13 +79,18 @@ context fields are treated as untrusted data, not instructions. The result is a
 preliminary scope/timeline/investment range for human review, never an audit
 opinion, certification, attestation, or legal conclusion.
 
+The operator-selected default model is `gemini-3.6-pro`; `GEMINI_MODEL` remains
+an explicit runtime override. Production activation is fail-closed until the
+selected Google project and region prove that exact model identifier is enabled.
+Do not silently substitute another model or rewrite the default in source.
+
 PostgreSQL remains authoritative. REST reads recover current status; WebSocket
 messages are notification hints. The asynchronous states are `queued`,
 `analyzing`, `ready`, and `failed`.
 
 ## Required secrets
 
-The Canonical overlay reads only these External Secrets paths:
+The Canonical Shared Auth overlay reads only these External Secrets paths:
 
 ```text
 dd/shared-auth/customer/canonical-plus/supabase-projects
@@ -101,31 +106,61 @@ dd/shared-auth/customer/canonical-plus/introspect-secret
 dd/shared-auth/customer/canonical-plus/browser-seal-secret
 ```
 
-The quote runtime additionally requires `GEMINI_API_KEY`; `GEMINI_MODEL`
-defaults to `gemini-2.5-pro` and `QUOTE_ANALYSIS_MAX_CONCURRENCY` defaults to 4.
+The quote runtime additionally requires a Canonical-only `GEMINI_API_KEY`.
+`GEMINI_MODEL` defaults to `gemini-3.6-pro`, and
+`QUOTE_ANALYSIS_MAX_CONCURRENCY` defaults to 4. Database migration and runtime
+identities must remain distinct; the web and API processes must not receive the
+privileged migration credential.
 
 ## Ordered rollout
 
-1. Merge and independently validate the Shared Auth browser-session PR.
-2. Merge and independently validate the Cloudflare Worker PR.
-3. Merge the Canonical quote web/API PR after its full permanent CI matrix is green.
-4. Apply the Canonical desired PostgreSQL schema with the privileged migration identity.
-5. Provision the exact External Secrets above.
+1. Confirm `shared-auth/shared-auth-server.rs#41` is merged and its exact server,
+   configuration, migration, and browser-auth contracts passed.
+2. Confirm `shared-auth/shared-auth-infra#9` is merged and its Node, Worker,
+   configuration, and dry-deploy contracts passed.
+3. Merge the Canonical quote web/API PR only after its permanent exact-head CI
+   matrix is fully green, including dependency audit and non-root container
+   validation.
+4. Apply the Canonical desired PostgreSQL schema with the privileged migration
+   identity, then remove that identity from the runtime environment.
+5. Provision the exact Canonical-only Shared Auth and quote secrets. Verify that
+   no Fiducia, oresoftware.com, or generic Shared Auth value is referenced.
 6. Merge this GitOps application; confirm ArgoCD renders
-   `deploy/k8s/overlays/canonical-plus` and the generated names are suffixed
+   `deploy/k8s/overlays/canonical-plus` and generated names are suffixed
    `-canonical-plus`.
-7. Route `/shared-auth/*` to the Canonical Shared Auth Service and all other app
+7. Verify the Cloudflare token, account, exact `canonical.plus` zone, Worker
+   script, routes, DNS record, R2 bucket, and environment before any edge write.
+8. Route `/shared-auth/*` to the Canonical Shared Auth Service and all other app
    traffic to the Canonical web/API origins.
-8. Verify redirect, login, CSRF rejection, owner isolation, quote submission,
-   REST recovery, WebSocket updates, logout/revocation, and refresh rotation.
-9. Add Cloudflare DNS/proxy records only after origin health and TLS checks pass.
+9. Verify redirect, login, sealed return, CSRF rejection, owner isolation, quote
+   submission, Gemini failure handling, REST recovery, WebSocket updates,
+   logout/revocation, and refresh rotation in the deployed environment.
+10. Add or enable proxied Cloudflare DNS only after origin health and TLS checks
+    pass.
 
-## Current activation blockers
+## Current activation state
 
-- The `shared-auth` GitHub organization has a hosted Actions billing/spending
-  block, so its server and Worker jobs have not executed. Their PRs must remain
-  unmerged until the same gates run on an approved independent runner or hosted
-  Actions is restored.
-- Secrets and Supabase/RDS identifiers are intentionally not committed.
-- The ArgoCD application depends on the Canonical overlay being present on the
-  Shared Auth repository's `main` branch.
+Completed dependencies:
+
+- `shared-auth/shared-auth-server.rs#41` is merged.
+- `shared-auth/shared-auth-infra#9` is merged.
+- `canonical-cloud/canonical-marketing-site.web#21` is merged and links to the
+  exact signed-in destination.
+- `deploy/k8s/overlays/canonical-plus` exists on Shared Auth `main`.
+
+Remaining fail-closed gates:
+
+- the exact Canonical web/API release head must complete every required CI job;
+- the desired PostgreSQL schema must be applied with the privileged migration
+  identity;
+- the Canonical-only External Secrets and quote runtime secrets must be proven
+  present;
+- `gemini-3.6-pro` must be proven available to the selected Google project and
+  region;
+- the exact Cloudflare account, `canonical.plus` zone, Worker, routes, DNS, R2
+  bucket, and deployment environment must be inventoried before any write;
+- origin health and TLS must pass before enabling proxied DNS.
+
+Secrets, account identifiers, provider credentials, and private endpoints are
+intentionally excluded from Git. Store them only in the approved secret systems
+and redact operational evidence.
