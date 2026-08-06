@@ -36,3 +36,7 @@ playwright-report/
 blob-report/
 .playwright/
 .playwright-hostile-build/
+tmp
+temp
+tmp/worktrees
+temp/worktrees
