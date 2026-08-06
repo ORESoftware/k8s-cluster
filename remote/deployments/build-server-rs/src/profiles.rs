@@ -29,6 +29,121 @@ pub struct ProfileSpec {
 const FLUTTER_IMAGE: &str =
     "710156900967.dkr.ecr.us-east-1.amazonaws.com/sonus-flutter-builder:3.44.2-c9a6c48423";
 const BROWSER_IMAGE: &str = "mcr.microsoft.com/playwright:v1.60.0-noble";
+const RUST_IMAGE: &str = "docker.io/library/rust:1.90-bookworm";
+const NODE_IMAGE: &str = "docker.io/library/node:22-bookworm";
+const PYTHON_IMAGE: &str = "docker.io/library/python:3.13-bookworm";
+
+const RUST_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
+    name: "Rust formatting, Clippy, and tests",
+    image: RUST_IMAGE,
+    subdirectory: ".",
+    script: r#"set -euo pipefail
+crate_dir=.
+if [ ! -f "$crate_dir/Cargo.toml" ]; then
+  if [ -f remote/deployments/gha-clone-server-rs/Cargo.toml ]; then
+    crate_dir=remote/deployments/gha-clone-server-rs
+  elif [ -f generated/rust/Cargo.toml ] \
+    && [ -f generated/rust/Cargo.lock ] \
+    && [ -f schema/domain.schema.json ] \
+    && [ -f nats/subjects.json ]; then
+    crate_dir=generated/rust
+  else
+    echo "rust-verify requires Cargo.toml at repository root, the reviewed gha-clone-server monorepo path, or the reviewed generated-interface crate shape" >&2
+    exit 2
+  fi
+fi
+cd "$crate_dir"
+rustup component add rustfmt clippy
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-targets --all-features"#,
+}];
+
+const RUST_GENERATED_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
+    name: "Generated Rust interface formatting, Clippy, and tests",
+    image: RUST_IMAGE,
+    subdirectory: ".",
+    script: r#"set -euo pipefail
+manifest=generated/rust/Cargo.toml
+if [ ! -f "$manifest" ]; then
+  echo "rust-generated-verify requires generated/rust/Cargo.toml" >&2
+  exit 2
+fi
+cargo generate-lockfile --manifest-path "$manifest"
+rustup component add rustfmt clippy
+cargo fmt --manifest-path "$manifest" -- --check
+cargo clippy --locked --manifest-path "$manifest" --all-targets -- -D warnings
+cargo test --locked --manifest-path "$manifest" --all-targets"#,
+}];
+
+const NODE_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
+    name: "Node dependency and test verification",
+    image: NODE_IMAGE,
+    subdirectory: ".",
+    script: r#"set -euo pipefail
+package_manager=
+if [ -f pnpm-lock.yaml ]; then
+  corepack enable
+  pnpm install --frozen-lockfile
+  package_manager=pnpm
+elif [ -f yarn.lock ]; then
+  corepack enable
+  yarn install --immutable
+  package_manager=yarn
+elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+  npm ci
+  package_manager=npm
+else
+  echo "node-verify requires pnpm-lock.yaml, yarn.lock, package-lock.json, or npm-shrinkwrap.json" >&2
+  exit 2
+fi
+"$package_manager" test
+if node -e 'const p=require("./package.json"); process.exit(p.scripts && p.scripts[process.argv[1]] ? 0 : 1)' check:typescript; then
+  "$package_manager" run check:typescript
+fi"#,
+}];
+
+const NODE_HARDENED_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
+    name: "Hardened Node operator configuration verification",
+    image: NODE_IMAGE,
+    subdirectory: ".",
+    script: r#"set -euo pipefail
+if [ ! -f package-lock.json ] && [ ! -f npm-shrinkwrap.json ]; then
+  echo "node-hardened-verify requires package-lock.json or npm-shrinkwrap.json" >&2
+  exit 2
+fi
+npm ci --ignore-scripts
+npm run check
+npm run test:operator-config
+npm audit --audit-level=high"#,
+}];
+
+const NODE_HARDENED_TEST_STEPS: &[ProfileStep] = &[ProfileStep {
+    name: "Lifecycle-script-free Node repository tests",
+    image: NODE_IMAGE,
+    subdirectory: ".",
+    script: r#"set -euo pipefail
+if [ ! -f package-lock.json ] && [ ! -f npm-shrinkwrap.json ]; then
+  echo "node-hardened-test requires package-lock.json or npm-shrinkwrap.json" >&2
+  exit 2
+fi
+npm ci --ignore-scripts
+npm test"#,
+}];
+
+const PYTHON_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
+    name: "Python compile and pytest verification",
+    image: PYTHON_IMAGE,
+    subdirectory: ".",
+    script: r#"set -euo pipefail
+python -m compileall -q .
+if [ -f requirements.txt ]; then
+  python -m pip install --disable-pip-version-check --no-input -r requirements.txt
+elif [ -f pyproject.toml ]; then
+  python -m pip install --disable-pip-version-check --no-input .
+fi
+python -m pytest"#,
+}];
 
 const FLUTTER_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
     name: "flutter verify",
@@ -103,6 +218,50 @@ const BROWSER_E2E_STEPS: &[ProfileStep] = &[ProfileStep {
 
 pub const SPECS: &[ProfileSpec] = &[
     ProfileSpec {
+        name: "rust-verify",
+        platform: "linux",
+        description: "Rust formatting, Clippy with warnings denied, and all-feature tests",
+        steps: RUST_VERIFY_STEPS,
+        artifact_paths: &[],
+    },
+    ProfileSpec {
+        name: "rust-generated-verify",
+        platform: "linux",
+        description: "Generated Rust interface lock, formatting, warnings-denied Clippy, and tests",
+        steps: RUST_GENERATED_VERIFY_STEPS,
+        artifact_paths: &[],
+    },
+    ProfileSpec {
+        name: "node-verify",
+        platform: "linux",
+        description:
+            "Lockfile-strict Node dependency installation, tests, and optional TypeScript contract checks",
+        steps: NODE_VERIFY_STEPS,
+        artifact_paths: &[],
+    },
+    ProfileSpec {
+        name: "node-hardened-verify",
+        platform: "linux",
+        description:
+            "Lifecycle-script-free Node operator checks, focused tests, and high-severity audit",
+        steps: NODE_HARDENED_VERIFY_STEPS,
+        artifact_paths: &[],
+    },
+    ProfileSpec {
+        name: "node-hardened-test",
+        platform: "linux",
+        description: "Lifecycle-script-free lockfile install and complete Node repository tests",
+        steps: NODE_HARDENED_TEST_STEPS,
+        artifact_paths: &[],
+    },
+    ProfileSpec {
+        name: "python-verify",
+        platform: "linux",
+        description: "Python bytecode compilation, declared dependency install, and pytest",
+        steps: PYTHON_VERIFY_STEPS,
+        artifact_paths: &[],
+    },
+    ProfileSpec {
         name: "flutter-verify",
         platform: "linux",
         description: "Flutter dependency resolution, analysis, and unit tests",
@@ -174,4 +333,141 @@ pub fn find(name: &str) -> Option<&'static ProfileSpec> {
 
 pub fn names() -> impl Iterator<Item = &'static str> {
     SPECS.iter().map(|profile| profile.name)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use super::*;
+
+    #[test]
+    fn profile_names_are_unique_and_resolvable() {
+        let names = names().collect::<Vec<_>>();
+        let unique = names.iter().copied().collect::<BTreeSet<_>>();
+        assert_eq!(names.len(), unique.len());
+        for name in names {
+            assert_eq!(find(name).map(|profile| profile.name), Some(name));
+        }
+    }
+
+    #[test]
+    fn every_profile_is_linux_fixed_and_bounded() {
+        for profile in SPECS {
+            assert_eq!(profile.platform, "linux");
+            assert!(!profile.steps.is_empty());
+            for step in profile.steps {
+                assert!(!step.name.is_empty());
+                assert!(!step.image.ends_with(":latest"));
+                assert!(!step.script.trim().is_empty());
+                assert!(!step.script.contains("curl | sh"));
+                assert!(!step.script.contains("wget | sh"));
+            }
+        }
+    }
+
+    #[test]
+    fn continuity_profiles_are_installed() {
+        for name in [
+            "rust-verify",
+            "rust-generated-verify",
+            "node-verify",
+            "node-hardened-verify",
+            "node-hardened-test",
+            "python-verify",
+        ] {
+            assert!(find(name).is_some(), "{name} should be installed");
+        }
+    }
+
+    #[test]
+    fn generated_rust_profile_is_locked_ordered_and_non_publishing() {
+        let profile = find("rust-generated-verify").expect("generated Rust profile");
+        let script = profile.steps[0].script;
+        let lock = script
+            .find("cargo generate-lockfile")
+            .expect("lock generation");
+        let format = script.find("cargo fmt").expect("formatting");
+        let clippy = script.find("cargo clippy").expect("Clippy");
+        let test = script.find("cargo test").expect("tests");
+        assert!(lock < format && format < clippy && clippy < test);
+        assert_eq!(profile.steps[0].subdirectory, ".");
+        assert!(script.contains("generated/rust/Cargo.toml"));
+        assert!(script.contains("--locked"));
+        assert!(script.contains("-D warnings"));
+        assert!(!script.contains("cargo publish"));
+        assert!(!script.contains("find "));
+        assert!(!script.contains("|| true"));
+        assert!(!script.contains("curl"));
+        assert!(!script.contains("wget"));
+    }
+
+    #[test]
+    fn hardened_node_profile_is_ordered_and_supply_chain_bounded() {
+        let profile = find("node-hardened-verify").expect("hardened Node profile");
+        let script = profile.steps[0].script;
+        let install = script
+            .find("npm ci --ignore-scripts")
+            .expect("install step");
+        let check = script.find("npm run check").expect("check step");
+        let focused = script
+            .find("npm run test:operator-config")
+            .expect("focused test step");
+        let audit = script
+            .find("npm audit --audit-level=high")
+            .expect("audit step");
+        assert!(install < check && check < focused && focused < audit);
+        assert_eq!(profile.steps[0].subdirectory, ".");
+        assert!(script.contains("package-lock.json"));
+        assert!(script.contains("npm-shrinkwrap.json"));
+        assert!(!script.contains("npm install"));
+        assert!(!script.contains("|| true"));
+        assert!(!script.contains("--force"));
+        assert!(!script.contains("curl"));
+        assert!(!script.contains("wget"));
+    }
+
+    #[test]
+    fn hardened_node_test_profile_disables_lifecycle_scripts() {
+        let profile = find("node-hardened-test").expect("hardened Node test profile");
+        let script = profile.steps[0].script;
+        let install = script
+            .find("npm ci --ignore-scripts")
+            .expect("install step");
+        let test = script.find("npm test").expect("test step");
+        assert!(install < test);
+        assert!(script.contains("package-lock.json"));
+        assert!(script.contains("npm-shrinkwrap.json"));
+        assert!(!script.contains("npm install"));
+        assert!(!script.contains("npm audit"));
+        assert!(!script.contains("|| true"));
+        assert!(!script.contains("curl"));
+        assert!(!script.contains("wget"));
+    }
+
+    #[test]
+    fn rust_verify_has_only_reviewed_monorepo_fallbacks() {
+        let profile = find("rust-verify").expect("rust profile");
+        let script = profile.steps[0].script;
+        assert_eq!(profile.steps[0].subdirectory, ".");
+        assert!(script.contains("remote/deployments/gha-clone-server-rs/Cargo.toml"));
+        assert!(script.contains("generated/rust/Cargo.toml"));
+        assert!(script.contains("generated/rust/Cargo.lock"));
+        assert!(script.contains("schema/domain.schema.json"));
+        assert!(script.contains("nats/subjects.json"));
+        assert!(script.contains("cargo test --locked --all-targets --all-features"));
+        assert!(!script.contains("find "));
+        assert!(!script.contains("for crate"));
+    }
+
+    #[test]
+    fn node_verify_runs_optional_typescript_contracts_after_locked_tests() {
+        let profile = find("node-verify").expect("node profile");
+        let script = profile.steps[0].script;
+        assert!(script.contains("pnpm install --frozen-lockfile"));
+        assert!(script.contains("yarn install --immutable"));
+        assert!(script.contains("npm ci"));
+        assert!(script.contains("check:typescript"));
+        assert!(script.contains("process.exit"));
+    }
 }

@@ -1,0 +1,23 @@
+{
+  "apply_succeeded": false,
+  "observed_at": "2026-08-02T02:20:08Z",
+  "platform_application": {
+    "exists": false,
+    "health_status": "",
+    "sync_status": "",
+    "target_revision": ""
+  },
+  "prerequisites": {
+    "application_crd_exists": true,
+    "argocd_namespace_exists": true
+  },
+  "schema_version": 1,
+  "trusted_k8s_cluster_sha": "d71412a5a8715b6d60bdb0c457d9ff50e40b2e32",
+  "workload_application": {
+    "exists": false,
+    "health_status": "",
+    "operation_phase": "",
+    "sync_status": "",
+    "target_revision": ""
+  }
+}

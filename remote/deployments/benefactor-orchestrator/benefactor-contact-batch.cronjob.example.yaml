@@ -1,0 +1,130 @@
+# Opt-in 250-contact Benefactor discovery + HubSpot synchronization lane.
+# The committed form is suspended and dry-run-only. Live persistence requires
+# both explicit confirmation strings and runtime secrets. Discovery never grants
+# marketing consent and this job never invokes Gmail or SendGrid.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: benefactor-contact-batch
+  namespace: default
+  labels:
+    app.kubernetes.io/name: benefactor-contact-batch
+    app.kubernetes.io/component: lead-discovery
+    app.kubernetes.io/part-of: benefactor-cc
+spec:
+  schedule: "30 3 * * *"
+  timeZone: America/Lima
+  suspend: true
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 900
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 3600
+      ttlSecondsAfterFinished: 172800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: benefactor-contact-batch
+            app.kubernetes.io/component: lead-discovery
+            app.kubernetes.io/part-of: benefactor-cc
+        spec:
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: contact-batch
+              image: ghcr.io/oresoftware/benefactor-contact-orchestrator:main
+              imagePullPolicy: Always
+              args:
+                - contact-batch.mjs
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+                seccompProfile:
+                  type: RuntimeDefault
+              env:
+                - name: BATCH_DRY_RUN
+                  value: "true"
+                - name: BATCH_TARGET_CONTACTS
+                  value: "250"
+                - name: BATCH_MINIMUM_CONTACTS
+                  value: "200"
+                - name: BATCH_MAXIMUM_CONTACTS
+                  value: "300"
+                - name: BATCH_MAX_CONTACTS_PER_CATEGORY
+                  value: "50"
+                - name: HUBSPOT_SYNC_AFTER_DISCOVERY
+                  value: "true"
+                - name: HUBSPOT_DRY_RUN
+                  value: "true"
+                - name: SCRAPER_URL
+                  value: http://dd-web-scraper.default.svc.cluster.local:8097
+                - name: SCRAPER_ALLOWED_HOSTS
+                  value: dd-web-scraper.default.svc.cluster.local
+                - name: REQUIRE_ROLE_EMAIL
+                  value: "true"
+                - name: RDS_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: benefactor-contact-pipeline
+                      key: RDS_URL
+                - name: SCRAPER_AUTH
+                  valueFrom:
+                    secretKeyRef:
+                      name: benefactor-contact-pipeline
+                      key: SCRAPER_AUTH
+                - name: SERPER_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: benefactor-contact-pipeline
+                      key: SERPER_API_KEY
+                      optional: true
+                - name: BRAVE_SEARCH_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: benefactor-contact-pipeline
+                      key: BRAVE_SEARCH_API_KEY
+                      optional: true
+                - name: HUBSPOT_ACCESS_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: benefactor-contact-pipeline
+                      key: HUBSPOT_ACCESS_TOKEN
+                      optional: true
+                - name: PG_SSL_CA_FILE
+                  value: /run/secrets/rds/global-bundle.pem
+              resources:
+                requests:
+                  cpu: 200m
+                  memory: 384Mi
+                limits:
+                  cpu: "2"
+                  memory: 2Gi
+              volumeMounts:
+                - name: rds-ca
+                  mountPath: /run/secrets/rds
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: rds-ca
+              secret:
+                secretName: benefactor-contact-pipeline
+                items:
+                  - key: RDS_CA_PEM
+                    path: global-bundle.pem
+            - name: tmp
+              emptyDir: {}

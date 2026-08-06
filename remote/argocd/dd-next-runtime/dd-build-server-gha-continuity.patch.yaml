@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-build-server
+  namespace: default
+spec:
+  template:
+    spec:
+      containers:
+        - name: build-server
+          env:
+            - name: BUILD_SERVER_ALLOWED_PROFILES
+              value: rust-verify,rust-generated-verify,node-verify,node-hardened-verify,node-hardened-test,python-verify,flutter-verify,flutter-android-debug,flutter-web-release,flutter-linux-release,flutter-linux-desktop-entrypoint,flutter-web-e2e,playwright,puppeteer,browser-e2e
+            - name: BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON
+              value: >-
+                [{"repository":"https://github.com/ORESoftware/k8s-cluster.git","profiles":["rust-verify"]},{"repository":"https://github.com/messaging-intel/msgint-connectors.git","profiles":["node-hardened-verify","node-hardened-test"]},{"repository":"https://github.com/3FA-app/3fa-interfaces.git","profiles":["node-hardened-test","rust-generated-verify"]}]
+            # Permit only the two reviewed DES black-box repositories, not the
+            # entire test organization, to reach executable browser profiles.
+            - name: BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES
+              value: https://github.com/ORESoftware/,https://github.com/sonus-auris/,https://github.com/discrete-event-systems-test/des-web-playwright-e2e,https://github.com/discrete-event-systems-test/des-web-puppeteer-e2e,git@github.com:ORESoftware/,git@github.com:sonus-auris/,git@github.com:discrete-event-systems-test/des-web-playwright-e2e,git@github.com:discrete-event-systems-test/des-web-puppeteer-e2e
+            # Execution is enabled only for workflows that pass the fail-closed
+            # static planner, immutable-revision check, exact repository
+            # allowlist, and fixed reviewed browser profiles above.
+            - name: BUILD_SERVER_GHA_WORKFLOW_EXECUTION_ENABLED
+              value: 'true'
+            - name: BUILD_SERVER_GHA_MAX_YAML_BYTES
+              value: '262144'
+            - name: BUILD_SERVER_GHA_MAX_JOBS
+              value: '64'
+            - name: BUILD_SERVER_GHA_MAX_STEPS_PER_JOB
+              value: '128'
+            - name: BUILD_SERVER_GHA_MAX_YAML_NODES
+              value: '16384'
+            - name: BUILD_SERVER_GHA_MAX_YAML_DEPTH
+              value: '64'
+            - name: BUILD_SERVER_GHA_POLL_MILLISECONDS
+              value: '250'
+            - name: BUILD_SERVER_GHA_RUN_TIMEOUT_SECONDS
+              value: '3600'
+            - name: BUILD_SERVER_GHA_MAX_RUNS
+              value: '512'

@@ -183,8 +183,7 @@ fn signed_transaction_rejects_oversized_payload() {
     let request = TransactionRpcRequest {
         request_id: Some("simulate-demo".to_string()),
         cluster: Some("devnet".to_string()),
-        transaction: general_purpose::STANDARD
-            .encode(vec![7_u8; MAX_SIGNED_TRANSACTION_BYTES + 1]),
+        transaction: general_purpose::STANDARD.encode(vec![7_u8; MAX_SIGNED_TRANSACTION_BYTES + 1]),
         encoding: Some("base64".to_string()),
         commitment: None,
         sig_verify: None,
@@ -293,12 +292,8 @@ fn metrics_body_includes_rpc_and_nats_breakdowns() {
     assert!(body.contains(
         "dd_contract_service_rpc_errors_by_method_total{rpc_method=\"simulateTransaction\"} 1"
     ));
-    assert!(
-        body.contains("dd_contract_service_nats_published_total{subject_kind=\"result\"} 2")
-    );
-    assert!(
-        body.contains("dd_contract_service_nats_published_total{subject_kind=\"critical\"} 1")
-    );
+    assert!(body.contains("dd_contract_service_nats_published_total{subject_kind=\"result\"} 2"));
+    assert!(body.contains("dd_contract_service_nats_published_total{subject_kind=\"critical\"} 1"));
 }
 
 #[test]
@@ -346,21 +341,13 @@ fn mainnet_gate_blocks_broadcast_without_explicit_flag() {
     // Devnet never requires the gate.
     assert!(enforce_mainnet_settlement_gate("devnet", true, true, true, false).is_ok());
     // Mainnet with any broadcast capability and no gate is refused.
-    assert!(
-        enforce_mainnet_settlement_gate("mainnet-beta", true, false, false, false).is_err()
-    );
-    assert!(
-        enforce_mainnet_settlement_gate("mainnet-beta", false, true, false, false).is_err()
-    );
-    assert!(
-        enforce_mainnet_settlement_gate("mainnet-beta", false, false, true, false).is_err()
-    );
+    assert!(enforce_mainnet_settlement_gate("mainnet-beta", true, false, false, false).is_err());
+    assert!(enforce_mainnet_settlement_gate("mainnet-beta", false, true, false, false).is_err());
+    assert!(enforce_mainnet_settlement_gate("mainnet-beta", false, false, true, false).is_err());
     // Mainnet with the explicit gate is allowed.
     assert!(enforce_mainnet_settlement_gate("mainnet-beta", true, true, true, true).is_ok());
     // Mainnet with nothing broadcast-capable needs no gate.
-    assert!(
-        enforce_mainnet_settlement_gate("mainnet-beta", false, false, false, false).is_ok()
-    );
+    assert!(enforce_mainnet_settlement_gate("mainnet-beta", false, false, false, false).is_ok());
 }
 
 #[test]
@@ -450,21 +437,13 @@ fn mainnet_gate_blocks_unflagged_broadcast() {
     // Devnet is unaffected regardless of broadcast flags.
     assert!(enforce_mainnet_settlement_gate("devnet", true, true, true, false).is_ok());
     // Mainnet with any broadcast capability needs the explicit second flag.
-    assert!(
-        enforce_mainnet_settlement_gate("mainnet-beta", true, false, false, false).is_err()
-    );
-    assert!(
-        enforce_mainnet_settlement_gate("mainnet-beta", false, true, false, false).is_err()
-    );
-    assert!(
-        enforce_mainnet_settlement_gate("mainnet-beta", false, false, true, false).is_err()
-    );
+    assert!(enforce_mainnet_settlement_gate("mainnet-beta", true, false, false, false).is_err());
+    assert!(enforce_mainnet_settlement_gate("mainnet-beta", false, true, false, false).is_err());
+    assert!(enforce_mainnet_settlement_gate("mainnet-beta", false, false, true, false).is_err());
     // With the second flag, mainnet broadcast is permitted.
     assert!(enforce_mainnet_settlement_gate("mainnet-beta", true, true, true, true).is_ok());
     // Mainnet with no broadcast capability is always fine.
-    assert!(
-        enforce_mainnet_settlement_gate("mainnet-beta", false, false, false, false).is_ok()
-    );
+    assert!(enforce_mainnet_settlement_gate("mainnet-beta", false, false, false, false).is_ok());
 }
 
 #[test]

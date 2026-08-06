@@ -1,0 +1,55 @@
+name: Resume paired test-organization repository chunks safely
+run-name: Resume paired test-organization chunk from one-time encrypted response
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ops-resume-paired-test-organization-repositories-encrypted-v3
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event.issue.number == 916 &&
+      github.actor == 'ORESoftware' &&
+      startsWith(github.event.comment.body, 'ops-publish-test-org-factory:916:v3:')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      REPOSITORY: ${{ github.repository }}
+      CARRIER_NUMBER: '916'
+      TEST_ORG_FACTORY_MUTATION_INTERVAL_SECONDS: '2.5'
+      GITHUB_EVENT_COMMENT_BODY: ${{ github.event.comment.body }}
+
+    steps:
+      - name: Check out trusted main without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install bounded publisher prerequisites
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends jq openssl python3-yaml
+          command -v gh
+          command -v git
+          command -v jq
+          command -v openssl
+          python3 -c 'import yaml; print(yaml.__version__)'
+
+      - name: Challenge, publish bounded chunk, and verify result
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ops/test_org_factory/run_test_org_factory_chunk_v3.sh

@@ -1,0 +1,49 @@
+name: AI agent bridge Kubernetes contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ai-agent-bridge-k8s-contract.yml'
+      - 'remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.deployment.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-runner.deployment.yaml'
+      - 'remote/argocd/dd-next-runtime/kustomization.yaml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ai-agent-bridge-k8s-contract.yml'
+      - 'remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.deployment.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-runner.deployment.yaml'
+      - 'remote/argocd/dd-next-runtime/kustomization.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-agent-bridge-k8s-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Check out without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+
+      - name: Validate source syntax
+        run: node --check remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs
+
+      - name: Run the deployment contract
+        run: node --test remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs

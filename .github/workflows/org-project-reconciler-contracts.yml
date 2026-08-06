@@ -1,0 +1,35 @@
+name: Organization Project reconciler contracts
+
+on:
+  pull_request:
+    paths:
+      - scripts/ops/audit_org_project_docs_evidence.py
+      - scripts/ops/sync_org_project_docs.sh
+      - tests/ops/test_audit_org_project_docs_evidence.py
+      - tests/ops/test_sync_org_project_docs_source.py
+      - .github/workflows/org-project-reconciler-contracts.yml
+  push:
+    branches: [main]
+    paths:
+      - scripts/ops/audit_org_project_docs_evidence.py
+      - scripts/ops/sync_org_project_docs.sh
+      - tests/ops/test_audit_org_project_docs_evidence.py
+      - tests/ops/test_sync_org_project_docs_source.py
+      - .github/workflows/org-project-reconciler-contracts.yml
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate shell syntax
+        run: bash -n scripts/ops/sync_org_project_docs.sh
+      - name: Run offline evidence and source contracts
+        run: |
+          python3 -m unittest \
+            tests/ops/test_audit_org_project_docs_evidence.py \
+            tests/ops/test_sync_org_project_docs_source.py

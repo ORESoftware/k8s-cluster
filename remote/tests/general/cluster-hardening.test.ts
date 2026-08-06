@@ -197,13 +197,13 @@ test("AI agent bridge is authenticated, observable, isolated, and disruption-pro
 
   assert.match(deployment, /automountServiceAccountToken:\s*false/);
   assert.match(deployment, /enableServiceLinks:\s*false/);
-  // The bridge authenticates against a DEDICATED per-service bearer
-  // (dd-ai-agent-bridge-secrets/inbox_token), not the cluster-wide
-  // dd-agent-secrets/SERVER_AUTH_SECRET the MCP servers above share. Least
-  // privilege: compromising the bridge must not surrender the credential every
-  // service-to-service call uses. The secret is provisioned by
-  // dd-ai-agent-bridge.externalsecret.yaml; the exact wiring (required, no
-  // plaintext, no optional) is asserted by ai-agent-bridge-k8s-contract.test.mjs.
+  // The bridge authenticates against its own dedicated per-service bearer
+  // (dd-ai-agent-bridge-secrets/inbox_token), provisioned by
+  // dd-ai-agent-bridge.externalsecret.yaml, rather than the cluster-wide
+  // dd-agent-secrets/SERVER_AUTH_SECRET used by the MCP servers. This limits the
+  // blast radius of a compromised bridge. The exact required, non-plaintext wiring
+  // is also covered by the k8s contract test, the kind smoke fixture, and
+  // scripts/ci/test-ai-agent-bridge-kind.sh.
   assert.match(
     deployment,
     /name:\s*API_AUTH_BEARER[\s\S]*name:\s*dd-ai-agent-bridge-secrets[\s\S]*key:\s*inbox_token/,
@@ -212,7 +212,7 @@ test("AI agent bridge is authenticated, observable, isolated, and disruption-pro
     deployment,
     /name:\s*AI_AGENT_BRIDGE_TOKEN[\s\S]*name:\s*dd-ai-agent-bridge-secrets[\s\S]*key:\s*inbox_token/,
   );
-  // ...and it must NOT fall back to the shared cluster-wide credential.
+  assert.doesNotMatch(deployment, /name:\s*dd-agent-secrets/);
   assert.doesNotMatch(deployment, /key:\s*SERVER_AUTH_SECRET/);
   assert.match(deployment, /name:\s*OTEL_SERVICE_NAME[\s\S]*value:\s*dd-ai-agent-bridge/);
   assert.match(

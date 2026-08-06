@@ -1,0 +1,63 @@
+# dd-ai-agent-bridge — deployed auth-enforcement browser smoke on the remote/tests
+# runner. Drives a DEPLOYED bridge through Playwright AND Puppeteer
+# (remote/tests/ai-agent-bridge-auth-smoke.mjs) and asserts the security invariant:
+# an unauthenticated GET /agents is refused (401/403), never served. The target URL
+# comes from the `AI_BRIDGE_HTTP_URL` repo variable; when it is unset the smoke
+# SKIPS cleanly (exit 0), so this workflow is safe to keep enabled before a public
+# bridge URL exists. Manual dispatch plus a daily schedule once a URL exists.
+# Static counterpart: remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs
+# (run by ai-agent-bridge-k8s-smoke.yml).
+name: ai agent bridge auth smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: "Deployed dd-ai-agent-bridge base URL (overrides the AI_BRIDGE_HTTP_URL variable)"
+        required: false
+        type: string
+  schedule:
+    - cron: "43 7 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-agent-bridge-auth-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: bridge auth smoke (playwright + puppeteer)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install remote test dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+        working-directory: remote/tests
+
+      - name: Bridge auth-enforcement smoke (both engines)
+        working-directory: remote/tests
+        env:
+          # Manual input wins; otherwise the repo variable. Empty => the smoke skips.
+          AI_BRIDGE_HTTP_URL: ${{ inputs.target_url || vars.AI_BRIDGE_HTTP_URL }}
+        run: pnpm run test:ui:ai-agent-bridge-auth

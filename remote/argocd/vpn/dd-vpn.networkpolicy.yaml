@@ -22,3 +22,13 @@ spec:
     - ports:
         - protocol: TCP
           port: 51821
+    # These listeners exist only in the shared pod network namespace. WireGuard
+    # peers reach them through 10.8.0.1; no Service, NodePort, Ingress, or
+    # hostPort publishes them to the internet.
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+        - protocol: TCP
+          port: 8443

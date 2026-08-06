@@ -17,6 +17,10 @@ resources:
   - dd-agent-worker-broker.deployment.yaml
   - dd-agent-worker-broker.networkpolicy.yaml
   - dd-agent-worker-broker.service.yaml
+  - dd-durable-worker-server.deployment.yaml
+  - dd-durable-worker-server.service.yaml
+  - dd-durable-worker-server.networkpolicy.yaml
+  - dd-durable-worker-server.pdb.yaml
   - dd-container-pool-rbac.yaml
   - dd-container-pool.deployment.yaml
   - dd-container-pool.networkpolicy.yaml
@@ -26,6 +30,16 @@ resources:
   - dd-build-server.deployment.yaml
   - dd-build-server.service.yaml
   - dd-build-server.networkpolicy.yaml
+  - dd-gha-clone-server.configmap.yaml
+  - dd-gha-clone-server.externalsecret.yaml
+  - dd-gha-clone-server.deployment.yaml
+  - dd-gha-clone-server.service.yaml
+  - dd-gha-clone-server.networkpolicy.yaml
+  - dd-gha-executor-router.configmap.yaml
+  - dd-gha-executor-router.externalsecret.yaml
+  - dd-gha-executor-router.deployment.yaml
+  - dd-gha-executor-router.service.yaml
+  - dd-gha-executor-router.networkpolicy.yaml
   - dd-image-builder.deployment.yaml
   - dd-image-builder.service.yaml
   - dd-image-builder.networkpolicy.yaml
@@ -62,7 +76,14 @@ resources:
   - dd-fabrication-server.deployment.yaml
   - dd-fabrication-server.service.yaml
   - dd-fabrication-server.networkpolicy.yaml
+  # Canonical DES browser surface. The legacy simulator Deployment stays at
+  # zero replicas; its stable Service name aliases the DES-owned web pods so the
+  # existing /des/ gateway rule remains identical in AWS and Hetzner.
   - dd-des-simulator.deployment.yaml
+  - dd-des-web.deployment.yaml
+  - dd-des-web.networkpolicy.yaml
+  - dd-des-web.pdb.yaml
+  - dd-des-web.service.yaml
   - dd-des-simulator.service.yaml
   - dd-des-rs.deployment.yaml
   - dd-des-rs.hpa.yaml
@@ -77,6 +98,16 @@ resources:
   - dd-email-sms-contact-rs.deployment.yaml
   - dd-email-sms-contact-rs.externalsecret.yaml
   - dd-email-sms-contact-rs.service.yaml
+  # push-notification-server: dedicated hardened push (FCM/APNs/Expo/WebPush)
+  # + optional SendGrid/Twilio contact lanes (HTTP :8121). Built in-pod from
+  # the pinned remote/deployments/push-notification-server.rs submodule.
+  # DEN-263 rollout: shadows dd-email-sms-contact-rs above during migration;
+  # the legacy service keeps ownership until cutover (DEN-795).
+  - dd-push-notification-server.deployment.yaml
+  - dd-push-notification-server.externalsecret.yaml
+  - dd-push-notification-server.networkpolicy.yaml
+  - dd-push-notification-server.pdb.yaml
+  - dd-push-notification-server.service.yaml
   - dd-happy-wakey-gateway.deployment.yaml
   - dd-happy-wakey-gateway.externalsecret.yaml
   - dd-happy-wakey-gateway.networkpolicy.yaml
@@ -238,6 +269,10 @@ resources:
   - dd-idle-reaper-rbac.yaml
   - dd-idle-reaper.deployment.yaml
   - dd-headlamp-cron-sentinel.cronjob.yaml
+  # Runtime hygiene: hourly reap of Evicted pod tombstones older than 3 days so
+  # node-eviction debris can't pile up (default ns; least-priv pod delete).
+  - dd-evicted-pod-reaper-rbac.yaml
+  - dd-evicted-pod-reaper.cronjob.yaml
   # ai-agent-bridge: inter-agent conversation bus (HTTP :8142 + TCP :8143).
   # Built in-pod from the remote/deployments/ai-agent-bridge submodule; synced on
   # both AWS and Hetzner via the dd-next-runtime app.
@@ -267,3 +302,9 @@ patches:
       version: v1
       kind: Deployment
       name: dd-athleto-backend
+  - path: dd-build-server-gha-continuity.patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: dd-build-server

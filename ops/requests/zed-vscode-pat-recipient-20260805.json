@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "execute": true,
+  "recipient_id": "ncc-publish-20260805-2b8a4d7c91e6f503",
+  "purpose": "Publish the verified zed-pkg/zed-vscode repository, review PR, VSIX release, and organization project evidence without persisting a plaintext GitHub credential."
+}

@@ -1,0 +1,26 @@
+name: Dispatch protected fleet publisher once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-dispatch-protected-fleet-publisher-once.yml
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch reviewed protected-profile publisher
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          gh workflow run ops-publish-missing-org-repositories-gh-profile.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main

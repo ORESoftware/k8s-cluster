@@ -1,0 +1,7 @@
+self-hosted-runner:
+  labels:
+    - sonus-ci
+    - sonus-browser
+    - sonus-ci-dind
+    - sonus-android-kvm
+    - streempilot-ci

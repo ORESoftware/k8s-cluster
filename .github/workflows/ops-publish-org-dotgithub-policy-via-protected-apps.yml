@@ -1,0 +1,156 @@
+name: Publish organization .github policy through repository App
+run-name: Publish organization .github policy through repository App @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-org-dotgithub-policy-via-protected-apps.yml
+      - scripts/ops/publish_org_dotgithub_policy_from_repository_app.py
+      - scripts/ops/publish_org_dotgithub_policy_with_protected_apps.py
+      - scripts/ops/select_hypesiege_github_app_from_protected_sources.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-org-dotgithub-policy-via-protected-apps.yml
+      - scripts/ops/publish_org_dotgithub_policy_from_repository_app.py
+      - scripts/ops/publish_org_dotgithub_policy_with_protected_apps.py
+      - scripts/ops/select_hypesiege_github_app_from_protected_sources.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-publish-org-dotgithub-policy-via-protected-apps
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out the exact reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate the bounded App-only publisher
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          selector=scripts/ops/select_hypesiege_github_app_from_protected_sources.py
+          publisher=scripts/ops/publish_org_dotgithub_policy_with_protected_apps.py
+          adapter=scripts/ops/publish_org_dotgithub_policy_from_repository_app.py
+          python3 -m py_compile "$selector" "$publisher" "$adapter"
+          python3 "$publisher" --self-test
+          python3 "$adapter" --report "$RUNNER_TEMP/self-test.json" --self-test
+          grep -q 'len(PRODUCTION_ORGANIZATIONS) != 45' "$publisher"
+          grep -q 'PAT/OAuth environment is forbidden' "$publisher"
+          grep -q 'repository_actions_secrets' "$adapter"
+          grep -q 'administration.*write' "$adapter"
+          grep -q 'contents.*write' "$adapter"
+          grep -q 'metadata.*read' "$adapter"
+          grep -q 'greater than 99.1%' "$publisher"
+          grep -q 'greater than 99.7%' "$publisher"
+          grep -q '`dev` is the integration branch' "$publisher"
+          grep -q '\*-infra' "$publisher"
+          grep -q 'GitOps controller' "$publisher"
+          git diff --check
+
+  publish:
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+      K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+    steps:
+      - name: Check out trusted main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Publish and verify all production organization policies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          adapter=scripts/ops/publish_org_dotgithub_policy_from_repository_app.py
+          report="$RUNNER_TEMP/org-dotgithub-policy-publication.json"
+          stdout_log="$RUNNER_TEMP/org-dotgithub-policy-publisher.stdout"
+          stderr_log="$RUNNER_TEMP/org-dotgithub-policy-publisher.stderr"
+
+          [[ "${K8S_SUBMODULE_APP_ID:-}" =~ ^[0-9]+$ ]]
+          test -n "${K8S_SUBMODULE_APP_PRIVATE_KEY:-}"
+
+          python3 -m py_compile "$adapter"
+          python3 "$adapter" --report "$RUNNER_TEMP/self-test.json" --self-test >/dev/null
+          set +e
+          python3 "$adapter" --report "$report" >"$stdout_log" 2>"$stderr_log"
+          publisher_status=$?
+          set -e
+          unset K8S_SUBMODULE_APP_ID K8S_SUBMODULE_APP_PRIVATE_KEY
+
+          if [[ -s "$stderr_log" ]]; then
+            tail -n 300 "$stderr_log" >&2
+          fi
+          test -s "$report"
+          jq . "$report"
+          if [[ "$publisher_status" -ne 0 ]]; then
+            exit "$publisher_status"
+          fi
+
+          jq -e '
+            .schema_version == 1 and
+            .policy_version == "2026-08-05.1" and
+            .discovery.credential_source == "repository_actions_secrets" and
+            .validated_app_count == 1 and
+            .target_count == 45 and
+            .verified_count == 45 and
+            (.failures | length) == 0 and
+            .pat_used == false and
+            (.organizations | length) == 45 and
+            all(.organizations[];
+              .verified == true and
+              ((.organization | ascii_downcase | endswith("-test")) | not) and
+              (.files_created + .files_updated + .files_unchanged) == 6
+            )
+          ' "$report" >/dev/null
+
+      - name: Add verified publication summary
+        if: success()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          report="$RUNNER_TEMP/org-dotgithub-policy-publication.json"
+          {
+            echo '# Organization .github policy publication'
+            echo
+            jq -r '"- Policy version: `\(.policy_version)`"' "$report"
+            jq -r '"- Credential source: `\(.discovery.credential_source)`"' "$report"
+            jq -r '"- Organizations verified: `\(.verified_count)` / `\(.target_count)`"' "$report"
+            jq -r '"- Missing `.github` repositories created: `\(.repository_created_count)`"' "$report"
+            jq -r '"- Protected Apps validated: `\(.validated_app_count)`"' "$report"
+            echo '- PAT used: `false`'
+            echo
+            jq -r '.organizations[] | "- `\(.organization)/.github` — repo created: `\(.repository_created)`; files created `\(.files_created)`, updated `\(.files_updated)`, unchanged `\(.files_unchanged)`"' "$report"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload non-secret publication evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: organization-dotgithub-policy-repository-app-publication
+          path: |
+            ${{ runner.temp }}/org-dotgithub-policy-publication.json
+            ${{ runner.temp }}/org-dotgithub-policy-publisher.stderr
+          if-no-files-found: warn
+          retention-days: 14

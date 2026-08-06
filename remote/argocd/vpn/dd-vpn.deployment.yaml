@@ -32,12 +32,18 @@ spec:
           imagePullPolicy: IfNotPresent
           command:
             - /bin/sh
-            - -c
+            - -ec
+          args:
             - |
               sysctl -w net.ipv4.ip_forward=1
               sysctl -w net.ipv4.conf.all.src_valid_mark=1
+              chown 101:101 /argocd-mobile-tmp
+              chmod 0700 /argocd-mobile-tmp
           securityContext:
             privileged: true
+          volumeMounts:
+            - name: argocd-mobile-tmp
+              mountPath: /argocd-mobile-tmp
       containers:
         - name: wg-easy
           image: ghcr.io/wg-easy/wg-easy:15
@@ -100,6 +106,147 @@ spec:
             - name: lib-modules
               mountPath: /lib/modules
               readOnly: true
+
+        - name: argocd-mobile-dns
+          image: registry.k8s.io/coredns/coredns:v1.14.2
+          imagePullPolicy: IfNotPresent
+          args:
+            - -conf
+            - /etc/coredns/Corefile
+          ports:
+            - name: dns-udp
+              containerPort: 53
+              protocol: UDP
+            - name: dns-tcp
+              containerPort: 53
+              protocol: TCP
+            - name: dns-health
+              containerPort: 8080
+              protocol: TCP
+            - name: dns-ready
+              containerPort: 8181
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - NET_BIND_SERVICE
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: dns-ready
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: dns-health
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          volumeMounts:
+            - name: argocd-mobile-config
+              mountPath: /etc/coredns/Corefile
+              subPath: Corefile
+              readOnly: true
+
+        - name: argocd-mobile-proxy
+          image: docker.io/library/nginx:1.29.7-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              trap 'nginx -s quit >/dev/null 2>&1 || true; exit 0' TERM INT
+              last_cert_hash=""
+
+              while true; do
+                if [ ! -s /etc/nginx/tls/tls.crt ] || [ ! -s /etc/nginx/tls/tls.key ]; then
+                  echo "argocd-mobile-proxy: waiting for Secret/vpn/argocd-mobile-tls"
+                  sleep 30 &
+                  wait $!
+                  continue
+                fi
+
+                current_cert_hash="$(
+                  sha256sum /etc/nginx/tls/tls.crt /etc/nginx/tls/tls.key |
+                    sha256sum |
+                    awk '{print $1}'
+                )"
+                master_pid=""
+                if [ -s /tmp/nginx.pid ]; then
+                  master_pid="$(cat /tmp/nginx.pid)"
+                fi
+
+                if [ -z "$master_pid" ] || ! kill -0 "$master_pid" 2>/dev/null; then
+                  if nginx -t; then
+                    nginx
+                    last_cert_hash="$current_cert_hash"
+                    echo "argocd-mobile-proxy: listening on 10.8.0.1:8443"
+                  else
+                    echo "argocd-mobile-proxy: nginx config/upstream not ready; retrying"
+                  fi
+                elif [ "$current_cert_hash" != "$last_cert_hash" ]; then
+                  if nginx -t; then
+                    nginx -s reload
+                    last_cert_hash="$current_cert_hash"
+                    echo "argocd-mobile-proxy: reloaded renewed TLS certificate"
+                  else
+                    echo "argocd-mobile-proxy: renewed certificate failed nginx validation"
+                  fi
+                fi
+
+                sleep 30 &
+                wait $!
+              done
+          ports:
+            - name: argocd-mobile
+              containerPort: 8443
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 101
+            runAsGroup: 101
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: argocd-mobile-config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: argocd-mobile-tls
+              mountPath: /etc/nginx/tls
+              readOnly: true
+            - name: argocd-mobile-tmp
+              mountPath: /tmp
       volumes:
         - name: config
           persistentVolumeClaim:
@@ -108,3 +255,14 @@ spec:
           hostPath:
             path: /lib/modules
             type: Directory
+        - name: argocd-mobile-config
+          configMap:
+            name: dd-argocd-mobile-config
+        - name: argocd-mobile-tls
+          secret:
+            secretName: argocd-mobile-tls
+            optional: true
+        - name: argocd-mobile-tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi

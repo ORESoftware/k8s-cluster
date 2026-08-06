@@ -1,0 +1,51 @@
+name: Retry paired test-organization publication with diagnostics
+run-name: Retry paired test-organization publication with one-time encrypted owner credential
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ops-publish-paired-test-organization-repositories-encrypted
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event.issue.number == 916 &&
+      github.actor == 'ORESoftware' &&
+      github.event.comment.body == 'ops-publish-test-org-factory:916:rsa-oaep-sha256-v2:20260805T0350Z'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      REPOSITORY: ${{ github.repository }}
+      CARRIER_NUMBER: '916'
+
+    steps:
+      - name: Check out trusted main without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install bounded publisher prerequisites
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends jq openssl python3-yaml
+          command -v gh
+          command -v git
+          python3 -c 'import yaml; print(yaml.__version__)'
+
+      - name: Retry idempotently and report sanitized target diagnostics
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ops/run_test_org_factory_encrypted_retry.sh

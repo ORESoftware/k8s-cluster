@@ -33,8 +33,17 @@ jobs:
           node-version: '22'
           cache: pnpm
           cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - name: Setup Gleam contract toolchain
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
+        with:
+          otp-version: '27.3.4.14'
+          gleam-version: '1.17.0'
+          rebar3-version: '3'
       - run: pnpm install --frozen-lockfile
         working-directory: remote/tests
+      - name: Install the locked Playwright Chromium runtime
+        working-directory: remote/tests
+        run: pnpm exec playwright install --with-deps chromium
       - name: Run authoritative static list
         id: tests
         continue-on-error: true
@@ -59,7 +68,7 @@ jobs:
           exit "$status"
       - name: Upload diagnostic
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: den-255-static-current
           path: ${{ runner.temp }}/den-255-static-current

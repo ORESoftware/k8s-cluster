@@ -1,0 +1,85 @@
+name: Four-organization encrypted publisher contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-four-org-fleet-encrypted-owner.yml
+      - .github/workflows/ops-publish-four-org-fleet-encrypted-owner-contract.yml
+      - scripts/ops/test_four_org_encrypted_publisher.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-four-org-fleet-encrypted-owner.yml
+      - .github/workflows/ops-publish-four-org-fleet-encrypted-owner-contract.yml
+      - scripts/ops/test_four_org_encrypted_publisher.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: four-org-encrypted-publisher-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out proposed tree without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate workflow syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          # SC2016 is intentional for the nested `sh -c` cleanup loop: `$file`
+          # must expand inside the child shell rather than in the workflow shell.
+          docker run --rm \
+            -v "$PWD:/repo" \
+            -w /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            -ignore 'SC2016' \
+            .github/workflows/ops-publish-four-org-fleet-encrypted-owner.yml \
+            .github/workflows/ops-publish-four-org-fleet-encrypted-owner-contract.yml
+
+      - name: Compile and run fail-closed publisher contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ops/test_four_org_encrypted_publisher.py
+          python3 -m unittest -v scripts/ops/test_four_org_encrypted_publisher.py
+          git diff --check
+          if git grep -nE '^(<{7}|={7}|>{7})' -- \
+            .github/workflows/ops-publish-four-org-fleet-encrypted-owner.yml \
+            .github/workflows/ops-publish-four-org-fleet-encrypted-owner-contract.yml \
+            scripts/ops/test_four_org_encrypted_publisher.py; then
+            echo 'Git conflict markers are forbidden.' >&2
+            exit 1
+          fi
+
+      - name: Reject plaintext credential material and persistence paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -nE 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}' -- \
+            .github/workflows/ops-publish-four-org-fleet-encrypted-owner.yml \
+            .github/workflows/ops-publish-four-org-fleet-encrypted-owner-contract.yml \
+            scripts/ops/test_four_org_encrypted_publisher.py; then
+            echo 'Plaintext GitHub credentials are forbidden.' >&2
+            exit 1
+          fi
+          if grep -F 'upload-artifact' .github/workflows/ops-publish-four-org-fleet-encrypted-owner.yml; then
+            echo 'Artifact upload is forbidden in the owner-credential workflow.' >&2
+            exit 1
+          fi
+          if grep -F 'actions/cache' .github/workflows/ops-publish-four-org-fleet-encrypted-owner.yml; then
+            echo 'Caching is forbidden in the owner-credential workflow.' >&2
+            exit 1
+          fi
+          if grep -F 'owner_token >>' .github/workflows/ops-publish-four-org-fleet-encrypted-owner.yml; then
+            echo 'Owner-token persistence is forbidden.' >&2
+            exit 1
+          fi

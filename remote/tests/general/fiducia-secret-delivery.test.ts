@@ -180,3 +180,49 @@ test('runbook records the audited callers, guarded key grammar, and staged durab
   assert.match(runbook, /emptyDir/);
   assert.match(runbook, /transport-encrypted/i);
 });
+
+test('FID-SEC-1 phase 1: the KV-path TLS PKI renders and is inert (no workload consumes it yet)', () => {
+  const rendered = renderKustomization('remote/argocd/fiducia');
+
+  // A namespace CA is bootstrapped from the cluster `selfsigned` ClusterIssuer.
+  assert.match(
+    rendered,
+    /kind:\s*Certificate[\s\S]{0,400}name:\s*fiducia-internal-ca[\s\S]{0,400}isCA:\s*true/,
+    'expected an isCA fiducia-internal-ca Certificate',
+  );
+  assert.match(
+    rendered,
+    /kind:\s*Certificate[\s\S]{0,600}name:\s*fiducia-internal-ca[\s\S]{0,600}issuerRef:[\s\S]{0,160}name:\s*selfsigned/,
+    'CA must chain to the selfsigned ClusterIssuer',
+  );
+  // A CA Issuer signs fiducia serving certs from that CA secret.
+  assert.match(
+    rendered,
+    /kind:\s*Issuer[\s\S]{0,200}name:\s*fiducia-ca[\s\S]{0,200}secretName:\s*fiducia-internal-ca/,
+    'expected a fiducia-ca Issuer backed by the internal CA secret',
+  );
+  // The LB serving certificate covers every in-cluster Service DNS form clients use.
+  assert.match(rendered, /secretName:\s*fiducia-load-balance-tls/);
+  assert.match(
+    rendered,
+    /dnsNames:[\s\S]{0,240}fiducia-load-balance\.fiducia\.svc\.cluster\.local/,
+  );
+  assert.match(rendered, /^\s*-\s*fiducia-load-balance\s*$/m, 'expected the bare Service name SAN');
+  // kubectl kustomize sorts spec keys alphabetically, so issuerRef precedes
+  // secretName; anchor on the cert's metadata name instead of field order.
+  assert.match(
+    rendered,
+    /name:\s*fiducia-load-balance-tls[\s\S]{0,400}issuerRef:[\s\S]{0,120}kind:\s*Issuer[\s\S]{0,60}name:\s*fiducia-ca/,
+    'the serving cert must be signed by the fiducia-ca Issuer',
+  );
+
+  // Inertness ratchet: phase 1 must NOT wire the LB's TLS listener. When the
+  // phase-2 cutover (DEN-1240) lands FIDUCIA_TLS_CERT_PATH + the volume mount,
+  // this assertion is flipped deliberately in the same change — so an accidental
+  // early enablement (which 426s every plaintext client) fails the suite here.
+  assert.doesNotMatch(
+    rendered,
+    /FIDUCIA_TLS_CERT_PATH/,
+    'phase 1 is inert: no workload may consume the TLS cert until the coordinated cutover',
+  );
+});

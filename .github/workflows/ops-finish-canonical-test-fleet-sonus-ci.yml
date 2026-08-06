@@ -1,0 +1,58 @@
+name: Finish canonical test-organization fleet on sonus-ci
+run-name: Finish canonical 341-repository test fleet on isolated sonus-ci runner
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ops-finish-canonical-test-fleet-sonus-ci
+  cancel-in-progress: false
+
+jobs:
+  finish:
+    if: >-
+      github.event.issue.number == 916 &&
+      github.actor == 'ORESoftware' &&
+      github.event.comment.body == 'ops-finish-canonical-test-fleet:916:sonus-ci-rsa-v1:20260805T0430Z'
+    runs-on: [self-hosted, linux, sonus-ci]
+    timeout-minutes: 360
+    steps:
+      - name: Check out trusted control repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+          clean: true
+          show-progress: false
+
+      - name: Install Node.js 22 for the canonical fleet launcher
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+
+      - name: Publish, reconcile, and audit the exact canonical fleet
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          runtime_launcher="$RUNNER_TEMP/run-canonical-test-fleet-sonus-ci.sh"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          source = Path("scripts/ops/run_canonical_test_fleet_sonus_ci.sh").read_text()
+          obsolete = 'cp "$canonical/bootstrap/test-org-fleet.json.gz" "$audit/bootstrap/test-org-fleet.json.gz"\n'
+          if source.count(obsolete) != 1:
+              raise SystemExit("canonical fleet manifest seam changed")
+          destination = Path(os.environ["RUNNER_TEMP"]) / "run-canonical-test-fleet-sonus-ci.sh"
+          destination.write_text(source.replace(obsolete, ""))
+          destination.chmod(0o700)
+          PY
+          bash "$runtime_launcher"

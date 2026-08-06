@@ -301,11 +301,11 @@ test('runtime deployments avoid routing to half-started rust services', async ()
 
   assert.match(
     restDeployment,
-    /resources:[\s\S]*requests:[\s\S]*cpu:\s*100m[\s\S]*memory:\s*128Mi/,
+    /resources:[\s\S]*requests:[\s\S]*cpu:\s*25m[\s\S]*memory:\s*128Mi/,
   );
   assert.match(
     restDeployment,
-    /resources:[\s\S]*limits:[\s\S]*cpu:\s*['"]?1['"]?[\s\S]*memory:\s*1Gi/,
+    /resources:[\s\S]*limits:[\s\S]*cpu:\s*['"]?1['"]?[\s\S]*memory:\s*2Gi/,
   );
   assert.match(restDeployment, /startupProbe:[\s\S]*path: \/healthz/);
   assert.match(restDeployment, /readinessProbe:[\s\S]*path: \/healthz/);
