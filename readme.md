@@ -212,7 +212,7 @@ Current first-class parity surfaces:
 - `GET /alerts/rules` - authenticated alert rule catalog.
 - `GET /alerts/rules/:rule_id` - authenticated alert rule definition.
 - `POST /alerts/rules/:rule_id/evaluate` - authenticated alert rule evaluation.
-- `POST /alerts/contact-points` - authenticated alert contact point create/replace using secretRef
+- `POST /alerts/contact-points` - authenticated Grafana-style alert contact point create/replace using secretRef
   destinations.
 - `GET /alerts/contact-points` - authenticated alert contact point catalog.
 - `GET /alerts/contact-points/:contact_id` - authenticated alert contact point definition.
@@ -358,3 +358,52 @@ docker build -f remote/deployments/dd-data-viz-rs/Dockerfile -t dd-data-viz-rs:d
 ```
 
 > **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).
+
+## Cross-surface delivery
+
+User-visible, dataset, query, semantic-model, workbook, dashboard, chart, alert,
+notification, publishing, report, export, permission, navigation, or deep-link
+changes in this Rust analytics server must be evaluated for:
+
+- `claritas-viz/claritas-flutter` on Android, iOS, Flutter Web/mobile web, and
+  Flutter desktop;
+- `claritas-viz/claritas-desktop.rs`, the planned Dioxus Desktop workbench; and
+- Claritas interfaces, generated clients, dataset/query/model/dashboard/chart/
+  alert/report/export schemas, route types, renderer fixtures, and conformance
+  tests.
+
+This is judgment-based coordination. Query-engine internals, server-only cache
+or storage, parser implementation, observability, and artifact-worker plumbing
+may remain server-only. Native local datasets, multi-window analysis, local
+files, keyboard workflows, GPU/native overlays, and offline work may be
+desktop-specific. Dataset/field semantics, query results, semantic models,
+dashboards/charts, alerts, notifications, publishing approvals, reports,
+exports, permissions, errors, and navigation normally require coordinated
+updates or an explicit no-change rationale and parity follow-up.
+
+Mobile does not need every dense desktop authoring surface. Complex workbook or
+infrastructure-diagram editing may remain web/desktop while mobile receives
+view, filter, notification, approval, and deep-link workflows. The omission
+must be an explicit UX decision, not accidental drift.
+
+Deep links are HTTPS-first:
+
+```text
+https://<verified-claritas-owned-host>/open/<route>?<bounded-query>
+```
+
+with `claritas://` fallback. Web, Flutter, and Dioxus desktop must share
+versioned route types and fixtures and support cold start, already-running
+delivery, authentication resume, replay/expiry rejection, browser fallback,
+and explicit confirmation before connection changes, publishing/review, alert
+actions, imports, exports, or destructive operations.
+
+Raw datasets, query text containing secrets, connection credentials, secretRef
+values, private logs, alert destinations, report contents, rendered private
+artifacts, bearer tokens, and database identifiers are prohibited in URLs. Use
+bounded identifiers or short-lived, single-use, audience-bound codes and
+validate route version, dataset/model/dashboard/chart/report/alert/connection
+identity, action, authorization, role, limits, and user intent.
+
+See [`docs/CROSS_SURFACE_DELIVERY.md`](docs/CROSS_SURFACE_DELIVERY.md) and the
+[portfolio policy](https://github.com/ORESoftware/project-registry/blob/main/docs/cross-surface-delivery.md).
