@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: canonical-api-server
+  namespace: canonical-cloud
+  labels:
+    app.kubernetes.io/name: canonical-api-server
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: canonical-cloud
+  annotations:
+    # Draft staging value. The promotion helper must replace both annotations
+    # and the image tag with the exact monorepo release SHA + immutable digest.
+    canonical.cloud/release-sha: "47b8e1cce07d1a21689cba461325b9365877f080"
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: canonical-api-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: canonical-api-server
+        app.kubernetes.io/component: api
+        app.kubernetes.io/part-of: canonical-cloud
+      annotations:
+        canonical.cloud/release-sha: "47b8e1cce07d1a21689cba461325b9365877f080"
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: canonical-cloud-ghcr-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: canonical-api-server
+      containers:
+        - name: api
+          image: ghcr.io/canonical-cloud/canonical-api-server:47b8e1cce07d1a21689cba461325b9365877f080
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: canonical-cloud-api-runtime
+          env:
+            - { name: PORT, value: "8081" }
+            - { name: APP_BASE_URL, value: "https://api.canonical.plus" }
+            - { name: APP_ALLOWED_ORIGINS, value: "https://api.canonical.plus,https://app.canonical.plus" }
+            - { name: COOKIE_SECURE, value: "true" }
+            - { name: APP_SESSION_COOKIE, value: "__Host-canonical_session" }
+            - { name: SHARED_AUTH_BROWSER_COOKIE_NAME, value: "__Host-canonical-customer-auth" }
+            - { name: SHARED_AUTH_VERIFY_URL, value: "http://dd-shared-auth-canonical-plus.shared-auth.svc.cluster.local:8120/auth/verify" }
+            - { name: GEMINI_MODEL, value: "gemini-3.6-pro" }
+            - { name: DATABASE_MAX_CONNECTIONS, value: "10" }
+            - { name: BEARER_AUTH_MAX_CONCURRENCY, value: "64" }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://dd-otel-collector.observability.svc.cluster.local:4317" }
+            - { name: OTEL_SERVICE_NAME, value: "canonical-api-server" }
+          ports:
+            - name: http
+              containerPort: 8081
+              protocol: TCP
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
