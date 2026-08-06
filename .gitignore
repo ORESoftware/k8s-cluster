@@ -12,3 +12,6 @@ tmp
 __pycache__/
 *.pyc
 viz/tune_log.csv
+temp
+tmp/worktrees
+temp/worktrees
