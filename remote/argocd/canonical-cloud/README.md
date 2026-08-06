@@ -5,7 +5,7 @@ backend. It is deliberately separate from `dd-next-runtime`: the legacy
 `dd-canonical-cloud` workload remains untouched until this prebuilt-image path
 has been activated and verified.
 
-`canonical-cloud/canonical-monorepo` remains the deployable source of truth for
+`canonical-cloud/canonical-monorepo` remains the only deployable source for
 the web and revoker images. The dedicated quote API is released from
 `canonical-cloud/canonical-api-server.rs` because that repository owns its
 runtime, container contract, and immutable digest artifact. This overlay
