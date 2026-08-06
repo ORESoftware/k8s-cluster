@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Trusted dev pushes intentionally re-run this idempotent prerequisite so the
+# published readiness record reflects the current cluster rather than stale CI.
 secret_id='dd/remote-dev/gcs-rabbitmq'
 region="${AWS_REGION:-us-east-1}"
 payload_file=''

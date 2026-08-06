@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { generateKeyPairSync, verify } from 'node:crypto';
-import { mkdtempSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -46,7 +46,7 @@ function run(command: string, args: string[], options: { cwd: string; env: NodeJ
 const repoRoot = findRepoRoot();
 const script = resolve(repoRoot, 'scripts/ci/mint-github-app-installation-token.sh');
 
-test('mints a repository-restricted contents-read installation token without exposing it', async (t) => {
+test('mints an exact repository-scoped contents-read installation token without exposing it', async (t) => {
   const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
   const privateKeyPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString();
   const workDir = mkdtempSync(join(tmpdir(), 'github-app-token-test-'));
@@ -93,6 +93,10 @@ test('mints a repository-restricted contents-read installation token without exp
         token: installationToken,
         expires_at: '2026-07-27T21:00:00Z',
         permissions: { contents: 'read', metadata: 'read' },
+        repositories: [
+          { full_name: 'example-org/repo-b' },
+          { full_name: 'example-org/repo-a' },
+        ],
       }));
       return;
     }
@@ -125,5 +129,103 @@ test('mints a repository-restricted contents-read installation token without exp
   assert.equal(statSync(tokenFile).mode & 0o777, 0o600);
   assert.doesNotMatch(result.stdout, new RegExp(installationToken));
   assert.doesNotMatch(result.stderr, new RegExp(installationToken));
-  assert.match(result.stdout, /contents-read installation token for example-org covering 2 repository\/repositories/);
+  assert.match(
+    result.stdout,
+    /exact repository-scoped contents-read installation token for example-org covering 2 repository\/repositories/,
+  );
+});
+
+test('rejects broader permissions and repository-scope substitution before writing a token', async (t) => {
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const privateKeyPem = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString();
+  const scenarios = [
+    {
+      name: 'permission drift',
+      permissions: { contents: 'read', metadata: 'read', issues: 'read' },
+      repositories: [{ full_name: 'example-org/repo-a' }, { full_name: 'example-org/repo-b' }],
+    },
+    {
+      name: 'repository substitution',
+      permissions: { contents: 'read', metadata: 'read' },
+      repositories: [{ full_name: 'example-org/repo-a' }, { full_name: 'example-org/repo-c' }],
+    },
+    {
+      name: 'missing repository proof',
+      permissions: { contents: 'read', metadata: 'read' },
+      repositories: undefined,
+    },
+  ] as const;
+
+  for (const scenario of scenarios) {
+    await t.test(scenario.name, async (scenarioTest) => {
+      const workDir = mkdtempSync(join(tmpdir(), 'github-app-token-reject-test-'));
+      const tokenFile = join(workDir, 'installation-token');
+      const installationToken = `ghs_${scenario.name.replaceAll(' ', '_')}_secret-token-value`;
+
+      const server = createServer(async (request, response) => {
+        if (request.method === 'GET' && request.url === '/repos/example-org/repo-a/installation') {
+          response.writeHead(200, { 'content-type': 'application/json' });
+          response.end(JSON.stringify({ id: 9876 }));
+          return;
+        }
+        if (request.method === 'POST' && request.url === '/app/installations/9876/access_tokens') {
+          await readRequestBody(request);
+          response.writeHead(201, { 'content-type': 'application/json' });
+          response.end(JSON.stringify({
+            token: installationToken,
+            expires_at: '2026-07-27T21:00:00Z',
+            permissions: scenario.permissions,
+            ...(scenario.repositories === undefined ? {} : { repositories: scenario.repositories }),
+          }));
+          return;
+        }
+        response.writeHead(404, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ message: 'not found' }));
+      });
+
+      await new Promise<void>((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
+      scenarioTest.after(() => new Promise<void>((resolveClose) => server.close(() => resolveClose())));
+      const address = server.address();
+      assert.ok(address && typeof address === 'object');
+
+      const result = await run('bash', [script, 'example-org', tokenFile, 'repo-a', 'repo-b'], {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          GITHUB_ACTIONS: '',
+          GITHUB_API_URL: `http://127.0.0.1:${address.port}`,
+          GITHUB_API_VERSION: '2026-03-10',
+          K8S_SUBMODULE_APP_ID: '12345',
+          K8S_SUBMODULE_APP_PRIVATE_KEY: privateKeyPem,
+        },
+      });
+
+      assert.equal(result.code, 1, `${result.stdout}\n${result.stderr}`);
+      assert.equal(existsSync(tokenFile), false);
+      assert.doesNotMatch(result.stdout, new RegExp(installationToken));
+      assert.doesNotMatch(result.stderr, new RegExp(installationToken));
+      assert.match(
+        `${result.stdout}\n${result.stderr}`,
+        /exact repository-scoped contents-read installation token/,
+      );
+    });
+  }
+});
+
+test('rejects duplicate repository names case-insensitively before using credentials', async () => {
+  const workDir = mkdtempSync(join(tmpdir(), 'github-app-token-duplicate-test-'));
+  const tokenFile = join(workDir, 'installation-token');
+  const result = await run('bash', [script, 'example-org', tokenFile, 'repo-a', 'REPO-A'], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      K8S_SUBMODULE_APP_ID: '',
+      K8S_SUBMODULE_APP_PRIVATE_KEY: '',
+    },
+  });
+
+  assert.equal(result.code, 64);
+  assert.equal(existsSync(tokenFile), false);
+  assert.match(`${result.stdout}\n${result.stderr}`, /requested more than once/);
+  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /App ID missing|private key missing/);
 });

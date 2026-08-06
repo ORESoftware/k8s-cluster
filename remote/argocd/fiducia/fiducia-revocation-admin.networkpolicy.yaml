@@ -1,0 +1,60 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-revocation-admin
+  namespace: fiducia
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: fiducia-revocation-admin
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: fiducia-load-balance
+      ports:
+        - protocol: TCP
+          port: 8098
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: fiducia-load-balance
+      ports:
+        - protocol: TCP
+          port: 8088
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fiducia-load-balance-to-revocation-reader
+  namespace: fiducia
+spec:
+  podSelector:
+    matchLabels:
+      app: fiducia-load-balance
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: fiducia-revocation-admin
+      ports:
+        - protocol: TCP
+          port: 8098

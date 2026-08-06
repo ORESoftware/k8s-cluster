@@ -17,6 +17,10 @@ resources:
   - dd-agent-worker-broker.deployment.yaml
   - dd-agent-worker-broker.networkpolicy.yaml
   - dd-agent-worker-broker.service.yaml
+  - dd-durable-worker-server.deployment.yaml
+  - dd-durable-worker-server.service.yaml
+  - dd-durable-worker-server.networkpolicy.yaml
+  - dd-durable-worker-server.pdb.yaml
   - dd-container-pool-rbac.yaml
   - dd-container-pool.deployment.yaml
   - dd-container-pool.networkpolicy.yaml
@@ -31,6 +35,11 @@ resources:
   - dd-gha-clone-server.deployment.yaml
   - dd-gha-clone-server.service.yaml
   - dd-gha-clone-server.networkpolicy.yaml
+  - dd-gha-executor-router.configmap.yaml
+  - dd-gha-executor-router.externalsecret.yaml
+  - dd-gha-executor-router.deployment.yaml
+  - dd-gha-executor-router.service.yaml
+  - dd-gha-executor-router.networkpolicy.yaml
   - dd-image-builder.deployment.yaml
   - dd-image-builder.service.yaml
   - dd-image-builder.networkpolicy.yaml

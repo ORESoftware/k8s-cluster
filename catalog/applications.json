@@ -764,6 +764,42 @@
           "application_namespace": "argocd",
           "destination": {
             "name": "",
+            "namespace": "vpn",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/apps/dd-argocd-mobile-prereqs.application.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/vpn/argocd-mobile-prereqs",
+              "repo_url": "git@github.com:ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-argocd-mobile-prereqs"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
             "namespace": "default",
             "server": "https://kubernetes.default.svc"
           },
@@ -2390,6 +2426,114 @@
           "application_namespace": "argocd",
           "destination": {
             "name": "",
+            "namespace": "argocd",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/aws/root.application.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/clusters/aws",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": true,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-root-aws"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "argocd",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/gcp/root.application.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/clusters/gcp",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": true,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-root-gcp"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "argocd",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/hetzner/root.application.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/clusters/hetzner",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": true,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-root-hetzner"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
             "namespace": "ai-ml",
             "server": "https://kubernetes.default.svc"
           },
@@ -2697,6 +2841,201 @@
       ],
       "duplicate_name": false,
       "name": "dd-shared-auth-nats-bridge"
+    },
+    {
+      "declaration_count": 2,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "arc-systems",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 1,
+          "manifest_path": "remote/argocd/clusters/aws/gha-ci.applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "gha-runner-scale-set-controller",
+              "path": "",
+              "repo_url": "ghcr.io/actions/actions-runner-controller-charts",
+              "target_revision": "0.14.2"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        },
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "arc-systems",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 1,
+          "manifest_path": "remote/argocd/clusters/hetzner/gha-ci.applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "gha-runner-scale-set-controller",
+              "path": "",
+              "repo_url": "ghcr.io/actions/actions-runner-controller-charts",
+              "target_revision": "0.14.2"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": true,
+      "name": "dd-sonus-ci-arc-controller"
+    },
+    {
+      "declaration_count": 2,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "arc-runners-sonus",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/aws/gha-ci.applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/ci-runners/sonus-auris/base",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": true,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        },
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "arc-runners-sonus",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/hetzner/gha-ci.applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/ci-runners/sonus-auris/base",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": true,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": true,
+      "name": "dd-sonus-ci-runner-prereqs"
+    },
+    {
+      "declaration_count": 2,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "arc-runners-sonus",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 2,
+          "manifest_path": "remote/argocd/clusters/aws/gha-ci.applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "gha-runner-scale-set",
+              "path": "",
+              "repo_url": "ghcr.io/actions/actions-runner-controller-charts",
+              "target_revision": "0.14.2"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        },
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "arc-runners-sonus",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 2,
+          "manifest_path": "remote/argocd/clusters/hetzner/gha-ci.applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "gha-runner-scale-set",
+              "path": "",
+              "repo_url": "ghcr.io/actions/actions-runner-controller-charts",
+              "target_revision": "0.14.2"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": true,
+      "name": "dd-sonus-ci-runner-set"
     },
     {
       "declaration_count": 1,
@@ -3330,6 +3669,42 @@
       "name": "dd-zed-web-server"
     },
     {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "edge-cache-warmer",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/apps/edge-cache-warmer.application.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/edge-cache-warmer",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": true,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=true",
+              "PruneLast=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "edge-cache-warmer"
+    },
+    {
       "declaration_count": 4,
       "declarations": [
         {
@@ -3915,7 +4290,7 @@
           "application_namespace": "argocd",
           "destination": {
             "name": "",
-            "namespace": "arc-runners",
+            "namespace": "arc-runners-sonus",
             "server": "https://kubernetes.default.svc"
           },
           "document_index": 0,
@@ -3926,22 +4301,23 @@
               "chart": "gha-runner-scale-set",
               "path": "",
               "repo_url": "ghcr.io/actions/actions-runner-controller-charts",
-              "target_revision": "0.13.1"
+              "target_revision": "0.14.2"
             }
           ],
           "sync_policy": {
-            "automated": true,
+            "automated": false,
             "create_namespace": true,
-            "prune": true,
-            "self_heal": true,
+            "prune": false,
+            "self_heal": false,
             "sync_options": [
-              "CreateNamespace=true"
+              "CreateNamespace=true",
+              "ServerSideApply=true"
             ]
           }
         }
       ],
       "duplicate_name": false,
-      "name": "sonus-ci-runner-set"
+      "name": "sonus-ci-runner-set-template"
     },
     {
       "declaration_count": 1,
@@ -4024,12 +4400,12 @@
     "source": "tracked Argo CD Application manifests"
   },
   "summary": {
-    "application_documents": 121,
-    "applications": 86,
+    "application_documents": 132,
+    "applications": 94,
     "default_destination_namespace_declarations": 54,
-    "default_project_declarations": 94,
-    "duplicate_names": 15,
+    "default_project_declarations": 105,
+    "duplicate_names": 18,
     "gitlink_render_path_violations": 0,
-    "in_repo_source_declarations": 77
+    "in_repo_source_declarations": 84
   }
 }

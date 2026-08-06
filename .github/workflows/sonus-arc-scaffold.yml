@@ -1,67 +1,130 @@
-name: Sonus Auris ARC scaffold
+name: Sonus Auris ARC and CI failover
 
 on:
   pull_request:
-    branches: [main]
+    branches: [dev]
     paths:
+      - "catalog/applications.json"
+      - "docs/github-actions-self-hosted-failover.md"
       - "remote/argocd/ci-runners/sonus-auris/**"
+      - "remote/argocd/ci-runners/sonus-auris-arc-plan.md"
       - "remote/argocd/ci-runners/validate-sonus-arc-scaffold.py"
+      - "remote/argocd/clusters/aws/gha-ci.applications.yaml"
+      - "remote/argocd/clusters/aws/kustomization.yaml"
+      - "remote/argocd/clusters/hetzner/gha-ci.applications.yaml"
+      - "remote/argocd/clusters/hetzner/kustomization.yaml"
+      - "remote/argocd/observability/k8s-resource-exporter.configmap.yaml"
+      - "remote/argocd/observability/k8s-resource-exporter.deployment.yaml"
+      - "remote/deployments/gha-capacity-broker-rs/**"
       - "remote/deployments/sonus-auris-ci-runner/**"
-      - "remote/argocd/apps/canonical-ci-arc-controller.application.yaml"
+      - ".github/actionlint.yaml"
       - ".github/workflows/sonus-arc-scaffold.yml"
   push:
-    branches: [main]
+    branches: [dev, main]
     paths:
+      - "catalog/applications.json"
+      - "docs/github-actions-self-hosted-failover.md"
       - "remote/argocd/ci-runners/sonus-auris/**"
+      - "remote/argocd/ci-runners/sonus-auris-arc-plan.md"
       - "remote/argocd/ci-runners/validate-sonus-arc-scaffold.py"
+      - "remote/argocd/clusters/aws/gha-ci.applications.yaml"
+      - "remote/argocd/clusters/aws/kustomization.yaml"
+      - "remote/argocd/clusters/hetzner/gha-ci.applications.yaml"
+      - "remote/argocd/clusters/hetzner/kustomization.yaml"
+      - "remote/argocd/observability/k8s-resource-exporter.configmap.yaml"
+      - "remote/argocd/observability/k8s-resource-exporter.deployment.yaml"
+      - "remote/deployments/gha-capacity-broker-rs/**"
       - "remote/deployments/sonus-auris-ci-runner/**"
-      - "remote/argocd/apps/canonical-ci-arc-controller.application.yaml"
+      - ".github/actionlint.yaml"
       - ".github/workflows/sonus-arc-scaffold.yml"
   workflow_dispatch:
+    inputs:
+      run_self_hosted_smoke:
+        description: Run the credential-free sonus-ci registration smoke
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 concurrency:
-  group: sonus-arc-scaffold-${{ github.ref }}
+  group: sonus-arc-failover-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  validate:
+  contracts:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+          fetch-depth: 2
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Compile validator
         run: python -m py_compile remote/argocd/ci-runners/validate-sonus-arc-scaffold.py
-      - name: Validate required scaffold files
-        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py files
-      - name: Validate inert promotion state
-        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py inert
-      - name: Validate ARC chart/controller alignment
-        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py versions
-      - name: Validate non-privileged runner template
-        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py template
-      - name: Validate ExternalSecret and smoke templates
-        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py activation
-      - name: Validate pinned runner image contract
-        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py runner
-      - name: Validate operational documentation
-        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py docs
-      - name: Validate committed secret boundaries
-        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py secrets
-      - name: Check repository whitespace and conflict markers
+      - name: Validate ARC, broker, secret, and activation contracts
+        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py
+      - name: Validate application catalog
+        run: python tools/application_catalog.py check catalog/applications.json
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: -config-file .github/actionlint.yaml .github/workflows/sonus-arc-scaffold.yml
+      - name: Check whitespace and conflict markers
         run: |
           git diff --check HEAD^ HEAD
           if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- \
+            docs/github-actions-self-hosted-failover.md \
             remote/argocd/ci-runners/sonus-auris \
-            remote/deployments/sonus-auris-ci-runner \
-            remote/argocd/ci-runners/validate-sonus-arc-scaffold.py; then
+            remote/argocd/ci-runners/sonus-auris-arc-plan.md \
+            remote/argocd/ci-runners/validate-sonus-arc-scaffold.py \
+            remote/argocd/clusters/aws/gha-ci.applications.yaml \
+            remote/argocd/clusters/hetzner/gha-ci.applications.yaml \
+            remote/deployments/gha-capacity-broker-rs; then
             echo "conflict marker found" >&2
             exit 1
           fi
+
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: "1.90.0"
+          components: rustfmt, clippy
+      - name: Check formatting
+        working-directory: remote/deployments/gha-capacity-broker-rs
+        run: cargo fmt --check
+      - name: Run unit tests
+        working-directory: remote/deployments/gha-capacity-broker-rs
+        run: cargo test --all-features
+      - name: Run clippy
+        working-directory: remote/deployments/gha-capacity-broker-rs
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  self-hosted-smoke:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_self_hosted_smoke
+    runs-on: sonus-ci
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Prove runner isolation without repository checkout or secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${RUNNER_OS}" = Linux
+          test "$(id -u)" != 0
+          test ! -e /var/run/docker.sock
+          test ! -e /run/containerd/containerd.sock
+          test ! -e /var/run/secrets/kubernetes.io/serviceaccount/token
+          test -n "${RUNNER_NAME:-}"
+          printf 'runner=%s os=%s arch=%s\n' "$RUNNER_NAME" "$RUNNER_OS" "$RUNNER_ARCH"
