@@ -1,0 +1,31 @@
+[package]
+org = "canonical-cloud"
+name = "canonical-monorepo"
+version = "0.1.0"
+description = "Pinned Canonical Cloud integration workspace with Zed packages and Git submodules"
+license = "MIT"
+keywords = ["compliance", "monorepo", "zed", "git-submodules", "integration"]
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/canonical-cloud/canonical-monorepo"
+
+[dependencies]
+"canonical-cloud/canonical-interfaces" = "^0.1.0"
+"canonical-cloud/canonical-clients" = "^0.1.0"
+
+[publish]
+include_readme = true
+tag_format = "v{version}"
+exclude = [".env", ".env.*", ".vendor/.zed/**", ".zed/**", ".zed-pack/**", "apps/**", "**/*.log"]
+
+[install]
+adapter = "none"
+dir = ".vendor/.zed"
+
+[targets.repository]
+dir = "."
+name = "canonical-monorepo-repository"
+
+[scripts]
+test = "python3 scripts/verify-zed-submodules.py"

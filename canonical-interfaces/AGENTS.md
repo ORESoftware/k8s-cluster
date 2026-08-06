@@ -10,6 +10,9 @@ Schema in `schema/` is generated into per-language adapters under `generated/`.
 - `src/generate.mjs` — the generator (schema → TS/Rust/Python/Go).
 - `src/generate.test.mjs` — generator self-tests + `--check`.
 - `generated/<lang>/` — **adapters only; never hand-edit.**
+- `tests/interface-wasm-browser/` — hermetic Chromium contract for the generated
+  Rust/WASM package.
+- `.ci/` — exact TypeScript compiler lock plus reviewed dependency-lock hashes.
 
 ## Working here
 
@@ -24,6 +27,30 @@ Schema in `schema/` is generated into per-language adapters under `generated/`.
 - Commit the regenerated `generated/` alongside the schema change — CI runs
   `npm run check` and fails if `generated/` is stale.
 - Keep `sql/schema.sql` field names in sync with the JSON Schema.
+
+## Generated Rust/WASM boundary
+
+- `generated/rust-wasm/Cargo.lock` is generated dependency state and is the one
+  tracked-lock exception under `generated/`. Regenerate it with Cargo; never
+  edit package versions or checksums by hand.
+- `.ci/package-lock.json` locks the declaration-check compiler. Install it only
+  with `npm ci --ignore-scripts --prefix .ci`; do not replace it with `npx` or a
+  mutable `npm install` in CI.
+- `.ci/locks.sha256` records the reviewed lock artifacts. Any intentional lock
+  refresh must update both lockfiles and their hashes in one reviewed change.
+- CI pins Rust 1.95 and exact locked `wasm-pack 0.15.0`, builds with Cargo's
+  committed lock, proves packaging did not rewrite that lock, and type-checks
+  declarations with exact TypeScript 5.9.3.
+- Never downgrade or float the WASM package builder merely to bypass an upstream
+  install warning. Change the exact version only with the full declaration and
+  Chromium contracts on the same reviewed head.
+- The generated browser package is declaration-oriented. Do not add runtime
+  network, mutation, storage, cookie, WebSocket, beacon, or probe-execution
+  APIs merely to make a browser test interesting.
+- Browser certification must initialize the actual wasm-pack output in a real
+  Chromium process, serve loopback files only, block external DNS, verify
+  representative declarations, and fail on any unexpected-origin resource.
+- A server-side Cargo build or `.d.ts` grep alone is not browser evidence.
 
 ## Command safety
 

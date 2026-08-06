@@ -5,7 +5,7 @@ mod websocket;
 
 pub mod api;
 
-use crate::{views, AppState};
+use crate::{metrics, views, AppState};
 use axum::{
     http::{header, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
@@ -44,6 +44,7 @@ pub fn router(state: AppState) -> Router {
     let application = Router::new()
         .route("/healthz", get(health::healthz))
         .route("/readyz", get(health::readyz))
+        .route("/metrics", get(metrics::endpoint))
         .merge(private_application)
         // Administrative UI/API lives on a separate future origin and
         // process. Reserve this namespace so it can never be answered by the

@@ -206,3 +206,41 @@ fn revoker_manifest_cannot_depend_on_the_customer_http_surface() {
         assert!(manifest.contains(required), "revoker is missing {required}");
     }
 }
+
+#[test]
+fn browser_test_auth_is_debug_only_and_absent_from_production_images() {
+    let manifest = read("Cargo.toml");
+    let build = read("build.rs");
+    let library = read("src/lib.rs");
+    let app = read("src/app.rs");
+    let dockerfile = read("Dockerfile");
+
+    assert!(manifest.contains("test-auth = []"));
+    assert!(build.contains("CARGO_FEATURE_TEST_AUTH"));
+    assert!(build.contains("release_profile"));
+    assert!(build.contains("the test-auth feature is forbidden in release builds"));
+    assert!(library.contains("#[cfg(all(feature = \"test-auth\", not(debug_assertions)))]"));
+    assert!(library
+        .contains("compile_error!(\"the test-auth feature is forbidden in release builds\")"));
+    assert!(app.contains("#[cfg(feature = \"test-auth\")]"));
+    assert!(app.contains("BrowserTestAuth::is_enabled()"));
+    assert!(
+        !dockerfile.contains("--features test-auth"),
+        "the production image must never compile browser test authentication"
+    );
+}
+
+#[test]
+fn app_repository_has_an_executable_release_boundary_contract() {
+    let workflow = read(".github/workflows/container-contract.yml");
+    let contract = read("tests/release-boundary.mjs");
+
+    assert!(workflow.contains("permissions:\n  contents: read"));
+    assert!(workflow.matches("tests/release-boundary.mjs").count() >= 3);
+    assert!(workflow.contains("run: node tests/release-boundary.mjs"));
+    assert!(contract.contains("release/current-containers.env"));
+    assert!(contract.contains("canonical-monorepo is the sole release publisher"));
+    assert!(contract.contains("docker\\/build-push-action"));
+    assert!(contract.contains("(?:oras|crane|skopeo)"));
+    assert!(contract.contains("\\.github\\/workflows\\/"));
+}

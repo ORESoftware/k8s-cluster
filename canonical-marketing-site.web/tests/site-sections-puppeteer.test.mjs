@@ -64,12 +64,16 @@ test("puppeteer: process timeline lists the four ordered engagement steps", asyn
   assert.deepEqual(pageErrors, []);
 });
 
-test("puppeteer: hero CTAs target the right sections and advertise the framework badges", async (t) => {
+test("puppeteer: hero CTAs target the quote app and services", async (t) => {
   const { page, pageErrors } = await open(t);
 
   assert.equal(
     await page.$eval("#hero-cta-primary", (el) => el.getAttribute("href")),
-    "#contact",
+    "https://app.canonical.plus/u/quote",
+  );
+  assert.equal(
+    await page.$eval("#hero-cta-primary", (el) => el.getAttribute("data-application-link")),
+    "quote",
   );
   assert.equal(
     await page.$eval("#hero-cta-secondary", (el) => el.getAttribute("href")),

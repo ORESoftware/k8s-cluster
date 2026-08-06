@@ -70,7 +70,7 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
     // Catalog shape: every customer owner policy exists, admin tables have no
     // customer policy, and RLS is enabled + forced everywhere.
     let policy_count = privileged
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT count(*)::bigint AS count FROM pg_policies WHERE schemaname = 'public'",
         ))
@@ -83,7 +83,7 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
     );
 
     let admin_policy_count = privileged
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             r#"
             SELECT count(*)::bigint AS count
@@ -98,7 +98,7 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
     assert_eq!(admin_policy_count, 0, "admin tables must fail closed");
 
     let admin_function_count = privileged
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             r#"
             SELECT count(*)::bigint AS count
@@ -120,7 +120,7 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
     );
 
     let admin_fk_count = privileged
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             r#"
             SELECT count(*)::bigint AS count
@@ -139,7 +139,7 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
     assert_eq!(admin_fk_count, 3, "admin auth-user FKs must be installed");
 
     let unforced = privileged
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             r#"
             SELECT count(*)::bigint AS count
@@ -182,14 +182,14 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
     let engagement_a = Uuid::new_v4();
     let engagement_b = Uuid::new_v4();
     privileged
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO auth.users (id) VALUES ($1), ($2)",
             [user_a.into(), user_b.into()],
         ))
         .await?;
     privileged
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             INSERT INTO audit_engagement
@@ -217,7 +217,7 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
     ] {
         assert!(
             runtime
-                .query_one(Statement::from_string(DatabaseBackend::Postgres, query))
+                .query_one_raw(Statement::from_string(DatabaseBackend::Postgres, query))
                 .await
                 .is_err(),
             "customer role unexpectedly crossed the admin boundary with: {query}"
@@ -227,7 +227,7 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
     // Without an installed JWT context, auth.uid() is NULL and forced RLS
     // must hide every row.
     let blind_count = runtime
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT count(*)::bigint AS count FROM audit_engagement",
         ))
@@ -239,7 +239,7 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
     // With user A's context: exactly A's row is visible.
     let transaction = begin_user_transaction(&runtime, user_a).await?;
     let visible = transaction
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT count(*)::bigint AS count FROM audit_engagement",
         ))
@@ -250,7 +250,7 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
 
     // Cross-owner UPDATE silently matches nothing.
     let foreign_update = transaction
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE audit_engagement SET status = 'complete' WHERE id = $1",
             [engagement_b.into()],
@@ -261,7 +261,7 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
     // Owner-consistent writes succeed: an engagement and a note.
     let engagement_c = Uuid::new_v4();
     transaction
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             INSERT INTO audit_engagement
@@ -272,7 +272,7 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
         ))
         .await?;
     transaction
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             INSERT INTO engagement_note (id, engagement_id, owner_id, body, created_at)
@@ -286,7 +286,7 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
     // WITH CHECK rejects rows claiming another owner.
     let spoof_transaction = begin_user_transaction(&runtime, user_a).await?;
     let spoofed_engagement = spoof_transaction
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             INSERT INTO audit_engagement
@@ -301,7 +301,7 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
 
     let spoof_note_transaction = begin_user_transaction(&runtime, user_a).await?;
     let spoofed_note = spoof_note_transaction
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             INSERT INTO engagement_note (id, engagement_id, owner_id, body, created_at)
@@ -316,7 +316,7 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
     // Enum check constraints hold on CockroachDB too.
     let bad_framework = begin_user_transaction(&runtime, user_a).await?;
     let rejected = bad_framework
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             INSERT INTO audit_engagement
@@ -332,7 +332,7 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
     // The sync upgrade's invariants are enforced by CockroachDB, not merely
     // represented in the declarative PostgreSQL schema.
     let negative_clock = privileged
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO sync_clock (owner_id, cursor) VALUES ($1, -1)",
             [user_a.into()],
@@ -341,7 +341,7 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
     assert!(negative_clock.is_err(), "negative sync clock was accepted");
 
     let non_positive_record_version = privileged
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             INSERT INTO sync_record (
@@ -357,7 +357,7 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
     );
 
     let non_positive_change_cursor = privileged
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             INSERT INTO sync_change (
@@ -374,7 +374,7 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
     );
 
     let non_positive_change_version = privileged
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             INSERT INTO sync_change (
@@ -391,7 +391,7 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
     );
 
     let invalid_change_operation = privileged
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             INSERT INTO sync_change (
@@ -409,14 +409,14 @@ async fn migrations_and_owner_rls_hold_on_cockroachdb() -> Result<(), Box<dyn Er
 
     // Deleting the auth user cascades through engagements to notes.
     privileged
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "DELETE FROM auth.users WHERE id = $1",
             [user_a.into()],
         ))
         .await?;
     let survivors = privileged
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             r#"
             SELECT

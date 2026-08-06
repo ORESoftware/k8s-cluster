@@ -1,0 +1,61 @@
+name: container contract
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/**
+      - Dockerfile
+      - Cargo.toml
+      - Cargo.lock
+      - client/**
+      - crates/**
+      - migrations/**
+      - src/**
+      - tests/release-boundary.mjs
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/**
+      - Dockerfile
+      - Cargo.toml
+      - Cargo.lock
+      - client/**
+      - crates/**
+      - migrations/**
+      - src/**
+      - tests/release-boundary.mjs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Enforce application-repository release boundary
+        run: node tests/release-boundary.mjs
+
+      - name: Build both production targets without publishing
+        run: |
+          set -euo pipefail
+          docker build --pull --target web --tag canonical-web-server:pr .
+          docker build --pull --target revoker --tag canonical-session-revoker:pr .
+
+      - name: Verify non-root image users and entrypoints
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect canonical-web-server:pr --format '{{.Config.User}}')" = '65532:65532'
+          test "$(docker image inspect canonical-session-revoker:pr --format '{{.Config.User}}')" = '65532:65532'
+          test "$(docker image inspect canonical-web-server:pr --format '{{json .Config.Entrypoint}}')" = '["/usr/local/bin/canonical-web-server"]'
+          test "$(docker image inspect canonical-session-revoker:pr --format '{{json .Config.Entrypoint}}')" = '["/usr/local/bin/canonical-session-revoker"]'

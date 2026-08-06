@@ -1,0 +1,6 @@
+name: canonical_interfaces
+description: Generated quote v1 payloads for canonical.plus.
+version: 0.1.0
+publish_to: none
+environment:
+  sdk: '>=3.8.0 <4.0.0'

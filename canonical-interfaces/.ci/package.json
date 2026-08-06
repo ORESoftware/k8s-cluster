@@ -1,0 +1,9 @@
+{
+  "name": "canonical-interfaces-ci-tools",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Locked compiler used only to validate generated declarations in CI.",
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

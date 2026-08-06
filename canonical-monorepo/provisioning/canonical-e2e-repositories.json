@@ -1,0 +1,268 @@
+{
+  "schema_version": 1,
+  "source_org": "canonical-cloud",
+  "test_org": "canonical-cloud-test",
+  "confirmation": "provision canonical-cloud/canonical-e2e and canonical-cloud-test",
+  "repositories": [
+    {
+      "owner": "canonical-cloud",
+      "name": "canonical-e2e",
+      "visibility": "private",
+      "description": "Cross-repository exact-SHA end-to-end orchestration for Canonical Cloud.",
+      "kind": "orchestrator",
+      "zed_package": true,
+      "auto_init": true,
+      "language": "python",
+      "topics": [
+        "canonical-cloud",
+        "e2e",
+        "integration-testing",
+        "zed-package"
+      ],
+      "source_repositories": [
+        "canonical-monorepo",
+        "canonical-interfaces",
+        "canonical-lib",
+        "canonical-clients",
+        "canonical-cli",
+        "canonical-web-server.rs",
+        "canonical-api-server.rs",
+        "canonical-mcp-server.rs",
+        "canonical-marketing-site.web"
+      ]
+    },
+    {
+      "owner": "canonical-cloud-test",
+      "name": "canonical-api-server.rs",
+      "visibility": "private",
+      "description": "Disposable exact-SHA staging mirror for canonical-cloud/canonical-api-server.rs.",
+      "kind": "staging-mirror",
+      "zed_package": false,
+      "auto_init": false,
+      "language": "rust",
+      "topics": [
+        "canonical-cloud",
+        "staging-mirror"
+      ],
+      "source_repositories": [
+        "canonical-api-server.rs"
+      ]
+    },
+    {
+      "owner": "canonical-cloud-test",
+      "name": "api-server-contract-e2e",
+      "visibility": "private",
+      "description": "Exact-SHA REST, WebSocket, persistence, ownership, and Gemini failure-contract tests.",
+      "kind": "scenario",
+      "zed_package": true,
+      "auto_init": true,
+      "language": "python",
+      "topics": [
+        "canonical-cloud",
+        "e2e",
+        "api-contract"
+      ],
+      "source_repositories": [
+        "canonical-api-server.rs",
+        "canonical-interfaces",
+        "canonical-lib"
+      ]
+    },
+    {
+      "owner": "canonical-cloud-test",
+      "name": "monorepo-submodules-e2e",
+      "visibility": "private",
+      "description": "Validation that Canonical source gitlinks resolve at approved SHAs directly below apps/.",
+      "kind": "scenario",
+      "zed_package": true,
+      "auto_init": true,
+      "language": "python",
+      "topics": [
+        "canonical-cloud",
+        "e2e",
+        "git-submodules"
+      ],
+      "source_repositories": [
+        "canonical-monorepo"
+      ]
+    },
+    {
+      "owner": "canonical-cloud-test",
+      "name": "zed-package-graph-e2e",
+      "visibility": "private",
+      "description": "End-to-end resolution tests for the Canonical Zed package dependency graph.",
+      "kind": "scenario",
+      "zed_package": true,
+      "auto_init": true,
+      "language": "python",
+      "topics": [
+        "canonical-cloud",
+        "e2e",
+        "zed-package"
+      ],
+      "source_repositories": [
+        "canonical-interfaces",
+        "canonical-lib",
+        "canonical-cli",
+        "canonical-clients",
+        "canonical-monorepo"
+      ]
+    },
+    {
+      "owner": "canonical-cloud-test",
+      "name": "web-server-routing-e2e",
+      "visibility": "private",
+      "description": "Browser and HTTP tests for marketing, authenticated app, API, redirects, and routing boundaries.",
+      "kind": "scenario",
+      "zed_package": true,
+      "auto_init": true,
+      "language": "typescript",
+      "topics": [
+        "canonical-cloud",
+        "e2e",
+        "browser-testing"
+      ],
+      "source_repositories": [
+        "canonical-marketing-site.web",
+        "canonical-web-server.rs",
+        "canonical-api-server.rs"
+      ]
+    },
+    {
+      "owner": "canonical-cloud-test",
+      "name": "cli-install-e2e",
+      "visibility": "private",
+      "description": "Clean-environment tests for Canonical CLI installation and its Zed dependency chain.",
+      "kind": "scenario",
+      "zed_package": true,
+      "auto_init": true,
+      "language": "rust",
+      "topics": [
+        "canonical-cloud",
+        "e2e",
+        "cli"
+      ],
+      "source_repositories": [
+        "canonical-cli",
+        "canonical-lib",
+        "canonical-interfaces",
+        "canonical-clients"
+      ]
+    },
+    {
+      "owner": "canonical-cloud-test",
+      "name": "clients-rust-consumer",
+      "visibility": "private",
+      "description": "Minimal Rust consumer fixture compiled against an immutable canonical-clients revision.",
+      "kind": "consumer",
+      "zed_package": true,
+      "auto_init": true,
+      "language": "rust",
+      "topics": [
+        "canonical-cloud",
+        "e2e",
+        "rust"
+      ],
+      "source_repositories": [
+        "canonical-clients",
+        "canonical-interfaces"
+      ]
+    },
+    {
+      "owner": "canonical-cloud-test",
+      "name": "clients-typescript-consumer",
+      "visibility": "private",
+      "description": "Minimal TypeScript consumer fixture compiled against an immutable canonical-clients revision.",
+      "kind": "consumer",
+      "zed_package": true,
+      "auto_init": true,
+      "language": "typescript",
+      "topics": [
+        "canonical-cloud",
+        "e2e",
+        "typescript"
+      ],
+      "source_repositories": [
+        "canonical-clients",
+        "canonical-interfaces"
+      ]
+    },
+    {
+      "owner": "canonical-cloud-test",
+      "name": "clients-go-consumer",
+      "visibility": "private",
+      "description": "Minimal Go consumer fixture compiled against an immutable canonical-clients revision.",
+      "kind": "consumer",
+      "zed_package": true,
+      "auto_init": true,
+      "language": "go",
+      "topics": [
+        "canonical-cloud",
+        "e2e",
+        "go"
+      ],
+      "source_repositories": [
+        "canonical-clients",
+        "canonical-interfaces"
+      ]
+    },
+    {
+      "owner": "canonical-cloud-test",
+      "name": "clients-python-consumer",
+      "visibility": "private",
+      "description": "Minimal Python consumer fixture tested against an immutable canonical-clients revision.",
+      "kind": "consumer",
+      "zed_package": true,
+      "auto_init": true,
+      "language": "python",
+      "topics": [
+        "canonical-cloud",
+        "e2e",
+        "python"
+      ],
+      "source_repositories": [
+        "canonical-clients",
+        "canonical-interfaces"
+      ]
+    },
+    {
+      "owner": "canonical-cloud-test",
+      "name": "mcp-contract-e2e",
+      "visibility": "private",
+      "description": "Protocol and authorization contract tests for the Canonical MCP server.",
+      "kind": "scenario",
+      "zed_package": true,
+      "auto_init": true,
+      "language": "python",
+      "topics": [
+        "canonical-cloud",
+        "e2e",
+        "mcp"
+      ],
+      "source_repositories": [
+        "canonical-mcp-server.rs",
+        "canonical-interfaces",
+        "canonical-lib"
+      ]
+    },
+    {
+      "owner": "canonical-cloud-test",
+      "name": "legacy-mirror-guard-e2e",
+      "visibility": "private",
+      "description": "Guard tests proving canonical.cloud remains frozen and canonical-monorepo remains authoritative.",
+      "kind": "scenario",
+      "zed_package": true,
+      "auto_init": true,
+      "language": "python",
+      "topics": [
+        "canonical-cloud",
+        "e2e",
+        "migration-guard"
+      ],
+      "source_repositories": [
+        "canonical.cloud",
+        "canonical-monorepo"
+      ]
+    }
+  ]
+}

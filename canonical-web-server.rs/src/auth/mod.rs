@@ -1,5 +1,7 @@
 mod extractor;
 mod rate_limit;
+#[cfg(feature = "test-auth")]
+pub(crate) mod test_provider;
 
 pub use canonical_auth::{
     validated_session_id, AuthContext, AuthProvider, AuthProviderError, AuthTokens,

@@ -1,0 +1,33 @@
+{
+  "organizationName": "Example Company",
+  "contactName": "Taylor Example",
+  "contactEmail": "security@example.com",
+  "website": "https://example.com",
+  "employeeCount": 120,
+  "annualRevenueBand": "10m_50m",
+  "frameworks": [
+    "soc2_type_2",
+    "nist_csf_2",
+    "nist_800_53",
+    "hipaa"
+  ],
+  "currentStage": "readiness",
+  "infrastructure": [
+    "aws",
+    "saas_only"
+  ],
+  "dataSensitivity": [
+    "confidential",
+    "pii",
+    "phi"
+  ],
+  "targetDate": "2026-12-31",
+  "hasSecurityProgram": true,
+  "hasPolicies": true,
+  "hasRiskAssessment": false,
+  "hasIncidentResponsePlan": true,
+  "hasVendorManagement": false,
+  "notes": "Planning fixture only; contains no secrets or regulated records.",
+  "contextKey": "quote-analysis",
+  "answersVersion": 1
+}

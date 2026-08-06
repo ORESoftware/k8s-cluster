@@ -17,6 +17,8 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
+  # These packages are owned by this release repository. App repositories
+  # validate their Docker targets but never write deployable images.
   WEB_IMAGE: ghcr.io/canonical-cloud/canonical-web-server
   REVOKER_IMAGE: ghcr.io/canonical-cloud/canonical-session-revoker
   RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -37,7 +39,7 @@ jobs:
     steps:
       - name: Use HTTPS for public submodules
         run: git config --global url."https://github.com/".insteadOf "git@github.com:"
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.RELEASE_SHA }}
           submodules: recursive
@@ -54,15 +56,15 @@ jobs:
             exit 1
           fi
           bash scripts/audit-repo-state.sh
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and publish customer web image
         id: web
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: apps/canonical-web-server.rs
           target: web
@@ -79,14 +81,14 @@ jobs:
           provenance: mode=max
           sbom: true
       - name: Attest customer web image
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ${{ env.WEB_IMAGE }}
           subject-digest: ${{ steps.web.outputs.digest }}
           push-to-registry: true
       - name: Build and publish no-ingress revoker image
         id: revoker
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: apps/canonical-web-server.rs
           target: revoker
@@ -103,11 +105,54 @@ jobs:
           provenance: mode=max
           sbom: true
       - name: Attest no-ingress revoker image
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-name: ${{ env.REVOKER_IMAGE }}
           subject-digest: ${{ steps.revoker.outputs.digest }}
           push-to-registry: true
+      - name: Write sanitized release ledger
+        shell: bash
+        env:
+          WEB_DIGEST: ${{ steps.web.outputs.digest }}
+          REVOKER_DIGEST: ${{ steps.revoker.outputs.digest }}
+        run: |
+          set -euo pipefail
+          digest_re='^sha256:[0-9a-f]{64}$'
+          [[ "$WEB_DIGEST" =~ $digest_re ]]
+          [[ "$REVOKER_DIGEST" =~ $digest_re ]]
+          jq -n \
+            --arg release_sha "$RELEASE_SHA" \
+            --arg web_image "$WEB_IMAGE" \
+            --arg web_digest "$WEB_DIGEST" \
+            --arg revoker_image "$REVOKER_IMAGE" \
+            --arg revoker_digest "$REVOKER_DIGEST" \
+            --arg workflow_run_id "$GITHUB_RUN_ID" \
+            --arg workflow_run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg published_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{
+              schema_version: 1,
+              release_sha: $release_sha,
+              web: {image: $web_image, digest: $web_digest},
+              revoker: {image: $revoker_image, digest: $revoker_digest},
+              workflow_run_id: $workflow_run_id,
+              workflow_run_attempt: $workflow_run_attempt,
+              published_at: $published_at
+            }' >"$RUNNER_TEMP/canonical-release.json"
+          jq -e '
+            .schema_version == 1 and
+            (.release_sha | test("^[0-9a-f]{40}$")) and
+            .web.image == "ghcr.io/canonical-cloud/canonical-web-server" and
+            (.web.digest | test("^sha256:[0-9a-f]{64}$")) and
+            .revoker.image == "ghcr.io/canonical-cloud/canonical-session-revoker" and
+            (.revoker.digest | test("^sha256:[0-9a-f]{64}$"))
+          ' "$RUNNER_TEMP/canonical-release.json" >/dev/null
+      - name: Upload sanitized release ledger
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: canonical-release-ledger
+          path: ${{ runner.temp }}/canonical-release.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Record the GitOps promotion inputs
         shell: bash
         env:
@@ -130,3 +175,60 @@ jobs:
             printf '  --revoker-digest %s\n' "${REVOKER_DIGEST}"
             echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
+
+  publish-ledger:
+    name: publish sanitized release ledger
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Download sanitized release ledger
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: canonical-release-ledger
+          path: ${{ runner.temp }}/canonical-release-ledger
+      - name: Validate and publish ledger branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$RUNNER_TEMP/canonical-release-ledger/canonical-release.json"
+          test -s "$result"
+          jq -e '
+            .schema_version == 1 and
+            (.release_sha | test("^[0-9a-f]{40}$")) and
+            .web.image == "ghcr.io/canonical-cloud/canonical-web-server" and
+            (.web.digest | test("^sha256:[0-9a-f]{64}$")) and
+            .revoker.image == "ghcr.io/canonical-cloud/canonical-session-revoker" and
+            (.revoker.digest | test("^sha256:[0-9a-f]{64}$"))
+          ' "$result" >/dev/null
+          if grep -Eqi 'BEGIN [A-Z ]*PRIVATE KEY|gh[pousr]_|github_pat_|Bearer[[:space:]]+[A-Za-z0-9]|access_token|refresh_token|authorization_code' "$result"; then
+            echo 'release ledger unexpectedly contains credential material' >&2
+            exit 1
+          fi
+
+          branch=automation/canonical-release-digests
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin "$branch" || true
+          if git show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+            git switch -C "$branch" "origin/$branch"
+          else
+            git switch --orphan "$branch"
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+          mkdir -p canonical
+          cp "$result" canonical/latest.json
+          git add canonical/latest.json
+          if git diff --cached --quiet; then
+            echo 'Canonical release ledger is unchanged.'
+            exit 0
+          fi
+          git commit -m 'release: publish canonical image digests'
+          git push origin "HEAD:$branch"

@@ -1,0 +1,32 @@
+{
+  "quoteId": "11111111-1111-4111-8111-111111111111",
+  "status": "ready",
+  "currency": "USD",
+  "lowerBoundCents": 2500000,
+  "upperBoundCents": 6000000,
+  "durationWeeksLow": 8,
+  "durationWeeksHigh": 18,
+  "confidence": "medium",
+  "summary": "Preliminary planning range for a multi-framework readiness engagement.",
+  "assumptions": [
+    "The organization can provide current policies and system inventories.",
+    "The scope excludes an attestation opinion or legal conclusion."
+  ],
+  "gaps": [
+    "A current risk assessment is not yet available.",
+    "Third-party risk management is not yet operating consistently."
+  ],
+  "nextSteps": [
+    "Confirm system boundaries and in-scope data flows.",
+    "Review evidence availability with a Canonical specialist."
+  ],
+  "frameworks": [
+    "soc2_type_2",
+    "nist_csf_2",
+    "nist_800_53",
+    "hipaa"
+  ],
+  "model": "gemini-3.1-pro-preview",
+  "contextVersion": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "createdAt": "2026-08-06T05:02:00Z"
+}

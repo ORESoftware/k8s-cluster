@@ -76,10 +76,22 @@ function resolveBinary() {
     return override;
   }
   const built = join(REPO_ROOT, "target", "debug", "canonical-web-server");
-  const build = spawnSync("cargo", ["build", "--locked", "--quiet", "--bin", "canonical-web-server"], {
-    cwd: REPO_ROOT,
-    stdio: "inherit",
-  });
+  const build = spawnSync(
+    "cargo",
+    [
+      "build",
+      "--locked",
+      "--quiet",
+      "--features",
+      "test-auth",
+      "--bin",
+      "canonical-web-server",
+    ],
+    {
+      cwd: REPO_ROOT,
+      stdio: "inherit",
+    },
+  );
   if (build.status !== 0) {
     throw new Error(`cargo build failed (exit ${build.status}); set CANONICAL_WEB_SERVER_BIN to skip`);
   }
@@ -165,6 +177,9 @@ export async function startServer() {
       DATABASE_MAX_CONNECTIONS: "1",
       SUPABASE_URL: "http://127.0.0.1:54321",
       SUPABASE_PUBLISHABLE_KEY: "sb_publishable_ci_only",
+      // The binary must also have been built with the debug-only `test-auth`
+      // feature. Release builds reject that feature at compile time.
+      CANONICAL_TEST_AUTH_ENABLED: "1",
       STATIC_DIR: staticDir,
       APP_ASSET_DIR: join(REPO_ROOT, "client", "dist"),
     },

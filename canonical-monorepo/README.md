@@ -15,6 +15,11 @@ repo's main branch.
 | `apps/canonical-web-server.rs`       | sMASH + TypeScript/IndexedDB | [canonical-web-server.rs](https://github.com/canonical-cloud/canonical-web-server.rs) |
 | `apps/canonical-marketing-site.web` | Astro                      | [canonical-marketing-site.web](https://github.com/canonical-cloud/canonical-marketing-site.web) |
 | `apps/canonical-interfaces`          | JSON Schema / SQL          | [canonical-interfaces](https://github.com/canonical-cloud/canonical-interfaces) |
+| `apps/canonical-mcp-server.rs`       | Rust MCP server            | [canonical-mcp-server.rs](https://github.com/canonical-cloud/canonical-mcp-server.rs) |
+
+`canonical-mcp-server.rs` is the agent-facing operations and diagnostics surface
+for the organization. It remains a separately reviewed Rust repository and is
+pinned here like every other deployable app.
 
 `canonical-marketing-site.web` is the static public site.
 `canonical-web-server.rs` is a modular Rust workspace. Its customer-facing
@@ -96,8 +101,10 @@ fast-forwards each submodule, and stages the resulting gitlink pins. Preview
 with `--dry-run`.
 
 After the full pinned-stack CI succeeds on `main`, the release workflow
-publishes separately attested web and no-ingress revoker images to GHCR, tagged
-with the exact monorepo commit. Deployment state and digest promotion live in
+publishes separately attested web and no-ingress revoker images to the
+monorepo-owned GHCR packages, tagged with the exact monorepo commit. App
+repositories build and inspect container targets but have no registry-write or
+release-manifest path. Deployment state and digest promotion live in
 `ORESoftware/k8s-cluster`; Argo CD, not GitHub Actions, reconciles the backend.
 See `docs/deploy.md` for the credential and migration boundaries.
 

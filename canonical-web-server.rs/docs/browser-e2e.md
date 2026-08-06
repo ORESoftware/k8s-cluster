@@ -11,37 +11,40 @@ runs `serve` with `DATABASE_MAX_CONNECTIONS=1` against that same file. This is
 the same privilege-separated boot recipe the `container-smoke` CI job proves.
 No Postgres, Supabase, privileged runtime credential, or secrets are required.
 
-**Covered today (6 tests, unauthenticated surface):** login page render + form
-wiring, `/app` → `/login` redirect, maud 404, `/api/v1/{health,info}` JSON
-contract + JSON 404, app-vs-marketing CSP/security-header divergence.
+**Covered today (8 tests):** login page render + form wiring, `/app` →
+`/login` redirect, maud 404, `/api/v1/{health,info}` JSON contract + JSON 404,
+app-vs-marketing CSP/security-header divergence, real form login through the
+opaque session cookie and CSRF checks, engagements create/status/note htmx
+swaps, IndexedDB-first offline writes and REST reconciliation, and
+cookie-authenticated WebSocket invalidation/reconnect.
 
 ---
 
-## 1. No authenticated coverage — the biggest gap (HIGH)
+## 1. Authenticated product coverage (closed)
 
-Everything behind `SessionAuthenticated` is browser-untested: the `/app`
-dashboard, the engagements CRUD flow (`/app/engagements` create/status/notes),
-the htmx fragments, and the offline-sync WebSocket loop (`/ws`). These are the
-app's actual product surface, and the router tests in `tests/app.rs` cover them
-only at the `oneshot` layer — not through a real browser (htmx swaps, IndexedDB,
-optimistic UI, WS reconnect).
+The blocking Playwright suite now enters through the real `/auth/login` form,
+asserts the opaque `HttpOnly` session cookie, proves an invalid CSRF header is
+rejected, and drives the engagements create/status/note lifecycle through htmx
+swaps. A second authenticated scenario writes a draft while Chrome is offline,
+observes the pending IndexedDB outbox, returns online, and waits for the REST
+push to reconcile the record. It also observes an owner-scoped
+`sync.invalidated` frame and forces a reconnect through the htmx WebSocket
+extension.
 
-Why it's blocked: logging in needs a real Supabase password exchange. `tests/app.rs`
-already solves the equivalent for router tests with a `FakeAuth` provider and by
-minting sessions directly through `SessionService`.
+The seam is the preferred provider swap: `test-auth` is a non-default Cargo
+feature and it also requires `CANONICAL_TEST_AUTH_ENABLED=1`. `build.rs`
+rejects it for the Cargo release profile even if that profile enables debug
+assertions, while `src/lib.rs` independently rejects any profile without debug
+assertions. CI runs the negative release build and checks the exact failure.
+The production Dockerfile does not enable the feature, with a structural test
+preserving these conditions. There is no session-minting endpoint, so the
+browser exercises the same login, session encryption/storage, cookie, Origin,
+and CSRF path used with Supabase.
 
-**How to shore up.** Add an env-gated test-auth seam to the *binary* (not just
-the test crate), so the e2e harness can obtain a session:
-- Option A (preferred): a `#[cfg(feature = "test-auth")]` build that swaps
-  `SupabaseAuth` for a fake provider accepting a fixed credential, gated behind
-  an env flag that is impossible to set in prod images. Harness logs in via the
-  real `/auth/login` form → exercises the whole cookie/CSRF path.
-- Option B: a test-only signed-session minting endpoint compiled out of release
-  builds. Faster but bypasses the login flow (less realistic).
-Then seed a couple of `audit_engagement` rows and assert the dashboard, the
-create-engagement htmx swap, and a note round-trip. Keep SQLite for the shell
-tests; use the Postgres service (already in CI for `postgres-rls`) if a test
-needs RLS-faithful behavior.
+The browser shell remains SQLite-backed. PostgreSQL owner isolation and RLS are
+covered separately by `tests/postgres_rls.rs`; if browser behavior ever depends
+on a PostgreSQL-only feature, add a dedicated Postgres browser job instead of
+weakening this fast hermetic suite.
 
 ## 2. Dependency reproducibility in CI (closed)
 
@@ -89,3 +92,7 @@ The self-hosted path (`browser-e2e-selfhosted.yml` on `runs-on: canonical-browse
 has never executed — the runner scale set isn't deployed. It is validated only as
 YAML + by mirroring the working ubuntu-latest job. See the k8s-cluster followups
 doc for the deploy checklist before trusting it.
+
+The browser suite does not contact Supabase or test Supabase's password service;
+the `canonical-auth` integration tests retain responsibility for upstream
+request shape, key scoping, token parsing, and error mapping.

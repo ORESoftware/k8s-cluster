@@ -127,3 +127,189 @@ export type AuditEngagement = {
   /** Optional RFC 3339 date the attestation report is targeted for. */
   target_report_date?: string;
 };
+
+/** Authenticated request to generate a bounded compliance-services quote. */
+export type QuoteRequest = {
+  /** Legal or commonly used organization name. */
+  organizationName: string;
+  /** Primary contact for the quote. */
+  contactName: string;
+  /** Verified follow-up email. Authentication and owner identity are derived from the accepted credential, not this field. */
+  contactEmail: string;
+  /** Optional public organization website. */
+  website?: string;
+  /** Approximate number of employees and long-term contractors. */
+  employeeCount: number;
+  /** Optional bounded annual-revenue band used only for scoping. */
+  annualRevenueBand?: string;
+  /** Compliance frameworks requested for the engagement. */
+  frameworks: string[];
+  /** Current compliance-program stage. */
+  currentStage: string;
+  /** Primary hosting and application infrastructure. */
+  infrastructure: string[];
+  /** Highest-sensitivity data categories in scope. */
+  dataSensitivity: string[];
+  /** Optional target date for readiness, attestation, or authorization. */
+  targetDate?: string;
+  /** Whether a named security owner and operating security program exist. */
+  hasSecurityProgram: boolean;
+  /** Whether reviewed security and privacy policies currently exist. */
+  hasPolicies: boolean;
+  /** Whether a current documented risk assessment exists. */
+  hasRiskAssessment: boolean;
+  /** Whether an incident-response plan exists and has been exercised. */
+  hasIncidentResponsePlan: boolean;
+  /** Whether third-party risk and vendor review processes exist. */
+  hasVendorManagement: boolean;
+  /** Optional additional scoping details; secrets and regulated records must not be submitted. */
+  notes?: string;
+  /** Optional allow-listed canonical_context key selected by the server; defaults to quote-analysis. */
+  contextKey?: string;
+  /** Questionnaire schema version; only version 1 is accepted. */
+  answersVersion: number;
+};
+
+/** Accepted response from POST /api/v1/quotes. */
+export type QuoteSubmissionResponse = {
+  /** Server-generated quote identifier. */
+  quoteId: string;
+  /** Current asynchronous quote state. */
+  status: "queued" | "analyzing" | "ready" | "failed";
+  /** Authenticated WebSocket URL or relative path for quote progress. */
+  streamUrl: string;
+  /** RFC 3339 creation timestamp. */
+  createdAt: string;
+};
+
+/** Structured Gemini-assisted estimate persisted after server-side validation. */
+export type QuoteEstimate = {
+  /** Quote identifier. */
+  quoteId: string;
+  /** Terminal estimate status. */
+  status: string;
+  /** ISO 4217 currency code, initially USD. */
+  currency: string;
+  /** Inclusive lower estimate bound in minor currency units. */
+  lowerBoundCents: number;
+  /** Inclusive upper estimate bound in minor currency units. */
+  upperBoundCents: number;
+  /** Optimistic delivery duration in weeks. */
+  durationWeeksLow: number;
+  /** Conservative delivery duration in weeks. */
+  durationWeeksHigh: number;
+  /** Confidence after context and questionnaire completeness checks. */
+  confidence: string;
+  /** Customer-facing estimate summary. */
+  summary: string;
+  /** Material assumptions used to construct the range. */
+  assumptions: string[];
+  /** Likely readiness gaps that affect cost or schedule. */
+  gaps: string[];
+  /** Recommended next actions in priority order. */
+  nextSteps: string[];
+  /** Frameworks included in this estimate. */
+  frameworks: string[];
+  /** Configured Gemini model identifier used for analysis. */
+  model: string;
+  /** Immutable combined-context version or digest. */
+  contextVersion: string;
+  /** RFC 3339 estimate timestamp. */
+  createdAt: string;
+};
+
+/** Authenticated WebSocket progress message for one quote. */
+export type QuoteStatusEvent = {
+  /** Quote identifier. */
+  quoteId: string;
+  /** Monotonic decimal-string event sequence. */
+  sequence: string;
+  /** Bounded processing stage. */
+  stage: "queued" | "loading_context" | "analyzing" | "validating" | "ready" | "failed";
+  /** Human-readable progress summary without sensitive prompt content. */
+  message: string;
+  /** True when no later state is expected. */
+  terminal: boolean;
+  /** Present only for a successful ready event. */
+  estimate?: QuoteEstimate;
+  /** RFC 3339 timestamp for the persisted event. */
+  occurredAt: string;
+  /** Present only when the event reports a safe public failure. */
+  problem?: QuoteProblem;
+};
+
+/** Bounded public error payload for quote endpoints. */
+export type QuoteProblem = {
+  /** Stable machine-readable error code. */
+  code: string;
+  /** Safe human-readable error detail. */
+  message: string;
+  /** Request correlation identifier. */
+  requestId: string;
+};
+
+/** Owner-scoped list item for a compliance quote. */
+export type QuoteSummary = {
+  /** Server-generated quote identifier. */
+  quoteId: string;
+  /** Current asynchronous quote state. */
+  status: "queued" | "analyzing" | "ready" | "failed";
+  /** Organization name from the accepted request. */
+  organizationName: string;
+  /** Frameworks included in the request. */
+  frameworks: string[];
+  /** RFC 3339 creation timestamp. */
+  createdAt: string;
+  /** RFC 3339 last-status timestamp. */
+  updatedAt: string;
+  /** Present only when the quote is ready. */
+  estimate?: QuoteEstimate;
+};
+
+/** Owner-scoped authoritative REST representation of one quote. */
+export type QuoteDetail = {
+  /** Server-generated quote identifier. */
+  quoteId: string;
+  /** Current asynchronous quote state. */
+  status: "queued" | "analyzing" | "ready" | "failed";
+  /** Normalized accepted questionnaire. */
+  request: QuoteRequest;
+  /** Authenticated WebSocket URL or relative path for persisted status events. */
+  eventsUrl: string;
+  /** RFC 3339 creation timestamp. */
+  createdAt: string;
+  /** RFC 3339 last-status timestamp. */
+  updatedAt: string;
+  /** Present only when the quote is ready. */
+  estimate?: QuoteEstimate;
+  /** Present only when the quote is failed. */
+  problem?: QuoteProblem;
+};
+
+/** Bounded owner-scoped list query for GET /api/v1/quotes. */
+export type QuoteListQuery = {
+  /** Opaque owner-bound pagination cursor. */
+  cursor?: string;
+  /** Requested page size; the server clamps to 1 through 100. */
+  limit?: number;
+};
+
+/** Owner-scoped quote list response. */
+export type QuoteListResponse = {
+  /** Quotes in descending creation order. */
+  quotes: QuoteSummary[];
+  /** Opaque cursor for the next page when more results exist. */
+  nextCursor?: string;
+};
+
+/** Accepted response after retrying a failed quote. */
+export type QuoteRetryResponse = {
+  /** Quote identifier. */
+  quoteId: string;
+  /** A successful retry requeues the quote. */
+  status: "queued";
+  /** Authenticated WebSocket URL or relative path for quote progress. */
+  streamUrl: string;
+  /** RFC 3339 retry acceptance timestamp. */
+  updatedAt: string;
+};

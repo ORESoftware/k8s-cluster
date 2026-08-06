@@ -10,3 +10,7 @@
 	path = apps/canonical-interfaces
 	url = git@github.com:canonical-cloud/canonical-interfaces
 	branch = main
+[submodule "apps/canonical-mcp-server.rs"]
+	path = apps/canonical-mcp-server.rs
+	url = git@github.com:canonical-cloud/canonical-mcp-server.rs.git
+	branch = main

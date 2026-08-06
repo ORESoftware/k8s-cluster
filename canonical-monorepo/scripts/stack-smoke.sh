@@ -52,6 +52,8 @@ PORT="$PORT" \
   DATABASE_MAX_CONNECTIONS=1 \
   SUPABASE_URL="http://127.0.0.1:54321" \
   SUPABASE_PUBLISHABLE_KEY="sb_publishable_smoke_only" \
+  CANONICAL_API_URL="http://127.0.0.1:18092" \
+  CANONICAL_WEB_SERVICE_TOKEN="canonical-smoke-service-token-32bytes" \
   STATIC_DIR="$MARKETING_DIST" \
   APP_ASSET_DIR="$CLIENT_DIST" \
   "$SERVER" serve &

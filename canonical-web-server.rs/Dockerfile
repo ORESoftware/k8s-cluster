@@ -7,7 +7,7 @@ RUN npm ci
 COPY client/ ./
 RUN npm run typecheck && npm test && npm run build
 
-FROM rust:1.95-slim-bookworm@sha256:d7482085ff5b415f84dba5647ae71606650bdef00db7aeb69f4b3d170c3e4082 AS rust-base
+FROM rust:1.97-slim-bookworm@sha256:99e09cb2284e2ddbb73a995deee3e91783fd04d177602ccf6eab326d778ee777 AS rust-base
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update \
@@ -27,14 +27,14 @@ COPY --from=client-build /build/client/dist ./client/dist
 RUN cargo build --locked --release -p canonical-web-server --bin canonical-web-server \
     && strip target/release/canonical-web-server
 
-FROM gcr.io/distroless/cc-debian12:nonroot@sha256:66aa873a4a14fb164aa01296058efd8253744606d72715e45acface073359faa AS revoker
+FROM gcr.io/distroless/cc-debian12:nonroot@sha256:fccdbb0a547c14e23fcf4ce8ad62ca5d43b4faae8d22cd292f490fef9946c96e AS revoker
 COPY --from=revoker-build --chown=65532:65532 \
     /build/canonical-web-server.rs/target/release/canonical-session-revoker \
     /usr/local/bin/canonical-session-revoker
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/canonical-session-revoker"]
 
-FROM gcr.io/distroless/cc-debian12:nonroot@sha256:66aa873a4a14fb164aa01296058efd8253744606d72715e45acface073359faa AS web
+FROM gcr.io/distroless/cc-debian12:nonroot@sha256:fccdbb0a547c14e23fcf4ce8ad62ca5d43b4faae8d22cd292f490fef9946c96e AS web
 COPY --from=web-build --chown=65532:65532 \
     /build/canonical-web-server.rs/target/release/canonical-web-server \
     /usr/local/bin/canonical-web-server

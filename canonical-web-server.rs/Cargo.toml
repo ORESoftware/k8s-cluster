@@ -9,6 +9,10 @@ members = [
 ]
 resolver = "2"
 
+[workspace.dependencies]
+sea-orm = { version = "2.0.0", default-features = false }
+sea-orm-migration = { version = "2.0.0", default-features = false }
+
 [package]
 name = "canonical-web-server"
 version = "0.1.0"
@@ -16,12 +20,18 @@ edition = "2021"
 rust-version = "1.88"
 default-run = "canonical-web-server"
 
+[features]
+default = []
+# Browser e2e only. build.rs and src/lib.rs independently reject production
+# profiles, and the provider still requires an exact runtime opt-in.
+test-auth = []
+
 [dependencies]
 aes-gcm = "0.11.0"
 async-trait = "0.1.89"
 axum = { version = "0.8.9", features = ["macros", "ws"] }
 axum-extra = { version = "0.12.6", features = ["cookie"] }
-base64 = "0.22.1"
+base64 = "0.23.0"
 canonical-auth = { path = "crates/canonical-auth" }
 canonical-config = { path = "crates/canonical-config" }
 canonical-session = { path = "crates/canonical-session" }
@@ -35,8 +45,8 @@ opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic", "metrics", "t
 opentelemetry_sdk = { version = "0.32.1", features = ["rt-tokio"] }
 rand = "0.10.2"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
-sea-orm = { version = "1.1.20", default-features = false, features = ["macros", "runtime-tokio-rustls", "sqlx-postgres", "sqlx-sqlite", "with-chrono", "with-json", "with-uuid"] }
-sea-orm-migration = { version = "1.1.20", default-features = false, features = ["runtime-tokio-rustls", "sqlx-postgres", "sqlx-sqlite", "with-chrono", "with-json", "with-uuid"] }
+sea-orm = { workspace = true, features = ["macros", "runtime-tokio-rustls", "sqlx-postgres", "sqlx-sqlite", "with-chrono", "with-json", "with-uuid"] }
+sea-orm-migration = { workspace = true, features = ["runtime-tokio-rustls", "sqlx-postgres", "sqlx-sqlite", "with-chrono", "with-json", "with-uuid"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 sha2 = "0.11.0"

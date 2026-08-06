@@ -46,10 +46,11 @@ test("submodule declarations stay complete, pinned to main, and backed by apps d
   const modules = parseGitmodules();
   const paths = modules.map((module) => module.path).sort();
 
-  assert.equal(modules.length, 3);
+  assert.equal(modules.length, 4);
   assert.deepEqual(paths, [
     "apps/canonical-interfaces",
     "apps/canonical-marketing-site.web",
+    "apps/canonical-mcp-server.rs",
     "apps/canonical-web-server.rs",
   ]);
 
@@ -352,15 +353,23 @@ test("submodule pin verification fails closed when origin cannot be fetched", ()
   );
 });
 
-test("every app AGENTS.md blacklists rm and whitelists git rm / git mv", () => {
-  for (const module of parseGitmodules()) {
-    const agents = read(path.join(module.path, "AGENTS.md"));
-    assert.match(agents, /Command safety/, `${module.path}/AGENTS.md needs a Command safety section`);
-    assert.match(agents, /git rm/, `${module.path}/AGENTS.md must whitelist git rm`);
-    assert.match(agents, /git mv/, `${module.path}/AGENTS.md must whitelist git mv`);
-  }
+test("canonical agents.md owns command safety while uppercase entrypoints stay pointers", () => {
+  const repositories = ["", ...parseGitmodules().map((module) => module.path)];
 
-  const own = read("AGENTS.md");
-  assert.match(own, /Command safety/);
-  assert.match(own, /git rm/);
+  for (const repository of repositories) {
+    const label = repository || ".";
+    const canonical = read(path.join(repository, "agents.md"));
+    const pointer = read(path.join(repository, "AGENTS.md"));
+
+    assert.match(canonical, /Command safety/, `${label}/agents.md needs a Command safety section`);
+    assert.match(canonical, /git rm/, `${label}/agents.md must whitelist git rm`);
+    assert.match(canonical, /git mv/, `${label}/agents.md must whitelist git mv`);
+
+    assert.match(pointer, /agents\.md/, `${label}/AGENTS.md must point to lowercase agents.md`);
+    assert.doesNotMatch(
+      pointer,
+      /## Command safety|Blacklisted \(never run\)|Whitelisted \(prefer these\)/,
+      `${label}/AGENTS.md must not duplicate canonical policy`,
+    );
+  }
 });

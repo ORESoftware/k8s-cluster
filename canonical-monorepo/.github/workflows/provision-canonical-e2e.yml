@@ -1,0 +1,148 @@
+name: provision-canonical-e2e
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Read-only plan or protected apply"
+        required: true
+        default: plan
+        type: choice
+        options:
+          - plan
+          - apply
+      confirmation:
+        description: "For apply, enter the exact confirmation phrase documented in the manifest"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: canonical-e2e-repository-provisioning
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out reviewed source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+
+      - name: Validate repository matrix and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/provision_canonical_e2e.py --check
+          python3 -m unittest discover -s tests -p "test_e2e_provisioning.py" -v
+
+  plan:
+    needs: validate
+    if: inputs.mode == 'plan'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out reviewed source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+
+      - name: Create read-only Canonical source token
+        id: source-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.CANONICAL_REPO_PROVISIONER_CLIENT_ID }}
+          private-key: ${{ secrets.CANONICAL_REPO_PROVISIONER_PRIVATE_KEY }}
+          owner: canonical-cloud
+          permission-administration: read
+          permission-contents: read
+
+      - name: Create read-only Canonical test token
+        id: test-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.CANONICAL_REPO_PROVISIONER_CLIENT_ID }}
+          private-key: ${{ secrets.CANONICAL_REPO_PROVISIONER_PRIVATE_KEY }}
+          owner: canonical-cloud-test
+          permission-administration: read
+          permission-contents: read
+
+      - name: Print idempotent repository plan
+        env:
+          CANONICAL_SOURCE_INSTALLATION_TOKEN: ${{ steps.source-token.outputs.token }}
+          CANONICAL_TEST_INSTALLATION_TOKEN: ${{ steps.test-token.outputs.token }}
+        run: python3 scripts/provision_canonical_e2e.py --plan
+
+  apply:
+    needs: validate
+    if: inputs.mode == 'apply'
+    environment: canonical-repository-provisioning
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out reviewed source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+
+      - name: Require the protected-environment approval marker
+        env:
+          APPROVAL_MARKER: ${{ secrets.CANONICAL_REPOSITORY_PROVISIONING_APPROVED }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$APPROVAL_MARKER" = "canonical-e2e-repository-provisioning-approved"
+
+      - name: Create Canonical source provisioning token
+        id: source-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.CANONICAL_REPO_PROVISIONER_CLIENT_ID }}
+          private-key: ${{ secrets.CANONICAL_REPO_PROVISIONER_PRIVATE_KEY }}
+          owner: canonical-cloud
+          permission-administration: write
+          permission-contents: write
+          permission-workflows: write
+
+      - name: Create Canonical test provisioning token
+        id: test-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.CANONICAL_REPO_PROVISIONER_CLIENT_ID }}
+          private-key: ${{ secrets.CANONICAL_REPO_PROVISIONER_PRIVATE_KEY }}
+          owner: canonical-cloud-test
+          permission-administration: write
+          permission-contents: write
+          permission-workflows: write
+
+      - name: Provision and seed the declared repositories
+        env:
+          CANONICAL_SOURCE_INSTALLATION_TOKEN: ${{ steps.source-token.outputs.token }}
+          CANONICAL_TEST_INSTALLATION_TOKEN: ${{ steps.test-token.outputs.token }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/provision_canonical_e2e.py \
+            --apply \
+            --confirm "$CONFIRMATION"

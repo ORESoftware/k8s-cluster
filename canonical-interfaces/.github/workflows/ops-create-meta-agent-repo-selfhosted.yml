@@ -1,0 +1,61 @@
+name: Create exact Meta Agents repository on self-hosted runner
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: create-exact-meta-agent-repository-selfhosted
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event.issue.number == 15 &&
+      github.event.issue.pull_request != null &&
+      github.event.comment.user.login == 'ORESoftware' &&
+      (github.event.comment.author_association == 'OWNER' ||
+       github.event.comment.author_association == 'MEMBER') &&
+      github.event.comment.body == 'ops-create-meta-agent-repo-selfhosted:2026-08-01'
+    permissions:
+      contents: read
+      issues: write
+    runs-on: canonical-browser
+    timeout-minutes: 30
+    env:
+      COMMENT_TOKEN: ${{ github.token }}
+      TRACKING_ISSUE: ${{ github.event.issue.number }}
+      SOURCE_ROOT: ${{ github.workspace }}/source
+
+    steps:
+      - name: Check out exact trusted orchestration revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: runner
+          persist-credentials: false
+
+      - name: Check out immutable recovered bundle assets
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/k8s-cluster
+          ref: 55ee15c190b7cfa4e075f6984c7cb551acd4b9d3
+          path: source
+          sparse-checkout: |
+            scripts/critical-org-fleet/assets
+          persist-credentials: false
+
+      - name: Validate the local reviewed publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f runner/scripts/ops-create-meta-agent-repo-selfhosted.py
+          test ! -L runner/scripts/ops-create-meta-agent-repo-selfhosted.py
+          python3 -m py_compile runner/scripts/ops-create-meta-agent-repo-selfhosted.py
+
+      - name: Authorize owner, create repository, and verify exact refs
+        shell: bash
+        run: python3 runner/scripts/ops-create-meta-agent-repo-selfhosted.py

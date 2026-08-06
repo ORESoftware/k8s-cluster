@@ -1,0 +1,42 @@
+{
+  "quoteId": "018f47c4-32a9-7c31-8f27-f3357f781001",
+  "status": "ready",
+  "request": {
+    "organizationName": "Example Incorporated",
+    "contactName": "Casey Example",
+    "contactEmail": "casey@example.com",
+    "employeeCount": 42,
+    "frameworks": ["soc2_type_2", "hipaa"],
+    "currentStage": "readiness",
+    "infrastructure": ["aws", "saas_only"],
+    "dataSensitivity": ["confidential", "pii", "phi"],
+    "hasSecurityProgram": true,
+    "hasPolicies": true,
+    "hasRiskAssessment": false,
+    "hasIncidentResponsePlan": true,
+    "hasVendorManagement": false,
+    "contextKey": "quote-analysis",
+    "answersVersion": 1
+  },
+  "eventsUrl": "/api/v1/quotes/018f47c4-32a9-7c31-8f27-f3357f781001/events",
+  "createdAt": "2026-08-06T04:30:00Z",
+  "updatedAt": "2026-08-06T04:31:12Z",
+  "estimate": {
+    "quoteId": "018f47c4-32a9-7c31-8f27-f3357f781001",
+    "status": "ready",
+    "currency": "USD",
+    "lowerBoundCents": 2500000,
+    "upperBoundCents": 4500000,
+    "durationWeeksLow": 8,
+    "durationWeeksHigh": 16,
+    "confidence": "medium",
+    "summary": "Preliminary readiness and remediation estimate for human review.",
+    "assumptions": ["One production environment and one primary cloud account."],
+    "gaps": ["A current risk assessment is not yet available."],
+    "nextSteps": ["Confirm scope and schedule a readiness workshop."],
+    "frameworks": ["soc2_type_2", "hipaa"],
+    "model": "gemini-3.1-pro-preview",
+    "contextVersion": "sha256:7d82c09f",
+    "createdAt": "2026-08-06T04:31:12Z"
+  }
+}

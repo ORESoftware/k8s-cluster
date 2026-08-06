@@ -129,3 +129,189 @@ type AuditEngagement struct {
 	// Optional RFC 3339 date the attestation report is targeted for.
 	TargetReportDate *string `json:"target_report_date,omitempty"`
 }
+
+// QuoteRequest: Authenticated request to generate a bounded compliance-services quote.
+type QuoteRequest struct {
+	// Legal or commonly used organization name.
+	OrganizationName string `json:"organizationName"`
+	// Primary contact for the quote.
+	ContactName string `json:"contactName"`
+	// Verified follow-up email. Authentication and owner identity are derived from the accepted credential, not this field.
+	ContactEmail string `json:"contactEmail"`
+	// Optional public organization website.
+	Website *string `json:"website,omitempty"`
+	// Approximate number of employees and long-term contractors.
+	EmployeeCount int64 `json:"employeeCount"`
+	// Optional bounded annual-revenue band used only for scoping.
+	AnnualRevenueBand *string `json:"annualRevenueBand,omitempty"`
+	// Compliance frameworks requested for the engagement.
+	Frameworks []string `json:"frameworks"`
+	// Current compliance-program stage.
+	CurrentStage string `json:"currentStage"`
+	// Primary hosting and application infrastructure.
+	Infrastructure []string `json:"infrastructure"`
+	// Highest-sensitivity data categories in scope.
+	DataSensitivity []string `json:"dataSensitivity"`
+	// Optional target date for readiness, attestation, or authorization.
+	TargetDate *string `json:"targetDate,omitempty"`
+	// Whether a named security owner and operating security program exist.
+	HasSecurityProgram bool `json:"hasSecurityProgram"`
+	// Whether reviewed security and privacy policies currently exist.
+	HasPolicies bool `json:"hasPolicies"`
+	// Whether a current documented risk assessment exists.
+	HasRiskAssessment bool `json:"hasRiskAssessment"`
+	// Whether an incident-response plan exists and has been exercised.
+	HasIncidentResponsePlan bool `json:"hasIncidentResponsePlan"`
+	// Whether third-party risk and vendor review processes exist.
+	HasVendorManagement bool `json:"hasVendorManagement"`
+	// Optional additional scoping details; secrets and regulated records must not be submitted.
+	Notes *string `json:"notes,omitempty"`
+	// Optional allow-listed canonical_context key selected by the server; defaults to quote-analysis.
+	ContextKey *string `json:"contextKey,omitempty"`
+	// Questionnaire schema version; only version 1 is accepted.
+	AnswersVersion int64 `json:"answersVersion"`
+}
+
+// QuoteSubmissionResponse: Accepted response from POST /api/v1/quotes.
+type QuoteSubmissionResponse struct {
+	// Server-generated quote identifier.
+	QuoteId string `json:"quoteId"`
+	// Current asynchronous quote state. (one of: queued, analyzing, ready, failed)
+	Status string `json:"status"`
+	// Authenticated WebSocket URL or relative path for quote progress.
+	StreamUrl string `json:"streamUrl"`
+	// RFC 3339 creation timestamp.
+	CreatedAt string `json:"createdAt"`
+}
+
+// QuoteEstimate: Structured Gemini-assisted estimate persisted after server-side validation.
+type QuoteEstimate struct {
+	// Quote identifier.
+	QuoteId string `json:"quoteId"`
+	// Terminal estimate status.
+	Status string `json:"status"`
+	// ISO 4217 currency code, initially USD.
+	Currency string `json:"currency"`
+	// Inclusive lower estimate bound in minor currency units.
+	LowerBoundCents int64 `json:"lowerBoundCents"`
+	// Inclusive upper estimate bound in minor currency units.
+	UpperBoundCents int64 `json:"upperBoundCents"`
+	// Optimistic delivery duration in weeks.
+	DurationWeeksLow int64 `json:"durationWeeksLow"`
+	// Conservative delivery duration in weeks.
+	DurationWeeksHigh int64 `json:"durationWeeksHigh"`
+	// Confidence after context and questionnaire completeness checks.
+	Confidence string `json:"confidence"`
+	// Customer-facing estimate summary.
+	Summary string `json:"summary"`
+	// Material assumptions used to construct the range.
+	Assumptions []string `json:"assumptions"`
+	// Likely readiness gaps that affect cost or schedule.
+	Gaps []string `json:"gaps"`
+	// Recommended next actions in priority order.
+	NextSteps []string `json:"nextSteps"`
+	// Frameworks included in this estimate.
+	Frameworks []string `json:"frameworks"`
+	// Configured Gemini model identifier used for analysis.
+	Model string `json:"model"`
+	// Immutable combined-context version or digest.
+	ContextVersion string `json:"contextVersion"`
+	// RFC 3339 estimate timestamp.
+	CreatedAt string `json:"createdAt"`
+}
+
+// QuoteStatusEvent: Authenticated WebSocket progress message for one quote.
+type QuoteStatusEvent struct {
+	// Quote identifier.
+	QuoteId string `json:"quoteId"`
+	// Monotonic decimal-string event sequence.
+	Sequence string `json:"sequence"`
+	// Bounded processing stage. (one of: queued, loading_context, analyzing, validating, ready, failed)
+	Stage string `json:"stage"`
+	// Human-readable progress summary without sensitive prompt content.
+	Message string `json:"message"`
+	// True when no later state is expected.
+	Terminal bool `json:"terminal"`
+	// Present only for a successful ready event.
+	Estimate *QuoteEstimate `json:"estimate,omitempty"`
+	// RFC 3339 timestamp for the persisted event.
+	OccurredAt string `json:"occurredAt"`
+	// Present only when the event reports a safe public failure.
+	Problem *QuoteProblem `json:"problem,omitempty"`
+}
+
+// QuoteProblem: Bounded public error payload for quote endpoints.
+type QuoteProblem struct {
+	// Stable machine-readable error code.
+	Code string `json:"code"`
+	// Safe human-readable error detail.
+	Message string `json:"message"`
+	// Request correlation identifier.
+	RequestId string `json:"requestId"`
+}
+
+// QuoteSummary: Owner-scoped list item for a compliance quote.
+type QuoteSummary struct {
+	// Server-generated quote identifier.
+	QuoteId string `json:"quoteId"`
+	// Current asynchronous quote state. (one of: queued, analyzing, ready, failed)
+	Status string `json:"status"`
+	// Organization name from the accepted request.
+	OrganizationName string `json:"organizationName"`
+	// Frameworks included in the request.
+	Frameworks []string `json:"frameworks"`
+	// RFC 3339 creation timestamp.
+	CreatedAt string `json:"createdAt"`
+	// RFC 3339 last-status timestamp.
+	UpdatedAt string `json:"updatedAt"`
+	// Present only when the quote is ready.
+	Estimate *QuoteEstimate `json:"estimate,omitempty"`
+}
+
+// QuoteDetail: Owner-scoped authoritative REST representation of one quote.
+type QuoteDetail struct {
+	// Server-generated quote identifier.
+	QuoteId string `json:"quoteId"`
+	// Current asynchronous quote state. (one of: queued, analyzing, ready, failed)
+	Status string `json:"status"`
+	// Normalized accepted questionnaire.
+	Request QuoteRequest `json:"request"`
+	// Authenticated WebSocket URL or relative path for persisted status events.
+	EventsUrl string `json:"eventsUrl"`
+	// RFC 3339 creation timestamp.
+	CreatedAt string `json:"createdAt"`
+	// RFC 3339 last-status timestamp.
+	UpdatedAt string `json:"updatedAt"`
+	// Present only when the quote is ready.
+	Estimate *QuoteEstimate `json:"estimate,omitempty"`
+	// Present only when the quote is failed.
+	Problem *QuoteProblem `json:"problem,omitempty"`
+}
+
+// QuoteListQuery: Bounded owner-scoped list query for GET /api/v1/quotes.
+type QuoteListQuery struct {
+	// Opaque owner-bound pagination cursor.
+	Cursor *string `json:"cursor,omitempty"`
+	// Requested page size; the server clamps to 1 through 100.
+	Limit *int64 `json:"limit,omitempty"`
+}
+
+// QuoteListResponse: Owner-scoped quote list response.
+type QuoteListResponse struct {
+	// Quotes in descending creation order.
+	Quotes []QuoteSummary `json:"quotes"`
+	// Opaque cursor for the next page when more results exist.
+	NextCursor *string `json:"nextCursor,omitempty"`
+}
+
+// QuoteRetryResponse: Accepted response after retrying a failed quote.
+type QuoteRetryResponse struct {
+	// Quote identifier.
+	QuoteId string `json:"quoteId"`
+	// A successful retry requeues the quote. (one of: queued)
+	Status string `json:"status"`
+	// Authenticated WebSocket URL or relative path for quote progress.
+	StreamUrl string `json:"streamUrl"`
+	// RFC 3339 retry acceptance timestamp.
+	UpdatedAt string `json:"updatedAt"`
+}

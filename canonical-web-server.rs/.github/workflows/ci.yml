@@ -20,7 +20,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
@@ -31,6 +31,8 @@ jobs:
         with:
           node-version: "22"
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Application repository release boundary
+        run: node tests/release-boundary.mjs
       - name: client dependencies
         run: npm ci --prefix client
       - name: client tests
@@ -45,6 +47,23 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: test
         run: cargo test --workspace --all-targets --locked
+      - name: Test authentication is forbidden in release builds
+        shell: bash
+        run: |
+          set +e
+          output="$(cargo check --locked --release --features test-auth \
+            -p canonical-web-server --lib 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -eq 0 ]; then
+            echo "test-auth unexpectedly compiled in the release profile" >&2
+            exit 1
+          fi
+          if ! grep -Fq "the test-auth feature is forbidden in release builds" <<<"$output"; then
+            echo "release build failed for an unexpected reason" >&2
+            exit 1
+          fi
       - name: Revoker dependency boundary
         shell: bash
         run: |
@@ -60,7 +79,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
@@ -68,26 +87,25 @@ jobs:
           toolchain: "1.95.0"
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked --version 0.22.2
-      - name: Assert ignored RSA package is not in the build graph
+      - name: Assert optional RSA package is not in the build graph
         shell: bash
         run: |
-          # RUSTSEC-2023-0071 is allowed below only because Cargo.lock records
-          # SQLx's disabled optional MySQL/RSA edge. If that edge ever becomes
-          # active, this gate fails before the advisory allow-list is applied.
-          rsa_path="$(cargo tree --workspace --invert rsa 2>/dev/null)"
-          if [ -n "$rsa_path" ]; then
-            echo "rsa unexpectedly entered the active dependency graph" >&2
-            exit 1
+          # SQLx previously recorded a disabled optional MySQL/RSA edge. The
+          # package is absent under SQLx 0.9, but keep a fail-closed graph check
+          # in case a future lockfile brings it back.
+          if grep -q '^name = "rsa"$' Cargo.lock; then
+            rsa_path="$(cargo tree --workspace --invert rsa 2>/dev/null)"
+            if [ -n "$rsa_path" ]; then
+              echo "rsa unexpectedly entered the active dependency graph" >&2
+              exit 1
+            fi
           fi
       - name: Audit Rust dependencies
         shell: bash
         run: |
-          # RUSTSEC-2023-0071: unreachable optional SQLx MySQL/RSA lock entry;
-          # the preceding inverse-tree gate makes this exception fail closed.
           # RUSTSEC-2026-0173: unmaintained (not vulnerable) compile-time-only
           # proc-macro-error2, currently required by SeaORM's derive macros.
           cargo audit --deny warnings \
-            --ignore RUSTSEC-2023-0071 \
             --ignore RUSTSEC-2026-0173
 
   postgres-rls:
@@ -110,7 +128,7 @@ jobs:
     env:
       TEST_POSTGRES_ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
@@ -147,7 +165,7 @@ jobs:
     env:
       PGPASSWORD: postgres
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
@@ -207,7 +225,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
@@ -221,7 +239,7 @@ jobs:
         run: |
           docker run --detach --name crdb --publish 26257:26257 \
             cockroachdb/cockroach:v25.2.4 start-single-node --insecure
-          for attempt in {1..60}; do
+          for _ in {1..60}; do
             if docker exec crdb cockroach sql --insecure -e "SELECT 1" >/dev/null 2>&1; then
               exit 0
             fi
@@ -247,7 +265,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
@@ -260,7 +278,7 @@ jobs:
         with:
           key: browser-e2e
       - name: Build server binary
-        run: cargo build --locked --bin canonical-web-server
+        run: cargo build --locked --features test-auth --bin canonical-web-server
       - name: Build client bundle
         run: |
           npm ci --prefix client
@@ -280,7 +298,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Build production image

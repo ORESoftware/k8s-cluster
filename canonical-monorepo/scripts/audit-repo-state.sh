@@ -77,8 +77,6 @@ if [[ -n "$tracked_secret_paths" ]]; then
   printf '%s\n' "$tracked_secret_paths" >&2
 fi
 
-# The deploy docs tell operators to keep real values in .env.local; make sure
-# an accidental `git add .env.local` can never be committed silently.
 if ! git check-ignore -q .env.local; then
   fail ".env.local is not git-ignored; real env files must be unignorable"
 fi
@@ -102,9 +100,6 @@ scan_git_repo() {
     printf '%s\n' "$marker_output" >&2
   fi
 
-  # Covers GitHub classic/fine-grained/app tokens, Supabase secret keys,
-  # three-segment JWTs (Supabase service-role keys are JWTs), private keys,
-  # and AWS access-key IDs.
   secret_output="$(
     git -C "$repo" grep -n -E 'gh[opsu]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,}|sb_secret_[A-Za-z0-9_-]{10,}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}' -- . \
       ':(exclude)*.lock' \
@@ -139,9 +134,6 @@ for i in "${!module_paths[@]}"; do
     fail "$module_path submodule branch is '$module_branch', expected 'main'"
   fi
 
-  # The recorded gitlink must be an ancestor of (or equal to) the tracked branch
-  # on the remote — i.e. the pin points at real, pushed history, not a local-only
-  # or detached commit. Remote verification is a blocking supply-chain gate.
   if [[ -d "$module_path" ]]; then
     pinned_sha="$(git -C "$module_path" rev-parse HEAD 2>/dev/null || true)"
     if git -C "$module_path" fetch -q origin "$module_branch" 2>/dev/null; then
@@ -167,20 +159,23 @@ for i in "${!module_paths[@]}"; do
     fail "README.md app list is missing $module_path"
   fi
 
-  # A submodule is a deployable *service* if it ships a runnable server: a Rust
-  # binary crate, or a web app with an Astro build. Library/interface repos (e.g.
-  # canonical-interfaces: schema + generated adapters) are not deployed and are
-  # exempt from the Dockerfile requirement.
   is_rust_service=0
   is_web_service=0
+  is_stdio_mcp=0
   if [[ -f "$module_path/Cargo.toml" && ( -f "$module_path/src/main.rs" || -d "$module_path/src/bin" ) ]]; then
     is_rust_service=1
   fi
   if compgen -G "$module_path/astro.config.*" >/dev/null 2>&1; then
     is_web_service=1
   fi
+  # Stdio MCP executables are launched by an MCP client and expose no network
+  # listener. They are runnable Rust binaries, but they are not deployable HTTP
+  # services and therefore do not require a Docker runtime image.
+  if [[ "$module_path" == apps/*-mcp-server.rs ]]; then
+    is_stdio_mcp=1
+  fi
 
-  if [[ "$is_rust_service" -eq 1 || "$is_web_service" -eq 1 ]]; then
+  if [[ ( "$is_rust_service" -eq 1 || "$is_web_service" -eq 1 ) && "$is_stdio_mcp" -eq 0 ]]; then
     if [[ ! -f "$module_path/Dockerfile" ]]; then
       fail "$module_path (service) is missing Dockerfile"
     fi
@@ -189,7 +184,7 @@ for i in "${!module_paths[@]}"; do
     fi
   fi
 
-  if [[ "$is_rust_service" -eq 1 && -f "$module_path/Dockerfile" ]]; then
+  if [[ "$is_rust_service" -eq 1 && "$is_stdio_mcp" -eq 0 && -f "$module_path/Dockerfile" ]]; then
     if ! grep -Eq '^FROM gcr\.io/distroless/cc-debian12:nonroot(@sha256:[0-9a-f]{64})?( AS [A-Za-z0-9_-]+)?$' "$module_path/Dockerfile"; then
       fail "$module_path Rust runtime image is not distroless nonroot"
     fi

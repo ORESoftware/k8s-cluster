@@ -1,0 +1,12 @@
+{
+  "quotes": [
+    {
+      "quoteId": "018f47c4-32a9-7c31-8f27-f3357f781001",
+      "status": "ready",
+      "organizationName": "Example Incorporated",
+      "frameworks": ["soc2_type_2", "hipaa"],
+      "createdAt": "2026-08-06T04:30:00Z",
+      "updatedAt": "2026-08-06T04:31:12Z"
+    }
+  ]
+}

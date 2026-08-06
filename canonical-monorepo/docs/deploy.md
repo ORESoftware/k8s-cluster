@@ -228,6 +228,14 @@ attestation. The workflow publishes no floating tags. GitOps must pin the
 release SHA or, preferably, the exact image digests printed in the release run
 summary.
 
+Those packages are owned by `canonical-monorepo`; its repository-scoped
+`GITHUB_TOKEN` is the only publishing credential. App repositories build and
+inspect their Docker targets as component validation, but their workflows have
+no `packages: write`, registry push, release manifest, or deployable tag. Do not
+grant an app repository access to these packages and do not replace the
+repository token with a personal access token. This keeps the tested
+superproject SHA as the sole deployable release authority.
+
 GitHub Actions never receives a kubeconfig and never runs `kubectl`. Backend
 runtime state lives in `ORESoftware/k8s-cluster`, where a dedicated
 canonical-cloud Argo CD Application reconciles reviewed digest changes. A

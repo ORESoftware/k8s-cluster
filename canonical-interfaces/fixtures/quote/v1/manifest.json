@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "schemaPath": "schema/quote.schema.json",
+  "schemaRevision": "ec2c739092c955e4756d2d692ef225adf67647e4",
+  "wireCase": "camelCase",
+  "fixtures": {
+    "QuoteRequest": "request.json",
+    "QuoteSubmissionResponse": "submission-response.json",
+    "QuoteEstimate": "estimate.json",
+    "QuoteStatusEvent": "status-event.json",
+    "QuoteProblem": "problem.json"
+  }
+}

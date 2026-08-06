@@ -1,0 +1,49 @@
+[package]
+org = "canonical-cloud"
+name = "canonical-interfaces"
+version = "0.1.0"
+description = "Canonical Cloud API, compliance, quote, sync, SQL, and generated language contracts"
+license = "MIT"
+keywords = ["interfaces", "compliance", "quote", "json-schema", "sync", "polyglot"]
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/canonical-cloud/canonical-interfaces"
+
+[publish]
+include_readme = true
+tag_format = "v{version}"
+smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/schema/index.json\" && test -f \"$ZED_PKG_TEST_TARGET/schema/quote.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/generated/dart/lib/quote_v1.dart\" && test -f \"$ZED_PKG_TEST_TARGET/sql/schema.sql\""
+exclude = [".env", ".env.*", ".direnv/**", ".zed/**", ".zed-pack/**", "tmp/**", "**/*.log", ".DS_Store", "**/target/**", "**/node_modules/**"]
+
+[targets.repository]
+dir = "."
+name = "canonical-interfaces-repository"
+
+[targets.typescript]
+dir = "generated/typescript"
+adapter = "node"
+
+[targets.rust]
+dir = "generated/rust"
+adapter = "rust"
+
+[targets.rust-wasm]
+dir = "generated/rust-wasm"
+adapter = "node"
+ecosystem = "npm"
+
+[targets.dart]
+dir = "generated/dart"
+adapter = "dart"
+
+[targets.python]
+dir = "generated/python"
+adapter = "python"
+
+[targets.golang]
+dir = "generated/go"
+adapter = "go"
+
+[scripts]
+test = "npm test"

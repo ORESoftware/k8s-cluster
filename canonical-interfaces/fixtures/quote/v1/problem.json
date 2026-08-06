@@ -1,0 +1,5 @@
+{
+  "code": "invalid_request",
+  "message": "The quote request did not satisfy the versioned public contract.",
+  "requestId": "req_01J5CANONICALQUOTE000000000"
+}

@@ -18,6 +18,7 @@ as a `$def` and regenerate.
 | TypeScript | `generated/typescript/index.ts` |
 | Rust (serde) | `generated/rust/src/lib.rs` |
 | Rust → WebAssembly (tsify) | `generated/rust-wasm/src/lib.rs` |
+| Dart / Flutter quote v1 | `generated/dart/lib/quote_v1.dart` |
 | Python (dataclasses) | `generated/python/canonical_interfaces.py` |
 | Go | `generated/go/interfaces.go` |
 
@@ -49,6 +50,19 @@ The v1 sync contract accepts only `draft_note`, only payload schema version 1,
 decimal strings, not JavaScript numbers. Mutation results are `applied`,
 `conflict`, `gone`, `invalid`, or `idempotency_key_reused`. REST pull is
 authoritative; WebSocket invalidations only wake the pull loop.
+
+The signed-in quote contract (`schema/quote.schema.json`):
+
+- **`QuoteRequest`** — the normalized questionnaire; contact fields are follow-up metadata, never identity authority.
+- **`QuoteSubmissionResponse`**, **`QuoteDetail`**, **`QuoteSummary`**, **`QuoteListResponse`**, and **`QuoteRetryResponse`** — the authoritative REST wire shapes.
+- **`QuoteStatusEvent`** — persisted progress events delivered through the authenticated WebSocket route.
+- **`QuoteEstimate`** and **`QuoteProblem`** — bounded public estimate and error payloads.
+
+The exact route, authentication, idempotency, state-machine, privacy, and
+internal-header decisions are documented in [`docs/quote-api-v1.md`](docs/quote-api-v1.md).
+Golden cross-language examples live in [`fixtures/quote-v1`](fixtures/quote-v1).
+The public paths are `/api/v1/quotes`, `/api/v1/quotes/{quoteId}`,
+`/api/v1/quotes/{quoteId}/retry`, and `/api/v1/quotes/{quoteId}/events`.
 
 The compliance domain (`schema/compliance.schema.json`, mirrored by
 `sql/schema.sql`):
@@ -102,11 +116,11 @@ an arbitrary actor ID.
 npm install
 npm run generate     # regenerate generated/<lang> from schema/
 npm run check        # verify generated/ is up to date (CI)
-npm test             # generator self-tests + --check
+npm test             # generator self-tests + quote fixtures + --check
 ```
 
 Consume the generated adapters via the package `exports` map, e.g.
-`@canonical-cloud/interfaces/typescript`, `.../rust`, `.../sql`.
+`@canonical-cloud/interfaces/typescript`, `.../rust`, `.../dart`, `.../sql`.
 
 ## Add a type
 

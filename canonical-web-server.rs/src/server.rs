@@ -2,7 +2,7 @@
 
 use std::net::SocketAddr;
 
-use sea_orm::{ConnectionTrait, DatabaseBackend};
+use sea_orm::DatabaseBackend;
 
 use crate::{app, config::Config, error::AppError, ws, SERVICE};
 

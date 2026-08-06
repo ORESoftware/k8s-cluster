@@ -1,0 +1,49 @@
+name: e2e-provisioning-contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/e2e-provisioning-contract.yml"
+      - ".github/workflows/provision-canonical-e2e.yml"
+      - "docs/e2e-repository-provisioning.md"
+      - "provisioning/canonical-e2e-repositories.json"
+      - "scripts/provision_canonical_e2e.py"
+      - "tests/test_e2e_provisioning.py"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/e2e-provisioning-contract.yml"
+      - ".github/workflows/provision-canonical-e2e.yml"
+      - "docs/e2e-repository-provisioning.md"
+      - "provisioning/canonical-e2e-repositories.json"
+      - "scripts/provision_canonical_e2e.py"
+      - "tests/test_e2e_provisioning.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: canonical-e2e-provisioning-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out reviewed source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+
+      - name: Validate repository matrix
+        run: python3 scripts/provision_canonical_e2e.py --check
+
+      - name: Run provisioning tests
+        run: python3 -m unittest discover -s tests -p "test_e2e_provisioning.py" -v

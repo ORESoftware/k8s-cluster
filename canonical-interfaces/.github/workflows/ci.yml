@@ -9,68 +9,162 @@ on:
 permissions:
   contents: read
 
-# Cancel superseded runs on the same ref (a new push obsoletes the previous one).
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: "22"
-      # No npm dependencies: the generator and its tests use only node: builtins,
-      # so there is nothing to install (and no lockfile to drift).
-      # Generator self-tests + `--check` that generated/ is up to date.
-      - run: npm test
+      - name: Verify reviewed lock artifacts
+        run: sha256sum --check .ci/locks.sha256
+      - name: Validate locked browser policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
 
-  # The generated Rust->WebAssembly crate must compile to wasm32 and produce a
-  # valid wasm-bindgen package (this is what surfaces tsify type-mapping bugs).
+          const packageLock = JSON.parse(fs.readFileSync(".ci/package-lock.json", "utf8"));
+          if (packageLock.packages["node_modules/typescript"].version !== "5.9.3") {
+            throw new Error("CI TypeScript compiler is not locked to 5.9.3");
+          }
+          for (const path of [
+            ".ci/locks.sha256",
+            "generated/rust-wasm/Cargo.lock",
+            "tests/interface-wasm-browser/index.html",
+            "tests/interface-wasm-browser/contract.mjs",
+            "tests/interface-wasm-browser/driver.mjs",
+            "tests/interface-wasm-browser/run.sh",
+            "tests/publisher/test_security.py",
+            "src/browser-harness-policy.test.mjs",
+          ]) {
+            if (!fs.existsSync(path)) throw new Error(`missing locked browser input ${path}`);
+          }
+
+          const workflow = fs.readFileSync(".github/workflows/ci.yml", "utf8");
+          for (const token of [
+            'toolchain: "1.95"',
+            "sha256sum --check .ci/locks.sha256",
+            "cargo install wasm-pack --locked --version 0.15.0",
+            "wasm-pack build generated/rust-wasm --target web --dev -- --locked",
+            "npm ci --ignore-scripts --prefix .ci",
+            "python3 -m unittest discover -s tests/publisher -p 'test_*.py'",
+            "for attempt in 1 2",
+            "CANONICAL_BROWSER_ARTIFACT_DIR",
+            "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "bash tests/interface-wasm-browser/run.sh",
+          ]) {
+            if (!workflow.includes(token)) throw new Error(`missing CI invariant: ${token}`);
+          }
+          const commandLines = workflow
+            .split("\n")
+            .map((line) => line.trim())
+            .filter((line) => line.startsWith("run:") || line.startsWith("- run:"));
+          if (commandLines.some((line) => /\bnpx\b|\bnpm install\b/.test(line))) {
+            throw new Error(`mutable registry-resolved command remains: ${commandLines.join(" | ")}`);
+          }
+          NODE
+      - name: Test publisher security helpers
+        run: python3 -m unittest discover -s tests/publisher -p 'test_*.py'
+      - name: Test generator and generated-output drift
+        run: npm test
+
   wasm:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: "22"
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
+          toolchain: "1.95"
           targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           workspaces: generated/rust-wasm
-      # Pinned, checksummed prebuilt binary — no `curl | sh`, guaranteed on PATH.
-      - uses: taiki-e/install-action@ed67fa35ac944f3a9b33f12c4dd43b6f31a47e20 # v2
-        with:
-          tool: wasm-pack
-      - name: Compile to wasm32
-        run: cargo build --manifest-path generated/rust-wasm/Cargo.toml --target wasm32-unknown-unknown
-      # --dev skips wasm-opt, avoiding an extra binaryen download
-      - name: wasm-bindgen package
-        run: wasm-pack build generated/rust-wasm --target web --dev
-      # Regression guard: the generated .d.ts must not contain an undefined `Value`,
-      # a `bigint` (i64 leak), or a `Map<>` (should be `Record`).
-      - name: Assert generated .d.ts is clean
+      - name: Verify reviewed lock artifacts
+        run: sha256sum --check .ci/locks.sha256
+      - name: Install locked TypeScript compiler
+        run: npm ci --ignore-scripts --prefix .ci
+      - name: Format generated Rust/WASM source
+        run: cargo fmt --manifest-path generated/rust-wasm/Cargo.toml -- --check
+      - name: Lint generated Rust/WASM source
+        run: cargo clippy --locked --manifest-path generated/rust-wasm/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
+      - name: Compile locked Rust/WASM graph
+        run: cargo build --locked --manifest-path generated/rust-wasm/Cargo.toml --target wasm32-unknown-unknown
+      - name: Install exact locked wasm-pack
+        run: cargo install wasm-pack --locked --version 0.15.0
+      - name: Build reviewed web package
+        run: wasm-pack build generated/rust-wasm --target web --dev -- --locked
+      - name: Prove package build did not rewrite the dependency graph
+        run: git diff --exit-code -- generated/rust-wasm/Cargo.lock
+      - name: Assert generated declarations are clean
+        shell: bash
         run: |
-          dts=$(ls generated/rust-wasm/pkg/*.d.ts | grep -v _bg)
+          set -euo pipefail
+          dts=$(find generated/rust-wasm/pkg -maxdepth 1 -type f -name '*.d.ts' ! -name '*_bg*' -print -quit)
+          test -n "$dts"
           echo "checking $dts"
-          if grep -nE ':[[:space:]]*(bigint|Map<)|:[[:space:]]*Value([;[]|$)' "$dts"; then
-            echo "::error::generated .d.ts has an undefined Value, a bigint, or a Map<> — tsify type-mapping regression"
-            exit 1
-          fi
-          echo "clean"
-      # Stronger guard: the generated .d.ts must be valid TypeScript (catches any
-      # unresolved type, e.g. an undefined `Value`, that the grep would miss).
-      - name: Type-check generated .d.ts (tsc)
+          DTS="$dts" node --input-type=module <<'NODE'
+          import fs from "node:fs";
+
+          const source = fs.readFileSync(process.env.DTS, "utf8");
+          for (const [name, pattern] of [
+            ["bigint or Map", /:\s*(?:bigint|Map<)/],
+            ["unresolved Value", /:\s*Value\b/],
+          ]) {
+            if (pattern.test(source)) {
+              throw new Error(`generated declarations contain ${name}`);
+            }
+          }
+          NODE
+      - name: Type-check generated declarations with the locked compiler
+        shell: bash
         run: |
-          dts=$(ls generated/rust-wasm/pkg/*.d.ts | grep -v _bg)
-          npx -y -p typescript@5 tsc --noEmit --lib esnext,dom "$dts"
+          set -euo pipefail
+          dts=$(find generated/rust-wasm/pkg -maxdepth 1 -type f -name '*.d.ts' ! -name '*_bg*' -print -quit)
+          test -n "$dts"
+          node .ci/node_modules/typescript/bin/tsc \
+            --noEmit \
+            --lib esnext,dom \
+            "$dts"
+      - name: Initialize the generated package twice in Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          chrome=$(command -v google-chrome || command -v google-chrome-stable || command -v chromium)
+          test -n "$chrome"
+          "$chrome" --version
+          for attempt in 1 2; do
+            attempt_dir="${RUNNER_TEMP}/canonical-interface-browser/attempt-${attempt}"
+            echo "Chromium certification attempt ${attempt}"
+            CANONICAL_BROWSER_ARTIFACT_DIR="$attempt_dir" \
+              CHROME_BIN="$chrome" \
+              bash tests/interface-wasm-browser/run.sh
+          done
+      - name: Upload bounded browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: interface-wasm-browser-failure-${{ github.run_id }}
+          path: |
+            generated/rust-wasm/pkg/canonical_interfaces_wasm.js
+            generated/rust-wasm/pkg/canonical_interfaces_wasm_bg.wasm
+            generated/rust-wasm/pkg/canonical_interfaces_wasm.d.ts
+            ${{ runner.temp }}/canonical-interface-browser
+          if-no-files-found: warn
+          retention-days: 3

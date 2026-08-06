@@ -1,0 +1,19 @@
+name: zed-package
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths:
+      - ".zpkg.toml"
+      - ".zpkg.lock"
+      - ".gitignore"
+      - ".github/workflows/zed-package.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    uses: zed-pkg/zed-interfaces/.github/workflows/certify-zed-package.yml@d36ac522915792539740cb105e928652503dfde2

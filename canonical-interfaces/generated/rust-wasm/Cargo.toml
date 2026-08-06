@@ -5,6 +5,7 @@ edition = "2021"
 description = "Generated typed payloads for the canonical.cloud API, compiled to WebAssembly (see canonical-interfaces)."
 
 [lib]
+path = "../../src/rust-wasm-entry.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]

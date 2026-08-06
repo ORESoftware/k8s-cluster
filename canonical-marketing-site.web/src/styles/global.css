@@ -115,6 +115,13 @@ button {
   background: none;
 }
 
+/* Preserve a visible keyboard location even when component styles only define
+   hover states. This intentionally applies to every native interactive control. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid var(--av-emerald-light);
+  outline-offset: 3px;
+}
+
 /* ── Typography ── */
 h1,
 h2,
@@ -351,6 +358,64 @@ p {
   .section--hero {
     padding-top: calc(var(--nav-height) + var(--space-2xl));
     padding-bottom: var(--space-3xl);
+  }
+
+  /* BaseLayout deliberately owns the closed state. This higher-specificity
+     global rule supplies the missing open state without weakening component
+     encapsulation. */
+  .nav .nav__links.nav__links--open {
+    position: fixed;
+    top: var(--nav-height);
+    right: 0;
+    left: 0;
+    display: flex;
+    max-height: calc(100dvh - var(--nav-height));
+    overflow-y: auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-sm);
+    padding: var(--space-lg) var(--space-md);
+    background: rgba(10, 15, 24, 0.98);
+    border-bottom: 1px solid var(--av-border-hover);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .nav .nav__links.nav__links--open .nav__link {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    padding: 0.65rem var(--space-md);
+    border-radius: var(--radius-sm);
+  }
+
+  .nav .nav__links.nav__links--open .nav__cta {
+    justify-content: center;
+    margin-top: var(--space-xs);
+  }
+
+  .nav__mobile-toggle[aria-expanded='true'] span:nth-child(1) {
+    transform: translateY(7px) rotate(45deg);
+  }
+  .nav__mobile-toggle[aria-expanded='true'] span:nth-child(2) {
+    opacity: 0;
+  }
+  .nav__mobile-toggle[aria-expanded='true'] span:nth-child(3) {
+    transform: translateY(-7px) rotate(-45deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

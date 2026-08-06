@@ -1,0 +1,30 @@
+[package]
+org = "canonical-cloud"
+name = "canonical-marketing-site"
+version = "0.1.0"
+description = "Canonical Cloud public Astro marketing site"
+license = "MIT"
+keywords = ["marketing", "astro", "compliance", "web"]
+language = "typescript"
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/canonical-cloud/canonical-marketing-site.web"
+
+[build]
+command = "npm ci && npm run build"
+outputs = ["dist"]
+
+[publish]
+include_readme = true
+tag_format = "v{version}"
+exclude = [".env", ".env.*", ".direnv/**", ".vendor/.zed/**", ".zed/**", ".zed-pack/**", "node_modules/**", "tmp/**", "**/*.log", ".DS_Store"]
+
+[install]
+adapter = "none"
+dir = ".vendor/.zed"
+
+[scripts]
+test = "npm test"
+browser-test = "npm run test:browser"
+build = "npm run build"

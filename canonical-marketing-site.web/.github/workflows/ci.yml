@@ -18,33 +18,84 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
+          cache: npm
       - run: npm ci
       # Static contract specs (site-contract.test.mjs).
       - run: npm test
       # Astro production build — the gating step.
       - run: npm run build
 
-  # Browser e2e (Playwright + Puppeteer). Blocking: the runner installs its
-  # own Chromium via `playwright install --with-deps`, so there is no
-  # missing-browser excuse; a red run means the site actually regressed.
+  # Browser e2e (Playwright + Puppeteer) against Astro preview. Blocking: the
+  # runner installs its own Chromium, so a red run represents a real browser or
+  # application regression rather than an undeclared host dependency.
   browser-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
+          cache: npm
       - run: npm ci
-      # Install the Chromium builds both runners drive.
       - run: npx playwright install --with-deps chromium
-      - name: browser e2e (playwright + puppeteer)
+      - name: Browser e2e (Playwright + Puppeteer)
         run: npm run test:browser
+
+  # Astro preview cannot prove the nginx headers in the artifact users actually
+  # deploy. Build and boot the final image, then drive that exact HTTP surface
+  # with Chromium and execute the CSP instead of accepting a config-only check.
+  container-browser-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Build deployable image
+        run: docker build --tag canonical-marketing-site:ci .
+      - name: Browser security contract against deployable image
+        shell: bash
+        env:
+          CANONICAL_REQUIRE_SECURITY_HEADERS: "1"
+          CANONICAL_SITE_TEST_URL: http://127.0.0.1:18080
+        run: |
+          set -euo pipefail
+          docker run --detach \
+            --name canonical-marketing-site-ci \
+            --publish 127.0.0.1:18080:80 \
+            canonical-marketing-site:ci
+          cleanup() {
+            docker logs canonical-marketing-site-ci || true
+            docker rm --force canonical-marketing-site-ci >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          ready=0
+          for _ in {1..30}; do
+            if curl --fail --silent --show-error "$CANONICAL_SITE_TEST_URL/" >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$ready" != "1" ]]; then
+            echo "container did not become ready" >&2
+            exit 1
+          fi
+
+          node --test --test-timeout=120000 tests/container-security-playwright.test.mjs

@@ -147,7 +147,7 @@ async fn runtime_role_enforces_supabase_rls_context() -> Result<(), Box<dyn Erro
         .await?;
 
     let runtime_is_restricted = privileged
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             format!(
                 r#"
@@ -195,14 +195,14 @@ async fn runtime_role_enforces_supabase_rls_context() -> Result<(), Box<dyn Erro
     let record_a = Uuid::new_v4();
     let record_b = Uuid::new_v4();
     privileged
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO auth.users (id) VALUES ($1), ($2)",
             [user_a.into(), user_b.into()],
         ))
         .await?;
     privileged
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             INSERT INTO admin_role_assignment
@@ -215,7 +215,7 @@ async fn runtime_role_enforces_supabase_rls_context() -> Result<(), Box<dyn Erro
         ))
         .await?;
     privileged
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             INSERT INTO sync_record
@@ -258,14 +258,14 @@ async fn runtime_role_enforces_supabase_rls_context() -> Result<(), Box<dyn Erro
         .is_err());
     assert_customer_cannot_cross_admin_boundary(&runtime).await?;
     assert!(runtime
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT id FROM auth.users LIMIT 1",
         ))
         .await
         .is_err());
     assert!(runtime
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             INSERT INTO sync_record
@@ -279,7 +279,7 @@ async fn runtime_role_enforces_supabase_rls_context() -> Result<(), Box<dyn Erro
 
     let own_transaction = begin_user_transaction(&runtime, user_a).await?;
     let own_count = own_transaction
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT count(*)::bigint AS count FROM sync_record",
         ))
@@ -289,7 +289,7 @@ async fn runtime_role_enforces_supabase_rls_context() -> Result<(), Box<dyn Erro
     assert_eq!(own_count, 1);
 
     let other_count = own_transaction
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT count(*)::bigint AS count FROM sync_record WHERE owner_id = $1",
             [user_b.into()],
@@ -300,7 +300,7 @@ async fn runtime_role_enforces_supabase_rls_context() -> Result<(), Box<dyn Erro
     assert_eq!(other_count, 0);
 
     let updated = own_transaction
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE sync_record SET version = 2 WHERE record_id = $1",
             [record_a.into()],
@@ -311,7 +311,7 @@ async fn runtime_role_enforces_supabase_rls_context() -> Result<(), Box<dyn Erro
 
     let cross_user_transaction = begin_user_transaction(&runtime, user_a).await?;
     let cross_user_insert = cross_user_transaction
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             INSERT INTO sync_record
@@ -328,7 +328,7 @@ async fn runtime_role_enforces_supabase_rls_context() -> Result<(), Box<dyn Erro
     let engagement_a = Uuid::new_v4();
     let engagement_b = Uuid::new_v4();
     privileged
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             INSERT INTO audit_engagement
@@ -348,7 +348,7 @@ async fn runtime_role_enforces_supabase_rls_context() -> Result<(), Box<dyn Erro
 
     let engagement_transaction = begin_user_transaction(&runtime, user_a).await?;
     let visible_engagements = engagement_transaction
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT count(*)::bigint AS count FROM audit_engagement",
         ))
@@ -358,7 +358,7 @@ async fn runtime_role_enforces_supabase_rls_context() -> Result<(), Box<dyn Erro
     assert_eq!(visible_engagements, 1);
 
     let foreign_update = engagement_transaction
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE audit_engagement SET status = 'complete' WHERE id = $1",
             [engagement_b.into()],
@@ -367,7 +367,7 @@ async fn runtime_role_enforces_supabase_rls_context() -> Result<(), Box<dyn Erro
     assert_eq!(foreign_update.rows_affected(), 0);
 
     let own_note = engagement_transaction
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             INSERT INTO engagement_note (id, engagement_id, owner_id, body, created_at)
@@ -383,7 +383,7 @@ async fn runtime_role_enforces_supabase_rls_context() -> Result<(), Box<dyn Erro
     // engagement id.
     let foreign_note_transaction = begin_user_transaction(&runtime, user_a).await?;
     let foreign_note = foreign_note_transaction
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             INSERT INTO engagement_note (id, engagement_id, owner_id, body, created_at)
@@ -707,7 +707,7 @@ async fn assert_backplane_commit_delivery(
 }
 
 async fn visible_record_count(db: &DatabaseConnection) -> Result<i64, sea_orm::DbErr> {
-    db.query_one(Statement::from_string(
+    db.query_one_raw(Statement::from_string(
         DatabaseBackend::Postgres,
         "SELECT count(*)::bigint AS count FROM sync_record",
     ))
@@ -729,7 +729,7 @@ async fn assert_customer_cannot_cross_admin_boundary(
     ] {
         assert!(
             runtime
-                .query_one(Statement::from_string(DatabaseBackend::Postgres, query))
+                .query_one_raw(Statement::from_string(DatabaseBackend::Postgres, query))
                 .await
                 .is_err(),
             "customer runtime unexpectedly crossed the admin boundary with: {query}"
@@ -747,7 +747,7 @@ async fn assert_admin_role_is_capability_scoped(
     support_admin: Uuid,
 ) -> Result<(), Box<dyn Error>> {
     let restricted = privileged
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             format!(
                 r#"
@@ -818,14 +818,14 @@ async fn assert_admin_role_is_capability_scoped(
     let user_admin = Uuid::new_v4();
     let compliance_admin = Uuid::new_v4();
     privileged
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO auth.users (id) VALUES ($1), ($2)",
             [user_admin.into(), compliance_admin.into()],
         ))
         .await?;
     privileged
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             INSERT INTO admin_role_assignment
@@ -855,7 +855,7 @@ async fn assert_admin_role_is_capability_scoped(
     }
 
     privileged
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE admin_role_assignment SET revoked_at = now() WHERE user_id = $1",
             [user_admin.into()],
@@ -871,7 +871,7 @@ async fn assert_admin_role_is_capability_scoped(
     assert!(has_admin_capability(&security, "audit.read").await?);
     assert!(has_admin_capability(&security, "role.manage").await?);
     security
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             SELECT canonical_admin_append_audit(
@@ -894,7 +894,7 @@ async fn assert_admin_role_is_capability_scoped(
     assert!(has_admin_capability(&unsupported_success, "user.read").await?);
     assert!(!has_admin_capability(&unsupported_success, "role.manage").await?);
     let rejected = unsupported_success
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             SELECT canonical_admin_append_audit(
@@ -913,7 +913,7 @@ async fn assert_admin_role_is_capability_scoped(
     let denied_attempt =
         begin_admin_transaction(&runtime, support_admin, AssuranceLevel::Aal2).await?;
     denied_attempt
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             SELECT canonical_admin_append_audit(
@@ -928,7 +928,7 @@ async fn assert_admin_role_is_capability_scoped(
     denied_attempt.commit().await?;
 
     let recorded = privileged
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             SELECT
@@ -974,7 +974,7 @@ async fn install_admin_claims(
     })
     .to_string();
     transaction
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             SELECT
@@ -993,7 +993,7 @@ async fn has_admin_capability(
     capability: &str,
 ) -> Result<bool, sea_orm::DbErr> {
     transaction
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT canonical_admin_has_capability($1) AS allowed",
             [capability.into()],
@@ -1012,7 +1012,7 @@ async fn assert_session_revoker_is_scoped(
     user_id: Uuid,
 ) -> Result<(), Box<dyn Error>> {
     let restricted = privileged
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             format!(
                 r#"
@@ -1087,7 +1087,7 @@ async fn assert_session_revoker_is_scoped(
     sessions.revoke(&created.raw_id).await?;
     assert_eq!(enqueue_auth.sign_out_calls.load(Ordering::SeqCst), 1);
     customer_runtime
-        .execute(Statement::from_sql_and_values(
+        .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE web_session SET revocation_next_attempt_at = now() - interval '1 second' WHERE id_hash = $1",
             [session_hash.clone().into()],
@@ -1095,7 +1095,7 @@ async fn assert_session_revoker_is_scoped(
         .await?;
 
     let direct_visible = revoker
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT count(*)::bigint AS count FROM web_session",
         ))
@@ -1109,7 +1109,7 @@ async fn assert_session_revoker_is_scoped(
 
     let transaction = begin_session_revocation_transaction(&revoker).await?;
     let task = transaction
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT current_setting('canonical.system_task', true) AS task",
         ))
@@ -1118,7 +1118,7 @@ async fn assert_session_revoker_is_scoped(
         .try_get::<String>("", "task")?;
     assert_eq!(task, "session_revocation");
     let tagged_visible = transaction
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT count(*)::bigint AS count FROM web_session",
         ))
@@ -1129,7 +1129,7 @@ async fn assert_session_revoker_is_scoped(
     transaction.commit().await?;
 
     let task_after_commit = revoker
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT current_setting('canonical.system_task', true) AS task",
         ))
@@ -1154,7 +1154,7 @@ async fn assert_session_revoker_is_scoped(
         "the database lease must prevent duplicate upstream logout"
     );
     let reconciled = customer_runtime
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT upstream_revoked_at IS NOT NULL AS reconciled FROM web_session WHERE id_hash = $1",
             [session_hash.into()],
@@ -1170,7 +1170,7 @@ async fn assert_session_revoker_is_scoped(
         .is_err());
     let customer_transaction = begin_user_transaction(&revoker, user_id).await?;
     assert!(customer_transaction
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT user_id FROM user_profile LIMIT 1",
         ))
@@ -1183,7 +1183,7 @@ async fn assert_session_revoker_is_scoped(
 }
 
 async fn role_exists(db: &DatabaseConnection, role: &str) -> Result<bool, sea_orm::DbErr> {
-    db.query_one(Statement::from_sql_and_values(
+    db.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1) AS present",
         [role.into()],
@@ -1309,7 +1309,7 @@ async fn assert_runtime_role_has_no_blanket_sequence_access(
         .await?;
     privileged.execute_unprepared(BOOTSTRAP_SQL).await?;
     let has_access = privileged
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             format!(
                 "SELECT has_sequence_privilege('{RUNTIME_ROLE}', 'public.{sequence}', 'USAGE') OR has_sequence_privilege('{RUNTIME_ROLE}', 'public.{sequence}', 'SELECT') OR has_sequence_privilege('{RUNTIME_ROLE}', 'public.{sequence}', 'UPDATE') AS allowed"

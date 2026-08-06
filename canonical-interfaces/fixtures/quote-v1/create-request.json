@@ -1,0 +1,21 @@
+{
+  "organizationName": "Example Incorporated",
+  "contactName": "Casey Example",
+  "contactEmail": "casey@example.com",
+  "website": "https://example.com",
+  "employeeCount": 42,
+  "annualRevenueBand": "1m_10m",
+  "frameworks": ["soc2_type_2", "hipaa"],
+  "currentStage": "readiness",
+  "infrastructure": ["aws", "saas_only"],
+  "dataSensitivity": ["confidential", "pii", "phi"],
+  "targetDate": "2027-01-15",
+  "hasSecurityProgram": true,
+  "hasPolicies": true,
+  "hasRiskAssessment": false,
+  "hasIncidentResponsePlan": true,
+  "hasVendorManagement": false,
+  "notes": "Initial bounded scoping request; no secrets or regulated records.",
+  "contextKey": "quote-analysis",
+  "answersVersion": 1
+}

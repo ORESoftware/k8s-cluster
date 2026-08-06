@@ -13,6 +13,7 @@ const baseNoSlash = import.meta.env.BASE_URL.replace(/\/+$/, '');
 const homeHref = `${baseNoSlash}/`;
 const faviconHref = `${baseNoSlash}/favicon.svg`;
 const siteScriptHref = `${baseNoSlash}/site.js`;
+const quoteHref = 'https://app.canonical.plus/u/quote';
 ---
 
 <!doctype html>
@@ -31,10 +32,12 @@ const siteScriptHref = `${baseNoSlash}/site.js`;
     <meta property="og:type" content="website" />
   </head>
   <body>
-    <nav class="nav" id="main-nav">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <nav class="nav" id="main-nav" aria-label="Primary navigation">
       <div class="nav__inner container">
         <a href={homeHref} class="nav__logo" id="nav-logo">
-          <svg class="nav__logo-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <svg class="nav__logo-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
             <!-- Shield icon -->
             <path d="M16 2L4 7V15C4 22.18 9.12 28.82 16 30C22.88 28.82 28 22.18 28 15V7L16 2Z" stroke="currentColor" stroke-width="1.5" fill="none"/>
             <path d="M16 2L4 7V15C4 22.18 9.12 28.82 16 30C22.88 28.82 28 22.18 28 15V7L16 2Z" fill="currentColor" opacity="0.08"/>
@@ -50,10 +53,18 @@ const siteScriptHref = `${baseNoSlash}/site.js`;
           <a href="#process" class="nav__link" id="nav-process">Process</a>
           <a href="#frameworks" class="nav__link" id="nav-frameworks">Frameworks</a>
           <a href="#about" class="nav__link" id="nav-about">About</a>
-          <a href="#contact" class="btn btn--primary nav__cta" id="nav-contact">Get Compliant</a>
+          <a href={quoteHref} class="nav__link" id="nav-sign-in">Sign in</a>
+          <a href={quoteHref} class="btn btn--primary nav__cta" id="nav-quote">Get a quote · under 5 min</a>
         </div>
 
-        <button class="nav__mobile-toggle" id="nav-toggle" aria-label="Toggle navigation">
+        <button
+          class="nav__mobile-toggle"
+          id="nav-toggle"
+          type="button"
+          aria-controls="nav-links"
+          aria-expanded="false"
+          aria-label="Open navigation"
+        >
           <span></span>
           <span></span>
           <span></span>
@@ -61,7 +72,7 @@ const siteScriptHref = `${baseNoSlash}/site.js`;
       </div>
     </nav>
 
-    <main>
+    <main id="main-content" tabindex="-1">
       <slot />
     </main>
 
@@ -70,7 +81,7 @@ const siteScriptHref = `${baseNoSlash}/site.js`;
         <div class="footer__top">
           <div class="footer__brand">
             <a href={homeHref} class="nav__logo">
-              <svg class="nav__logo-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <svg class="nav__logo-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
                 <path d="M16 2L4 7V15C4 22.18 9.12 28.82 16 30C22.88 28.82 28 22.18 28 15V7L16 2Z" stroke="currentColor" stroke-width="1.5" fill="none"/>
                 <path d="M16 2L4 7V15C4 22.18 9.12 28.82 16 30C22.88 28.82 28 22.18 28 15V7L16 2Z" fill="currentColor" opacity="0.08"/>
                 <path d="M12 16L15 19L21 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -82,7 +93,7 @@ const siteScriptHref = `${baseNoSlash}/site.js`;
             <p class="footer__tagline">SOC 2, FedRAMP & HIPAA compliance<br/>audits powered by CPA + technology.</p>
           </div>
 
-          <div class="footer__columns">
+          <nav class="footer__columns" aria-label="Footer navigation">
             <div class="footer__col">
               <h4 class="footer__col-title">Services</h4>
               <a href="#services" class="footer__link">SOC 2 Attestation</a>
@@ -98,12 +109,17 @@ const siteScriptHref = `${baseNoSlash}/site.js`;
               <a href="#contact" class="footer__link">Contact</a>
             </div>
             <div class="footer__col">
+              <h4 class="footer__col-title">Account</h4>
+              <a href={quoteHref} class="footer__link">Sign in</a>
+              <a href={quoteHref} class="footer__link">Get a quote in under 5 minutes</a>
+            </div>
+            <div class="footer__col">
               <h4 class="footer__col-title">Connect</h4>
               <a href="https://dancingdragons.cc" target="_blank" rel="noopener noreferrer" class="footer__link">Dancing Dragons ↗</a>
               <a href="https://dragonteam.co" target="_blank" rel="noopener noreferrer" class="footer__link">Dragon Team ↗</a>
               <a href="mailto:compliance@canonical.cloud" class="footer__link">compliance@canonical.cloud</a>
             </div>
-          </div>
+          </nav>
         </div>
 
         <div class="footer__bottom">
@@ -114,6 +130,32 @@ const siteScriptHref = `${baseNoSlash}/site.js`;
     </footer>
 
     <style>
+      .skip-link {
+        position: fixed;
+        top: var(--space-sm);
+        left: var(--space-sm);
+        z-index: 2000;
+        padding: 0.75rem 1rem;
+        border-radius: var(--radius-sm);
+        background: var(--av-text-primary);
+        color: var(--av-black);
+        font-weight: 700;
+        transform: translateY(calc(-100% - var(--space-xl)));
+        transition: transform var(--duration-fast) var(--ease-out);
+      }
+
+      .skip-link:focus-visible {
+        transform: translateY(0);
+      }
+
+      #main-content:focus-visible {
+        outline-offset: -3px;
+      }
+
+      :global([id]:target) {
+        scroll-margin-top: calc(var(--nav-height) + var(--space-md));
+      }
+
       /* ── Navigation ── */
       .nav {
         position: fixed;
@@ -125,7 +167,7 @@ const siteScriptHref = `${baseNoSlash}/site.js`;
         background: rgba(10, 15, 24, 0.85);
         backdrop-filter: blur(20px) saturate(180%);
         -webkit-backdrop-filter: blur(20px) saturate(180%);
-        border-bottom: 1px solid var(--ac-border);
+        border-bottom: 1px solid var(--av-border);
       }
 
       .nav__inner {
@@ -144,7 +186,7 @@ const siteScriptHref = `${baseNoSlash}/site.js`;
       .nav__logo-icon {
         width: 32px;
         height: 32px;
-        color: var(--ac-teal);
+        color: var(--av-teal);
       }
 
       .nav__logo-text {
@@ -154,11 +196,11 @@ const siteScriptHref = `${baseNoSlash}/site.js`;
       }
 
       .nav__logo-aardvark {
-        color: var(--ac-text-primary);
+        color: var(--av-text-primary);
       }
 
       .nav__logo-compliance {
-        color: var(--ac-teal);
+        color: var(--av-teal);
       }
 
       .nav__links {
@@ -170,7 +212,7 @@ const siteScriptHref = `${baseNoSlash}/site.js`;
       .nav__link {
         font-size: 0.9rem;
         font-weight: 500;
-        color: var(--ac-text-secondary);
+        color: var(--av-text-secondary);
         transition: color var(--duration-fast) var(--ease-out);
         position: relative;
       }
@@ -182,12 +224,12 @@ const siteScriptHref = `${baseNoSlash}/site.js`;
         left: 0;
         width: 0;
         height: 2px;
-        background: var(--ac-teal);
+        background: var(--av-teal);
         transition: width var(--duration-normal) var(--ease-out);
       }
 
       .nav__link:hover {
-        color: var(--ac-text-primary);
+        color: var(--av-text-primary);
       }
 
       .nav__link:hover::after {
@@ -197,6 +239,7 @@ const siteScriptHref = `${baseNoSlash}/site.js`;
       .nav__cta {
         padding: 0.5rem 1.25rem;
         font-size: 0.85rem;
+        white-space: nowrap;
       }
 
       .nav__mobile-toggle {
@@ -210,16 +253,16 @@ const siteScriptHref = `${baseNoSlash}/site.js`;
         display: block;
         width: 22px;
         height: 2px;
-        background: var(--ac-text-secondary);
+        background: var(--av-text-secondary);
         border-radius: 2px;
         transition: all var(--duration-fast) var(--ease-out);
       }
 
       /* ── Footer ── */
       .footer {
-        border-top: 1px solid var(--ac-border);
+        border-top: 1px solid var(--av-border);
         padding: var(--space-4xl) 0 var(--space-xl);
-        background: var(--ac-black);
+        background: var(--av-black);
       }
 
       .footer__top {
@@ -236,7 +279,7 @@ const siteScriptHref = `${baseNoSlash}/site.js`;
       .footer__tagline {
         margin-top: var(--space-md);
         font-size: 0.95rem;
-        color: var(--ac-text-muted);
+        color: var(--av-text-muted);
         line-height: 1.6;
       }
 
@@ -256,18 +299,18 @@ const siteScriptHref = `${baseNoSlash}/site.js`;
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.1em;
-        color: var(--ac-text-primary);
+        color: var(--av-text-primary);
         margin-bottom: var(--space-sm);
       }
 
       .footer__link {
         font-size: 0.9rem;
-        color: var(--ac-text-muted);
+        color: var(--av-text-muted);
         transition: color var(--duration-fast) var(--ease-out);
       }
 
       .footer__link:hover {
-        color: var(--ac-teal);
+        color: var(--av-teal);
       }
 
       .footer__bottom {
@@ -275,16 +318,16 @@ const siteScriptHref = `${baseNoSlash}/site.js`;
         justify-content: space-between;
         align-items: center;
         padding-top: var(--space-xl);
-        border-top: 1px solid var(--ac-border);
+        border-top: 1px solid var(--av-border);
       }
 
       .footer__copy {
         font-size: 0.8rem;
-        color: var(--ac-text-muted);
+        color: var(--av-text-muted);
       }
 
       .footer__link--inline {
-        color: var(--ac-teal);
+        color: var(--av-teal);
         transition: opacity var(--duration-fast);
       }
 

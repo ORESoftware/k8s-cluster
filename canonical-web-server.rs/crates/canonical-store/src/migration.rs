@@ -8,7 +8,7 @@ async fn is_cockroachdb(manager: &SchemaManager<'_>) -> Result<bool, DbErr> {
 
     let row = manager
         .get_connection()
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT version()::text AS database_version",
         ))

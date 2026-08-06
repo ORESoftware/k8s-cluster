@@ -1,6 +1,7 @@
 node_modules/
 target/
 Cargo.lock
+!generated/rust-wasm/Cargo.lock
 # wasm-pack output for generated/rust-wasm
 pkg/
 .env
@@ -12,3 +13,7 @@ pkg/
 
 # Scratch / git worktrees (tmp/worktrees/*)
 tmp/
+
+# zed-pkg local state
+/zed_modules/
+/.zed/pack/

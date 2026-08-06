@@ -1,0 +1,51 @@
+name: live browser smoke
+
+# This job exercises the deployed canonical.cloud origin rather than a PR
+# checkout or local preview. It is deliberately scheduled/manual only so an
+# external deployment incident cannot make an unrelated source PR unmergeable.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 8 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-browser-smoke
+  cancel-in-progress: true
+
+jobs:
+  deployed-origin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+      CANONICAL_REQUIRE_SECURITY_HEADERS: "1"
+      CANONICAL_SITE_TEST_URL: https://canonical.cloud
+      CANONICAL_BROWSER_ARTIFACT_DIR: artifacts/live-browser-smoke
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install lockfile-pinned dependencies
+        run: npm ci
+      - name: Install the reviewed Chromium build
+        run: npx playwright install --with-deps chromium
+      - name: Execute deployed security policy in Chromium
+        run: >-
+          node --test --test-timeout=120000
+          tests/container-security-playwright.test.mjs
+      - name: Upload bounded browser evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: canonical-live-browser-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/live-browser-smoke
+          if-no-files-found: error
+          retention-days: 14
