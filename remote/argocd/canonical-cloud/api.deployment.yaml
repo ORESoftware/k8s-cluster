@@ -67,7 +67,7 @@ spec:
             - name: GEMINI_MODEL
               value: gemini-3.6-pro
             - name: QUOTE_CONTEXT_KEY
-              value: quote_analysis
+              value: quote-analysis
             - name: RUST_LOG
               value: canonical_api_server=info,tower_http=info,hyper=warn,h2=warn,reqwest=warn,sea_orm=warn
           ports:
