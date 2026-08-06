@@ -26,7 +26,11 @@
     "dart": "typed route registry/code generation used by both dispatcher and OpenAPI renderer",
     "python": "framework-native typed route schema (FastAPI preferred)",
     "java": "typed Vert.x route descriptor used by router and OpenAPI renderer",
-    "fsharp": "typed endpoint descriptor used by router and OpenAPI renderer"
+    "fsharp": "typed endpoint descriptor used by router and OpenAPI renderer",
+    "go": "framework-native typed route registration or a repository-owned typed descriptor consumed by both net/http dispatch and deterministic OpenAPI rendering"
+  },
+  "runtimeClassificationInventories": {
+    "go": "remote/config/go-api-contract-inventory.json"
   },
   "legacySourceScannerAllowlist": [
     "agent-worker-broker-rs",

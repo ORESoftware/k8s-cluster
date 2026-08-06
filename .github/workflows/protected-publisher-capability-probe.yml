@@ -1,0 +1,286 @@
+name: Probe protected publisher capabilities
+run-name: Probe protected publisher capabilities @ ${{ github.sha }}
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/protected-publisher-capability-probe.yml
+  pull_request_target:
+    branches:
+      - main
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths:
+      - .github/protected-publisher-capability-probe-trigger
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: read
+
+concurrency:
+  group: protected-publisher-capability-probe-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.head.ref == 'agent/protected-publisher-capability-probe-20260731-v1')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Validate the dedicated read-only probe carrier
+        if: github.event_name == 'pull_request_target'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          files="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100")"
+          test "$(jq 'length' <<<"$files")" = 1
+          test "$(jq -r '.[0].filename' <<<"$files")" = \
+            .github/protected-publisher-capability-probe-trigger
+          test "$(jq -r '.[0].status' <<<"$files")" = added
+          encoded="$(
+            gh api \
+              "repos/${GITHUB_REPOSITORY}/contents/.github/protected-publisher-capability-probe-trigger?ref=${HEAD_SHA}" \
+              --jq .content
+          )"
+          marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
+          test "$marker" = probe=protected-credential-capabilities-v1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: protected-publisher-capability-probe
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Inspect protected credential capabilities without exposing values
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: |
+          set -euo pipefail
+          test -n "${INSTANCE_ID:-}"
+
+          probe="$RUNNER_TEMP/protected-publisher-probe.sh"
+          cat > "$probe" <<'PROBE'
+          #!/usr/bin/env bash
+          set -u
+          umask 077
+
+          command_path() {
+            local prefix=$1
+            local command_name=$2
+            local path
+            path="$(command -v "$command_name" 2>/dev/null || true)"
+            if test -n "$path"; then
+              printf '%s.%s=%s\n' "$prefix" "$command_name" "$path"
+            else
+              printf '%s.%s=absent\n' "$prefix" "$command_name"
+            fi
+          }
+
+          echo root.user="$(id -un)"
+          for command_name in bash python3 git gh kubectl aws curl sudo getent; do
+            command_path root "$command_name"
+          done
+
+          if test -r /root/.config/gh/hosts.yml; then
+            echo root.gh_config=readable
+          else
+            echo root.gh_config=absent
+          fi
+          if command -v gh >/dev/null 2>&1; then
+            if GH_CONFIG_DIR=/root/.config/gh \
+              gh auth status --hostname github.com >/dev/null 2>&1; then
+              echo root.gh_auth=valid
+            else
+              echo root.gh_auth=unavailable
+            fi
+            if GH_CONFIG_DIR=/root/.config/gh \
+              gh auth token --hostname github.com >/dev/null 2>&1; then
+              echo root.gh_token=available
+            else
+              echo root.gh_token=unavailable
+            fi
+          else
+            echo root.gh_auth=no-gh
+            echo root.gh_token=no-gh
+          fi
+
+          find /root /home -maxdepth 5 -type f -path '*/.config/gh/hosts.yml' \
+            -printf 'gh.profile=%p owner=%u mode=%m\n' 2>/dev/null || true
+
+          if command -v aws >/dev/null 2>&1; then
+            secret_json="$(
+              aws secretsmanager get-secret-value \
+                --region us-east-1 \
+                --secret-id dd/remote-dev/agent-secrets \
+                --query SecretString \
+                --output text 2>/dev/null || true
+            )"
+            if test -n "$secret_json"; then
+              echo root.secretsmanager_access=yes
+              if printf '%s' "$secret_json" | python3 -c '
+          import json
+          import sys
+          try:
+              payload = json.load(sys.stdin)
+          except (json.JSONDecodeError, OSError):
+              raise SystemExit(1)
+          value = payload.get("GH_PAT")
+          raise SystemExit(0 if isinstance(value, str) and bool(value) else 1)
+          ' >/dev/null 2>&1; then
+                echo root.secretsmanager_gh_pat=present
+              else
+                echo root.secretsmanager_gh_pat=absent
+              fi
+            else
+              echo root.secretsmanager_access=no
+              echo root.secretsmanager_gh_pat=unknown
+            fi
+            unset secret_json
+          else
+            echo root.secretsmanager_access=no-aws
+            echo root.secretsmanager_gh_pat=unknown
+          fi
+
+          if command -v kubectl >/dev/null 2>&1; then
+            for kubeconfig in \
+              /etc/kubernetes/admin.conf \
+              /root/.kube/config \
+              /home/ec2-user/.kube/config
+            do
+              label="$(printf '%s' "$kubeconfig" | tr '/.-' '___')"
+              if ! test -r "$kubeconfig"; then
+                echo "root.kube_${label}=unreadable"
+                continue
+              fi
+              encoded="$(
+                KUBECONFIG="$kubeconfig" \
+                  kubectl -n default get secret dd-agent-secrets \
+                  -o jsonpath='{.data.GH_PAT}' 2>/dev/null || true
+              )"
+              if test -n "$encoded"; then
+                echo "root.kube_${label}_gh_pat=present"
+              else
+                echo "root.kube_${label}_gh_pat=absent"
+              fi
+              unset encoded
+            done
+          else
+            echo root.kube_secret_access=no-kubectl
+          fi
+
+          ec2_home="$(getent passwd ec2-user 2>/dev/null | awk -F: '$1 == "ec2-user" {print $6; exit}')"
+          case "$ec2_home" in
+            /*) echo ec2.home="$ec2_home" ;;
+            *) echo ec2.home=invalid; ec2_home='' ;;
+          esac
+
+          ec2_probe=/tmp/protected-publisher-ec2-probe.sh
+          cat > "$ec2_probe" <<'EC2'
+          #!/usr/bin/env bash
+          set -u
+          echo ec2.user="$(id -un)"
+          echo ec2.runtime_home="${HOME:-unset}"
+          echo ec2.xdg_config_home="${XDG_CONFIG_HOME:-unset}"
+          for command_name in bash python3 git gh kubectl aws curl; do
+            path="$(command -v "$command_name" 2>/dev/null || true)"
+            if test -n "$path"; then
+              printf 'ec2.%s=%s\n' "$command_name" "$path"
+            else
+              printf 'ec2.%s=absent\n' "$command_name"
+            fi
+          done
+          if test -r "${XDG_CONFIG_HOME:-/nonexistent}/gh/hosts.yml"; then
+            echo ec2.gh_config=readable
+          else
+            echo ec2.gh_config=absent
+          fi
+          if command -v gh >/dev/null 2>&1; then
+            if gh auth status --hostname github.com >/dev/null 2>&1; then
+              echo ec2.gh_auth=valid
+            else
+              echo ec2.gh_auth=unavailable
+            fi
+            if gh auth token --hostname github.com >/dev/null 2>&1; then
+              echo ec2.gh_token=available
+            else
+              echo ec2.gh_token=unavailable
+            fi
+          else
+            echo ec2.gh_auth=no-gh
+            echo ec2.gh_token=no-gh
+          fi
+          EC2
+          chmod 755 "$ec2_probe"
+          if test -n "$ec2_home" && command -v sudo >/dev/null 2>&1; then
+            sudo -u ec2-user -H \
+              env \
+                -u GH_CONFIG_DIR \
+                -u GH_TOKEN \
+                -u GITHUB_TOKEN \
+                -u GH_ENTERPRISE_TOKEN \
+                -u GITHUB_REPOSITORY_ADMIN_TOKEN \
+                HOME="$ec2_home" \
+                XDG_CONFIG_HOME="$ec2_home/.config" \
+                bash --noprofile --norc "$ec2_probe"
+          else
+            echo ec2.probe=unavailable
+          fi
+          rm -f "$ec2_probe"
+          unset ec2_home
+          PROBE
+          chmod 700 "$probe"
+
+          encoded="$(base64 --wrap=0 "$probe")"
+          remote_command="remote_probe=/tmp/protected-publisher-capability-probe.sh; printf '%s' '$encoded' | base64 --decode > \"\$remote_probe\"; chmod 700 \"\$remote_probe\"; status=0; bash \"\$remote_probe\" || status=\$?; rm -f \"\$remote_probe\"; exit \$status"
+          parameters="$RUNNER_TEMP/probe-parameters.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment 'Probe protected publisher capabilities without secret values' \
+              --parameters "file://$parameters" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+          echo "ssm_command_id=$command_id"
+
+          status=Pending
+          for _ in $(seq 1 90); do
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query Status \
+                --output text 2>/dev/null || true
+            )"
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut|Cancelling) break ;;
+            esac
+            sleep 3
+          done
+
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json
+          test "$status" = Success

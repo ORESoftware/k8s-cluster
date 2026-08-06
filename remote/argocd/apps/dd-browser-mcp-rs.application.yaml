@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git@github.com:ORESoftware/k8s-cluster.git
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
     targetRevision: dev
     path: remote/deployments/browser-mcp-rs/k8s/ec2
   destination:

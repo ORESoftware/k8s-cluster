@@ -24,7 +24,7 @@ spec:
       annotations:
         dd.dev/soccer-server-revision: '2bfc4c577549353849754eb9d7b7c8e92f5db65d'
         dd.dev/soccer-engine-revision: '2550d1225db3e85935fe6a127795a6b612e6388b'
-        dd.dev/des-engine-revision: '0abe4a00a4bafbb8ef9024a03539f617a0a1ef15'
+        dd.dev/des-engine-revision: '894e86fb188b88b0e2c734b5cf7caa27c6b18e00'
       labels:
         app: dd-soccer-rs
     spec:
@@ -182,7 +182,7 @@ spec:
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
-              value: 0abe4a00a4bafbb8ef9024a03539f617a0a1ef15
+              value: 894e86fb188b88b0e2c734b5cf7caa27c6b18e00
             - name: HOME
               value: /tmp
             - name: CARGO_HOME

@@ -38,7 +38,12 @@ function scrapeJob(config: string, name: string): string {
 function assertTarget(config: string, job: string, target: string): void {
   const block = scrapeJob(config, job);
   assert.match(block, /metrics_path:\s*\/metrics/);
-  assert.ok(block.includes(`- ${target}`), `${job} must scrape ${target}`);
+  assert.ok(
+    block.includes(
+      `        static_configs:\n          - targets:\n              - ${target}`,
+    ),
+    `${job} must place ${target} under static_configs with canonical indentation`,
+  );
 }
 
 function assertScrapeAnnotations(resource: string, port: number): void {
@@ -93,6 +98,74 @@ test("central Prometheus scrapes each first-wave application every 15 seconds", 
   );
   assert.match(prometheus, /alert:\s*DDSonusAurisNginxExporterScrapeFailed/);
   assert.match(prometheus, /nginx_up\{job="dd-sonus-auris-site"\}\s*==\s*0/);
+});
+
+test("Shared Auth endpoints are private, scraped, and alerted", async () => {
+  const prometheus = await read("remote/argocd/observability/prometheus.configmap.yaml");
+  const gateway = await read(
+    "remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml",
+  );
+  const rollout = await read(
+    "docs/observability/prometheus-application-rollout.yaml",
+  );
+
+  assertTarget(
+    prometheus,
+    "dd-shared-auth",
+    "dd-shared-auth.shared-auth.svc.cluster.local:8120",
+  );
+  assertTarget(
+    prometheus,
+    "dd-shared-auth-nats-bridge",
+    "dd-shared-auth-nats-bridge.shared-auth.svc.cluster.local:8121",
+  );
+  for (const alert of [
+    "SharedAuthServerTargetMissing",
+    "SharedAuthBridgeTargetMissing",
+    "SharedAuthMetricsTargetDown",
+    "SharedAuthVerificationFailuresHigh",
+    "SharedAuthBridgePublishFailuresHigh",
+    "SharedAuthBridgeDeliveryFailuresHigh",
+  ]) {
+    assert.ok(
+      prometheus.includes(`          - alert: ${alert}\n            expr:`),
+      `missing canonically nested alert ${alert}`,
+    );
+  }
+  assert.match(
+    prometheus,
+    /up\{job=~"dd-shared-auth\|dd-shared-auth-nats-bridge"\}\s*==\s*0/,
+  );
+  assert.match(
+    prometheus,
+    /increase\(shared_auth_verify_failures_total\[10m\]\)\s*>\s*100/,
+  );
+  assert.match(
+    prometheus,
+    /increase\(shared_auth_bridge_publishes_total\{outcome="failed"\}\[10m\]\)\)\s*>\s*10/,
+  );
+  assert.match(
+    prometheus,
+    /increase\(shared_auth_bridge_deliveries_total\{outcome="failed"\}\[10m\]\)\)\s*>\s*5/,
+  );
+  assert.doesNotMatch(
+    prometheus,
+    /shared_auth_bridge_(?:publishes|deliveries)_total\{[^}]*subject=/,
+  );
+
+  const metricsDeny = gateway.indexOf("location = /shared-auth/metrics");
+  const publicProxy = gateway.indexOf("location /shared-auth/");
+  assert.ok(metricsDeny >= 0 && metricsDeny < publicProxy);
+  assert.match(
+    gateway.slice(metricsDeny, publicProxy),
+    /location = \/shared-auth\/metrics \{\s*return 404;/,
+  );
+  assert.doesNotMatch(gateway, /dd-shared-auth-nats-bridge\.shared-auth/);
+
+  assert.ok(rollout.includes("project: github.com/shared-auth"));
+  assert.ok(rollout.includes("expected_replica_targets: 2"));
+  assert.ok(rollout.includes("source_revision: 821386ba8b167571b27d91012c665ffcb724ae46"));
+  assert.ok(rollout.includes("source_revision: d03316944e33fd59ee90a4acaa4fee67cae71d61"));
 });
 
 test("Fiducia and Akrion build the reviewed merged revisions", async () => {

@@ -1,0 +1,104 @@
+name: NATS messaging resilience
+
+on:
+  pull_request:
+    paths:
+      - 'remote/nats-bridge/**'
+      - 'remote/deployments/queue-consumer-rs/**'
+      - 'remote/argocd/messaging/**'
+      - '.github/workflows/nats-messaging-resilience.yml'
+  push:
+    branches: [dev, main]
+    paths:
+      - 'remote/nats-bridge/**'
+      - 'remote/deployments/queue-consumer-rs/**'
+      - 'remote/argocd/messaging/**'
+      - '.github/workflows/nats-messaging-resilience.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nats-resilience-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-and-live-nats:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Require private libraries deploy key
+        env:
+          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+        run: test -n "$K8S_LIBS_DEPLOY_KEY"
+
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Initialize shared Rust libraries
+        env:
+          SUBMODULE_AUTH_MODE: ssh
+        run: bash scripts/ci/init-submodules-with-report.sh remote/libs
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Verify owned Rust source formatting
+        run: |
+          rustfmt --edition 2021 --check remote/nats-bridge/src/main.rs
+          rustfmt --edition 2021 --check remote/deployments/queue-consumer-rs/src/main.rs
+
+      - name: Clippy — NATS bridge
+        working-directory: remote/nats-bridge
+        run: cargo clippy --locked --all-targets --no-deps -- -D warnings
+
+      - name: Clippy — queue consumer and DLQ
+        working-directory: remote/deployments/queue-consumer-rs
+        run: cargo clippy --locked --all-targets --no-deps -- -D warnings
+
+      - name: Start pinned NATS with JetStream
+        run: |
+          set -euo pipefail
+          docker run -d --name dd-nats-resilience \
+            -p 14222:4222 \
+            -p 18222:8222 \
+            nats:2.11.17-alpine -js -m 8222
+          for _ in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:18222/healthz && exit 0
+            sleep 1
+          done
+          docker logs dd-nats-resilience
+          exit 1
+
+      - name: Bridge unit tests
+        working-directory: remote/nats-bridge
+        run: cargo test --locked --all-targets
+
+      - name: Queue consumer unit and live DLQ tests
+        working-directory: remote/deployments/queue-consumer-rs
+        env:
+          NATS_DLQ_E2E_URL: nats://127.0.0.1:14222
+        run: cargo test --locked --all-targets -- --test-threads=1
+
+      - name: Show queue-test NATS logs on failure
+        if: failure()
+        run: docker logs dd-nats-resilience || true
+
+      - name: Stop queue-test NATS before bridge E2E
+        if: always()
+        run: docker rm -f dd-nats-resilience >/dev/null 2>&1 || true
+
+      - name: Bridge HTTP and reconnect E2E
+        run: timeout 300s bash remote/nats-bridge/scripts/e2e.sh
+
+      - name: Stop NATS test containers
+        if: always()
+        run: |
+          docker rm -f dd-nats-resilience >/dev/null 2>&1 || true
+          docker rm -f vxl-nats-e2e >/dev/null 2>&1 || true

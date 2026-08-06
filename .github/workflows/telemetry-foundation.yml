@@ -1,0 +1,76 @@
+name: telemetry foundation
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - .github/workflows/telemetry-foundation.yml
+      - .github/workflows/telemetry-upstream-promotion.yml
+      - docs/telemetry-ticket-automation.md
+      - remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml
+      - remote/argocd/dd-next-runtime/dd-rust-network-mutex-mills.statefulset.yaml
+      - remote/argocd/dd-next-runtime/dd-t2v-api.deployment.yaml
+      - remote/argocd/dd-next-runtime/dd-t2v-api.networkpolicy.yaml
+      - remote/argocd/dd-next-runtime/dd-t2v-web.deployment.yaml
+      - remote/argocd/dd-next-runtime/dd-t2v-web.networkpolicy.yaml
+      - remote/argocd/observability/kustomization.yaml
+      - remote/argocd/observability/loki.configmap.yaml
+      - remote/argocd/observability/loki.deployment.yaml
+      - remote/argocd/observability/loki.rules.configmap.yaml
+      - remote/argocd/observability/otel-collector.configmap.yaml
+      - remote/deployments/gcs/k8s/ec2/gcs.deployment.yaml
+      - remote/tests/general/telemetry-foundation.test.mjs
+      - remote/tools/check-observability-coverage.mjs
+  push:
+    branches: [dev, main]
+    paths:
+      - .github/workflows/telemetry-foundation.yml
+      - .github/workflows/telemetry-upstream-promotion.yml
+      - docs/telemetry-ticket-automation.md
+      - remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml
+      - remote/argocd/dd-next-runtime/dd-rust-network-mutex-mills.statefulset.yaml
+      - remote/argocd/dd-next-runtime/dd-t2v-api.deployment.yaml
+      - remote/argocd/dd-next-runtime/dd-t2v-api.networkpolicy.yaml
+      - remote/argocd/dd-next-runtime/dd-t2v-web.deployment.yaml
+      - remote/argocd/dd-next-runtime/dd-t2v-web.networkpolicy.yaml
+      - remote/argocd/observability/kustomization.yaml
+      - remote/argocd/observability/loki.configmap.yaml
+      - remote/argocd/observability/loki.deployment.yaml
+      - remote/argocd/observability/loki.rules.configmap.yaml
+      - remote/argocd/observability/otel-collector.configmap.yaml
+      - remote/deployments/gcs/k8s/ec2/gcs.deployment.yaml
+      - remote/tests/general/telemetry-foundation.test.mjs
+      - remote/tools/check-observability-coverage.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/telemetry-foundation.yml .github/workflows/telemetry-upstream-promotion.yml
+      - name: Run telemetry foundation contracts
+        run: node --test remote/tests/general/telemetry-foundation.test.mjs
+      - name: Render affected overlays
+        run: |
+          set -euo pipefail
+          kubectl kustomize remote/argocd/observability >/tmp/observability.yaml
+          kubectl kustomize remote/argocd/dd-next-runtime >/tmp/runtime.yaml
+          grep -q 'name: dd-loki-rules' /tmp/observability.yaml
+          grep -q 'spanmetrics' /tmp/observability.yaml
+          ! grep -q 'name: dd-ai-agent-runner' /tmp/runtime.yaml
+      - name: Validate coverage tool syntax
+        run: node --check remote/tools/check-observability-coverage.mjs

@@ -25,6 +25,7 @@ resources:
   - grafana.deployment.yaml
   - grafana.service.yaml
   - loki.configmap.yaml
+  - loki.rules.configmap.yaml
   - loki.deployment.yaml
   - loki.service.yaml
   - promtail.rbac.yaml

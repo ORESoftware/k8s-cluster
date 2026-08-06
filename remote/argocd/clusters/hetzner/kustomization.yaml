@@ -8,3 +8,5 @@ labels:
 resources:
   - storageclass.yaml
   - applications.yaml
+  - ai-agent-coordinator.applications.yaml
+  - project-automation.application.yaml

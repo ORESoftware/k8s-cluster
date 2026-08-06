@@ -1,0 +1,46 @@
+{
+  "created_count": 0,
+  "expected_repositories": [
+    "hypesiege/hypesiege-analytics.rs",
+    "hypesiege/hypesiege-publishing-worker.rs",
+    "hypesiege/hypesiege-scheduler.rs"
+  ],
+  "generator_sha256": "a57b00961ee57ae09bf3bb2e2d09afbdd1ddbbbde832b027802f82a1fc5dfa84",
+  "organization": "hypesiege",
+  "preserved_count": 3,
+  "repositories": [
+    {
+      "default_branch": "main",
+      "disposition": "preserved",
+      "expected_sealed_sha": "3eb8efba49bd4f932b7cc673c66b3788e3f458c1",
+      "full_name": "hypesiege/hypesiege-analytics.rs",
+      "html_url": "https://github.com/hypesiege/hypesiege-analytics.rs",
+      "main_sha": "3eb8efba49bd4f932b7cc673c66b3788e3f458c1",
+      "repository_id": 1324459288,
+      "visibility": "private"
+    },
+    {
+      "default_branch": "main",
+      "disposition": "preserved",
+      "expected_sealed_sha": "0278b9cc86e7ea3b11d33dd987be6689dc06aba0",
+      "full_name": "hypesiege/hypesiege-publishing-worker.rs",
+      "html_url": "https://github.com/hypesiege/hypesiege-publishing-worker.rs",
+      "main_sha": "0278b9cc86e7ea3b11d33dd987be6689dc06aba0",
+      "repository_id": 1324464349,
+      "visibility": "private"
+    },
+    {
+      "default_branch": "main",
+      "disposition": "preserved",
+      "expected_sealed_sha": "e8a739d9e658e9cef8f1dc938a412b923dbff57d",
+      "full_name": "hypesiege/hypesiege-scheduler.rs",
+      "html_url": "https://github.com/hypesiege/hypesiege-scheduler.rs",
+      "main_sha": "e8a739d9e658e9cef8f1dc938a412b923dbff57d",
+      "repository_id": 1324464386,
+      "visibility": "private"
+    }
+  ],
+  "schema_version": 1,
+  "sealed_source_repository": "ORESoftware/ai-agent-coordinator.rs",
+  "sealed_source_sha": "5d9a0c2cb44dff607bc3953954ce4b9af08e5789"
+}

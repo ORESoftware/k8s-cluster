@@ -1,0 +1,55 @@
+# Revalidated after #945 retired the stale one-use durable-worker writer.
+name: workflow branch trigger contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - 'remote/tests/general/workflow-branch-trigger-contract.test.ts'
+      - 'remote/tests/package.json'
+      - 'remote/tests/pnpm-lock.yaml'
+  push:
+    branches: [main, dev]
+    paths:
+      - '.github/workflows/**'
+      - 'remote/tests/general/workflow-branch-trigger-contract.test.ts'
+      - 'remote/tests/package.json'
+      - 'remote/tests/pnpm-lock.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workflow-branch-trigger-contract-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install test dependencies without lifecycle scripts
+        working-directory: remote/tests
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Enforce canonical branches and expiring carriers
+        working-directory: remote/tests
+        run: pnpm exec tsx --test general/workflow-branch-trigger-contract.test.ts

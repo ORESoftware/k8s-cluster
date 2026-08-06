@@ -1,0 +1,203 @@
+name: telemetry upstream promotion
+
+on:
+  repository_dispatch:
+    types: [telemetry-upstream-promotion]
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: Exact allowlisted owner/repository
+        required: true
+        type: string
+      sha:
+        description: Full upstream commit SHA
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: telemetry-upstream-promotion-${{ github.event.client_payload.repository || inputs.repository }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      REQUESTED_REPOSITORY: ${{ github.event.client_payload.repository || inputs.repository }}
+      REQUESTED_SHA: ${{ github.event.client_payload.sha || inputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
+          submodules: false
+          fetch-depth: 0
+          persist-credentials: true
+          token: ${{ github.token }}
+
+      - name: Validate the exact promotion request
+        id: request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "$REQUESTED_REPOSITORY" in
+            ORESoftware/chat.vibe)
+              path=remote/deployments/gcs/chat-vibe
+              repository_name=chat.vibe
+              slug=chat-vibe
+              ;;
+            ORESoftware/live-mutex-mills.rs)
+              path=remote/submodules/live-mutex-mills.rs
+              repository_name=live-mutex-mills.rs
+              slug=live-mutex-mills
+              ;;
+            ORESoftware/mip-solver-node.rs)
+              path=remote/deployments/mip-solver-node.rs
+              repository_name=mip-solver-node.rs
+              slug=mip-solver-node
+              ;;
+            ORESoftware/t2v-v2t.rs)
+              path=remote/deployments/t2v-v2t.rs
+              repository_name=t2v-v2t.rs
+              slug=t2v-v2t
+              ;;
+            ORESoftware/tor-server.rs)
+              path=remote/deployments/tor-server.rs
+              repository_name=tor-server.rs
+              slug=tor-server
+              ;;
+            *)
+              echo "repository is not in the promotion allowlist: $REQUESTED_REPOSITORY" >&2
+              exit 1
+              ;;
+          esac
+
+          if [[ ! "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "sha must be a full lowercase commit SHA" >&2
+            exit 1
+          fi
+
+          short_sha="${REQUESTED_SHA:0:12}"
+          branch="agent/promote-${slug}-${short_sha}"
+          if [[ "$(gh pr list --state all --head "$branch" --json number --jq length)" != 0 ]]; then
+            echo "promotion PR already exists for $branch"
+            echo "skip=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >>"$GITHUB_OUTPUT"
+          fi
+
+          {
+            echo "path=$path"
+            echo "repository_name=$repository_name"
+            echo "slug=$slug"
+            echo "short_sha=$short_sha"
+            echo "branch=$branch"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Advance the allowlisted gitlink with a read-only App token
+        id: update
+        if: steps.request.outputs.skip != 'true'
+        env:
+          K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          path='${{ steps.request.outputs.path }}'
+          repository_name='${{ steps.request.outputs.repository_name }}'
+          token_file="${RUNNER_TEMP}/telemetry-upstream-read.token"
+          upstream_token=''
+
+          cleanup() {
+            if [[ -n "$upstream_token" ]]; then
+              curl --silent --show-error \
+                --request DELETE \
+                --output /dev/null \
+                --header 'Accept: application/vnd.github+json' \
+                --header "Authorization: Bearer ${upstream_token}" \
+                --header "X-GitHub-Api-Version: ${GITHUB_API_VERSION:-2026-03-10}" \
+                "${GITHUB_API_URL:-https://api.github.com}/installation/token" || true
+            fi
+            rm -f "$token_file"
+          }
+          trap cleanup EXIT
+
+          bash scripts/ci/mint-github-app-installation-token.sh \
+            ORESoftware \
+            "$token_file" \
+            "$repository_name"
+          upstream_token="$(<"$token_file")"
+          printf '::add-mask::%s\n' "$upstream_token"
+          basic_auth="$(printf 'x-access-token:%s' "$upstream_token" | base64 -w0)"
+
+          git config --local url."https://github.com/".insteadOf git@github.com:
+          git config --local --add url."https://github.com/".insteadOf ssh://git@github.com/
+          git submodule sync -- "$path"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${basic_auth}" \
+            submodule update --init --depth 1 "$path"
+          git -C "$path" \
+            -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${basic_auth}" \
+            fetch --depth 1 origin "$REQUESTED_SHA"
+          git -C "$path" checkout --detach "$REQUESTED_SHA"
+
+          unset basic_auth
+          if git diff --quiet -- "$path"; then
+            echo "$path already points at $REQUESTED_SHA"
+            echo "changed=false" >>"$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Open a draft-only GitOps promotion PR
+        if: steps.request.outputs.skip != 'true' && steps.update.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          path='${{ steps.request.outputs.path }}'
+          slug='${{ steps.request.outputs.slug }}'
+          short_sha='${{ steps.request.outputs.short_sha }}'
+          branch='${{ steps.request.outputs.branch }}'
+
+          if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
+            echo "remote branch exists without a matching PR: $branch" >&2
+            exit 1
+          fi
+
+          git switch -c "$branch"
+          git config user.name ore-telemetry-gitops
+          git config user.email bot@oresoftware.dev
+          git add "$path"
+          git commit -m "promote ${slug} to ${short_sha}"
+          git push --set-upstream origin "$branch"
+
+          body="$RUNNER_TEMP/promotion.md"
+          {
+            echo "## Upstream"
+            echo
+            echo "- Repository: \`$REQUESTED_REPOSITORY\`"
+            echo "- Commit: \`$REQUESTED_SHA\`"
+            echo "- Submodule: \`$path\`"
+            echo
+            echo "## Deployment contract"
+            echo
+            echo "This is an automated, draft-only GitOps promotion. Required repository"
+            echo "checks and rendered Kubernetes validation must pass before review."
+            echo "This workflow never merges or deploys the pull request directly."
+          } >"$body"
+
+          gh pr create \
+            --draft \
+            --base dev \
+            --head "$branch" \
+            --title "promote ${slug} telemetry build ${short_sha}" \
+            --body-file "$body"

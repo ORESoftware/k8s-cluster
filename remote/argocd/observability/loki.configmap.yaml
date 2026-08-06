@@ -36,7 +36,19 @@ data:
         cache:
           embedded_cache:
             enabled: true
-            max_size_mb: 100
+                max_size_mb: 100
+
+    ruler:
+      storage:
+        type: local
+        local:
+          directory: /etc/loki/rules
+      rule_path: /loki/rule-tmp
+      alertmanager_url: http://dd-alertmanager.observability.svc.cluster.local:9093
+      enable_alertmanager_v2: true
+      ring:
+        kvstore:
+          store: inmemory
 
     compactor:
       working_directory: /loki/compactor

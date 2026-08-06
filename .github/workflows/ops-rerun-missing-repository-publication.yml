@@ -1,0 +1,106 @@
+name: Rerun and observe missing repository publication
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ops-rerun-missing-repository-publication.yml'
+
+permissions:
+  actions: write
+  contents: read
+  statuses: write
+
+concurrency:
+  group: ops-rerun-missing-repository-publication-20260731
+  cancel-in-progress: false
+
+jobs:
+  supervise:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Locate, rerun if necessary, and supervise the protected publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          workflow_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows?per_page=100" \
+            --jq '.workflows[] | select(.path == ".github/workflows/ops-publish-missing-organization-repositories.yml") | .id' \
+            | head -n1)"
+          test -n "$workflow_id" || {
+            echo 'publisher workflow is not registered' >&2
+            exit 1
+          }
+
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/runs?branch=main&event=push&per_page=10")"
+          run_id="$(jq -r '.workflow_runs[0].id // empty' <<<"$run_json")"
+          test -n "$run_id" || {
+            echo 'publisher workflow has no main-branch push run to supervise' >&2
+            exit 1
+          }
+
+          initial_attempt="$(jq -r '.workflow_runs[0].run_attempt' <<<"$run_json")"
+          status="$(jq -r '.workflow_runs[0].status' <<<"$run_json")"
+          conclusion="$(jq -r '.workflow_runs[0].conclusion // ""' <<<"$run_json")"
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
+
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state=pending \
+            -f context='ops/missing-repository-publication-rerun' \
+            -f description="supervising publisher run ${run_id}" \
+            -f target_url="$run_url" >/dev/null
+
+          if [[ "$status" == completed && "$conclusion" != success ]]; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/rerun" >/dev/null
+            for _ in $(seq 1 40); do
+              sleep 3
+              current="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}")"
+              attempt="$(jq -r '.run_attempt' <<<"$current")"
+              status="$(jq -r '.status' <<<"$current")"
+              if (( attempt > initial_attempt )) || [[ "$status" != completed ]]; then
+                break
+              fi
+            done
+          fi
+
+          for _ in $(seq 1 180); do
+            current="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}")"
+            status="$(jq -r '.status' <<<"$current")"
+            conclusion="$(jq -r '.conclusion // ""' <<<"$current")"
+            attempt="$(jq -r '.run_attempt' <<<"$current")"
+            echo "publisher run=${run_id} attempt=${attempt} status=${status} conclusion=${conclusion:-pending}"
+            if [[ "$status" == completed ]]; then
+              break
+            fi
+            sleep 15
+          done
+
+          test "$status" = completed || {
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+              -f state=error \
+              -f context='ops/missing-repository-publication-rerun' \
+              -f description='publisher supervision timed out' \
+              -f target_url="$run_url" >/dev/null
+            exit 1
+          }
+
+          if [[ "$conclusion" == success ]]; then
+            state=success
+            description='all repository publication steps passed'
+          else
+            state=failure
+            description="repository publication ${conclusion:-failed}"
+          fi
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state="$state" \
+            -f context='ops/missing-repository-publication-rerun' \
+            -f description="$description" \
+            -f target_url="$run_url" >/dev/null
+          test "$conclusion" = success

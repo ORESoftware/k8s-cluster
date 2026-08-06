@@ -1,0 +1,261 @@
+name: Create empty canonical slack-ores-integrations with encrypted owner credential
+run-name: Create ORESoftware/slack-ores-integrations with bounded content retry
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+    paths:
+      - .github/slack-ores-repository-create-trigger
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  statuses: write
+
+concurrency:
+  group: slack-ores-empty-repository-creation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  create:
+    if: >-
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.user.login == 'ORESoftware' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'agent/slack-ores-repository-create-') &&
+      github.event.pull_request.title == 'DO NOT MERGE: create the empty canonical slack-ores-integrations repository'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      REPOSITORY: ${{ github.repository }}
+      MARKER_PATH: .github/slack-ores-repository-create-trigger
+      TARGET_REPOSITORY: ORESoftware/slack-ores-integrations
+      EXPECTED_SOURCE_SHA: 7d7b6f2a1018204eba8b727ffa069e6bef31b6a7
+
+    steps:
+      - name: Validate metadata-only carrier against current main
+        id: carrier
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          pull="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+          head_sha="$(jq -er '.head.sha' <<<"$pull")"
+          main_sha="$(gh api "repos/${REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]]
+          jq -e '
+            .draft == true and
+            .user.login == "ORESoftware" and
+            .base.ref == "main" and
+            .head.repo.full_name == "ORESoftware/k8s-cluster" and
+            (.head.ref | startswith("agent/slack-ores-repository-create-")) and
+            .title == "DO NOT MERGE: create the empty canonical slack-ores-integrations repository" and
+            .commits == 1 and
+            .changed_files == 1 and
+            .additions == 5 and
+            .deletions == 0
+          ' <<<"$pull" >/dev/null
+
+          commits="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/commits?per_page=100")"
+          test "$(jq 'length' <<<"$commits")" -eq 1
+          parent_sha="$(jq -er '.[0].parents[0].sha' <<<"$commits")"
+          [[ "$parent_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          files="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100")"
+          jq -e --arg path "$MARKER_PATH" '
+            length == 1 and
+            .[0].filename == $path and
+            .[0].status == "added" and
+            .[0].changes == 5
+          ' <<<"$files" >/dev/null
+
+          encoded="$(gh api "repos/${REPOSITORY}/contents/${MARKER_PATH}?ref=${head_sha}" --jq '.content')"
+          marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
+          marker_target="$(sed -n 's/^target=//p' <<<"$marker")"
+          marker_main="$(sed -n 's/^trusted-main=//p' <<<"$marker")"
+          marker_visibility="$(sed -n 's/^expected-visibility=//p' <<<"$marker")"
+          marker_source_sha="$(sed -n 's/^expected-source-sha=//p' <<<"$marker")"
+          marker_protocol="$(sed -n 's/^protocol=//p' <<<"$marker")"
+          test "$marker_target" = ORESoftware/slack-ores-integrations
+          test "$marker_main" = "$parent_sha"
+          test "$marker_visibility" = public
+          test "$marker_source_sha" = 7d7b6f2a1018204eba8b727ffa069e6bef31b6a7
+          test "$marker_protocol" = rsa-oaep-sha256-v1
+
+          comparison="$(gh api "repos/${REPOSITORY}/compare/${marker_main}...${main_sha}")"
+          jq -e '(.status == "ahead" or .status == "identical") and .behind_by == 0' <<<"$comparison" >/dev/null
+          printf 'head_sha=%s\n' "$head_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Issue one-time challenge, create repository, and verify emptiness
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CARRIER_HEAD_SHA: ${{ steps.carrier.outputs.head_sha }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          stage=challenge-bootstrap
+          workflow_token="$GH_TOKEN"
+          work="$(mktemp -d "$RUNNER_TEMP/slack-ores-empty-repo.XXXXXX")"
+          owner_token=''
+          actor=''
+          cleanup() {
+            unset owner_token actor GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+            rm -rf "$work"
+          }
+          report_failure() {
+            status=$?
+            trap - ERR
+            GH_TOKEN="$workflow_token" gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" \
+              --body "Canonical Slack repository creation failed at bounded stage \`${stage}\`. No owner credential was written to Git, workflow inputs or outputs, artifacts, remotes, or Linear." >/dev/null || true
+            exit "$status"
+          }
+          trap cleanup EXIT
+          trap report_failure ERR
+
+          gh_api_content_retry() {
+            local label="$1"
+            shift
+            local attempt=1
+            local max_attempts=8
+            local delay_seconds=15
+            local exit_status=1
+            local stdout_file="$work/${label}.stdout"
+            local stderr_file="$work/${label}.stderr"
+
+            while (( attempt <= max_attempts )); do
+              : > "$stdout_file"
+              : > "$stderr_file"
+              if gh api "$@" >"$stdout_file" 2>"$stderr_file"; then
+                cat "$stdout_file"
+                return 0
+              else
+                exit_status=$?
+              fi
+
+              if ! grep -Eiq 'secondary rate limit|abuse detection|HTTP 429|status 429' "$stderr_file"; then
+                printf 'GitHub API operation %s failed with a non-retryable response.\n' "$label" >&2
+                return "$exit_status"
+              fi
+              if (( attempt >= max_attempts )); then
+                printf 'GitHub API operation %s exhausted %s bounded content-limit attempts.\n' "$label" "$max_attempts" >&2
+                return "$exit_status"
+              fi
+
+              printf 'GitHub content creation is temporarily limited; retrying %s after %ss (attempt %s/%s).\n' \
+                "$label" "$delay_seconds" "$attempt" "$max_attempts" >&2
+              sleep "$delay_seconds"
+              attempt=$((attempt + 1))
+              delay_seconds=$((delay_seconds * 2))
+              if (( delay_seconds > 120 )); then
+                delay_seconds=120
+              fi
+            done
+            return "$exit_status"
+          }
+
+          private_key="$work/private.pem"
+          public_key="$work/public.pem"
+          ciphertext_file="$work/ciphertext.bin"
+          openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key"
+          chmod 600 "$private_key"
+          openssl pkey -in "$private_key" -pubout -out "$public_key"
+          nonce="$(openssl rand -hex 24)"
+          [[ "$nonce" =~ ^[0-9a-f]{48}$ ]]
+
+          challenge_body="$work/challenge.md"
+          {
+            printf '<!-- slack-ores-create-credential-challenge:%s -->\n' "$nonce"
+            printf 'One-time RSA-OAEP-SHA256/MGF1-SHA256 challenge to create the empty `%s` repository. The private key exists only in this runner and is destroyed on exit. Reply with the matching encrypted ciphertext marker.\n\n' "$TARGET_REPOSITORY"
+            printf '```pem\n'
+            cat "$public_key"
+            printf '```\n'
+          } > "$challenge_body"
+          challenge_json="$(jq -n --rawfile body "$challenge_body" '{body:$body}' | gh api --method POST "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" --input -)"
+          challenge_id="$(jq -er '.id | select(type == "number" and . > 0)' <<<"$challenge_json")"
+          response_marker="<!-- slack-ores-create-credential-response:${nonce} -->"
+
+          stage=await-encrypted-response
+          response_body=''
+          for _ in $(seq 1 180); do
+            comments="$(gh api --paginate "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" --slurp)"
+            response_body="$(jq -r --arg marker "$response_marker" --argjson challenge_id "$challenge_id" '
+              [.[][] | select(.id > $challenge_id) | select(.user.login == "ORESoftware") | select(.body | startswith($marker + "\n"))]
+              | sort_by(.id) | last | .body // empty
+            ' <<<"$comments")"
+            test -n "$response_body" && break
+            sleep 5
+          done
+          test -n "$response_body"
+          test "$(grep -c '^ciphertext-base64=' <<<"$response_body")" -eq 1
+          ciphertext="$(sed -n 's/^ciphertext-base64=//p' <<<"$response_body")"
+          [[ "$ciphertext" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#ciphertext}" -le 8192
+          printf '%s' "$ciphertext" | base64 --decode > "$ciphertext_file"
+          test -s "$ciphertext_file"
+
+          stage=decrypt-ciphertext
+          if ! owner_token="$(openssl pkeyutl -decrypt -inkey "$private_key" -in "$ciphertext_file" -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256 2>/dev/null)"; then
+            false
+          fi
+          stage=validate-owner-token-shape
+          test -n "$owner_token"
+          [[ "$owner_token" != *$'\n'* && "$owner_token" != *$'\r'* && "$owner_token" != *$'\t'* && "$owner_token" != *' '* ]]
+          [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
+          echo "::add-mask::$owner_token"
+          export GH_TOKEN="$owner_token"
+          export GITHUB_REPOSITORY_ADMIN_TOKEN="$owner_token"
+
+          stage=validate-owner-identity
+          if ! actor="$(gh api user --jq '.login' 2>/dev/null)"; then
+            false
+          fi
+          test "$actor" = ORESoftware
+
+          stage=create-or-validate-empty-repository
+          if metadata="$(gh api "repos/${TARGET_REPOSITORY}" 2>/dev/null)"; then
+            jq -e '.owner.login == "ORESoftware" and .name == "slack-ores-integrations" and .visibility == "public" and .private == false and .archived == false and .disabled == false' <<<"$metadata" >/dev/null
+            branches="$(gh api "repos/${TARGET_REPOSITORY}/branches?per_page=100")"
+            branch_count="$(jq 'length' <<<"$branches")"
+            branch_state="$(jq -r 'if length == 1 then .[0].name + ":" + .[0].commit.sha else "multiple" end' <<<"$branches")"
+            test "$branch_count" -eq 0 || test "$branch_state" = "main:7d7b6f2a1018204eba8b727ffa069e6bef31b6a7"
+          else
+            gh_api_content_retry create-target-repository --method POST user/repos \
+              -f name=slack-ores-integrations \
+              -f description='Reviewed Slack app manifests, local development, and compatibility contracts for alex-main-agent.' \
+              -F private=false \
+              -F has_issues=true \
+              -F has_projects=false \
+              -F has_wiki=false \
+              -F auto_init=false >/dev/null
+          fi
+
+          stage=verify-empty-repository
+          metadata="$(gh api "repos/${TARGET_REPOSITORY}")"
+          jq -e '.owner.login == "ORESoftware" and .name == "slack-ores-integrations" and .visibility == "public" and .private == false and .archived == false and .disabled == false' <<<"$metadata" >/dev/null
+          verified_branches="$(gh api "repos/${TARGET_REPOSITORY}/branches?per_page=100")"
+          verified_branch_count="$(jq 'length' <<<"$verified_branches")"
+          if test "$verified_branch_count" -eq 0; then
+            verified_state=empty
+          else
+            verified_branch_state="$(jq -r 'if length == 1 then .[0].name + ":" + .[0].commit.sha else "multiple" end' <<<"$verified_branches")"
+            test "$verified_branch_state" = "main:$EXPECTED_SOURCE_SHA"
+            verified_state=already-initialized
+          fi
+
+          stage=record-evidence
+          success_body="$work/success.md"
+          {
+            printf 'Created or validated `%s` with state `%s`.\n\n' "$TARGET_REPOSITORY" "$verified_state"
+            printf 'The full reviewed publisher can now push exact `main` and open the runtime-ownership PR without invoking repository creation.\n\n'
+            printf 'The one-time private key and plaintext credential were destroyed; this carrier is closed without merge.\n'
+          } > "$success_body"
+          GH_TOKEN="$workflow_token" gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" --body-file "$success_body" >/dev/null
+          GH_TOKEN="$workflow_token" gh api --method POST "repos/${REPOSITORY}/statuses/${CARRIER_HEAD_SHA}" \
+            -f state=success -f context='ops/slack-ores-empty-repository-creation' -f description='canonical empty repository verified' >/dev/null
+          GH_TOKEN="$workflow_token" gh api --method PATCH "repos/${REPOSITORY}/pulls/${PR_NUMBER}" -f state=closed >/dev/null

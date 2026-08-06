@@ -1,10 +1,8 @@
-# dd-nats-bridge — hardened HTTP→NATS publish chokepoint (remote/nats-bridge).
+# dd-nats-bridge — authenticated external HTTP -> JetStream queue ingress.
 #
-# Fleet run-from-source convention (same as dd-rust-vapi-phone / dd-t2v-api):
-# rust toolchain image clones this repo at BRIDGE_GIT_REF and `cargo run`s the
-# crate. The bridge fails closed at startup without BRIDGE_TOKEN and
-# BRIDGE_SUBJECT_PREFIXES — seed ClusterSecretStore key
-# dd/messaging/nats-bridge-secrets (BRIDGE_TOKEN ≥16 chars) before syncing.
+# External callers submit JSON to named routes and never receive NATS subjects,
+# stream names, credentials, or raw upstream errors. The pod fails closed until
+# both the route ConfigMap and client-scoped secret file are present.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -65,7 +63,7 @@ spec:
               git clone --depth 1 --branch "${BRIDGE_GIT_REF:-dev}" "${BRIDGE_GIT_URL}" "$clone_root"
               echo "[dd-nats-bridge] source: ${BRIDGE_GIT_URL}@${BRIDGE_GIT_REF:-dev} ($(git -C "$clone_root" rev-parse --short HEAD))"
               cd "$clone_root/remote/nats-bridge"
-              exec /usr/local/cargo/bin/cargo run --release --locked
+              exec /usr/local/cargo/bin/cargo run --release --locked --bin nats_http_ingress
           env:
             - name: HOME
               value: /tmp
@@ -77,18 +75,16 @@ spec:
               value: '3004'
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222
-            # Only vapi work-queue tasks and voxletra platform events may transit
-            # the bridge. Widen deliberately, per subject family, never to "dd.".
-            - name: BRIDGE_SUBJECT_PREFIXES
-              value: 'dd.vapi.tasks.,vxl.'
-            - name: BRIDGE_MAX_BODY_BYTES
-              value: '262144'
-            - name: BRIDGE_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: dd-nats-bridge-secrets
-                  key: BRIDGE_TOKEN
-                  optional: false
+            - name: BRIDGE_ROUTES_FILE
+              value: /etc/nats-bridge/routes.json
+            - name: BRIDGE_CLIENTS_FILE
+              value: /var/run/secrets/nats-bridge/clients.json
+            # Preserve the bounded pressure limit proven by the bridge/DLQ
+            # resilience suite; widen only with measured broker and pod headroom.
+            - name: BRIDGE_MAX_IN_FLIGHT
+              value: '64'
+            - name: BRIDGE_PUBLISH_TIMEOUT_MS
+              value: '5000'
           ports:
             - name: http
               containerPort: 3004
@@ -120,11 +116,30 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
           volumeMounts:
+            - name: route-config
+              mountPath: /etc/nats-bridge
+              readOnly: true
+            - name: client-config
+              mountPath: /var/run/secrets/nats-bridge
+              readOnly: true
             - name: build-cache
               mountPath: /var/cache/dd-nats-bridge
             - name: tmp
               mountPath: /tmp
       volumes:
+        - name: route-config
+          configMap:
+            name: dd-nats-bridge-routes
+            items:
+              - key: routes.json
+                path: routes.json
+        - name: client-config
+          secret:
+            secretName: dd-nats-bridge-secrets
+            optional: false
+            items:
+              - key: BRIDGE_CLIENTS_JSON
+                path: clients.json
         - name: build-cache
           emptyDir: {}
         - name: tmp

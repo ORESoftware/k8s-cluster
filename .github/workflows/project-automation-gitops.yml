@@ -1,0 +1,45 @@
+name: Project automation GitOps contract
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/project-automation-gitops.yml
+      - remote/argocd/project-automation/**
+      - remote/argocd/clusters/hetzner/project-automation.application.yaml
+      - remote/argocd/clusters/hetzner/kustomization.yaml
+      - remote/tests/general/project-automation-gitops.test.ts
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - .github/workflows/project-automation-gitops.yml
+      - remote/argocd/project-automation/**
+      - remote/argocd/clusters/hetzner/project-automation.application.yaml
+      - remote/argocd/clusters/hetzner/kustomization.yaml
+      - remote/tests/general/project-automation-gitops.test.ts
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: project-automation-gitops-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Enable pnpm
+        run: corepack enable
+      - name: Install test runner
+        working-directory: remote/tests
+        run: pnpm install --frozen-lockfile
+      - name: Verify fail-closed GitOps contract
+        working-directory: remote/tests
+        run: pnpm exec tsx --test general/project-automation-gitops.test.ts

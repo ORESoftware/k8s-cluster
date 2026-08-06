@@ -59,7 +59,7 @@ pub(crate) async fn list_models() -> impl IntoResponse {
 }
 
 /// `GET /streaming` — the JSONL streaming-solver contracts (lp, milp/mip/ip,
-/// mdp, pomdp, soccer-planner): each is an iterative solver fed a JSONL
+/// mdp, pomdp): each is an iterative solver fed a JSONL
 /// command stream.
 pub(crate) async fn list_streaming() -> impl IntoResponse {
     let contracts = streaming_contracts();
@@ -212,13 +212,27 @@ mod tests {
                 "missing kind {expected}"
             );
         }
-        assert!(streaming_model_names().contains(&"lp"));
-        assert!(streaming_model_names().contains(&"mdp"));
-        assert!(streaming_model_names().contains(&"soccer-planner"));
-        assert!(
-            streaming_contracts().len() >= 5,
-            "expected lp/milp/mdp/pomdp/soccer-planner streaming contracts"
+        let streaming_names = streaming_model_names();
+        for expected in ["lp", "milp", "mdp", "pomdp"] {
+            assert!(
+                streaming_names.contains(&expected),
+                "missing streaming model {expected}"
+            );
+        }
+        let contracts = streaming_contracts();
+        assert_eq!(
+            contracts.len(),
+            streaming_names.len(),
+            "every advertised streaming name must expose exactly one contract"
         );
+        for (name, contract) in streaming_names.iter().zip(&contracts) {
+            let expected_model = format!("streaming-{name}");
+            assert_eq!(
+                contract.model.as_str(),
+                expected_model.as_str(),
+                "streaming contract identifier drifted for route name {name}"
+            );
+        }
     }
 
     #[test]

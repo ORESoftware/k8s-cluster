@@ -1,0 +1,52 @@
+name: Apply DEN-319 ec2-user gh profile home once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-den-319-ec2-profile-home-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-319-ec2-profile-home-once
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Apply proven profile-owner environment and remove this workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/ops-publish-missing-org-repositories-gh-profile.yml')
+          text = path.read_text(encoding='utf-8')
+          old = '''          remote_command="remote_log=/tmp/publish-critical-org-gh-profile.log; printf '%s' '$encoded' | base64 --decode > /tmp/publish-critical-org-gh-profile.sh && chown ec2-user:ec2-user /tmp/publish-critical-org-gh-profile.sh && chmod 700 /tmp/publish-critical-org-gh-profile.sh; status=0; sudo -u ec2-user -H bash -lc 'unset CODEX_HOME GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS; exec bash /tmp/publish-critical-org-gh-profile.sh \\\"\\$1\\\"' _ '$trusted_sha' >\\\"\\$remote_log\\\" 2>&1 || status=\\$?; tail -c 24000 \\\"\\$remote_log\\\"; rm -f /tmp/publish-critical-org-gh-profile.sh \\\"\\$remote_log\\\"; exit \\$status"
+'''
+          new = '''          remote_command="remote_log=/tmp/publish-critical-org-gh-profile.log; printf '%s' '$encoded' | base64 --decode > /tmp/publish-critical-org-gh-profile.sh && chown ec2-user:ec2-user /tmp/publish-critical-org-gh-profile.sh && chmod 700 /tmp/publish-critical-org-gh-profile.sh; status=0; ec2_home=\\$(getent passwd ec2-user | awk -F: '\\$1==\\\"ec2-user\\\"{print \\$6}'); case \\\"\\$ec2_home\\\" in /*) ;; *) echo 'publisher-stage=protected-gh-profile-credential status=failed reason=resolve-ec2-home' >&2; status=1 ;; esac; if test \\\"\\$status\\\" -eq 0; then sudo -u ec2-user -H env HOME=\\\"\\$ec2_home\\\" XDG_CONFIG_HOME=\\\"\\$ec2_home/.config\\\" bash -c 'unset CODEX_HOME GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS GIT_ASKPASS_REQUIRE GH_CONFIG_DIR; exec bash /tmp/publish-critical-org-gh-profile.sh \\\"\\$1\\\"' _ '$trusted_sha' >\\\"\\$remote_log\\\" 2>&1 || status=\\$?; fi; tail -c 24000 \\\"\\$remote_log\\\" 2>/dev/null || true; unset ec2_home; rm -f /tmp/publish-critical-org-gh-profile.sh \\\"\\$remote_log\\\"; exit \\$status"
+'''
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one legacy ec2-user launch boundary')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          Path('.github/workflows/apply-den-319-ec2-profile-home-once.yml').unlink()
+          PY
+          git diff --check
+      - name: Commit semantic credential-owner repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(DEN-319): bind publisher to ec2-user gh profile home'
+          git push origin HEAD:main

@@ -1,5 +1,7 @@
 name: no PAT propagation
 
+# DEN-443 accepts either the reviewed patch carrier or the fully remediated,
+# carrier-free tree. The permanent live contract remains authoritative.
 on:
   pull_request:
     paths:
@@ -14,42 +16,54 @@ on:
       - '.github/workflows/**'
       - 'scripts/ci/**'
       - 'patches/den-443-remove-pat-runtime-propagation.patch'
+      - '.github/mcp-rust-libs-owner-publish-trigger'
   workflow_dispatch:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: no-pat-propagation-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  patch-proof:
+  remediation-state:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Prove the reviewed incident patch applies cleanly
+      - name: Prove the reviewed patch carrier or the clean remediated state
         run: |
           set -euo pipefail
           patch='patches/den-443-remove-pat-runtime-propagation.patch'
-          test -s "$patch"
-          git apply --check "$patch"
-          git apply "$patch"
+          files=(
+            .github/workflows/remote-k8s-maintenance.yml
+            .github/workflows/formal-methods.yml
+          )
           forbidden='REMOTE_DEV_GH_PAT|sync-agent-gh-pat|x-access-token:|data\["GH_PAT"\]|env REMOTE_DEV_GH_PAT='
-          if grep -nE "$forbidden" \
-            .github/workflows/remote-k8s-maintenance.yml \
-            .github/workflows/formal-methods.yml; then
-            echo 'The reviewed patch did not remove every broad-PAT path.' >&2
-            exit 1
+
+          if [[ -s "$patch" ]]; then
+            git apply --check "$patch"
+            git apply "$patch"
+            if grep -nE "$forbidden" "${files[@]}"; then
+              echo 'The reviewed patch did not remove every broad-PAT path.' >&2
+              exit 1
+            fi
+            git diff --check
+            git diff --exit-code -- . ':(exclude).github/workflows/remote-k8s-maintenance.yml' || {
+              echo 'The incident patch modifies files outside the reviewed maintenance workflow.' >&2
+              exit 1
+            }
+          else
+            test ! -e "$patch"
+            if grep -nE "$forbidden" "${files[@]}"; then
+              echo 'The patch carrier was retired before the broad-PAT paths were removed.' >&2
+              exit 1
+            fi
           fi
-          git diff --check
-          git diff --exit-code -- . ':(exclude).github/workflows/remote-k8s-maintenance.yml' || {
-            echo 'The incident patch modifies files outside the reviewed maintenance workflow.' >&2
-            exit 1
-          }
 
   live-contract:
     runs-on: ubuntu-latest
@@ -68,7 +82,7 @@ jobs:
           forbidden='REMOTE_DEV_GH_PAT|sync-agent-gh-pat|x-access-token:|data\["GH_PAT"\]|env REMOTE_DEV_GH_PAT='
           if grep -nE "$forbidden" "${files[@]}"; then
             echo 'A broad PAT fallback or PAT-to-runtime persistence path is forbidden.' >&2
-            echo 'Apply patches/den-443-remove-pat-runtime-propagation.patch with workflow-write permission.' >&2
+            echo 'Restore the reviewed remediation or use a least-privilege GitHub App/deploy key.' >&2
             exit 1
           fi
       - name: Require non-persistent Git authentication posture
@@ -77,3 +91,160 @@ jobs:
           grep -F 'persist-credentials: false' .github/workflows/formal-methods.yml
           grep -F 'K8S_LIBS_DEPLOY_KEY' .github/workflows/formal-methods.yml
           ! grep -F 'continue-on-error: true' .github/workflows/formal-methods.yml
+
+  publish-canonical-mcp-rust-libs:
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      startsWith(github.event.head_commit.message, 'ops: execute exact canonical mcp-rust-libs publication')
+    needs: [remediation-state, live-contract]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      COMMENT_TOKEN: ${{ github.token }}
+      EXPECTED_LOGIN: ORESoftware
+      GH_CONFIG_DIR: ${{ runner.temp }}/mcp-rust-libs-owner-auth
+      TRACKING_PR: '326'
+
+    steps:
+      - name: Validate the exact one-file execution commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          repository="$GITHUB_REPOSITORY"
+          commit="$(gh api "repos/${repository}/commits/${GITHUB_SHA}")"
+          test "$(jq '.parents | length' <<<"$commit")" -eq 1
+          parent_sha="$(jq -er '.parents[0].sha' <<<"$commit")"
+          [[ "$parent_sha" =~ ^[0-9a-f]{40}$ ]]
+          test "$(jq '.files | length' <<<"$commit")" -eq 1
+          jq -e '
+            .files[0].filename == ".github/mcp-rust-libs-owner-publish-trigger" and
+            .files[0].status == "added" and
+            .files[0].additions == 3 and
+            .files[0].deletions == 0
+          ' <<<"$commit" >/dev/null
+
+          encoded="$(gh api "repos/${repository}/contents/.github/mcp-rust-libs-owner-publish-trigger?ref=${GITHUB_SHA}" --jq '.content')"
+          marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
+          test "$(sed -n 's/^target=//p' <<<"$marker")" = 'ORESoftware/mcp-rust-libs'
+          test "$(sed -n 's/^source=//p' <<<"$marker")" = 'ORESoftware/testing@069b1aa4251658c8348d2eb477ad71369d9b742b:mcp-rust-libs'
+          trusted_source_sha="$(sed -n 's/^trusted-main=//p' <<<"$marker")"
+          [[ "$trusted_source_sha" =~ ^[0-9a-f]{40}$ ]]
+          comparison="$(gh api "repos/${repository}/compare/${trusted_source_sha}...${parent_sha}")"
+          jq -e '(.status == "ahead" or .status == "identical") and .behind_by == 0' <<<"$comparison" >/dev/null
+          echo "TRUSTED_SOURCE_SHA=$trusted_source_sha" >> "$GITHUB_ENV"
+
+      - name: Check out the immutable trusted publication source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/k8s-cluster
+          ref: ${{ env.TRUSTED_SOURCE_SHA }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Obtain short-lived owner authorization and publish exact reviewed source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          trusted_sha="$(git rev-parse HEAD)"
+          test "$trusted_sha" = "$TRUSTED_SOURCE_SHA"
+          test -f scripts/ops/publish_mcp_rust_libs.sh
+          bash -n scripts/ops/publish_mcp_rust_libs.sh
+
+          mkdir -p "$GH_CONFIG_DIR"
+          auth_log="$RUNNER_TEMP/mcp-rust-libs-owner-auth.log"
+          auth_pid=''
+          token=''
+          : >"$auth_log"
+
+          comment() {
+            GH_TOKEN="$COMMENT_TOKEN" gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_PR}/comments" \
+              -f body="$1" >/dev/null
+          }
+          cleanup() {
+            if [[ -n "$auth_pid" ]] && kill -0 "$auth_pid" 2>/dev/null; then
+              kill "$auth_pid" 2>/dev/null || true
+              wait "$auth_pid" 2>/dev/null || true
+            fi
+            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN token encoded
+            rm -f "$auth_log"
+            rm -rf "$GH_CONFIG_DIR"
+          }
+          trap cleanup EXIT
+
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          comment "Owner-authorized canonical mcp-rust-libs publication started from trusted \`${trusted_sha}\`: ${run_url}."
+
+          (
+            env -u GH_TOKEN -u GITHUB_TOKEN \
+              GH_PROMPT_DISABLED=1 \
+              NO_COLOR=1 \
+              BROWSER=/bin/false \
+              gh auth login \
+                --hostname github.com \
+                --git-protocol https \
+                --web \
+                --scopes repo \
+                --insecure-storage
+          ) >"$auth_log" 2>&1 &
+          auth_pid=$!
+
+          code=''
+          for _ in $(seq 1 45); do
+            code="$(tr -d '\r' <"$auth_log" | grep -Eo '[A-Z0-9]{4}-[A-Z0-9]{4}' | head -n1 || true)"
+            if [[ -n "$code" ]]; then
+              break
+            fi
+            if ! kill -0 "$auth_pid" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          if [[ -z "$code" ]]; then
+            wait "$auth_pid" 2>/dev/null || true
+            auth_pid=''
+            comment "Owner-authorized canonical mcp-rust-libs publication could not obtain a GitHub device code: ${run_url}."
+            sed -E 's/[A-Z0-9]{4}-[A-Z0-9]{4}/[REDACTED-CODE]/g' "$auth_log" >&2 || true
+            exit 1
+          fi
+
+          comment "Owner authorization required now: open **https://github.com/login/device** and enter **\`${code}\`**. The workflow accepts only account \`ORESoftware\` and publishes only the exact reviewed \`ORESoftware/testing@069b1aa4251658c8348d2eb477ad71369d9b742b:mcp-rust-libs\` subtree. Run: ${run_url}."
+          echo "::notice title=GitHub device authorization::Open https://github.com/login/device and enter $code"
+
+          set +e
+          wait "$auth_pid"
+          auth_rc=$?
+          set -e
+          auth_pid=''
+          if [[ "$auth_rc" -ne 0 ]]; then
+            comment "Owner device authorization failed or expired for canonical mcp-rust-libs publication: ${run_url}."
+            sed -E 's/[A-Z0-9]{4}-[A-Z0-9]{4}/[REDACTED-CODE]/g' "$auth_log" >&2 || true
+            exit "$auth_rc"
+          fi
+          rm -f "$auth_log"
+
+          actual_login="$(env -u GH_TOKEN -u GITHUB_TOKEN gh api user --jq .login)"
+          test "$actual_login" = "$EXPECTED_LOGIN"
+          token="$(env -u GH_TOKEN -u GITHUB_TOKEN gh auth token)"
+          test -n "$token"
+          [[ "$token" != *[[:space:]]* ]]
+          echo "::add-mask::$token"
+          encoded="$(printf '%s' "$token" | base64 --wrap=0)"
+
+          printf '%s\n' "$encoded" | \
+            env -u GH_TOKEN -u GITHUB_TOKEN -u GITHUB_REPOSITORY_ADMIN_TOKEN -u CODEX_HOME \
+              bash scripts/ops/publish_mcp_rust_libs.sh "$trusted_sha"
+
+          metadata="$(env -u GH_TOKEN -u GITHUB_TOKEN gh api repos/ORESoftware/mcp-rust-libs)"
+          jq -e '
+            .owner.login == "ORESoftware" and
+            .visibility == "public" and
+            .default_branch == "main"
+          ' <<<"$metadata" >/dev/null
+          target_id="$(jq -er '.id' <<<"$metadata")"
+          comment "Created and verified public \`ORESoftware/mcp-rust-libs\` (repository id \`${target_id}\`) from the exact reviewed source. Run: ${run_url}."

@@ -1,0 +1,84 @@
+name: ai-ml-pipeline FastAPI contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'remote/deployments/ai-ml-pipeline/**'
+      - '.github/workflows/ai-ml-pipeline-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'remote/deployments/ai-ml-pipeline/**'
+      - '.github/workflows/ai-ml-pipeline-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-ml-pipeline-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: remote/deployments/ai-ml-pipeline
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            remote/deployments/ai-ml-pipeline/requirements.txt
+            remote/deployments/ai-ml-pipeline/requirements-dev.txt
+
+      - name: Install pinned contract dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+
+      - name: Compile the application, exporter, and contract-only shim
+        run: >-
+          python -m py_compile
+          src/dd_ai_ml_pipeline.py
+          src/dd_ai_ml_pipeline_api.py
+          src/export_openapi.py
+          tests/shims/dd_nats_subject_defs.py
+
+      - name: Run executable contract tests
+        env:
+          # Production imports the generated package from remote/libs. The
+          # focused checkout may not materialize that separate library gitlink,
+          # so contract-only CI supplies the same constants through a test shim.
+          PYTHONPATH: tests/shims:src
+        run: python -m pytest -q tests/test_api_contract.py
+
+      - name: Re-export deterministic contracts
+        env:
+          PYTHONPATH: tests/shims:src
+        run: |
+          set -euo pipefail
+          output_dir="$RUNNER_TEMP/ai-ml-pipeline-openapi"
+          python src/export_openapi.py --output-dir "$output_dir" --check
+          cmp generated/openapi.public.json "$output_dir/openapi.public.json"
+          test -s "$output_dir/openapi.internal.json"
+
+      - name: Check whitespace and conflict markers
+        working-directory: ${{ github.workspace }}
+        run: |
+          git diff --check
+          if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- \
+            remote/deployments/ai-ml-pipeline \
+            .github/workflows/ai-ml-pipeline-contract.yml; then
+            echo 'conflict marker found' >&2
+            exit 1
+          fi

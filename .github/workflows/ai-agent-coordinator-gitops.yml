@@ -4,10 +4,12 @@ on:
   pull_request:
     paths:
       - '.github/workflows/ai-agent-coordinator-gitops.yml'
-      - 'remote/argocd/apps/ai-agent-coordinator.application.yaml'
-      - 'remote/argocd/projects/ai-agent-coordinator.appproject.yaml'
-      - 'remote/argocd/projects/ai-agent-coordinator.tenant.yaml'
+      - 'remote/argocd/apps/ai-agent-coordinator*.application.yaml'
+      - 'remote/argocd/projects/ai-agent-coordinator/**'
+      - 'remote/argocd/clusters/*/ai-agent-coordinator.applications.yaml'
+      - 'remote/argocd/clusters/*/kustomization.yaml'
       - 'remote/tests/general/ai-agent-coordinator-gitops.test.ts'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,29 +18,129 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  COORDINATOR_REVISION: d25e04e50be4a9fad039cfcfa6c321e9c99a1e02
+
 jobs:
   contract:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Check out cluster repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+
       - name: Validate workflow
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
           args: .github/workflows/ai-agent-coordinator-gitops.yml
+
+      - name: Check out immutable coordinator source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ORESoftware/ai-agent-coordinator.rs
+          ref: ${{ env.COORDINATOR_REVISION }}
+          path: upstream/ai-agent-coordinator
+          persist-credentials: false
+
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 10.33.0
+
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '22'
           cache: pnpm
           cache-dependency-path: remote/tests/pnpm-lock.yaml
-      - name: Install test dependencies
+
+      - name: Install focused test dependencies
         run: pnpm install --frozen-lockfile
         working-directory: remote/tests
-      - name: Run coordinator GitOps contract
+
+      - name: Run coordinator GitOps source contracts
         run: pnpm exec tsx --test general/ai-agent-coordinator-gitops.test.ts
         working-directory: remote/tests
+
+      - name: Render platform, cluster, and immutable upstream manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C upstream/ai-agent-coordinator rev-parse HEAD)" = "$COORDINATOR_REVISION"
+          kubectl kustomize remote/argocd/projects/ai-agent-coordinator > /tmp/coordinator-platform.yaml
+          for cloud in aws gcp hetzner; do
+            kubectl kustomize "remote/argocd/clusters/${cloud}" > "/tmp/coordinator-${cloud}.yaml"
+          done
+          kubectl kustomize upstream/ai-agent-coordinator/deploy/overlays/cross-org-linear-pilot > /tmp/coordinator-upstream.yaml
+
+      - name: Validate rendered ownership and dry-run boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby <<'RUBY'
+          require 'yaml'
+
+          def documents(path)
+            YAML.load_stream(File.read(path)).compact
+          end
+
+          def fail_contract(message)
+            warn("coordinator GitOps contract: #{message}")
+            exit(1)
+          end
+
+          platform = documents('/tmp/coordinator-platform.yaml')
+          expected_platform_kinds = %w[AppProject LimitRange Namespace NetworkPolicy ResourceQuota ServiceAccount]
+          actual_platform_kinds = platform.map { |resource| resource.fetch('kind') }.sort
+          fail_contract('platform bundle kind set changed') unless actual_platform_kinds == expected_platform_kinds
+          fail_contract('platform bundle contains a plaintext Secret') if platform.any? { |resource| resource['kind'] == 'Secret' }
+
+          namespace = platform.find { |resource| resource['kind'] == 'Namespace' }
+          fail_contract('tenant namespace missing') unless namespace&.dig('metadata', 'name') == 'ai-agent-coordinator'
+          project = platform.find { |resource| resource['kind'] == 'AppProject' }
+          fail_contract('strict AppProject missing') unless project&.dig('metadata', 'name') == 'ai-agent-coordinator'
+          fail_contract('AppProject source is not exact') unless project.dig('spec', 'sourceRepos') == ['https://github.com/ORESoftware/ai-agent-coordinator.rs.git']
+          fail_contract('AppProject admits cluster resources') unless project.dig('spec', 'clusterResourceWhitelist') == []
+
+          upstream = documents('/tmp/coordinator-upstream.yaml')
+          forbidden_upstream_kinds = %w[AppProject ClusterRole ClusterRoleBinding CustomResourceDefinition LimitRange Namespace ResourceQuota ServiceAccount StorageClass]
+          forbidden = upstream.select { |resource| forbidden_upstream_kinds.include?(resource['kind']) }
+          fail_contract("upstream owns platform resources: #{forbidden.map { |resource| resource['kind'] }.join(', ')}") unless forbidden.empty?
+          fail_contract('upstream contains a plaintext Secret') if upstream.any? { |resource| resource['kind'] == 'Secret' }
+          namespaced = upstream.reject { |resource| resource['kind'] == 'PersistentVolume' }
+          fail_contract('upstream resource escaped tenant namespace') unless namespaced.all? { |resource| resource.dig('metadata', 'namespace') == 'ai-agent-coordinator' }
+
+          pilot_secret = upstream.find do |resource|
+            resource['kind'] == 'ExternalSecret' && resource.dig('metadata', 'name') == 'ai-agent-coordinator-linear-pilot'
+          end
+          fail_contract('pilot ExternalSecret missing') unless pilot_secret
+          expected_store = {'kind' => 'ClusterSecretStore', 'name' => 'dd-cluster-secrets'}
+          fail_contract('pilot secret store boundary changed') unless pilot_secret.dig('spec', 'secretStoreRef') == expected_store
+          remote_keys = pilot_secret.dig('spec', 'data').map { |entry| entry.dig('remoteRef', 'key') }.uniq
+          fail_contract('pilot remote secret bundle changed') unless remote_keys == ['dd/remote-dev/ai-agent-coordinator-linear-pilot']
+
+          pilot_config = upstream.find do |resource|
+            resource['kind'] == 'ConfigMap' && resource.dig('metadata', 'name') == 'ai-agent-coordinator-telemetry'
+          end
+          fail_contract('pilot ConfigMap missing') unless pilot_config
+          data = pilot_config.fetch('data')
+          fail_contract('pilot must remain dry-run') unless data['LINEAR_DELIVERY_DRY_RUN'] == 'true'
+          fail_contract('pilot delivery worker is not enabled') unless data['LINEAR_DELIVERY_ENABLED'] == 'true'
+          fail_contract('completed-state IDs are forbidden before activation') if data.key?('LINEAR_COMPLETED_STATE_IDS') || data.key?('LINEAR_COMPLETED_STATE_ID')
+
+          %w[aws gcp hetzner].each do |cloud|
+            resources = documents("/tmp/coordinator-#{cloud}.yaml")
+            applications = resources.select { |resource| resource['kind'] == 'Application' }
+            platform_apps = applications.select { |app| app.dig('metadata', 'name') == 'ai-agent-coordinator-platform' }
+            workload_apps = applications.select { |app| app.dig('metadata', 'name') == 'ai-agent-coordinator' }
+            fail_contract("#{cloud} must contain one platform Application") unless platform_apps.length == 1
+            fail_contract("#{cloud} must contain one workload Application") unless workload_apps.length == 1
+            platform_app = platform_apps.first
+            fail_contract("#{cloud} platform path drifted") unless platform_app.dig('spec', 'source', 'path') == 'remote/argocd/projects/ai-agent-coordinator'
+            workload = workload_apps.first
+            fail_contract("#{cloud} workload project is not strict") unless workload.dig('spec', 'project') == 'ai-agent-coordinator'
+            fail_contract("#{cloud} workload revision drifted") unless workload.dig('spec', 'source', 'targetRevision') == ENV.fetch('COORDINATOR_REVISION')
+            fail_contract("#{cloud} workload path drifted") unless workload.dig('spec', 'source', 'path') == 'deploy/overlays/cross-org-linear-pilot'
+            fail_contract("#{cloud} creates the namespace from the app") if workload.dig('spec', 'syncPolicy', 'syncOptions').to_a.include?('CreateNamespace=true')
+          end
+          RUBY

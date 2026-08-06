@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "execute": true,
+  "organization": "zed-pkg",
+  "repository": "zed-pkg/zed-vscode",
+  "visibility": "public",
+  "default_branch": "main",
+  "recipient_id": "ncc-publish-20260805-2b8a4d7c91e6f503",
+  "recipient_fingerprint": "02e8c3781927c4870d1274e660f163c393322f36a163f8f76ccf8e9d0065bb66",
+  "ciphertext_base64": "VmeOdRmloTX1jErua9GaJmLRObd1x6+qJzxoNrUleV3c6ZR9TJohf28MJ7lJTwB5MEOjyakw+ZLrwx2EJIYwVuSQOppO8jnK5aG+mCt17B9Yn1Juq7N4A4v1NzRS7F4nzk0/hCe2zblcezh/BZ4A+y4FAfB3KNcpouyYQJ5+obLW5fq7ymygJUUv4erP8866J57DQ7X2TVuiJwFhG8KiqzEYVhyLpt9aX3W8Tz9hcU7HfYrFO+yxZOI65ZVg4T6GFD/05c66fmhkaZEAAi6dICdqbmI0e6HEbX5pDIkijQYBXNk2DG48mabJFmSELz0SE9A+2nSJFrVb3vnmAchiF8f0XwB3uZ2Kz4kVrLHXWNa7B3qVpN1MRuGpJSc8/sBIXjAcDc6ESJmrBRqISnW8P6xXITXElgVwHXPve49YzmBEVCVmuXOVBCbdu2MvkLMNo8pAlRrGWUDjQ3Z6/VR7pAEsijgIrV1JzBupkzRQUS1JkX3k1lP+E/gXnqD04qji8nJ1NeFC0qeZLZCn8kJN4neghmu4Nihoa9VmRZyyDfsr9EuH8zGqkQFGq73uyPKBkrloR1mGPvIoETw4LL6BdRf3Wftb6PqySOgT4sXOnULxmhhMypTb5YK1xJNtwiXE9NyHopvwWqq9WeuzJEsOseIwyB2ZMaM8rhF0vkQ6bww=",
+  "ciphertext_sha256": "7eccc4ddc7f67260c3c647631f8dbe05138c605e2a12d693f47540b10829c335",
+  "source_repository": "zed-pkg/.github",
+  "source_commit": "62b920b818e1255cd8643b47fc614133a7287a38",
+  "bundle_sha256": "a0d927aa62ab20922e85ee2de9592d0a9fd4bafebf6a5b00a0029a95914c2991",
+  "initial_sha": "376372168e12ddd0d2f3cf873a120671d64ca422",
+  "candidate_sha": "7fe04d03d5c16c45381aff23eec4e8c6c441ec31"
+}

@@ -8,8 +8,11 @@ on:
       - "remote/argocd/observability/prometheus.configmap.yaml"
       - "remote/argocd/observability/prometheus.deployment.yaml"
       - "tools/test_benefactor_observability.py"
+      - "tools/test_benefactor_observability_live.py"
+      - "tools/verify_benefactor_observability_live.py"
   push:
     branches:
+      - main
       - dev
     paths:
       - ".github/workflows/benefactor-observability.yml"
@@ -17,20 +20,41 @@ on:
       - "remote/argocd/observability/prometheus.configmap.yaml"
       - "remote/argocd/observability/prometheus.deployment.yaml"
       - "tools/test_benefactor_observability.py"
+      - "tools/test_benefactor_observability_live.py"
+      - "tools/verify_benefactor_observability_live.py"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: benefactor-observability-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   static-contract:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      - uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+      - name: Check out repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
         with:
           version: v1.31.0
-      - name: Run Benefactor observability contract
-        run: python3 -m unittest -v tools/test_benefactor_observability.py
+
+      - name: Compile the live verifier
+        run: python3 -m py_compile tools/verify_benefactor_observability_live.py
+
+      - name: Run Benefactor observability contracts
+        run: |
+          python3 -m unittest -v \
+            tools/test_benefactor_observability.py \
+            tools/test_benefactor_observability_live.py
+
       - name: Render observability and backend manifests
         run: |
           kubectl kustomize remote/argocd/observability >/tmp/observability.yaml

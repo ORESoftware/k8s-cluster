@@ -74,6 +74,14 @@ spec:
               value: dd-dev-server-api
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: http://dd-otel-collector.observability.svc.cluster.local:4318
+            - name: GEMINI_MODEL
+              value: gemini-3.1-pro-preview
+            - name: ANTHROPIC_MODEL
+              value: claude-opus-5
+            - name: OPENAI_MODEL
+              value: gpt-5.6-sol
+            - name: CODEX_MODEL
+              value: gpt-5.6-sol
             - name: REMOTE_DEV_THREAD_ID
               value: "00000000-0000-4000-8000-000000000001"
             - name: IDLE_TIMEOUT_MS

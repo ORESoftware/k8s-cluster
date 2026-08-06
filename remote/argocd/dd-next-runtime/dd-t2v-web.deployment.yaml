@@ -20,7 +20,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/t2v-web-revision: 'gitops-source'
+        dd.dev/t2v-web-revision: '2026-07-29-otel'
       labels:
         app: dd-t2v-web
     spec:
@@ -103,6 +103,15 @@ spec:
               value: /var/cache/dd-t2v-web/target
             - name: CARGO_BUILD_JOBS
               value: '1'
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4317
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: >-
+                service.namespace=oresoftware,
+                deployment.environment.name=remote-dev,
+                github.repository=ORESoftware/t2v-v2t.rs
             - name: T2V_GIT_URL
               value: https://github.com/ORESoftware/k8s-cluster.git
             - name: T2V_GIT_REF

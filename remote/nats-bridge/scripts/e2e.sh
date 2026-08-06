@@ -6,7 +6,8 @@ set -euo pipefail
 #
 # Covers, in order:
 #   1. bridge auth / subject-allowlist / body rejection matrix
-#   2. core-NATS fallback for subjects with no stream bound
+#   2. durable subjects fail closed without a stream; explicitly
+#      non-durable subjects may use core-NATS fallback
 #   3. vapi worker stream+consumer provisioning and task lifecycle
 #      (ack-and-drop for poison tasks, bounded NAK redelivery for transient)
 #   4. the KEDA scale signal: consumer lag accrues while the worker is down
@@ -101,7 +102,10 @@ print('-1')
 start_bridge() {
   BRIDGE_TOKEN="$BRIDGE_TOKEN_VALUE" \
   BRIDGE_SUBJECT_PREFIXES="dd.vapi.tasks.,vxl." \
+  BRIDGE_DURABLE_SUBJECT_PREFIXES="dd.vapi.tasks." \
   BRIDGE_MAX_BODY_BYTES=4096 \
+  BRIDGE_MAX_IN_FLIGHT=64 \
+  BRIDGE_PUBLISH_TIMEOUT_MS=3000 \
   NATS_URL="nats://127.0.0.1:${NATS_PORT}" \
   PORT="$BRIDGE_PORT" \
     "${BRIDGE_DIR}/target/debug/nats-bridge" >"${WORK_DIR}/bridge.log" 2>&1 &
@@ -146,6 +150,8 @@ refuses "refuses to start with no BRIDGE_TOKEN" BRIDGE_SUBJECT_PREFIXES="vxl."
 refuses "refuses a BRIDGE_TOKEN under 16 chars" BRIDGE_TOKEN="short" BRIDGE_SUBJECT_PREFIXES="vxl."
 refuses "refuses to start with no BRIDGE_SUBJECT_PREFIXES" BRIDGE_TOKEN="$BRIDGE_TOKEN_VALUE"
 refuses "refuses an empty BRIDGE_SUBJECT_PREFIXES" BRIDGE_TOKEN="$BRIDGE_TOKEN_VALUE" BRIDGE_SUBJECT_PREFIXES=" , "
+refuses "refuses durable prefixes outside the allowlist" BRIDGE_TOKEN="$BRIDGE_TOKEN_VALUE" \
+  BRIDGE_SUBJECT_PREFIXES="vxl." BRIDGE_DURABLE_SUBJECT_PREFIXES="dd.vapi.tasks."
 
 start_bridge
 wait_for 30 curl -sf "${BRIDGE_URL}/readyz" || { echo "bridge never became ready"; exit 1; }
@@ -181,7 +187,15 @@ assert_code "oversize body -> 413" 413 \
 assert_json "rejections counted, none published" \
   "d['published_total']==0 and d['rejected_total']==7" "${BRIDGE_URL}/healthz"
 
-step "2. Core-NATS fallback for a subject with no stream bound"
+step "2. Durable-only subjects never downgrade to core NATS"
+assert_code "durable subject without stream -> 503" 503 \
+  -X POST "${BRIDGE_URL}/publish/dd.vapi.tasks.call" \
+  -H "authorization: Bearer ${BRIDGE_TOKEN_VALUE}" -H 'content-type: application/json' \
+  -d '{"type":"setup-refresh"}'
+assert_json "durability rejection is counted" \
+  "d['durability_rejected_total']==1 and d['core_published_total']==0" "${BRIDGE_URL}/healthz"
+
+step "2b. Core-NATS fallback for an explicitly non-durable subject"
 assert_json "allowed subject -> 200 durable:false" \
   "d['ok'] is True and d['durable'] is False" \
   -X POST "${BRIDGE_URL}/publish/vxl.events.test" \
@@ -196,10 +210,23 @@ else
   bad "worker provisioned stream DD_VAPI_TASKS" "stream absent"
 fi
 
-assert_json "JetStream publish is durable-acked" "d['durable'] is True" \
+assert_json "JetStream publish is durable-acked" "d['durable'] is True and d['duplicate'] is False" \
   -X POST "${BRIDGE_URL}/publish/dd.vapi.tasks.call" \
   -H "authorization: Bearer ${BRIDGE_TOKEN_VALUE}" -H 'content-type: application/json' \
   -d '{"type":"reboot-cluster"}'
+
+
+first_dedupe="$(curl -s -X POST "${BRIDGE_URL}/publish/dd.vapi.tasks.call" \
+  -H "authorization: Bearer ${BRIDGE_TOKEN_VALUE}" -H 'content-type: application/json' \
+  -H 'x-message-id: e2e-vapi-dedup-001' -d '{"type":"reboot-cluster"}')"
+second_dedupe="$(curl -s -X POST "${BRIDGE_URL}/publish/dd.vapi.tasks.call" \
+  -H "authorization: Bearer ${BRIDGE_TOKEN_VALUE}" -H 'content-type: application/json' \
+  -H 'x-message-id: e2e-vapi-dedup-001' -d '{"type":"reboot-cluster"}')"
+if python3 -c 'import json,sys; first,second=map(json.loads,sys.argv[1:3]); assert first["durable"] is True and first["duplicate"] is False; assert second["durable"] is True and second["duplicate"] is True; assert first["stream"] == second["stream"] == "DD_VAPI_TASKS"; assert first["sequence"] == second["sequence"]; assert first["messageId"] == second["messageId"] == "e2e-vapi-dedup-001"' "$first_dedupe" "$second_dedupe"; then
+  ok "repeated x-message-id is durably de-duplicated"
+else
+  bad "JetStream message-id de-duplication" "first=$first_dedupe second=$second_dedupe"
+fi
 if wait_for 15 grep -q "unknown task type 'reboot-cluster'" "${WORK_DIR}/vapi.log"; then
   ok "poison task dropped + acked (cannot wedge queue)"
 else

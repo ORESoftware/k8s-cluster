@@ -1,0 +1,49 @@
+# Cluster-local copies of the canonical coordinator platform and workload
+# Applications. Contract tests keep these fields aligned with remote/argocd/apps.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-agent-coordinator-platform
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/argocd/projects/ai-agent-coordinator
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - PruneLast=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-agent-coordinator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: ai-agent-coordinator
+  source:
+    repoURL: https://github.com/ORESoftware/ai-agent-coordinator.rs.git
+    targetRevision: d25e04e50be4a9fad039cfcfa6c321e9c99a1e02
+    path: deploy/overlays/cross-org-linear-pilot
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai-agent-coordinator
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - PruneLast=true

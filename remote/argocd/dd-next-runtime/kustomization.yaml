@@ -26,6 +26,11 @@ resources:
   - dd-build-server.deployment.yaml
   - dd-build-server.service.yaml
   - dd-build-server.networkpolicy.yaml
+  - dd-gha-clone-server.configmap.yaml
+  - dd-gha-clone-server.externalsecret.yaml
+  - dd-gha-clone-server.deployment.yaml
+  - dd-gha-clone-server.service.yaml
+  - dd-gha-clone-server.networkpolicy.yaml
   - dd-image-builder.deployment.yaml
   - dd-image-builder.service.yaml
   - dd-image-builder.networkpolicy.yaml
@@ -62,7 +67,14 @@ resources:
   - dd-fabrication-server.deployment.yaml
   - dd-fabrication-server.service.yaml
   - dd-fabrication-server.networkpolicy.yaml
+  # Canonical DES browser surface. The legacy simulator Deployment stays at
+  # zero replicas; its stable Service name aliases the DES-owned web pods so the
+  # existing /des/ gateway rule remains identical in AWS and Hetzner.
   - dd-des-simulator.deployment.yaml
+  - dd-des-web.deployment.yaml
+  - dd-des-web.networkpolicy.yaml
+  - dd-des-web.pdb.yaml
+  - dd-des-web.service.yaml
   - dd-des-simulator.service.yaml
   - dd-des-rs.deployment.yaml
   - dd-des-rs.hpa.yaml
@@ -241,6 +253,7 @@ resources:
   # ai-agent-bridge: inter-agent conversation bus (HTTP :8142 + TCP :8143).
   # Built in-pod from the remote/deployments/ai-agent-bridge submodule; synced on
   # both AWS and Hetzner via the dd-next-runtime app.
+  - dd-ai-agent-bridge.externalsecret.yaml
   - dd-ai-agent-bridge.deployment.yaml
   - dd-ai-agent-bridge.networkpolicy.yaml
   - dd-ai-agent-bridge.pdb.yaml
@@ -266,3 +279,9 @@ patches:
       version: v1
       kind: Deployment
       name: dd-athleto-backend
+  - path: dd-build-server-gha-continuity.patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: dd-build-server

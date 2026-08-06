@@ -315,9 +315,10 @@ const dependencyManifests = walk(deploymentsDir).filter((file) =>
 );
 
 const grafanaDashboards = fs.readFileSync(grafanaDashboardsPath, 'utf8');
-const webHomeMain = fs.readFileSync(webHomeMainPath, 'utf8');
-const webHomeGrafana = fs.readFileSync(webHomeGrafanaPath, 'utf8');
-const webHomeRoutingSources = `${webHomeMain}\n${webHomeGrafana}`;
+const webHomeMain = [
+  fs.readFileSync(webHomeMainPath, 'utf8'),
+  fs.readFileSync(webHomeGrafanaPath, 'utf8'),
+].join('\n');
 
 const failures = [];
 
@@ -474,10 +475,8 @@ for (const [label, pattern] of [
   ['web-home observability Grafana route', /\.route\(\s*"\/grafana\/observability"/],
   ['web-home observability Grafana target', /dd-observability-control-plane/],
 ]) {
-  if (!pattern.test(webHomeRoutingSources)) {
-    failures.push(
-      `Missing ${label} in web-home routing sources (${path.relative(repoRoot, webHomeMainPath)}, ${path.relative(repoRoot, webHomeGrafanaPath)}).`,
-    );
+  if (!pattern.test(webHomeMain)) {
+    failures.push(`Missing ${label} in ${path.relative(repoRoot, webHomeMainPath)}.`);
   }
 }
 

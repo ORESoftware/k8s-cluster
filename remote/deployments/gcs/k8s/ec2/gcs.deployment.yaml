@@ -27,9 +27,12 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: "2026-06-03-router-capacity-1"
+        dd.dev/telemetry-revision: "2026-07-29-otel-tracing"
         dd.dev/chat-vibe-revision: "d1ab694-pressure-shed"
         dd.dev/gcs-capacity-profile: "2026-06-05-30k-1pod"
+        prometheus.io/scrape: 'true'
+        prometheus.io/port: '3000'
+        prometheus.io/path: /chat/metrics
       labels:
         app: gcs
         dd.dev/redis-cache-client: 'true'
@@ -112,6 +115,20 @@ spec:
               value: 'true'
             - name: vibe_log_level
               value: info
+            - name: OTEL_SERVICE_NAME
+              value: chat-vibe
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4317
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_DEPLOYMENT_ENVIRONMENT
+              value: remote-dev
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: >-
+                service.namespace=oresoftware,
+                deployment.environment.name=remote-dev,
+                k8s.namespace.name=default,
+                github.repository=ORESoftware/chat.vibe
             - name: GCS_DIAG_LOGS
               value: 'true'
             - name: GOMEMLIMIT

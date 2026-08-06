@@ -1,0 +1,182 @@
+name: Supervise protected gh-profile organization publisher
+run-name: Supervise protected gh-profile publication for PR #${{ github.event.pull_request.number }}
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+    paths:
+      - .github/critical-org-gh-profile-publish-trigger-main
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+  statuses: write
+
+concurrency:
+  group: critical-org-gh-profile-supervisor-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  supervise:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'agent/critical-org-gh-profile-trigger-main-20260731-v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      TRACKING_PR: '291'
+      MARKER_PATH: .github/critical-org-gh-profile-publish-trigger-main
+      PUBLISH_WORKFLOW: ops-publish-missing-org-repositories-gh-profile.yml
+
+    steps:
+      - name: Validate one-file carrier and supervise exact child run
+        shell: bash
+        run: |
+          set -euo pipefail
+          repository="$GITHUB_REPOSITORY"
+
+          comment() {
+            local body=$1
+            gh api --method POST \
+              "repos/${repository}/issues/${PR_NUMBER}/comments" \
+              -f body="$body" >/dev/null || true
+            if [[ "$TRACKING_PR" != "$PR_NUMBER" ]]; then
+              gh api --method POST \
+                "repos/${repository}/issues/${TRACKING_PR}/comments" \
+                -f body="$body" >/dev/null || true
+            fi
+          }
+
+          fail() {
+            local description=$1
+            local detail=${2:-No additional diagnostic was returned.}
+            gh api --method POST "repos/${repository}/statuses/${TARGET_SHA}" \
+              -f state=error \
+              -f context='ops/protected-gh-profile-publication' \
+              -f description="$description" >/dev/null || true
+            body="$RUNNER_TEMP/supervisor-error.md"
+            {
+              echo '### Protected gh-profile publisher diagnostic'
+              echo
+              echo "- Carrier PR: #${PR_NUMBER}"
+              echo "- Carrier head: \`${TARGET_SHA}\`"
+              echo "- Trusted supervisor commit: \`${GITHUB_SHA}\`"
+              echo "- Result: **${description}**"
+              echo
+              echo '```text'
+              printf '%s\n' "$detail" | head -c 3000
+              echo
+              echo '```'
+            } > "$body"
+            comment "$(cat "$body")"
+            exit 1
+          }
+
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || fail 'invalid carrier head SHA'
+
+          mapfile -t changed_files < <(
+            gh api --paginate \
+              "repos/${repository}/pulls/${PR_NUMBER}/files?per_page=100" \
+              --jq '.[].filename'
+          )
+          if (( ${#changed_files[@]} != 1 )) || [[ "${changed_files[0]:-}" != "$MARKER_PATH" ]]; then
+            fail 'carrier changed files outside the fixed marker' "$(printf '%s\n' "${changed_files[@]:-<none>}")"
+          fi
+
+          marker="$(
+            gh api --method GET \
+              "repos/${repository}/contents/${MARKER_PATH}" \
+              -f ref="$TARGET_SHA" \
+              --jq '.content' \
+              | tr -d '\n' \
+              | base64 --decode
+          )"
+          [[ "$marker" == 'publish=protected-gh-profile-v1' ]] || \
+            fail 'carrier marker content is not approved' "$marker"
+
+          workflow_metadata="$(
+            gh api "repos/${repository}/actions/workflows/${PUBLISH_WORKFLOW}" 2>&1
+          )" || fail 'protected publisher workflow is not registered' "$workflow_metadata"
+          [[ "$(jq -r '.state' <<<"$workflow_metadata")" == active ]] || \
+            fail 'protected publisher workflow is not active' "$workflow_metadata"
+
+          runs_endpoint="repos/${repository}/actions/workflows/${PUBLISH_WORKFLOW}/runs?branch=main&event=workflow_dispatch&per_page=100"
+          before="$RUNNER_TEMP/before-run-ids.txt"
+          before_runs="$(gh api "$runs_endpoint" 2>&1)" || \
+            fail 'unable to snapshot publisher runs' "$before_runs"
+          jq -r '.workflow_runs[].id' <<<"$before_runs" | sort -n > "$before"
+
+          dispatch_response="$(
+            gh api --method POST \
+              "repos/${repository}/actions/workflows/${PUBLISH_WORKFLOW}/dispatches" \
+              -f ref=main 2>&1
+          )" || fail 'workflow dispatch API rejected the request' "$dispatch_response"
+
+          run_id=''
+          last_runs=''
+          for _ in $(seq 1 90); do
+            last_runs="$(gh api "$runs_endpoint" 2>&1)" || \
+              fail 'unable to list publisher runs after dispatch' "$last_runs"
+            while IFS= read -r candidate; do
+              [[ "$candidate" =~ ^[0-9]+$ ]] || continue
+              if ! grep -Fxq "$candidate" "$before"; then
+                run_id="$candidate"
+                break
+              fi
+            done < <(jq -r '.workflow_runs[].id' <<<"$last_runs")
+            [[ "$run_id" =~ ^[0-9]+$ ]] && break
+            sleep 2
+          done
+
+          if [[ ! "$run_id" =~ ^[0-9]+$ ]]; then
+            recent="$(
+              jq -r '.workflow_runs[:10][] | [.id,.event,.head_branch,.display_title,.status,.conclusion] | @tsv' \
+                <<<"$last_runs" 2>/dev/null || true
+            )"
+            fail 'dispatch accepted but no new publisher run appeared' "$recent"
+          fi
+
+          run_url="https://github.com/${repository}/actions/runs/${run_id}"
+          gh api --method POST "repos/${repository}/statuses/${TARGET_SHA}" \
+            -f state=pending \
+            -f context='ops/protected-gh-profile-publication' \
+            -f description="publisher run ${run_id} is executing" \
+            -f target_url="$run_url" >/dev/null
+          comment "Protected gh-profile publisher dispatched from trusted \`main\`: ${run_url} (carrier \`${TARGET_SHA}\`)."
+
+          status=queued
+          conclusion=''
+          attempt=1
+          for _ in $(seq 1 240); do
+            current="$(gh api "repos/${repository}/actions/runs/${run_id}")"
+            status="$(jq -r '.status' <<<"$current")"
+            conclusion="$(jq -r '.conclusion // empty' <<<"$current")"
+            attempt="$(jq -r '.run_attempt' <<<"$current")"
+            echo "publisher run=${run_id} attempt=${attempt} status=${status} conclusion=${conclusion:-pending}"
+            [[ "$status" == completed ]] && break
+            sleep 15
+          done
+
+          if [[ "$status" != completed ]]; then
+            conclusion=timed_out
+          fi
+
+          if [[ "$conclusion" == success ]]; then
+            state=success
+            description='protected publisher completed; direct remote audit required'
+          else
+            state=failure
+            description="protected publisher ${conclusion:-failed}"
+          fi
+          gh api --method POST "repos/${repository}/statuses/${TARGET_SHA}" \
+            -f state="$state" \
+            -f context='ops/protected-gh-profile-publication' \
+            -f description="$description" \
+            -f target_url="$run_url" >/dev/null
+          comment "Protected gh-profile publisher completed with **${conclusion:-unknown}**: ${run_url}."
+          test "$conclusion" = success

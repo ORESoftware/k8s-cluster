@@ -1,0 +1,26 @@
+name: Cancel stale pre-owner-fix organization reconciliation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-cancel-stale-org-reconcile-once.yml
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cancel:
+    if: github.repository == 'ORESoftware/k8s-cluster' && github.actor == 'ORESoftware'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Cancel only the stale run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          gh api --method POST \
+            repos/ORESoftware/k8s-cluster/actions/runs/31037622675/cancel
+          echo 'cancelled stale run 31037622675'

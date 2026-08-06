@@ -100,6 +100,37 @@ applications:
     expected_replica_targets: 1
     public_gateway: /usacc/metrics requires gateway authentication and is not publicly accessible
 
+  - project: github.com/shared-auth
+    issue: DEN-675
+    component: auth-server
+    source_repository: shared-auth/shared-auth-server.rs
+    source_pull_requests: [16, 19]
+    source_revision: 821386ba8b167571b27d91012c665ffcb724ae46
+    workload: shared-auth/dd-shared-auth
+    target: dd-shared-auth.shared-auth.svc.cluster.local:8120
+    path: /metrics
+    implementation: native-rust
+    discovery_mode: static-service-target
+    expected_replica_targets: 2
+    network_policy: observability/app=dd-prometheus -> tcp/8120
+    public_gateway: /shared-auth/metrics returns 404 before the public auth proxy
+
+  - project: github.com/shared-auth
+    issue: DEN-675
+    component: nats-bridge
+    source_repository: shared-auth/shared-auth-nats-bridge.rs
+    source_pull_requests: [3, 4, 5]
+    source_revision: d03316944e33fd59ee90a4acaa4fee67cae71d61
+    workload: shared-auth/dd-shared-auth-nats-bridge
+    target: dd-shared-auth-nats-bridge.shared-auth.svc.cluster.local:8121
+    path: /metrics
+    implementation: native-rust
+    discovery_mode: static-service-target
+    expected_replica_targets: 2
+    network_policy: observability/app=dd-prometheus -> tcp/8121
+    metric_cardinality: bounded outcome labels; raw NATS subjects excluded
+    public_gateway: no NATS bridge route exists
+
 completion_gates:
   - application source and release artifact are immutable and deployed
   - Canonical canonical-containers/published status is success

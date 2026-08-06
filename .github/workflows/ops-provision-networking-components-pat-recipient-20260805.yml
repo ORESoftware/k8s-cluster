@@ -1,0 +1,87 @@
+name: Provision one-time networking-components PAT recipient
+run-name: Provision one-time networking-components PAT recipient @ ${{ github.sha }}
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ops/requests/networking-components-pat-recipient-20260805.json
+      - .github/workflows/ops-provision-networking-components-pat-recipient-20260805.yml
+      - scripts/ops/provision_networking_components_pat_recipient_20260805.sh
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: provision-networking-components-pat-recipient-20260805
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out trusted commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate request
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+          data = json.loads(Path("ops/requests/networking-components-pat-recipient-20260805.json").read_text())
+          assert data["schema_version"] == 1
+          assert data["execute"] is True
+          assert re.fullmatch(r"ncc-publish-20260805-[0-9a-f]{16}", data["recipient_id"])
+          print("recipient request validated")
+          PY
+          bash -n scripts/ops/provision_networking_components_pat_recipient_20260805.sh
+
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: provision-networking-components-pat-recipient
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Generate recipient on protected host
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: |
+          set -euo pipefail
+          test -n "${INSTANCE_ID:-}"
+          trusted_sha="$(git rev-parse HEAD)"
+          region="${AWS_REGION:?AWS region is required}"
+          recipient_id="$(jq -er '.recipient_id' ops/requests/networking-components-pat-recipient-20260805.json)"
+          remote_command="set -Eeuo pipefail; work=\$(mktemp -d /tmp/ncc-recipient-launcher.XXXXXX); trap 'rm -rf \"\$work\"' EXIT; git init \"\$work/k8s-cluster\" >/dev/null; git -C \"\$work/k8s-cluster\" remote add origin https://github.com/ORESoftware/k8s-cluster.git; git -C \"\$work/k8s-cluster\" fetch --quiet --depth=1 origin '$trusted_sha'; git -C \"\$work/k8s-cluster\" switch --quiet --detach FETCH_HEAD; test \"\$(git -C \"\$work/k8s-cluster\" rev-parse HEAD)\" = '$trusted_sha'; bash \"\$work/k8s-cluster/scripts/ops/provision_networking_components_pat_recipient_20260805.sh\" '$recipient_id'"
+          parameters="$RUNNER_TEMP/ssm-parameters.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
+          command_id="$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --comment 'Provision one-time NCC PAT recipient' --parameters "file://$parameters" --query 'Command.CommandId' --output text)"
+          status=Pending
+          for _ in $(seq 1 180); do
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$status" in Success|Failed|Cancelled|TimedOut|Cancelling) break;; esac
+            sleep 2
+          done
+          invocation="$RUNNER_TEMP/ncc-recipient-invocation.json"
+          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' --output json > "$invocation"
+          stdout="$(jq -r '.Stdout // ""' "$invocation")"
+          printf '%s\n' "$stdout"
+          if [[ "$status" != Success ]]; then
+            jq -r '.Stderr // ""' "$invocation" >&2
+            exit 1
+          fi
+          grep -Eq '^NCC_PAT_RECIPIENT_ID=ncc-publish-20260805-[0-9a-f]{16}$' <<<"$stdout"
+          grep -Eq '^NCC_PAT_RECIPIENT_FINGERPRINT=[0-9a-f]{64}$' <<<"$stdout"
+          grep -Eq '^NCC_PAT_RECIPIENT_PUBLIC_KEY_BASE64=[A-Za-z0-9+/]+={0,2}$' <<<"$stdout"

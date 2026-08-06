@@ -5,11 +5,21 @@ on:
     paths:
       - 'remote/nats-bridge/**'
       - 'remote/argocd/messaging/nats-bridge*'
+      - 'remote/argocd/messaging/kustomization.yaml'
+      - 'remote/argocd/messaging/readme.md'
+      - 'docs/nats-external-http-ingress.md'
       - 'remote/tests/general/nats-http-ingress-boundary.test.ts'
       - '.github/workflows/nats-http-ingress.yml'
   push:
-    branches:
-      - agent/den-440-nats-http-ingress-clean
+    branches: [dev, main]
+    paths:
+      - 'remote/nats-bridge/**'
+      - 'remote/argocd/messaging/nats-bridge*'
+      - 'remote/argocd/messaging/kustomization.yaml'
+      - 'remote/argocd/messaging/readme.md'
+      - 'docs/nats-external-http-ingress.md'
+      - 'remote/tests/general/nats-http-ingress-boundary.test.ts'
+      - '.github/workflows/nats-http-ingress.yml'
   workflow_dispatch:
 
 permissions:
@@ -44,7 +54,7 @@ jobs:
         run: cargo install cargo-audit --locked
       - name: Audit dependency advisories
         working-directory: remote/nats-bridge
-        run: cargo audit --locked
+        run: cargo audit
 
   contracts:
     runs-on: ubuntu-latest

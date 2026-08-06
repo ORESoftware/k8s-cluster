@@ -1,0 +1,81 @@
+name: Canonical docs publisher contract
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/canonical-docs-publisher-contract.yml
+      - .github/workflows/ops-publish-canonical-docs-20260804.yml
+      - ops/canonical-docs/**
+      - scripts/ops/publish_canonical_docs_no_pat_20260804.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: canonical-docs-contract-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the reviewed pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Validate publisher syntax
+        run: bash -n scripts/ops/publish_canonical_docs_no_pat_20260804.sh
+      - name: Validate source, documentation tests, and deterministic history
+        env:
+          PUBLISH_DRY_RUN: "1"
+        run: bash scripts/ops/publish_canonical_docs_no_pat_20260804.sh "$GITHUB_WORKSPACE"
+      - name: Validate bounded reversible protected-profile handoff
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path(
+              ".github/workflows/ops-publish-canonical-docs-20260804.yml"
+          ).read_text(encoding="utf-8")
+          publisher = Path(
+              "scripts/ops/publish_canonical_docs_no_pat_20260804.sh"
+          ).read_text(encoding="utf-8")
+          required = {
+              "bounded profile roots": "find /home /root /var/lib -maxdepth 7 -type f",
+              "symlink rejection": "candidate-symlink-rejected",
+              "owner rejection": "candidate-owner-rejected",
+              "mode rejection": "candidate-mode-rejected",
+              "PAT rejection": "candidate-personal-access-token-rejected",
+              "token-class allowlist": "gho_*|ghu_*|ghs_*",
+              "identity check": "test \"$identity\" != ORESoftware",
+              "organization-owner check": "test \"$membership\" != $'admin\\tactive'",
+              "temporary backup": "profile_backup=\"$work/original-hosts.yml\"",
+              "restore prior profile": "cp -a -- \"$profile_backup\" \"$profile_target\"",
+              "remove temporary profile": "rm -f -- \"$profile_target\"",
+          }
+          missing = [label for label, value in required.items() if value not in workflow]
+          if missing:
+              raise SystemExit(f"missing protected-profile contract(s): {missing}")
+          if "# Never force:" not in publisher:
+              raise SystemExit("durable publisher must document the no-force boundary")
+          combined = workflow + "\n" + publisher
+          if "git push --force" in combined or "git push -f" in combined:
+              raise SystemExit("publisher must not force-push")
+          if "find / -" in workflow:
+              raise SystemExit("profile discovery must remain bounded")
+          print("canonical-docs protected-profile handoff contract: PASS")
+          PY
+      - name: Parse workflow YAML
+        run: |
+          ruby -e 'require "yaml"; ARGV.each { |path| YAML.load_file(path) }' \
+            .github/workflows/canonical-docs-publisher-contract.yml \
+            .github/workflows/ops-publish-canonical-docs-20260804.yml
+      - name: Reject patch and whitespace errors
+        run: git diff --check "origin/${{ github.base_ref }}...HEAD"

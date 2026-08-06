@@ -1,0 +1,180 @@
+# Canonical cross-system registry guard and daily reconciler.
+name: Portfolio project links
+
+on:
+  pull_request:
+    paths:
+      - ops/portfolio/github-linear-project-registry.tsv
+      - ops/registries/portfolio-project-links.csv
+      - ops/evidence/github-organization-access.json
+      - scripts/ops/portfolio_project_links.py
+      - scripts/ops/validate_github_linear_projects_by_org_doc.py
+      - scripts/ops/validate_github_linear_registry_relationship.py
+      - scripts/ops/validate_portfolio_project_links.py
+      - scripts/ops/sync_portfolio_project_links.py
+      - scripts/ops/sync_github_project_metadata.py
+      - scripts/ops/tests/test_github_organization_access.py
+      - scripts/ops/tests/test_github_linear_projects_by_org_doc.py
+      - scripts/ops/tests/test_github_linear_registry_relationship.py
+      - scripts/ops/tests/test_portfolio_project_links.py
+      - scripts/ops/tests/test_sync_portfolio_project_links.py
+      - docs/portfolio/github-linear-project-registry.md
+      - docs/portfolio/github-linear-projects-by-org.md
+      - docs/portfolio-project-linking.md
+      - docs/daily-portfolio-project-sync.md
+      - .github/workflows/validate-portfolio-project-links.yml
+  push:
+    branches: [main]
+    paths:
+      - ops/portfolio/github-linear-project-registry.tsv
+      - ops/registries/portfolio-project-links.csv
+      - ops/evidence/github-organization-access.json
+      - scripts/ops/portfolio_project_links.py
+      - scripts/ops/validate_github_linear_projects_by_org_doc.py
+      - scripts/ops/validate_github_linear_registry_relationship.py
+      - scripts/ops/validate_portfolio_project_links.py
+      - scripts/ops/sync_portfolio_project_links.py
+      - scripts/ops/sync_github_project_metadata.py
+      - scripts/ops/tests/test_github_organization_access.py
+      - scripts/ops/tests/test_github_linear_projects_by_org_doc.py
+      - scripts/ops/tests/test_github_linear_registry_relationship.py
+      - scripts/ops/tests/test_portfolio_project_links.py
+      - scripts/ops/tests/test_sync_portfolio_project_links.py
+      - docs/portfolio/github-linear-project-registry.md
+      - docs/portfolio/github-linear-projects-by-org.md
+      - docs/portfolio-project-linking.md
+      - docs/daily-portfolio-project-sync.md
+      - .github/workflows/validate-portfolio-project-links.yml
+  schedule:
+    # GitHub cron is UTC. The reconciler selects the expression that maps to
+    # 03:00 America/Chicago for the current daylight/standard-time offset.
+    - cron: '0 8 * * *'
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Apply provider metadata changes
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+# Validation, manual runs, and both DST cron lanes share one lock. The script
+# turns the redundant cron lane into a documented no-op.
+concurrency:
+  group: portfolio-project-links
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate registry and reconciler
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/validate-portfolio-project-links.yml
+
+      - name: Validate governance-to-portfolio relationship
+        run: >-
+          python scripts/ops/validate_github_linear_registry_relationship.py
+          --json-output artifacts/github-linear-registry-relationship.json
+
+      - name: Validate generated GitHub and Linear directory
+        run: python scripts/ops/validate_github_linear_projects_by_org_doc.py
+
+      - name: Validate canonical mappings
+        run: python scripts/ops/validate_portfolio_project_links.py
+
+      - name: Run unit tests
+        run: python -m unittest discover -s scripts/ops/tests -v
+
+      - name: Build a credential-free reconciliation plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/ops/sync_portfolio_project_links.py \
+            --allow-missing-credentials \
+            --json-output artifacts/portfolio-project-sync.json \
+            --markdown-output artifacts/portfolio-project-sync.md
+          cat artifacts/portfolio-project-sync.md >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload validation evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: portfolio-project-link-validation
+          path: |
+            artifacts/github-linear-registry-relationship.json
+            artifacts/portfolio-project-sync.*
+          if-no-files-found: error
+          retention-days: 14
+
+  reconcile:
+    name: Reconcile provider metadata
+    needs: validate
+    if: >-
+      ${{
+        github.event_name == 'schedule' ||
+        (github.event_name == 'workflow_dispatch' && inputs.apply)
+      }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: portfolio-project-sync
+    env:
+      PROJECT_SYNC_GITHUB_TOKEN: ${{ secrets.PROJECT_SYNC_GITHUB_TOKEN }}
+      LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+      CHATGPT_PROJECT_SYNC_ENDPOINT: ${{ secrets.CHATGPT_PROJECT_SYNC_ENDPOINT }}
+      CHATGPT_PROJECT_SYNC_TOKEN: ${{ secrets.CHATGPT_PROJECT_SYNC_TOKEN }}
+      SCHEDULED_CRON: ${{ github.event.schedule }}
+    steps:
+      - name: Check out without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+
+      - name: Reconcile all 41 canonical project links
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            --apply
+            --json-output artifacts/portfolio-project-sync.json
+            --markdown-output artifacts/portfolio-project-sync.md
+            --summary-channel oresoftware
+          )
+          if [[ -n "${SCHEDULED_CRON:-}" ]]; then
+            args+=(--scheduled-cron "$SCHEDULED_CRON")
+          fi
+          python scripts/ops/sync_portfolio_project_links.py "${args[@]}"
+          cat artifacts/portfolio-project-sync.md >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload reconciliation evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: portfolio-project-link-sync-${{ github.run_id }}
+          path: artifacts/portfolio-project-sync.*
+          if-no-files-found: error
+          retention-days: 30

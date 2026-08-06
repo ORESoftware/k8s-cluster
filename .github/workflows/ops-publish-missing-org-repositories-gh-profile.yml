@@ -1,0 +1,314 @@
+# Retriggered after separating missing canonical gaps from preserved live histories.
+name: Publish missing organization repositories from protected gh profile
+run-name: Publish missing organization repositories from protected gh profile @ ${{ github.sha }}
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/ops-publish-missing-org-repositories-gh-profile.yml
+      - scripts/ops/publish_missing_org_repositories.py
+      - scripts/ops/publish_missing_org_repositories_current.py
+      - scripts/ops/repository_fleet_visibility.py
+      - scripts/ops/repository_fleet_remote_state.py
+      - scripts/ops/test_repository_fleet_visibility.py
+      - scripts/ops/test_repository_fleet_remote_state.py
+      - scripts/ops/test_private_fleet_publisher_contract.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+concurrency:
+  group: ops-publish-missing-organization-repositories
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Check out the exact trusted main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind publication to exact main event
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Configure trusted main-ref AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: critical-org-gh-profile-publisher
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Publish and verify through the protected host profile
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+          GH_TOKEN: ${{ github.token }}
+          TRACKING_PR: '291'
+        run: |
+          set -euo pipefail
+          test -n "${INSTANCE_ID:-}"
+          trusted_sha="$(git rev-parse HEAD)"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          gh pr comment "$TRACKING_PR" --body \
+            "Protected gh-profile publisher started from trusted main \`${trusted_sha}\`: ${run_url}" >/dev/null || true
+
+          remote_script="$RUNNER_TEMP/publish-critical-org-repositories-gh-profile.sh"
+          cat >"$remote_script" <<'REMOTE_EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          umask 077
+
+          stage=initialization
+          report_failure() {
+            local rc=$?
+            trap - ERR
+            printf 'publisher-stage=%s status=failed rc=%s\n' "$stage" "$rc" >&2
+            exit "$rc"
+          }
+          trap report_failure ERR
+
+          trusted_sha="${1:?trusted SHA required}"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          for inherited in \
+            CODEX_HOME GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS
+          do
+            if test -n "${!inherited:-}"; then
+              printf 'publisher-stage=%s status=failed reason=inherited-%s\n' \
+                "$stage" "$inherited" >&2
+              exit 64
+            fi
+          done
+
+          stage=prepare-disposable-state
+          work="$(mktemp -d /tmp/critical-org-gh-profile-publisher.XXXXXX)"
+          export CODEX_HOME="$work/codex-home"
+          install -d -m 700 "$CODEX_HOME"
+          cleanup() {
+            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN CODEX_HOME
+            unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
+            unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+            unset gh_hosts
+            rm -rf "$work"
+          }
+          trap cleanup EXIT
+
+          stage=protected-gh-profile-credential
+          gh_hosts="${GH_CONFIG_DIR:-$HOME/.config/gh}/hosts.yml"
+          if ! test -r "$gh_hosts"; then
+            printf 'publisher-stage=%s status=failed reason=profile-not-readable\n' \
+              "$stage" >&2
+            exit 66
+          fi
+          GH_TOKEN="$(
+            GH_HOSTS="$gh_hosts" python3 - <<'PY'
+          import ast
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          path = Path(os.environ["GH_HOSTS"])
+          current_host = None
+          for raw in path.read_text(encoding="utf-8").splitlines():
+              stripped = raw.strip()
+              if not stripped or stripped.startswith("#"):
+                  continue
+              indent = len(raw) - len(raw.lstrip())
+              if indent == 0 and stripped.endswith(":"):
+                  current_host = stripped[:-1]
+                  continue
+              if current_host != "github.com":
+                  continue
+              match = re.match(r"^\s+oauth_token:\s*(.*?)\s*$", raw)
+              if match is None:
+                  continue
+              value = match.group(1)
+              if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+                  try:
+                      value = ast.literal_eval(value)
+                  except (SyntaxError, ValueError):
+                      raise SystemExit(65)
+              if not isinstance(value, str) or not value or any(ch.isspace() for ch in value):
+                  raise SystemExit(65)
+              sys.stdout.write(value)
+              raise SystemExit(0)
+          raise SystemExit(65)
+          PY
+          )"
+          test -n "$GH_TOKEN"
+          case "$GH_TOKEN" in
+            *$'\n'*|*$'\r'*)
+              printf 'publisher-stage=%s status=failed reason=invalid-profile-token-bytes\n' \
+                "$stage" >&2
+              exit 65
+              ;;
+          esac
+          export GH_TOKEN
+          export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
+          printf 'publisher-stage=%s status=ready source=protected-gh-profile\n' "$stage"
+
+          stage=git-credential-transport
+          askpass="$work/git-askpass.sh"
+          cat >"$askpass" <<'ASKPASS_EOF'
+          #!/usr/bin/env sh
+          case "${1:-}" in
+            *Username*) printf '%s\n' x-access-token ;;
+            *Password*) printf '%s\n' "${GH_TOKEN:?}" ;;
+            *) exit 1 ;;
+          esac
+          ASKPASS_EOF
+          chmod 700 "$askpass"
+          export GIT_ASKPASS="$askpass"
+          export GIT_ASKPASS_REQUIRE=force
+          export GIT_TERMINAL_PROMPT=0
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=credential.helper
+          export GIT_CONFIG_VALUE_0=
+
+          stage=github-identity-and-ownership
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "protected-gh-profile-repository-publisher",
+          }
+
+          def get(path: str) -> dict:
+              request = urllib.request.Request("https://api.github.com" + path, headers=headers)
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  error.read(4096)
+                  raise SystemExit(f"GitHub preflight failed for {path}: HTTP {error.code}") from error
+
+          identity = get("/user")
+          if identity.get("login") != "ORESoftware":
+              raise SystemExit(f"unexpected publisher identity: {identity.get('login')!r}")
+          for organization in (
+              "hypesiege",
+              "StreemPilot",
+              "meta-agents-demo",
+              "file-tunnel",
+              "unreal-unity-poc",
+          ):
+              membership = get(f"/user/memberships/orgs/{organization}")
+              observed = (membership.get("role"), membership.get("state"))
+              if observed != ("admin", "active"):
+                  raise SystemExit(f"{organization} owner membership is {observed!r}")
+              print(f"{organization} owner membership verified")
+          PY
+          printf 'publisher-stage=%s status=passed\n' "$stage"
+
+          stage=trusted-publisher-source
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/ORESoftware/k8s-cluster.git "$work/k8s-cluster"
+          git -C "$work/k8s-cluster" fetch --depth=1 origin "$trusted_sha"
+          git -C "$work/k8s-cluster" checkout --detach "$trusted_sha"
+          test "$(git -C "$work/k8s-cluster" rev-parse HEAD)" = "$trusted_sha"
+          printf 'publisher-stage=%s status=passed sha=%s\n' "$stage" "$trusted_sha"
+
+          stage=publisher-static-validation
+          python3 -m py_compile \
+            "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories.py" \
+            "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories_current.py" \
+            "$work/k8s-cluster/scripts/ops/repository_fleet_visibility.py" \
+            "$work/k8s-cluster/scripts/ops/repository_fleet_remote_state.py" \
+            "$work/k8s-cluster/scripts/ops/test_repository_fleet_visibility.py" \
+            "$work/k8s-cluster/scripts/ops/test_repository_fleet_remote_state.py" \
+            "$work/k8s-cluster/scripts/ops/test_private_fleet_publisher_contract.py"
+          python3 "$work/k8s-cluster/scripts/ops/test_repository_fleet_visibility.py" -v
+          python3 "$work/k8s-cluster/scripts/ops/test_repository_fleet_remote_state.py" -v
+          python3 "$work/k8s-cluster/scripts/ops/test_private_fleet_publisher_contract.py" -v
+          printf 'publisher-stage=%s status=passed\n' "$stage"
+
+          stage=bounded-repository-publication
+          python3 "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories_current.py"
+          printf 'publisher-stage=%s status=passed\n' "$stage"
+
+          # The gap-aware publisher already proves each newly created repository
+          # matches its sealed root and every pre-existing repository ID/main SHA
+          # stayed unchanged. The historical finalizer assumes a public, exact-
+          # sealed fleet and is intentionally not used for this private transition.
+          stage=gap-aware-publication-verification
+          printf 'publisher-stage=%s status=passed contract=created-exact-preserved-unchanged\n' "$stage"
+
+          stage=complete
+          printf 'publisher-stage=%s status=success\n' "$stage"
+          REMOTE_EOF
+          chmod 700 "$remote_script"
+
+          encoded="$(base64 --wrap=0 "$remote_script")"
+          remote_command="remote_log=/tmp/publish-critical-org-gh-profile.log; printf '%s' '$encoded' | base64 --decode > /tmp/publish-critical-org-gh-profile.sh && chown ec2-user:ec2-user /tmp/publish-critical-org-gh-profile.sh && chmod 700 /tmp/publish-critical-org-gh-profile.sh; status=0; sudo -u ec2-user -H bash -lc 'unset CODEX_HOME GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS; exec bash /tmp/publish-critical-org-gh-profile.sh \"\$1\"' _ '$trusted_sha' >\"\$remote_log\" 2>&1 || status=\$?; tail -c 24000 \"\$remote_log\"; rm -f /tmp/publish-critical-org-gh-profile.sh \"\$remote_log\"; exit \$status"
+          parameters="$RUNNER_TEMP/ssm-gh-profile-parameters.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' >"$parameters"
+
+          command_id="$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "Publish critical repositories via protected gh profile" \
+            --parameters "file://$parameters" \
+            --query 'Command.CommandId' \
+            --output text)"
+          echo "ssm_command_id=$command_id"
+
+          status=Pending
+          for _ in $(seq 1 840); do
+            status="$(aws ssm get-command-invocation \
+              --command-id "$command_id" \
+              --instance-id "$INSTANCE_ID" \
+              --query Status \
+              --output text 2>/dev/null || true)"
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut|Cancelling) break ;;
+            esac
+            sleep 3
+          done
+
+          invocation="$(aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json)"
+          printf '%s\n' "$invocation"
+
+          if test "$status" = Success; then
+            gh pr comment "$TRACKING_PR" --body \
+              "Protected gh-profile publisher completed successfully from \`${trusted_sha}\`: ${run_url}" >/dev/null || true
+          else
+            diagnostic="$(jq -r '.Stdout + .Stderr' <<<"$invocation" | tail -c 1800)"
+            body="$RUNNER_TEMP/publisher-failure.md"
+            {
+              echo "Protected gh-profile publisher failed before full verification: ${run_url}"
+              echo
+              echo '```text'
+              printf '%s\n' "$diagnostic"
+              echo '```'
+            } >"$body"
+            gh pr comment "$TRACKING_PR" --body-file "$body" >/dev/null || true
+            exit 1
+          fi

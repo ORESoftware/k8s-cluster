@@ -152,7 +152,7 @@ async fn query_http(
     let rows: Vec<_> = events
         .iter()
         .rev()
-        .filter(|event| filter.map_or(true, |addr| event.address == addr))
+        .filter(|event| filter.is_none_or(|addr| event.address == addr))
         .take(limit)
         .map(|event| {
             json!({

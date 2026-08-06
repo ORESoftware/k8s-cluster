@@ -373,6 +373,15 @@ data:
         limit_mib: 384
         spike_limit_mib: 128
 
+    connectors:
+      spanmetrics:
+        namespace: traces_span_metrics
+        dimensions:
+          - name: deployment.environment
+        histogram:
+          explicit:
+            buckets: [5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s]
+
     exporters:
       prometheus:
         endpoint: 0.0.0.0:8889
@@ -434,6 +443,7 @@ data:
           receivers:
             - prometheus
             - otlp
+            - spanmetrics
           processors:
             - memory_limiter
             - batch
@@ -449,6 +459,7 @@ data:
             - otlp/tempo
             - otlp/jaeger
             - debug
+            - spanmetrics
         logs:
           receivers:
             - otlp
