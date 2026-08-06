@@ -10,9 +10,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   dependency-policy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2
@@ -21,17 +26,27 @@ jobs:
 
   audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.88.0
       - uses: taiki-e/install-action@v2.79.11
         with:
           tool: cargo-audit
           fallback: none
       - name: Audit locked dependencies against RustSec
-        run: cargo audit
+        # Vulnerabilities fail by default; unsound and yanked crates are
+        # promoted to failures. Unmaintained advisories stay warnings so a
+        # third-party maintenance lapse cannot block unrelated work; cargo-deny
+        # policy governs those separately.
+        run: cargo audit --deny unsound --deny yanked
 
   secrets:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -41,4 +56,11 @@ jobs:
           docker run --rm \
             --volume "$PWD:/repo" \
             ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
-            git --redact --no-banner --verbose /repo
+            git --redact --no-banner --verbose \
+            --report-format sarif --report-path /repo/gitleaks.sarif /repo
+      - name: Upload Gitleaks SARIF to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks

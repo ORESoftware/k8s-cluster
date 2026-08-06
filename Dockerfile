@@ -3,9 +3,18 @@ RUN apt-get update \
     && apt-get install --yes --no-install-recommends libssl-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY Cargo.toml Cargo.lock* ./
+# Dependency layer: compile the full locked graph against stub sources so a
+# source-only change does not rebuild every crate at codegen-units=1. The
+# lockfile is copied without a glob so its absence fails here, not later
+# inside cargo with a confusing --locked error.
+COPY Cargo.toml Cargo.lock ./
+RUN mkdir src \
+    && echo 'fn main() {}' > src/main.rs \
+    && touch src/lib.rs \
+    && cargo build --locked --release \
+    && rm -rf src
 COPY src ./src
-RUN cargo build --locked --release
+RUN touch src/main.rs src/lib.rs && cargo build --locked --release
 
 FROM debian:bookworm-slim
 RUN useradd --system --uid 10001 --create-home app \

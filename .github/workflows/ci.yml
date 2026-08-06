@@ -4,25 +4,95 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   rust:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      RUSTFLAGS: "-D warnings"
+    steps:
+      - uses: actions/checkout@v7
+      # Pinned to rust-toolchain.toml's channel so a new stable release cannot
+      # break gating fmt/clippy output (see the DEN-331 rustfmt churn).
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo fmt --all --check
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - run: cargo test --locked --all-features
+
+  msrv:
+    name: MSRV (rust-version from Cargo.toml)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - name: Read rust-version from Cargo.toml
+        id: msrv
+        run: |
+          version="$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)"
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: msrv-${{ steps.msrv.outputs.version }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Verify the crate builds on its declared MSRV
+        run: cargo check --locked --all-targets --all-features
+
+  stable-drift:
+    name: Latest stable (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --check
-      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
-      - run: cargo test --locked --all-features
+        with:
+          key: stable-drift
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Surface upcoming fmt/clippy breakage without gating
+        run: |
+          cargo fmt --all --check
+          cargo clippy --locked --all-targets --all-features -- -D warnings
+
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: docs
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build documentation with warnings denied
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --locked --no-deps --all-features --document-private-items
 
   container:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
@@ -30,4 +100,30 @@ jobs:
         with:
           context: .
           push: false
+          load: true
           tags: push-notification-server:test
+          cache-from: type=gha,scope=push-notification-server
+          cache-to: type=gha,mode=max,scope=push-notification-server
+      - name: Smoke the built image
+        run: |
+          docker image inspect push-notification-server:test \
+            --format 'user={{.Config.User}} exposed={{json .Config.ExposedPorts}} entrypoint={{json .Config.Entrypoint}}'
+          docker run --rm --entrypoint /bin/sh push-notification-server:test \
+            -c 'test -x /usr/local/bin/push-notification-server && echo "binary present and executable"'
+
+  ci-success:
+    name: CI success
+    if: always()
+    needs: [rust, msrv, docs, container]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail when any required job did not succeed
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS_JSON"
+          if printf '%s' "$NEEDS_JSON" | grep -Eq '"result": *"(failure|cancelled|skipped)"'; then
+            echo "A required job failed, was cancelled, or was skipped."
+            exit 1
+          fi
