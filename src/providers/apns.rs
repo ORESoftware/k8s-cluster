@@ -188,10 +188,10 @@ impl ApnsProvider {
 
     async fn token(&self) -> Result<String, ProviderError> {
         let mut guard = self.provider_token.lock().await;
-        if let Some(cached) = guard.as_ref() {
-            if cached.expires_at > Instant::now() {
-                return Ok(cached.value.clone());
-            }
+        if let Some(cached) = guard.as_ref()
+            && cached.expires_at > Instant::now()
+        {
+            return Ok(cached.value.clone());
         }
 
         let token = encode_provider_token(&self.config, unix_now()?)?;
@@ -491,7 +491,7 @@ fn invalid_payload(detail: impl AsRef<str>, code: &'static str) -> ProviderError
 
 fn valid_device_token(token: &str) -> bool {
     (32..=512).contains(&token.len())
-        && token.len() % 2 == 0
+        && token.len().is_multiple_of(2)
         && token.chars().all(|character| character.is_ascii_hexdigit())
 }
 

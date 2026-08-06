@@ -7,16 +7,11 @@ use utoipa::ToSchema;
 use crate::redaction::{TargetFingerprint, fingerprint_target};
 
 /// The wire-contract version accepted by this service.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ContractVersion {
+    #[default]
     V1,
-}
-
-impl Default for ContractVersion {
-    fn default() -> Self {
-        Self::V1
-    }
 }
 
 /// Supported upstream delivery providers.
