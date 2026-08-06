@@ -1,0 +1,73 @@
+name: Shared Auth GitHub App preflight
+
+on:
+  push:
+    branches:
+      - ci/shared-auth-release-validation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  app-access:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+      K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+      GITHUB_API_VERSION: '2026-03-10'
+      SERVER_SHA: 1f99d3f3ef14613d3ed669f8a5075ab8696fc9ee
+      INFRA_SHA: 6234f1ee72349f84652c85a5a957b2982ea471bf
+    steps:
+      - name: Check out credential helper
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Mint owner-scoped contents-read token
+        id: mint
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$K8S_SUBMODULE_APP_ID"
+          test -n "$K8S_SUBMODULE_APP_PRIVATE_KEY"
+          token_file="${RUNNER_TEMP}/shared-auth-installation.token"
+          scripts/ci/mint-github-app-installation-token.sh \
+            shared-auth "$token_file" shared-auth-server.rs shared-auth-infra
+          token="$(cat "$token_file")"
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+      - name: Check out exact Shared Auth server source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: shared-auth/shared-auth-server.rs
+          ref: ${{ env.SERVER_SHA }}
+          path: shared-auth-server
+          token: ${{ steps.mint.outputs.token }}
+          persist-credentials: false
+          show-progress: false
+      - name: Check out exact merged Shared Auth infra source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: shared-auth/shared-auth-infra
+          ref: ${{ env.INFRA_SHA }}
+          path: shared-auth-infra
+          token: ${{ steps.mint.outputs.token }}
+          persist-credentials: false
+          show-progress: false
+      - name: Assert immutable source heads
+        run: |
+          test "$(git -C shared-auth-server rev-parse HEAD)" = "$SERVER_SHA"
+          test "$(git -C shared-auth-infra rev-parse HEAD)" = "$INFRA_SHA"
+      - name: Revoke installation token
+        if: always() && steps.mint.outputs.token != ''
+        env:
+          INSTALLATION_TOKEN: ${{ steps.mint.outputs.token }}
+        run: |
+          curl --fail --silent --show-error \
+            --request DELETE \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer ${INSTALLATION_TOKEN}" \
+            --header 'X-GitHub-Api-Version: 2026-03-10' \
+            https://api.github.com/installation/token
