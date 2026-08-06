@@ -30,6 +30,7 @@ fn document() -> Value {
             "/auth/refresh": { "post": { "summary": "Atomically rotate a refresh token", "responses": { "200": { "description": "Rotated token pair" }, "401": { "description": "Invalid, expired, revoked, or replayed token" } } } },
             "/auth/logout": { "post": { "summary": "Revoke a refresh session", "responses": { "204": { "description": "Revoked or already absent" } } } },
             "/auth/introspect": { "post": { "summary": "Inspect a shared-auth access token", "responses": { "200": { "description": "Token activity and provider provenance" } } } },
+            "/auth/verify": { "get": { "summary": "Bearer check for gateway auth_request", "responses": { "200": { "description": "Token accepted" }, "401": { "description": "Token rejected" } } } },
             "/.well-known/jwks.json": { "get": { "summary": "Read public ES256 signing keys", "responses": { "200": { "description": "JWKS" } } } },
             "/healthz": { "get": { "summary": "Liveness", "responses": { "200": { "description": "Alive" } } } },
             "/readyz": { "get": { "summary": "Postgres-aware readiness", "responses": { "200": { "description": "Ready" }, "503": { "description": "Not ready" } } } }
@@ -57,5 +58,73 @@ mod tests {
         ] {
             assert!(value["paths"].get(path).is_some(), "missing {path}");
         }
+    }
+
+    /// Every public route must appear in the OpenAPI document.
+    ///
+    /// Client SDKs are written against this contract, and they had drifted
+    /// badly: eleven documented endpoints did not exist on the server, while
+    /// the whole passwordless/SMS-MFA surface that does exist had no client
+    /// coverage at all. Nothing detected it because no test compared the two.
+    /// This reads the router source so a new `.route(...)` cannot ship
+    /// undocumented.
+    #[test]
+    fn openapi_documents_every_public_route() {
+        // Operational and browser-facing surfaces are deliberately excluded:
+        // they are not part of the SDK contract.
+        const NOT_PUBLIC_API: [&str; 8] = [
+            "/",
+            "/ui",
+            "/ui/exchange",
+            "/docs/api",
+            "/api/docs",
+            "/metrics",
+            "/internal/webhook/sync",
+            "/api/docs.json",
+        ];
+
+        let router_source = include_str!("mod.rs");
+        let documented = document();
+        let mut undocumented = Vec::new();
+
+        for line in router_source.lines() {
+            let Some(rest) = line.trim().strip_prefix(".route(\"") else {
+                continue;
+            };
+            let Some(path) = rest.split('"').next() else {
+                continue;
+            };
+            if NOT_PUBLIC_API.contains(&path) {
+                continue;
+            }
+            if documented["paths"].get(path).is_none() {
+                undocumented.push(path.to_owned());
+            }
+        }
+
+        assert!(
+            undocumented.is_empty(),
+            "routes missing from the OpenAPI contract: {undocumented:?}"
+        );
+    }
+
+    /// The inverse: the document must not promise routes that do not exist.
+    #[test]
+    fn openapi_documents_no_route_the_router_lacks() {
+        let router_source = include_str!("mod.rs");
+        let documented = document();
+        let paths = documented["paths"].as_object().expect("paths object");
+
+        let phantom = paths
+            .keys()
+            .filter(|path| path.as_str() != "/api/docs.json")
+            .filter(|path| !router_source.contains(&format!(".route(\"{path}\"")))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        assert!(
+            phantom.is_empty(),
+            "OpenAPI promises routes the server does not serve: {phantom:?}"
+        );
     }
 }
