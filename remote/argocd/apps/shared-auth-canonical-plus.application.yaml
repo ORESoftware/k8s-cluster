@@ -1,0 +1,62 @@
+# Canonical Plus realm-isolated Shared Auth deployment.
+#
+# This Application is intentionally separate from dd-shared-auth. The same
+# reviewed Rust binary is reused, but this overlay has a name suffix and an
+# independent issuer, Supabase project, RDS identity/session plane, signing
+# key, browser-state sealing key, and host-only cookie namespace.
+#
+# DEPENDENCIES (do not sync before all are true):
+#   1. shared-auth/shared-auth-server.rs#41 is merged and the
+#      deploy/k8s/overlays/canonical-plus path exists on main.
+#   2. remote/argocd/projects/shared-auth.tenant.yaml and
+#      remote/argocd/projects/shared-auth.appproject.yaml are applied.
+#   3. Fiducia/External Secrets contains the exact Canonical realm keys:
+#        dd/shared-auth/customer/canonical-plus/supabase-projects
+#        dd/shared-auth/customer/canonical-plus/provider-credentials
+#        dd/shared-auth/customer/canonical-plus/signing-key-pem
+#        dd/shared-auth/customer/canonical-plus/database-url
+#        dd/shared-auth/customer/canonical-plus/database-endpoint-host
+#        dd/shared-auth/customer/canonical-plus/database-resource-ref
+#        dd/shared-auth/customer/canonical-plus/supabase-project-ref
+#        dd/shared-auth/customer/canonical-plus/redis-url
+#        dd/shared-auth/customer/canonical-plus/webhook-secret
+#        dd/shared-auth/customer/canonical-plus/introspect-secret
+#        dd/shared-auth/customer/canonical-plus/browser-seal-secret
+#   4. The Canonical RDS schema is applied through the reviewed migration job.
+#   5. The app.canonical.plus edge routes /shared-auth/* to the generated
+#      dd-shared-auth-canonical-plus Service and strips caller x-auth-* headers.
+#
+# Never point this overlay at the Fiducia, oresoftware.com, or generic
+# shared-auth data plane. Realm separation is a security boundary, not only a
+# branding choice.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: canonical-plus-shared-auth
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    canonical.plus/dependency: shared-auth-server.rs#41
+spec:
+  project: shared-auth
+  source:
+    repoURL: git@github.com:shared-auth/shared-auth-server.rs.git
+    targetRevision: main
+    path: deploy/k8s/overlays/canonical-plus
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: shared-auth
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=false
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
