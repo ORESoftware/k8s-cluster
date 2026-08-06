@@ -79,6 +79,10 @@ production project/database authority remains one reviewed deployment per realm
 and Supabase project; Canonical does not receive Fiducia or OreSoftware cookies,
 tables, or provider credentials.
 
+Each Cloudflare route uses a dedicated HTTPS backend origin. WebSocket proxy
+checks must prove that the `Upgrade` and `Connection` headers reach the selected
+web or API Service without falling back to the public Worker hostname.
+
 ## Promotion
 
 The checked-in `e245ed408810455b7a0c43b9f4e81fd60b172100` image tags are an
