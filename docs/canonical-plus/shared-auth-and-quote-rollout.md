@@ -17,11 +17,36 @@ sealed relative path `/u/quote`.
 | Boundary | Repository | Responsibility |
 |---|---|---|
 | Public CTA | `canonical-cloud/canonical-marketing-site.web` | Sign-in and “Get a quote · under 5 min” links |
-| Quote web/API | `canonical-cloud/canonical-web-server.rs` | Maud + Axum UI, REST, WebSockets, SeaORM persistence, Gemini analysis |
-| Browser identity authority | `shared-auth/shared-auth-server.rs` | Magic-link/OTP ceremony, host-only access cookie, JWT verification/revocation |
-| Edge enforcement | `shared-auth/shared-auth-infra` | `app.canonical.plus` protected-prefix routing and sanitized verified identity headers |
+| Browser application | `canonical-cloud/canonical-web-server.rs` | Maud/HTMX pages, origin-side Shared Auth verification, owner-scoped REST/WebSockets, SeaORM persistence, and the in-process quote analysis path |
+| Durable quote API | `canonical-cloud/canonical-api-server.rs` | Standalone Axum REST/WebSocket service, durable PostgreSQL work claiming, model calls, retries, and strict response validation |
+| Browser identity authority | `shared-auth/shared-auth-server.rs` | Magic-link/OTP ceremony, host-only cookies, JWT verification, refresh, and revocation |
+| Edge enforcement | `shared-auth/shared-auth-infra` | Protected-prefix routing, token verification, caller-header stripping, and sanitized identity forwarding |
 | GitOps | `ORESoftware/k8s-cluster` | ArgoCD project/application and tenant boundary |
-| Product data plane | Canonical Supabase + RDS | Independent Canonical identity/session/context/quote records |
+| Product data plane | Canonical Supabase + PostgreSQL | Independent Canonical identity, session, context, and quote records |
+
+## Landed source state
+
+The reviewed application changes are merged:
+
+- `shared-auth/shared-auth-server.rs#41` — merge commit
+  `22aab1de937620251f4e0b9a617c485733c97ff5`;
+- `shared-auth/shared-auth-infra#9` — merge commit
+  `6234f1ee72349f84652c85a5a957b2982ea471bf`;
+- `canonical-cloud/canonical-web-server.rs#41` — squash commit
+  `74448c8dcb885fbb240ac59d1079a929bd06caa5`;
+- `canonical-cloud/canonical-api-server.rs#6` — squash commit
+  `91ac093bf6c3d0958918fc8678af95dd13975f1e`;
+- `canonical-cloud/canonical-api-server.rs#8` — squash commit
+  `e3a7cc79b3ceac0e455b9d7822a29d4154c9584b`.
+
+The web and standalone API services now agree on:
+
+- default model identifier: `gemini-3.6-pro`;
+- explicit runtime override: `GEMINI_MODEL`;
+- PostgreSQL context key: `quote-analysis`.
+
+Competing branches that used a different model or authorization boundary were
+closed as superseded.
 
 ## Trust flow
 
@@ -52,43 +77,46 @@ explicit bearer, existing Canonical app session, then Shared Auth browser cookie
 
 Canonical Plus runs the common Shared Auth binary as an independent authority:
 
-- issuer: `https://app.canonical.plus/shared-auth`
-- audience: `canonical-plus-web`
-- cookie: `__Host-canonical-customer-auth`
-- independent Supabase project
-- independent PostgreSQL identity/session schema and credentials
-- independent signing key
-- independent browser return-state sealing key
-- independent Redis namespace/endpoint
+- issuer: `https://app.canonical.plus/shared-auth`;
+- audience: `canonical-plus-web`;
+- cookie: `__Host-canonical-customer-auth`;
+- independent Supabase project;
+- independent PostgreSQL identity/session plane and credentials;
+- independent signing key;
+- independent browser return-state sealing key;
+- independent Redis namespace or endpoint.
 
 Do not share these values with `fiducia.cloud`, `oresoftware.com`, or the generic
-Shared Auth deployment. Cross-product SSO, when desired, should be an explicit
-federation/grant protocol rather than shared cookies or shared database rows.
+Shared Auth deployment. Cross-product SSO, when desired, must be an explicit
+federation or grant protocol rather than shared cookies or database rows.
 
 ## Quote analysis boundary
 
-The quote service combines:
+Both quote implementations combine:
 
-1. version-controlled `context/compliance-quote.md`;
-2. the latest active PostgreSQL `canonical_context` record with key
+1. version-controlled Markdown policy;
+2. the active PostgreSQL `canonical_context` record with key
    `quote-analysis`; and
 3. the authenticated customer's validated intake.
 
 Gemini receives bounded context and a structured response schema. Customer and
-context fields are treated as untrusted data, not instructions. The result is a
-preliminary scope/timeline/investment range for human review, never an audit
-opinion, certification, attestation, or legal conclusion.
+context fields are untrusted data, not instructions. The result is a preliminary
+scope, timeline, and investment range for human review, never an audit opinion,
+certification, attestation, or legal conclusion.
 
-The operator-selected default model is `gemini-3.6-pro`; `GEMINI_MODEL` remains
-an explicit runtime override. Production activation is fail-closed until the
-selected Google project and region prove that exact model identifier is enabled.
-Do not silently substitute another model or rewrite the default in source.
+The operator-selected source default is `gemini-3.6-pro`; `GEMINI_MODEL` remains
+an explicit runtime override. As of August 6, 2026, public Google Gemini API
+documentation lists `gemini-3.6-flash` and `gemini-3.1-pro-preview`, but does not
+list a public `gemini-3.6-pro` endpoint. Production activation is therefore
+fail-closed until the authenticated model inventory for the selected Canonical
+Google project and region returns the exact `gemini-3.6-pro` identifier. Do not
+silently substitute Flash or another Pro version.
 
 PostgreSQL remains authoritative. REST reads recover current status; WebSocket
 messages are notification hints. The asynchronous states are `queued`,
 `analyzing`, `ready`, and `failed`.
 
-## Required secrets
+## Required secrets and identities
 
 The Canonical Shared Auth overlay reads only these External Secrets paths:
 
@@ -106,61 +134,100 @@ dd/shared-auth/customer/canonical-plus/introspect-secret
 dd/shared-auth/customer/canonical-plus/browser-seal-secret
 ```
 
-The quote runtime additionally requires a Canonical-only `GEMINI_API_KEY`.
-`GEMINI_MODEL` defaults to `gemini-3.6-pro`, and
-`QUOTE_ANALYSIS_MAX_CONCURRENCY` defaults to 4. Database migration and runtime
-identities must remain distinct; the web and API processes must not receive the
-privileged migration credential.
+The quote services additionally require Canonical-only runtime values for:
 
-## Ordered rollout
+- PostgreSQL runtime connectivity;
+- a separately scoped privileged migration identity used only by a migration
+  job;
+- Canonical Supabase URL and publishable key;
+- a random web-to-API service credential;
+- `GEMINI_API_KEY`;
+- optional `GEMINI_MODEL`, defaulting to `gemini-3.6-pro`;
+- `QUOTE_CONTEXT_KEY=quote-analysis`.
 
-1. Confirm `shared-auth/shared-auth-server.rs#41` is merged and its exact server,
-   configuration, migration, and browser-auth contracts passed.
-2. Confirm `shared-auth/shared-auth-infra#9` is merged and its Node, Worker,
-   configuration, and dry-deploy contracts passed.
-3. Merge the Canonical quote web/API PR only after its permanent exact-head CI
-   matrix is fully green, including dependency audit and non-root container
-   validation.
-4. Apply the Canonical desired PostgreSQL schema with the privileged migration
-   identity, then remove that identity from the runtime environment.
-5. Provision the exact Canonical-only Shared Auth and quote secrets. Verify that
-   no Fiducia, oresoftware.com, or generic Shared Auth value is referenced.
-6. Merge this GitOps application; confirm ArgoCD renders
-   `deploy/k8s/overlays/canonical-plus` and generated names are suffixed
-   `-canonical-plus`.
-7. Verify the Cloudflare token, account, exact `canonical.plus` zone, Worker
-   script, routes, DNS record, R2 bucket, and environment before any edge write.
-8. Route `/shared-auth/*` to the Canonical Shared Auth Service and all other app
-   traffic to the Canonical web/API origins.
-9. Verify redirect, login, sealed return, CSRF rejection, owner isolation, quote
-   submission, Gemini failure handling, REST recovery, WebSocket updates,
-   logout/revocation, and refresh rotation in the deployed environment.
-10. Add or enable proxied Cloudflare DNS only after origin health and TLS checks
-    pass.
+The long-lived web and API processes must never receive the privileged migration
+credential. Secrets, account identifiers, provider credentials, and private
+endpoints are intentionally excluded from Git.
+
+## Cloudflare reference contract
+
+The merged edge repository contains a reviewed reference configuration with:
+
+- Worker name `canonical-plus-auth-edge`;
+- zone name `canonical.plus`;
+- protected route patterns for `app.canonical.plus/u/*`, the quote REST paths,
+  and quote WebSockets;
+- same-origin Shared Auth issuer and login paths.
+
+That file is a source contract, not evidence that the Worker, routes, DNS
+records, or production environment currently exist in the authorized Cloudflare
+account. Before any Cloudflare write, an authenticated inventory must prove:
+
+1. the token resolves to the authorized Canonical account;
+2. the exact zone named `canonical.plus` belongs to that account;
+3. the exact Worker script and environment;
+4. the existing routes and their zone association;
+5. the exact `app.canonical.plus` and `api.canonical.plus` DNS records;
+6. the exact Kubernetes gateway, load balancer, or tunnel origin;
+7. origin health and TLS before enabling proxying.
+
+No R2 bucket is part of the quote architecture. Do not create, modify, or bind an
+R2 bucket unless a separate Canonical use case and exact bucket are approved.
+
+## Ordered activation
+
+1. Apply the desired Canonical PostgreSQL schema with the privileged migration
+   identity, then remove that identity from every long-lived runtime.
+2. Seed exactly one active `canonical_context` version for `quote-analysis` and
+   verify both services read the same row.
+3. Provision the exact Canonical-only Shared Auth and quote secrets. Verify that
+   no unrelated product value is referenced.
+4. Query the selected Google project's authenticated model inventory and require
+   the exact `gemini-3.6-pro` identifier before enabling analysis traffic.
+5. Build and publish immutable image digests for Shared Auth, the web service,
+   the standalone API, and the session revoker; record the rollback digests.
+6. Render this ArgoCD Application against the intended cluster and namespace.
+   Merge only after the secret objects and image digests are proven. Automated
+   sync remains disabled; activation requires an explicit operator sync.
+7. Perform the authenticated Cloudflare account, zone, Worker, route, DNS, and
+   origin inventory described above. Stop on any ambiguity.
+8. Configure `/shared-auth/*` to the Canonical Shared Auth Service and route the
+   remaining application and API paths only to the proven Canonical origins.
+9. Verify origin health and TLS, then create or update only the explicitly
+   approved proxied Canonical DNS records and Worker routes.
+10. Certify redirect, magic-link/OTP login, sealed return, CSRF rejection,
+    revocation, refresh rotation, owner isolation, quote submission, model
+    failure behavior, REST recovery, and WebSocket updates in the deployed
+    environment.
 
 ## Current activation state
 
-Completed dependencies:
+Completed:
 
-- `shared-auth/shared-auth-server.rs#41` is merged.
-- `shared-auth/shared-auth-infra#9` is merged.
-- `canonical-cloud/canonical-marketing-site.web#21` is merged and links to the
-  exact signed-in destination.
-- `deploy/k8s/overlays/canonical-plus` exists on Shared Auth `main`.
+- public CTA and exact signed-in destination;
+- Shared Auth browser-session implementation;
+- Canonical edge Worker implementation and local Worker contract tests;
+- signed-in web quote application and embedded API;
+- standalone durable quote API;
+- shared model and `quote-analysis` context-key contracts;
+- PostgreSQL and CockroachDB RLS tests, declarative schema convergence, browser
+  E2E, RustSec active-graph validation, and non-root image contracts;
+- manual-only ArgoCD application policy;
+- Linear activation tracking.
 
 Remaining fail-closed gates:
 
-- the exact Canonical web/API release head must complete every required CI job;
-- the desired PostgreSQL schema must be applied with the privileged migration
-  identity;
-- the Canonical-only External Secrets and quote runtime secrets must be proven
-  present;
-- `gemini-3.6-pro` must be proven available to the selected Google project and
+- privileged schema application and `quote-analysis` seed record;
+- Canonical-only Supabase, PostgreSQL, Shared Auth, service-token, and Gemini
+  secrets;
+- authenticated proof that `gemini-3.6-pro` exists for the selected project and
   region;
-- the exact Cloudflare account, `canonical.plus` zone, Worker, routes, DNS, R2
-  bucket, and deployment environment must be inventoried before any write;
-- origin health and TLS must pass before enabling proxied DNS.
+- immutable production image digests and rollback references;
+- authenticated Cloudflare account and exact `canonical.plus` zone ownership;
+- exact Worker, route, DNS, environment, and Kubernetes origin inventory;
+- origin health and TLS;
+- manual ArgoCD sync and deployed end-to-end certification.
 
-Secrets, account identifiers, provider credentials, and private endpoints are
-intentionally excluded from Git. Store them only in the approved secret systems
-and redact operational evidence.
+No Cloudflare, DNS, R2, Supabase, PostgreSQL, secret-store, or live Kubernetes
+mutation is authorized by this document alone. Every activation write remains
+conditional on the exact target being proven immediately beforehand.
