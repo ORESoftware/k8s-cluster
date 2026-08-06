@@ -30,7 +30,7 @@ The test uses Twilio's documented valid magic From number with account test cred
 
 ## Safety
 
-- The workflow is `workflow_dispatch` only; it is not run for arbitrary pull requests.
+- The workflow runs on `workflow_dispatch` and a weekly schedule against `main`; it is not run for arbitrary pull requests.
 - It skips cleanly when the relevant secret set is absent.
 - Credentials are supplied only through GitHub Actions secrets.
 - Test jobs assert that normalized outcomes contain fingerprints rather than recipient addresses or phone numbers.

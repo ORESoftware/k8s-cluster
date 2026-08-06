@@ -2,6 +2,12 @@ name: Provider canaries
 
 on:
   workflow_dispatch:
+  schedule:
+    # Weekly canary against main. Both jobs exit 0 without contacting any
+    # provider when their secret set is absent, so the schedule is inert until
+    # credentials are configured; when configured it detects SendGrid/Twilio
+    # API contract drift between releases.
+    - cron: "41 7 * * 1"
 
 permissions:
   contents: read

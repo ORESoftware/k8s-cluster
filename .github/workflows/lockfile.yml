@@ -5,28 +5,33 @@ on:
     paths:
       - Cargo.toml
       - Cargo.lock
+  push:
+    branches: [main]
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: lockfile-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  normalize:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+  # Verify-only by design. The previous normalize job ran cargo
+  # generate-lockfile (a whole-graph re-resolution) and bot-committed the
+  # result with the default GITHUB_TOKEN, which both bypassed human review of
+  # dependency changes and produced commits no workflow ever tested. A stale
+  # lockfile now fails here and the contributor commits the fix themselves.
+  verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
         with:
-          ref: ${{ github.head_ref }}
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Regenerate Cargo.lock
-        run: cargo generate-lockfile
-      - name: Commit Cargo.lock when changed
-        run: |
-          if git diff --quiet -- Cargo.lock; then
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Cargo.lock
-          git commit -m "CI normalize Cargo.lock"
-          git push origin "HEAD:${{ github.head_ref }}"
+          key: lockfile
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Fail when Cargo.lock is out of sync with Cargo.toml
+        run: cargo metadata --format-version 1 --locked > /dev/null
+      - name: Fail when Cargo.lock is not the committed, canonical form
+        run: git diff --exit-code -- Cargo.lock

@@ -4,9 +4,18 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    # Daily against main so an upstream NATS or dependency regression is
+    # visible without waiting for the next pull request.
+    - cron: "23 6 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   http-process:
@@ -16,8 +25,16 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.88.0
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Run real-socket push and contact HTTP integration tests
-        run: cargo test --locked --test http_process --test contact_process -- --nocapture
+        run: |
+          cargo test --locked \
+            --test http_process \
+            --test contact_process \
+            --test push_hardening \
+            --test contact_hardening \
+            -- --nocapture
 
   nats-jetstream:
     runs-on: ubuntu-latest
@@ -30,6 +47,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.88.0
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Start NATS with JetStream
         run: |
           docker run --detach \
@@ -53,3 +72,20 @@ jobs:
       - name: Show NATS logs
         if: always()
         run: docker logs nats-e2e || true
+
+  e2e-success:
+    name: E2E success
+    if: always()
+    needs: [http-process, nats-jetstream]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail when any required job did not succeed
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS_JSON"
+          if printf '%s' "$NEEDS_JSON" | grep -Eq '"result": *"(failure|cancelled|skipped)"'; then
+            echo "A required job failed, was cancelled, or was skipped."
+            exit 1
+          fi
