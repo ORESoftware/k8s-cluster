@@ -14,8 +14,8 @@ consumes only reviewed immutable digests and never builds source in-cluster. The
 context and is not an input to this overlay.
 
 Argo CD is the only runtime writer. GitHub Actions builds and attests the web
-and revoker images, but it receives no kubeconfig and never applies Kubernetes
-resources. A reviewed Git commit promotes exact registry digests here; Argo CD
+and revoker images, but it never deploys the umbrella `canonical.cloud` stack,
+receives no kubeconfig, and never applies Kubernetes resources. A reviewed Git commit promotes exact registry digests here; Argo CD
 then reconciles that commit from `k8s-cluster@dev`.
 
 ## Process and credential boundaries
