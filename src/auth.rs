@@ -11,7 +11,6 @@ use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use axum::http::HeaderMap;
 use base64::Engine;
-use rand::RngCore;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
@@ -49,7 +48,10 @@ impl FromRequestParts<AppState> for AuthedDevice {
 /// SHA-256 hex digest.
 pub fn issue_token() -> (String, String) {
     let mut raw = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut raw);
+    // Token entropy must come from the operating system and must never fall
+    // back to a userspace PRNG: a token that is not OS-random is a forgeable
+    // device credential.
+    getrandom::fill(&mut raw).expect("operating system entropy is unavailable");
     let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw);
     let hash = token_hash(&token);
     (token, hash)
