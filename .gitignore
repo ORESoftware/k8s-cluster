@@ -11,3 +11,7 @@ result-*
 
 # scratch space (git worktrees, build scratch, etc.)
 tmp/
+tmp
+temp
+tmp/worktrees
+temp/worktrees
