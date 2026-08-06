@@ -57,6 +57,14 @@ spec:
         - protocol: TCP
           port: 4317
     - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: canonical-api-server
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: 8081
+    - to:
         - ipBlock:
             cidr: 0.0.0.0/0
             except:
