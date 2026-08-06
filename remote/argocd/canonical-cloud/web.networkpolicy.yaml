@@ -73,7 +73,18 @@ spec:
               app.kubernetes.io/component: api
       ports:
         - protocol: TCP
-          port: 8081
+          port: 8080
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: shared-auth
+          podSelector:
+            matchLabels:
+              app: dd-shared-auth
+              app.kubernetes.io/instance: canonical-plus
+      ports:
+        - protocol: TCP
+          port: 8120
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
