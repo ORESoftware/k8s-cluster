@@ -14,3 +14,7 @@ pg-defs/generated/**/build/
 .env
 *.env
 env/
+tmp
+temp
+tmp/worktrees
+temp/worktrees
