@@ -81,7 +81,7 @@ jobs:
           echo "029a7f0f4e1932c52a0476cf02a0fd855c0bb85694b82c338fc648dcb53a819d  $archive" | sha256sum --check
           tar -xzf "$archive" -C /tmp kustomize
           /tmp/kustomize version
-      - name: Render Canonical overlay and verify secret wiring
+      - name: Render Canonical overlay and verify first-party boundary
         shell: bash
         run: |
           set -euo pipefail
@@ -97,6 +97,12 @@ jobs:
           grep -Fq 'value: https://app.canonical.plus/shared-auth' "$rendered"
           grep -Fq 'value: canonical-plus-web' "$rendered"
           grep -Fq 'value: __Host-canonical-customer-auth' "$rendered"
+          grep -Fq 'kind: Ingress' "$rendered"
+          grep -Fq 'host: app.canonical.plus' "$rendered"
+          grep -Fq 'path: /shared-auth(/|$)(.*)' "$rendered"
+          grep -Fq 'nginx.ingress.kubernetes.io/rewrite-target: /$2' "$rendered"
+          grep -Fq 'name: dd-shared-auth-canonical-plus' "$rendered"
+          grep -Fq 'kubernetes.io/metadata.name: ingress-nginx' "$rendered"
       - name: Format
         run: cargo fmt --all --check
       - name: Schema
