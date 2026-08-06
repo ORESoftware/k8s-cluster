@@ -100,7 +100,7 @@ jobs:
       AUTH_REALM_ALLOW_LOOPBACK: "true"
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.0.0
         with:
           node-version: 22
       - name: Install Rust
