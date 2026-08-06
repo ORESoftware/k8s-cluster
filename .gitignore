@@ -4,3 +4,7 @@ node_modules/
 result
 **/.dart_tool/
 **/target/
+tmp
+temp
+tmp/worktrees
+temp/worktrees
