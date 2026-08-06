@@ -119,7 +119,7 @@ jq -e --argjson allowed "$allowed_json" '
       . as $repository | $allowed | index($repository) != null)) and
   all(.[];
     type == "array" and length > 0 and
-    all(.[ ];
+    all(.[];
       type == "string" and
       startswith(".github/workflows/") and
       (endswith(".yml") or endswith(".yaml")) and
