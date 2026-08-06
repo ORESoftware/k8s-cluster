@@ -1,0 +1,326 @@
+name: Shared Auth release exact-head validation
+
+on:
+  push:
+    branches:
+      - ci/shared-auth-release-validation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shared-auth-release-exact-head
+  cancel-in-progress: false
+
+env:
+  SHARED_AUTH_SERVER_SHA: 1f99d3f3ef14613d3ed669f8a5075ab8696fc9ee
+  SHARED_AUTH_INFRA_SHA: 6234f1ee72349f84652c85a5a957b2982ea471bf
+
+jobs:
+  credential-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify private repository checkout credential
+        env:
+          ORG_GITOPS_TOKEN: ${{ secrets.ORG_GITOPS_TOKEN }}
+        run: test -n "$ORG_GITOPS_TOKEN"
+
+  server-core:
+    needs: credential-preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_DB: shared_auth_test
+          POSTGRES_USER: shared_auth
+          POSTGRES_PASSWORD: shared_auth_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U shared_auth -d shared_auth_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:8.2-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      AUTH_TEST_DATABASE_URL: postgres://shared_auth:shared_auth_test@127.0.0.1:5432/shared_auth_test
+      AUTH_TEST_REDIS_URL: redis://127.0.0.1:6379/
+    steps:
+      - name: Check out Shared Auth server exact SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: shared-auth/shared-auth-server.rs
+          ref: ${{ env.SHARED_AUTH_SERVER_SHA }}
+          path: shared-auth-server
+          token: ${{ secrets.ORG_GITOPS_TOKEN }}
+          persist-credentials: false
+          show-progress: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+          components: rustfmt,clippy
+      - name: Assert exact server source head
+        working-directory: shared-auth-server
+        run: test "$(git rev-parse HEAD)" = "$SHARED_AUTH_SERVER_SHA"
+      - name: Realm contract tests
+        working-directory: shared-auth-server
+        run: |
+          python3 -m unittest scripts/test_validate_auth_realms.py
+          python3 scripts/validate_auth_realms.py \
+            --contract config/auth-realms.contract.json \
+            --schema db/schema.sql \
+            --realm-source src/realm.rs
+      - name: Repository policy
+        working-directory: shared-auth-server
+        run: scripts/check-repository-policy.sh
+      - name: Formal obligation register
+        working-directory: shared-auth-server
+        run: python3 formal/review-procedure/check.py
+      - name: Format
+        working-directory: shared-auth-server
+        run: cargo fmt --all --check
+      - name: Apply declarative schema
+        working-directory: shared-auth-server
+        run: psql "$AUTH_TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql
+      - name: Check all targets
+        working-directory: shared-auth-server
+        run: cargo check --all-targets --locked
+      - name: Clippy
+        working-directory: shared-auth-server
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Test all targets
+        working-directory: shared-auth-server
+        run: cargo test --all-targets --locked
+      - name: Exhaust bounded auth state model
+        working-directory: shared-auth-server
+        run: cargo test --test auth_state_model --locked
+      - name: Release build
+        working-directory: shared-auth-server
+        run: cargo build --release --locked
+      - name: Canonical Kustomize render
+        working-directory: shared-auth-server
+        run: |
+          kubectl kustomize deploy/k8s/overlays/canonical-plus > /tmp/canonical-plus-shared-auth.yaml
+          test -s /tmp/canonical-plus-shared-auth.yaml
+          grep -Fq 'canonical-plus-shared-auth' /tmp/canonical-plus-shared-auth.yaml
+          grep -Fq '__Host-canonical-customer-auth' /tmp/canonical-plus-shared-auth.yaml
+          grep -Fq 'app.canonical.plus' /tmp/canonical-plus-shared-auth.yaml
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked --version 0.22.2
+      - name: RustSec audit
+        working-directory: shared-auth-server
+        run: cargo audit --deny warnings
+
+  server-browser-webauthn:
+    needs: credential-preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_DB: shared_auth_browser
+          POSTGRES_USER: shared_auth
+          POSTGRES_PASSWORD: shared_auth_browser
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U shared_auth -d shared_auth_browser"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      AUTH_DATABASE_URL: postgres://shared_auth:shared_auth_browser@127.0.0.1:5432/shared_auth_browser
+      AUTH_BIND_ADDR: 127.0.0.1:8120
+      AUTH_ALLOW_REGISTRATION: "true"
+      AUTH_FACTOR_ENCRYPTION_KEY_HEX: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+      AUTH_OTP_PEPPER: browser-ci-test-pepper-with-at-least-32-bytes
+      AUTH_WEBAUTHN_RP_ID: localhost
+      AUTH_WEBAUTHN_RP_ORIGIN: http://localhost:8120
+      AUTH_WEBAUTHN_RP_NAME: Shared Auth Browser CI
+      AUTH_ISSUER: http://localhost:8120
+      AUTH_AUDIENCE: shared-auth-browser-ci
+      AUTH_SIGNING_KEY_FILE: /tmp/shared-auth-browser-key.pem
+      AUTH_BASE_URL: http://localhost:8120
+      AUTH_REALM: customer
+      AUTH_REALM_DEPLOYMENT: shared-auth-customer-browser-ci
+      AUTH_DATABASE_ENDPOINT_HOST: 127.0.0.1
+      AUTH_DATABASE_RESOURCE_REF: test:postgres:shared-auth-customer-browser-ci
+      AUTH_DATABASE_SECRET_REF: dd/shared-auth/customer/browser-ci-database-url
+      AUTH_SIGNING_KEY_REF: dd/shared-auth/customer/browser-ci-signing-key
+      AUTH_SESSION_COOKIE_NAME: __Host-shared-auth-customer-browser-ci
+      AUTH_REALM_SUPABASE_PROJECT_REF: customerprojectref01
+      AUTH_REALM_ALLOW_LOOPBACK: "true"
+    steps:
+      - name: Check out Shared Auth server exact SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: shared-auth/shared-auth-server.rs
+          ref: ${{ env.SHARED_AUTH_SERVER_SHA }}
+          path: shared-auth-server
+          token: ${{ secrets.ORG_GITOPS_TOKEN }}
+          persist-credentials: false
+          show-progress: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "22"
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+      - name: Assert exact server source head
+        working-directory: shared-auth-server
+        run: test "$(git rev-parse HEAD)" = "$SHARED_AUTH_SERVER_SHA"
+      - name: Apply browser schema
+        working-directory: shared-auth-server
+        run: psql "$AUTH_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql
+      - name: Generate ephemeral ES256 signing key
+        run: >-
+          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256
+          -out "$AUTH_SIGNING_KEY_FILE"
+      - name: Install pinned Playwright package
+        working-directory: shared-auth-server/e2e
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install Chromium runtime
+        working-directory: shared-auth-server/e2e
+        run: npx playwright install --with-deps chromium
+      - name: Run real WebAuthn ceremonies
+        working-directory: shared-auth-server
+        run: |
+          set -euo pipefail
+          cargo build --locked --bin shared-auth-server
+          target/debug/shared-auth-server >/tmp/shared-auth-browser.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for _ in $(seq 1 60); do
+            if curl --fail --silent http://localhost:8120/healthz >/dev/null; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$server_pid" 2>/dev/null; then
+              cat /tmp/shared-auth-browser.log
+              exit 1
+            fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            cat /tmp/shared-auth-browser.log
+            exit 1
+          fi
+          (cd e2e && npm test)
+      - name: Print server log on failure
+        if: failure()
+        run: cat /tmp/shared-auth-browser.log || true
+
+  server-browser-e2e:
+    needs: credential-preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out Shared Auth server exact SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: shared-auth/shared-auth-server.rs
+          ref: ${{ env.SHARED_AUTH_SERVER_SHA }}
+          path: shared-auth-server
+          token: ${{ secrets.ORG_GITOPS_TOKEN }}
+          persist-credentials: false
+          show-progress: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: shared-auth-server/e2e/package-lock.json
+      - name: Assert exact server source head
+        working-directory: shared-auth-server
+        run: test "$(git rev-parse HEAD)" = "$SHARED_AUTH_SERVER_SHA"
+      - name: Build release binary
+        working-directory: shared-auth-server
+        run: cargo build --release --locked --bin shared-auth-server
+      - name: Install e2e dependencies
+        working-directory: shared-auth-server/e2e
+        run: npm ci
+      - name: Install Chromium
+        working-directory: shared-auth-server/e2e
+        run: npx playwright install --with-deps chromium
+      - name: Run browser e2e
+        working-directory: shared-auth-server/e2e
+        run: npx playwright test
+
+  server-docker:
+    needs: credential-preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out Shared Auth server exact SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: shared-auth/shared-auth-server.rs
+          ref: ${{ env.SHARED_AUTH_SERVER_SHA }}
+          path: shared-auth-server
+          token: ${{ secrets.ORG_GITOPS_TOKEN }}
+          persist-credentials: false
+          show-progress: false
+      - name: Assert exact server source head
+        working-directory: shared-auth-server
+        run: test "$(git rev-parse HEAD)" = "$SHARED_AUTH_SERVER_SHA"
+      - name: Build production image
+        working-directory: shared-auth-server
+        run: docker build -t shared-auth-server:pr41-exact-head .
+
+  infra-worker-and-contracts:
+    needs: credential-preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out Shared Auth infra merged SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: shared-auth/shared-auth-infra
+          ref: ${{ env.SHARED_AUTH_INFRA_SHA }}
+          path: shared-auth-infra
+          token: ${{ secrets.ORG_GITOPS_TOKEN }}
+          persist-credentials: false
+          show-progress: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: shared-auth-infra/workers/auth-edge/package-lock.json
+      - name: Assert exact infra source head
+        working-directory: shared-auth-infra
+        run: test "$(git rev-parse HEAD)" = "$SHARED_AUTH_INFRA_SHA"
+      - name: Runtime configuration tests
+        working-directory: shared-auth-infra
+        run: |
+          node --test scripts/validate-runtime-auth-config.test.mjs
+          node scripts/validate-runtime-auth-config.mjs config/production.required.env
+          node --test scripts/validate-auth-data-planes.test.mjs
+          node scripts/validate-auth-data-planes.mjs config/auth-data-planes.contract.json
+      - name: Install Worker dependencies
+        working-directory: shared-auth-infra/workers/auth-edge
+        run: npm ci
+      - name: Worker static checks
+        working-directory: shared-auth-infra/workers/auth-edge
+        run: npm run check
+      - name: Worker tests
+        working-directory: shared-auth-infra/workers/auth-edge
+        run: npm test
+      - name: Worker dry deploy
+        working-directory: shared-auth-infra/workers/auth-edge
+        run: npx wrangler deploy --dry-run
