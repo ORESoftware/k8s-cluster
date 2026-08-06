@@ -13,3 +13,7 @@ canonical-monorepo/apps/
 # misc
 .DS_Store
 *.log
+tmp
+temp
+tmp/worktrees
+temp/worktrees
