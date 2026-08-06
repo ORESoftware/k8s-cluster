@@ -20,7 +20,7 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
-test('vpn app deploys wg-easy wireguard with private admin UI', async () => {
+test('vpn app deploys wg-easy wireguard with private admin UI and VPN-local DNS', async () => {
   const app = await readRepoFile('remote/argocd/apps/dd-vpn.application.yaml');
   const kustomization = await readRepoFile('remote/argocd/vpn/kustomization.yaml');
   const config = await readRepoFile('remote/argocd/vpn/dd-vpn.configmap.yaml');
@@ -45,6 +45,7 @@ test('vpn app deploys wg-easy wireguard with private admin UI', async () => {
     'dd-vpn-secrets.externalsecret.yaml',
     'dd-vpn.pv.yaml',
     'dd-vpn.pvc.yaml',
+    'dd-argocd-mobile.configmap.yaml',
     'dd-vpn.deployment.yaml',
     'dd-vpn-ui.service.yaml',
     'dd-vpn.networkpolicy.yaml',
@@ -52,10 +53,14 @@ test('vpn app deploys wg-easy wireguard with private admin UI', async () => {
     assert.match(kustomization, new RegExp(resource.replaceAll('.', '\\.')));
   }
 
-  assert.match(config, /INIT_HOST:\s*"54\.91\.17\.58"/);
+  assert.match(config, /INIT_HOST:\s*"[A-Za-z0-9.-]+"/);
   assert.match(config, /INIT_PORT:\s*"51820"/);
-  assert.match(config, /INIT_DNS:\s*"10\.96\.0\.10,1\.1\.1\.1"/);
-  assert.match(config, /INIT_ALLOWED_IPS:\s*"10\.8\.0\.0\/24,10\.96\.0\.0\/12,10\.244\.0\.0\/16"/);
+  assert.match(config, /INIT_DNS:\s*"10\.8\.0\.1"/);
+  assert.doesNotMatch(config, /INIT_DNS:[^\n]*1\.1\.1\.1/);
+  assert.match(
+    config,
+    /INIT_ALLOWED_IPS:\s*"10\.8\.0\.0\/24,10\.96\.0\.0\/12,10\.244\.0\.0\/16"/,
+  );
   assert.match(config, /INSECURE:\s*"true"/);
   assert.match(config, /DISABLE_IPV6:\s*"true"/);
 
@@ -70,7 +75,10 @@ test('vpn app deploys wg-easy wireguard with private admin UI', async () => {
   assert.match(persistentVolume, /kind:\s*PersistentVolume/);
   assert.match(persistentVolume, /name:\s*dd-vpn-config/);
   assert.match(persistentVolume, /persistentVolumeReclaimPolicy:\s*Retain/);
-  assert.match(persistentVolume, /claimRef:[\s\S]*namespace:\s*vpn[\s\S]*name:\s*dd-vpn-config/);
+  assert.match(
+    persistentVolume,
+    /claimRef:[\s\S]*namespace:\s*vpn[\s\S]*name:\s*dd-vpn-config/,
+  );
   assert.match(persistentVolume, /path:\s*\/home\/ec2-user\/dd-vpn-config/);
 
   assert.match(deployment, /strategy:[\s\S]*type:\s*Recreate/);
@@ -82,11 +90,17 @@ test('vpn app deploys wg-easy wireguard with private admin UI', async () => {
   assert.match(deployment, /SYS_MODULE/);
   assert.match(deployment, /allowPrivilegeEscalation:\s*false/);
   assert.match(deployment, /hostPort:\s*51820/);
-  assert.match(deployment, /protocol:\s*UDP/);
+  assert.doesNotMatch(deployment, /hostPort:\s*8443/);
   assert.match(deployment, /mountPath:\s*\/etc\/wireguard/);
   assert.match(deployment, /path:\s*\/lib\/modules/);
-  assert.match(deployment, /INIT_USERNAME[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-vpn-secrets/);
-  assert.match(deployment, /INIT_PASSWORD[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-vpn-secrets/);
+  assert.match(
+    deployment,
+    /INIT_USERNAME[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-vpn-secrets/,
+  );
+  assert.match(
+    deployment,
+    /INIT_PASSWORD[\s\S]*secretKeyRef:[\s\S]*name:\s*dd-vpn-secrets/,
+  );
   assert.match(deployment, /startupProbe:[\s\S]*port:\s*http/);
 
   assert.match(service, /type:\s*ClusterIP/);
@@ -97,6 +111,7 @@ test('vpn app deploys wg-easy wireguard with private admin UI', async () => {
 
   assert.match(readme, /WireGuard VPN endpoint/);
   assert.match(readme, /Open UDP `51820`/);
+  assert.match(readme, /VPN-only Argo CD/);
   assert.match(readme, /VPC-like overlay/);
   assert.match(readme, /does not create or manage AWS VPC resources/);
 });

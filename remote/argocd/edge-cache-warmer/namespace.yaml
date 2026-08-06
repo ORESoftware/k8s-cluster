@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: edge-cache-warmer
+  labels:
+    app.kubernetes.io/name: edge-cache-warmer
+    app.kubernetes.io/part-of: edge-cache-warmer

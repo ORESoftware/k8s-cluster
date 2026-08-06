@@ -1,0 +1,184 @@
+# INERT AWS TEMPLATE: prerequisites may reconcile only after this file is
+# promoted into the AWS cluster overlay. Controller and scale set remain manual
+# until CRD audit, GitHub App, runner group, image, and smoke gates are complete.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-streempilot-ci-runner-prereqs
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+    dd.dev/activation-state: template-only
+    dd.dev/cloud-provider: aws
+    dd.dev/linear-issue: DEN-1549
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/argocd/ci-runners/streempilot/base
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: arc-runners-streempilot
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-streempilot-ci-arc-controller
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    dd.dev/activation-state: controller-and-crd-audit-gated
+    dd.dev/cloud-provider: aws
+    dd.dev/linear-issue: DEN-1549
+spec:
+  project: default
+  source:
+    repoURL: ghcr.io/actions/actions-runner-controller-charts
+    chart: gha-runner-scale-set-controller
+    targetRevision: 0.14.2
+    helm:
+      releaseName: streempilot-ci-arc
+      skipTests: true
+      values: |
+        replicaCount: 1
+        flags:
+          watchSingleNamespace: arc-runners-streempilot
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: "1"
+            memory: 512Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: arc-systems
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-streempilot-ci-runner-set
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+    dd.dev/activation-state: credential-runner-group-and-smoke-gated
+    dd.dev/cloud-provider: aws
+    dd.dev/linear-issue: DEN-1549
+spec:
+  project: default
+  source:
+    repoURL: ghcr.io/actions/actions-runner-controller-charts
+    chart: gha-runner-scale-set
+    targetRevision: 0.14.2
+    helm:
+      releaseName: streempilot-ci-aws
+      skipTests: true
+      values: |
+        githubConfigUrl: https://github.com/StreemPilot
+        githubConfigSecret: streempilot-arc-github
+        runnerGroup: "streempilot-aws"
+        runnerScaleSetName: streempilot-ci
+        minRunners: 0
+        maxRunners: 4
+        controllerServiceAccount:
+          namespace: arc-systems
+          name: streempilot-ci-arc-gha-rs-controller
+        containerMode:
+          type: ""
+        listenerTemplate:
+          spec:
+            containers:
+              - name: listener
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 128Mi
+                  limits:
+                    cpu: 500m
+                    memory: 512Mi
+                securityContext:
+                  runAsNonRoot: true
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: ["ALL"]
+                  seccompProfile:
+                    type: RuntimeDefault
+        template:
+          metadata:
+            labels:
+              dd.dev/ci-runner: streempilot-ci
+              dd.dev/cloud-provider: aws
+          spec:
+            automountServiceAccountToken: false
+            restartPolicy: Never
+            terminationGracePeriodSeconds: 30
+            securityContext:
+              fsGroup: 1001
+              runAsNonRoot: true
+              runAsUser: 1001
+              seccompProfile:
+                type: RuntimeDefault
+            containers:
+              - name: runner
+                image: ghcr.io/actions/actions-runner:2.334.0
+                imagePullPolicy: IfNotPresent
+                command: ["/home/runner/run.sh"]
+                env:
+                  - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+                    value: "false"
+                resources:
+                  requests:
+                    cpu: "1"
+                    memory: 2Gi
+                    ephemeral-storage: 8Gi
+                  limits:
+                    cpu: "4"
+                    memory: 8Gi
+                    ephemeral-storage: 24Gi
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 1001
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: ["ALL"]
+                  seccompProfile:
+                    type: RuntimeDefault
+                volumeMounts:
+                  - name: work
+                    mountPath: /home/runner/_work
+                  - name: tmp
+                    mountPath: /tmp
+            volumes:
+              - name: work
+                emptyDir:
+                  sizeLimit: 20Gi
+              - name: tmp
+                emptyDir:
+                  sizeLimit: 4Gi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: arc-runners-streempilot
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

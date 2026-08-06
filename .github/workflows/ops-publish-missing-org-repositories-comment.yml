@@ -1,0 +1,132 @@
+name: Publish missing organization repositories from trusted comment
+run-name: Publish missing organization repositories for PR #${{ github.event.issue.number }}
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+  statuses: write
+
+concurrency:
+  group: ops-publish-missing-organization-repositories
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event.issue.pull_request &&
+      github.actor == 'chatgpt' &&
+      github.event.comment.body == 'ops-publish-missing-org-repositories:231:e481ff951e3713913813bc25966745757186bb57'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      TARGET_SHA: e481ff951e3713913813bc25966745757186bb57
+      TARGET_BRANCH: agent/critical-org-publish-trigger-main-20260731-v4
+      PR_NUMBER: '231'
+    steps:
+      - name: Mark the exact trigger commit pending
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            -f state=pending \
+            -f context='ops/missing-repository-publication' \
+            -f description="trusted-main publisher run ${GITHUB_RUN_ID} is executing" \
+            -f target_url="$run_url" >/dev/null
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --body "Trusted-main publisher started: ${run_url}" >/dev/null
+
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate the fixed same-repository trigger
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pr="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
+          test "$(jq -r '.head.repo.full_name' <<<"$pr")" = "$GITHUB_REPOSITORY"
+          test "$(jq -r '.head.ref' <<<"$pr")" = "$TARGET_BRANCH"
+          test "$(jq -r '.head.sha' <<<"$pr")" = "$TARGET_SHA"
+          test "$(jq -r '.base.ref' <<<"$pr")" = main
+          test "$(jq -r '.state' <<<"$pr")" = open
+
+      - name: Configure trusted main-ref AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Load and mask the protected GitHub publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret_json="$(aws secretsmanager get-secret-value \
+            --secret-id dd/remote-dev/agent-secrets \
+            --query SecretString \
+            --output text)"
+          token="$(jq -er '.GH_PAT | select(type == "string" and length > 0)' <<<"$secret_json")"
+          printf '::add-mask::%s\n' "$token"
+          {
+            printf 'GH_TOKEN=%s\n' "$token"
+            printf 'GITHUB_REPOSITORY_ADMIN_TOKEN=%s\n' "$token"
+          } >> "$GITHUB_ENV"
+          unset token secret_json
+
+      - name: Verify exact publisher identity and organization ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api user --jq .login)" = ORESoftware
+          for org in hypesiege StreemPilot meta-agents-demo file-tunnel unreal-unity-poc; do
+            membership="$(gh api "/user/memberships/orgs/$org" --jq '.role + ":" + .state')"
+            test "$membership" = admin:active
+            echo "$org owner membership verified"
+          done
+
+      - name: Publish and verify the fixed 34-repository allowlist
+        id: publish
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ops/publish_missing_org_repositories.py
+          python3 scripts/ops/publish_missing_org_repositories.py
+
+      - name: Report exact publication result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          if [[ "${{ steps.publish.outcome }}" == success ]]; then
+            state=success
+            description='all 34 canonical repositories published and verified'
+            conclusion=success
+          else
+            state=failure
+            description='trusted publisher failed; inspect the linked Actions run'
+            conclusion=failure
+          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            -f state="$state" \
+            -f context='ops/missing-repository-publication' \
+            -f description="$description" \
+            -f target_url="$run_url" >/dev/null
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --body "Trusted-main publisher completed with **${conclusion}**: ${run_url}" >/dev/null
+          test "$conclusion" = success

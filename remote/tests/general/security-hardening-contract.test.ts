@@ -174,6 +174,7 @@ test('no manifest carries a credential as an inline env value', async () => {
   const CREDENTIAL_NAME =
     /(PASSWORD|_PASS$|_PASS_|^PASS$|SECRET|TOKEN|COOKIE|APIKEY|API_KEY|CREDENTIAL|PRIVATE_KEY)/;
   const NOT_A_SECRET = /^(|true|false|\d+(\.\d+)?)$/i;
+  const RUNTIME_SECRET_PATH = /^\/var\/run\/[A-Za-z0-9._/-]+$/;
   const offenders: string[] = [];
 
   for (const file of listManifests()) {
@@ -195,6 +196,16 @@ test('no manifest carries a credential as an inline env value', async () => {
 
       const value = valueMatch[1].trim().replace(/^['"]|['"]$/g, '');
       if (NOT_A_SECRET.test(value)) return;
+      // A *_PATH variable may point to a projected Secret file. Keep this
+      // exception deliberately narrow: an absolute runtime mount only, with no
+      // parent traversal. The secret bytes themselves remain forbidden here.
+      if (
+        (envName.endsWith('_PATH') || envName.endsWith('_SECRET_ROOT')) &&
+        RUNTIME_SECRET_PATH.test(value) &&
+        !value.includes('..')
+      ) {
+        return;
+      }
 
       offenders.push(`${file}:${index + 1} ${envName} = ${JSON.stringify(value)}`);
     });

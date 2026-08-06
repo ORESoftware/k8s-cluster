@@ -1,0 +1,89 @@
+name: durable-worker-sdk-namespace-contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/durable-worker-sdk-namespace.yml'
+      - 'remote/worker-sdks/**'
+      - 'remote/api-sdks/**'
+      - 'remote/tools/generate-api-sdks.mjs'
+      - 'remote/tests/general/durable-worker-typescript-sdk.test.mjs'
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - '.github/workflows/durable-worker-sdk-namespace.yml'
+      - 'remote/worker-sdks/**'
+      - 'remote/api-sdks/**'
+      - 'remote/tools/generate-api-sdks.mjs'
+      - 'remote/tests/general/durable-worker-typescript-sdk.test.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: durable-worker-sdk-namespace-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  namespace-and-generation-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout without persistent credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Enforce generated and hand-authored namespace separation
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk='remote/worker-sdks/typescript/durable-worker'
+          generated_root='remote/api-sdks/typescript'
+          old="${generated_root}/durable-worker"
+          test -d "$sdk"
+          test ! -e "$old"
+          if git grep -n -F "$old" -- . ':!.github/workflows/durable-worker-sdk-namespace.yml'; then
+            echo 'stale generated-namespace worker SDK reference remains' >&2
+            exit 1
+          fi
+          test -f remote/worker-sdks/README.md
+
+      - name: Verify SDK runtime and repository contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix remote/worker-sdks/typescript/durable-worker run check
+          npm --prefix remote/worker-sdks/typescript/durable-worker test
+          node --test remote/tests/general/durable-worker-typescript-sdk.test.mjs
+
+      - name: Verify generated OpenAPI outputs remain deterministic
+        run: node remote/tools/generate-api-sdks.mjs --check
+
+      - name: Verify package payload
+        working-directory: remote/worker-sdks/typescript/durable-worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm pack --dry-run --json > "${RUNNER_TEMP}/durable-worker-sdk-pack.json"
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          const report = JSON.parse(await readFile(process.env.RUNNER_TEMP + '/durable-worker-sdk-pack.json', 'utf8'));
+          const files = new Set(report[0].files.map((entry) => entry.path));
+          for (const expected of ['README.md', 'index.d.ts', 'index.mjs', 'package.json']) {
+            if (!files.has(expected)) throw new Error(`package payload is missing ${expected}`);
+          }
+          if (files.has('test/client.test.mjs')) throw new Error('package payload leaked tests');
+          NODE
+
+      - name: Assert validation did not mutate tracked files
+        run: git diff --exit-code

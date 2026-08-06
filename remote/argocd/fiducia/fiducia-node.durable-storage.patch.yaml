@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: fiducia-node
+  namespace: fiducia
+spec:
+  # StatefulSet deletion or scale-down must never garbage-collect authoritative
+  # Raft volumes. An operator must explicitly authorize PVC deletion after a
+  # verified backup and restore drill.
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Kubernetes replaces the highest ordinal first and never updates two
+      # voters simultaneously. The runbook adds quorum/catch-up stop gates.
+      partition: 0
+  template:
+    spec:
+      volumes:
+        # Strategic-merge deletion of the legacy authoritative emptyDir. The
+        # volumeClaimTemplate below supplies the same `data` mount instead.
+        - $patch: delete
+          name: data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app: fiducia-node
+          dd.dev/data-class: authoritative-raft
+        annotations:
+          dd.dev/backup-required: "true"
+          dd.dev/deletion-approval: "security-and-platform"
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        # AWS uses EBS gp3. The Hetzner bootstrap intentionally exposes its
+        # provisioner under the same name so this base stays portable.
+        storageClassName: gp3
+        volumeMode: Filesystem
+        resources:
+          requests:
+            storage: 20Gi

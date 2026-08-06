@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "scopeRoot": "remote/deployments",
+  "classifications": [
+    "product-http-api",
+    "protocol-only",
+    "controller-worker",
+    "metrics-exporter",
+    "embedded-runtime-fixture",
+    "retired"
+  ],
+  "modules": [
+    {
+      "id": "go-wss-server-go",
+      "moduleRoot": "remote/deployments/go-wss-server-go",
+      "entrypoint": "remote/deployments/go-wss-server-go/main.go",
+      "classification": "protocol-only",
+      "productHttpApi": false,
+      "primaryProtocol": "websocket",
+      "operationalHttpRoutes": [
+        "/healthz",
+        "/metrics",
+        "/readyz"
+      ],
+      "openapiDisposition": "not-applicable-protocol-only",
+      "evidence": [
+        "The public workload protocol is a WebSocket frame contract on the benchmark listener.",
+        "The separate net/http admin listener exposes only health, readiness, and Prometheus metrics.",
+        "No request/response business API is registered, so generating REST OpenAPI would misdescribe the service."
+      ],
+      "nextAction": "Record and test the WebSocket wire protocol independently; keep operational endpoints in the fleet probe/metrics standards rather than the REST SDK pipeline."
+    },
+    {
+      "id": "thread-operator-go",
+      "moduleRoot": "remote/deployments/thread-operator-go",
+      "entrypoint": "remote/deployments/thread-operator-go/cmd/operator/main.go",
+      "classification": "controller-worker",
+      "productHttpApi": false,
+      "primaryProtocol": "kubernetes-controller-runtime",
+      "operationalHttpRoutes": [
+        "/healthz",
+        "/metrics",
+        "/readyz"
+      ],
+      "openapiDisposition": "not-applicable-worker",
+      "evidence": [
+        "The process reconciles the namespaced Thread custom resource through controller-runtime.",
+        "Its listeners are controller-runtime metrics and probe servers, not a customer-facing HTTP router.",
+        "The executable contract is the CRD, RBAC, reconciliation behavior, and status model."
+      ],
+      "nextAction": "Keep CRD/schema and reconciliation tests authoritative; do not invent REST documentation for controller-runtime probes."
+    },
+    {
+      "id": "thread-fleet-exporter-go",
+      "moduleRoot": "remote/deployments/thread-fleet-exporter-go",
+      "entrypoint": "remote/deployments/thread-fleet-exporter-go/cmd/exporter/main.go",
+      "classification": "metrics-exporter",
+      "productHttpApi": false,
+      "primaryProtocol": "prometheus-exposition",
+      "operationalHttpRoutes": [
+        "/healthz",
+        "/metrics"
+      ],
+      "openapiDisposition": "not-applicable-operational-only",
+      "evidence": [
+        "The process performs read-only Kubernetes API collection and exports Prometheus metrics.",
+        "Its net/http mux contains only the Prometheus exposition endpoint and a health endpoint.",
+        "No application request or response DTO is dispatched over HTTP."
+      ],
+      "nextAction": "Keep Prometheus metric-family and probe tests authoritative; exclude this exporter from REST SDK generation."
+    }
+  ],
+  "nonModuleSources": [
+    {
+      "id": "container-pool-golang-handler",
+      "path": "remote/deployments/container-pool-rs/runtime-images/common/golang-handler.go",
+      "classification": "embedded-runtime-fixture",
+      "productHttpApi": false,
+      "openapiDisposition": "not-applicable-embedded-fixture",
+      "evidence": [
+        "The file is copied into language runtime images by container-pool-rs and is not a standalone Go module or Kubernetes workload.",
+        "Its route surface belongs to the managed-function runtime contract owned by container-pool-rs."
+      ],
+      "nextAction": "Validate it through the container-pool managed-function contract instead of creating a separate Go service SDK."
+    }
+  ]
+}

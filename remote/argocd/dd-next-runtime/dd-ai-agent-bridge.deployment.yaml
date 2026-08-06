@@ -64,13 +64,33 @@ spec:
               # remote/libs. Prefer the mounted superproject; otherwise clone
               # k8s-cluster and init just those two submodules so unrelated private
               # submodules can't block startup (mirrors dd-soccer-rs).
+              # The binary this manifest execs. Also used to validate the mounted
+              # source below — see the staleness guard.
+              bin_name="fiducia-ai-agent-bridge"
+
               build_root=""
               mounted="/opt/dd-next-1"
+              # STALENESS GUARD. The hostPath mount is the EC2 node's own checkout,
+              # shared by ~93 deployments, and nothing keeps it in lockstep with the
+              # manifests ArgoCD delivers from Git. On 2026-07-31 that split took this
+              # service down: Git pinned the submodule at d9b4bf7 (crate renamed to
+              # fiducia-ai-agent-bridge) while the node sat at 2d82df2 (crate
+              # ai-agent-bridge), so the build "succeeded" in 0.14s and then exec'd a
+              # path that did not exist — 78 CrashLoopBackOff restarts.
+              #
+              # Requiring the mounted crate to declare the binary we are about to exec
+              # turns that silent mismatch into an automatic fallback to the pinned
+              # clone below, which is self-contained and immune to node drift.
               if [ -f "${mounted}/remote/deployments/ai-agent-bridge/Cargo.toml" ] \
-                 && [ -f "${mounted}/remote/libs/pg-defs/generated/rust/Cargo.toml" ]; then
+                 && [ -f "${mounted}/remote/libs/pg-defs/generated/rust/Cargo.toml" ] \
+                 && grep -q "^name = \"${bin_name}\"" \
+                      "${mounted}/remote/deployments/ai-agent-bridge/Cargo.toml"; then
                 build_root="${mounted}"
                 echo "[dd-ai-agent-bridge] using mounted superproject at ${mounted}"
               else
+                if [ -f "${mounted}/remote/deployments/ai-agent-bridge/Cargo.toml" ]; then
+                  echo "[dd-ai-agent-bridge] mounted source is STALE (does not build ${bin_name}); cloning instead"
+                fi
                 # GH_PAT (dd-git-clone-token) authenticates private fetches via an
                 # HTTP header so an auth failure cannot print the token.
                 git_auth_args=()
@@ -94,7 +114,16 @@ spec:
               # to `--features postgres` once the ai_agent_bridge schema migration
               # is applied and the DATABASE_URL env below is enabled.
               cargo build --release --locked
-              exec "${CARGO_TARGET_DIR:-target}/release/fiducia-ai-agent-bridge"
+              built="${CARGO_TARGET_DIR:-target}/release/${bin_name}"
+              # Fail with the actual cause rather than bash's bare "No such file or
+              # directory", which is what the 2026-07-31 stale-source outage looked
+              # like from the logs.
+              if [ ! -x "${built}" ]; then
+                echo "[dd-ai-agent-bridge] FATAL: cargo did not produce ${built}" >&2
+                echo "[dd-ai-agent-bridge] binaries present: $(ls "${CARGO_TARGET_DIR:-target}/release/" 2>/dev/null | grep -v '\.d$' | tr '\n' ' ')" >&2
+                exit 1
+              fi
+              exec "${built}"
           env:
             - name: HOST
               value: 0.0.0.0
@@ -106,14 +135,16 @@ spec:
               value: json
             - name: RUST_LOG
               value: info,ai_agent_bridge=info,hyper=warn,reqwest=warn
-            # The binary refuses a non-loopback bind without this global bearer.
-            # Reuse the cluster's required server-to-server credential so every
-            # non-health HTTP route and every TCP connection fails closed.
+            # The binary refuses a non-loopback bind without this global bearer,
+            # so every non-health HTTP route and every TCP connection fails
+            # closed; a missing secret must fail startup rather than expose the
+            # agent/channel/workflow APIs. Backed by the bridge's dedicated
+            # secret (enforced by the k8s contract test and kind smoke fixture).
             - name: API_AUTH_BEARER
               valueFrom:
                 secretKeyRef:
-                  name: dd-agent-secrets
-                  key: SERVER_AUTH_SECRET
+                  name: dd-ai-agent-bridge-secrets
+                  key: inbox_token
             - name: OTEL_SERVICE_NAME
               value: dd-ai-agent-bridge
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -130,8 +161,8 @@ spec:
             - name: AI_AGENT_BRIDGE_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: dd-agent-secrets
-                  key: SERVER_AUTH_SECRET
+                  name: dd-ai-agent-bridge-secrets
+                  key: inbox_token
             # In-cluster embedder is optional — the built-in deterministic local
             # embedder is used when this is unset. Enable once the endpoint/contract
             # is confirmed:

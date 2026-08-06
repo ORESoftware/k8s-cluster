@@ -1,0 +1,70 @@
+name: Publish missing organization repositories (dispatch)
+run-name: Publish missing organization repositories (${{ inputs.request_id }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: Immutable request correlation identifier
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ops-publish-missing-organization-repositories
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out the trusted main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Configure trusted main-ref AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Load and mask the protected GitHub publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret_json="$(aws secretsmanager get-secret-value \
+            --secret-id dd/remote-dev/agent-secrets \
+            --query SecretString \
+            --output text)"
+          token="$(jq -er '.GH_PAT | select(type == "string" and length > 0)' <<<"$secret_json")"
+          printf '::add-mask::%s\n' "$token"
+          {
+            printf 'GH_TOKEN=%s\n' "$token"
+            printf 'GITHUB_REPOSITORY_ADMIN_TOKEN=%s\n' "$token"
+          } >> "$GITHUB_ENV"
+          unset token secret_json
+
+      - name: Verify exact publisher identity and organization ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api user --jq .login)" = ORESoftware
+          for org in hypesiege StreemPilot meta-agents-demo file-tunnel unreal-unity-poc; do
+            membership="$(gh api "/user/memberships/orgs/$org" --jq '.role + ":" + .state')"
+            test "$membership" = admin:active
+            echo "$org owner membership verified"
+          done
+
+      - name: Publish and verify the fixed 34-repository allowlist
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ops/publish_missing_org_repositories.py
+          python3 scripts/ops/publish_missing_org_repositories.py

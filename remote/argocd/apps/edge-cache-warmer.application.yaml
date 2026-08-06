@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: edge-cache-warmer
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: edge-cache-warmer
+    app.kubernetes.io/part-of: edge-cache-warmer
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/argocd/edge-cache-warmer
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: edge-cache-warmer
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true

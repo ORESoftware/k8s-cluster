@@ -1,0 +1,173 @@
+name: durable-worker-go-sdk
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/durable-worker-go-sdk.yml'
+      - 'remote/worker-sdks/README.md'
+      - 'remote/worker-sdks/fixtures/**'
+      - 'remote/worker-sdks/go/durable-worker/**'
+      - 'remote/worker-sdks/python/durable-worker/**'
+      - 'remote/worker-sdks/typescript/durable-worker/**'
+      - 'remote/tests/general/durable-worker-go-sdk.test.mjs'
+      - 'remote/tests/general/durable-worker-sdk-protocol-fixture.test.mjs'
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - '.github/workflows/durable-worker-go-sdk.yml'
+      - 'remote/worker-sdks/README.md'
+      - 'remote/worker-sdks/fixtures/**'
+      - 'remote/worker-sdks/go/durable-worker/**'
+      - 'remote/worker-sdks/python/durable-worker/**'
+      - 'remote/worker-sdks/typescript/durable-worker/**'
+      - 'remote/tests/general/durable-worker-go-sdk.test.mjs'
+      - 'remote/tests/general/durable-worker-sdk-protocol-fixture.test.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: durable-worker-go-sdk-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version:
+          - '1.23.x'
+          - 'stable'
+    defaults:
+      run:
+        working-directory: remote/worker-sdks/go/durable-worker
+    steps:
+      - name: Checkout without persistent credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Set up Go ${{ matrix.go-version }}
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: false
+
+      - name: Enforce formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          unformatted="$(gofmt -l .)"
+          if [[ -n "$unformatted" ]]; then
+            printf '%s\n' "$unformatted" >&2
+            exit 1
+          fi
+
+      - name: Run race-enabled client, worker, and fixture tests
+        run: go test ./... -race -count=1
+
+      - name: Run Go vet
+        run: go vet ./...
+
+      - name: Stress lease-fencing cancellation
+        if: matrix.go-version == 'stable'
+        run: go test . -race -run '^TestFencedHeartbeatCancelsHandlerAndSuppressesTerminalMutation$' -count=50
+
+      - name: Assert validation did not mutate tracked files
+        working-directory: ${{ github.workspace }}
+        run: git diff --exit-code
+
+  cross-language-conformance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout without persistent credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Run Go packaging and shared protocol contracts
+        run: |
+          node --test \
+            remote/tests/general/durable-worker-go-sdk.test.mjs \
+            remote/tests/general/durable-worker-sdk-protocol-fixture.test.mjs
+
+      - name: Re-run TypeScript lifecycle tests after retry hardening
+        run: node --test remote/worker-sdks/typescript/durable-worker/test/client.test.mjs
+
+      - name: Re-run Python lifecycle tests against the shared contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$PWD/remote/worker-sdks/python/durable-worker/src"
+          python3 -m unittest discover \
+            -s remote/worker-sdks/python/durable-worker/tests \
+            -v
+
+      - name: Reject credential-shaped source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -R -E -n \
+            --exclude-dir=.git \
+            --exclude='*.sum' \
+            'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----' \
+            remote/worker-sdks/go/durable-worker \
+            remote/worker-sdks/fixtures \
+            remote/tests/general/durable-worker-go-sdk.test.mjs \
+            remote/tests/general/durable-worker-sdk-protocol-fixture.test.mjs; then
+            echo 'credential-shaped material found in durable-worker SDK changes' >&2
+            exit 1
+          fi
+
+      - name: Assert validation did not mutate tracked files
+        run: git diff --exit-code
+
+  publish-source-artifact:
+    if: github.event_name == 'push'
+    needs:
+      - go-runtime
+      - cross-language-conformance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Checkout without persistent credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Build deterministic source archive and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="durable-worker-go-sdk-${GITHUB_SHA}.tgz"
+          tar \
+            --sort=name \
+            --mtime='UTC 1970-01-01' \
+            --owner=0 \
+            --group=0 \
+            --numeric-owner \
+            -czf "$archive" \
+            -C remote/worker-sdks/go durable-worker
+          sha256sum "$archive" > "$archive.sha256"
+
+      - name: Publish Go SDK source artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: durable-worker-go-sdk-${{ github.sha }}
+          path: |
+            durable-worker-go-sdk-${{ github.sha }}.tgz
+            durable-worker-go-sdk-${{ github.sha }}.tgz.sha256
+          if-no-files-found: error
+          retention-days: 30
