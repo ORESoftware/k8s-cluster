@@ -1,0 +1,38 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: canonical-cloud-origins
+  namespace: canonical-cloud
+  labels:
+    app.kubernetes.io/part-of: canonical-cloud
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - canonical-web-origin.canonical.plus
+        - canonical-api-origin.canonical.plus
+      secretName: canonical-cloud-origin-tls
+  rules:
+    - host: canonical-web-origin.canonical.plus
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: canonical-cloud-web
+                port:
+                  number: 8081
+    - host: canonical-api-origin.canonical.plus
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: canonical-cloud-api
+                port:
+                  number: 8081
