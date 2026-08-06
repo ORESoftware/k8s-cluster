@@ -1,0 +1,292 @@
+name: Canonical Plus Shared Auth exact-head certification
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/canonical-plus-shared-auth-certification.yml"
+      - "config/ci/canonical-plus-shared-auth-pins.json"
+      - "config/ci/k8s-submodule-github-app-allowlist.json"
+      - "scripts/ci/mint-github-app-installation-token.sh"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: canonical-plus-shared-auth-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_DB: shared_auth_test
+          POSTGRES_USER: shared_auth
+          POSTGRES_PASSWORD: shared_auth_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U shared_auth -d shared_auth_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:8.2-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      AUTH_TEST_DATABASE_URL: postgres://shared_auth:shared_auth_test@127.0.0.1:5432/shared_auth_test
+      AUTH_TEST_REDIS_URL: redis://127.0.0.1:6379/
+    steps:
+      - name: Check out the certification harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Validate the immutable pins and narrow repository allowlist
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          pins = json.loads(Path('config/ci/canonical-plus-shared-auth-pins.json').read_text())
+          assert pins['schema_version'] == 1
+          assert pins['sources'] == {
+              'shared-auth/shared-auth-server.rs': '22aab1de937620251f4e0b9a617c485733c97ff5',
+              'shared-auth/shared-auth-infra': 'b1a73635d93064a59e2dc6aab610d2f654306d04',
+          }
+          assert not any(pins['live_writes'].values())
+
+          allowlist = json.loads(Path('config/ci/k8s-submodule-github-app-allowlist.json').read_text())
+          assert allowlist['required_permissions'] == {'contents': 'read', 'metadata': 'read'}
+          shared_auth = allowlist['repositories_by_owner']['shared-auth']
+          assert shared_auth == sorted(set(shared_auth))
+          for required in ('shared-auth-infra', 'shared-auth-server.rs'):
+              assert required in shared_auth
+          PY
+
+      - name: Fetch exact private commits with one owner-scoped App token
+        id: private_sources
+        shell: bash
+        env:
+          K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          pins=config/ci/canonical-plus-shared-auth-pins.json
+          server_sha="$(python3 -c "import json; print(json.load(open('$pins'))['sources']['shared-auth/shared-auth-server.rs'])")"
+          infra_sha="$(python3 -c "import json; print(json.load(open('$pins'))['sources']['shared-auth/shared-auth-infra'])")"
+          source_root="$RUNNER_TEMP/canonical-plus-private-sources"
+          server_dir="$source_root/server"
+          infra_dir="$source_root/infra"
+          token_file="$RUNNER_TEMP/shared-auth-installation.token"
+          mkdir -p "$source_root"
+
+          bash scripts/ci/mint-github-app-installation-token.sh \
+            shared-auth "$token_file" shared-auth-infra shared-auth-server.rs
+          token="$(<"$token_file")"
+          echo "::add-mask::$token"
+          rm -f "$token_file"
+          basic="$(printf 'x-access-token:%s' "$token" | base64 -w0)"
+          echo "::add-mask::$basic"
+
+          fetch_exact() {
+            local repository="$1"
+            local sha="$2"
+            local destination="$3"
+            git init --quiet "$destination"
+            git -C "$destination" remote add origin "https://github.com/shared-auth/${repository}.git"
+            git -C "$destination" \
+              -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${basic}" \
+              fetch --quiet --depth=1 origin "$sha"
+            git -C "$destination" checkout --quiet --detach FETCH_HEAD
+            test "$(git -C "$destination" rev-parse HEAD)" = "$sha"
+            test -z "$(git -C "$destination" status --porcelain)"
+            git -C "$destination" remote remove origin
+          }
+
+          fetch_exact shared-auth-server.rs "$server_sha" "$server_dir"
+          fetch_exact shared-auth-infra "$infra_sha" "$infra_dir"
+
+          revoke_status="$(curl --silent --show-error \
+            --request DELETE \
+            --output /dev/null \
+            --write-out '%{http_code}' \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer ${token}" \
+            --header 'X-GitHub-Api-Version: 2026-03-10' \
+            "${GITHUB_API_URL%/}/installation/token")" || revoke_status=000
+          test "$revoke_status" = 204
+          unset token basic
+
+          echo "SERVER_DIR=$server_dir" >> "$GITHUB_ENV"
+          echo "INFRA_DIR=$infra_dir" >> "$GITHUB_ENV"
+          echo "server_sha=$server_sha" >> "$GITHUB_OUTPUT"
+          echo "infra_sha=$infra_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Install Node.js 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+
+      - name: Run the exact Canonical edge checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$INFRA_DIR/workers/auth-edge"
+          npm install --ignore-scripts --no-package-lock --no-audit --no-fund
+          npm run check
+          npm test
+          npx --yes wrangler@4.115.0 deploy \
+            --dry-run \
+            --config wrangler.canonical-plus.example.toml \
+            --outdir "$RUNNER_TEMP/canonical-plus-worker"
+
+      - name: Assert app-browser and standalone-API edge contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          CONFIG="$INFRA_DIR/workers/auth-edge/wrangler.canonical-plus.example.toml" python3 - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          config = tomllib.loads(Path(os.environ['CONFIG']).read_text())
+          assert config['name'] == 'canonical-plus-auth-edge'
+          assert config['main'] == 'src/canonical-plus.mjs'
+          assert config['workers_dev'] is False
+          assert config['routes'] == [
+              {'pattern': 'app.canonical.plus/u/*', 'zone_name': 'canonical.plus'},
+              {'pattern': 'app.canonical.plus/api/v1/quotes*', 'zone_name': 'canonical.plus'},
+              {'pattern': 'app.canonical.plus/ws/quotes*', 'zone_name': 'canonical.plus'},
+              {'pattern': 'api.canonical.plus/v1/quotes*', 'zone_name': 'canonical.plus'},
+              {'pattern': 'api.canonical.plus/v1/ws*', 'zone_name': 'canonical.plus'},
+          ]
+          variables = config['vars']
+          assert variables['CANONICAL_API_HOST'] == 'api.canonical.plus'
+          assert variables['AUTH_ISSUER'] == 'https://app.canonical.plus/shared-auth'
+          assert variables['AUTH_AUDIENCE'] == 'canonical-plus-web'
+          assert variables['SESSION_COOKIE_NAME'] == '__Host-canonical-customer-auth'
+          assert variables['REFRESH_COOKIE_NAME'] == '__Host-canonical-customer-auth-refresh'
+          assert variables['PROTECTED_PATH_PREFIXES'] == '/u/,/api/v1/quotes,/ws/quotes,/v1/quotes,/v1/ws'
+          PY
+
+      - name: Install stable Rust with formatting and Clippy
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+          components: rustfmt,clippy
+
+      - name: Validate the exact Canonical realm contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$SERVER_DIR"
+          python3 -m unittest scripts/test_validate_auth_realms.py
+          python3 scripts/validate_auth_realms.py \
+            --contract config/auth-realms.contract.json \
+            --schema db/schema.sql \
+            --realm-source src/realm.rs
+          cargo fmt --all --check
+          psql "$AUTH_TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --all-targets --locked
+          cargo build --release --locked
+
+      - name: Install kubectl
+        uses: Azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
+        with:
+          version: v1.32.2
+
+      - name: Render the isolated Canonical Shared Auth overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          rendered="$RUNNER_TEMP/canonical-plus-shared-auth.yaml"
+          kubectl kustomize "$SERVER_DIR/deploy/k8s/overlays/canonical-plus" > "$rendered"
+          grep -Fq 'value: https://app.canonical.plus/shared-auth' "$rendered"
+          grep -Fq 'value: canonical-plus-web' "$rendered"
+          grep -Fq 'value: __Host-canonical-customer-auth' "$rendered"
+          grep -Fq 'host: app.canonical.plus' "$rendered"
+          grep -Fq 'name: dd-shared-auth-canonical-plus' "$rendered"
+
+      - name: Run real browser WebAuthn ceremonies
+        shell: bash
+        env:
+          AUTH_DATABASE_URL: postgres://shared_auth:shared_auth_test@127.0.0.1:5432/shared_auth_test
+          AUTH_BIND_ADDR: 127.0.0.1:8120
+          AUTH_ALLOW_REGISTRATION: "true"
+          AUTH_FACTOR_ENCRYPTION_KEY_HEX: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+          AUTH_OTP_PEPPER: browser-ci-test-pepper-with-at-least-32-bytes
+          AUTH_WEBAUTHN_RP_ID: localhost
+          AUTH_WEBAUTHN_RP_ORIGIN: http://localhost:8120
+          AUTH_WEBAUTHN_RP_NAME: Shared Auth Browser CI
+          AUTH_ISSUER: http://localhost:8120
+          AUTH_AUDIENCE: shared-auth-browser-ci
+          AUTH_SIGNING_KEY_FILE: /tmp/shared-auth-browser-key.pem
+          AUTH_BASE_URL: http://localhost:8120
+          AUTH_REALM: customer
+          AUTH_REALM_DEPLOYMENT: shared-auth-customer-browser-ci
+          AUTH_DATABASE_ENDPOINT_HOST: 127.0.0.1
+          AUTH_DATABASE_RESOURCE_REF: test:postgres:shared-auth-customer-browser-ci
+          AUTH_DATABASE_SECRET_REF: dd/shared-auth/customer/browser-ci-database-url
+          AUTH_SIGNING_KEY_REF: dd/shared-auth/customer/browser-ci-signing-key
+          AUTH_SESSION_COOKIE_NAME: __Host-shared-auth-customer-browser-ci
+          AUTH_REALM_SUPABASE_PROJECT_REF: customerprojectref01
+          AUTH_REALM_ALLOW_LOOPBACK: "true"
+        run: |
+          set -euo pipefail
+          cd "$SERVER_DIR"
+          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 \
+            -out "$AUTH_SIGNING_KEY_FILE"
+          npm ci --prefix e2e --ignore-scripts --no-audit --no-fund
+          npx --prefix e2e playwright install --with-deps chromium
+          cargo build --locked --bin shared-auth-server
+          target/debug/shared-auth-server >"$RUNNER_TEMP/shared-auth-browser.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://localhost:8120/healthz >/dev/null; then
+              break
+            fi
+            if ! kill -0 "$server_pid" 2>/dev/null; then
+              cat "$RUNNER_TEMP/shared-auth-browser.log"
+              exit 1
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              cat "$RUNNER_TEMP/shared-auth-browser.log"
+              exit 1
+            fi
+            sleep 1
+          done
+          npm test --prefix e2e
+
+      - name: Build the exact Shared Auth container without publishing
+        shell: bash
+        run: docker build --tag shared-auth-server:canonical-plus-ci "$SERVER_DIR"
+
+      - name: Record the immutable certification evidence
+        shell: bash
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Canonical Plus private exact-head certification
+
+          - Shared Auth server: `${{ steps.private_sources.outputs.server_sha }}`
+          - Shared Auth edge: `${{ steps.private_sources.outputs.infra_sha }}`
+          - GitHub App token: owner-scoped, contents/metadata read-only, revoked after fetch
+          - Cloudflare/DNS/R2 writes: none
+          - Kubernetes writes: none
+          - Persistent database/Supabase/secret-store writes: none
+          EOF
