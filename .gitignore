@@ -4,3 +4,7 @@
 result
 _apalache-out/
 .formal-artifacts/
+tmp
+temp
+tmp/worktrees
+temp/worktrees
