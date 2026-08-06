@@ -139,3 +139,6 @@ remote/deployments/soccer-rs/out/
 # Python bytecode / test caches
 __pycache__/
 *.py[cod]
+# Agent-created worktree staging areas (agents should use primary branches instead).
+tmp/worktrees
+temp/worktrees
