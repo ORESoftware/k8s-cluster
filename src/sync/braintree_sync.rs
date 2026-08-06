@@ -383,7 +383,7 @@ async fn post_charge(ctx: &SyncCtx<'_>, merchant_id: &str, n: &TxNode) -> AppRes
         metadata: meta,
         postings,
     };
-    let outcome = match ctx.ledger.post_transaction(&draft, ctx.region).await {
+    let outcome = match ctx.post_transaction(&draft).await {
         Ok(_) => PostOutcome::Posted { n: len },
         Err(AppError::Conflict(_)) => PostOutcome::Replayed,
         Err(e) => return Err(e),
@@ -480,7 +480,7 @@ async fn post_refund_leg(
             },
         ],
     };
-    match ctx.ledger.post_transaction(&draft, ctx.region).await {
+    match ctx.post_transaction(&draft).await {
         Ok(_) | Err(AppError::Conflict(_)) => Ok(()),
         Err(e) => Err(e),
     }

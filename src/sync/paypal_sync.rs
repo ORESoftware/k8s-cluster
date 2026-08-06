@@ -350,7 +350,7 @@ async fn post_one(ctx: &SyncCtx<'_>, merchant_id: &str, info: &TxInfo) -> AppRes
         metadata: meta,
         postings,
     };
-    match ctx.ledger.post_transaction(&draft, ctx.region).await {
+    match ctx.post_transaction(&draft).await {
         Ok(_) => Ok(PostOutcome::Posted { n }),
         Err(AppError::Conflict(_)) => Ok(PostOutcome::Replayed),
         Err(e) => Err(e),

@@ -131,12 +131,7 @@ impl LedgerService {
             .await?;
 
         let result = self
-            .post_transaction_locked(
-                draft,
-                region,
-                &mut customer_lock_guard,
-                operation_context,
-            )
+            .post_transaction_locked(draft, region, &mut customer_lock_guard, operation_context)
             .await;
         if let Err(e) = customer_lock_guard.release().await {
             tracing::warn!(error = %e, "failed to release customer ledger-write lock");

@@ -230,7 +230,7 @@ async fn post_one(
         metadata: meta,
         postings,
     };
-    match ctx.ledger.post_transaction(&draft, ctx.region).await {
+    match ctx.post_transaction(&draft).await {
         Ok(_) => Ok(PostOutcome::Posted { n: len }),
         Err(AppError::Conflict(_)) => Ok(PostOutcome::Replayed),
         Err(e) => Err(e),

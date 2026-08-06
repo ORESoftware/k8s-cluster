@@ -198,14 +198,14 @@ async fn post_one(
     }
 
     let postings_count = norm.draft.postings.len();
-    match ctx.ledger.post_transaction(&norm.draft, ctx.region).await {
-        Ok(tx_id) => {
+    match ctx.post_transaction(&norm.draft).await {
+        Ok(posted) => {
             // If the returned tx_id matches an existing transaction (replay),
             // post_transaction returns it without inserting; we don't have a
             // way to distinguish here, so we report Posted with the count.
             // The user-facing tally is approximate by exactly the idempotency
             // count — fine for ops visibility.
-            tracing::debug!(stripe_id=%bt.id, tx_id=%tx_id, "posted stripe balance_transaction");
+            tracing::debug!(stripe_id=%bt.id, tx_id=%posted.transaction_id, replayed=posted.replayed, "posted stripe balance_transaction");
             Ok(PostOutcome::Posted {
                 postings: postings_count,
             })

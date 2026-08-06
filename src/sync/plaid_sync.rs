@@ -197,7 +197,7 @@ async fn post_added(ctx: &SyncCtx<'_>, tx: &PlaidTransaction) -> AppResult<PostO
         .ensure_account(ctx.tenant_id, ctx.region, None, cp_kind, cp_acct, currency)
         .await?;
 
-    match ctx.ledger.post_transaction(&draft, ctx.region).await {
+    match ctx.post_transaction(&draft).await {
         Ok(_) => Ok(PostOutcome::Posted { n: 2 }),
         Err(AppError::Conflict(_)) => Ok(PostOutcome::Replayed),
         Err(e) => Err(e),

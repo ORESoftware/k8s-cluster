@@ -8,11 +8,6 @@
 
 use std::fmt;
 
-pub use crate::shared_auth::{
-    Aal, AuthError, SharedAuthIdentity as SupabaseIdentity, SharedAuthVerifier as SupabaseVerifier,
-    bearer_token,
-};
-
 /// Legacy deployment fields retained only so old configuration files continue
 /// to deserialize during the migration. Shared Auth configuration is loaded
 /// from `BILLING_SHARED_AUTH_*` by `SharedAuthVerifier::from_env`.

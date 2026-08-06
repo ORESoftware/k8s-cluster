@@ -7,6 +7,8 @@ use uuid::Uuid;
 use crate::config::Config;
 use crate::error::{AppError, AppResult};
 use crate::events::EventBus;
+use crate::financial_audit::{AuditedLedgerPost, FinancialOperationContext};
+use crate::ledger::DraftTransaction;
 use crate::ledger::LedgerService;
 use crate::locks::{AcquireRequest, LockService, ReleaseRequest};
 use crate::providers::connection::{ConnectionService, ProviderConnection};
@@ -42,6 +44,21 @@ pub struct SyncCtx<'a> {
     pub events: &'a EventBus,
     pub tenant_id: Uuid,
     pub region: Region,
+}
+
+impl SyncCtx<'_> {
+    /// Post one provider-derived draft with durable, non-human attribution.
+    /// Keeping this at the shared sync boundary makes it impossible for a new
+    /// provider adapter to accidentally bypass the financial audit contract.
+    pub async fn post_transaction(&self, draft: &DraftTransaction) -> AppResult<AuditedLedgerPost> {
+        self.ledger
+            .post_transaction(
+                draft,
+                self.region,
+                &FinancialOperationContext::provider_sync(),
+            )
+            .await
+    }
 }
 
 pub struct ConnectionSyncJob {

@@ -6,9 +6,7 @@ use uuid::Uuid;
 
 use crate::api::auth::Principal;
 use crate::error::{AppError, AppResult};
-use crate::financial_audit::{
-    BILLING_WRITE_SCOPE, FinancialOperationContext, REQUEST_ID_HEADER,
-};
+use crate::financial_audit::{BILLING_WRITE_SCOPE, FinancialOperationContext, REQUEST_ID_HEADER};
 use crate::ledger::{AccountBalance, AccountKind, DraftTransaction};
 use crate::money::Currency;
 use crate::state::AppState;

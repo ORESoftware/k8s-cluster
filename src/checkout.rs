@@ -7,12 +7,7 @@
 
 use std::{collections::BTreeMap, env, sync::Arc};
 
-use axum::{
-    Extension, Json, Router,
-    extract::State,
-    middleware,
-    routing::post,
-};
+use axum::{Extension, Json, Router, extract::State, middleware, routing::post};
 use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
@@ -128,10 +123,7 @@ async fn create_checkout_session(
 
     let mut form = vec![
         ("mode".to_owned(), "payment".to_owned()),
-        (
-            "payment_method_types[0]".to_owned(),
-            "card".to_owned(),
-        ),
+        ("payment_method_types[0]".to_owned(), "card".to_owned()),
         ("success_url".to_owned(), request.success_url.clone()),
         ("cancel_url".to_owned(), request.cancel_url.clone()),
         (
@@ -275,11 +267,7 @@ impl CreateCheckoutSession {
         if let Some(email) = self.customer_email.as_deref() {
             validate_email(email)?;
         }
-        validate_return_url(
-            "success_url",
-            &self.success_url,
-            allowed_return_prefixes,
-        )?;
+        validate_return_url("success_url", &self.success_url, allowed_return_prefixes)?;
         validate_return_url("cancel_url", &self.cancel_url, allowed_return_prefixes)?;
         if self.metadata.len() > MAX_METADATA_ENTRIES {
             return Err(AppError::BadRequest(format!(
@@ -410,31 +398,23 @@ mod tests {
     fn return_urls_are_exactly_allowlisted_and_https() {
         let mut value = request();
         value.success_url = "https://fab.example.com.evil.test/payment/success".into();
-        assert!(value
-            .validate(&["https://fab.example.com".into()])
-            .is_err());
+        assert!(value.validate(&["https://fab.example.com".into()]).is_err());
 
         let mut value = request();
         value.cancel_url = "http://fab.example.com/payment/cancel".into();
-        assert!(value
-            .validate(&["https://fab.example.com".into()])
-            .is_err());
+        assert!(value.validate(&["https://fab.example.com".into()]).is_err());
     }
 
     #[test]
     fn rejects_unbounded_amounts_and_metadata() {
         let mut value = request();
         value.amount_minor = 0;
-        assert!(value
-            .validate(&["https://fab.example.com".into()])
-            .is_err());
+        assert!(value.validate(&["https://fab.example.com".into()]).is_err());
 
         let mut value = request();
         value.metadata = (0..=MAX_METADATA_ENTRIES)
             .map(|index| (format!("key_{index}"), "value".into()))
             .collect();
-        assert!(value
-            .validate(&["https://fab.example.com".into()])
-            .is_err());
+        assert!(value.validate(&["https://fab.example.com".into()]).is_err());
     }
 }

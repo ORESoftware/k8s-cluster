@@ -177,7 +177,7 @@ async fn post_one(
             .await?;
     }
     let n = norm.draft.postings.len();
-    match ctx.ledger.post_transaction(&norm.draft, ctx.region).await {
+    match ctx.post_transaction(&norm.draft).await {
         Ok(_) => Ok(PostOutcome::Posted { n }),
         Err(AppError::Conflict(_)) => Ok(PostOutcome::Replayed),
         Err(e) => Err(e),

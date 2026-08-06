@@ -21,8 +21,7 @@ pub const BILLING_WRITE_SCOPE: &str = "billing:write";
 pub const LEGACY_SERVICE_SCOPE: &str = "legacy:service";
 
 const IDEMPOTENCY_KEY_MAX_BYTES: usize = 1024;
-const IDEMPOTENCY_FINGERPRINT_DOMAIN: &[u8] =
-    b"quaestor:financial-operation-idempotency:v1\0";
+const IDEMPOTENCY_FINGERPRINT_DOMAIN: &[u8] = b"quaestor:financial-operation-idempotency:v1\0";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FinancialOperationContext {
@@ -37,6 +36,23 @@ pub struct FinancialOperationContext {
 }
 
 impl FinancialOperationContext {
+    /// Attribute a provider-sync posting to the scheduler boundary. Provider
+    /// syncs have no human Shared Auth session, but they still need an explicit
+    /// durable actor class and a fresh correlation id for every accepted
+    /// operation.
+    pub fn provider_sync() -> Self {
+        Self {
+            request_correlation_id: Uuid::new_v4(),
+            actor_kind: "provider_sync",
+            shared_user_id: None,
+            shared_session_id: None,
+            authorization_scope: BILLING_WRITE_SCOPE,
+            aal: 0,
+            acr: None,
+            auth_time_unix: None,
+        }
+    }
+
     /// Resolve the authenticated principal and canonical request correlation ID.
     /// A Shared Auth user must carry a live session identifier for a durable
     /// financial mutation, even when a lower-risk development deployment has
@@ -73,10 +89,7 @@ impl FinancialOperationContext {
                     1
                 };
                 let auth_time_unix = if aal == 2 {
-                    Some(
-                        i64::try_from(user.identity.issued_at)
-                            .map_err(|_| AppError::Forbidden)?,
-                    )
+                    Some(i64::try_from(user.identity.issued_at).map_err(|_| AppError::Forbidden)?)
                 } else {
                     None
                 };
@@ -204,7 +217,9 @@ where
             ],
         ))
         .await?
-        .ok_or_else(|| AppError::Other(anyhow::anyhow!("financial audit insert returned no row")))?;
+        .ok_or_else(|| {
+            AppError::Other(anyhow::anyhow!("financial audit insert returned no row"))
+        })?;
 
     Ok(FinancialOperationReceipt::recorded(
         row.try_get("", "id")?,
@@ -392,6 +407,16 @@ mod tests {
     }
 
     #[test]
+    fn provider_sync_has_explicit_nonhuman_attribution() {
+        let context = FinancialOperationContext::provider_sync();
+        assert_eq!(context.actor_kind, "provider_sync");
+        assert_eq!(context.authorization_scope, BILLING_WRITE_SCOPE);
+        assert!(context.shared_user_id.is_none());
+        assert!(context.shared_session_id.is_none());
+        assert_eq!(context.aal, 0);
+    }
+
+    #[test]
     fn shared_auth_actor_requires_a_canonical_session() {
         assert!(
             FinancialOperationContext::from_request(
@@ -440,9 +465,6 @@ mod tests {
         assert!(first.starts_with("sha256:v1:"));
         assert_eq!(first.len(), "sha256:v1:".len() + 64);
         assert!(!first.contains("customer-visible-key"));
-        assert_ne!(
-            first,
-            idempotency_key_fingerprint("another-key").unwrap()
-        );
+        assert_ne!(first, idempotency_key_fingerprint("another-key").unwrap());
     }
 }
