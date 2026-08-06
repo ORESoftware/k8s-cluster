@@ -172,3 +172,43 @@ The runtime manifest builds the pinned submodule with `cargo run --release
 --locked`, injects database/auth configuration from cluster secrets, injects
 pod metadata plus the in-cluster OTLP collector endpoint, and probes
 `/healthz`.
+
+## Cross-surface delivery
+
+User-visible, catalog, cart, checkout, order, fulfillment, account,
+notification, permission, navigation, or deep-link changes in this Rust web app
+must be evaluated for:
+
+- `athlet-o/athleto-flutter` on Android, iOS, Flutter Web/mobile web, and
+  Flutter desktop;
+- `athlet-o/athleto-desktop.rs`, the planned Rust desktop app for coach,
+  facility, team, and analytics workflows; and
+- Athlet-O interfaces, generated clients, product/order/payment schemas, route
+  types, fixtures, and conformance tests.
+
+This is judgment-based coordination, not blind parity. Public storefront SEO,
+server-rendered marketing, and web-only checkout/provider return pages can
+remain web-specific. Native coach/facility analytics, local device imports,
+notifications, secure storage, and offline workflows may be native-specific.
+Catalog/product semantics, cart and order state, account/B2B approval,
+payment status, fulfillment, permissions, errors, notifications, and navigation
+normally require coordinated changes or an explicit no-change rationale and
+parity follow-up.
+
+Deep links are HTTPS-first and should preserve the verified Athlet-O origins:
+
+```text
+https://<verified-athlet-o-owned-host>/open/<route>?<bounded-query>
+```
+
+A custom-scheme fallback requires a reviewed ADR before registration; do not
+invent one. Web, Flutter, and Rust desktop must share versioned route types and
+fixtures and support cold start, already-running delivery, authentication
+resume, replay/expiry rejection, and browser fallback. Payment credentials,
+provider tokens, API keys, cart/session cookies, private order data, health or
+fitness data, and personally sensitive information are prohibited in URLs.
+Checkout, payment-return, order, approval, and invitation handoffs use bounded
+IDs or short-lived, single-use, audience-bound codes and explicit confirmation.
+
+See [`docs/CROSS_SURFACE_DELIVERY.md`](docs/CROSS_SURFACE_DELIVERY.md) and the
+[portfolio policy](https://github.com/ORESoftware/project-registry/blob/main/docs/cross-surface-delivery.md).
