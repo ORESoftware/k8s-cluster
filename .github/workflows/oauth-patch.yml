@@ -1,0 +1,78 @@
+name: oauth-patch
+
+on:
+  push:
+    branches: [feat/oauth-authorization-code-pkce]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: oauth-patch-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  materialize-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_DB: shared_auth_oauth
+          POSTGRES_USER: shared_auth
+          POSTGRES_PASSWORD: shared_auth_oauth
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U shared_auth -d shared_auth_oauth"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:8.2-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      AUTH_TEST_DATABASE_URL: postgres://shared_auth:shared_auth_oauth@127.0.0.1:5432/shared_auth_oauth
+      AUTH_TEST_REDIS_URL: redis://127.0.0.1:6379/
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/oauth-authorization-code-pkce
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+      - name: Materialize reviewed OAuth implementation
+        run: python3 scripts/apply_oauth_patch.py
+      - name: Format
+        run: cargo fmt --all
+      - name: Validate realm and application federation contract
+        run: >-
+          python3 scripts/validate_auth_realms.py
+          --contract config/auth-realms.contract.json
+          --schema db/schema.sql
+          --realm-source src/realm.rs
+      - name: Apply declarative test schema
+        run: psql "$AUTH_TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --all-targets --locked
+      - name: Build release binary
+        run: cargo build --release --locked
+      - name: Commit materialized source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add README.md db/schema.sql src scripts/apply_oauth_patch.py
+          if git diff --cached --quiet; then
+            echo "OAuth implementation already materialized"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "feat: materialize browser OAuth authorization code flow"
+          git push origin HEAD:feat/oauth-authorization-code-pkce
