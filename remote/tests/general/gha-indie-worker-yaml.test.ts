@@ -145,7 +145,7 @@ test('reviewed execution activation is exact-repository and resource bounded', a
   }
 });
 
-test('the activation harness pins both repositories and drives plan then run', async () => {
+test('the activation harness pins both repositories and supports engine or exact-profile execution', async () => {
   const harness = await readRepoFile(
     'scripts/ops/run_des_indie_browser_workflows.sh',
   );
@@ -155,10 +155,19 @@ test('the activation harness pins both repositories and drives plan then run', a
   assert.match(harness, /PUPPETEER_REPO='discrete-event-systems-test\/des-web-puppeteer-e2e'/);
   assert.match(harness, /PUPPETEER_SHA='0547548429d937023a124de37afca7659a85c3dd'/);
   assert.match(harness, /DES_REQUEST_SUFFIX:\?DES_REQUEST_SUFFIX is required/);
+
+  assert.match(harness, /policy_mode='workflow-engine'/);
+  assert.match(harness, /policy_mode='direct-profile'/);
   assert.match(harness, /\/gha\/workflows\/plan/);
   assert.match(harness, /\/gha\/workflows\/runs/);
+  assert.match(harness, /http:\/\/127\.0\.0\.1:18100\/builds/);
+  assert.match(harness, /jobKind:"run-profile"/);
+  assert.match(harness, /gitRef:\$revision/);
+  assert.match(harness, /exact-id:discrete-event-systems-test\/des-web-playwright-e2e#playwright/);
+  assert.match(harness, /exact-id:discrete-event-systems-test\/des-web-puppeteer-e2e#puppeteer/);
   assert.match(harness, /\.status == "succeeded"/);
   assert.match(harness, /all\(\.jobs\[\]; \.status == "succeeded"/);
+  assert.match(harness, /grep -F -- "--branch \$revision"/);
 });
 
 test('unit tests cover valid DAGs, authenticated HTTP, and adversarial structures', async () => {
