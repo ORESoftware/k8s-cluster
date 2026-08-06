@@ -1,0 +1,29 @@
+[package]
+org = "threefa"
+name = "threefa-backend"
+version = "0.1.0"
+description = "Zero-knowledge 3FA synchronization and device backend"
+license = "MIT OR Apache-2.0"
+language = "rust"
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/3FA-app/3fa-backend.rs"
+
+[install]
+dir = ".vendor/.zed"
+
+[dependencies]
+"threefa/threefa-interfaces" = "^0.1.0"
+# Keep this draft blocked until threefa-monorepo#7 creates and publishes it.
+"threefa/threefa-lib" = "^0.1.0"
+"threefa/threefa-sync" = "^0.1.0"
+"shared-auth/shared-auth-clients" = "^0.1.0"
+
+[publish]
+include_readme = true
+tag_format = "v{version}"
+exclude = [".env", ".env.*", ".direnv/**", ".zed/**", ".zed-pack/**", "node_modules/**", "target/**", "tmp/**", "**/*.log", ".vendor/.zed/**", ".DS_Store"]
+
+[scripts]
+test = "cargo test --all-targets --locked"
