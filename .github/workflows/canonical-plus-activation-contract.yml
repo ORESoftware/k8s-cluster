@@ -100,10 +100,13 @@ jobs:
       - name: Render without applying
         run: kubectl kustomize remote/argocd/canonical-cloud >/tmp/canonical-plus.yaml
 
-      - name: Prove this workflow has no deployment authority
+      - name: Prove this workflow is read-only
         shell: bash
         run: |
           set -euo pipefail
           workflow=.github/workflows/canonical-plus-activation-contract.yml
-          ! grep -Eq 'kubectl[[:space:]]+(apply|create|replace|patch|delete)|argocd[[:space:]]+app[[:space:]]+sync|wrangler[[:space:]]+deploy' "$workflow"
+          grep -Fq 'permissions:' "$workflow"
+          grep -Fq 'contents: read' "$workflow"
           ! grep -Fq 'secrets.' "$workflow"
+          ! grep -Fq 'contents: write' "$workflow"
+          ! grep -Fq 'id-token: write' "$workflow"
