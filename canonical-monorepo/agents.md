@@ -40,7 +40,7 @@ files (they stay reviewable and reversible via history), `git restore` /
 
 ## Git worktrees
 
-Create git worktrees under `tmp/worktrees/` (e.g. `tmp/worktrees/<branch>`).
+`tmp/worktrees/` (e.g. `tmp/worktrees/<branch>`) is reserved for a worktree only when a human explicitly instructs its use.
 `tmp/` is gitignored, so worktree checkouts never show up as untracked files or
 get committed by accident.
 
@@ -54,3 +54,15 @@ get committed by accident.
 
 All three refuse to `git push` and validate branch names; the mutating ones
 support `--dry-run`.
+
+<!-- ore-primary-branch-policy:begin -->
+## Primary branch and concurrent-agent policy
+
+This policy overrides generic feature-branch and worktree defaults for agent tooling.
+
+- Highly prefer an existing primary branch, in this order: `main`, `dev`, then `master`.
+- Work directly on the selected primary branch even when other agents are active. Use another branch only when a human or a repository-specific release process explicitly requires it.
+- Never create or use a Git worktree unless a human explicitly instructs you to do so for the current task. Concurrency alone is not permission to use a worktree.
+- Concurrent agents must coordinate repository and file ownership through the available agent communication channel, keep edits scoped, inspect live state before each write, and hand off cleanly. Coordinate instead of isolating routine work in worktrees.
+- Preserve unrelated in-progress changes and never overwrite another agent's work. If safe ownership of overlapping files cannot be established, pause that overlapping edit and coordinate before continuing.
+<!-- ore-primary-branch-policy:end -->
