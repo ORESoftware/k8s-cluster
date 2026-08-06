@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/name: canonical-web-server
     app.kubernetes.io/component: web
   annotations:
-    canonical.cloud/release-sha: "488791e252c2ac94de78e1cd4d71165b53c2a2c3"
+    canonical.cloud/release-sha: "d6226363aae7d4ebc7a5084b10509c3d189749b4"
 spec:
   replicas: 1
   minReadySeconds: 5
@@ -27,7 +27,7 @@ spec:
         app.kubernetes.io/name: canonical-web-server
         app.kubernetes.io/component: web
       annotations:
-        canonical.cloud/release-sha: "488791e252c2ac94de78e1cd4d71165b53c2a2c3"
+        canonical.cloud/release-sha: "d6226363aae7d4ebc7a5084b10509c3d189749b4"
         prometheus.io/scrape: 'true'
         prometheus.io/path: '/metrics'
         prometheus.io/port: '8081'
@@ -47,7 +47,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: web
-          image: ghcr.io/canonical-cloud/canonical-web-server@sha256:5e58011c4bf98e9567cf1cf8c901fc71ddb83dc20a4696f17e378e10b050871a
+          image: ghcr.io/canonical-cloud/canonical-web-server@sha256:0eac454163bc72bf12ba6659659d528e520d0e37eb473062add806b97c932b29
           imagePullPolicy: IfNotPresent
           args:
             - serve
