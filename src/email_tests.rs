@@ -65,11 +65,21 @@ fn config() -> MagicLinkConfig {
 }
 
 #[test]
-fn link_contains_only_the_one_time_token_query() {
-    let link = magic_link_url(&config(), "sat_magic_a-b_C").unwrap();
+fn link_contains_the_one_time_token_and_optional_opaque_state() {
+    let link = magic_link_url(&config(), "sat_magic_a-b_C", None).unwrap();
     assert_eq!(
         link,
         "https://app.example/auth/magic-link?token=sat_magic_a-b_C"
+    );
+    let link = magic_link_url(
+        &config(),
+        "sat_magic_a-b_C",
+        Some("opaque-browser-state"),
+    )
+    .unwrap();
+    assert_eq!(
+        link,
+        "https://app.example/auth/magic-link?token=sat_magic_a-b_C&state=opaque-browser-state"
     );
 }
 
@@ -91,6 +101,7 @@ async fn sendgrid_request_contract_is_bearer_authenticated_and_complete() {
         "person@example.com",
         "sat_magic_contract",
         "123456",
+        Some("opaque-state"),
     )
     .await
     .unwrap();
@@ -119,8 +130,10 @@ async fn sendgrid_request_contract_is_bearer_authenticated_and_complete() {
     let html = payload["content"][1]["value"].as_str().unwrap();
     assert!(text.contains("123456"));
     assert!(text.contains("sat_magic_contract"));
+    assert!(text.contains("opaque-state"));
     assert!(html.contains("123456"));
     assert!(html.contains("sat_magic_contract"));
+    assert!(html.contains("opaque-state"));
 }
 
 #[tokio::test]
@@ -133,6 +146,7 @@ async fn sendgrid_non_accepted_response_fails_closed() {
         "person@example.com",
         "sat_magic_contract",
         "123456",
+        None,
     )
     .await;
     assert!(matches!(result, Err(AuthError::Upstream)));
