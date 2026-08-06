@@ -1,7 +1,6 @@
 //! Server-rendered UI (Maud). The auth API is JSON; these are the
-//! human-facing HTML blobs: a status landing page and a token-exchange helper
-//! whose form posts to a normal same-origin endpoint.
-//! No websockets — plain HTTP request/response.
+//! human-facing HTML blobs: status, token exchange, and first-party magic-link
+//! sign-in. No third-party scripts or websocket dependency.
 
 use maud::{html, Markup, PreEscaped, DOCTYPE};
 
@@ -14,10 +13,14 @@ const CSS: &str = r#"
   h1 { font-size: 1.3rem; } h2 { font-size: 1.05rem; margin-top: 2rem; }
   code, pre { background: color-mix(in srgb, currentColor 8%, transparent); border-radius: 4px; }
   code { padding: .1rem .3rem; } pre { padding: .75rem; overflow-x: auto; }
-  textarea { width: 100%; min-height: 5rem; font: inherit; }
-  button { font: inherit; padding: .4rem .9rem; cursor: pointer; }
+  input, textarea { box-sizing: border-box; width: 100%; font: inherit; padding: .6rem; }
+  textarea { min-height: 5rem; }
+  label { display: block; margin: 1rem 0 .35rem; }
+  button { font: inherit; padding: .55rem 1rem; cursor: pointer; }
   .ok { color: #2a7; } .err { color: #c33; }
   .muted { opacity: .7; }
+  .card { border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+          border-radius: .75rem; padding: 1.25rem; margin: 1rem 0; }
   table { border-collapse: collapse; } td { padding: .1rem .6rem .1rem 0; vertical-align: top; }
 "#;
 
@@ -46,8 +49,8 @@ pub fn landing(project_count: usize, issuer: &str, db_enabled: bool) -> Markup {
             p class="muted" {
                 "Postgres-primary OreSoftware auth with " (project_count)
                 " configured Supabase secondary project(s), provider-neutral "
-                "identities, passwordless email, SMS MFA, rotated sessions, roles, "
-                "and unified access tokens."
+                "identities, passwordless email, SMS MFA, TOTP, passkeys, rotated "
+                "sessions, roles, and unified access tokens."
             }
             h2 { "status" }
             table {
@@ -57,18 +60,85 @@ pub fn landing(project_count: usize, issuer: &str, db_enabled: bool) -> Markup {
             }
             h2 { "endpoints" }
             table {
+                tr { td { code { "GET /auth/browser/sign-in" } } td class="muted" { "first-party magic-link sign-in UI" } }
                 tr { td { code { "POST /auth/exchange" } } td class="muted" { "Supabase token → OreSoftware JWT (JSON)" } }
                 tr { td { code { "POST /auth/login" } } td class="muted" { "local credentials → access and refresh tokens" } }
                 tr { td { code { "POST /auth/passwordless/request" } } td class="muted" { "SendGrid magic link and email OTP" } }
                 tr { td { code { "POST /auth/passwordless/consume" } } td class="muted" { "one-time email credential → AAL1 session" } }
                 tr { td { code { "POST /auth/mfa/sms/request" } } td class="muted" { "start a Twilio Verify SMS challenge" } }
                 tr { td { code { "POST /auth/mfa/sms/verify" } } td class="muted" { "verify SMS and issue an AAL2 session" } }
+                tr { td { code { "POST /auth/factors/totp/enroll" } } td class="muted" { "authenticator/3FA-compatible TOTP enrollment" } }
+                tr { td { code { "POST /auth/passkeys/registration/options" } } td class="muted" { "begin WebAuthn/passkey enrollment" } }
                 tr { td { code { "POST /auth/refresh" } } td class="muted" { "rotate a one-time refresh token" } }
                 tr { td { code { "POST /auth/introspect" } } td class="muted" { "validate an OreSoftware JWT" } }
                 tr { td { code { "GET /.well-known/jwks.json" } } td class="muted" { "our public JWKS" } }
-                tr { td { code { "GET /ui" } } td class="muted" { "token-exchange helper (this UI)" } }
+                tr { td { code { "GET /ui" } } td class="muted" { "token-exchange helper" } }
             }
             p { a href="ui" { "→ token exchange helper" } }
+        },
+    )
+}
+
+pub fn browser_sign_in(remembered_emails: &[String], return_to: &str, action: &str) -> Markup {
+    page(
+        "sign in",
+        html! {
+            main {
+                h1 { "Sign in" }
+                p class="muted" {
+                    "Enter your email. We will send a single-use magic link and a six-digit fallback code."
+                }
+                form method="post" action=(action) class="card" {
+                    input type="hidden" name="return" value=(return_to);
+                    label for="email" { "Email" }
+                    input id="email" type="email" name="email" list="remembered-emails"
+                        autocomplete="email" maxlength="320" required autofocus;
+                    @if !remembered_emails.is_empty() {
+                        datalist id="remembered-emails" {
+                            @for email in remembered_emails {
+                                option value=(email) {}
+                            }
+                        }
+                        p class="muted" { "Previously verified addresses are stored only in a sealed, host-only browser cookie." }
+                    }
+                    p { button type="submit" { "Email me a sign-in link" } }
+                }
+                p class="muted" {
+                    "After sign-in, the same account can enroll a passkey, authenticator app (including 3FA), or verified phone for step-up authentication."
+                }
+            }
+        },
+    )
+}
+
+pub fn browser_link_sent(
+    email: &str,
+    state: &str,
+    otp_action: &str,
+    restart_action: &str,
+) -> Markup {
+    page(
+        "check your email",
+        html! {
+            main {
+                h1 class="ok" { "Check your email" }
+                p {
+                    "If the address is eligible, a single-use link and code were sent to "
+                    strong { (email) } "."
+                }
+                section class="card" {
+                    h2 { "Use the six-digit code" }
+                    form method="post" action=(otp_action) {
+                        input type="hidden" name="email" value=(email);
+                        input type="hidden" name="state" value=(state);
+                        label for="otp" { "Code" }
+                        input id="otp" name="otp" inputmode="numeric" autocomplete="one-time-code"
+                            minlength="6" maxlength="6" pattern="[0-9]{6}" required;
+                        p { button type="submit" { "Verify code" } }
+                    }
+                }
+                p { a href=(restart_action) { "Use a different email" } }
+            }
         },
     )
 }

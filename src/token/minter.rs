@@ -1,4 +1,4 @@
-//! Sign unified OreSoftware JWTs (ES256).
+//! Sign unified OreSoftware JWTs and short-lived delegated product tokens (ES256).
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -23,7 +23,6 @@ pub struct TokenMinter {
     /// Verification side, so this server can also validate the tokens it minted
     /// (`/auth/introspect`, `/auth/verify`) without a network round-trip.
     decoding_key: DecodingKey,
-    validation: Validation,
 }
 
 /// A freshly minted token and its absolute expiry (unix seconds).
@@ -63,11 +62,6 @@ impl TokenMinter {
             .map_err(|e| anyhow::anyhow!("encoding public key: {e}"))?;
         let decoding_key = DecodingKey::from_ec_pem(public_pem.as_bytes())
             .map_err(|e| anyhow::anyhow!("building decoding key: {e}"))?;
-        let mut validation = Validation::new(Algorithm::ES256);
-        validation.set_issuer(&[config.issuer.as_str()]);
-        validation.set_audience(&[config.audience.as_str()]);
-        validation.validate_exp = true;
-        validation.set_required_spec_claims(&["exp", "iss", "aud", "sub", "iat", "nbf"]);
 
         Ok(Self {
             encoding_key,
@@ -77,13 +71,31 @@ impl TokenMinter {
             ttl_secs: config.ttl_secs,
             jwks,
             decoding_key,
-            validation,
         })
     }
 
-    /// Validate a token this server previously minted, returning its claims.
+    /// Validate a normal shared-auth token this server previously minted.
     pub fn verify(&self, token: &str) -> Result<OreClaims, AuthError> {
-        decode::<OreClaims>(token, &self.decoding_key, &self.validation)
+        self.verify_for_audience(token, &self.audience)
+    }
+
+    /// Validate a token for an exact expected audience. This is used only after
+    /// the caller has authenticated to protected introspection; downstream
+    /// services should still pin issuer, audience, scope, and authorized party.
+    pub fn verify_for_audience(
+        &self,
+        token: &str,
+        expected_audience: &str,
+    ) -> Result<OreClaims, AuthError> {
+        if expected_audience.is_empty() || expected_audience.len() > 128 {
+            return Err(AuthError::Unauthorized);
+        }
+        let mut validation = Validation::new(Algorithm::ES256);
+        validation.set_issuer(&[self.issuer.as_str()]);
+        validation.set_audience(&[expected_audience]);
+        validation.validate_exp = true;
+        validation.set_required_spec_claims(&["exp", "iss", "aud", "sub", "iat", "nbf"]);
+        decode::<OreClaims>(token, &self.decoding_key, &validation)
             .map(|data| data.claims)
             .map_err(|_| AuthError::Unauthorized)
     }
@@ -119,16 +131,92 @@ impl TokenMinter {
             aal: context.assurance.level(),
             amr: context.assurance.amr.clone(),
             acr: context.assurance.acr.clone(),
+            auth_time: Some(now),
+            scope: String::new(),
+            azp: None,
+            parent_jti: None,
         };
-        let token = encode(&self.header, &claims, &self.encoding_key).map_err(|err| {
-            tracing::error!(error = %err, "token signing failed");
-            AuthError::Internal
-        })?;
+        let token = self.sign(&claims)?;
         Ok(MintedToken {
             token,
             expires_at,
             amr: context.assurance.amr,
             acr: context.assurance.acr,
+        })
+    }
+
+    /// Mint a narrow product token from an already verified, revocation-aware
+    /// base token. Delegated tokens cannot be recursively delegated.
+    pub fn mint_delegated(
+        &self,
+        source: &OreClaims,
+        audience: &str,
+        client_id: &str,
+        scopes: &[String],
+        ttl_secs: u64,
+    ) -> Result<MintedToken, AuthError> {
+        if source.is_delegated()
+            || source.aud != self.audience
+            || audience.is_empty()
+            || audience == self.audience
+            || audience.len() > 128
+            || client_id.is_empty()
+            || client_id.len() > 128
+            || scopes.is_empty()
+            || scopes.len() > 32
+            || ttl_secs == 0
+            || ttl_secs > 900
+        {
+            return Err(AuthError::Forbidden);
+        }
+
+        let now = now_secs();
+        if source.exp <= now {
+            return Err(AuthError::Unauthorized);
+        }
+        let expires_at = source.exp.min(now.saturating_add(ttl_secs));
+        if expires_at <= now {
+            return Err(AuthError::Unauthorized);
+        }
+        let scope = scopes.join(" ");
+        let claims = OreClaims {
+            sub: source.sub.clone(),
+            iss: self.issuer.clone(),
+            aud: audience.to_owned(),
+            iat: now,
+            exp: expires_at,
+            nbf: now.saturating_sub(5),
+            jti: uuid::Uuid::new_v4().to_string(),
+            sid: source.sid.clone(),
+            provider: source.provider.clone(),
+            provider_tenant: source.provider_tenant.clone(),
+            provider_subject: source.provider_subject.clone(),
+            project: source.project.clone(),
+            supabase_user_id: source.supabase_user_id.clone(),
+            email: source.email.clone(),
+            email_verified: source.email_verified,
+            roles: source.roles.clone(),
+            aal: source.aal,
+            amr: source.amr.clone(),
+            acr: source.acr.clone(),
+            auth_time: source.auth_time.or(Some(source.iat)),
+            scope,
+            azp: Some(client_id.to_owned()),
+            parent_jti: Some(source.jti.clone()),
+        };
+        let token = self.sign(&claims)?;
+        Ok(MintedToken {
+            token,
+            expires_at,
+            amr: source.amr.clone(),
+            acr: source.acr.clone(),
+        })
+    }
+
+    fn sign(&self, claims: &OreClaims) -> Result<String, AuthError> {
+        encode(&self.header, claims, &self.encoding_key).map_err(|err| {
+            tracing::error!(error = %err, "token signing failed");
+            AuthError::Internal
         })
     }
 }
@@ -144,7 +232,7 @@ fn now_secs() -> u64 {
 mod tests {
     use super::*;
     use crate::config::SigningConfig;
-    use crate::token::{AuthenticationAssurance, ACR_LOA1};
+    use crate::token::{AuthenticationAssurance, ACR_LOA1, ACR_LOA2};
 
     use p256::pkcs8::{EncodePrivateKey, LineEnding};
 
@@ -167,6 +255,20 @@ mod tests {
         .unwrap()
     }
 
+    fn context(assurance: AuthenticationAssurance) -> MintContext {
+        MintContext {
+            shared_user_id: "shared-42".into(),
+            session_id: Some(uuid::Uuid::from_u128(42)),
+            provider: "supabase".into(),
+            provider_tenant: "fiducia-cloud".into(),
+            provider_subject: "sub-1".into(),
+            email: Some("a@b.co".into()),
+            email_verified: true,
+            roles: vec!["user".into()],
+            assurance,
+        }
+    }
+
     // Our minted tokens verify against our own key with NO Supabase dependency —
     // the half of tandem-resilience that keeps downstream auth alive even if
     // Supabase is fully down.
@@ -174,17 +276,7 @@ mod tests {
     fn mint_then_verify_roundtrip() {
         let m = minter();
         let minted = m
-            .mint(MintContext {
-                shared_user_id: "shared-42".into(),
-                session_id: Some(uuid::Uuid::from_u128(42)),
-                provider: "supabase".into(),
-                provider_tenant: "fiducia-cloud".into(),
-                provider_subject: "sub-1".into(),
-                email: Some("a@b.co".into()),
-                email_verified: true,
-                roles: vec!["user".into()],
-                assurance: AuthenticationAssurance::local_password(),
-            })
+            .mint(context(AuthenticationAssurance::local_password()))
             .unwrap();
         let claims = m.verify(&minted.token).unwrap();
         assert_eq!(claims.sub, "shared-42");
@@ -198,7 +290,69 @@ mod tests {
         assert_eq!(claims.acr.as_deref(), Some(ACR_LOA1));
         assert_eq!(minted.amr, vec!["pwd"]);
         assert_eq!(minted.acr.as_deref(), Some(ACR_LOA1));
+        assert!(claims.auth_time.is_some());
+        assert!(!claims.is_delegated());
         assert!(claims.exp > claims.iat);
+    }
+
+    #[test]
+    fn delegation_preserves_subject_session_and_assurance_but_narrows_authority() {
+        let m = minter();
+        let assurance = AuthenticationAssurance::step_up(&["pwd".into()], "totp");
+        let base = m.mint(context(assurance)).unwrap();
+        let source = m.verify(&base.token).unwrap();
+        let delegated = m
+            .mint_delegated(
+                &source,
+                "cliptown-api",
+                "memebank-api",
+                &["cliptown:memebank:write".into()],
+                300,
+            )
+            .unwrap();
+
+        assert!(m.verify(&delegated.token).is_err());
+        let claims = m
+            .verify_for_audience(&delegated.token, "cliptown-api")
+            .unwrap();
+        assert_eq!(claims.sub, source.sub);
+        assert_eq!(claims.sid, source.sid);
+        assert_eq!(claims.auth_time, source.auth_time);
+        assert_eq!(claims.acr.as_deref(), Some(ACR_LOA2));
+        assert!(claims.used_method("totp"));
+        assert!(claims.has_scope("cliptown:memebank:write"));
+        assert_eq!(claims.azp.as_deref(), Some("memebank-api"));
+        assert_eq!(claims.parent_jti.as_deref(), Some(source.jti.as_str()));
+        assert_ne!(claims.jti, source.jti);
+        assert!(claims.exp <= source.exp);
+    }
+
+    #[test]
+    fn delegated_token_cannot_be_recursively_exchanged() {
+        let m = minter();
+        let base = m
+            .mint(context(AuthenticationAssurance::local_password()))
+            .unwrap();
+        let source = m.verify(&base.token).unwrap();
+        let first = m
+            .mint_delegated(
+                &source,
+                "cliptown-api",
+                "memebank-api",
+                &["cliptown:memebank:read".into()],
+                300,
+            )
+            .unwrap();
+        let first_claims = m.verify_for_audience(&first.token, "cliptown-api").unwrap();
+        assert!(m
+            .mint_delegated(
+                &first_claims,
+                "another-api",
+                "other-client",
+                &["read".into()],
+                60,
+            )
+            .is_err());
     }
 
     #[test]
@@ -218,7 +372,7 @@ mod tests {
             })
             .unwrap();
         let mut bad = minted.token.clone();
-        bad.push('x'); // corrupt the signature segment
+        bad.push('x');
         assert!(m.verify(&bad).is_err());
     }
 

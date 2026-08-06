@@ -1,0 +1,115 @@
+name: Canonical browser validation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/canonical-browser-branch-validation.yml"
+      - "deploy/k8s/**"
+      - "src/email.rs"
+      - "src/email_tests.rs"
+      - "src/http/browser.rs"
+      - "src/http/mod.rs"
+      - "src/http/passwordless.rs"
+      - "src/views.rs"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/canonical-browser-branch-validation.yml"
+      - "deploy/k8s/**"
+      - "src/email.rs"
+      - "src/email_tests.rs"
+      - "src/http/browser.rs"
+      - "src/http/mod.rs"
+      - "src/http/passwordless.rs"
+      - "src/views.rs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_DB: shared_auth_test
+          POSTGRES_USER: shared_auth
+          POSTGRES_PASSWORD: shared_auth_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U shared_auth -d shared_auth_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:8.2-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      AUTH_TEST_DATABASE_URL: postgres://shared_auth:shared_auth_test@127.0.0.1:5432/shared_auth_test
+      AUTH_TEST_REDIS_URL: redis://127.0.0.1:6379/
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+          components: rustfmt,clippy
+      - name: Realm contract
+        run: |
+          python3 -m unittest scripts/test_validate_auth_realms.py
+          python3 scripts/validate_auth_realms.py \
+            --contract config/auth-realms.contract.json \
+            --schema db/schema.sql \
+            --realm-source src/realm.rs
+      - name: Install pinned Kustomize
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive=/tmp/kustomize.tar.gz
+          curl --fail --location --silent --show-error \
+            https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.8.1/kustomize_v5.8.1_linux_amd64.tar.gz \
+            --output "$archive"
+          echo "029a7f0f4e1932c52a0476cf02a0fd855c0bb85694b82c338fc648dcb53a819d  $archive" | sha256sum --check
+          tar -xzf "$archive" -C /tmp kustomize
+          /tmp/kustomize version
+      - name: Render Canonical overlay and verify first-party boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          rendered=/tmp/canonical-plus-auth.yaml
+          /tmp/kustomize build deploy/k8s/overlays/canonical-plus > "$rendered"
+          expected_secret=dd-shared-auth-secrets-canonical-plus
+          references="$(grep -Ec "^[[:space:]]*name: ${expected_secret}$" "$rendered")"
+          if [ "$references" -ne 3 ]; then
+            echo "expected ExternalSecret metadata, target, and Deployment envFrom to agree on ${expected_secret}; found ${references} exact references" >&2
+            cat "$rendered" >&2
+            exit 1
+          fi
+          grep -Fq 'value: https://app.canonical.plus/shared-auth' "$rendered"
+          grep -Fq 'value: canonical-plus-web' "$rendered"
+          grep -Fq 'value: __Host-canonical-customer-auth' "$rendered"
+          grep -Fq 'kind: Ingress' "$rendered"
+          grep -Fq 'host: app.canonical.plus' "$rendered"
+          grep -Fq 'path: /shared-auth(/|$)(.*)' "$rendered"
+          grep -Fq 'nginx.ingress.kubernetes.io/rewrite-target: /$2' "$rendered"
+          grep -Fq 'name: dd-shared-auth-canonical-plus' "$rendered"
+          grep -Fq 'kubernetes.io/metadata.name: ingress-nginx' "$rendered"
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Schema
+        run: psql "$AUTH_TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql
+      - name: Check
+        run: cargo check --all-targets --locked
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Test
+        run: cargo test --all-targets --locked
