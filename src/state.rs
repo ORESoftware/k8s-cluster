@@ -31,7 +31,15 @@ impl AppState {
         shared_auth: Option<SharedAuthConfig>,
         server_secret: Vec<u8>,
     ) -> Result<Self, prometheus::Error> {
-        let http = reqwest::Client::new();
+        // Bound every outbound auth hop. Without these, a silently dropped
+        // packet (a NetworkPolicy denying the shared-auth hop drops rather than
+        // rejects) parks an axum worker on the OS TCP timeout instead of
+        // failing fast into the Degraded/503 path the handlers already have.
+        let http = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(3))
+            .timeout(std::time::Duration::from_secs(8))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         Ok(Self {
             supabase,
             shared_auth: shared_auth.map(|config| SharedAuthClient::new(config, http.clone())),
