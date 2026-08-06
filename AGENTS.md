@@ -1,32 +1,39 @@
-# Agent Rules
+# Claritas data visualization server agent instructions
 
-Rules for AI agents (and humans) working in this repository.
+## Query, visualization, and security invariants
 
-## Forbidden — destructive operations
+- Treat input parsing, semantic normalization, logical planning, SQL generation, dataset/schema metadata, chart/table output, and API responses as one coherent contract.
+- SQL, DAX, and other expression frontends fail closed on unsupported syntax, comments, multiple statements, excessive nesting, invalid identifiers, unsafe characters, joins or constructs outside the documented subset, and ambiguous source selection.
+- Preserve arithmetic precedence, expression-kind semantics, dependency extraction, row/filter context, aggregation behavior, grouping, limit clamping, warning generation, and normalized/compiled output.
+- Never interpolate unvalidated user strings into SQL, HTML, XML, URLs, filenames, shell commands, or identifiers. Keep escaping and identifier-cleaning tests synchronized.
+- Bound query rows, parsing depth, payload sizes, execution time, and error output. Never echo secrets or sensitive dataset contents through logs, errors, telemetry, or generated markup.
+- Keep visualization output accessible, deterministic, structurally valid, and faithful to the logical plan. Do not hide unsupported semantics behind a misleading chart.
 
-Never run, script, or suggest any of the following here:
+## Instruction discovery
 
-- `rm` / `rm -rf` on tracked or untracked files (stage removals with `git rm` on a reviewed branch instead)
-- `git rebase` (interactive or otherwise)
-- `git reset` (any mode — `--soft`, `--mixed`, `--hard`)
-- `git push --force` / `--force-with-lease` / `--force-if-includes`
-- `git filter-repo`, `git filter-branch`, BFG, or any history-rewriting tool
-- `git clean`
-- `git checkout -- <path>` / `git restore` that discards uncommitted work
-- deleting branches or tags (local `-D` or remote)
-- amending commits that have been pushed
+Resolve `$PWD`, walk upward through every parent directory to the filesystem root, read every readable lowercase `agents.md` on that ancestor chain, and apply them root-to-leaf. Do not search siblings. Deduplicate resolved paths/inodes, avoid symlink cycles, and report unreadable files.
 
-## Required workflow
+## Synchronize with the remote
 
-- History is append-only. Fix mistakes with a new commit or `git revert` — never by rewriting.
-- Changes land on `main` via feature branches; keep commits small and reviewable.
-- **This repository is the source of truth.** The copy vendored into
-  `ORESoftware/k8s-cluster` (under `remote/deployments/`) is a *secondary* submodule
-  checkout — after merging here, bump the submodule pointer there. Do not edit the
-  vendored copy directly.
+Before editing, inspect `git status`, current branch, configured remotes, and the default branch. Run `git fetch --all --prune` and create the feature branch from the latest remote default branch. Fetch again before pushing and incorporate upstream changes with `git merge` or `git pull` on a clean working tree.
 
-## Build context
+- avoid git rebase in favor of git merge.
+- Never discard remote commits, force-push, rewrite shared history, bypass review, or bypass required CI.
 
-Path dependencies (`../../libs`, `../../submodules`) resolve only when this repo is
-checked out at its `remote/deployments/` path inside the `k8s-cluster` superproject.
-Full builds happen there; standalone CI is limited to hygiene and format checks by design.
+## Resolve Git conflicts semantically
+
+Resolve conflicts by understanding and combining both sides' intent. Do not mechanically choose `ours`, `theirs`, current, or incoming changes. Produce the conceptually correct result while preserving parser safety, logical semantics, normalization/SQL equivalence, bounds, escaping, warnings, output accessibility, tests, documentation, configuration, and public APIs. Regenerate snapshots or output fixtures from the merged implementation rather than selecting one side's generated output. If intentions are incompatible, make the smallest explicit design decision and document it in the pull request.
+
+After resolving:
+
+1. Reread every affected file from the top, not only conflict hunks.
+2. Run formatting, linting, unit/integration tests, parser fuzz/property tests, API tests, and visualization snapshot/accessibility validation.
+3. Search the entire worktree for conflict markers:
+
+   ```sh
+   grep -RInE '^(<<<<<<<|=======|>>>>>>>)' --exclude-dir=.git .
+   ```
+
+4. If any marker or suspicious partial resolution remains, repeat semantic resolution from the top and rerun validation.
+
+A conflict is resolved only when the query and visualization pipeline is conceptually coherent and verified, not merely accepted by Git.
