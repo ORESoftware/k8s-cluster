@@ -67,14 +67,16 @@ spec:
             - secretRef:
                 name: canonical-cloud-web-runtime
           env:
-            - name: PORT
-              value: "8081"
-            - name: COOKIE_SECURE
-              value: "true"
-            - name: DATABASE_MAX_CONNECTIONS
-              value: "10"
-            - name: APP_SESSION_TTL_DAYS
-              value: "30"
+            - { name: PORT, value: "8081" }
+            - { name: APP_BASE_URL, value: "https://app.canonical.plus" }
+            - { name: APP_ALLOWED_ORIGINS, value: "https://app.canonical.plus" }
+            - { name: COOKIE_SECURE, value: "true" }
+            - { name: APP_SESSION_COOKIE, value: "__Host-canonical_session" }
+            - { name: SHARED_AUTH_BROWSER_COOKIE_NAME, value: "__Host-canonical-customer-auth" }
+            - { name: SHARED_AUTH_VERIFY_URL, value: "http://dd-shared-auth-canonical-plus.shared-auth.svc.cluster.local:8120/auth/verify" }
+            - { name: DATABASE_MAX_CONNECTIONS, value: "10" }
+            - { name: APP_SESSION_TTL_DAYS, value: "30" }
+            - { name: BEARER_AUTH_MAX_CONCURRENCY, value: "32" }
             - name: RUST_LOG
               value: canonical_web_server=info,tower_http=info,hyper=warn,h2=warn,reqwest=warn,sea_orm=warn
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
