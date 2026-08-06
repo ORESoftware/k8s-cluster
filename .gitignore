@@ -1,2 +1,6 @@
 .DS_Store
 .vendor/.zed/
+tmp
+temp
+tmp/worktrees
+temp/worktrees
