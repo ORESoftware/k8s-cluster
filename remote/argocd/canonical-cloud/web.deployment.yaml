@@ -80,7 +80,7 @@ spec:
             - name: SHARED_AUTH_BROWSER_COOKIE_NAME
               value: __Host-canonical-customer-auth
             - name: SHARED_AUTH_VERIFY_URL
-              value: https://auth.oresoftware.dev/shared-auth/auth/verify
+              value: http://dd-shared-auth-canonical-plus.shared-auth.svc.cluster.local:8120/auth/verify
             - name: RUST_LOG
               value: canonical_web_server=info,tower_http=info,hyper=warn,h2=warn,reqwest=warn,sea_orm=warn
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
