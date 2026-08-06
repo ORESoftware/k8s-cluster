@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="title description">
+  <title id="title">Canonical Cloud layered C</title>
+  <desc id="description">A layered green and cyan letter C with a floating upper terminal.</desc>
+
+  <g stroke="#66f29a" stroke-width="4" stroke-linecap="round">
+    <path d="M7.62 29.65A22.5 22.5 0 0 1 47.73 18.15"/>
+    <path d="M12.89 30.20A17.2 17.2 0 0 1 42.78 20.49"/>
+    <path d="M18.17 30.76A11.9 11.9 0 0 1 37.65 22.88"/>
+    <path d="M42.5 24H55"/>
+  </g>
+
+  <g stroke="#00a7c7" stroke-width="4" stroke-linecap="round">
+    <path d="M7.62 34.35A22.5 22.5 0 0 0 47.73 45.85"/>
+    <path d="M12.89 33.80A17.2 17.2 0 0 0 44.26 41.62"/>
+    <path d="M18.17 33.24A11.9 11.9 0 0 0 37.65 39.65H54.5"/>
+  </g>
+</svg>
