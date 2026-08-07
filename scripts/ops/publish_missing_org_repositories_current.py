@@ -574,6 +574,116 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
     print("VERIFIED 32/32 HypeSiege and StreemPilot repositories")
 
 
+def publish_current_hypesiege_and_streempilot(work: Path) -> None:
+    """Publish the exact reviewed schema-v2 fleet one repository at a time."""
+
+    carrier = work / "fleet-carrier"
+    MODULE.run(
+        [
+            "git",
+            "clone",
+            "--filter=blob:none",
+            "--no-checkout",
+            f"https://github.com/{FLEET_SOURCE_REPOSITORY}.git",
+            str(carrier),
+        ]
+    )
+    MODULE.run(
+        ["git", "-C", str(carrier), "fetch", "--depth=1", "origin", FLEET_SOURCE_SHA]
+    )
+    MODULE.run(["git", "-C", str(carrier), "checkout", "--detach", FLEET_SOURCE_SHA])
+    actual_source_sha = MODULE.run(
+        ["git", "-C", str(carrier), "rev-parse", "HEAD"]
+    ).strip()
+    if actual_source_sha != FLEET_SOURCE_SHA:
+        fail(
+            "fleet source checkout mismatch: "
+            f"{actual_source_sha} != {FLEET_SOURCE_SHA}"
+        )
+
+    payload_dir = carrier / "repository-fleets/hypesiege-streempilot"
+    checked_manifest_path = carrier / "repository-fleets/hypesiege-streempilot.json"
+    reconstructor = carrier / "scripts/reconstruct_hypesiege_streempilot_fleet.py"
+    publisher = carrier / "scripts/publish_hypesiege_streempilot_fleet.py"
+    source_root = work / "hypesiege-streempilot-fleet"
+    generated_manifest_path = work / "hypesiege-streempilot-manifest.json"
+
+    MODULE.run(
+        [
+            sys.executable,
+            "-m",
+            "py_compile",
+            str(reconstructor),
+            str(publisher),
+        ]
+    )
+    MODULE.run(
+        [
+            sys.executable,
+            str(reconstructor),
+            "--payload-dir",
+            str(payload_dir),
+            "--output-root",
+            str(source_root),
+            "--manifest-out",
+            str(generated_manifest_path),
+        ]
+    )
+
+    checked_manifest = json.loads(checked_manifest_path.read_text(encoding="utf-8"))
+    generated_manifest = json.loads(generated_manifest_path.read_text(encoding="utf-8"))
+    if generated_manifest != checked_manifest:
+        fail("reconstructed fleet does not exactly match the checked-in schema-v2 ledger")
+    if generated_manifest.get("generator_sha256") != FLEET_GENERATOR_SHA256:
+        fail("reviewed fleet generator identity changed")
+    if generated_manifest.get("repository_count") != 32:
+        fail("reviewed fleet must contain exactly 32 repositories")
+    if generated_manifest.get("organizations") != {
+        "hypesiege": 15,
+        "streempilot": 17,
+    }:
+        fail("reviewed fleet organization counts changed")
+
+    environment = os.environ.copy()
+    environment["GITHUB_REPOSITORY_ADMIN_TOKEN"] = MODULE.TOKEN
+    records = generated_manifest.get("repositories")
+    if not isinstance(records, list):
+        fail("reviewed fleet repository ledger is malformed")
+
+    for record in records:
+        full_name = record.get("full_name")
+        if not isinstance(full_name, str):
+            fail("reviewed fleet contains an invalid repository identity")
+        MODULE.run(
+            [
+                sys.executable,
+                str(publisher),
+                "--manifest",
+                str(generated_manifest_path),
+                "--source-root",
+                str(source_root),
+                "--repository",
+                full_name,
+                "--execute",
+                "--confirm-repository",
+                full_name,
+            ],
+            env=environment,
+        )
+
+    for record in records:
+        full_name = str(record["full_name"])
+        expected = str(record["commit"])
+        actual = MODULE.main_ref(full_name)
+        if actual != expected:
+            fail(
+                f"fleet verification failed for {full_name}: "
+                f"{actual!r} != {expected}"
+            )
+        print(f"VERIFIED {full_name} {actual}")
+    print("VERIFIED 32/32 HypeSiege and StreemPilot repositories")
+
+
 MODULE.repair_publisher = repair_or_validate_publisher
 MODULE.ensure_repository = ensure_private_repository
 MODULE.publish_hypesiege_and_streempilot = publish_current_hypesiege_and_streempilot
