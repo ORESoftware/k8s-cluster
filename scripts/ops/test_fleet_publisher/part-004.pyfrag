@@ -1,0 +1,258 @@
+            "test-fleet.json", "source-pins.json", ".zpkg.toml", "test-plan.md",
+            "scripts/verify_fleet.py", "scripts/materialize_dependencies.sh",
+            "scripts/probe_native_packages.py", "tests/test_fleet_manifest.py",
+            ".github/workflows/ci.yml", ".github/workflows/integration.yml",
+        }
+    missing = sorted(required - set(files))
+    if missing:
+        raise FleetError(f"rendered repository {test_org}/{repository_name} is missing files: {missing}")
+    readme = files["README.md"][0]
+    if f"{MANAGED_MARKER} digest={digest} -->" not in readme:
+        raise FleetError(f"rendered repository {test_org}/{repository_name} has an invalid managed marker")
+    if dotgithub:
+        catalog = json.loads(files["test-fleet-catalog.json"][0])
+        if catalog.get("test_org") != test_org or int(catalog.get("repository_count", -1)) <= 0:
+            raise FleetError(f"rendered .github catalog identity mismatch for {test_org}")
+        return
+    manifest = json.loads(files["test-fleet.json"][0])
+    pins = json.loads(files["source-pins.json"][0])
+    if manifest.get("test_org") != test_org or manifest.get("repository", {}).get("name") != repository_name:
+        raise FleetError(f"rendered repository identity mismatch for {test_org}/{repository_name}")
+    contract = {
+        "renderer_version": manifest.get("renderer_version"),
+        "test_org": manifest.get("test_org"),
+        "production_org": manifest.get("production_org"),
+        "repository": manifest.get("repository"),
+        "sources": pins.get("sources", []),
+    }
+    actual = hashlib.sha256(json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    if actual != digest or manifest.get("contract_digest") != digest:
+        raise FleetError(f"rendered repository digest mismatch for {test_org}/{repository_name}")
+    import tomllib
+    tomllib.loads(files[".zpkg.toml"][0])
+    for path in ("scripts/verify_fleet.py", "scripts/probe_native_packages.py", "tests/test_fleet_manifest.py"):
+        compile(files[path][0], path, "exec")
+    available = [pin for pin in pins.get("sources", []) if pin.get("exists")]
+    if available and ".gitmodules" not in files:
+        raise FleetError(f"available sources lack .gitmodules for {test_org}/{repository_name}")
+    if ".gitmodules" in files:
+        import configparser
+        parser = configparser.ConfigParser()
+        parser.read_string(files[".gitmodules"][0])
+        paths = {parser[section].get("path") for section in parser.sections()}
+        expected = {f"vendor/{pin['alias']}" for pin in available}
+        if paths != expected:
+            raise FleetError(f"gitmodule/source-pin mismatch for {test_org}/{repository_name}")
+
+
+def commit_gate(client: GitHubClient, full_name: str, commit_sha: str) -> tuple[bool, str]:
+    encoded = encode_repo_path(full_name)
+    combined = client.get(f"/repos/{encoded}/commits/{commit_sha}/status")
+    statuses = combined.get("statuses", []) if isinstance(combined, dict) else []
+    checks_payload = client.get(f"/repos/{encoded}/commits/{commit_sha}/check-runs?per_page=100")
+    checks = checks_payload.get("check_runs", []) if isinstance(checks_payload, dict) else []
+    observed = len(statuses) + len(checks)
+    if observed == 0:
+        return False, "no commit status or check run exists for the exact PR head"
+    bad_statuses = [item for item in statuses if item.get("state") != "success"]
+    bad_checks = [
+        item for item in checks
+        if item.get("status") != "completed" or item.get("conclusion") != "success"
+    ]
+    if bad_statuses or bad_checks:
+        status_names = [f"{item.get('context')}={item.get('state')}" for item in bad_statuses]
+        check_names = [f"{item.get('name')}={item.get('status')}/{item.get('conclusion')}" for item in bad_checks]
+        return False, "non-green exact-head gates: " + ", ".join(status_names + check_names)
+    return True, f"{observed} exact-head status/check gate(s) succeeded"
+
+
+def encode_repo_path(full_name: str) -> str:
+    owner, repo = full_name.split("/", 1)
+    return f"{urllib.parse.quote(owner, safe='')}/{urllib.parse.quote(repo, safe='')}"
+
+
+def repo_marker_matches(client: GitHubClient, full_name: str, digest: str) -> bool:
+    encoded = encode_repo_path(full_name)
+    content = client.get(f"/repos/{encoded}/contents/README.md", allow_404=True)
+    if not isinstance(content, dict):
+        return False
+    encoded_content = content.get("content")
+    if not isinstance(encoded_content, str):
+        return False
+    import base64
+    try:
+        text = base64.b64decode(encoded_content).decode("utf-8")
+    except Exception:
+        return False
+    return f"{MANAGED_MARKER} digest={digest} -->" in text
+
+
+def ensure_repository(client: GitHubClient, org: str, name: str, description: str, visibility: str) -> tuple[dict[str, Any], bool]:
+    full_name = f"{org}/{name}"
+    encoded = encode_repo_path(full_name)
+    existing = client.get(f"/repos/{encoded}", allow_404=True)
+    created = False
+    private = visibility != "public"
+    if existing is None:
+        existing = client.post(
+            f"/orgs/{urllib.parse.quote(org, safe='')}/repos",
+            {
+                "name": name,
+                "description": description[:350],
+                "private": private,
+                "auto_init": True,
+                "has_issues": True,
+                "has_projects": False,
+                "has_wiki": False,
+                "has_discussions": False,
+            },
+            expected=(201,),
+        )
+        created = True
+        for _ in range(12):
+            if existing.get("default_branch"):
+                ref = client.get(f"/repos/{encoded}/git/ref/heads/{urllib.parse.quote(str(existing['default_branch']), safe='')}", allow_404=True)
+                if ref:
+                    break
+            time.sleep(1.0)
+            existing = client.get(f"/repos/{encoded}")
+    settings = {
+        "description": description[:350],
+        "has_issues": True,
+        "has_projects": False,
+        "has_wiki": False,
+        "delete_branch_on_merge": True,
+        "allow_squash_merge": True,
+        "allow_merge_commit": False,
+        "allow_rebase_merge": False,
+    }
+    try:
+        existing = client.patch(f"/repos/{encoded}", settings)
+    except ApiError as exc:
+        if exc.status not in {403, 422}:
+            raise
+
+    # Some pre-created repositories are completely empty. Seed one harmless
+    # commit so the deterministic bootstrap branch has a real base and the
+    # requested changes can still arrive through a pull request.
+    default_branch = str(existing.get("default_branch") or "main")
+    ref_path = f"/repos/{encoded}/git/ref/heads/{urllib.parse.quote(default_branch, safe='')}"
+    ref = client.get(ref_path, allow_404=True)
+    if ref is None:
+        import base64
+        seed = base64.b64encode(
+            b"# Repository initialization\n\nThis seed commit is replaced by the managed test-fleet bootstrap pull request.\n"
+        ).decode("ascii")
+        body = {"message": "chore: initialize repository", "content": seed}
+        try:
+            client.put(f"/repos/{encoded}/contents/README.md", body, expected=(201,))
+        except ApiError as exc:
+            if exc.status not in {409, 422}:
+                raise
+            body["branch"] = default_branch
+            client.put(f"/repos/{encoded}/contents/README.md", body, expected=(201,))
+        for _ in range(12):
+            existing = client.get(f"/repos/{encoded}")
+            default_branch = str(existing.get("default_branch") or default_branch)
+            ref_path = f"/repos/{encoded}/git/ref/heads/{urllib.parse.quote(default_branch, safe='')}"
+            if client.get(ref_path, allow_404=True):
+                break
+            time.sleep(1.0)
+        else:
+            raise FleetError(f"repository {full_name} did not expose an initialized default branch")
+    return existing, created
+
+
+def create_commit_tree(
+    client: GitHubClient,
+    full_name: str,
+    base_sha: str,
+    files: Mapping[str, tuple[str, str]],
+    pins: Sequence[SourcePin],
+    message: str,
+) -> tuple[str, list[str]]:
+    encoded = encode_repo_path(full_name)
+    commit = client.get(f"/repos/{encoded}/git/commits/{base_sha}")
+    base_tree = str(commit["tree"]["sha"])
+    # The Git Trees API accepts inline UTF-8 blob content. Keeping each repository
+    # to one tree request instead of one request per file saves thousands of API
+    # calls across the bounded 227-repository rollout.
+    entries: list[dict[str, Any]] = []
+    for path, (content, mode) in sorted(files.items()):
+        entries.append({"path": path, "mode": mode, "type": "blob", "content": content})
+    gitlink_warnings: list[str] = []
+    for pin in pins:
+        if pin.exists and pin.commit_sha:
+            entries.append({"path": f"vendor/{pin.alias}", "mode": "160000", "type": "commit", "sha": pin.commit_sha})
+    try:
+        tree = client.post(
+            f"/repos/{encoded}/git/trees",
+            {"base_tree": base_tree, "tree": entries},
+            expected=(201,),
+        )
+    except ApiError as exc:
+        if exc.status != 422 or not any(item.get("mode") == "160000" for item in entries):
+            raise
+        gitlink_warnings.append("GitHub rejected cross-repository gitlink objects; .gitmodules and immutable source-pins remain committed, and materialization is available through scripts/materialize_dependencies.sh")
+        entries = [item for item in entries if item.get("mode") != "160000"]
+        tree = client.post(
+            f"/repos/{encoded}/git/trees",
+            {"base_tree": base_tree, "tree": entries},
+            expected=(201,),
+        )
+    created_commit = client.post(
+        f"/repos/{encoded}/git/commits",
+        {"message": message, "tree": tree["sha"], "parents": [base_sha]},
+        expected=(201,),
+    )
+    return str(created_commit["sha"]), gitlink_warnings
+
+
+def find_pr_for_branch(client: GitHubClient, full_name: str, org: str, branch: str) -> dict[str, Any] | None:
+    encoded = encode_repo_path(full_name)
+    query = urllib.parse.urlencode({"state": "all", "head": f"{org}:{branch}", "per_page": "10"})
+    items = client.get(f"/repos/{encoded}/pulls?{query}")
+    if isinstance(items, list):
+        return next((item for item in items if item.get("head", {}).get("ref") == branch), None)
+    return None
+
+
+def create_or_finish_pr(
+    client: GitHubClient,
+    full_name: str,
+    org: str,
+    default_branch: str,
+    base_sha: str,
+    branch: str,
+    files: Mapping[str, tuple[str, str]],
+    pins: Sequence[SourcePin],
+    title: str,
+    body: str,
+) -> tuple[str | None, dict[str, Any], bool, list[str]]:
+    encoded = encode_repo_path(full_name)
+    existing_ref = client.get(f"/repos/{encoded}/git/ref/heads/{urllib.parse.quote(branch, safe='')}", allow_404=True)
+    warnings: list[str] = []
+    commit_sha: str | None = None
+    if existing_ref is None:
+        commit_sha, warnings = create_commit_tree(client, full_name, base_sha, files, pins, title)
+        client.post(
+            f"/repos/{encoded}/git/refs",
+            {"ref": f"refs/heads/{branch}", "sha": commit_sha},
+            expected=(201,),
+        )
+    elif isinstance(existing_ref, dict):
+        commit_sha = str(existing_ref.get("object", {}).get("sha") or "") or None
+    if not commit_sha:
+        raise FleetError(f"cannot resolve exact branch head for {full_name}:{branch}")
+    pr = find_pr_for_branch(client, full_name, org, branch)
+    if pr is None:
+        pr = client.post(
+            f"/repos/{encoded}/pulls",
+            {"title": title, "body": body, "head": branch, "base": default_branch, "maintainer_can_modify": True},
+            expected=(201,),
+        )
+    elif pr.get("state") == "closed" and not pr.get("merged_at"):
+        pr = client.patch(f"/repos/{encoded}/pulls/{int(pr['number'])}", {"state": "open"})
+
+    merged = bool(pr.get("merged_at"))
+    if merged:
