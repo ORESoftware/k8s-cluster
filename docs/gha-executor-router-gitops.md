@@ -5,6 +5,9 @@ Linear: DEN-1597
 Parent: DEN-1550
 
 Core router: pull request #665
+Linear: DEN-1597  
+Parent: DEN-1550  
+Core router: pull request #645  
 Last reviewed: 2026-08-04
 
 ## Purpose
