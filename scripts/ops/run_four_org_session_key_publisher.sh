@@ -39,6 +39,15 @@ def replace_once(old: str, new: str, label: str) -> None:
     source = source.replace(old, new, 1)
 
 
+
+def replace_once(old: str, new: str, label: str) -> None:
+    global source
+    matches = source.count(old)
+    if matches != 1:
+        raise SystemExit(f"{label}: expected one match, found {matches}")
+    source = source.replace(old, new, 1)
+
+
 pattern = re.compile(
     r"cat > \"\$public_key\" <<'PUBLIC_KEY'\n"
     r".*?\n"
