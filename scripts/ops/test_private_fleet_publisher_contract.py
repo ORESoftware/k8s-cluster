@@ -74,6 +74,19 @@ class PrivateFleetPublisherContractTests(unittest.TestCase):
         )
         self.assertIn("push:\n    branches:\n      - main", self.workflow)
 
+    def test_publisher_observer_uses_exact_workflow_and_bounded_evidence(self) -> None:
+        self.assertIn(
+            "- Publish missing organization repositories from protected gh profile",
+            self.observer,
+        )
+        self.assertIn("types:\n      - requested\n      - completed", self.observer)
+        self.assertIn("actions: read", self.observer)
+        self.assertIn("issues: write", self.observer)
+        self.assertIn("failed_jobs", self.observer)
+        self.assertNotIn("--log", self.observer)
+        self.assertNotIn("AWS_SSM_INSTANCE_ID", self.observer)
+        self.assertNotIn("GITHUB_REPOSITORY_ADMIN_TOKEN", self.observer)
+
     def test_workflow_checks_out_and_binds_the_exact_main_event_sha(self) -> None:
         self.assertIn("ref: ${{ github.sha }}", self.workflow)
         self.assertNotIn("ref: main\n          fetch-depth", self.workflow)
