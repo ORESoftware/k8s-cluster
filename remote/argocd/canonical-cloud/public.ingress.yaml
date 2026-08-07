@@ -1,0 +1,54 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: canonical-plus-public
+  namespace: canonical-cloud
+  labels:
+    app.kubernetes.io/part-of: canonical-cloud
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - app.canonical.plus
+      secretName: canonical-plus-app-tls
+    - hosts:
+        - api.canonical.plus
+      secretName: canonical-plus-api-tls
+  rules:
+    - host: app.canonical.plus
+      http:
+        paths:
+          # Browser REST fallback and WebSocket status use the same standalone
+          # API service as SDK/CLI clients; NGINX selects this longer prefix
+          # before the web catch-all.
+          - path: /api/v1/quotes
+            pathType: Prefix
+            backend:
+              service:
+                name: canonical-api-server
+                port:
+                  number: 8081
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: canonical-cloud-web
+                port:
+                  number: 8081
+    - host: api.canonical.plus
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: canonical-api-server
+                port:
+                  number: 8081

@@ -15,6 +15,13 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8081
+    - from:
+        - namespaceSelector:
+            matchLabels:
               kubernetes.io/metadata.name: default
           podSelector:
             matchLabels:
@@ -59,6 +66,16 @@ spec:
     - to:
         - namespaceSelector:
             matchLabels:
+              kubernetes.io/metadata.name: shared-auth
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: canonical-plus
+      ports:
+        - protocol: TCP
+          port: 8120
+    - to:
+        - namespaceSelector:
+            matchLabels:
               kubernetes.io/metadata.name: observability
           podSelector:
             matchLabels:
@@ -87,6 +104,12 @@ spec:
           port: 8120
     - to:
         - ipBlock:
+            cidr: 172.31.0.0/16
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - ipBlock:
             cidr: 0.0.0.0/0
             except:
               - 0.0.0.0/8
@@ -106,8 +129,6 @@ spec:
       ports:
         - protocol: TCP
           port: 443
-        - protocol: TCP
-          port: 5432
     - to:
         - ipBlock:
             cidr: "::/0"
@@ -124,5 +145,3 @@ spec:
       ports:
         - protocol: TCP
           port: 443
-        - protocol: TCP
-          port: 5432

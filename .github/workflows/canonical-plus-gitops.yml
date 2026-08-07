@@ -1,0 +1,68 @@
+name: canonical.plus gitops
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/canonical-plus-gitops.yml"
+      - "remote/argocd/canonical-cloud/**"
+      - "remote/tests/general/canonical-plus-api-gitops.test.ts"
+  push:
+    branches: [dev, main]
+    paths:
+      - ".github/workflows/canonical-plus-gitops.yml"
+      - "remote/argocd/canonical-cloud/**"
+      - "remote/tests/general/canonical-plus-api-gitops.test.ts"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: canonical-plus-gitops-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install test dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+
+      - name: Validate app/API release and routing contracts
+        run: pnpm exec tsx --test general/canonical-plus-api-gitops.test.ts
+        working-directory: remote/tests
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
+        with:
+          version: v1.32.2
+
+      - name: Render Canonical overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          rendered="${RUNNER_TEMP}/canonical-plus.yaml"
+          kubectl kustomize remote/argocd/canonical-cloud > "$rendered"
+          test -s "$rendered"
+          grep -Fq 'host: app.canonical.plus' "$rendered"
+          grep -Fq 'host: api.canonical.plus' "$rendered"
+          grep -Fq 'name: canonical-api-server' "$rendered"
