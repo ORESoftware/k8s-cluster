@@ -1,0 +1,22 @@
+{
+  "schema_version": "daedalus.meshy-job.v1",
+  "images": [
+    {
+      "asset_id": "asset-front",
+      "url": "https://assets.example.invalid/owned/front.png",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "asset_id": "asset-left",
+      "url": "https://assets.example.invalid/owned/left.png",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "target_formats": ["glb", "stl", "3mf"],
+  "should_texture": true,
+  "should_remesh": false,
+  "ai_model": "meshy-6",
+  "purpose": "additive-prototype",
+  "archive_prefix": "meshy",
+  "max_artifact_bytes": 536870912
+}

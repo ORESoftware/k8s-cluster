@@ -11,6 +11,10 @@ shared-auth-lib = { path = "../../libs/shared-auth-lib/rust" }
 # `daedalus.fab_learning_outcomes` back src/stores.rs; this crate never issues
 # DDL — the schema is owned by pg-defs.
 dd-pg-defs-sea-orm = { path = "../../libs/pg-defs/generated/rust/sea-orm" }
+# Shared resumable Meshy state machine and verified artifact archive. Provider
+# HTTP remains owned by crates/meshy-client; this root binary adapts it to the
+# Fiducia-fenced RDS job-control layer.
+dd-meshy-job = { path = "crates/meshy-job" }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 tracing = "0.1"
 async-nats = "=0.38.0"
