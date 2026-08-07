@@ -182,6 +182,11 @@ jobs:
               "${BASH_LINENO[0]:-unknown}" "$status" >&2
             exit "$status"
           }
+          on_error() {
+            local status=$?
+            printf 'streempilot-remote-wrapper status=failed line=%s exit=%s\n' "${BASH_LINENO[0]:-unknown}" "$status" >&2
+            exit "$status"
+          }
           trap cleanup EXIT
           trap on_error ERR
 
