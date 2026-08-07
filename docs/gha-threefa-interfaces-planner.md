@@ -100,7 +100,7 @@ Every submission contains:
 - no caller command or image; and
 - deterministic `gha-clone:{planId}:{jobId}` request identity.
 
-Repeating the exact run reuses each job's request identity while keeping the Node and Rust job identities distinct. Mutable revisions, unreviewed sibling repositories, and command-extended workflow variants are rejected before the mock build server receives any submission.
+Repeating the exact run reuses each job's request identity while keeping the Node and Rust job identities distinct. Mutable revisions, unreviewed sibling repositories, command-extended workflows, mutable action refs, and extra actions are rejected before the mock build server receives any submission.
 
 This is execution-contract evidence against a mock build server; it is not a live private-source run. The GitOps deployment remains at zero replicas with API and webhook execution disabled.
 
