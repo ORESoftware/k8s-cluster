@@ -24,12 +24,378 @@
         "missing-governance-issue-number"
       ],
       "requested_org": "zed-pkg-test"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "messaging-intel"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "messaging-intel-test"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "meta-agents-demo"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "networking-components"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "OmniBlitz"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "opto-sync"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "opto-sync-test"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "quaestor-ledger"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "quaestor-ledger-test"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "r2g-test"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "rust-ssr-demos"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "sagitta-stack"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "scintilla-run"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "scintilla-run-test"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "shared-auth"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "shared-auth-test"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "sonus-auris"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "sonus-auris-test"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "streamkore"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "StreemPilot"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "streempilot-test"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "unreal-unity-poc"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "usa-acc"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "voxletra"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "zed-pkg"
+    },
+    {
+      "reasons": [
+        "invalid-canonical-org",
+        "invalid-documentation-pr-state",
+        "invalid-documentation-pr-url",
+        "invalid-governance-issue-url",
+        "invalid-project-item-action",
+        "invalid-project-number",
+        "invalid-project-url",
+        "missing-documentation-pr-number",
+        "missing-governance-issue-number"
+      ],
+      "requested_org": "zed-pkg-test"
     }
   ],
   "invalid_reason_counts": {
+    "invalid-canonical-org": 26,
     "invalid-documentation-pr-state": 2,
     "invalid-documentation-pr-url": 2,
     "invalid-governance-issue-url": 2,
+    "invalid-project-item-action": 26,
     "invalid-project-number": 2,
     "invalid-project-url": 2,
     "missing-documentation-pr-number": 2,
