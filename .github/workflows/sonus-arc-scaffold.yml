@@ -55,7 +55,7 @@ concurrency:
 jobs:
   contracts:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -76,7 +76,22 @@ jobs:
           args: -config-file .github/actionlint.yaml .github/workflows/sonus-arc-scaffold.yml
       - name: Check whitespace and conflict markers
         run: |
-          git diff --check HEAD^ HEAD
+          python -m py_compile \
+            remote/argocd/ci-runners/validate-sonus-arc-scaffold.py \
+            remote/argocd/ci-runners/validate-sonus-gha-ha.py
+      - name: Validate legacy inert scaffold contract
+        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py
+      - name: Validate AWS/Hetzner failover and capacity contract
+        run: python remote/argocd/ci-runners/validate-sonus-gha-ha.py
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/sonus-arc-scaffold.yml
+      - name: Check whitespace and conflict markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check "origin/${GITHUB_BASE_REF:-dev}...HEAD"
           if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- \
             docs/github-actions-self-hosted-failover.md \
             remote/argocd/ci-runners/sonus-auris \

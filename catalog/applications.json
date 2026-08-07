@@ -4744,6 +4744,222 @@
       ],
       "duplicate_name": true,
       "name": "dd-zed-web-server"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "arc-systems",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/apps/canonical-ci-arc-controller.application.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "gha-runner-scale-set-controller",
+              "path": "",
+              "repo_url": "ghcr.io/actions/actions-runner-controller-charts",
+              "target_revision": "0.14.2"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": true,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "canonical-ci-arc-controller"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "arc-runners-sonus",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/aws/gha-ci.applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/ci-runners/sonus-auris/base",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": true,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-sonus-ci-runner-prereqs-aws"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "arc-runners-sonus",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/hetzner/gha-ci.applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/ci-runners/sonus-auris/base",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": true,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-sonus-ci-runner-prereqs-hetzner"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "arc-runners-sonus",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 1,
+          "manifest_path": "remote/argocd/clusters/aws/gha-ci.applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "gha-runner-scale-set",
+              "path": "",
+              "repo_url": "ghcr.io/actions/actions-runner-controller-charts",
+              "target_revision": "0.14.2"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-sonus-ci-runner-set-aws"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "arc-runners-sonus",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 1,
+          "manifest_path": "remote/argocd/clusters/hetzner/gha-ci.applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "gha-runner-scale-set",
+              "path": "",
+              "repo_url": "ghcr.io/actions/actions-runner-controller-charts",
+              "target_revision": "0.14.2"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-sonus-ci-runner-set-hetzner"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "arc-runners-sonus",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/ci-runners/sonus-auris/sonus-ci-runner-set.application.template.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "gha-runner-scale-set",
+              "path": "",
+              "repo_url": "ghcr.io/actions/actions-runner-controller-charts",
+              "target_revision": "0.14.2"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "sonus-ci-runner-set"
     }
   ],
   "policy_violations": {
