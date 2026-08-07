@@ -1,9 +1,23 @@
 /target
 .DS_Store
 *.log
+# --- environment / secrets (sops + age) -------------------------------------
+# Only env/enc/*.env.enc is tracked. Every plaintext form stays out of git;
+# `just env-check` enforces it. See env/README.md.
+# (`*.env` already matches at any depth — `**/*.env` is stated for clarity.)
 .env
 .env.*
+*.env
+**/*.env
+env/dec/
 !.env.example
+
+# age private keys — never commit these.
+*.agekey
+*.age-key
+keys.txt
+sops-private*.txt
+
 
 # Built Astro site. NOT committed — the deployment builds it in-pod (node
 # initContainer) and hands it to this backend via STATIC_DIR. For local dev,
