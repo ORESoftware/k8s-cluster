@@ -2002,6 +2002,12 @@ mod tests {
                 .is_ok()
         );
         assert!(normalize_build_server_url("http://dd-build-server.remote.svc:8123").is_ok());
+        assert!(normalize_build_server_url("http://[::1]:8123").is_ok());
+        assert!(
+            normalize_build_server_url("http://extra.dd-build-server.remote.svc:8123").is_err()
+        );
+        assert!(normalize_build_server_url("http://dd_build.remote.svc:8123").is_err());
+        assert!(normalize_build_server_url("http://-build.remote.svc:8123").is_err());
         assert!(normalize_build_server_url("http://10.0.0.10:8123").is_err());
         assert!(normalize_build_server_url("http://build.example.com").is_err());
         assert!(normalize_build_server_url("http://service.svc.evil.example").is_err());
@@ -2021,12 +2027,20 @@ mod tests {
         assert!(validate_build_job_response_id(&valid, Some(&valid.id)).is_ok());
         assert!(validate_build_job_response_id(&valid, Some("different")).is_err());
 
-        let invalid = BuildJobResponse {
-            id: "../build?token=x".into(),
+        for id in ["", ".", "..", "../build?token=x", "build/child"] {
+            let invalid = BuildJobResponse {
+                id: id.into(),
+                status: "queued".into(),
+                error: None,
+            };
+            assert!(validate_build_job_response_id(&invalid, None).is_err());
+        }
+        let too_long = BuildJobResponse {
+            id: "a".repeat(129),
             status: "queued".into(),
             error: None,
         };
-        assert!(validate_build_job_response_id(&invalid, None).is_err());
+        assert!(validate_build_job_response_id(&too_long, None).is_err());
     }
 
     #[tokio::test]

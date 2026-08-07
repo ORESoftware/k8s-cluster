@@ -13,7 +13,7 @@ Every accepted build response must contain a bounded path-safe identifier. Empty
 
 ## Build identity
 
-Every accepted build response must contain a bounded path-safe identifier. Poll responses must return the same identifier that was accepted at submission. Unknown, malformed, or mismatched identifiers fail the workflow run before URL construction or state mutation.
+Every accepted build response must contain a bounded path-safe identifier. Empty IDs and URL dot-segments (`.` and `..`) are rejected explicitly before a polling URL is formed. Poll responses must return the same identifier that was accepted at submission. Unknown, malformed, or mismatched identifiers fail the workflow run before URL construction or state mutation.
 
 ## Runtime bounds
 
