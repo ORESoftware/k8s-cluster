@@ -120,3 +120,5 @@ jobs:
             scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py
           git diff --check
           git push origin HEAD:main
+
+# trigger-generation: 1
