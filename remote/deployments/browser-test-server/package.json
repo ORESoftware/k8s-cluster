@@ -1,18 +1,21 @@
 {
   "dependencies": {
     "@dd/telemetry": "file:../../libs/telemetry-node",
-    "fastify": "^5.0.0",
+    "@fastify/swagger": "9.8.1",
+    "@scalar/fastify-api-reference": "1.63.0",
+    "fastify": "5.10.0",
+    "fastify-type-provider-zod": "7.0.0",
     "playwright": "1.56.0",
-    "puppeteer": "^24.22.3",
-    "selenium-webdriver": "^4.27.0",
-    "zod": "^4.1.13"
+    "puppeteer": "24.22.3",
+    "selenium-webdriver": "4.27.0",
+    "zod": "4.4.3"
   },
   "description": "On-demand Playwright + Puppeteer + Selenium runner for end-to-end UI tests against the remote cluster.",
   "devDependencies": {
-    "@types/node": "^22.7.0",
-    "@types/selenium-webdriver": "^4.1.27",
-    "tsx": "^4.19.0",
-    "typescript": "^5.6.0"
+    "@types/node": "22.18.12",
+    "@types/selenium-webdriver": "4.1.27",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
   },
   "engines": {
     "node": ">=22"
@@ -25,8 +28,10 @@
     "build": "tsc",
     "dev": "tsx watch src/server.ts",
     "export:openapi": "tsx src/server.ts --export-openapi",
+    "openapi:export": "tsx src/server.ts --export-openapi",
     "start": "node dist/server.js",
     "start:src": "tsx src/server.ts",
+    "test": "node --import tsx --test src/api-contract.test.ts",
     "test:contract": "tsx --test src/api-contract.test.ts",
     "test:runtime": "node scripts/runtime-contract-smoke.mjs",
     "typecheck": "node scripts/den-479-post-apply-fix.mjs && tsc --noEmit"
