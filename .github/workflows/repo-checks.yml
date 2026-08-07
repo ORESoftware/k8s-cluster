@@ -23,7 +23,7 @@ jobs:
   static-contracts:
     name: api docs + static repo contracts
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -90,7 +90,10 @@ jobs:
         run: pnpm run check:observability-coverage
         working-directory: remote/tests
 
-      - name: Run static repo contract tests
+      - name: Run static repo contract tests and retain bounded diagnostics
+        id: static
+        working-directory: remote/tests
+        shell: bash
         run: |
           set -euo pipefail
           # Tests that read private deployment gitlinks are intentionally run in
@@ -143,8 +146,38 @@ jobs:
             general/webrtc-signaling-service.test.ts
             general/ws-loadtest-config.test.ts
           )
-          pnpm exec tsx --test "${static_tests[@]}"
-        working-directory: remote/tests
+          log="$RUNNER_TEMP/den-406-current-static-contracts.log"
+          summary="$RUNNER_TEMP/den-406-current-static-contracts-summary.txt"
+          set +e
+          pnpm exec tsx --test "${static_tests[@]}" >"$log" 2>&1
+          status=$?
+          set -e
+          {
+            printf 'commit=%s\n' "$GITHUB_SHA"
+            printf 'exit_status=%s\n\n' "$status"
+            printf 'Failure markers:\n'
+            grep -E '^(not ok [0-9]+ - |# (tests|pass|fail|cancelled|skipped|todo|duration_ms) )' "$log" || true
+          } >"$summary"
+          tail -n 160 "$log"
+          printf 'status=%s\n' "$status" >>"$GITHUB_OUTPUT"
+          printf 'log=%s\nsummary=%s\n' "$log" "$summary" >>"$GITHUB_OUTPUT"
+
+      - name: Upload current static-contract diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: den-406-current-static-contracts
+          path: |
+            ${{ steps.static.outputs.log }}
+            ${{ steps.static.outputs.summary }}
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Preserve the real static-contract result
+        if: steps.static.outputs.status != '0'
+        run: |
+          echo 'Current static repository contracts failed; inspect the uploaded bounded diagnostics.' >&2
+          exit 1
 
   fiducia-secret-contract:
     name: Fiducia KV secret-delivery contract
