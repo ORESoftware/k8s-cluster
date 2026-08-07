@@ -1,0 +1,110 @@
+name: Dispatch exact Meta Agents publication from PR
+run-name: Dispatch Meta Agents publisher from PR #${{ github.event.pull_request.number }}
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: dispatch-meta-agent-publication-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: >-
+      github.actor == 'ORESoftware' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.user.login == 'ORESoftware' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/dispatch-meta-agent-publication-20260731-v2' &&
+      github.event.pull_request.title == 'DO NOT MERGE: publish exact Meta Agents repository'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SUPERVISOR_WORKFLOW: ops-supervise-exact-meta-agent-publication.yml
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+
+    steps:
+      - name: Validate exact tracking PR
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          pull="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
+          test "$(jq -r .state <<<"$pull")" = open
+          test "$(jq -r .draft <<<"$pull")" = true
+          test "$(jq -r .user.login <<<"$pull")" = ORESoftware
+          test "$(jq -r .base.ref <<<"$pull")" = main
+          test "$(jq -r .head.ref <<<"$pull")" = agent/dispatch-meta-agent-publication-20260731-v2
+          test "$(jq -r .title <<<"$pull")" = 'DO NOT MERGE: publish exact Meta Agents repository'
+
+      - name: Dispatch trusted-main supervisor
+        id: dispatch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          before="$(
+            gh run list --repo "$GITHUB_REPOSITORY" \
+              --workflow "$SUPERVISOR_WORKFLOW" \
+              --event workflow_dispatch --limit 100 --json databaseId \
+              | jq '[.[].databaseId]'
+          )"
+
+          gh workflow run "$SUPERVISOR_WORKFLOW" \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f tracking_pr="$PR_NUMBER"
+
+          run=''
+          for _ in $(seq 1 90); do
+            candidates="$(
+              gh run list --repo "$GITHUB_REPOSITORY" \
+                --workflow "$SUPERVISOR_WORKFLOW" \
+                --event workflow_dispatch --limit 50 \
+                --json databaseId,headSha,createdAt,status,conclusion,url
+            )"
+            run="$(
+              jq -c --argjson before "$before" \
+                '[.[] | select((.databaseId as $id | $before | index($id)) == null)] | sort_by(.createdAt) | last // empty' \
+                <<<"$candidates"
+            )"
+            test -n "$run" && break
+            sleep 2
+          done
+
+          test -n "$run"
+          run_id="$(jq -r .databaseId <<<"$run")"
+          run_url="$(jq -r .url <<<"$run")"
+          [[ "$run_id" =~ ^[0-9]+$ ]]
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "run_url=$run_url" >> "$GITHUB_OUTPUT"
+
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body \
+            "Trusted-main Meta Agents supervisor dispatched: ${run_url}" >/dev/null
+
+      - name: Report dispatcher result
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ steps.dispatch.outputs.run_url }}
+          DISPATCH_OUTCOME: ${{ steps.dispatch.outcome }}
+        run: |
+          set -Eeuo pipefail
+          if test "$DISPATCH_OUTCOME" = success; then
+            exit 0
+          fi
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body \
+            "Meta Agents supervisor dispatch failed; inspect this PR's Actions checks. Run: ${RUN_URL:-unavailable}" >/dev/null || true
+          exit 1
