@@ -37,6 +37,13 @@ repository or an individual application repository. The existing
 `remote/deployments/canonical-cloud` secondary submodule is legacy operational
 context and is not an input to this overlay.
 
+`canonical-cloud/canonical-monorepo` is the only deployable source of truth. Its
+exact tested commit produces all three release images; this overlay consumes
+only immutable digests and never deploys the umbrella `canonical.cloud`
+repository or an individual application repository. The existing
+`remote/deployments/canonical-cloud` secondary submodule is legacy operational
+context and is not an input to this overlay.
+
 Argo CD is the only runtime writer. GitHub Actions builds and attests the web,
 API, and revoker images, but it receives no kubeconfig and never applies
 Kubernetes resources. A reviewed Git commit promotes exact registry digests

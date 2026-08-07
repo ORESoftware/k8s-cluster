@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: canonical-shared-auth-origin
+  namespace: canonical-cloud
+  labels:
+    app.kubernetes.io/name: canonical-shared-auth-origin
+    app.kubernetes.io/component: identity-origin
+    app.kubernetes.io/part-of: canonical-cloud
+spec:
+  type: ExternalName
+  externalName: dd-shared-auth-canonical-plus.shared-auth.svc.cluster.local
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8120
