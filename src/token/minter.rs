@@ -109,8 +109,37 @@ impl TokenMinter {
     }
 
     /// Mint a token for a resolved OreSoftware identity.
+    ///
+    /// A local AAL2 token is minted only after this process completed a verified
+    /// step-up ceremony, so its `auth_time` is the current time. Provider
+    /// exchanges that need to preserve an upstream factor timestamp use
+    /// [`Self::mint_with_auth_time`] instead.
     pub fn mint(&self, context: MintContext) -> Result<MintedToken, AuthError> {
+        self.mint_with_auth_time(context, None)
+    }
+
+    /// Mint while preserving a verified upstream authentication timestamp.
+    ///
+    /// `verified_auth_time` is load-bearing only for AAL2. AAL1 tokens never
+    /// carry `auth_time`. For local AAL2 flows the caller passes `None`, and the
+    /// completion time of the server-owned ceremony is used. Exchange adapters
+    /// pass the factor timestamp extracted from the already verified provider
+    /// token; if they cannot establish one they must downgrade assurance before
+    /// calling this method. A future upstream timestamp is rejected here as a
+    /// second line of defense, even if the adapter already checked it.
+    pub fn mint_with_auth_time(
+        &self,
+        context: MintContext,
+        verified_auth_time: Option<u64>,
+    ) -> Result<MintedToken, AuthError> {
         let now = now_secs();
+        if verified_auth_time
+            .is_some_and(|timestamp| timestamp > now.saturating_add(MAX_AUTH_TIME_FUTURE_SKEW_SECS))
+        {
+            tracing::warn!("refusing to mint token with future auth_time");
+            return Err(AuthError::Unauthorized);
+        }
+
         let expires_at = now.saturating_add(self.ttl_secs);
         let assurance_level = context.assurance.level();
         let auth_time = context.assurance.auth_time;
@@ -130,6 +159,8 @@ impl TokenMinter {
         }
 
         let is_supabase = context.provider == "supabase";
+        let assurance_level = context.assurance.level();
+        let auth_time = (assurance_level >= 2).then(|| verified_auth_time.unwrap_or(now));
         let claims = OreClaims {
             sub: context.shared_user_id,
             iss: self.issuer.clone(),
@@ -139,6 +170,7 @@ impl TokenMinter {
             nbf: now.saturating_sub(5),
             auth_time,
             jti: uuid::Uuid::new_v4().to_string(),
+            auth_time,
             sid: context.session_id.map(|id| id.to_string()),
             project: is_supabase.then(|| context.provider_tenant.clone()),
             supabase_user_id: is_supabase.then(|| context.provider_subject.clone()),

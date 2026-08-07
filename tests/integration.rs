@@ -193,6 +193,7 @@ async fn exchange_then_introspect_roundtrip() {
     assert_eq!(intro["project"], "fiducia-cloud");
     assert_eq!(intro["supabase_user_id"], "supa-user-1");
     assert_eq!(intro["aal"], 1);
+    assert!(intro["auth_time"].is_null());
     assert_eq!(intro["amr"], serde_json::json!(["federated"]));
     assert!(intro["auth_time"].is_null());
 }

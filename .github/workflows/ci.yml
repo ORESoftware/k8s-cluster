@@ -81,7 +81,19 @@ jobs:
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: test
         run: cargo test --all-targets --locked
-      - name: build
+      - name: Re-run the downstream introspection contract explicitly
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked http::introspect::tests::
+          cargo test --locked --test integration exchange_then_introspect_roundtrip -- --exact
+          cargo test --locked --test integration exchange_preserves_supabase_aal2 -- --exact
+          cargo test --locked --test integration introspect_non_ore_token_is_inactive -- --exact
+          cargo test --locked --test integration introspect_authorized_caller_succeeds -- --exact
+          cargo test --locked --test integration introspect_rejects_unauthorized_caller -- --exact
+          cargo test --locked --test integration introspect_authorized_caller_invalid_token_is_inactive -- --exact
+          cargo test --locked --test integration introspect_fails_closed_when_secret_unset -- --exact
+      - name: Build the release binary with the committed lockfile
         run: cargo build --release --locked
 
   browser-webauthn:

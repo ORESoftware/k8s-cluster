@@ -5,7 +5,7 @@ use std::sync::Once;
 
 use axum::{
     extract::State,
-    http::{HeaderMap, StatusCode},
+    http::{header::AUTHORIZATION, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -172,6 +172,9 @@ pub async fn verify(State(state): State<AppState>, headers: HeaderMap) -> impl I
             }
             if let Some(acr) = &claims.acr {
                 insert_header(&mut output, "x-auth-acr", acr);
+            }
+            if let Some(auth_time) = claims.auth_time {
+                insert_header(&mut output, "x-auth-time", &auth_time.to_string());
             }
             if let Some(project) = &claims.project {
                 insert_header(&mut output, "x-auth-project", project);
