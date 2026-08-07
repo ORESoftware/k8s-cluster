@@ -9,6 +9,7 @@ The second list supports two deliberately different rule forms:
 
 - `https://github.com/ORESoftware/` — an ordinary prefix rule, granting reviewed profile execution to repositories in that organization URL namespace.
 - `=https://github.com/messaging-intel/msgint-connectors.git` — an exact canonical URL rule, granting only that one HTTPS repository URL.
+- `=https://github.com/3FA-app/3fa-interfaces.git` — an exact canonical URL rule for the bounded 3FA interfaces workflow only.
 
 The leading `=` is security-significant. A repository URL written without it is evaluated as a prefix. Therefore a single-repository grant must always use the exact form. The validator rejects empty exact rules, sibling repositories, SSH aliases that were not separately reviewed, and suffix-appended lookalikes such as:
 
@@ -16,11 +17,15 @@ The leading `=` is security-significant. A repository URL written without it is 
 https://github.com/messaging-intel/msgint-connectors.git-evil
 https://github.com/messaging-intel/msgint-connectors-extra.git
 git@github.com:messaging-intel/msgint-connectors.git
+https://github.com/3FA-app/3fa-interfaces.git-evil
+https://github.com/3FA-app/3fa-backend.rs.git
+git@github.com:3FA-app/3fa-interfaces.git
 ```
 
 The broader clone allowlist does not imply profile-execution permission. Adding either an organization prefix or an exact repository requires a reviewed manifest change, and the dedicated build-server unit suite must exercise both the positive rule and nearby negative cases.
 
 For Messaging Intel, the current reviewed rule is:
+For Messaging Intel, the reviewed rule is:
 
 ```text
 =https://github.com/messaging-intel/msgint-connectors.git
@@ -31,3 +36,12 @@ The GHA continuity server independently allowlists the exact `messaging-intel/ms
 ## Validation lanes
 
 Normal pull-request and push validation is credential free: it compiles the bounded workflow fixture, runs the exact repository-admission and fixed-profile tests, executes a dependency-free hardened Node fixture, and verifies the real Rust server dispatches only the reviewed profiles. The live private-repository smoke is manual and uses a short-lived GitHub App token restricted to `messaging-intel/msgint-connectors`; it is never a prerequisite for untrusted pull-request code.
+For 3FA interfaces, the reviewed rule is:
+
+```text
+=https://github.com/3FA-app/3fa-interfaces.git
+```
+
+The continuity server independently allowlists only `3FA-app/3fa-interfaces` and `.github/workflows/gha-clone-contracts.yml`. The bounded workflow maps its Node job to `node-hardened-test` and its generated-Rust job to `rust-generated-verify`. The generated-Rust profile accepts one exact command sequence targeting `generated/rust/Cargo.toml`; reordered, additional, or alternate Cargo commands are not approximated.
+
+Neither exact rule authorizes sibling repositories, organization-wide profile execution, publication, formal-model downloads, secrets, environments, service containers, or caller-selected commands.

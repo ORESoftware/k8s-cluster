@@ -400,6 +400,11 @@ async fn create_plan(
     if let Err(response) = require_allowed_repository(&request.repository, &state) {
         return response;
     }
+    if let Err(response) =
+        require_allowed_workflow(&request.repository, &request.workflow_path, &state)
+    {
+        return response;
+    }
     match build_plan(&request, &state.config.limits) {
         Ok(plan) => (StatusCode::OK, Json(plan)).into_response(),
         Err(errors) => (
@@ -419,6 +424,13 @@ async fn create_run(
         return response;
     }
     if let Err(response) = require_allowed_repository(&request.plan.repository, &state) {
+        return response;
+    }
+    if let Err(response) = require_allowed_workflow(
+        &request.plan.repository,
+        &request.plan.workflow_path,
+        &state,
+    ) {
         return response;
     }
     if !state.config.execution_enabled {
@@ -1278,6 +1290,32 @@ fn require_allowed_repository(repository: &str, state: &AppState) -> Result<(), 
             Json(json!({
                 "error": "repository is not allowlisted",
                 "repository": repository
+            })),
+        )
+            .into_response())
+    }
+}
+
+#[allow(clippy::result_large_err)] // Preserve direct Axum rejection responses without heap boxing.
+fn require_allowed_workflow(
+    repository: &str,
+    workflow_path: &str,
+    state: &AppState,
+) -> Result<(), Response> {
+    let Some(configured_paths) = state.config.workflow_rules.get(repository) else {
+        // Preserve existing direct API behavior for legacy repositories that
+        // have a repository allowlist entry but no explicit workflow rules.
+        return Ok(());
+    };
+    if configured_paths.iter().any(|path| path == workflow_path) {
+        Ok(())
+    } else {
+        Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "error": "workflow path is not allowlisted",
+                "repository": repository,
+                "workflowPath": workflow_path
             })),
         )
             .into_response())

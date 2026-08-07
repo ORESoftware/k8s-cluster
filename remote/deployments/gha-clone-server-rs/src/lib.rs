@@ -57,6 +57,7 @@ pub fn capabilities(limits: &PlannerLimits) -> CapabilityResponse {
         },
         independent_profiles: vec![
             "rust-verify".to_string(),
+            "rust-generated-verify".to_string(),
             "node-verify".to_string(),
             "node-hardened-verify".to_string(),
             "node-hardened-test".to_string(),
@@ -1157,6 +1158,39 @@ jobs:
         assert!(verify_github_signature("secret", b"body", &signature));
         assert!(!verify_github_signature("secret", b"tampered", &signature));
         assert!(!verify_github_signature("secret", b"body", "sha1=00"));
+    }
+
+    #[test]
+    fn generated_rust_commands_are_exact_and_order_sensitive() {
+        let exact = [
+            "cargo generate-lockfile --manifest-path generated/rust/Cargo.toml",
+            "cargo fmt --manifest-path generated/rust/Cargo.toml -- --check",
+            "cargo clippy --locked --manifest-path generated/rust/Cargo.toml --all-targets -- -D warnings",
+            "cargo test --locked --manifest-path generated/rust/Cargo.toml --all-targets",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+        assert_eq!(
+            generated_rust_profile(&exact),
+            Some("rust-generated-verify")
+        );
+
+        let mut reordered = exact.clone();
+        reordered.swap(2, 3);
+        assert_eq!(generated_rust_profile(&reordered), None);
+
+        let mut extra = exact.clone();
+        extra.push("cargo publish --manifest-path generated/rust/Cargo.toml".into());
+        assert_eq!(generated_rust_profile(&extra), None);
+        assert!(generated_rust_intent(
+            &exact
+                .join(
+                    "
+"
+                )
+                .to_ascii_lowercase()
+        ));
     }
 }
 
