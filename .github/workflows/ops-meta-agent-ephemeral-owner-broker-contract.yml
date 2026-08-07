@@ -9,6 +9,7 @@ on:
       - scripts/ops/test_verify_meta_agent_source_snapshot.py
       - scripts/ops/test_meta_agent_ephemeral_owner_broker.py
       - scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py
+      - scripts/ops/test_verify_meta_agent_source_snapshot.py
       - docs/operations/meta-agent-ephemeral-credential-publication.md
   push:
     branches: [main]
@@ -19,6 +20,7 @@ on:
       - scripts/ops/test_verify_meta_agent_source_snapshot.py
       - scripts/ops/test_meta_agent_ephemeral_owner_broker.py
       - scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py
+      - scripts/ops/test_verify_meta_agent_source_snapshot.py
       - docs/operations/meta-agent-ephemeral-credential-publication.md
 
 permissions:
@@ -53,11 +55,13 @@ jobs:
             scripts/ops/verify_meta_agent_source_snapshot.py \
             scripts/ops/test_verify_meta_agent_source_snapshot.py \
             scripts/ops/test_meta_agent_ephemeral_owner_broker.py \
-            scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py
+            scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py \
+            scripts/ops/test_verify_meta_agent_source_snapshot.py
           python3 -m unittest -v \
             scripts/ops/test_verify_meta_agent_source_snapshot.py \
             scripts/ops/test_meta_agent_ephemeral_owner_broker.py \
-            scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py
+            scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py \
+            scripts/ops/test_verify_meta_agent_source_snapshot.py
           git diff --check
           if git grep -nE '^(<{7}|={7}|>{7})' -- \
             .github/workflows/ops-meta-agent-ephemeral-owner-broker.yml \
@@ -66,6 +70,7 @@ jobs:
             scripts/ops/test_verify_meta_agent_source_snapshot.py \
             scripts/ops/test_meta_agent_ephemeral_owner_broker.py \
             scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py \
+            scripts/ops/test_verify_meta_agent_source_snapshot.py \
             docs/operations/meta-agent-ephemeral-credential-publication.md; then
             echo 'Git conflict markers are forbidden.' >&2
             exit 1
