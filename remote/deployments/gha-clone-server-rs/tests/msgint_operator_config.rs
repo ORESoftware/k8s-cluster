@@ -1,5 +1,4 @@
 use std::{
-    fs,
     net::TcpListener as StdTcpListener,
     path::PathBuf,
     process::{Child, Command, ExitStatus, Stdio},
@@ -115,8 +114,29 @@ async fn wait_until_ready(client: &reqwest::Client, base_url: &str, child: &mut 
     }
 }
 
+async fn submit_run(
+    client: &reqwest::Client,
+    server_url: &str,
+    repository: &str,
+    workflow_path: &str,
+    workflow_yaml: &str,
+) -> reqwest::Response {
+    client
+        .post(format!("{server_url}/v1/runs"))
+        .header("x-gha-clone-auth", SERVER_AUTH)
+        .json(&json!({
+            "repository": repository,
+            "revision": REVISION,
+            "workflowPath": workflow_path,
+            "workflowYaml": workflow_yaml
+        }))
+        .send()
+        .await
+        .expect("submit Messaging Intel continuity run")
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn running_server_dispatches_messaging_intel_operator_and_full_test_profiles() {
+async fn running_server_dispatches_exact_msgint_profiles_and_rejects_mutations() {
     let mock_state = MockBuildState::default();
     let mock_listener = TcpListener::bind("127.0.0.1:0")
         .await
@@ -138,6 +158,7 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("CARGO_BIN_EXE_gha-clone-server").map(PathBuf::from))
         .expect("Cargo must expose the gha-clone-server binary to integration tests");
+    let workflow_rules = json!({ REPOSITORY: [WORKFLOW_PATH] }).to_string();
     let child = Command::new(binary)
         .env("HOST", "127.0.0.1")
         .env("PORT", server_port.to_string())
@@ -146,7 +167,7 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
         .env("GHA_CLONE_EXECUTION_ENABLED", "true")
         .env("GHA_CLONE_WEBHOOK_EXECUTION_ENABLED", "false")
         .env("GHA_CLONE_ALLOWED_REPOSITORIES", REPOSITORY)
-        .env("GHA_CLONE_WORKFLOW_RULES_JSON", "{}")
+        .env("GHA_CLONE_WORKFLOW_RULES_JSON", workflow_rules)
         .env(
             "GHA_CLONE_BUILD_SERVER_URL",
             format!("http://{mock_address}"),
@@ -171,20 +192,16 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
 
     let workflow_path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/msgint-operator-config.yml");
-    let workflow_yaml = fs::read_to_string(&workflow_path)
+    let workflow_yaml = std::fs::read_to_string(&workflow_path)
         .unwrap_or_else(|error| panic!("read {}: {error}", workflow_path.display()));
-    let response = client
-        .post(format!("{server_url}/v1/runs"))
-        .header("x-gha-clone-auth", SERVER_AUTH)
-        .json(&json!({
-            "repository": REPOSITORY,
-            "revision": REVISION,
-            "workflowPath": WORKFLOW_PATH,
-            "workflowYaml": workflow_yaml
-        }))
-        .send()
-        .await
-        .expect("submit Messaging Intel run");
+    let response = submit_run(
+        &client,
+        &server_url,
+        REPOSITORY,
+        WORKFLOW_PATH,
+        &workflow_yaml,
+    )
+    .await;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     let accepted: Value = response.json().await.expect("accepted run JSON");
     let run_id = accepted
@@ -262,13 +279,13 @@ async fn running_server_dispatches_messaging_intel_operator_and_full_test_profil
         1,
     );
     let mutable_action = workflow_yaml.replacen(
-        "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-        "actions/checkout@main",
+        "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+        "actions/setup-node@v4",
         1,
     );
     let bracket_secret = workflow_yaml.replacen(
-        "          persist-credentials: false\n",
-        "          persist-credentials: false\n        env:\n          MSGINT_META_ACCESS_TOKEN: ${{ secrets['PROD_TOKEN'] }}\n",
+        "          npm test\n",
+        "          npm test\n        env:\n          PRIVATE_TOKEN: ${{ secrets['PRIVATE_TOKEN'] }}\n",
         1,
     );
 

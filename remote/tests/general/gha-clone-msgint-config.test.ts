@@ -14,6 +14,9 @@ const buildPatch = read(
 );
 const workflow = read('.github/workflows/gha-clone-server.yml');
 const planner = read('remote/deployments/gha-clone-server-rs/src/lib.rs');
+const msgintContract = read(
+  'remote/deployments/gha-clone-server-rs/src/msgint_contract.rs',
+);
 const fixture = read(
   'remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml',
 );
@@ -26,7 +29,7 @@ const admissionDoc = read('docs/gha-profile-repository-admission.md');
 
 const repository = 'messaging-intel/msgint-connectors';
 const workflowPath = '.github/workflows/gha-clone-operator-config.yml';
-const revision = '952623b07fd83caa3a83ee27bdea293f6bd4372f';
+const revision = 'a9cc977d78347ec0efdbe8e6766967f80d425882';
 
 test('Messaging Intel repository and workflow admission are exact and additive', () => {
   assert.match(config, /messaging-intel\/msgint-connectors/);
@@ -46,8 +49,9 @@ test('Messaging Intel repository and workflow admission are exact and additive',
     admissionDoc,
     /=https:\/\/github\.com\/messaging-intel\/msgint-connectors\.git/,
   );
-  assert.match(validation, /Exact\(/);
-  assert.match(validation, /suffix-appended/);
+  assert.match(validation, /ensure_allowed_prefix_or_exact/);
+  assert.match(validation, /strip_prefix\('='\)/);
+  assert.match(admissionDoc, /suffix-appended/);
 });
 
 test('bounded workflow uses immutable setup actions and exact reviewed commands', () => {
@@ -69,21 +73,37 @@ test('bounded workflow uses immutable setup actions and exact reviewed commands'
   );
   assert.doesNotMatch(fixture, /\benv:\s|\$\{\{\s*secrets|npm publish|pull_request_target/);
 
-  assert.match(planner, /node-hardened-verify/);
-  assert.match(planner, /node-hardened-test/);
-  assert.match(planner, /exact reviewed command sequence/);
-  assert.match(planner, /exact 40-hex commit SHA/);
-  assert.match(planner, /fixed profiles do not forward caller-selected variables/);
+  assert.match(planner, /classify_msgint_workflow/);
+  assert.match(planner, /ContractMatch::Reject/);
+  assert.match(msgintContract, /node-hardened-verify/);
+  assert.match(msgintContract, /node-hardened-test/);
+  assert.match(msgintContract, /exact reviewed command sequence/);
+  assert.match(msgintContract, /exact 40-hex commit SHA/);
+  assert.match(
+    msgintContract,
+    /reserved Messaging Intel repository\/workflow identity mismatch/,
+  );
+  assert.match(msgintContract, new RegExp(revision));
 });
 
 test('build profiles are lifecycle-script-free and use fixed reviewed names', () => {
   for (const profile of ['node-hardened-verify', 'node-hardened-test']) {
     assert.match(profiles, new RegExp(`name: "${profile}"`));
   }
-  assert.match(profiles, /npm ci --ignore-scripts/);
-  assert.match(profiles, /npm run test:operator-config/);
-  assert.match(profiles, /npm audit --audit-level=high/);
-  assert.doesNotMatch(profiles, /npm ci(?! --ignore-scripts)/);
+  const hardenedVerify = profiles.match(
+    /const NODE_HARDENED_VERIFY_STEPS:[\s\S]*?script: r#"([\s\S]*?)"#/,
+  );
+  const hardenedTest = profiles.match(
+    /const NODE_HARDENED_TEST_STEPS:[\s\S]*?script: r#"([\s\S]*?)"#/,
+  );
+  assert.ok(hardenedVerify);
+  assert.ok(hardenedTest);
+  assert.match(hardenedVerify[1], /npm ci --ignore-scripts/);
+  assert.match(hardenedTest[1], /npm ci --ignore-scripts/);
+  assert.match(hardenedVerify[1], /npm run test:operator-config/);
+  assert.match(hardenedVerify[1], /npm audit --audit-level=high/);
+  assert.doesNotMatch(hardenedVerify[1], /^npm ci$/m);
+  assert.doesNotMatch(hardenedTest[1], /^npm ci$/m);
 });
 
 test('real-process proof and manual private smoke share one immutable revision', () => {
@@ -92,7 +112,7 @@ test('real-process proof and manual private smoke share one immutable revision',
   assert.ok(processTest.includes(`const WORKFLOW_PATH: &str = "${workflowPath}"`));
   assert.match(processTest, /node-hardened-verify/);
   assert.match(processTest, /node-hardened-test/);
-  assert.match(processTest, /HTTP 422|UNPROCESSABLE_ENTITY/);
+  assert.match(processTest, /StatusCode::UNPROCESSABLE_ENTITY/);
   assert.match(processTest, /zero|submissions.*2/s);
 
   assert.match(workflow, new RegExp(`MSGINT_REVISION: ${revision}`));

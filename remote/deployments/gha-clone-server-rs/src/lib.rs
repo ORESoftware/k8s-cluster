@@ -305,81 +305,15 @@ pub fn build_plan(
     })
 }
 
-fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPlan, Vec<String>> {
-    let mut errors = Vec::new();
-    let needs = parse_string_or_sequence(
-        mapping_get(job, "needs"),
-        &format!("jobs.{id}.needs"),
-        &mut errors,
-    );
-    let runs_on = parse_string_or_sequence(
-        mapping_get(job, "runs-on"),
-        &format!("jobs.{id}.runs-on"),
-        &mut errors,
-    );
-    if runs_on.is_empty() {
-        errors.push(format!(
-            "jobs.{id}.runs-on: at least one runner label is required"
-        ));
-    }
-
-    let mut reasons = Vec::new();
-    let mut notes = Vec::new();
-    let mut combined = String::new();
-    let mut run_commands = Vec::new();
-    let has_services = mapping_get(job, "services").is_some();
-    let has_container = mapping_get(job, "container").is_some();
-    let has_strategy = mapping_get(job, "strategy").is_some();
-
-    for key in [
-        "uses",
-        "permissions",
-        "environment",
-        "secrets",
-        "defaults",
-        "outputs",
-        "continue-on-error",
-        "timeout-minutes",
-    ] {
-        if mapping_get(job, key).is_some() {
-            reasons.push(format!(
-                "job-level {key} is unsupported by the independent lane"
-            ));
-        }
-    }
-    if has_services {
-        reasons.push("service containers require the isolated ARC DinD lane".into());
-    }
-    if has_container {
-        reasons.push("job containers are not reproduced by the independent lane".into());
-    }
-    if has_strategy {
-        reasons.push("dynamic strategy/matrix expansion is unsupported".into());
-    }
-    let runner_text = runs_on.join(" ").to_ascii_lowercase();
-    if runner_text.contains("macos") || runner_text.contains("windows") {
-        reasons.push("non-Linux native execution is unavailable in the independent lane".into());
-    }
-    if let Some(value) = mapping_get(job, "if") {
-        reasons.push(format!(
-            "job-level if condition is unsupported: {}",
-            compact_yaml(value)
-        ));
-    }
-    if let Some(environment) = mapping_get(job, "env") {
-        if contains_secret_expression(Some(environment)) {
-            reasons.push("job environment contains a secret expression".into());
-        } else {
-            reasons.push(
-                "job environment is unsupported because fixed profiles do not forward caller-selected variables"
-                    .into(),
-            );
-        }
-    }
-
-    let Some(steps) = mapping_get(job, "steps").and_then(Value::as_sequence) else {
-        errors.push(format!("jobs.{id}.steps must be a sequence"));
-        return Err(errors);
+    let profiles = match msgint_contract::classify_msgint_workflow(
+        &request.repository,
+        &request.revision,
+        &request.workflow_path,
+        root,
+    ) {
+        msgint_contract::ContractMatch::NotApplicable => return Ok(plan),
+        msgint_contract::ContractMatch::Reject(reasons) => return Err(reasons),
+        msgint_contract::ContractMatch::Match(profiles) => profiles,
     };
     if steps.len() > limits.max_steps_per_job {
         errors.push(format!(
