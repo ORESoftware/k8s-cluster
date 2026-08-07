@@ -31,6 +31,11 @@ The capacity-broker smoke mounts two distinct dummy GitHub App key paths, keeps 
 
 Pull-request jobs have read-only repository permissions and do not receive package-write or issue-write permission. Trusted publication jobs use only the workflow-scoped `GITHUB_TOKEN`; no PAT, GitHub App private key, ARC registration credential, billing credential, mutation credential, executor credential, repository secret, or workflow-provided customer value is used.
 
+
+The capacity-broker smoke mounts two distinct dummy GitHub App key paths, keeps `GHA_MUTATION_ENABLED=false`, and proves `/healthz`, `/readyz`, `/api/v1/capabilities`, and `/metrics` without requesting an installation token or contacting the GitHub API.
+
+Pull-request jobs have read-only repository permissions and do not receive package-write or issue-write permission. Trusted publication jobs use only the workflow-scoped `GITHUB_TOKEN`; no PAT, GitHub App private key, ARC registration credential, billing credential, mutation credential, executor credential, repository secret, or workflow-provided customer value is used.
+
 Repository-wide observability coverage requires the clone server, executor router, Sonus capacity broker, and StreemPilot capacity broker in the applicable resource-exporter inventories before activation.
 
 ## Publication
@@ -76,6 +81,13 @@ GitOps must copy the exact `ref` from the record matching the reviewed source re
 
 ## Capacity-broker runtime boundary
 
+
+GitOps must copy the exact `ref` from the record matching the reviewed source revision and target. Workflow summaries, mutable `:dev` tags, and mutable or discoverable SHA tags are not release authority.
+
+## Capacity-broker runtime boundary
+
+
+The ledger is idempotent. An identical record for the same `(source_sha, target)` marker creates no new comment. If that marker already exists with a different body or digest, publication stops as a reproducibility conflict. Publishers read every issue-comment page before classifying the marker.
 
 GitOps must copy the exact `ref` from the record matching the reviewed source revision and target. Workflow summaries, mutable `:dev` tags, and mutable or discoverable SHA tags are not release authority.
 
