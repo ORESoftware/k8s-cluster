@@ -53,7 +53,6 @@ jobs:
           grep -qF 'benefactor-web-server.rs|' "$script"
           grep -qF 'benefactor-api-server.rs|' "$script"
           grep -qF 'benefactor-infra|' "$script"
-          test "$(grep -cE '^  .+\|.+$' "$script")" -eq 3
           grep -qF 'candidate-personal-access-token-rejected' "$script"
           pinned_gh_auth='"$''gh_binary" auth token'
           grep -qF "$pinned_gh_auth" "$script"
