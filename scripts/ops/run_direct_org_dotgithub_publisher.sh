@@ -34,7 +34,7 @@ printf 'publisher-stage=%s status=passed\n' "$stage" >&2
 
 stage=direct-delegate
 set +e
-bash "$protected_runner" "$trusted_sha" "$source_root"
+bash "$patched_runner" "$trusted_sha" "$source_root"
 status=$?
 set -e
 if [[ "$status" -ne 0 ]]; then
