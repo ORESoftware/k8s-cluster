@@ -136,6 +136,9 @@ Delivered lifecycle-aware worker SDKs:
 
 Remaining worker SDKs:
 
+Deliver hand-authored worker SDKs for:
+
+- Go;
 - Rust;
 - Dart;
 - Gleam;
@@ -147,6 +150,9 @@ Also deliver:
 - Node.js, Bun, Deno, edge, Python, Go, and container examples;
 - generated API clients kept separate from lifecycle-aware worker SDKs;
 - one cross-language fixture corpus for retries, polling ambiguity, progress, cancellation, restart, lease loss, and fencing.
+- Node.js, Bun, Deno, edge, Python, and container examples;
+- generated API clients kept separate from lifecycle-aware worker SDKs;
+- one cross-language fixture corpus for retries, progress, cancellation, restart, lease loss, and fencing.
 
 Exit gate:
 
