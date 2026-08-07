@@ -37,6 +37,7 @@ cargo test --locked --manifest-path generated/rust/Cargo.toml --all-targets
 ```
 
 ## Exact setup-action authority
+The fixture pins checkout, Node setup, and Rust toolchain actions because the independent fixed profiles own the actual toolchain and command execution. Exact run-command sequences and immutable repository revisions are enforced for the registered 3FA tuple. General setup-action reference immutability is tracked separately so unrelated existing fixtures are not silently reclassified.
 
 For the registered 3FA tuple, setup actions are also an exact ordered allowlist:
 
@@ -78,6 +79,30 @@ Repeating the exact run reuses each job's request identity while keeping the Nod
 
 This is execution-contract evidence against a mock build server; it is not a live private-source run. The GitOps deployment remains at zero replicas with API and webhook execution disabled.
 
+## Real-process execution evidence
+
+The `threefa_http` integration starts the actual `gha-clone-server` binary with API execution enabled only inside the test process and points it at a recording local build-server mock.
+
+It proves that one accepted immutable request produces exactly two authenticated build submissions in deterministic topological order:
+
+```text
+node_contracts  -> node-hardened-test
+generated_rust -> rust-generated-verify
+```
+
+Every submission contains:
+
+- `schemaVersion=build-server.v1`;
+- `jobKind=run-profile`;
+- exact `https://github.com/3FA-app/3fa-interfaces.git` repository URL;
+- the exact immutable 40-hex revision;
+- no caller command or image; and
+- deterministic `gha-clone:{planId}:{jobId}` request identity.
+
+Repeating the exact run reuses each job's request identity while keeping the Node and Rust job identities distinct. Mutable revisions, unreviewed sibling repositories, and command-extended workflow variants are rejected before the mock build server receives any submission.
+
+This is execution-contract evidence against a mock build server; it is not a live private-source run. The GitOps deployment remains at zero replicas with API and webhook execution disabled.
+
 ## Independent authority
 
 The build server independently enforces the exact repository-to-profile rule merged through DEN-539: `3FA-app/3fa-interfaces` may use only `node-hardened-test` and `rust-generated-verify`. The planner and dispatcher cannot widen that authority.
@@ -89,6 +114,7 @@ The reviewed path must retain:
 - Rust formatting and warnings-denied Clippy;
 - all existing workflow parser, StreemPilot, transport, and auth regressions;
 - 3FA planner and adversarial command/action tests;
+- 3FA planner and adversarial tests;
 - the real-process 3FA dispatch, retry, and zero-submission rejection tests;
 - complete build-server profile/admission/idempotency/NATS tests;
 - actionlint and complete continuity Kustomize render;
