@@ -1,0 +1,305 @@
+name: Publish canonical-docs with ephemeral owner credential
+run-name: Publish canonical-cloud/canonical-docs from encrypted operator response
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+    paths:
+      - .github/canonical-docs-ephemeral-publish-trigger
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  statuses: write
+
+concurrency:
+  group: canonical-docs-ephemeral-owner-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    if: >-
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.user.login == 'ORESoftware' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'agent/canonical-docs-ephemeral-publish-') &&
+      github.event.pull_request.title == 'DO NOT MERGE: publish canonical-docs with encrypted credential'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      REPOSITORY: ${{ github.repository }}
+      MARKER_PATH: .github/canonical-docs-ephemeral-publish-trigger
+      TARGET_REPOSITORY: canonical-cloud/canonical-docs
+      EXPECTED_MAIN: 1848835599049ca41f68a079b5ac04f7d360fe87
+      EXPECTED_FEATURE: 54aa2efcbcfd21020614cbecccea5a907ead813f
+      FEATURE_REF: agent/den-1049-repository-baseline
+      BUNDLE_SHA256: 3169c190a11f8889ca0a29d5db58acabae1e3b887cc302407ccc350d3a461828
+      VERIFY_SHA256: 8ae154019b70d2f1c117b3ed4882405042b0da6c7792709df65bd37e88746e9c
+      PUBLISHER_SHA256: 0dbbff9b1859fcea7cdfed7b97df404ae06bb3f4cf8f414ec956cd63be2f4b15
+      EXPECTED_ASSET_COUNT: '4'
+
+    steps:
+      - name: Validate the metadata-only carrier against current main
+        id: carrier
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          pull="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+          head_sha="$(jq -er '.head.sha | select(test("^[0-9a-f]{40}$"))' <<<"$pull")"
+          main_sha="$(gh api "repos/${REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]]
+          jq -e '
+            .draft == true and
+            .user.login == "ORESoftware" and
+            .base.ref == "main" and
+            .head.repo.full_name == "ORESoftware/k8s-cluster" and
+            (.head.ref | startswith("agent/canonical-docs-ephemeral-publish-")) and
+            .title == "DO NOT MERGE: publish canonical-docs with encrypted credential" and
+            .commits == 1 and
+            .changed_files == 1 and
+            .additions == 4 and
+            .deletions == 0
+          ' <<<"$pull" >/dev/null
+
+          commits="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/commits?per_page=100")"
+          test "$(jq 'length' <<<"$commits")" -eq 1
+          parent_sha="$(jq -er '.[0].parents[0].sha | select(test("^[0-9a-f]{40}$"))' <<<"$commits")"
+          test "$parent_sha" = "$main_sha"
+
+          files="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100")"
+          jq -e --arg path "$MARKER_PATH" '
+            length == 1 and
+            .[0].filename == $path and
+            .[0].status == "added" and
+            .[0].changes == 4
+          ' <<<"$files" >/dev/null
+
+          encoded="$(gh api "repos/${REPOSITORY}/contents/${MARKER_PATH}?ref=${head_sha}" --jq '.content')"
+          marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
+          test "$(printf '%s' "$marker" | awk 'END { print NR }')" -eq 4
+          marker_target="$(awk -F= '$1 == "target" {print substr($0, index($0, "=") + 1)}' <<<"$marker")"
+          marker_main="$(awk -F= '$1 == "trusted-main" {print substr($0, index($0, "=") + 1)}' <<<"$marker")"
+          marker_bundle="$(awk -F= '$1 == "bundle-sha256" {print substr($0, index($0, "=") + 1)}' <<<"$marker")"
+          marker_protocol="$(awk -F= '$1 == "protocol" {print substr($0, index($0, "=") + 1)}' <<<"$marker")"
+          test "$marker_target" = "$TARGET_REPOSITORY"
+          test "$marker_main" = "$main_sha"
+          test "$marker_bundle" = "$BUNDLE_SHA256"
+          test "$marker_protocol" = rsa-oaep-sha256-v1
+
+          printf 'head_sha=%s\n' "$head_sha" >> "$GITHUB_OUTPUT"
+          printf 'trusted_sha=%s\n' "$main_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Issue one-time challenge, decrypt in memory, publish, and verify
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_SHA: ${{ steps.carrier.outputs.trusted_sha }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          stage=challenge-bootstrap
+          workflow_token="$GH_TOKEN"
+          work="$(mktemp -d "$RUNNER_TEMP/canonical-docs-credential-broker.XXXXXX")"
+          owner_token=''
+          cleanup() {
+            unset owner_token owner_login membership GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+            unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
+            WORK_TO_CLEAN="$work" python3 - <<'PY_CLEANUP'
+          import os
+          import shutil
+          from pathlib import Path
+          shutil.rmtree(Path(os.environ["WORK_TO_CLEAN"]), ignore_errors=True)
+          PY_CLEANUP
+          }
+          report_failure() {
+            status=$?
+            trap - ERR
+            GH_TOKEN="$workflow_token" gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" \
+              --body "Ephemeral Canonical Docs publication failed at bounded stage \`${stage}\`. No credential was written to Git, Actions outputs, artifacts, or the environment file." >/dev/null || true
+            exit "$status"
+          }
+          trap cleanup EXIT
+          trap report_failure ERR
+
+          private_key="$work/private.pem"
+          public_key="$work/public.pem"
+          ciphertext_file="$work/ciphertext.bin"
+          openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key"
+          chmod 600 "$private_key"
+          openssl pkey -in "$private_key" -pubout -out "$public_key"
+          nonce="$(openssl rand -hex 24)"
+          [[ "$nonce" =~ ^[0-9a-f]{48}$ ]]
+
+          challenge_body="$work/challenge.md"
+          {
+            printf '<!-- canonical-docs-credential-challenge:%s -->\n' "$nonce"
+            printf 'One-time RSA-OAEP-SHA256 challenge for %s. The private key exists only in this runner and is destroyed on exit. Reply with the matching encrypted ciphertext marker.\n\n' "$TARGET_REPOSITORY"
+            printf '```pem\n'
+            cat "$public_key"
+            printf '```\n'
+          } > "$challenge_body"
+          challenge_json="$(jq -n --rawfile body "$challenge_body" '{body:$body}' | gh api --method POST "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" --input -)"
+          challenge_id="$(jq -er '.id | select(type == "number" and . > 0)' <<<"$challenge_json")"
+          response_marker="<!-- canonical-docs-credential-response:${nonce} -->"
+
+          stage=await-encrypted-response
+          response_body=''
+          for _ in $(seq 1 180); do
+            comments="$(gh api --paginate "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" --slurp)"
+            response_body="$(
+              jq -r --arg marker "$response_marker" --argjson challenge_id "$challenge_id" '
+                [.[][]
+                 | select(.id > $challenge_id)
+                 | select(.user.login == "ORESoftware")
+                 | select(.body | startswith($marker + "\n"))]
+                | sort_by(.id) | last | .body // empty
+              ' <<<"$comments"
+            )"
+            test -n "$response_body" && break
+            sleep 5
+          done
+          test -n "$response_body"
+          test "$(grep -c '^ciphertext-base64=' <<<"$response_body")" -eq 1
+          ciphertext="$(awk -F= '$1 == "ciphertext-base64" {print substr($0, index($0, "=") + 1)}' <<<"$response_body")"
+          [[ "$ciphertext" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#ciphertext}" -le 8192
+          printf '%s' "$ciphertext" | base64 --decode > "$ciphertext_file"
+          test -s "$ciphertext_file"
+
+          stage=decrypt-ciphertext
+          owner_token="$(
+            openssl pkeyutl -decrypt \
+              -inkey "$private_key" \
+              -in "$ciphertext_file" \
+              -pkeyopt rsa_padding_mode:oaep \
+              -pkeyopt rsa_oaep_md:sha256 \
+              -pkeyopt rsa_mgf1_md:sha256 \
+              2>/dev/null
+          )"
+
+          stage=validate-owner-token-shape
+          test -n "$owner_token"
+          [[ "$owner_token" != *$'\n'* && "$owner_token" != *$'\r'* && "$owner_token" != *$'\t'* && "$owner_token" != *' '* ]]
+          [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
+          echo "::add-mask::$owner_token"
+          export GH_TOKEN="$owner_token"
+          export GITHUB_REPOSITORY_ADMIN_TOKEN="$owner_token"
+
+          stage=validate-owner-identity
+          owner_login="$(gh api user --jq '.login')"
+          test "$owner_login" = ORESoftware
+          membership="$(gh api /user/memberships/orgs/canonical-cloud --jq '.role + ":" + .state')"
+          test "$membership" = admin:active
+
+          stage=reconstruct-reviewed-source
+          source_root="$work/source"
+          asset_dir="$source_root/scripts/critical-org-fleet/assets"
+          mkdir -p "$asset_dir" "$source_root/scripts/ops"
+          source_commit="$(GH_TOKEN="$workflow_token" gh api "repos/${REPOSITORY}/git/commits/${TRUSTED_SHA}")"
+          test "$(jq -er '.sha' <<<"$source_commit")" = "$TRUSTED_SHA"
+          source_tree_sha="$(jq -er '.tree.sha | select(test("^[0-9a-f]{40}$"))' <<<"$source_commit")"
+          source_tree="$(GH_TOKEN="$workflow_token" gh api "repos/${REPOSITORY}/git/trees/${source_tree_sha}?recursive=1")"
+          test "$(jq -r '.truncated' <<<"$source_tree")" = false
+
+          asset_rows="$(
+            jq -r '
+              [.tree[]
+               | select(.type == "blob")
+               | select(.path | test("^scripts/critical-org-fleet/assets/canonical-docs\\.part[0-9]{3}$"))
+               | [.path, .sha]]
+              | sort_by(.[0]) | .[] | @tsv
+            ' <<<"$source_tree"
+          )"
+          test "$(wc -l <<<"$asset_rows" | tr -d ' ')" -eq "$EXPECTED_ASSET_COUNT"
+          expected_assets="$(printf 'canonical-docs.part000\ncanonical-docs.part001\ncanonical-docs.part002\ncanonical-docs.part003\n')"
+          observed_assets="$(awk -F/ '{print $NF}' <<<"$asset_rows")"
+          test "$observed_assets" = "$expected_assets"
+          while IFS=$'\t' read -r asset_path asset_sha; do
+            [[ "$asset_sha" =~ ^[0-9a-f]{40}$ ]]
+            asset_blob="$(GH_TOKEN="$workflow_token" gh api "repos/${REPOSITORY}/git/blobs/${asset_sha}")"
+            test "$(jq -er '.encoding' <<<"$asset_blob")" = base64
+            output="$source_root/$asset_path"
+            jq -er '.content' <<<"$asset_blob" | tr -d '\n' | base64 --decode > "$output"
+            test -s "$output"
+          done <<<"$asset_rows"
+
+          fetch_trusted_file() {
+            relative="$1"
+            expected_digest="$2"
+            output="$3"
+            blob_sha="$(
+              jq -er --arg path "$relative" '
+                [.tree[] | select(.type == "blob" and .path == $path)]
+                | if length == 1 then .[0].sha else error("trusted blob mismatch") end
+                | select(test("^[0-9a-f]{40}$"))
+              ' <<<"$source_tree"
+            )"
+            blob="$(GH_TOKEN="$workflow_token" gh api "repos/${REPOSITORY}/git/blobs/${blob_sha}")"
+            test "$(jq -er '.encoding' <<<"$blob")" = base64
+            jq -er '.content' <<<"$blob" | tr -d '\n' | base64 --decode > "$output"
+            printf '%s  %s\n' "$expected_digest" "$output" | sha256sum --check --strict
+          }
+
+          verifier="$source_root/scripts/ops/verify_canonical_docs_bundle.py"
+          publisher="$source_root/scripts/ops/publish_canonical_docs.py"
+          fetch_trusted_file scripts/ops/verify_canonical_docs_bundle.py "$VERIFY_SHA256" "$verifier"
+          fetch_trusted_file scripts/ops/publish_canonical_docs.py "$PUBLISHER_SHA256" "$publisher"
+          python3 -m py_compile "$verifier" "$publisher"
+
+          verifier_report="$work/source-report.json"
+          python3 "$verifier" --asset-dir "$asset_dir" --json-report "$verifier_report"
+          jq -e --arg bundle "$BUNDLE_SHA256" --arg main "$EXPECTED_MAIN" --arg feature "$EXPECTED_FEATURE" --arg feature_ref "refs/heads/$FEATURE_REF" '
+            .bundle_sha256 == $bundle and
+            .heads["refs/heads/main"] == $main and
+            .heads[$feature_ref] == $feature and
+            .asset_count == 4 and
+            (.documentation_contract | startswith("documentation contract: PASS"))
+          ' "$verifier_report" >/dev/null
+
+          bundle_base64="$work/canonical-docs.bundle.b64"
+          bundle="$work/canonical-docs.bundle"
+          cat "$asset_dir"/canonical-docs.part000 "$asset_dir"/canonical-docs.part001 "$asset_dir"/canonical-docs.part002 "$asset_dir"/canonical-docs.part003 > "$bundle_base64"
+          base64 --decode "$bundle_base64" > "$bundle"
+          printf '%s  %s\n' "$BUNDLE_SHA256" "$bundle" | sha256sum --check --strict
+
+          stage=create-and-push-exact-repository
+          publication_report="$work/publication-report.json"
+          python3 "$publisher" "$bundle" --json-report "$publication_report"
+          jq -e --arg repository "$TARGET_REPOSITORY" --arg main "$EXPECTED_MAIN" --arg feature "$EXPECTED_FEATURE" --arg feature_ref "$FEATURE_REF" '
+            .repository == $repository and
+            .visibility == "public" and
+            .default_branch == "main" and
+            .main_sha == $main and
+            .feature_ref == $feature_ref and
+            .feature_sha == $feature and
+            (.pull_request_number | type == "number" and . > 0) and
+            (.pull_request_url | type == "string" and length > 0)
+          ' "$publication_report" >/dev/null
+          target_pr="$(jq -er '.pull_request_number' "$publication_report")"
+          target_pr_url="$(jq -er '.pull_request_url' "$publication_report")"
+
+          stage=verify-live-repository
+          metadata="$(gh api "repos/${TARGET_REPOSITORY}")"
+          jq -e '
+            .owner.login == "canonical-cloud" and
+            .visibility == "public" and
+            .private == false and
+            .archived == false and
+            .disabled == false and
+            .default_branch == "main" and
+            .allow_rebase_merge == false and
+            .delete_branch_on_merge == true
+          ' <<<"$metadata" >/dev/null
+          test "$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$EXPECTED_MAIN"
+          test "$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/${FEATURE_REF}" --jq '.object.sha')" = "$EXPECTED_FEATURE"
+
+          stage=close-execution-carrier
+          GH_TOKEN="$workflow_token" gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" \
+            --body "Created and verified \`${TARGET_REPOSITORY}\`: \`main\` \`${EXPECTED_MAIN}\`, \`${FEATURE_REF}\` \`${EXPECTED_FEATURE}\`. Review PR: ${target_pr_url}" >/dev/null
+          GH_TOKEN="$workflow_token" gh api --method PATCH "repos/${REPOSITORY}/pulls/${PR_NUMBER}" -f state=closed >/dev/null
+          printf 'canonical-docs publication completed target_pr=%s\n' "$target_pr"
