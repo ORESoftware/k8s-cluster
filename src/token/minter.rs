@@ -13,6 +13,8 @@ use super::assurance::AuthenticationAssurance;
 use super::claims::OreClaims;
 use super::jwks::PublicJwks;
 
+const MAX_AUTH_TIME_FUTURE_SKEW_SECS: u64 = 60;
+
 pub struct TokenMinter {
     encoding_key: EncodingKey,
     header: Header,
@@ -29,6 +31,7 @@ pub struct TokenMinter {
 pub struct MintedToken {
     pub token: String,
     pub expires_at: u64,
+    pub auth_time: Option<u64>,
     pub amr: Vec<String>,
     pub acr: Option<String>,
 }
@@ -109,6 +112,23 @@ impl TokenMinter {
     pub fn mint(&self, context: MintContext) -> Result<MintedToken, AuthError> {
         let now = now_secs();
         let expires_at = now.saturating_add(self.ttl_secs);
+        let assurance_level = context.assurance.level();
+        let auth_time = context.assurance.auth_time;
+
+        // LOA2 without a ceremony timestamp would let a consumer mistake a
+        // freshly re-minted access token for freshly completed MFA. Reject it at
+        // the authority boundary. Future-dated provider timestamps are equally
+        // invalid, allowing only bounded clock skew.
+        if assurance_level >= 2 && auth_time.is_none() {
+            tracing::warn!("refusing to mint LOA2 token without auth_time");
+            return Err(AuthError::Unauthorized);
+        }
+        if auth_time.is_some_and(|value| value > now.saturating_add(MAX_AUTH_TIME_FUTURE_SKEW_SECS))
+        {
+            tracing::warn!("refusing to mint token with future auth_time");
+            return Err(AuthError::Unauthorized);
+        }
+
         let is_supabase = context.provider == "supabase";
         let claims = OreClaims {
             sub: context.shared_user_id,
@@ -117,6 +137,7 @@ impl TokenMinter {
             iat: now,
             exp: expires_at,
             nbf: now.saturating_sub(5),
+            auth_time,
             jti: uuid::Uuid::new_v4().to_string(),
             sid: context.session_id.map(|id| id.to_string()),
             project: is_supabase.then(|| context.provider_tenant.clone()),
@@ -128,7 +149,7 @@ impl TokenMinter {
             email_verified: context.email_verified,
             roles: context.roles,
             // Derived from the ACR so `aal` and `acr` can never disagree.
-            aal: context.assurance.level(),
+            aal: assurance_level,
             amr: context.assurance.amr.clone(),
             acr: context.assurance.acr.clone(),
             auth_time: Some(now),
@@ -140,6 +161,7 @@ impl TokenMinter {
         Ok(MintedToken {
             token,
             expires_at,
+            auth_time,
             amr: context.assurance.amr,
             acr: context.assurance.acr,
         })
@@ -288,6 +310,8 @@ mod tests {
         assert!(claims.email_verified);
         assert_eq!(claims.amr, vec!["pwd"]);
         assert_eq!(claims.acr.as_deref(), Some(ACR_LOA1));
+        assert_eq!(claims.auth_time, minted.auth_time);
+        assert!(claims.auth_time.is_some());
         assert_eq!(minted.amr, vec!["pwd"]);
         assert_eq!(minted.acr.as_deref(), Some(ACR_LOA1));
         assert!(claims.auth_time.is_some());

@@ -1,5 +1,6 @@
 //! Access-token introspection and gateway verification.
 
+use std::env;
 use std::sync::Once;
 
 use axum::{
@@ -59,6 +60,17 @@ fn authorize_service_credential(
     } else {
         Err(AuthError::Unauthorized)
     }
+}
+
+fn allow_unauthenticated_introspection() -> bool {
+    env::var("AUTH_ALLOW_UNAUTHENTICATED_INTROSPECTION")
+        .ok()
+        .is_some_and(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
 }
 
 /// Constant-time credential comparison via double-HMAC under a per-call random
@@ -152,6 +164,9 @@ pub async fn verify(State(state): State<AppState>, headers: HeaderMap) -> impl I
             );
             insert_header(&mut output, "x-auth-roles", &claims.roles.join(","));
             insert_header(&mut output, "x-auth-aal", &claims.aal.to_string());
+            if let Some(auth_time) = claims.auth_time {
+                insert_header(&mut output, "x-auth-time", &auth_time.to_string());
+            }
             if !claims.amr.is_empty() {
                 insert_header(&mut output, "x-auth-amr", &claims.amr.join(","));
             }

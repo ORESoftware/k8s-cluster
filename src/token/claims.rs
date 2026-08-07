@@ -15,6 +15,11 @@ pub struct OreClaims {
     pub iat: u64,
     pub exp: u64,
     pub nbf: u64,
+    /// Time the authentication ceremony represented by `aal`/`amr`/`acr`
+    /// completed. For LOA2 this is the verified second-factor/passkey time;
+    /// it is deliberately distinct from `iat`, which is only token mint time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_time: Option<u64>,
     pub jti: String,
     /// Opaque session id used for revocation checks. Old stateless tokens may
     /// omit it during migration.
