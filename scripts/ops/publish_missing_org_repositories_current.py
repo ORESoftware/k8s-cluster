@@ -688,7 +688,7 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
             env=environment,
         )
 
-    for record in records:
+    for record in execution_records:
         full_name = str(record["full_name"])
         expected = str(record["commit"])
         actual = MODULE.main_ref(full_name)
@@ -697,8 +697,16 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
                 f"fleet verification failed for {full_name}: "
                 f"{actual!r} != {expected}"
             )
-        print(f"VERIFIED {full_name} {actual}")
-    print("VERIFIED 32/32 HypeSiege and StreemPilot repositories")
+        status, remote = MODULE.api("GET", f"/repos/{full_name}")
+        if status != 200 or not isinstance(remote, dict):
+            fail(f"remote verification failed for {full_name}: HTTP {status}")
+        if remote.get("private") is not True or remote.get("visibility") != "private":
+            fail(
+                f"remote visibility drift for {full_name}: "
+                f"private={remote.get('private')!r}, visibility={remote.get('visibility')!r}"
+            )
+        print(f"VERIFIED_PRIVATE {full_name} {actual}")
+    print("VERIFIED 32/32 private HypeSiege and StreemPilot repositories")
 
 
 MODULE.repair_publisher = repair_or_validate_publisher
