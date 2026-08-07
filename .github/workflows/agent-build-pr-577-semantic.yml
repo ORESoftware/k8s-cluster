@@ -1,0 +1,82 @@
+name: Build semantic PR 577 branch
+
+on:
+  push:
+    branches:
+      - agent/hypesiege-streempilot-app-of-apps-semantic
+    paths:
+      - '.github/workflows/agent-build-pr-577-semantic.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: agent-build-pr-577-semantic
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out current-main semantic branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/hypesiege-streempilot-app-of-apps-semantic
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Copy exact reviewed app-of-apps files
+        shell: bash
+        run: |
+          set -euo pipefail
+          reviewed='0342a0b8c3370fd57af9bf3b3a439fa20ac9f8aa'
+          git fetch --no-tags origin "$reviewed"
+          files=(
+            '.github/workflows/product-app-of-apps.yml'
+            'docs/hypesiege-streempilot-gitops.md'
+            'remote/argocd/apps/hypesiege-root.application.yaml'
+            'remote/argocd/apps/hypesiege.applications.yaml'
+            'remote/argocd/apps/streempilot-root.application.yaml'
+            'remote/argocd/apps/streempilot.applications.yaml'
+            'remote/argocd/projects/hypesiege.appproject.yaml'
+            'remote/argocd/projects/hypesiege.tenant.yaml'
+            'remote/argocd/projects/streempilot.appproject.yaml'
+            'remote/argocd/projects/streempilot.tenant.yaml'
+            'tools/test_product_app_of_apps.rb'
+          )
+          git checkout "$reviewed" -- "${files[@]}"
+
+          # The StreemPilot web repository was renamed after review. Preserve the
+          # reviewed service boundary while pointing Argo and its contracts at
+          # the canonical current repository rather than relying on a redirect.
+          grep -rlZ 'StreemPilot/streempilot-web-server.rs' "${files[@]}" \
+            | xargs -0 -r sed -i 's#StreemPilot/streempilot-web-server.rs#StreemPilot/sp-web-mash#g'
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31.11.0
+
+      - name: Regenerate and validate the semantic union
+        shell: bash
+        run: |
+          set -euo pipefail
+          nix develop --accept-flake-config -c python tools/application_catalog.py generate catalog/applications.json
+          nix develop --accept-flake-config -c python tools/application_catalog.py check catalog/applications.json
+          ruby tools/test_product_app_of_apps.rb
+          grep -Fq 'https://github.com/StreemPilot/sp-web-mash.git' remote/argocd/apps/streempilot.applications.yaml
+          ! grep -R 'StreemPilot/streempilot-web-server.rs' \
+            remote/argocd/apps/streempilot.applications.yaml \
+            docs/hypesiege-streempilot-gitops.md \
+            tools/test_product_app_of_apps.rb
+          git diff --check
+
+      - name: Commit and push product-only semantic union
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'feat: add current-main Hypesiege and StreemPilot app-of-apps'
+          git push origin HEAD:agent/hypesiege-streempilot-app-of-apps-semantic
