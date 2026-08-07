@@ -1,0 +1,30 @@
+# One-shot Hypesiege and StreemPilot repository-fleet publisher. The application
+# repository owns the audited Job and deterministic generator; this platform
+# repository pins the exact reviewed implementation commit.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-ai-agent-coordinator-repository-bootstrap
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: ai-agent-coordinator
+    app.kubernetes.io/component: repository-bootstrap
+    app.kubernetes.io/part-of: oresoftware-agent-platform
+  annotations:
+    linear.app/issue: DEN-877
+spec:
+  project: ai-agent-coordinator
+  source:
+    repoURL: https://github.com/ORESoftware/ai-agent-coordinator.rs.git
+    targetRevision: 11bf6edff185d72c8f606be1c3fcc485a3ee4695
+    path: deploy/k8s/bootstrap
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai-agent-coordinator
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - PruneLast=true
