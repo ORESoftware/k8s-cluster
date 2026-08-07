@@ -16,6 +16,7 @@ The bridge does not scrape Google Chat. It runs as the deploying Google user and
 - A high-entropy bridge token gates every sensitive HTTP action.
 - Only the token's SHA-256 hash is stored in Script Properties.
 - The canonical repository relay uses authenticated GET because the Apps Script response redirect terminates at a GET-only `googleusercontent.com` endpoint. Forcing POST across the 302/303 redirect returns HTTP 405.
+- The deployed web route is GET-only. The repository's canonical relay wraps that GET transport in a one-time RSA-OAEP handoff and an AES-256 encrypted one-day artifact.
 - Relay protocol 2 accepts exactly one ciphertext per published run ID. A second matching submission fails closed instead of choosing a last writer.
 - The decrypted handoff must contain the published `run_id`, bridge token, and a distinct high-entropy archive passphrase.
 - Completion metadata binds the input ciphertext, plaintext export manifest, and encrypted archive by SHA-256.
@@ -113,6 +114,27 @@ The old automatic POST relay forced POST across Apps Script's 302/303 response r
 A direct client may still send the original request as POST only when it lets the redirect change to GET. Never use `--post302` or `--post303`, and never put a credential in process arguments or committed configuration.
 
 After the import, run `rotateBridgeToken()` or `disableBridge()` from the editor.
+The current deployment returns HTTP 405 for POST. `.github/workflows/ephemeral-google-chat-relay.yml` is therefore a manual retirement notice; it performs no bridge call. Use `.github/workflows/ephemeral-google-chat-relay-get.yml` for encrypted imports.
+
+## Ephemeral encrypted relay protocol 2
+
+1. The GET relay publishes a one-time 3072-bit RSA public key and run ID on the fixed relay issue.
+2. The submitter generates a unique archive passphrase and encrypts one compact JSON payload using RSA-OAEP SHA-256:
+
+   ```json
+   {
+     "run_id": "<PUBLISHED_RUN_ID>",
+     "token": "<BRIDGE_TOKEN>",
+     "archive_passphrase": "<UNIQUE_HIGH_ENTROPY_PASSPHRASE>"
+   }
+   ```
+
+3. Submit exactly one `CHAT_RELAY_GET_CIPHERTEXT` comment for that run. Duplicate matching comments reject the run after a bounded race-detection window.
+4. The workflow verifies the payload run ID, fixed space, fixed display name, and earliest boundary; paginates the GET API; writes a non-self-referential checksum manifest; encrypts the archive; and retains it for one day.
+5. The completion comment includes the ciphertext, export-manifest, and encrypted-archive SHA-256 values. Verify all three before accepting the audit evidence.
+6. Destroy the local passphrase/export and rotate or disable the bridge token after reconciliation.
+
+[`test_relay_workflows.py`](./test_relay_workflows.py) and [`.github/workflows/google-chat-relay-contract.yml`](../../.github/workflows/google-chat-relay-contract.yml) enforce the non-negotiable workflow invariants.
 
 ## Ephemeral encrypted relay protocol 2
 
