@@ -532,13 +532,6 @@ fn classify_profile(text: &str) -> Option<String> {
     {
         return Some("python-verify".into());
     }
-    if text.contains("npm ci --ignore-scripts")
-        && text.contains("npm run check")
-        && text.contains("npm run test:operator-config")
-        && text.contains("npm audit --audit-level=high")
-    {
-        return Some("node-hardened-verify".into());
-    }
     if text.contains("npm ")
         || text.contains("pnpm ")
         || text.contains("yarn ")

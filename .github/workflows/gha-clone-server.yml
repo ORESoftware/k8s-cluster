@@ -301,7 +301,7 @@ jobs:
           output_dir = Path(os.environ["RUNNER_TEMP"])
           for profile, constant in (
               ("node-hardened-verify", "NODE_HARDENED_VERIFY_STEPS"),
-              ("node-verify", "NODE_VERIFY_STEPS"),
+              ("node-hardened-test", "NODE_HARDENED_TEST_STEPS"),
           ):
               pattern = rf'const {constant}:.*?script: r#"(.*?)"#,\n\}}\];'
               match = re.search(pattern, source, flags=re.DOTALL)
@@ -329,7 +329,7 @@ jobs:
             *) echo "Node profile image did not resolve to an immutable digest" >&2; exit 1 ;;
           esac
           printf 'resolved_node_profile_image=%s\n' "$resolved_image"
-          for profile in node-hardened-verify node-verify; do
+          for profile in node-hardened-verify node-hardened-test; do
             script="$RUNNER_TEMP/${profile}.sh"
             test -s "$script"
             docker run --rm \

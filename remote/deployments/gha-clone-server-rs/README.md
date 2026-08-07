@@ -188,6 +188,60 @@ count. It is in-memory in the first deployment, so keep exactly one replica.
 Horizontal scaling requires a shared durable delivery store or a Fiducia-fenced
 claim before webhook execution may be enabled.
 
+## Messaging Intel mirror and adversarial proof
+
+The allowlisted fixture
+`tests/fixtures/msgint-operator-config.yml` represents only
+`messaging-intel/msgint-connectors` at an immutable 40-hex revision. Its command
+sequences are exact contracts:
+
+```text
+node-hardened-verify:
+  npm ci --ignore-scripts
+  npm run check
+  npm run test:operator-config
+  npm audit --audit-level=high
+
+node-hardened-test:
+  npm ci --ignore-scripts
+  npm test
+```
+
+A job that signals hardened Node intent cannot fall back to generic
+`node-verify`. Extra commands, reordered commands, quoted/spoofed evidence,
+mutable setup-action refs, caller-selected environments, setup-input
+expressions, and secret expressions are rejected before any build submission.
+The real-process integration test first proves the two valid submissions reach
+`succeeded`, then sends five adjacent variants through the authenticated HTTP
+API:
+
+1. an extra `npm publish` command after the reviewed operator sequence;
+2. the same reviewed command strings in a different order;
+3. a mutable `actions/checkout@main` setup action;
+4. a bracket-form `${{ secrets['PROD_TOKEN'] }}` step environment; and
+5. a plain non-secret `NODE_ENV=test` job environment.
+
+Every variant must return HTTP 422 with the specific fail-closed reason. The
+recording build server must remain at exactly the two valid submissions, proving
+that rejection happens before dispatch. A separate fixture-contract test keeps
+every mutation anchor unique and verifies that fixture evolution cannot silently
+turn an adversarial mutation into a no-op.
+
+This hermetic proof needs neither the private Messaging Intel repository nor a
+Kubernetes context. The optional hosted smoke and the deployed-cluster canary
+are deliberately separate access layers:
+
+- the hosted smoke requires a short-lived, contents-read GitHub App installation
+  limited to the exact private repository;
+- the deployed canary requires a reviewed kubeconfig/context plus the runtime
+  server/build-server secrets provisioned through External Secrets.
+
+The optional hosted smoke is manual-only. It mints a short-lived GitHub App token
+restricted to `messaging-intel/msgint-connectors`, checks out the exact reviewed
+revision with persisted Git credentials disabled, extracts only the two compiled
+fixed scripts, resolves the Node runner image to a digest, and executes both
+profiles in capability-dropped, no-new-privileges, read-only containers.
+
 ## Fail-closed exclusions
 
 The independent lane rejects:
@@ -315,6 +369,8 @@ exist. Activation requires:
 7. register the failure-only `workflow_run` webhook and prove HMAC, exact-path filtering,
    loop exclusion, delivery dedupe, and build-server idempotency before enabling execution.
 7. enable webhook execution only after HMAC and idempotency evidence.
+9. enable webhook execution only after HMAC, duplicate-delivery, idempotency,
+   exact-repository admission, and no-recursion evidence.
 
 AWS is the initial independent executor because the existing build server,
 containerd/buildkit, ECR and Postgres are there. Hetzner can immediately host ARC
@@ -547,3 +603,5 @@ The Dockerfile creates an unprivileged runtime image. Publish it through the exi
 cargo test
 python3 remote/argocd/ci-runners/validate-sonus-arc-scaffold.py
 ```
+standalone `ORESoftware/gha-clone-server.rs` repository is tracked after the API
+and fixtures stabilize and must use the protected repository-bootstrap path.

@@ -453,7 +453,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: 5
         shell: bash
-      - uses: actions/setup-node@abc
+      - uses: actions/setup-node@0123456789abcdef0123456789abcdef01234567
         env:
           TOKEN: '${{ secrets.TOKEN }}'
         with:
@@ -494,7 +494,7 @@ jobs:
   compact_secret:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-node@abc
+      - uses: actions/setup-node@0123456789abcdef0123456789abcdef01234567
         with:
           token: '${{secrets.NPM_TOKEN}}'
       - run: npm test
