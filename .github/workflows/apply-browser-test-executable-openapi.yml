@@ -1,0 +1,315 @@
+# Observable same-repository publisher; removed before the PR leaves draft.
+name: Apply browser-test executable OpenAPI migration
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-browser-test-executable-openapi.yml'
+      - '.github/scripts/apply-browser-test-executable-openapi.py'
+      - '.github/scripts/fix-browser-test-executable-openapi.py'
+      - 'remote/deployments/browser-test-server/**'
+      - 'remote/api-contracts/**'
+      - 'remote/config/api-contracts.json'
+      - 'remote/tools/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-browser-test-executable-openapi-pr-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+  PUPPETEER_SKIP_DOWNLOAD: 'true'
+
+jobs:
+  apply-test-and-publish:
+    if: github.repository == 'ORESoftware/k8s-cluster' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/browser-test-executable-openapi
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Merge current main without rebasing
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main --no-tags
+          git merge --no-edit origin/main
+
+      - name: Reject mutable CI dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('.github/workflows/apply-browser-test-executable-openapi.yml')
+          failures = []
+          for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
+              match = re.match(r'^\s*uses:\s*([^\s#]+)', line)
+              if match:
+                  reference = match.group(1)
+                  if not reference.startswith('./') and not re.fullmatch(r'[^@]+@[0-9a-fA-F]{40}', reference):
+                      failures.append(f'{path}:{number}: mutable action reference: {reference}')
+              if re.search(r'^\s*runs-on:\s*ubuntu-latest\s*$', line):
+                  failures.append(f'{path}:{number}: mutable runner label: ubuntu-latest')
+          if failures:
+              raise SystemExit('\n'.join(failures))
+          PY
+
+      - name: Create contract-only telemetry package shim
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          mkdir -p remote/libs/telemetry-node
+          cat > remote/libs/telemetry-node/package.json <<'JSON'
+          {
+            "name": "@dd/telemetry",
+            "version": "0.0.0-contract-shim",
+            "private": true,
+            "type": "module",
+            "exports": {
+              ".": {
+                "types": "./index.d.ts",
+                "default": "./index.js"
+              }
+            }
+          }
+          JSON
+          cat > remote/libs/telemetry-node/index.js <<'JS'
+          export const loggerMixin = () => ({});
+          export const instrumentFastify = () => {};
+          export const initTelemetry = () => ({ shutdown: async () => {} });
+          JS
+          cat > remote/libs/telemetry-node/index.d.ts <<'TS'
+          import type { FastifyInstance } from 'fastify';
+          export declare const loggerMixin: () => Record<string, never>;
+          export declare const instrumentFastify: (
+            app: FastifyInstance,
+            options?: Record<string, unknown>,
+          ) => void;
+          export declare const initTelemetry: (service: string) => {
+            shutdown: () => Promise<void>;
+          };
+          TS
+
+      - name: Apply reviewed migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            .github/scripts/apply-browser-test-executable-openapi.py \
+            .github/scripts/fix-browser-test-executable-openapi.py
+          python3 .github/scripts/apply-browser-test-executable-openapi.py
+          python3 .github/scripts/fix-browser-test-executable-openapi.py
+          git diff --check
+          git diff --binary > "${RUNNER_TEMP}/browser-test-migration.diff"
+
+      - name: Install Node.js 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Install pnpm 9.15.4
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@9.15.4 --activate
+          test "$(pnpm --version)" = '9.15.4'
+
+      - name: Refresh locked service dependencies
+        working-directory: remote/deployments/browser-test-server
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --no-frozen-lockfile
+
+      - name: Seed embedded public contract and compile
+        working-directory: remote/deployments/browser-test-server
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            pnpm docs:embed
+            pnpm typecheck
+            pnpm build
+          } 2>&1 | tee "${RUNNER_TEMP}/browser-test-compile.log"
+
+      - name: Export canonical native OpenAPI
+        working-directory: remote/deployments/browser-test-server
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p generated
+          pnpm exec tsx src/server.ts --export-openapi > "${RUNNER_TEMP}/browser-test-openapi.1.json"
+          pnpm exec tsx src/server.ts --export-openapi > "${RUNNER_TEMP}/browser-test-openapi.2.json"
+          cmp "${RUNNER_TEMP}/browser-test-openapi.1.json" "${RUNNER_TEMP}/browser-test-openapi.2.json"
+          python3 -m json.tool "${RUNNER_TEMP}/browser-test-openapi.1.json" >/dev/null
+          cp "${RUNNER_TEMP}/browser-test-openapi.1.json" generated/openapi.json
+
+      - name: Regenerate public projection and fleet indexes
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check remote/tools/generate-api-docs.mjs
+          node remote/tools/generate-api-docs.mjs
+          node remote/tools/generate-api-docs.mjs --check
+
+      - name: Re-embed final public projection and run runtime tests
+        working-directory: remote/deployments/browser-test-server
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm docs:embed
+          pnpm docs:embed:check
+          pnpm typecheck
+          pnpm build
+          node --test test/openapi-contract.test.mjs
+          node dist/server.js --export-openapi > "${RUNNER_TEMP}/browser-test-openapi.3.json"
+          cmp "${RUNNER_TEMP}/browser-test-openapi.1.json" "${RUNNER_TEMP}/browser-test-openapi.3.json"
+          cmp "${RUNNER_TEMP}/browser-test-openapi.3.json" generated/openapi.json
+          cmp generated/openapi.json generated/api-docs.internal.json
+
+      - name: Verify native and fleet contract invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check remote/tools/check-openapi-contracts.mjs
+          node --check remote/tools/validate-openapi-contracts.mjs
+          node remote/tools/check-openapi-contracts.mjs --service browser-test-server
+          node remote/tools/generate-api-docs.mjs --check --service browser-test-server
+          node remote/tools/validate-openapi-contracts.mjs
+
+      - name: Regenerate and verify deterministic fleet SDKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check remote/tools/generate-api-sdks.mjs
+          node --check remote/tools/validate-api-sdks.mjs
+          node remote/tools/generate-api-sdks.mjs
+          node remote/tools/generate-api-sdks.mjs --check
+          node remote/tools/validate-api-sdks.mjs
+
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.95.0'
+
+      - name: Generate service-specific SDK smoke clients
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/browser-test-sdk
+          node remote/tools/generate-openapi-sdks.mjs \
+            --service browser-test-server \
+            --output .tmp/browser-test-sdk
+
+      - name: Compile generated Rust SDK
+        working-directory: .tmp/browser-test-sdk/rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check
+          cargo check --locked
+
+      - name: Type-check generated TypeScript SDK
+        working-directory: .tmp/browser-test-sdk/typescript
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run build
+
+      - name: Install Dart 3.12.2
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
+        with:
+          sdk: '3.12.2'
+
+      - name: Analyze generated Dart SDK
+        working-directory: .tmp/browser-test-sdk/dart
+        shell: bash
+        run: |
+          set -euo pipefail
+          dart pub get
+          dart analyze
+
+      - name: Stage only verified source and deterministic outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .tmp remote/deployments/browser-test-server/dist remote/libs
+          git reset -- remote/libs || true
+          test "$(git ls-files --stage remote/libs | awk '{print $1}')" = '160000'
+
+          git add -A -- \
+            remote/deployments/browser-test-server \
+            remote/api-contracts/manifest.json \
+            remote/config/api-contracts.json \
+            remote/tools/generate-api-docs.mjs \
+            remote/deployments/generated-api-docs-index.json \
+            remote/deployments/generated-api-docs-index.html \
+            remote/api-sdks
+          git reset -- remote/libs || true
+          git diff --cached --check
+
+          mapfile -t changed < <(git diff --cached --name-only)
+          test "${#changed[@]}" -gt 5
+          for path in "${changed[@]}"; do
+            case "$path" in
+              remote/deployments/browser-test-server/*|remote/api-contracts/manifest.json|remote/config/api-contracts.json|remote/tools/generate-api-docs.mjs|remote/deployments/generated-api-docs-index.json|remote/deployments/generated-api-docs-index.html|remote/api-sdks/*)
+                ;;
+              *)
+                echo "unexpected staged path from browser-test migration: $path" >&2
+                exit 1
+                ;;
+            esac
+          done
+
+          if git diff --cached --no-ext-diff --unified=0 | grep -E '^\+(<<<<<<< |=======$|>>>>>>> )'; then
+            echo 'new git conflict marker detected' >&2
+            exit 1
+          fi
+          if git diff --cached --no-ext-diff --unified=0 | grep -E '^\+.*(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})'; then
+            echo 'new GitHub token-like value detected' >&2
+            exit 1
+          fi
+
+      - name: Commit and push verified migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(browser-test): enforce executable OpenAPI contract'
+          git push origin HEAD:agent/browser-test-executable-openapi
+
+      - name: Upload focused failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-test-executable-openapi-diagnostics
+          path: |
+            ${{ runner.temp }}/browser-test-migration.diff
+            ${{ runner.temp }}/browser-test-compile.log
+            ${{ runner.temp }}/browser-test-openapi.1.json
+            ${{ runner.temp }}/browser-test-openapi.2.json
+            ${{ runner.temp }}/browser-test-openapi.3.json
+          retention-days: 1
+          if-no-files-found: warn

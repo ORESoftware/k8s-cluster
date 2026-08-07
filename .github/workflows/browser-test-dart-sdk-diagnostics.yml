@@ -1,0 +1,175 @@
+# Explicit trigger after workflow registration.
+name: browser-test generated Dart SDK diagnostics
+
+on:
+  push:
+    branches:
+      - agent/browser-test-executable-openapi
+    paths:
+      - '.github/workflows/browser-test-dart-sdk-diagnostics.yml'
+      - '.github/scripts/apply-browser-test-executable-openapi.py'
+      - '.github/scripts/fix-browser-test-executable-openapi.py'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/browser-test-dart-sdk-diagnostics.yml'
+      - '.github/scripts/apply-browser-test-executable-openapi.py'
+      - '.github/scripts/fix-browser-test-executable-openapi.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-test-dart-sdk-diagnostics-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+  PUPPETEER_SKIP_DOWNLOAD: 'true'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/browser-test-executable-openapi
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Create contract-only telemetry package shim
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          mkdir -p remote/libs/telemetry-node
+          cat > remote/libs/telemetry-node/package.json <<'JSON'
+          {
+            "name": "@dd/telemetry",
+            "version": "0.0.0-contract-shim",
+            "private": true,
+            "type": "module",
+            "exports": {
+              ".": {
+                "types": "./index.d.ts",
+                "default": "./index.js"
+              }
+            }
+          }
+          JSON
+          cat > remote/libs/telemetry-node/index.js <<'JS'
+          export const loggerMixin = () => ({});
+          export const instrumentFastify = () => {};
+          export const initTelemetry = () => ({ shutdown: async () => {} });
+          JS
+          cat > remote/libs/telemetry-node/index.d.ts <<'TS'
+          import type { FastifyInstance } from 'fastify';
+          export declare const loggerMixin: () => Record<string, never>;
+          export declare const instrumentFastify: (
+            app: FastifyInstance,
+            options?: Record<string, unknown>,
+          ) => void;
+          export declare const initTelemetry: (service: string) => {
+            shutdown: () => Promise<void>;
+          };
+          TS
+
+      - name: Apply reviewed migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/apply-browser-test-executable-openapi.py
+          python3 .github/scripts/fix-browser-test-executable-openapi.py
+
+      - name: Install Node.js 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Export and materialize the exact contract
+        working-directory: remote/deployments/browser-test-server
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@9.15.4 --activate
+          pnpm install --no-frozen-lockfile
+          pnpm docs:embed
+          pnpm typecheck
+          mkdir -p generated
+          pnpm exec tsx src/server.ts --export-openapi > generated/openapi.json
+          python3 -m json.tool generated/openapi.json >/dev/null
+
+      - name: Regenerate fleet projection required by the SDK tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          node remote/tools/generate-api-docs.mjs --service browser-test-server
+          node remote/tools/check-openapi-contracts.mjs --service browser-test-server
+
+      - name: Generate the exact Dart client
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/browser-test-sdk
+          node remote/tools/generate-openapi-sdks.mjs \
+            --service browser-test-server \
+            --output .tmp/browser-test-sdk
+
+      - name: Install Dart 3.12.2
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
+        with:
+          sdk: '3.12.2'
+
+      - name: Resolve, format-check, analyze, and test the generated Dart client
+        id: dart
+        working-directory: .tmp/browser-test-sdk/dart
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            echo '=== dependency resolution ==='
+            dart pub get
+            test -s pubspec.lock
+            cp pubspec.lock "${RUNNER_TEMP}/browser-test-dart-sdk.pubspec.lock"
+
+            echo '=== static analysis ==='
+            dart analyze
+
+            echo '=== generated source formatting ==='
+            dart format --output=none --set-exit-if-changed lib test 2>/dev/null || \
+              dart format --output=none --set-exit-if-changed lib
+
+            echo '=== generated tests ==='
+            if test -d test && find test -type f -name '*_test.dart' -print -quit | grep -q .; then
+              dart test
+            else
+              echo 'No generated Dart tests were emitted.'
+            fi
+          } 2>&1 | tee "${RUNNER_TEMP}/browser-test-dart-sdk.log"
+          sha256sum pubspec.lock > "${RUNNER_TEMP}/browser-test-dart-sdk.pubspec.lock.sha256"
+
+      - name: Remove transient Dart build state
+        if: always()
+        shell: bash
+        run: |
+          rm -rf .tmp/browser-test-sdk/dart/.dart_tool \
+            .tmp/browser-test-sdk/dart/build
+
+      - name: Upload generated package and analyzer diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-test-dart-sdk-diagnostics
+          path: |
+            .tmp/browser-test-sdk/dart
+            ${{ runner.temp }}/browser-test-dart-sdk.log
+            ${{ runner.temp }}/browser-test-dart-sdk.pubspec.lock
+            ${{ runner.temp }}/browser-test-dart-sdk.pubspec.lock.sha256
+            remote/deployments/browser-test-server/generated/openapi.json
+          retention-days: 1
+          if-no-files-found: warn

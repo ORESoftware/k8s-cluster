@@ -1,0 +1,131 @@
+name: browser-test exporter diagnostics
+
+on:
+  push:
+    branches:
+      - agent/browser-test-executable-openapi
+    paths:
+      - '.github/workflows/browser-test-export-diagnostics.yml'
+      - '.github/scripts/apply-browser-test-executable-openapi.py'
+      - '.github/scripts/fix-browser-test-executable-openapi.py'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/browser-test-export-diagnostics.yml'
+      - '.github/scripts/apply-browser-test-executable-openapi.py'
+      - '.github/scripts/fix-browser-test-executable-openapi.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-test-export-diagnostics-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+  PUPPETEER_SKIP_DOWNLOAD: 'true'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/browser-test-executable-openapi
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Create contract-only telemetry package shim
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          mkdir -p remote/libs/telemetry-node
+          cat > remote/libs/telemetry-node/package.json <<'JSON'
+          {
+            "name": "@dd/telemetry",
+            "version": "0.0.0-contract-shim",
+            "private": true,
+            "type": "module",
+            "exports": {
+              ".": {
+                "types": "./index.d.ts",
+                "default": "./index.js"
+              }
+            }
+          }
+          JSON
+          cat > remote/libs/telemetry-node/index.js <<'JS'
+          export const loggerMixin = () => ({});
+          export const instrumentFastify = () => {};
+          export const initTelemetry = () => ({ shutdown: async () => {} });
+          JS
+          cat > remote/libs/telemetry-node/index.d.ts <<'TS'
+          import type { FastifyInstance } from 'fastify';
+          export declare const loggerMixin: () => Record<string, never>;
+          export declare const instrumentFastify: (
+            app: FastifyInstance,
+            options?: Record<string, unknown>,
+          ) => void;
+          export declare const initTelemetry: (service: string) => {
+            shutdown: () => Promise<void>;
+          };
+          TS
+
+      - name: Apply the reviewed migration exactly
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/apply-browser-test-executable-openapi.py
+          python3 .github/scripts/fix-browser-test-executable-openapi.py
+          git diff --check
+
+      - name: Install Node.js 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Install and compile
+        working-directory: remote/deployments/browser-test-server
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@9.15.4 --activate
+          pnpm install --no-frozen-lockfile
+          pnpm docs:embed
+          pnpm typecheck
+          pnpm build
+
+      - name: Capture exporter stdout and stderr
+        id: exporter
+        working-directory: remote/deployments/browser-test-server
+        shell: bash
+        run: |
+          set +e
+          pnpm exec tsx src/server.ts --export-openapi \
+            > "${RUNNER_TEMP}/browser-test-openapi.json" \
+            2> "${RUNNER_TEMP}/browser-test-export.stderr"
+          status=$?
+          set -e
+          echo "exit_status=${status}" > "${RUNNER_TEMP}/browser-test-export.status"
+          cat "${RUNNER_TEMP}/browser-test-export.stderr" >&2
+          wc -c "${RUNNER_TEMP}/browser-test-openapi.json" >&2
+          exit "${status}"
+
+      - name: Upload exporter diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-test-export-diagnostics
+          path: |
+            ${{ runner.temp }}/browser-test-openapi.json
+            ${{ runner.temp }}/browser-test-export.stderr
+            ${{ runner.temp }}/browser-test-export.status
+          retention-days: 1
+          if-no-files-found: error

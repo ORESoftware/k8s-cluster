@@ -1,0 +1,167 @@
+name: browser-test generated Rust SDK diagnostics
+
+on:
+  push:
+    branches:
+      - agent/browser-test-executable-openapi
+    paths:
+      - '.github/workflows/browser-test-rust-sdk-diagnostics.yml'
+      - '.github/scripts/apply-browser-test-executable-openapi.py'
+      - '.github/scripts/fix-browser-test-executable-openapi.py'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/browser-test-rust-sdk-diagnostics.yml'
+      - '.github/scripts/apply-browser-test-executable-openapi.py'
+      - '.github/scripts/fix-browser-test-executable-openapi.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-test-rust-sdk-diagnostics-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+  PUPPETEER_SKIP_DOWNLOAD: 'true'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/browser-test-executable-openapi
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Create contract-only telemetry package shim
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          mkdir -p remote/libs/telemetry-node
+          cat > remote/libs/telemetry-node/package.json <<'JSON'
+          {
+            "name": "@dd/telemetry",
+            "version": "0.0.0-contract-shim",
+            "private": true,
+            "type": "module",
+            "exports": {
+              ".": {
+                "types": "./index.d.ts",
+                "default": "./index.js"
+              }
+            }
+          }
+          JSON
+          cat > remote/libs/telemetry-node/index.js <<'JS'
+          export const loggerMixin = () => ({});
+          export const instrumentFastify = () => {};
+          export const initTelemetry = () => ({ shutdown: async () => {} });
+          JS
+          cat > remote/libs/telemetry-node/index.d.ts <<'TS'
+          import type { FastifyInstance } from 'fastify';
+          export declare const loggerMixin: () => Record<string, never>;
+          export declare const instrumentFastify: (
+            app: FastifyInstance,
+            options?: Record<string, unknown>,
+          ) => void;
+          export declare const initTelemetry: (service: string) => {
+            shutdown: () => Promise<void>;
+          };
+          TS
+
+      - name: Apply reviewed migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/apply-browser-test-executable-openapi.py
+          python3 .github/scripts/fix-browser-test-executable-openapi.py
+
+      - name: Install Node.js 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Export and materialize the exact contract
+        working-directory: remote/deployments/browser-test-server
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@9.15.4 --activate
+          pnpm install --no-frozen-lockfile
+          pnpm docs:embed
+          pnpm typecheck
+          mkdir -p generated
+          pnpm exec tsx src/server.ts --export-openapi > generated/openapi.json
+          python3 -m json.tool generated/openapi.json >/dev/null
+
+      - name: Regenerate fleet projection required by the SDK tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          node remote/tools/generate-api-docs.mjs --service browser-test-server
+          node remote/tools/check-openapi-contracts.mjs --service browser-test-server
+
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.95.0'
+          components: rustfmt
+
+      - name: Generate the exact Rust client
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/browser-test-sdk
+          node remote/tools/generate-openapi-sdks.mjs \
+            --service browser-test-server \
+            --output .tmp/browser-test-sdk
+
+      - name: Compile, test, document, and lock the generated Rust client
+        id: cargo
+        working-directory: .tmp/browser-test-sdk/rust
+        shell: bash
+        run: |
+          set -o pipefail
+          rm -f Cargo.lock
+          {
+            echo '=== initial compile and lock creation ==='
+            cargo check
+            test -s Cargo.lock
+            cp Cargo.lock "${RUNNER_TEMP}/browser-test-rust-sdk.Cargo.lock"
+
+            echo '=== locked reproducibility compile ==='
+            cargo check --locked
+
+            echo '=== locked generated-client tests ==='
+            cargo test --locked
+
+            echo '=== locked documentation build ==='
+            cargo doc --no-deps --locked
+
+            echo '=== generated source formatting ==='
+            cargo fmt --all -- --check
+          } 2>&1 | tee "${RUNNER_TEMP}/browser-test-rust-sdk.log"
+          sha256sum Cargo.lock > "${RUNNER_TEMP}/browser-test-rust-sdk.Cargo.lock.sha256"
+
+      - name: Upload generated crate and compiler diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-test-rust-sdk-diagnostics
+          path: |
+            .tmp/browser-test-sdk/rust
+            ${{ runner.temp }}/browser-test-rust-sdk.log
+            ${{ runner.temp }}/browser-test-rust-sdk.Cargo.lock
+            ${{ runner.temp }}/browser-test-rust-sdk.Cargo.lock.sha256
+            remote/deployments/browser-test-server/generated/openapi.json
+          retention-days: 1
+          if-no-files-found: warn
