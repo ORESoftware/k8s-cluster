@@ -1,0 +1,98 @@
+name: Verify and publish DEN-1597 retained assignments
+
+on:
+  push:
+    branches:
+      - agent/den-1597-retained-assignment-core-20260804
+    paths:
+      - .github/den-1597-retained-assignment-trigger
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1597-retained-assignment-publisher
+  cancel-in-progress: false
+
+jobs:
+  verify-and-publish:
+    if: github.repository == 'ORESoftware/k8s-cluster' && github.ref == 'refs/heads/agent/den-1597-retained-assignment-core-20260804'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out the exact branch head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1597-retained-assignment-core-20260804
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Apply the reviewed deterministic patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          source = Path('.github/workflows/finalize-den-1597-retained-assignment.yml')
+          text = source.read_text()
+          start_marker = "          python3 - <<'PY'\n"
+          end_marker = "\n          PY\n"
+          if text.count(start_marker) != 1:
+              raise SystemExit('expected exactly one embedded Python applicator')
+          start = text.index(start_marker) + len(start_marker)
+          end = text.index(end_marker, start)
+          script = textwrap.dedent(text[start:end])
+          compile(script, str(source), 'exec')
+          exec(script, {'__name__': '__main__'})
+          PY
+
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Format and validate every router target
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=remote/deployments/gha-clone-server-rs/Cargo.toml
+          cargo fmt --manifest-path "$manifest" --all
+          cargo test --locked --manifest-path "$manifest" --all-targets
+          cargo clippy --locked --manifest-path "$manifest" --all-targets -- -D warnings
+          git diff --check
+
+      - name: Publish only product source, tests, and documentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm -- \
+            .github/workflows/finalize-den-1597-retained-assignment.yml \
+            .github/workflows/run-den-1597-retained-assignment.yml \
+            .github/den-1597-retained-assignment-trigger
+
+          expected="$RUNNER_TEMP/expected-paths.txt"
+          actual="$RUNNER_TEMP/actual-paths.txt"
+          printf '%s\n' \
+            .github/den-1597-retained-assignment-trigger \
+            .github/workflows/finalize-den-1597-retained-assignment.yml \
+            .github/workflows/run-den-1597-retained-assignment.yml \
+            docs/gha-independent-executor-routing.md \
+            remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs \
+            remote/deployments/gha-clone-server-rs/tests/executor_router_http.rs \
+            | sort > "$expected"
+          git diff --name-only | sort > "$actual"
+          diff -u "$expected" "$actual"
+
+          git add -- \
+            docs/gha-independent-executor-routing.md \
+            remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs \
+            remote/deployments/gha-clone-server-rs/tests/executor_router_http.rs
+          git diff --cached --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'fix(DEN-1597): retain content-bound executor assignments'
+          git push origin HEAD:agent/den-1597-retained-assignment-core-20260804
