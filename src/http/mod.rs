@@ -21,6 +21,7 @@ mod browser;
 mod delegate;
 mod docs;
 mod exchange;
+mod handoff;
 mod health;
 pub(crate) mod introspect;
 mod jwks;
@@ -58,6 +59,10 @@ pub fn router(state: AppState) -> Router {
         .route("/", get(ui::landing))
         .route("/ui", get(ui::sign_in))
         .route("/ui/exchange", post(ui::ui_exchange))
+        .route(
+            "/authorize",
+            get(handoff::authorize).post(handoff::authorize_password),
+        )
         .route("/docs/api", get(docs::api_docs))
         .route("/api/docs", get(docs::api_docs))
         .route("/api/docs.json", get(docs::openapi))
@@ -76,6 +81,7 @@ pub fn router(state: AppState) -> Router {
         .route("/.well-known/jwks.json", get(jwks::jwks))
         .route("/auth/exchange", post(exchange::exchange))
         .route("/auth/delegate", post(delegate::delegate))
+        .route("/auth/handoff/redeem", post(handoff::redeem))
         .route("/auth/register", post(local::register))
         .route("/auth/login", post(local::login))
         .route("/auth/passwordless/request", post(passwordless::request))

@@ -10,6 +10,7 @@ use crate::cache::Cache;
 use crate::config::AppConfig;
 use crate::db::DbStore;
 use crate::factors::FactorService;
+use crate::handoff::HandoffService;
 use crate::metrics::Metrics;
 use crate::supabase::ProjectRegistry;
 use crate::token::TokenMinter;
@@ -29,6 +30,9 @@ pub struct AppState {
     pub factors: Option<FactorService>,
     /// Optional, non-authoritative Redis/Valkey acceleration.
     pub cache: Option<Cache>,
+    /// Optional browser authorization-code broker. Enabled only when
+    /// AUTH_BROWSER_CLIENTS is configured and always requires Postgres.
+    pub handoff: Option<HandoffService>,
     /// Outbound client for JWKS fetches (kept warm; connection-pooled).
     pub http: reqwest::Client,
     /// Prometheus counters.
@@ -77,6 +81,10 @@ impl AppState {
             None => None,
         };
 
+        let handoff = HandoffService::build(&config)
+            .await
+            .context("initializing browser authorization-code handoff")?;
+
         Ok(Self {
             config: Arc::new(config),
             supabase: Arc::new(supabase),
@@ -84,6 +92,7 @@ impl AppState {
             db,
             factors,
             cache,
+            handoff,
             http,
             metrics: Metrics::new(),
         })

@@ -242,6 +242,27 @@ create index if not exists session_application_grants_active_idx
     on shared_auth.session_application_grants (application_id, client_id, last_used_at desc)
     where revoked_at is null;
 
+-- Browser authorization codes are opaque, PKCE-bound and single-use. Supabase
+-- token bundles are AES-256-GCM ciphertext; plaintext tokens never enter URLs.
+create table if not exists shared_auth.browser_authorization_codes (
+    code_hash           text        primary key check (length(code_hash) = 43),
+    client_id           text        not null check (length(client_id) between 1 and 128),
+    redirect_uri        text        not null check (length(redirect_uri) between 1 and 512),
+    return_path         text        not null check (length(return_path) between 1 and 512),
+    supabase_project    text        not null check (length(supabase_project) between 1 and 128),
+    code_challenge      text        not null check (length(code_challenge) = 43),
+    encrypted_tokens    text        not null check (length(encrypted_tokens) between 64 and 65536),
+    created_at          timestamptz not null default now(),
+    expires_at          timestamptz not null,
+    consumed_at         timestamptz,
+    check (expires_at > created_at),
+    check (consumed_at is null or consumed_at >= created_at)
+);
+
+create index if not exists browser_authorization_codes_active_expiry_idx
+    on shared_auth.browser_authorization_codes (expires_at)
+    where consumed_at is null;
+
 -- Enrolled MFA factors. TOTP seeds are AES-256-GCM ciphertext and nonce; passkeys
 -- contain only the serialised public credential returned by webauthn-rs. Raw
 -- fingerprint/face material is never accepted or stored.
