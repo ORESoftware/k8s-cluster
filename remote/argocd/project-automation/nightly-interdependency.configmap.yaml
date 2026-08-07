@@ -1,0 +1,392 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-nightly-interdependency-bootstrap
+  namespace: default
+  labels:
+    app.kubernetes.io/name: dd-nightly-interdependency
+    app.kubernetes.io/component: scheduler
+    app.kubernetes.io/part-of: project-automation
+  annotations:
+    denman.linear.app/issue: DEN-2745
+data:
+  bootstrap.mjs: |-
+    import { createSign } from 'node:crypto';
+    import { mkdir, writeFile } from 'node:fs/promises';
+    import { dirname, resolve } from 'node:path';
+    import { pathToFileURL } from 'node:url';
+
+    const GITHUB_API = 'https://api.github.com';
+    const SOURCE_OWNER = 'ORESoftware';
+    const SOURCE_REPOSITORY = 'project-registry';
+    const WORKDIR = '/tmp/project-registry';
+    const MAX_GITHUB_RESPONSE_BYTES = 4 * 1024 * 1024;
+    const MAX_GRAPH_RESULT_BYTES = 64 * 1024;
+    const SOURCE_FILES = Object.freeze([
+      'bin/nightly-interdependency.mjs',
+      'src/nightly-interdependency.mjs',
+      'src/nightly-org-maintenance-dispatch.mjs',
+      'src/nightly-org-maintenance-plan.mjs',
+      'src/nightly-org-maintenance-policy.mjs',
+      'src/project-automation-policy.mjs',
+      'registry/nightly-interdependency.json',
+      'registry/nightly-org-maintenance.json',
+      'registry/project-automation.json',
+      'registry/project-contexts.json'
+    ]);
+
+    function requiredEnvironment(name) {
+      const value = process.env[name];
+      if (typeof value !== 'string' || value.trim() === '') {
+        throw new Error(`${name} is required`);
+      }
+      return value.trim();
+    }
+
+    function log(event, details = {}) {
+      process.stderr.write(`${JSON.stringify({
+        schema: 'dd.log.v1',
+        level: 'info',
+        service: 'nightly-interdependency-bootstrap',
+        event,
+        ...details
+      })}\n`);
+    }
+
+    function base64Url(value) {
+      return Buffer.from(value)
+        .toString('base64')
+        .replace(/=/g, '')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_');
+    }
+
+    function createGitHubAppJwt(appId, rawPrivateKey, now = Date.now()) {
+      const issuedAt = Math.floor(now / 1000) - 60;
+      const header = base64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+      const payload = base64Url(JSON.stringify({
+        iat: issuedAt,
+        exp: issuedAt + 9 * 60,
+        iss: appId
+      }));
+      const unsigned = `${header}.${payload}`;
+      const signer = createSign('RSA-SHA256');
+      signer.update(unsigned);
+      signer.end();
+      const privateKey = rawPrivateKey.includes('\\n')
+        ? rawPrivateKey.replace(/\\n/g, '\n')
+        : rawPrivateKey;
+      const signature = signer
+        .sign(privateKey)
+        .toString('base64')
+        .replace(/=/g, '')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_');
+      return `${unsigned}.${signature}`;
+    }
+
+    async function boundedJson(response, label) {
+      const text = await response.text();
+      if (Buffer.byteLength(text, 'utf8') > MAX_GITHUB_RESPONSE_BYTES) {
+        throw new Error(`${label} exceeded the response size limit`);
+      }
+      try {
+        return JSON.parse(text);
+      } catch {
+        throw new Error(`${label} returned invalid JSON`);
+      }
+    }
+
+    async function githubRequest(path, {
+      token,
+      method = 'GET',
+      body,
+      expectedStatuses = [200]
+    }) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20_000);
+      let response;
+      try {
+        response = await fetch(`${GITHUB_API}${path}`, {
+          method,
+          redirect: 'error',
+          signal: controller.signal,
+          headers: {
+            accept: 'application/vnd.github+json',
+            authorization: `Bearer ${token}`,
+            'content-type': 'application/json',
+            'user-agent': 'oresoftware-nightly-interdependency/1',
+            'x-github-api-version': '2022-11-28'
+          },
+          body: body === undefined ? undefined : JSON.stringify(body)
+        });
+      } catch (error) {
+        if (error?.name === 'AbortError') {
+          throw new Error(`GitHub request timed out for ${path}`);
+        }
+        throw new Error(`GitHub request failed for ${path}: ${error.message}`);
+      } finally {
+        clearTimeout(timeout);
+      }
+      if (!expectedStatuses.includes(response.status)) {
+        await response.text();
+        throw new Error(`GitHub rejected ${method} ${path} with HTTP ${response.status}`);
+      }
+      return boundedJson(response, `GitHub ${method} ${path}`);
+    }
+
+    async function findInstallation(jwt, login) {
+      const expected = login.toLowerCase();
+      for (let page = 1; page <= 20; page += 1) {
+        const installations = await githubRequest(`/app/installations?per_page=100&page=${page}`, {
+          token: jwt
+        });
+        if (!Array.isArray(installations)) {
+          throw new Error('GitHub App installation response must be an array');
+        }
+        const installation = installations.find((candidate) =>
+          candidate?.account?.login?.toLowerCase() === expected
+        );
+        if (installation) return installation;
+        if (installations.length < 100) break;
+      }
+      throw new Error(`GitHub App is not installed for ${login}`);
+    }
+
+    async function mintRepositoryToken(jwt, installationId) {
+      const response = await githubRequest(`/app/installations/${installationId}/access_tokens`, {
+        token: jwt,
+        method: 'POST',
+        expectedStatuses: [201],
+        body: {
+          repositories: [SOURCE_REPOSITORY],
+          permissions: {
+            contents: 'read'
+          }
+        }
+      });
+      if (typeof response?.token !== 'string' || response.token.length < 20) {
+        throw new Error('GitHub returned an invalid installation token');
+      }
+      return response.token;
+    }
+
+    function encodedRepositoryPath(path) {
+      return path.split('/').map(encodeURIComponent).join('/');
+    }
+
+    async function fetchSourceFile(token, revision, path) {
+      const response = await githubRequest(
+        `/repos/${SOURCE_OWNER}/${SOURCE_REPOSITORY}/contents/${encodedRepositoryPath(path)}?ref=${revision}`,
+        { token }
+      );
+      if (response?.type !== 'file' || response?.encoding !== 'base64' || typeof response.content !== 'string') {
+        throw new Error(`GitHub returned an invalid source file for ${path}`);
+      }
+      const content = Buffer.from(response.content.replace(/\n/g, ''), 'base64');
+      const destination = resolve(WORKDIR, path);
+      await mkdir(dirname(destination), { recursive: true });
+      await writeFile(destination, content, { mode: path.startsWith('bin/') ? 0o500 : 0o400 });
+    }
+
+    function targetOrganizations(plan) {
+      const targets = new Map();
+      for (const job of plan.jobs) {
+        for (const target of job.request.payload.target_organizations ?? []) {
+          const login = target?.github_login;
+          if (typeof login === 'string' && login.trim() !== '') {
+            targets.set(login.toLowerCase(), target);
+          }
+        }
+      }
+      return [...targets.values()].sort((left, right) =>
+        left.github_login.localeCompare(right.github_login, 'en', { sensitivity: 'base' })
+      );
+    }
+
+    function fleetGraphPrompt(scheduleDate, targets) {
+      return [
+        `Operate the DEN-2745 fleet graph preflight for ${scheduleDate} before any dependency update units run.`,
+        `Inventory all ${targets.length} exact target organizations supplied in payload.target_organizations; do not fuzzy-match or invent organizations.`,
+        'Read every accessible non-archived repository at its exact default-branch SHA. Parse .gitmodules and gitlinks, flake.nix, flake.lock, governed *.nix manifests, .zpkg.toml, and .zpkg.lock. Record source repository, manifest path, dependency kind, current ref/version/SHA/hash, and direct versus transitive provenance.',
+        'Build one directed cross-organization dependency graph. Emit deterministic JSON, Graphviz DOT, Mermaid, and a Markdown summary. Calculate strongly connected components, cycles, missing or contradictory pins, topological update waves, blast radius, and inaccessible or opted-out repositories.',
+        `Create or update one focused draft PR in ${SOURCE_OWNER}/${SOURCE_REPOSITORY} from branch ops/nightly-interdependency/fleet-graph-${scheduleDate}. Store date-stamped artifacts under dependency-graphs/${scheduleDate}/ and refreshed copies under dependency-graphs/latest/.`,
+        `Use the exact PR marker <!-- nightly-interdependency:fleet-graph:${scheduleDate} -->. Never close or rewrite a human-authored PR. An older graph PR may be superseded only with the exact marker and containment evidence.`,
+        'Do not bump dependencies in this preflight. Its job is to establish the canonical graph and update ordering used by the organization units.',
+        'Return a compact machine-readable result no larger than 64 KiB with schema_version nightly_interdependency_graph_result.v1, artifact_pr_url, artifact_head_sha, graph_digest, artifact_paths, topological_waves, strongly_connected_components, blocked_organizations, and contradiction_count. Do not embed the full graph in the result; point to the exact artifact head instead.',
+        'If the graph cannot be produced safely, create or update one deduplicated Linear blocker related to DEN-2745 with exact evidence and fail this job so no update units start.'
+      ].join('\n\n');
+    }
+
+    function graphJob(plan, policy) {
+      const targets = targetOrganizations(plan);
+      return {
+        idempotencyKey: `nightly-interdependency:${plan.scheduleDate}:fleet-graph`,
+        request: {
+          org: SOURCE_OWNER,
+          repo: SOURCE_REPOSITORY,
+          task_type: policy.execution.taskType,
+          priority: policy.execution.priority + 10,
+          max_attempts: policy.execution.maxAttempts,
+          budget_usd: 15,
+          payload: {
+            schema_version: 'nightly_interdependency_graph.v1',
+            run_key: `nightly-interdependency:${plan.scheduleDate}:fleet-graph`,
+            schedule_date: plan.scheduleDate,
+            scheduled_timezone: plan.timeZone,
+            canonical_linear_issue: policy.linearIssue,
+            target_organizations: targets,
+            graph_policy: policy.graph,
+            pull_request_policy: policy.pullRequests,
+            prompt: fleetGraphPrompt(plan.scheduleDate, targets)
+          }
+        }
+      };
+    }
+
+    function enrichedPlan(plan, graphSummary) {
+      const graphExecution = graphSummary.results?.[0];
+      if (graphExecution?.status !== 'succeeded' || graphExecution.result === null) {
+        throw new Error('fleet graph phase did not return a machine-readable successful result');
+      }
+      let graphResult = graphExecution.result;
+      if (typeof graphResult === 'string') {
+        try {
+          graphResult = JSON.parse(graphResult);
+        } catch {
+          throw new Error('fleet graph result string was not valid JSON');
+        }
+      }
+      if (typeof graphResult !== 'object' || Array.isArray(graphResult)) {
+        throw new Error('fleet graph result must be a JSON object');
+      }
+      const serialized = JSON.stringify(graphResult);
+      if (Buffer.byteLength(serialized, 'utf8') > MAX_GRAPH_RESULT_BYTES) {
+        throw new Error('fleet graph result exceeded 64 KiB; full artifacts must stay in the graph PR');
+      }
+      return {
+        ...plan,
+        jobs: plan.jobs.map((job) => ({
+          ...job,
+          request: {
+            ...job.request,
+            payload: {
+              ...job.request.payload,
+              fleet_graph: {
+                job_id: graphExecution.jobId,
+                result: graphResult
+              },
+              prompt: `${job.request.payload.prompt}\n\nFleet graph preflight completed successfully. Verify and use this exact compact result and its immutable artifact head before changing dependencies:\n${serialized}`
+            }
+          }
+        }))
+      };
+    }
+
+    async function loadRuntime(revision, installationToken) {
+      const commit = await githubRequest(
+        `/repos/${SOURCE_OWNER}/${SOURCE_REPOSITORY}/commits/${revision}`,
+        { token: installationToken }
+      );
+      if (commit?.sha !== revision) {
+        throw new Error(`project-registry revision mismatch: expected ${revision}`);
+      }
+      await Promise.all(SOURCE_FILES.map((path) => fetchSourceFile(installationToken, revision, path)));
+      const interdependency = await import(pathToFileURL(resolve(WORKDIR, 'src/nightly-interdependency.mjs')).href);
+      const dispatcher = await import(pathToFileURL(resolve(WORKDIR, 'src/nightly-org-maintenance-dispatch.mjs')).href);
+      return { interdependency, dispatcher };
+    }
+
+    async function main() {
+      const appId = requiredEnvironment('GITHUB_APP_ID');
+      const privateKey = requiredEnvironment('GITHUB_APP_PRIVATE_KEY');
+      const revision = requiredEnvironment('PROJECT_REGISTRY_REVISION');
+      const coordinatorEndpoint = requiredEnvironment('AI_AGENT_COORDINATOR_URL');
+      const coordinatorToken = requiredEnvironment('COORDINATOR_API_TOKEN');
+      if (!/^[0-9a-f]{40}$/.test(revision)) {
+        throw new Error('PROJECT_REGISTRY_REVISION must be an exact lowercase 40-character commit SHA');
+      }
+
+      const jwt = createGitHubAppJwt(appId, privateKey);
+      const installation = await findInstallation(jwt, SOURCE_OWNER);
+      const installationToken = await mintRepositoryToken(jwt, installation.id);
+      log('source_installation_verified', { owner: SOURCE_OWNER, installation_id: installation.id });
+
+      const { interdependency, dispatcher } = await loadRuntime(revision, installationToken);
+      log('source_revision_verified', { repository: `${SOURCE_OWNER}/${SOURCE_REPOSITORY}`, revision });
+
+      const policy = await interdependency.loadNightlyInterdependencyPolicy();
+      const plan = interdependency.createNightlyInterdependencyPlan(policy);
+      const options = {
+        endpoint: coordinatorEndpoint,
+        token: coordinatorToken,
+        onProgress(event) {
+          log('coordinator_progress', { progress: event });
+        }
+      };
+
+      const graphPolicy = {
+        ...policy,
+        execution: {
+          ...policy.execution,
+          maxConcurrentOrganizations: 1,
+          maximumMinutesPerOrganization: 90
+        }
+      };
+      const graphPlan = {
+        ...plan,
+        maxConcurrentOrganizations: 1,
+        jobs: [graphJob(plan, policy)]
+      };
+      log('fleet_graph_dispatch_started', { schedule_date: plan.scheduleDate });
+      const graphSummary = await dispatcher.dispatchNightlyOrgMaintenancePlan(
+        graphPlan,
+        graphPolicy,
+        options
+      );
+      if (!graphSummary.successful) {
+        process.stdout.write(`${JSON.stringify({
+          schema_version: 'nightly_interdependency_run.v1',
+          schedule_date: plan.scheduleDate,
+          successful: false,
+          phase: 'fleet_graph',
+          graph: graphSummary
+        }, null, 2)}\n`);
+        return 1;
+      }
+
+      const updatePlan = enrichedPlan(plan, graphSummary);
+      log('organization_updates_dispatch_started', {
+        schedule_date: plan.scheduleDate,
+        organization_units: updatePlan.jobs.length,
+        concurrency: policy.execution.maxConcurrentOrganizations
+      });
+      const updateSummary = await dispatcher.dispatchNightlyOrgMaintenancePlan(
+        updatePlan,
+        policy,
+        options
+      );
+      const summary = {
+        schema_version: 'nightly_interdependency_run.v1',
+        schedule_date: plan.scheduleDate,
+        source_revision: revision,
+        successful: graphSummary.successful && updateSummary.successful,
+        graph: graphSummary,
+        updates: updateSummary
+      };
+      process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+      return summary.successful ? 0 : 1;
+    }
+
+    try {
+      process.exitCode = await main();
+    } catch (error) {
+      process.stderr.write(`${JSON.stringify({
+        schema: 'dd.log.v1',
+        level: 'error',
+        service: 'nightly-interdependency-bootstrap',
+        event: 'fatal',
+        error: error instanceof Error ? error.message : 'unknown fatal error'
+      })}\n`);
+      process.exitCode = 2;
+    }
