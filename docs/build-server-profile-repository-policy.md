@@ -65,6 +65,9 @@ A genuinely different repository in an organization remains governed by the revi
 ## Reviewed bindings
 
 The dogfood rule binds:
+## Initial binding
+
+The first exact rule binds:
 
 ```text
 https://github.com/ORESoftware/k8s-cluster.git -> rust-verify
@@ -92,6 +95,7 @@ https://github.com/3FA-app/3fa-interfaces.git -> node-hardened-test, rust-genera
 The Node stage performs the lifecycle-script-free locked repository test. The generated Rust stage accepts only the reviewed generated Rust crate at `generated/rust/Cargo.toml`; it generates that crate's lockfile inside the ephemeral checkout, then runs formatting, warnings-denied Clippy, and tests through explicit manifest paths. It cannot search for arbitrary crates, publish packages, ignore failures, or execute caller-provided commands.
 
 The exact 3FA rule does not admit the `3FA-app` organization, sibling repositories, `node-verify`, `rust-verify`, browser, Python, or Flutter profiles. Workflow parsing, immutable revision admission, and Node-before-Rust dependency ordering remain separate clone-server responsibilities and are added only in a subsequent reviewed change.
+That permits the GHA continuity server to dogfood its Rust verification profile while rejecting a downgrade of the same repository identity to `node-verify`, `python-verify`, browser profiles, or Flutter profiles.
 
 Repositories without an exact rule continue to use the reviewed prefix fallback. Adding a sensitive repository should normally include an exact rule in the same pull request as its fixed profile and workflow contract.
 
@@ -104,6 +108,7 @@ A rollout must start with one exact repository, keep the broader prefix fallback
 ## Test contract
 
 The Rust policy and profile tests prove:
+The Rust policy tests prove:
 
 - exact allow and deny decisions across HTTPS, SSH, case, optional `.git`, and trailing-slash aliases;
 - exact identity rules override broad HTTPS and SSH prefixes;
@@ -119,3 +124,8 @@ The Rust policy and profile tests prove:
 The GitOps contract test parses the complete JSON policy and verifies that `k8s-cluster` receives only `rust-verify`, `msgint-connectors` receives only `node-hardened-verify` and `node-hardened-test`, and `3fa-interfaces` receives only `node-hardened-test` and `rust-generated-verify`.
 
 Temporary formatter or branch-writing workflows are not part of the deployable policy. The reviewed pull-request diff must contain only the profile registry, GitOps configuration, documentation, and tests.
+- malformed compiled state does not grant access.
+
+The GitOps contract test verifies that the deployment binds `k8s-cluster` only to `rust-verify` and that the dedicated GHA workflow formats and executes the policy tests.
+
+Temporary formatter or branch-writing workflows are not part of the deployable policy. The reviewed pull-request diff must contain only the policy source, its GitOps configuration, documentation, and tests.
