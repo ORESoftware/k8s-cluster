@@ -123,10 +123,13 @@ jobs:
       - name: Compile-check exact Slack command source
         run: cargo check --locked --manifest-path .tmp/ai-agent-bridge/Cargo.toml --bin fiducia-slack-command
 
-      - name: Build applied runtime overlay
-        uses: docker://registry.k8s.io/kubectl@sha256:15f89004d5a51dd9a599645a59aa1b80afc10f282111c5620d4749b8fcd8115e
+      - name: Setup kubectl 1.31.0
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
         with:
-          args: kustomize remote/argocd/dd-next-runtime
+          version: v1.31.0
+
+      - name: Build applied runtime overlay
+        run: kubectl kustomize remote/argocd/dd-next-runtime >/tmp/dd-next-runtime.yaml
 
       - name: Upload immutable GitOps audit
         if: always()
