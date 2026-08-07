@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gha-executor-router
+  namespace: gha-continuity
+  labels:
+    app: gha-executor-router
+data:
+  GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED: "false"
+  GHA_EXECUTOR_ROUTER_MAX_ROUTES: "4096"
+  GHA_EXECUTOR_ROUTER_MAX_REQUEST_BYTES: "65536"
+  GHA_EXECUTOR_ROUTER_MAX_RESPONSE_BYTES: "65536"
+  GHA_EXECUTOR_ROUTER_REQUEST_TIMEOUT_SECONDS: "60"
+  GHA_EXECUTOR_ROUTER_EXECUTORS_JSON: |-
+    [
+      {
+        "id": "aws-primary",
+        "provider": "aws",
+        "baseUrl": "http://dd-build-server.default.svc.cluster.local:8100",
+        "authPath": "/var/run/gha-executor-router/aws/auth"
+      },
+      {
+        "id": "hetzner-secondary",
+        "provider": "hetzner",
+        "baseUrl": "https://build-server.hetzner.example.invalid",
+        "authPath": "/var/run/gha-executor-router/hetzner/auth"
+      }
+    ]
