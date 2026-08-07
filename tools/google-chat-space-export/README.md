@@ -155,19 +155,30 @@ The current deployment returns HTTP 405 for POST. `.github/workflows/ephemeral-g
 6. Destroy the local passphrase/export and rotate or disable the bridge token after reconciliation.
 
 [`test_relay_workflows.py`](./test_relay_workflows.py) and [`.github/workflows/google-chat-relay-contract.yml`](../../.github/workflows/google-chat-relay-contract.yml) enforce the non-negotiable workflow invariants.
+The current deployment returns HTTP 405 for POST. `.github/workflows/ephemeral-google-chat-relay.yml` is therefore a manual retirement notice; it performs no bridge call. Use `.github/workflows/ephemeral-google-chat-relay-get.yml` for encrypted imports.
 
-## Bulk page fetch
+## Ephemeral encrypted relay protocol 2
 
-[`fetch-bridge-pages.mjs`](./fetch-bridge-pages.mjs) pages through the HTTP bridge and writes raw page files that the planner reads directly.
+1. The GET relay publishes a one-time 3072-bit RSA public key and run ID on the fixed relay issue.
+2. The submitter generates a unique archive passphrase and encrypts one compact JSON payload using RSA-OAEP SHA-256:
 
-```bash
-CHAT_BRIDGE_TOKEN=<token> node tools/google-chat-space-export/fetch-bridge-pages.mjs \
-  --out ./private/google-chat-export
-```
+   ```json
+   {
+     "run_id": "<PUBLISHED_RUN_ID>",
+     "token": "<BRIDGE_TOKEN>",
+     "archive_passphrase": "<UNIQUE_HIGH_ENTROPY_PASSPHRASE>"
+   }
+   ```
 
 The token comes from the environment so it never lands in argv or a query string. The script does not filter by date: the bridge floor is fixed and callers cannot widen it, so windowing belongs to the planner's `--since`.
 
 The fetcher sends POST only to the original Apps Script `/exec` URL and allows the 302/303 redirect to become GET. Re-posting to the `googleusercontent.com` target answers HTTP 405 with an HTML body.
+3. Submit exactly one `CHAT_RELAY_GET_CIPHERTEXT` comment for that run. Duplicate matching comments reject the run after a bounded race-detection window.
+4. The workflow verifies the payload run ID, fixed space, fixed display name, and earliest boundary; paginates the GET API; writes a non-self-referential checksum manifest; encrypts the archive; and retains it for one day.
+5. The completion comment includes the ciphertext, export-manifest, and encrypted-archive SHA-256 values. Verify all three before accepting the audit evidence.
+6. Destroy the local passphrase/export and rotate or disable the bridge token after reconciliation.
+
+[`test_relay_workflows.py`](./test_relay_workflows.py) and [`.github/workflows/google-chat-relay-contract.yml`](../../.github/workflows/google-chat-relay-contract.yml) enforce the non-negotiable workflow invariants.
 
 ## Dry-run import planner
 
@@ -176,14 +187,11 @@ The fetcher sends POST only to the original Apps Script `/exec` URL and allows t
 ```bash
 node tools/google-chat-space-export/import-plan.mjs \
   --input ./private/google-chat-export \
-  --since 2026-06-05T04:00:00.000Z \
   --existing-index ./private/linear-issue-index.json \
   --project-map tools/google-chat-space-export/import-project-map.example.json \
   --json ./private/google-chat-import-plan.json \
   --markdown ./private/google-chat-import-plan.md
 ```
-
-`--since` narrows the plan to messages created at or after the given instant, for reconciling one stretch of history at a time. It can only narrow: a value earlier than the fixed `2026-05-10T04:00:00.000Z` boundary is rejected rather than silently clamped, so the command line can never widen access to earlier history. Deduplication still runs across every supplied message, so `uniqueMessages` and `duplicateMessages` continue to describe the whole input while `plannedMessages` and `windowedOutMessages` describe the window. A narrowed window is stated in the Markdown report and recorded as `source.windowStartInclusive` in the JSON plan.
 
 The optional existing-issue index can be an array or `{ "issues": [...] }`. Each issue may contain `id`, `identifier`, `title`, `description`, `comments`, `project`, `state`, `url`, and explicit `sourceKeys`. The planner also discovers deterministic `google-chat:...` keys embedded in descriptions or comments.
 
