@@ -56,6 +56,29 @@ const fontFaceCss = `@font-face {
   font-display: swap;
   src: url("${base}/fonts/baloo2.woff2") format("woff2");
 }`;
+
+// GitHub Pages does not honor public/_headers, so enforce the directives that
+// browsers support through a CSP meta element. Header-only protections such as
+// HSTS and frame-ancestors remain documented in public/_headers for the future
+// CDN migration. The current site has no client JavaScript or forms, allowing a
+// deliberately narrow policy that turns unexpected active content into a CI- and
+// browser-visible failure rather than silently expanding the attack surface.
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "base-uri 'none'",
+  "object-src 'none'",
+  "script-src 'none'",
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self'",
+  "img-src 'self' data:",
+  "media-src 'self' blob:",
+  "connect-src 'none'",
+  "frame-src 'none'",
+  "worker-src 'none'",
+  "manifest-src 'self'",
+  "form-action 'self'",
+  "upgrade-insecure-requests",
+].join("; ");
 ---
 
 <!doctype html>
