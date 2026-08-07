@@ -1,0 +1,28 @@
+[package]
+org = "akrion-sim"
+name = "akrion-soccer-engine-rs"
+version = "0.0.1"
+description = "Agnostic 2D soccer simulation, planning, and reinforcement-learning engine source package"
+license = "MIT OR Apache-2.0"
+keywords = ["soccer", "simulation", "reinforcement-learning", "planning", "source-package"]
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/akrion-sim/akrion-soccer-engine-rs"
+
+[dependencies]
+"oresoftware/discrete-event-system-rs" = "^0.0.2"
+
+[publish]
+include_readme = true
+tag_format = "v{version}"
+smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/Cargo.toml\" && test -d \"$ZED_PKG_TEST_TARGET/src\" && test -d \"$ZED_PKG_TEST_TARGET/docs\""
+exclude = [".env", ".env.*", ".direnv/**", ".zed/**", ".zed-pack/**", "target/**", "out/**", "tmp/**", "**/*.log", ".DS_Store"]
+
+# Cargo currently resolves `des_engine` through the legacy sibling directory
+# `../discrete-event-system.rs`. Zed package names are lowercase slugs and cannot
+# preserve the dotted folder name, so this release versions the engine source
+# and pins the independently packaged DES dependency without claiming a
+# standalone Rust adapter until Cargo moves to a git/native dependency.
+[install]
+adapter = "none"
