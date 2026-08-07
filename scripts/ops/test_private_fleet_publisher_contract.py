@@ -67,6 +67,13 @@ class PrivateFleetPublisherContractTests(unittest.TestCase):
         self.assertNotIn("AWS_SSM_INSTANCE_ID", self.observer)
         self.assertNotIn("GITHUB_REPOSITORY_ADMIN_TOKEN", self.observer)
 
+    def test_workflow_retriggers_when_publisher_contracts_change(self) -> None:
+        self.assertIn(
+            "- scripts/ops/test_private_fleet_publisher_contract.py",
+            self.workflow,
+        )
+        self.assertIn("push:\n    branches:\n      - main", self.workflow)
+
     def test_workflow_checks_out_and_binds_the_exact_main_event_sha(self) -> None:
         self.assertIn("ref: ${{ github.sha }}", self.workflow)
         self.assertNotIn("ref: main\n          fetch-depth", self.workflow)
