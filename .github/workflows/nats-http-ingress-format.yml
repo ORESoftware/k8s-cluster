@@ -1,0 +1,121 @@
+name: DEN-440 format NATS ingress
+
+# One-use feature-branch formatter; delete after the source commit lands.
+# Stacked trigger for the reviewed base-branch workflow.
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/nats-http-ingress-format.yml'
+      - 'remote/nats-bridge/src/bin/nats_http_ingress.rs'
+  push:
+    branches:
+      - agent/den-440-nats-http-ingress
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-440-format-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  format:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-440-nats-http-ingress
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt
+      - name: Apply deterministic fixes and Rustfmt
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/nats-bridge/src/bin/nats_http_ingress.rs')
+          source = path.read_text()
+          replacements = [
+              (
+                  '.with(tracing_subscriber::fmt::layer().json())',
+                  '.with(tracing_subscriber::fmt::layer())',
+                  'tracing formatter feature',
+              ),
+              (
+                  '    path::PathBuf,',
+                  '    path::{Path as FsPath, PathBuf},',
+                  'filesystem Path import',
+              ),
+              (
+                  '    publish_timeout: Duration,\n    counters: Counters,',
+                  '    publish_timeout: Duration,\n    max_in_flight: usize,\n    counters: Counters,',
+                  'max-in-flight state',
+              ),
+              (
+                  '        publish_timeout: Duration::from_millis(timeout_ms),\n        counters: Counters {',
+                  '        publish_timeout: Duration::from_millis(timeout_ms),\n        max_in_flight,\n        counters: Counters {',
+                  'max-in-flight initializer',
+              ),
+              (
+                  'state.in_flight.available_permits().saturating_sub(state.in_flight.available_permits())',
+                  'state\n            .max_in_flight\n            .saturating_sub(state.in_flight.available_permits())',
+                  'in-flight metric',
+              ),
+              (
+                  'let token_len = client.token.as_bytes().len();',
+                  'let token_len = client.token.len();',
+                  'client-token length',
+              ),
+              (
+                  'let length = key.as_bytes().len();',
+                  'let length = key.len();',
+                  'idempotency-key length',
+              ),
+              (
+                  'constant_time_eq(token, &client.token)',
+                  'constant_time_eq(token, client.token.as_str())',
+                  'client-token borrow',
+              ),
+              (
+                  "fn load_json_file<T: for<'de> Deserialize<'de>>(path: &PathBuf, label: &str) -> T {",
+                  "fn load_json_file<T: for<'de> Deserialize<'de>>(path: &FsPath, label: &str) -> T {",
+                  'filesystem Path parameter',
+              ),
+              (
+                  '''    let nats = options.connect(&nats_url).await.unwrap_or_else(|error| {
+        fatal_value(&format!("could not connect to internal NATS: {error}"))
+    });''',
+                  '''    let nats = options
+        .connect(&nats_url)
+        .await
+        .unwrap_or_else(|_| fatal_value("could not connect to internal NATS"));''',
+                  'redacted NATS connection error',
+              ),
+          ]
+          for old, new, label in replacements:
+              if old in source:
+                  source = source.replace(old, new, 1)
+              elif new not in source:
+                  raise SystemExit(f'{label}: expected old or new text')
+          path.write_text(source)
+          PY
+          cargo fmt --manifest-path remote/nats-bridge/Cargo.toml --all
+      - name: Commit formatted source
+        run: |
+          set -euo pipefail
+          git add remote/nats-bridge/src/bin/nats_http_ingress.rs
+          if git diff --cached --quiet; then
+            echo 'Source is already formatted.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'DEN-440 format and correct NATS HTTP ingress'
+          git push origin HEAD:agent/den-440-nats-http-ingress
