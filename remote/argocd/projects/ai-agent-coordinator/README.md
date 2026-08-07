@@ -38,6 +38,8 @@ That revision contains the signed multi-organization push intake, protected
 Linear delivery worker, dry-run-only Sonus Auris/Daedalus Fab overlay, reusable
 manifest validator, locked-down container canary, and the bounded one-shot
 Meta Agents repository-bootstrap Job reviewed under DEN-1058.
+manifest validator, locked-down container canary, and the one-shot
+`meta-agents-demo/meta-agent-control-plane.rs` repository bootstrap Job.
 
 The generated application catalog is committed in the same promotion branch and
 validated against this exact immutable revision before merge.
@@ -124,6 +126,7 @@ After cluster credentials are available, record only redacted evidence for:
 6. dry-run plans resolving to the matching Linear projects;
 7. `/v1/linear/deliver-next` remaining blocked;
 8. the canonical Meta Agents repository existing publicly before bootstrap cleanup.
+8. creation and exact-ref verification of the Meta Agents control-plane repository.
 
 ## Rollback
 
