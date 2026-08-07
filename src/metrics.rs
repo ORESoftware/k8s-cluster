@@ -87,8 +87,7 @@ fn render() -> String {
         "# HELP {PREFIX}_build_info Build and version information for the Akrion web server."
     )
     .expect("writing to String cannot fail");
-    writeln!(output, "# TYPE {PREFIX}_build_info gauge")
-        .expect("writing to String cannot fail");
+    writeln!(output, "# TYPE {PREFIX}_build_info gauge").expect("writing to String cannot fail");
     writeln!(
         output,
         "{PREFIX}_build_info{{version=\"{}\"}} 1",
@@ -101,8 +100,7 @@ fn render() -> String {
         "# HELP {PREFIX}_process_up Whether the Akrion web process is serving metrics."
     )
     .expect("writing to String cannot fail");
-    writeln!(output, "# TYPE {PREFIX}_process_up gauge")
-        .expect("writing to String cannot fail");
+    writeln!(output, "# TYPE {PREFIX}_process_up gauge").expect("writing to String cannot fail");
     writeln!(output, "{PREFIX}_process_up 1").expect("writing to String cannot fail");
 
     writeln!(
@@ -214,9 +212,9 @@ mod tests {
         record("GET", 200, Duration::from_millis(50));
         let body = render();
         assert!(body.contains("# TYPE akrion_web_server_process_up gauge"));
-        assert!(body.contains(
-            "akrion_web_server_http_requests_total{method=\"GET\",status=\"200\"}"
-        ));
+        assert!(
+            body.contains("akrion_web_server_http_requests_total{method=\"GET\",status=\"200\"}")
+        );
         assert!(body.contains("# TYPE akrion_web_server_http_request_duration_seconds summary"));
         assert!(!body.contains("game_id"));
         assert!(!body.contains("session_id"));
