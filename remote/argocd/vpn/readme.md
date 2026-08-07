@@ -111,6 +111,14 @@ The bastion service also expects `SERVER_AUTH_SECRET` in `dd/remote-dev/agent-se
 the rest of the remote runtime. The phone endpoint's Cloudflare token and Argo CD password are
 covered separately in the prerequisite runbook; neither belongs in this repository.
 
+The phone endpoint additionally needs a Cloudflare API token with `Zone:DNS:Edit` and
+`Zone:Zone:Read`, restricted to the `fiducia.cloud` zone. Store it in AWS Secrets Manager at
+`dd/remote-dev/cloudflare`, property `CLOUDFLARE_DNS_API_TOKEN`. The VPN app owns a dedicated
+ExternalSecret named `argocd-mobile-cloudflare-dns-api-token` and a dedicated ClusterIssuer named
+`letsencrypt-prod-dns01-argocd-mobile`. Their target Secret and ACME account key are distinct from
+the optional public-gateway certificate migration, so Argo CD never gives two applications shared
+ownership of the same certificate-control-plane resources.
+
 ## Bootstrap
 
 1. Confirm `external-secrets-operator` and `dd-secrets` are already synced.
@@ -122,8 +130,27 @@ covered separately in the prerequisite runbook; neither belongs in this reposito
 kubectl apply -f remote/argocd/apps/dd-vpn.application.yaml
 ```
 
-4. Open UDP `51820` on the EC2 security group.
-5. Open the admin UI through a local port-forward:
+5. Open UDP `51820` on the EC2 security group.
+6. Watch the DNS-01 prerequisites and mobile certificate become healthy:
+
+```bash
+kubectl -n cert-manager wait \
+  --for=condition=Ready \
+  externalsecret/argocd-mobile-cloudflare-dns-api-token \
+  --timeout=5m
+
+kubectl wait \
+  --for=condition=Ready \
+  clusterissuer/letsencrypt-prod-dns01-argocd-mobile \
+  --timeout=5m
+
+kubectl -n vpn wait \
+  --for=condition=Ready \
+  certificate/argocd-mobile-tls \
+  --timeout=10m
+```
+
+7. Open the wg-easy admin UI through a local port-forward:
 
 ```bash
 kubectl -n vpn port-forward svc/dd-vpn-ui 51821:51821

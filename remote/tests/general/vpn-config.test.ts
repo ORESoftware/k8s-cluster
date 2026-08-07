@@ -24,6 +24,21 @@ test('vpn app deploys wg-easy wireguard with private admin UI and VPN-local DNS'
   const app = await readRepoFile('remote/argocd/apps/dd-vpn.application.yaml');
   const kustomization = await readRepoFile('remote/argocd/vpn/kustomization.yaml');
   const config = await readRepoFile('remote/argocd/vpn/dd-vpn.configmap.yaml');
+  const mobileConfig = await readRepoFile(
+    'remote/argocd/vpn/dd-argocd-mobile.configmap.yaml',
+  );
+  const mobileCloudflareSecret = await readRepoFile(
+    'remote/argocd/vpn/dd-argocd-mobile-cloudflare.externalsecret.yaml',
+  );
+  const mobileIssuer = await readRepoFile(
+    'remote/argocd/vpn/dd-argocd-mobile.clusterissuer.yaml',
+  );
+  const mobileCertificate = await readRepoFile(
+    'remote/argocd/vpn/dd-argocd-mobile.certificate.yaml',
+  );
+  const mobileArgoConfig = await readRepoFile(
+    'remote/argocd/vpn/dd-argocd-mobile.argocd-config.yaml',
+  );
   const externalSecret = await readRepoFile(
     'remote/argocd/vpn/dd-vpn-secrets.externalsecret.yaml',
   );
@@ -52,6 +67,7 @@ test('vpn app deploys wg-easy wireguard with private admin UI and VPN-local DNS'
   ]) {
     assert.match(kustomization, new RegExp(resource.replaceAll('.', '\\.')));
   }
+  assert.doesNotMatch(kustomization, /argocd-mobile-prereqs\.application\.yaml/);
 
   assert.match(config, /INIT_HOST:\s*"[A-Za-z0-9.-]+"/);
   assert.match(config, /INIT_PORT:\s*"51820"/);
@@ -63,6 +79,71 @@ test('vpn app deploys wg-easy wireguard with private admin UI and VPN-local DNS'
   );
   assert.match(config, /INSECURE:\s*"true"/);
   assert.match(config, /DISABLE_IPV6:\s*"true"/);
+
+  assert.match(mobileConfig, /10\.8\.0\.1 argocd-vpn\.fiducia\.cloud/);
+  assert.match(mobileConfig, /forward \. 10\.96\.0\.10/);
+  assert.match(mobileConfig, /listen 8443 ssl/);
+  assert.match(mobileConfig, /allow 10\.8\.0\.0\/24/);
+  assert.match(
+    mobileConfig,
+    /proxy_pass https:\/\/argocd-server\.argocd\.svc\.cluster\.local:443/,
+  );
+  assert.match(mobileConfig, /proxy_ssl_verify off/);
+  assert.match(mobileConfig, /proxy_buffering off/);
+
+  assert.match(mobileCloudflareSecret, /kind:\s*ExternalSecret/);
+  assert.match(
+    mobileCloudflareSecret,
+    /name:\s*argocd-mobile-cloudflare-dns-api-token/,
+  );
+  assert.match(mobileCloudflareSecret, /namespace:\s*cert-manager/);
+  assert.match(mobileCloudflareSecret, /sync-wave:\s*"-2"/);
+  assert.match(mobileCloudflareSecret, /name:\s*dd-cluster-secrets/);
+  assert.match(mobileCloudflareSecret, /key:\s*dd\/remote-dev\/cloudflare/);
+  assert.match(mobileCloudflareSecret, /property:\s*CLOUDFLARE_DNS_API_TOKEN/);
+  assert.match(mobileCloudflareSecret, /secretKey:\s*api-token/);
+  assert.match(mobileCloudflareSecret, /deletionPolicy:\s*Retain/);
+  assert.match(mobileCloudflareSecret, /conversionStrategy:\s*Default/);
+  assert.match(mobileCloudflareSecret, /decodingStrategy:\s*None/);
+  assert.match(mobileCloudflareSecret, /metadataPolicy:\s*None/);
+
+  assert.match(mobileIssuer, /kind:\s*ClusterIssuer/);
+  assert.match(
+    mobileIssuer,
+    /name:\s*letsencrypt-prod-dns01-argocd-mobile/,
+  );
+  assert.match(mobileIssuer, /sync-wave:\s*"-2"/);
+  assert.match(mobileIssuer, /name:\s*letsencrypt-prod-dns01-argocd-mobile-key/);
+  assert.match(mobileIssuer, /dnsZones:[\s\S]*- fiducia\.cloud/);
+  assert.match(
+    mobileIssuer,
+    /name:\s*argocd-mobile-cloudflare-dns-api-token[\s\S]*key:\s*api-token/,
+  );
+
+  assert.match(mobileCertificate, /kind:\s*Certificate/);
+  assert.match(mobileCertificate, /name:\s*argocd-mobile-tls/);
+  assert.match(mobileCertificate, /namespace:\s*vpn/);
+  assert.match(mobileCertificate, /secretName:\s*argocd-mobile-tls/);
+  assert.match(
+    mobileCertificate,
+    /name:\s*letsencrypt-prod-dns01-argocd-mobile/,
+  );
+  assert.match(mobileCertificate, /- argocd-vpn\.fiducia\.cloud/);
+  assert.match(mobileCertificate, /rotationPolicy:\s*Always/);
+
+  assert.match(mobileArgoConfig, /name:\s*argocd-cm/);
+  assert.match(mobileArgoConfig, /accounts\.argocd-mobile:\s*login/);
+  assert.match(mobileArgoConfig, /name:\s*argocd-rbac-cm/);
+  assert.match(mobileArgoConfig, /policy\.mobile\.csv:/);
+  assert.match(
+    mobileArgoConfig,
+    /p, argocd-mobile, applications, sync, \*\/\*, allow/,
+  );
+  assert.match(mobileArgoConfig, /p, argocd-mobile, logs, get, \*\/\*, allow/);
+  assert.doesNotMatch(mobileArgoConfig, /argocd-mobile[^\n]*delete/);
+  assert.doesNotMatch(mobileArgoConfig, /argocd-mobile[^\n]*exec/);
+  assert.doesNotMatch(mobileArgoConfig, /argocd-mobile, applications, update/);
+  assert.doesNotMatch(mobileArgoConfig, /argocd-mobile[^\n]*action/);
 
   assert.match(externalSecret, /kind:\s*ExternalSecret/);
   assert.match(externalSecret, /name:\s*dd-vpn-secrets/);
@@ -84,11 +165,22 @@ test('vpn app deploys wg-easy wireguard with private admin UI and VPN-local DNS'
   assert.match(deployment, /strategy:[\s\S]*type:\s*Recreate/);
   assert.match(deployment, /image:\s*ghcr\.io\/wg-easy\/wg-easy:15/);
   assert.match(deployment, /image:\s*busybox:1\.37/);
+  assert.match(
+    deployment,
+    /image:\s*registry\.k8s\.io\/coredns\/coredns:v1\.14\.2/,
+  );
+  assert.match(
+    deployment,
+    /image:\s*docker\.io\/library\/nginx:1\.29\.7-alpine/,
+  );
   assert.match(deployment, /sysctl -w net\.ipv4\.ip_forward=1/);
   assert.match(deployment, /privileged:\s*true/);
   assert.match(deployment, /NET_ADMIN/);
   assert.match(deployment, /SYS_MODULE/);
-  assert.match(deployment, /allowPrivilegeEscalation:\s*false/);
+  assert.match(deployment, /NET_BIND_SERVICE/);
+  assert.match(deployment, /runAsUser:\s*65532/);
+  assert.match(deployment, /runAsUser:\s*101/);
+  assert.match(deployment, /readOnlyRootFilesystem:\s*true/);
   assert.match(deployment, /hostPort:\s*51820/);
   assert.doesNotMatch(deployment, /hostPort:\s*8443/);
   assert.match(deployment, /mountPath:\s*\/etc\/wireguard/);
@@ -108,6 +200,9 @@ test('vpn app deploys wg-easy wireguard with private admin UI and VPN-local DNS'
   assert.match(networkPolicy, /policyTypes:[\s\S]*- Ingress/);
   assert.match(networkPolicy, /protocol:\s*UDP[\s\S]*port:\s*51820/);
   assert.match(networkPolicy, /protocol:\s*TCP[\s\S]*port:\s*51821/);
+  assert.match(networkPolicy, /protocol:\s*UDP[\s\S]*port:\s*53/);
+  assert.match(networkPolicy, /protocol:\s*TCP[\s\S]*port:\s*53/);
+  assert.match(networkPolicy, /protocol:\s*TCP[\s\S]*port:\s*8443/);
 
   assert.match(readme, /WireGuard VPN endpoint/);
   assert.match(readme, /Open UDP `51820`/);
