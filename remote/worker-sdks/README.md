@@ -12,5 +12,6 @@ Available hand-authored worker SDKs:
 - `rust/durable-worker` — async Rust 1.85+ client and Tokio worker loop with a replaceable transport boundary.
 
 Shared lifecycle semantics are ratcheted in `fixtures/durable-worker-protocol-v1.json`. The fixture defines ambiguous operations that must not be retried without a protocol identity, lease-loss statuses, progress identity, and the common assignment envelope. Language-specific runtime tests remain authoritative for concurrency and cancellation behavior.
+- `python/durable-worker` — dependency-free Python 3.11+ client and threaded worker loop.
 
 All worker SDKs must preserve the runtime's at-least-once delivery contract. External side effects require an idempotency key or a downstream write guarded by the assignment fencing token.
