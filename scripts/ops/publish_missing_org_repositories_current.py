@@ -91,6 +91,10 @@ def ensure_private_repository(
     )
 
 
+def _repository_lookup(full_name: str) -> tuple[int, dict[str, Any] | None]:
+    return MODULE.api("GET", f"/repos/{full_name}")
+
+
 def publish_current_hypesiege_and_streempilot(work: Path) -> None:
     """Create only canonical gaps while preserving every existing history."""
 
