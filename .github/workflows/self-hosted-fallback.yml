@@ -1,0 +1,117 @@
+name: Self-hosted fallback
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_repository:
+        description: Repository that emitted the signed workflow_run event
+        required: true
+        type: string
+      source_ref:
+        description: Trusted source branch
+        required: true
+        type: string
+      source_sha:
+        description: Exact source commit
+        required: true
+        type: string
+      source_workflow:
+        description: Failed source workflow name
+        required: true
+        type: string
+      source_run_id:
+        description: Failed source run id
+        required: true
+        type: string
+      source_run_attempt:
+        description: Failed source run attempt
+        required: true
+        type: string
+      runner:
+        description: Audit copy of the operator-selected ARC scale-set label
+        required: true
+        type: string
+      webhook_delivery:
+        description: Signed GitHub webhook delivery id
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-hosted-fallback-${{ inputs.source_run_id }}-${{ inputs.source_run_attempt }}
+  cancel-in-progress: false
+
+jobs:
+  focused-contracts:
+    name: exact-SHA bridge and GitOps contracts
+    # Deliberately hardcoded. A manual dispatch cannot choose an arbitrary
+    # self-hosted runner label through the audit-only `runner` input.
+    runs-on: oresoftware-ci
+    timeout-minutes: 30
+    steps:
+      - name: Validate signed-bridge inputs
+        shell: bash
+        env:
+          SOURCE_REPOSITORY: ${{ inputs.source_repository }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          SOURCE_WORKFLOW: ${{ inputs.source_workflow }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ inputs.source_run_attempt }}
+          RUNNER_LABEL: ${{ inputs.runner }}
+          WEBHOOK_DELIVERY: ${{ inputs.webhook_delivery }}
+        run: |
+          set -euo pipefail
+          test "$SOURCE_REPOSITORY" = "$GITHUB_REPOSITORY"
+          [[ "$SOURCE_REF" = main || "$SOURCE_REF" = dev ]]
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ || "$SOURCE_SHA" =~ ^[0-9a-f]{64}$ ]]
+          test "$SOURCE_WORKFLOW" = 'repo checks'
+          [[ "$SOURCE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$SOURCE_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          test "$RUNNER_LABEL" = oresoftware-ci
+          [[ "$WEBHOOK_DELIVERY" =~ ^[A-Za-z0-9_-]{1,128}$ ]]
+
+      - name: Checkout exact failed commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          show-progress: false
+
+      - name: Prove exact checkout belongs to the trusted branch
+        shell: bash
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git fetch --no-tags origin \
+            "refs/heads/${SOURCE_REF}:refs/remotes/origin/${SOURCE_REF}"
+          git merge-base --is-ancestor \
+            "$SOURCE_SHA" "refs/remotes/origin/${SOURCE_REF}"
+
+      - name: Compile webhook registrar and contract tests
+        run: |
+          python3 -m py_compile \
+            scripts/ops/register_github_org_webhook.py \
+            scripts/ops/test_gha_clone_server_contract.py
+
+      - name: Run bridge and GitOps contracts
+        run: python3 -m unittest -v scripts/ops/test_gha_clone_server_contract.py
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Test Rust failure bridge
+        run: cargo test --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml -- --check
