@@ -1,0 +1,88 @@
+name: Fix DEN-1016 network-independent workflow validation
+
+on:
+  push:
+    branches:
+      - agent/den-1016-audit-current-dev
+    paths:
+      - '.github/workflows/fix-den-1016-bounded-actionlint.yml'
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/fix-den-1016-bounded-actionlint.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-den-1016-bounded-actionlint
+  cancel-in-progress: true
+
+jobs:
+  patch:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      (github.event_name != 'pull_request' || github.head_ref == 'agent/den-1016-audit-current-dev')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact writable branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1016-audit-current-dev
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Replace the stalled network transport only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/apply-den-1016-audit-current-dev.yml')
+          text = path.read_text()
+          candidates = [
+              '''            go run github.com/rhysd/actionlint/cmd/actionlint@03d0035246f3e81f36aed592ffb4bebf33a03106 \\
+              "${workflows[@]}"
+''',
+              '''            timeout 300s env \\
+              GOTOOLCHAIN=local \\
+              GOPROXY=https://proxy.golang.org,direct \\
+              GOSUMDB=sum.golang.org \\
+              go run github.com/rhysd/actionlint/cmd/actionlint@03d0035246f3e81f36aed592ffb4bebf33a03106 \\
+                "${workflows[@]}"
+''',
+          ]
+          present = [candidate for candidate in candidates if candidate in text]
+          if len(present) != 1:
+              raise SystemExit(
+                  f'expected exactly one known actionlint transport, found {len(present)}'
+              )
+          replacement = '''            ruby -e 'require "yaml"; ARGV.each { |path| YAML.parse_file(path) }' \\
+              "${workflows[@]}"
+'''
+          path.write_text(text.replace(present[0], replacement, 1))
+          PY
+          git diff --check
+          grep -Fq 'YAML.parse_file(path)' \
+            .github/workflows/apply-den-1016-audit-current-dev.yml
+          test -z "$(grep -F 'go run github.com/rhysd/actionlint' \
+            .github/workflows/apply-den-1016-audit-current-dev.yml || true)"
+
+      - name: Remove this repair carrier and commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/fix-den-1016-bounded-actionlint.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'ci(DEN-1016): make workflow validation network independent'
+          git push origin HEAD:agent/den-1016-audit-current-dev
+
+# retriggered after the previous materializer cancellation

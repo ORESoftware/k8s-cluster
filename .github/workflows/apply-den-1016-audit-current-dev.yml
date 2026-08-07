@@ -1,0 +1,219 @@
+name: Apply DEN-1016 audit on current dev
+
+on:
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/apply-den-1016-audit-current-dev.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-1016-audit-current-dev
+  cancel-in-progress: true
+
+jobs:
+  merge-validate-clean:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      (github.event_name != 'pull_request' || github.head_ref == 'agent/den-1016-audit-current-dev')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact writable reconciliation branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1016-audit-current-dev
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Three-way merge the reviewed audit history
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin \
+            harden/dev-audit-2026-07-29-post-secret-stage:refs/remotes/origin/harden/dev-audit-2026-07-29-post-secret-stage
+          set +e
+          git merge --no-commit --no-ff \
+            origin/harden/dev-audit-2026-07-29-post-secret-stage
+          merge_status=$?
+          set -e
+          if [ "$merge_status" -ne 0 ] && ! git diff --name-only --diff-filter=U | grep -q .; then
+            echo 'merge failed without resolvable content conflicts' >&2
+            exit "$merge_status"
+          fi
+
+      - name: Resolve only known overlapping meanings
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          def run(*args: str) -> str:
+              return subprocess.check_output(args, text=True)
+
+          conflicts = [
+              line for line in run('git', 'diff', '--name-only', '--diff-filter=U').splitlines()
+              if line
+          ]
+          allowed = {
+              'remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml',
+              'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml',
+              'remote/argocd/observability/gcs-rabbitmq-management.externalsecret.yaml',
+              'remote/argocd/observability/kustomization.yaml',
+              'remote/deployments/browser-mcp-rs/readme.md',
+              'remote/deployments/browser-mcp-rs/src/main.rs',
+              'remote/deployments/dev-server/src/runtime-config.ts',
+              'remote/deployments/dev-server/src/server.ts',
+              'remote/deployments/gcs/k8s/ec2/gcs-rabbitmq.externalsecret.yaml',
+              'remote/deployments/gcs/k8s/ec2/kustomization.yaml',
+          }
+          unknown = sorted(set(conflicts) - allowed)
+          if unknown:
+              raise SystemExit(f'unknown semantic merge conflicts: {unknown}')
+
+          def stage(path: str, content: str) -> None:
+              Path(path).write_text(content)
+              subprocess.check_call(['git', 'add', '--', path])
+
+          exact_already_landed = {
+              'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml',
+              'remote/argocd/observability/gcs-rabbitmq-management.externalsecret.yaml',
+              'remote/deployments/browser-mcp-rs/readme.md',
+              'remote/deployments/browser-mcp-rs/src/main.rs',
+              'remote/deployments/dev-server/src/runtime-config.ts',
+              'remote/deployments/dev-server/src/server.ts',
+              'remote/deployments/gcs/k8s/ec2/gcs-rabbitmq.externalsecret.yaml',
+          }
+          for path in conflicts:
+              ours = run('git', 'show', f':2:{path}')
+              theirs = run('git', 'show', f':3:{path}')
+              if path in exact_already_landed:
+                  if ours != theirs:
+                      raise SystemExit(
+                          f'{path}: audit and current-dev versions are not byte-identical; '
+                          'refusing to choose a side'
+                      )
+                  stage(path, ours)
+              elif path == 'remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml':
+                  missing_current_lines = sorted(set(ours.splitlines()) - set(theirs.splitlines()))
+                  required = [
+                      'readOnlyRootFilesystem: true',
+                      '- CHOWN',
+                      '- DAC_OVERRIDE',
+                      '- FOWNER',
+                      'cpu: 10m',
+                      'memory: 16Mi',
+                  ]
+                  if missing_current_lines or any(marker not in theirs for marker in required):
+                      raise SystemExit(
+                          f'{path}: hardened version does not strictly preserve current deployment; '
+                          f'missing current lines={missing_current_lines[:20]}'
+                      )
+                  stage(path, theirs)
+              else:
+                  # Kustomizations are resource inventories. Preserve current ordering and
+                  # append only resources introduced by the reviewed audit branch.
+                  ours_lines = ours.splitlines()
+                  existing = set(ours_lines)
+                  for line in theirs.splitlines():
+                      if line.startswith('  - ') and line not in existing:
+                          ours_lines.append(line)
+                          existing.add(line)
+                  stage(path, '\n'.join(ours_lines) + '\n')
+          PY
+          test -z "$(git diff --name-only --diff-filter=U)"
+
+      - name: Prove prerequisite and newer dev work survived
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f .github/workflows/den-1016-gcs-rabbitmq-prerequisite.yml
+          test -f scripts/ci/den-1016-gcs-rabbitmq-prerequisite.sh
+          grep -Fq 'loki.rules.configmap.yaml' remote/argocd/observability/kustomization.yaml
+          grep -Fq 'gcs-rabbitmq-management.externalsecret.yaml' remote/argocd/observability/kustomization.yaml
+          grep -Fq 'gcs-rabbitmq.externalsecret.yaml' remote/deployments/gcs/k8s/ec2/kustomization.yaml
+          grep -Fq 'CARGO_TARGET_DIR=/tmp/dd-trading-server-target' \
+            remote/argocd/dd-next-runtime/dd-trading-server.deployment.yaml
+          test "$(git ls-files --stage remote/deployments/usacc-rest-api-backend-rs | awk '{print $1}')" = '160000'
+
+      - name: Validate security and manifest contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test remote/tests/general/dev-server-auth-boundary.test.mjs
+          node --test remote/tests/general/security-hardening-contract.test.ts
+          bash -n scripts/ci/den-1016-gcs-rabbitmq-prerequisite.sh
+          kubectl kustomize remote/deployments/gcs/k8s/ec2 >/dev/null
+          kubectl kustomize remote/argocd/observability >/dev/null
+          git diff --check
+          if git grep -nE '^(<<<<<<< |=======|>>>>>>> )' -- \
+            .github/workflows \
+            remote/argocd \
+            remote/deployments \
+            remote/tests; then
+            echo 'git conflict marker detected' >&2
+            exit 1
+          fi
+
+      - name: Validate all changed workflow action references
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t workflows < <(
+            git diff --name-only HEAD -- '.github/workflows/*.yml' '.github/workflows/*.yaml' |
+              grep -v 'apply-den-1016-audit-current-dev.yml' || true
+          )
+          if [ "${#workflows[@]}" -gt 0 ]; then
+            go run github.com/rhysd/actionlint/cmd/actionlint@03d0035246f3e81f36aed592ffb4bebf33a03106 \
+              "${workflows[@]}"
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import subprocess
+
+          paths = subprocess.check_output(
+              ['git', 'diff', '--name-only', 'HEAD', '--', '.github/workflows'],
+              text=True,
+          ).splitlines()
+          failures = []
+          for raw in paths:
+              if raw.endswith('apply-den-1016-audit-current-dev.yml'):
+                  continue
+              path = Path(raw)
+              if not path.exists():
+                  continue
+              for number, line in enumerate(path.read_text().splitlines(), 1):
+                  match = re.match(r'^\s*uses:\s*([^\s#]+)', line)
+                  if not match:
+                      continue
+                  ref = match.group(1)
+                  if ref.startswith('./') or ref.startswith('docker://'):
+                      continue
+                  if not re.fullmatch(r'[^@]+@[0-9a-fA-F]{40}', ref):
+                      failures.append(f'{path}:{number}: mutable action reference {ref}')
+          if failures:
+              raise SystemExit('\n'.join(failures))
+          PY
+
+      - name: Remove one-shot workflow and create the semantic merge commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/apply-den-1016-audit-current-dev.yml
+          git add -A
+          git diff --cached --check
+          test -z "$(git diff --cached --name-only | grep 'apply-den-1016-audit-current-dev.yml' || true)"
+          git status --short
+          git commit -m 'harden: reconcile July audit with current dev [DEN-1016]'
+          git push origin HEAD:agent/den-1016-audit-current-dev
