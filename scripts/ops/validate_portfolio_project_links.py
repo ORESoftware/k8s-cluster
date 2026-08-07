@@ -7,6 +7,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 from portfolio_project_links import (
     EXPECTED_COUNT,
