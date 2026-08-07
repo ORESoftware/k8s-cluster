@@ -13,4 +13,22 @@ spec:
               value: rust-verify,rust-generated-verify,node-verify,node-hardened-verify,node-hardened-test,python-verify,flutter-verify,flutter-android-debug,flutter-web-release,flutter-linux-release,flutter-linux-desktop-entrypoint,flutter-web-e2e,playwright,puppeteer,browser-e2e
             - name: BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON
               value: >-
-                [{"repository":"https://github.com/ORESoftware/k8s-cluster.git","profiles":["rust-verify"]},{"repository":"https://github.com/messaging-intel/msgint-connectors.git","profiles":["node-hardened-verify","node-hardened-test"]},{"repository":"https://github.com/3FA-app/3fa-interfaces.git","profiles":["node-hardened-test","rust-generated-verify"]}]
+                [{"repository":"https://github.com/ORESoftware/k8s-cluster.git","profiles":["rust-verify"]},{"repository":"https://github.com/messaging-intel/msgint-connectors.git","profiles":["node-hardened-verify","node-hardened-test"]},{"repository":"https://github.com/3FA-app/3fa-interfaces.git","profiles":["node-hardened-test","rust-generated-verify"]},{"repository":"https://github.com/discrete-event-systems-test/des-web-playwright-e2e.git","profiles":["playwright"]},{"repository":"https://github.com/discrete-event-systems-test/des-web-puppeteer-e2e.git","profiles":["puppeteer"]}]
+            - name: BUILD_SERVER_GHA_WORKFLOW_EXECUTION_ENABLED
+              value: 'false'
+            - name: BUILD_SERVER_GHA_MAX_YAML_BYTES
+              value: '262144'
+            - name: BUILD_SERVER_GHA_MAX_JOBS
+              value: '64'
+            - name: BUILD_SERVER_GHA_MAX_STEPS_PER_JOB
+              value: '128'
+            - name: BUILD_SERVER_GHA_MAX_YAML_NODES
+              value: '16384'
+            - name: BUILD_SERVER_GHA_MAX_YAML_DEPTH
+              value: '64'
+            - name: BUILD_SERVER_GHA_POLL_MILLISECONDS
+              value: '250'
+            - name: BUILD_SERVER_GHA_RUN_TIMEOUT_SECONDS
+              value: '3600'
+            - name: BUILD_SERVER_GHA_MAX_RUNS
+              value: '512'
