@@ -2287,6 +2287,42 @@
           "application_namespace": "argocd",
           "destination": {
             "name": "",
+            "namespace": "default",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/hetzner/project-automation.application.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/project-automation",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "main"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": true,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-project-automation"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
             "namespace": "ai-ml",
             "server": "https://kubernetes.default.svc"
           },
@@ -4154,12 +4190,12 @@
     "source": "tracked Argo CD Application manifests"
   },
   "summary": {
-    "application_documents": 125,
-    "applications": 87,
-    "default_destination_namespace_declarations": 53,
-    "default_project_declarations": 102,
+    "application_documents": 126,
+    "applications": 88,
+    "default_destination_namespace_declarations": 54,
+    "default_project_declarations": 103,
     "duplicate_names": 18,
     "gitlink_render_path_violations": 0,
-    "in_repo_source_declarations": 81
+    "in_repo_source_declarations": 82
   }
 }
