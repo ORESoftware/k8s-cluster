@@ -48,7 +48,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn openapi_has_stable_auth_paths() {
+    fn openapi_has_stable_auth_and_recovery_paths() {
         let value = document();
         assert_eq!(value["openapi"], "3.1.0");
         for path in [
