@@ -1,0 +1,44 @@
+name: Fix DEN-319 supervisor pins once
+
+on:
+  pull_request:
+    types: [synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'fix/den-319-extend-trusted-main-supervisor-20260801'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/den-319-extend-trusted-main-supervisor-20260801
+          fetch-depth: 0
+      - name: Replace only stale trusted blob pins
+        run: |
+          set -Eeuo pipefail
+          file=.github/workflows/critical-org-fleet-main-dispatch.yml
+          test "$(grep -o '825d5e5b297c8ea94a988834ca1664138b3eb37a' "$file" | wc -l)" -eq 2
+          test "$(grep -o '802c0e1bbb6ca7840a509af8efad04c811cc27cd' "$file" | wc -l)" -eq 2
+          sed -i \
+            -e 's/825d5e5b297c8ea94a988834ca1664138b3eb37a/112cb7e8249c6a2a41de9799fca870f5cabde055/g' \
+            -e 's/802c0e1bbb6ca7840a509af8efad04c811cc27cd/9d9021a0584de8e3f7def2f32a067b4f6701e6c2/g' \
+            "$file"
+          test "$(grep -o '112cb7e8249c6a2a41de9799fca870f5cabde055' "$file" | wc -l)" -eq 2
+          test "$(grep -o '9d9021a0584de8e3f7def2f32a067b4f6701e6c2' "$file" | wc -l)" -eq 2
+          ! grep -qE '825d5e5b297c8ea94a988834ca1664138b3eb37a|802c0e1bbb6ca7840a509af8efad04c811cc27cd' "$file"
+          git rm .github/workflows/fix-den319-supervisor-pins-once.yml
+      - name: Commit exact correction
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/critical-org-fleet-main-dispatch.yml
+          git diff --cached --check
+          git commit -m 'fix(DEN-319): pin supervisor to current safe bootstrap blobs'
+          git push origin HEAD:fix/den-319-extend-trusted-main-supervisor-20260801
