@@ -6,7 +6,9 @@ The clone server retains run records in one process-local ordered map. `GHA_CLON
 
 A direct run reserves one record. A workflow-run fallback reserves the complete mirrored-workflow batch. Reservation occurs under one write lock and either inserts every record or inserts none.
 
-Before insertion, the server may evict only the oldest terminal records (`succeeded` or `failed`). Queued and running records are never evicted to admit new work. If active records plus the requested batch exceed the configured limit, admission returns a bounded capacity error without changing the map.
+Before insertion, the server may evict only the oldest terminal records (`succeeded` or `failed`). Queued and running records are never evicted to admit new work. If active records plus the requested batch exceed the configured limit, admission returns HTTP `429` without changing the map. The bounded response reports only `error`, `maxRuns`, `activeRuns`, and `requestedRuns`; it does not expose retained run payloads, credentials, provider details, or workflow inputs.
+
+Admission is based on the active-run invariant `activeRuns + requestedRuns <= maxRuns`. Terminal records can be removed only to make the retained-map size fit after that invariant succeeds. They can never compensate for insufficient active capacity.
 
 Duplicate generated run IDs also fail without mutation. Equal-age terminal records are evicted deterministically by run ID.
 
