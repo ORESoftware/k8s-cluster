@@ -21,7 +21,7 @@ async function readRepoFile(path: string): Promise<string> {
   return readFile(resolve(repoRoot, path), 'utf8');
 }
 
-test('project automation is Argo managed from dev and fail-closed before activation', async () => {
+test('project automation is Argo managed through the dev root, sources reviewed main, and keeps the web deployment fail-closed', async () => {
   const application = await readRepoFile(
     'remote/argocd/clusters/hetzner/project-automation.application.yaml',
   );
@@ -32,7 +32,9 @@ test('project automation is Argo managed from dev and fail-closed before activat
 
   assert.match(application, /kind: Application/);
   assert.match(application, /name: dd-project-automation/);
-  assert.match(application, /targetRevision: dev/);
+  assert.match(application, /denman\.linear\.app\/issue: DEN-2745/);
+  assert.match(application, /targetRevision: main/);
+  assert.doesNotMatch(application, /targetRevision: dev/);
   assert.match(application, /path: remote\/argocd\/project-automation/);
   assert.match(application, /automated:\s*\n\s*prune: true\s*\n\s*selfHeal: true/);
   assert.match(clusterKustomization, /project-automation\.application\.yaml/);
