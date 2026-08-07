@@ -57,6 +57,11 @@ on:
         type: boolean
         required: true
         default: false
+      run_msgint_profile_smoke:
+        description: Run the private Messaging Intel fixed-profile smoke with the repository GitHub App
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: read

@@ -8,6 +8,7 @@ metadata:
 data:
   GHA_CLONE_ALLOWED_REPOSITORIES: >-
     ORESoftware/k8s-cluster,
+    messaging-intel/msgint-connectors,
     sonus-auris/sonus-auris-interfaces,
     sonus-auris/sonus-auris-ui.dart,
     sonus-auris/sonus-auris-backend.rs,
@@ -21,6 +22,7 @@ data:
   GHA_CLONE_WORKFLOW_RULES_JSON: |
     {
       "ORESoftware/k8s-cluster": [".github/workflows/gha-clone-server-meta.yml"],
+      "messaging-intel/msgint-connectors": [".github/workflows/gha-clone-operator-config.yml"],
       "sonus-auris/sonus-auris-interfaces": [".github/workflows/ci.yml"],
       "sonus-auris/sonus-auris-ui.dart": [".github/workflows/ci.yml", ".github/workflows/android-emulator-test.yml"],
       "StreemPilot/streempilot-api-server.rs": [".github/workflows/ci-mirror.yml"],

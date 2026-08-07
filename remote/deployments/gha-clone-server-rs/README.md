@@ -17,8 +17,12 @@ fail-closed fallback when the GitHub runner/allocation path is unavailable.
    approximated.
 
 The independent lane never forwards caller-selected shell, action code, runner
-images, or Kubernetes manifests. It submits only a trusted repository, immutable
-commit SHA, and operator-reviewed profile name to `dd-build-server`.
+images, environment variables, or Kubernetes manifests. It submits only a
+trusted repository, immutable commit SHA, and operator-reviewed profile name to
+`dd-build-server`. Messaging Intel uses a dedicated two-job mirror:
+`node-hardened-verify` for the non-secret operator contract and
+`node-hardened-test` for the lifecycle-script-free complete repository test
+suite.
 
 ## API
 
@@ -56,6 +60,8 @@ Example plan:
 | Cargo/rustfmt/Clippy/tests | `rust-verify` |
 | This repository's bounded GHA-clone meta workflow | `rust-verify`, with an exact reviewed fallback to `remote/deployments/gha-clone-server-rs` when the repository root is not a Cargo crate |
 | npm/pnpm/yarn/Node tests | `node-verify` |
+| npm install-script suppression + operator checks + high-severity audit | `node-hardened-verify` |
+| npm install-script suppression + complete repository tests | `node-hardened-test` |
 | Python compile/pytest | `python-verify` |
 | Flutter analyze/tests | `flutter-verify` |
 | Flutter Android APK/App Bundle | `flutter-android-debug` |
@@ -105,6 +111,39 @@ it creates one fixed build-server job for the immutable commit and stops at its
 terminal result. Duplicate delivery is bounded by the deterministic request ID,
 the webhook-delivery claim, and the build server's idempotency path.
 
+## Messaging Intel mirror and adversarial proof
+
+The allowlisted fixture
+`tests/fixtures/msgint-operator-config.yml` represents only
+`messaging-intel/msgint-connectors` at an immutable 40-hex revision. Its command
+sequences are exact contracts:
+
+```text
+node-hardened-verify:
+  npm ci --ignore-scripts
+  npm run check
+  npm run test:operator-config
+  npm audit --audit-level=high
+
+node-hardened-test:
+  npm ci --ignore-scripts
+  npm test
+```
+
+A job that signals hardened Node intent cannot fall back to generic
+`node-verify`. Extra commands, reordered commands, quoted or spoofed evidence,
+mutable setup-action refs, caller-selected environments, setup-input
+expressions, and secret expressions are rejected before any build submission.
+The real-process integration test first proves the two valid submissions reach
+`succeeded`, then sends adjacent malicious variants and verifies the recording
+build server remains at exactly two submissions.
+
+The optional hosted smoke is manual-only. It mints a short-lived GitHub App token
+restricted to `messaging-intel/msgint-connectors`, checks out the exact reviewed
+revision with persisted Git credentials disabled, extracts only the two compiled
+fixed scripts, resolves the Node runner image to a digest, and executes both
+profiles in capability-dropped, no-new-privileges, read-only containers.
+
 ## Failure webhook contract
 
 GitHub emits `workflow_run` completion events for every conclusion. The
@@ -140,7 +179,12 @@ claim before webhook execution may be enabled.
 The independent lane rejects:
 
 - branch/tag execution instead of a 40-hex commit SHA;
-- secret/OIDC expressions in `env`, `with`, or commands;
+- every caller-selected job/step environment;
+- secret/OIDC expressions in setup inputs or commands;
+- expressions inside setup inputs;
+- mutable setup-action references;
+- hardened Node command sequences that are incomplete, reordered, spoofed, or
+  contain any extra command;
 - dynamic matrices and conditional jobs/steps;
 - arbitrary marketplace actions;
 - job or service containers;
@@ -213,18 +257,21 @@ exist. Activation requires:
 1. provision `dd-gha-clone-server-secrets` through the reviewed ExternalSecret;
 2. verify the GitHub App is installed only on allowlisted organizations/repos;
 3. confirm `dd-build-server` is healthy and its fixed profiles include the
-   reviewed monorepo Rust fallback;
+   reviewed monorepo Rust fallback plus both Messaging Intel hardened profiles;
 4. pin the deployment to the merged source revision;
 5. scale to one replica and run plan-only fixtures;
 6. enable API execution for immutable trusted commits and submit
    `.github/workflows/gha-clone-server-meta.yml` at the exact merged SHA;
 7. verify the real build-server job tests this crate and the run reaches
    `succeeded` without creating a second independent run;
-8. register the failure-only `workflow_run` webhook and prove HMAC, exact-path
+8. run the manual private Messaging Intel smoke after the exact-repository
+   GitHub App installation and secrets are available;
+9. register the failure-only `workflow_run` webhook and prove HMAC, exact-path
    filtering, recursion exclusion, retry after transient retrieval failure,
-   concurrent duplicate suppression, and build-server idempotency;
-9. enable webhook execution only while the deployment remains single-replica,
-   until shared delivery persistence or Fiducia fencing is implemented.
+   concurrent duplicate suppression, build-server idempotency, and exact
+   repository admission;
+10. enable webhook execution only while the deployment remains single-replica,
+    until shared delivery persistence or Fiducia fencing is implemented.
 
 AWS is the initial independent executor because the existing build server,
 containerd/buildkit, ECR and Postgres are there. Hetzner can immediately host ARC
@@ -233,7 +280,7 @@ storage and Fiducia-fenced claims before it becomes authoritative.
 
 ## Repository extraction
 
-The service is initially in `ORESoftware/k8s-cluster` so parser, executor
-profiles, deployment and policy contracts evolve atomically. Extraction to a
+The service is initially in `ORESoftware/k8s-cluster` so implementation,
+deployment, security, and executor contracts evolve atomically. Extraction to a
 standalone `ORESoftware/gha-clone-server.rs` repository is tracked after the API
 and fixtures stabilize and must use the protected repository-bootstrap path.

@@ -1,0 +1,12 @@
+{
+  "name": "gha-node-profile-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Credential-free fixture for the GHA continuity Node profiles",
+  "type": "module",
+  "scripts": {
+    "check": "node --check src/operator-config.mjs && node --check test/operator-config.test.mjs",
+    "test:operator-config": "node --test test/operator-config.test.mjs",
+    "test": "node --test test/operator-config.test.mjs"
+  }
+}

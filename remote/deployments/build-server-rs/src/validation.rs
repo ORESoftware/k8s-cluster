@@ -380,8 +380,6 @@ mod tests {
         assert!(validate_relative_path("contextDir", "services/api").is_ok());
         assert!(validate_relative_path("contextDir", "../../etc").is_err());
         assert!(validate_relative_path("contextDir", "/etc").is_err());
-        // Mount-spec injection: a component with `,`/`=`/`:` could add a second
-        // `src=` field to the nerdctl --mount string.
         assert!(validate_relative_path("contextDir", "x,src=/home/ec2-user").is_err());
         assert!(validate_relative_path("contextDir", "a=b").is_err());
         assert!(validate_relative_path("contextDir", "c:d").is_err());
@@ -409,6 +407,48 @@ mod tests {
         )]));
         assert!(validate_build_args(&safe).is_ok());
         assert!(validate_build_args(&unsafe_args).is_err());
+    }
+
+    #[test]
+    fn profile_repository_rules_distinguish_exact_urls_from_prefixes() {
+        let rules = vec![
+            "https://github.com/ORESoftware/".to_string(),
+            "=https://github.com/messaging-intel/msgint-connectors.git".to_string(),
+        ];
+        assert!(ensure_allowed_prefix_or_exact(
+            "profile repoUrl",
+            "https://github.com/ORESoftware/k8s-cluster.git",
+            &rules,
+            "BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES",
+        )
+        .is_ok());
+        assert!(ensure_allowed_prefix_or_exact(
+            "profile repoUrl",
+            "https://github.com/messaging-intel/msgint-connectors.git",
+            &rules,
+            "BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES",
+        )
+        .is_ok());
+        for rejected in [
+            "https://github.com/messaging-intel/msgint-connectors.git-evil",
+            "https://github.com/messaging-intel/msgint-connectors-extra.git",
+            "git@github.com:messaging-intel/msgint-connectors.git",
+        ] {
+            assert!(ensure_allowed_prefix_or_exact(
+                "profile repoUrl",
+                rejected,
+                &rules,
+                "BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES",
+            )
+            .is_err());
+        }
+        assert!(ensure_allowed_prefix_or_exact(
+            "profile repoUrl",
+            "https://github.com/messaging-intel/msgint-connectors.git",
+            &["=".to_string()],
+            "BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES",
+        )
+        .is_err());
     }
 
     #[test]

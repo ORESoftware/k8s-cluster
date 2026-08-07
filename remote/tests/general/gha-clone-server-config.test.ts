@@ -32,6 +32,9 @@ const observabilityPaths = [
   'remote/argocd/observability/k8s-resource-exporter.deployment.yaml',
 ];
 const profilesPath = 'remote/deployments/build-server-rs/src/profiles.rs';
+const continuityPatchPath =
+  'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml';
+const profileAdmissionDocPath = 'docs/gha-profile-repository-admission.md';
 const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';
 const serverPath = 'remote/deployments/gha-clone-server-rs/src/main.rs';
 const routerSourcePaths = [
@@ -49,6 +52,10 @@ const routerTestPaths = [
 ];
 const metaIntegrationTestPath =
   'remote/deployments/gha-clone-server-rs/tests/meta_self_test.rs';
+const msgintIntegrationTestPath =
+  'remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs';
+const msgintFixturePath =
+  'remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml';
 const workflowPath = '.github/workflows/gha-clone-server.yml';
 const metaWorkflowPath = '.github/workflows/gha-clone-server-meta.yml';
 
@@ -215,6 +222,7 @@ test('clone dispatch is forced through the authenticated router', () => {
 test('configuration and fixed profiles preserve the bounded execution surface', () => {
   const config = read(configMapPath);
   assert.match(config, /ORESoftware\/k8s-cluster/);
+  assert.match(config, /messaging-intel\/msgint-connectors/);
   assert.match(config, /sonus-auris\/sonus-auris-interfaces/);
   assert.match(config, /\.github\/workflows\/ci\.yml/);
   assert.match(
@@ -225,10 +233,20 @@ test('configuration and fixed profiles preserve the bounded execution surface', 
     config,
     /"ORESoftware\/k8s-cluster": \["\.github\/workflows\/gha-clone-server\.yml"\]/,
   );
+  assert.match(
+    config,
+    /"messaging-intel\/msgint-connectors": \["\.github\/workflows\/gha-clone-operator-config\.yml"\]/,
+  );
   assert.doesNotMatch(config, /https?:\/\/[^/\s]+\/\*|owner\/\*/);
 
   const profiles = read(profilesPath);
-  for (const profile of ['rust-verify', 'node-verify', 'python-verify']) {
+  for (const profile of [
+    'rust-verify',
+    'node-verify',
+    'node-hardened-verify',
+    'node-hardened-test',
+    'python-verify',
+  ]) {
     assert.match(profiles, new RegExp(`name: "${profile}"`));
   }
   assert.match(
@@ -236,7 +254,22 @@ test('configuration and fixed profiles preserve the bounded execution surface', 
     /cargo clippy --locked --all-targets --all-features -- -D warnings/,
   );
   assert.match(profiles, /pnpm install --frozen-lockfile/);
+  assert.match(profiles, /npm ci --ignore-scripts/);
+  assert.match(profiles, /npm run test:operator-config/);
+  assert.match(profiles, /npm audit --audit-level=high/);
   assert.match(profiles, /python -m pytest/);
+
+  const continuityPatch = read(continuityPatchPath);
+  assert.match(continuityPatch, /node-hardened-verify/);
+  assert.match(continuityPatch, /node-hardened-test/);
+  assert.match(
+    continuityPatch,
+    /=https:\/\/github\.com\/messaging-intel\/msgint-connectors\.git/,
+  );
+  assert.doesNotMatch(
+    continuityPatch,
+    /https:\/\/github\.com\/messaging-intel\/(?!msgint-connectors\.git)/,
+  );
   assert.doesNotMatch(profiles, /find .*Cargo\.toml|for crate in/);
 
   for (const [, image] of profiles.matchAll(
@@ -250,12 +283,18 @@ test('planner and dispatcher reject arbitrary workflow execution', () => {
   const planner = read(plannerPath);
   const server = read(serverPath);
   assert.match(planner, /service containers require the isolated ARC DinD lane/);
-  assert.match(planner, /secret-bearing env\/with values are unsupported/);
+  assert.match(planner, /fixed profiles do not forward caller-selected variables/);
+  assert.match(planner, /secret-bearing setup inputs are unsupported/);
+  assert.match(planner, /expressions in setup inputs are unsupported/);
   assert.match(planner, /workflow job dependency graph contains a cycle/);
   assert.match(planner, /revision is not an exact 40-hex commit SHA/);
   assert.match(planner, /workflow-level .* is unsupported by the independent lane/);
   assert.match(planner, /"working-directory"/);
   assert.match(planner, /non-Linux native execution is unavailable/);
+  assert.match(planner, /node-hardened-verify/);
+  assert.match(planner, /node-hardened-test/);
+  assert.match(planner, /exact reviewed command sequence/);
+  assert.match(planner, /exact 40-hex commit SHA/);
   assert.match(server, /job_kind: "run-profile"/);
   assert.match(server, /profile,/);
   assert.doesNotMatch(server, /command:\s*&|script:\s*&|runner_image/);
@@ -324,5 +363,16 @@ test('permanent GHA workflow checks source, deployment, activation, and overlay 
   assert.match(workflow, /gha-executor-router-activation\.test\.mjs/);
   assert.match(workflow, /kubectl kustomize remote\/argocd\/dd-next-runtime/);
   assert.match(workflow, /actionlint@sha256:/);
+  assert.match(workflow, /run_msgint_profile_smoke/);
+  assert.match(workflow, /create-github-app-token@/);
+  assert.match(workflow, /K8S_SUBMODULE_APP_ID/);
+  assert.match(workflow, /K8S_SUBMODULE_APP_PRIVATE_KEY/);
+  assert.match(workflow, /NODE_HARDENED_TEST_STEPS/);
+  assert.match(workflow, /node-hardened-test/);
   assert.match(workflow, /persist-credentials:\s*false/);
+  assert.doesNotMatch(workflow, /\brm\s+-rf\b/);
+  assert.doesNotMatch(
+    workflow,
+    /ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}/,
+  );
 });
