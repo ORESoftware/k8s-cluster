@@ -92,9 +92,14 @@ jobs:
             scripts/ops/repository_rename_alias_guard.py \
             scripts/ops/private_repository_creation.py \
             scripts/ops/repository_fleet_visibility.py \
-            scripts/ops/repository_fleet_remote_state.py
+            scripts/ops/repository_fleet_remote_state.py \
+            scripts/ops/test_private_repository_creation.py \
+            scripts/ops/test_repository_fleet_remote_state.py \
+            scripts/ops/test_repository_redirect_aliases.py
           python3 scripts/ops/test_repository_fleet_visibility.py -v
           python3 scripts/ops/test_repository_fleet_remote_state.py -v
+          python3 scripts/ops/test_repository_redirect_aliases.py -v
+          python3 scripts/ops/test_private_repository_creation.py -v
           python3 scripts/ops/test_private_fleet_publisher_contract.py -v
           python3 scripts/ops/test_project_reconciliation_workflow_contract.py -v
 
