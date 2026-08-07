@@ -60,6 +60,14 @@ jobs:
           set -Eeuo pipefail
           umask 077
 
+          stage=bootstrap
+          report_failure() {
+            status=$?
+            printf 'FAILED stage=%s status=%s\n' "$stage" "$status" >&2
+            exit "$status"
+          }
+          trap report_failure ERR
+
           trusted_sha="${1:?trusted SHA required}"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
           stage=initialization
