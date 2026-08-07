@@ -100255,7 +100255,9 @@ fn same_team_proximity_grace_matches_the_worked_example() {
         "just under LT5 grace, still forgiven: b5={b5}"
     );
     assert!(
-        b5 < SAME_TEAM_PROXIMITY_GRACE_LT6_SECONDS && b5 < SAME_TEAM_PROXIMITY_GRACE_LT7_SECONDS,
+        // LT6 (1.0s) < LT7 (1.5s), so being under LT6's grace already puts b5
+        // under LT7's; the old `&& b5 < ..._LT7_SECONDS` clause was dead.
+        b5 < SAME_TEAM_PROXIMITY_GRACE_LT6_SECONDS,
         "the tight timer trips first, before the wider ones' grace"
     );
     run(&mut b7, &mut b6, &mut b5, dive, 0.2);
