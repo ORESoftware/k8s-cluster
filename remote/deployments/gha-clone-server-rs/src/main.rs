@@ -1806,4 +1806,68 @@ mod tests {
         assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
         server.abort();
     }
+
+    #[test]
+    fn build_server_origin_is_credential_free_and_transport_safe() {
+        assert_eq!(
+            normalize_build_server_url("https://build.example.com/").unwrap(),
+            "https://build.example.com"
+        );
+        assert!(normalize_build_server_url("http://127.0.0.1:8123").is_ok());
+        assert!(normalize_build_server_url("http://localhost:8123").is_ok());
+        assert!(
+            normalize_build_server_url("http://dd-build-server.remote.svc.cluster.local:8123")
+                .is_ok()
+        );
+        assert!(normalize_build_server_url("http://dd-build-server.remote.svc:8123").is_ok());
+        assert!(normalize_build_server_url("http://10.0.0.10:8123").is_err());
+        assert!(normalize_build_server_url("http://build.example.com").is_err());
+        assert!(normalize_build_server_url("http://service.svc.evil.example").is_err());
+        assert!(normalize_build_server_url("https://user:pass@build.example.com").is_err());
+        assert!(normalize_build_server_url("https://build.example.com/api").is_err());
+        assert!(normalize_build_server_url("https://build.example.com?token=x").is_err());
+    }
+
+    #[test]
+    fn build_job_response_identity_is_validated_and_bound() {
+        let valid = BuildJobResponse {
+            id: "build:0123-abc_def.test".into(),
+            status: "queued".into(),
+            error: None,
+        };
+        assert!(validate_build_job_response_id(&valid, None).is_ok());
+        assert!(validate_build_job_response_id(&valid, Some(&valid.id)).is_ok());
+        assert!(validate_build_job_response_id(&valid, Some("different")).is_err());
+
+        let invalid = BuildJobResponse {
+            id: "../build?token=x".into(),
+            status: "queued".into(),
+            error: None,
+        };
+        assert!(validate_build_job_response_id(&invalid, None).is_err());
+    }
+
+    #[tokio::test]
+    async fn configured_http_client_does_not_follow_redirects() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route(
+                "/start",
+                get(|| async { axum::response::Redirect::temporary("/final") }),
+            )
+            .route("/final", get(|| async { StatusCode::OK }));
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let response = build_http_client()
+            .unwrap()
+            .get(format!("http://{address}/start"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+        server.abort();
+    }
 }
