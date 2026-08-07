@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 from private_repository_creation import (
     ensure_private_repository as ensure_private_repository_with_api,
@@ -40,6 +41,10 @@ FLEET_SOURCE_SHA = "5d9a0c2cb44dff607bc3953954ce4b9af08e5789"
 FLEET_GENERATOR_SHA256 = (
     "a57b00961ee57ae09bf3bb2e2d09afbdd1ddbbbde832b027802f82a1fc5dfa84"
 )
+
+
+def fail(message: str) -> None:
+    raise RuntimeError(message)
 
 
 def fail(message: str) -> None:
