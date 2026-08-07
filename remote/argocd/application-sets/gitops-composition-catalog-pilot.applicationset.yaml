@@ -1,0 +1,43 @@
+# DEN-2724 read-only ApplicationSet prototype.
+#
+# This file is intentionally NOT referenced by a Kustomization, bootstrap
+# Application, or live Argo CD root. Applying it is outside this PR.
+#
+# It reads parent-owned composition records and points generated Applications
+# directly at the child repositories at exact gitlink SHAs. The generated
+# catalog-pilot-* names cannot collide with the retained static Applications.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: gitops-composition-catalog-pilot
+  namespace: argocd
+  annotations:
+    oresoftware.dev/activation: inert-not-in-bootstrap
+    oresoftware.dev/linear-issue: DEN-2724
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - git:
+        repoURL: https://github.com/ORESoftware/k8s-cluster.git
+        revision: dev
+        requeueAfterSeconds: 180
+        files:
+          - path: catalog/gitops/apps/*.json
+  template:
+    metadata:
+      name: 'catalog-pilot-{{ .metadata.name }}'
+      namespace: argocd
+      annotations:
+        oresoftware.dev/composition-contract: '{{ .apiVersion }}'
+        oresoftware.dev/source-application: '{{ .metadata.name }}'
+    spec:
+      project: '{{ .spec.argo.project }}'
+      source:
+        repoURL: '{{ .spec.source.repository }}'
+        targetRevision: '{{ .spec.source.targetRevision }}'
+        path: '{{ .spec.source.path }}'
+      destination:
+        server: '{{ .spec.argo.destinationServer }}'
+        namespace: '{{ .spec.argo.namespace }}'
