@@ -9,7 +9,6 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
 
 from private_repository_creation import (
     ensure_private_repository as ensure_private_repository_with_api,
