@@ -14,9 +14,9 @@ on:
 
 permissions:
   contents: read
-  actions: write
   issues: write
   pull-requests: write
+  statuses: write
 
 concurrency:
   group: dispatch-exact-meta-agents-owner-publication-${{ github.run_id }}
