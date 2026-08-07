@@ -1,0 +1,311 @@
+name: Nightly dependency steward
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/nightly-dependency-steward.yml'
+      - 'scripts/ops/nightly_dependency_steward.py'
+      - 'scripts/ops/publish_nightly_dependency_steward.py'
+      - 'scripts/ops/tests/test_nightly_dependency_steward.py'
+      - 'docs/nightly-dependency-steward.md'
+      - 'ops/registries/portfolio-project-links.csv'
+  push:
+    branches: [main, dev]
+    paths:
+      - '.github/workflows/nightly-dependency-steward.yml'
+      - 'scripts/ops/nightly_dependency_steward.py'
+      - 'scripts/ops/publish_nightly_dependency_steward.py'
+      - 'scripts/ops/tests/test_nightly_dependency_steward.py'
+      - 'docs/nightly-dependency-steward.md'
+      - 'ops/registries/portfolio-project-links.csv'
+  schedule:
+    # GitHub cron is UTC. The controller accepts only the lane that maps to
+    # 02:00 America/Chicago for the current daylight/standard-time offset.
+    - cron: '0 7 * * *'
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Publish verified PRs and Linear escalations after analysis
+        required: true
+        default: false
+        type: boolean
+      org:
+        description: Optional comma-separated canonical GitHub organizations
+        required: false
+        default: ''
+        type: string
+      max_repositories:
+        description: Optional repository cap for a staged run; zero means all
+        required: true
+        default: 0
+        type: number
+      max_prs:
+        description: Maximum verified minor-upgrade PRs in this run
+        required: true
+        default: 200
+        type: number
+      workers:
+        description: Concurrent repository analyzers
+        required: true
+        default: 3
+        type: number
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-dependency-steward
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate policy, controller, and publisher
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/nightly-dependency-steward.yml
+
+      - name: Compile and test the dependency policy
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            scripts/ops/nightly_dependency_steward.py \
+            scripts/ops/publish_nightly_dependency_steward.py \
+            scripts/ops/tests/test_nightly_dependency_steward.py
+          python -m unittest -v scripts/ops/tests/test_nightly_dependency_steward.py
+          git diff --check
+
+      - name: Reject committed credential material
+        run: |
+          set -euo pipefail
+          ! grep -RIE \
+            'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|lin_api_[A-Za-z0-9]{20,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' \
+            .github/workflows/nightly-dependency-steward.yml \
+            scripts/ops/nightly_dependency_steward.py \
+            scripts/ops/publish_nightly_dependency_steward.py \
+            scripts/ops/tests/test_nightly_dependency_steward.py \
+            docs/nightly-dependency-steward.md
+
+  analyze:
+    name: Analyze exact SHAs and produce a credential-free publish plan
+    needs: validate
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    runs-on: [self-hosted, linux, sonus-ci]
+    timeout-minutes: 720
+    environment: portfolio-project-sync
+    outputs:
+      active: ${{ steps.lane.outputs.active }}
+    env:
+      INPUT_MAX_REPOSITORIES: ${{ inputs.max_repositories || 0 }}
+      INPUT_MAX_PRS: ${{ inputs.max_prs || 200 }}
+      INPUT_WORKERS: ${{ inputs.workers || 3 }}
+      INPUT_ORGS: ${{ inputs.org || '' }}
+      SCHEDULED_CRON: ${{ github.event.schedule }}
+    steps:
+      - name: Check out exact controller revision without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+
+      - name: Select the DST-correct 02:00 Central lane
+        id: lane
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -z "${SCHEDULED_CRON:-}"; then
+            echo 'active=true' >>"$GITHUB_OUTPUT"
+          elif SCHEDULED_CRON="$SCHEDULED_CRON" python - <<'PY'
+          import datetime as dt
+          import os
+          import sys
+          sys.path.insert(0, 'scripts/ops')
+          from nightly_dependency_steward import scheduled_cron_is_active
+          raise SystemExit(
+              0 if scheduled_cron_is_active(
+                  dt.datetime.now(dt.timezone.utc), os.environ['SCHEDULED_CRON']
+              ) else 1
+          )
+          PY
+          then
+            echo 'active=true' >>"$GITHUB_OUTPUT"
+          else
+            echo 'active=false' >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Record the inactive redundant cron lane
+        if: ${{ steps.lane.outputs.active != 'true' }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/dependency-steward
+          cat > artifacts/dependency-steward/report.md <<'EOF'
+          # Nightly dependency steward
+
+          Inactive DST cron lane; clean no-op.
+          EOF
+          cat > artifacts/dependency-steward/publish-plan.json <<'EOF'
+          {
+            "contract": "dependency-steward:v1",
+            "phase": "analyze",
+            "status": "inactive-cron-lane",
+            "tickets": [],
+            "pull_requests": []
+          }
+          EOF
+
+      - name: Install pinned Nix
+        if: ${{ steps.lane.outputs.active == 'true' }}
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+
+      - name: Install pinned Rust toolchain
+        if: ${{ steps.lane.outputs.active == 'true' }}
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+
+      - name: Install pinned Node.js and pnpm
+        if: ${{ steps.lane.outputs.active == 'true' }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Install pinned pnpm
+        if: ${{ steps.lane.outputs.active == 'true' }}
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - name: Install the exact Zed package resolver
+        if: ${{ steps.lane.outputs.active == 'true' }}
+        run: >-
+          cargo install --locked
+          --git https://github.com/zed-pkg/zed-cli
+          --rev ad6ff369a763f0fbdc3b677894655c73b23e062c
+          zed-cli
+
+      - name: Analyze every canonical organization
+        if: ${{ steps.lane.outputs.active == 'true' }}
+        shell: bash
+        env:
+          DEPENDENCY_STEWARD_READ_TOKEN: ${{ secrets.DEPENDENCY_STEWARD_READ_TOKEN || secrets.PROJECT_SYNC_GITHUB_TOKEN }}
+          DEPENDENCY_STEWARD_REMEDIATION_ENDPOINT: ${{ secrets.DEPENDENCY_STEWARD_REMEDIATION_ENDPOINT }}
+          DEPENDENCY_STEWARD_REMEDIATION_TOKEN: ${{ secrets.DEPENDENCY_STEWARD_REMEDIATION_TOKEN }}
+          DEPENDENCY_STEWARD_REMEDIATION_COMMAND: ${{ vars.DEPENDENCY_STEWARD_REMEDIATION_COMMAND }}
+        run: |
+          set -euo pipefail
+          args=(
+            --registry ops/registries/portfolio-project-links.csv
+            --artifacts artifacts/dependency-steward
+            --work-root "$RUNNER_TEMP/dependency-steward-analysis"
+            --workers "$INPUT_WORKERS"
+            --max-prs "$INPUT_MAX_PRS"
+          )
+          if test "$INPUT_MAX_REPOSITORIES" -gt 0; then
+            args+=(--max-repositories "$INPUT_MAX_REPOSITORIES")
+          fi
+          if test -n "$INPUT_ORGS"; then
+            IFS=',' read -r -a orgs <<<"$INPUT_ORGS"
+            for org in "${orgs[@]}"; do
+              org="${org#${org%%[![:space:]]*}}"
+              org="${org%${org##*[![:space:]]}}"
+              test -z "$org" || args+=(--org "$org")
+            done
+          fi
+          if test -n "${SCHEDULED_CRON:-}"; then
+            args+=(--scheduled-cron "$SCHEDULED_CRON")
+          fi
+          status=0
+          python scripts/ops/nightly_dependency_steward.py "${args[@]}" || status=$?
+          test -s artifacts/dependency-steward/publish-plan.json
+          test -s artifacts/dependency-steward/report.md
+          printf 'analysis_exit=%s\n' "$status" >> artifacts/dependency-steward/analysis.env
+          cat artifacts/dependency-steward/report.md >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload graph, test evidence, patches, and publish plan
+        id: analysis_artifact
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dependency-steward-analysis-${{ github.run_id }}
+          path: artifacts/dependency-steward/**
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish verified PRs and Linear escalations without running repository code
+    needs: analyze
+    if: >-
+      ${{
+        needs.analyze.outputs.active == 'true' &&
+        (github.event_name == 'schedule' || inputs.apply)
+      }}
+    runs-on: [self-hosted, linux, sonus-ci]
+    timeout-minutes: 120
+    environment: portfolio-project-sync
+    env:
+      INPUT_MAX_PRS: ${{ inputs.max_prs || 200 }}
+    steps:
+      - name: Check out exact publisher revision without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+
+      - name: Download the same-run verified analysis artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+        with:
+          name: dependency-steward-analysis-${{ github.run_id }}
+          path: artifacts/dependency-steward
+
+      - name: Publish exact-base plans
+        shell: bash
+        env:
+          DEPENDENCY_STEWARD_GITHUB_TOKEN: ${{ secrets.DEPENDENCY_STEWARD_GITHUB_TOKEN || secrets.PROJECT_SYNC_GITHUB_TOKEN }}
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          DEPENDENCY_STEWARD_LINEAR_TEAM_ID: ${{ vars.DEPENDENCY_STEWARD_LINEAR_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          status=0
+          python scripts/ops/publish_nightly_dependency_steward.py \
+            --registry ops/registries/portfolio-project-links.csv \
+            --plan artifacts/dependency-steward/publish-plan.json \
+            --artifacts artifacts/dependency-steward-publish \
+            --work-root "$RUNNER_TEMP/dependency-steward-publish" \
+            --max-prs "$INPUT_MAX_PRS" || status=$?
+          test -s artifacts/dependency-steward-publish/publish-report.md
+          cat artifacts/dependency-steward-publish/publish-report.md >>"$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      - name: Upload publication evidence
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dependency-steward-publication-${{ github.run_id }}
+          path: artifacts/dependency-steward-publish/**
+          if-no-files-found: warn
+          retention-days: 30
