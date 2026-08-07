@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
-const sourceRevision = '671378c1d7d91af32e68b2adb3a730c8a732b607';
+const sourceRevision = '4bc6306928e6b7d2fb300ffca07a1bb667a90242';
 const credentialPattern = new RegExp([
   ['gh', 'p_'].join(''),
   ['github', '_pat_'].join(''),
@@ -27,7 +27,7 @@ async function readRepoFile(path) {
   return readFile(resolve(repoRoot, path), 'utf8');
 }
 
-test('nightly PR reconciliation schedule is DST-aware, active, bounded, and immutable', async () => {
+test('nightly governed reconciliation schedule is DST-aware, active, bounded, and immutable', async () => {
   const cronjob = await readRepoFile(`${overlay}/nightly-pr-reconciliation.cronjob.yaml`);
 
   assert.match(cronjob, /kind: CronJob/);
@@ -39,6 +39,10 @@ test('nightly PR reconciliation schedule is DST-aware, active, bounded, and immu
   assert.match(cronjob, /startingDeadlineSeconds: 3600/);
   assert.match(cronjob, /activeDeadlineSeconds: 43200/);
   assert.match(cronjob, /backoffLimit: 0/);
+  assert.match(cronjob, /denman\.linear\.app\/linear-reconciliation-issue: DEN-2876/);
+  assert.match(cronjob, /dd\.dev\/required-linear-opinion-agents: "chatgpt,claude"/);
+  assert.match(cronjob, /dd\.dev\/linear-draft-status: Backlog/);
+  assert.match(cronjob, /dd\.dev\/linear-pending-status: Todo/);
   assert.match(cronjob, /dd\.dev\/readiness-threshold-exclusive: "0\.995"/);
   assert.match(cronjob, /dd\.dev\/minimum-continuous-open-hours: "55"/);
   assert.match(cronjob, new RegExp(`dd\\.dev/source-revision: ${sourceRevision}`));
@@ -50,22 +54,36 @@ test('nightly PR reconciliation schedule is DST-aware, active, bounded, and immu
   assert.doesNotMatch(cronjob, /:(?:main|latest)\s*$/m);
 });
 
-test('bootstrap verifies exact source and dispatches through the deployed worker lane', async () => {
+test('bootstrap verifies exact source and dispatches GitHub and Linear reconciliation together', async () => {
   const config = await readRepoFile(`${overlay}/nightly-pr-reconciliation.configmap.yaml`);
 
   assert.match(config, /SOURCE_REPOSITORY = 'project-registry'/);
   assert.match(config, /commits\/\$\{revision\}/);
   assert.match(config, /commit\?\.sha !== revision/);
-  assert.match(config, /src\/nightly-pr-reconciliation\.mjs/);
-  assert.match(config, /registry\/nightly-pr-reconciliation\.json/);
-  assert.match(config, /registry\/nightly-interdependency\.json/);
+  for (const source of [
+    'src/nightly-pr-reconciliation.mjs',
+    'src/nightly-linear-reconciliation.mjs',
+    'src/nightly-linear-reconciliation-policy.mjs',
+    'src/nightly-linear-reconciliation-stage.mjs',
+    'registry/nightly-pr-reconciliation.json',
+    'registry/nightly-linear-reconciliation.json',
+    'registry/nightly-interdependency.json'
+  ]) {
+    assert.match(config, new RegExp(source.replaceAll('.', '\\.')));
+  }
   assert.match(config, /loadNightlyPrReconciliationPolicy/);
+  assert.match(config, /loadNightlyLinearReconciliationPolicy/);
   assert.match(config, /createNightlyPrReconciliationPlan/);
+  assert.match(config, /createNightlyLinearReconciliationPlan/);
   assert.match(config, /dispatchNightlyPrReconciliationPlan/);
+  assert.match(config, /dispatchNightlyLinearReconciliationPlan/);
+  assert.match(config, /required_linear_agents: linearPolicy\.execution\.agents/);
+  assert.match(config, /linear_draft_status: linearPolicy\.statusMapping\.denman\.draft/);
+  assert.match(config, /linear_pending_status: linearPolicy\.statusMapping\.denman\.pending/);
   assert.match(config, /logical_task_type: job\.request\.task_type/);
   assert.match(config, /task_type: queueTaskType/);
   assert.match(config, /queueTaskType !== 'nightly_org_maintenance'/);
-  assert.match(config, /nightly_pr_reconciliation_run\.v1/);
+  assert.match(config, /nightly_governed_reconciliation_run\.v1/);
   assert.doesNotMatch(config, credentialPattern);
 });
 
@@ -87,7 +105,7 @@ test('credentials, pod security, and egress remain least-privilege', async () =>
   assert.doesNotMatch(`${cronjob}\n${networkPolicy}`, credentialPattern);
 });
 
-test('Kustomize includes every nightly PR reconciliation resource', async () => {
+test('Kustomize includes every nightly governed reconciliation resource', async () => {
   const kustomization = await readRepoFile(`${overlay}/kustomization.yaml`);
   for (const resource of [
     'nightly-pr-reconciliation.configmap.yaml',
