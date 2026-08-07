@@ -45,3 +45,8 @@ For 3FA interfaces, the reviewed rule is:
 The continuity server independently allowlists only `3FA-app/3fa-interfaces` and `.github/workflows/gha-clone-contracts.yml`. The bounded workflow maps its Node job to `node-hardened-test` and its generated-Rust job to `rust-generated-verify`. The generated-Rust profile accepts one exact command sequence targeting `generated/rust/Cargo.toml`; reordered, additional, or alternate Cargo commands are not approximated.
 
 Neither exact rule authorizes sibling repositories, organization-wide profile execution, publication, formal-model downloads, secrets, environments, service containers, or caller-selected commands.
+The GHA continuity server reserves the exact `messaging-intel/msgint-connectors` repository and `.github/workflows/gha-clone-operator-config.yml` workflow path, requires reviewed revision `a9cc977d78347ec0efdbe8e6766967f80d425882`, validates the exact workflow name, trigger, ordered DAG, action SHAs, action inputs, and command arrays before privileged profile assignment, and sends only the canonical HTTPS repository URL plus a fixed profile name to the build server. A reserved identity mismatch is terminal and cannot fall back to `node-verify`.
+
+This reservation is additive and does not widen the existing organization-prefix rules: another Messaging Intel repository, another workflow path, another revision, or another command sequence must be admitted by a separate reviewed contract before it can receive a fixed executable profile.
+
+Permanent pull-request verification is read-only. Branch-normalization or materialization helpers must remove themselves before review readiness; no `contents: write` job is part of the accepted Messaging Intel continuity workflow.

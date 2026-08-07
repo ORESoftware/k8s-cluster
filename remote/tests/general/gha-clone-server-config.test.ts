@@ -36,6 +36,8 @@ const continuityPatchPath =
   'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml';
 const profileAdmissionDocPath = 'docs/gha-profile-repository-admission.md';
 const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';
+const genericPlannerPath =
+  'remote/deployments/gha-clone-server-rs/src/planner.rs';
 const serverPath = 'remote/deployments/gha-clone-server-rs/src/main.rs';
 const routerSourcePaths = [
   'remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs',
