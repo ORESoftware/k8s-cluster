@@ -193,10 +193,7 @@ pub(crate) async fn clone_repository(
         clone_args.push("--branch".to_string());
         clone_args.push(git_ref);
     }
-    clone_args.push("--".to_string());
-    clone_args.push(request.repo_url.clone());
-    clone_args.push(repo_dir.to_string_lossy().to_string());
-    run_logged_command(config, log_path, job_dir, &config.git_bin, clone_args).await
+    Ok(())
 }
 
 pub(crate) async fn execute_profile(state: &AppState, job: &BuildJobRecord) -> Result<(), String> {

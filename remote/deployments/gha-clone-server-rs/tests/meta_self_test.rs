@@ -154,6 +154,7 @@ async fn running_server_submits_the_standalone_workflow_to_the_fixed_build_profi
         .env("GHA_CLONE_BUILD_TIMEOUT_SECONDS", "15")
         .env("GHA_CLONE_MAX_RUNS", "8")
         .env_remove("GHA_CLONE_GITHUB_TOKEN")
+        .env_remove("GHA_CLONE_GITHUB_TOKEN_FILE")
         .env_remove("GHA_CLONE_GITHUB_WEBHOOK_SECRET")
         .stdout(Stdio::null())
         .stderr(Stdio::null())

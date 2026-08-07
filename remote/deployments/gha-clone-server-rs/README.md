@@ -24,7 +24,9 @@ trusted repository, immutable commit SHA, and operator-reviewed profile name to
 `node-hardened-test` for the lifecycle-script-free complete repository test
 suite.
 images, or Kubernetes manifests. It submits only a trusted repository, immutable
-commit SHA, and operator-reviewed profile name to `dd-build-server`.
+commit SHA, and operator-reviewed profile name to `dd-build-server`. Messaging
+Intel uses a dedicated two-job mirror: `node-hardened-verify` for the non-secret
+operator contract and `node-verify` for the complete repository test suite.
 
 ## API
 
@@ -219,6 +221,8 @@ These jobs still receive an ARC classification such as `sonus-ci`,
 | `GHA_CLONE_WEBHOOK_IGNORED_WORKFLOWS` | exact workflow names excluded to prevent fallback recursion |
 | `GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS` | nonzero in-memory delivery-deduplication TTL |
 | `GHA_CLONE_MAX_WEBHOOK_DELIVERIES` | nonzero upper bound on retained delivery UUIDs |
+| `GHA_CLONE_GITHUB_TOKEN_FILE` | preferred projected file containing a rotating GitHub App installation token |
+| `GHA_CLONE_GITHUB_TOKEN` | legacy inline token for local tests; mutually exclusive with the file source |
 | `GHA_CLONE_BUILD_SERVER_URL` | internal `dd-build-server` origin |
 | `GHA_CLONE_BUILD_SERVER_AUTH` | scoped build-server auth |
 | `GHA_CLONE_ALLOWED_REPOSITORIES` | exact comma-separated `owner/repo` allowlist |
@@ -262,6 +266,9 @@ recursion, and duplicate-delivery checks.
 
 Use a GitHub App and External Secrets. Do not put classic PATs, private keys, or
 shared secrets in source, Argo parameters, Linear, logs, URLs, or image layers.
+The Kubernetes deployment projects the installation token as a Secret volume;
+the server reads that file for every workflow fetch so broker rotation is live
+without a restart. Inline and file token sources are mutually exclusive.
 
 ## Deployment state
 

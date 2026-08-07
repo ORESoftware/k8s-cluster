@@ -135,6 +135,108 @@ jobs:
         working-directory: remote/deployments/build-server-rs
         run: cargo test --locked nats_submit::tests -- --nocapture
 
+  msgint-profile-smoke:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_msgint_profile_smoke }}
+    needs: [rust, build-server-profile]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      MSGINT_REVISION: 7d905806b2000479bdacb9b206f33b26a707ba5e
+    steps:
+      - name: Checkout continuity source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Mint a short-lived token for the exact private repository
+        id: msgint-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          private-key: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+          owner: messaging-intel
+          repositories: msgint-connectors
+
+      - name: Checkout the immutable Messaging Intel revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: messaging-intel/msgint-connectors
+          ref: ${{ env.MSGINT_REVISION }}
+          token: ${{ steps.msgint-token.outputs.token }}
+          path: .tmp/msgint-connectors
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Prepare exact fixed profiles
+        id: prepare-msgint
+        run: |
+          set -euo pipefail
+          printf '%s' "$MSGINT_REVISION" | grep -Eq '^[a-f0-9]{40}$'
+          repo_dir="$GITHUB_WORKSPACE/.tmp/msgint-connectors"
+          test "$(git -C "$repo_dir" rev-parse HEAD)" = "$MSGINT_REVISION"
+          python3 <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          source = Path("remote/deployments/build-server-rs/src/profiles.rs").read_text(encoding="utf-8")
+          image_match = re.search(r'const NODE_IMAGE: &str = "([^"]+)";', source)
+          if image_match is None:
+              raise SystemExit("NODE_IMAGE was not found")
+
+          output_dir = Path(os.environ["RUNNER_TEMP"])
+          for profile, constant in (
+              ("node-hardened-verify", "NODE_HARDENED_VERIFY_STEPS"),
+              ("node-verify", "NODE_VERIFY_STEPS"),
+          ):
+              pattern = rf'const {constant}:.*?script: r#"(.*?)"#,\n\}}\];'
+              match = re.search(pattern, source, flags=re.DOTALL)
+              if match is None:
+                  raise SystemExit(f"{constant} script was not found")
+              script_path = output_dir / f"{profile}.sh"
+              script_path.write_text(match.group(1) + "\n", encoding="utf-8")
+              script_path.chmod(0o500)
+
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write(f"image={image_match.group(1)}\n")
+              output.write(f"repo_dir={Path(os.environ['GITHUB_WORKSPACE']) / '.tmp/msgint-connectors'}\n")
+          PY
+
+      - name: Execute both fixed profiles in the reviewed Node image
+        env:
+          PROFILE_IMAGE: ${{ steps.prepare-msgint.outputs.image }}
+          MSGINT_REPO_DIR: ${{ steps.prepare-msgint.outputs.repo_dir }}
+        run: |
+          set -euo pipefail
+          docker pull "$PROFILE_IMAGE"
+          resolved_image="$(docker image inspect --format='{{index .RepoDigests 0}}' "$PROFILE_IMAGE")"
+          case "$resolved_image" in
+            *@sha256:*) ;;
+            *) echo "Node profile image did not resolve to an immutable digest" >&2; exit 1 ;;
+          esac
+          printf 'resolved_node_profile_image=%s\n' "$resolved_image"
+          for profile in node-hardened-verify node-verify; do
+            script="$RUNNER_TEMP/${profile}.sh"
+            test -s "$script"
+            docker run --rm \
+              --pull=never \
+              --cap-drop=ALL \
+              --security-opt=no-new-privileges \
+              --pids-limit=512 \
+              --memory=4g \
+              --cpus=2 \
+              --read-only \
+              --tmpfs /tmp:rw,nosuid,nodev,noexec,size=1g \
+              --network=bridge \
+              -e CI=true \
+              -e HOME=/tmp/home \
+              -v "$MSGINT_REPO_DIR:/workspace:rw" \
+              -v "$script:/profile.sh:ro" \
+              -w /workspace \
+              "$resolved_image" \
+              bash /profile.sh
+          done
+
   contracts:
     runs-on: ubuntu-24.04
     timeout-minutes: 15

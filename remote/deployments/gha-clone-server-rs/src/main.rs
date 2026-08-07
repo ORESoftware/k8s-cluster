@@ -14,8 +14,8 @@ use axum::{
     Json, Router,
 };
 use gha_clone_server::{
-    build_plan, capabilities, is_full_commit_sha, verify_github_signature, PlanRequest,
-    PlannerLimits, WorkflowPlan, SERVICE_NAME,
+    build_plan, capabilities, credentials::TokenSource, is_full_commit_sha,
+    verify_github_signature, PlanRequest, PlannerLimits, WorkflowPlan, SERVICE_NAME,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -139,11 +139,20 @@ impl Config {
     }
 
     fn execution_ready(&self) -> bool {
-        !self.execution_enabled
+        let independent_ready = !self.execution_enabled
             || (self.auth_secret.is_some()
                 && self.build_server_url.is_some()
                 && self.build_server_auth.is_some()
-                && !self.allowed_repositories.is_empty())
+                && !self.allowed_repositories.is_empty());
+        let webhook_ready = !self.webhook_execution_enabled
+            || (self.execution_enabled
+                && self.webhook_secret.is_some()
+                && self
+                    .github_token_source
+                    .as_ref()
+                    .is_some_and(|source| source.read().is_ok())
+                && !self.workflow_rules.is_empty());
+        independent_ready && webhook_ready
     }
 
     fn webhook_execution_ready(&self) -> bool {
@@ -336,7 +345,13 @@ async fn healthz(State(state): State<AppState>) -> Json<Value> {
         "webhookExecutionEnabled": state.config.webhook_execution_enabled,
         "authConfigured": state.config.auth_secret.is_some(),
         "webhookConfigured": state.config.webhook_secret.is_some(),
-        "githubApiConfigured": state.config.github_token.is_some(),
+        "githubApiConfigured": state.config.github_token_source.is_some(),
+        "githubCredentialSource": state
+            .config
+            .github_token_source
+            .as_ref()
+            .map(TokenSource::kind)
+            .unwrap_or("none"),
         "buildServerConfigured": state.config.build_server_url.is_some()
             && state.config.build_server_auth.is_some(),
         "allowedRepositories": state.config.allowed_repositories.len(),
@@ -957,8 +972,8 @@ async fn fetch_workflow(
             state.config.github_api_base_url
         ))
         .header("Accept", "application/vnd.github.raw+json");
-    if let Some(token) = state.config.github_token.as_deref() {
-        request = request.bearer_auth(token);
+    if let Some(source) = state.config.github_token_source.as_ref() {
+        request = request.bearer_auth(source.read()?);
     }
     let response = request
         .send()

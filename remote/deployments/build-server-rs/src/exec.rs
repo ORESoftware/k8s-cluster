@@ -73,8 +73,12 @@ pub(crate) async fn append_log(path: &Path, message: &str, max_bytes: u64) {
     }
 }
 
-pub(crate) async fn pipe_reader<R>(reader: R, log_path: PathBuf, prefix: &'static str, max_bytes: u64)
-where
+pub(crate) async fn pipe_reader<R>(
+    reader: R,
+    log_path: PathBuf,
+    prefix: &'static str,
+    max_bytes: u64,
+) where
     R: AsyncRead + Unpin,
 {
     let mut reader = BufReader::new(reader);
@@ -164,7 +168,7 @@ pub(crate) async fn run_logged_command_inner(
         .stderr(Stdio::piped())
         .kill_on_drop(true);
     if program == config.git_bin {
-        if let Some(auth_header) = config.git_http_auth_header.as_deref() {
+        if let Some(auth_header) = config.git_http_auth_header()? {
             command
                 .env("GIT_CONFIG_COUNT", "1")
                 .env("GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader")
@@ -249,6 +253,7 @@ pub(crate) async fn run_logged_command_inner(
 
 pub(crate) fn build_dependencies_ready(config: &Config) -> bool {
     config.server_auth_secret.is_some()
+        && config.git_credentials_ready()
         && config.work_root.exists()
         && executable_available(&config.git_bin)
         && executable_available(&config.nerdctl_bin)
