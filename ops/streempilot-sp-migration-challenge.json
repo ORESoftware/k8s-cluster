@@ -1,0 +1,13 @@
+{
+  "state": "completed",
+  "purpose": "migrate-preserved-streempilot-repositories-to-canonical-sp-names",
+  "runId": "30974625142",
+  "sourceCommit": "cfc094b8eec296181c132fcb7cc3dcaf7b4dcdc7",
+  "authenticatedActor": "ORESoftware",
+  "legacyBranch": "legacy/pre-sp-migration-20260805",
+  "repositoriesMigrated": 7,
+  "repositoriesAlreadyPresent": 0,
+  "canonicalRepositoriesVerified": 8,
+  "privateKeyStored": false,
+  "plaintextCredentialStored": false
+}
