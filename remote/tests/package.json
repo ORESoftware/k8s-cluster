@@ -64,6 +64,7 @@
     "test:cli:pg-defs-bindings": "pnpm exec tsx --test general/pg-defs-bindings.test.ts",
     "test:cli:pg-sql-centralized": "pnpm exec tsx --test general/pg-sql-centralized.test.ts",
     "test:cli:prometheus-applications": "pnpm exec tsx --test general/prometheus-application-scrape.test.ts general/prometheus-pod-discovery-prerequisites.test.ts",
+    "test:cli:prometheus-direct-scrape": "pnpm exec tsx --test general/prometheus-direct-scrape-contract.test.ts",
     "test:cli:redis-cache-config": "pnpm exec tsx --test general/redis-cache-config.test.ts",
     "test:cli:remote-libs-submodule-contract": "pnpm exec tsx --test general/remote-libs-submodule-contract.test.ts",
     "test:cli:rest-api-route-parity": "pnpm exec tsx --test general/rest-api-route-parity.test.ts",

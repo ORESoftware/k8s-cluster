@@ -1,0 +1,137 @@
+schema_version: 1
+contract: direct-prometheus-scrape
+owner_issue: DEN-666
+cluster_pull_request: ORESoftware/k8s-cluster#180
+defaults:
+  path: /metrics
+  scrape_interval: 15s
+  exposition_content_type: text/plain; version=0.0.4; charset=utf-8
+  public_gateway_exposure: forbidden-by-default
+  label_policy: bounded-non-sensitive
+  current_discovery: static-service-target
+  replica_coverage: service-level-not-guaranteed-per-pod
+
+first_wave:
+  - project: github.com/fiducia-cloud
+    issue: DEN-667
+    source_repository: fiducia-cloud/fiducia-customer.rs
+    source_pull_request: fiducia-cloud/fiducia-customer.rs#21
+    deployment: fiducia/fiducia-backend
+    service: fiducia-backend.fiducia.svc.cluster.local
+    port: 8117
+    implementation: in-process-rust
+    network_policy: observability/app=dd-prometheus -> tcp/8117
+    public_route: app.fiducia.cloud returns 404 for /metrics
+    rollout_dependency: merge application PR before merging the scrape target
+    source_verification: green
+    status: source-ready-rollout-pending
+
+  - project: github.com/canonical-cloud
+    issue: DEN-668
+    source_repository: canonical-cloud/canonical-web-server.rs
+    source_pull_request: canonical-cloud/canonical-web-server.rs#27
+    deployment: canonical-cloud/canonical-cloud-web
+    service: canonical-cloud-web.canonical-cloud.svc.cluster.local
+    port: 8081
+    implementation: in-process-rust
+    network_policy: observability/app=dd-prometheus -> tcp/8081
+    public_route: dormant service is not referenced by the public gateway
+    rollout_dependency: publish and pin an image containing the endpoint before merging the scrape target
+    source_verification: green
+    status: source-ready-image-pending
+
+  - project: github.com/akrion-sim
+    issue: DEN-669
+    source_repository: akrion-sim/akrion-web-server.rs
+    source_pull_request: akrion-sim/akrion-web-server.rs#14
+    deployment: default/dd-akrion-web-server-rs
+    service: dd-akrion-web-server-rs.default.svc.cluster.local
+    port: 8127
+    implementation: in-process-rust
+    network_policy: observability/app=dd-prometheus -> tcp/8127
+    public_route: gateway returns 404 for /akrion-sim/metrics
+    rollout_dependency: merge the application PR and bump the k8s-cluster submodule/revision before merging the scrape target
+    source_verification: green
+    status: source-ready-revision-bump-pending
+
+  - project: github.com/sonus-auris
+    issue: DEN-670
+    source_repository: sonus-auris/sonus-auris-site.web
+    source_pull_request: not-required
+    deployment: default/dd-sonus-auris-site
+    service: dd-sonus-auris-site.default.svc.cluster.local
+    port: 9113
+    implementation: nginx-prometheus-exporter-sidecar
+    network_policy: observability/app=dd-prometheus -> tcp/9113
+    public_route: gateway proxies site port 8080 only and never exporter port 9113
+    rollout_dependency: merge this k8s-cluster change
+    source_verification: direct-scrape-contract-green
+    status: cluster-rollout-pending
+
+project_workstreams:
+  - project: github.com/ORESoftware
+    issue: DEN-671
+    deployed_scope: k8s-cluster-owned application services
+    status: in-progress
+  - project: github.com/daedalus-fab
+    issue: DEN-672
+    deployed_scope: fabrication and monorepo services
+    status: backlog
+  - project: github.com/athlet-o
+    issue: DEN-673
+    deployed_scope: app and backend services
+    status: backlog
+  - project: github.com/usa-acc
+    issue: DEN-674
+    deployed_scope: REST API backend
+    status: backlog
+  - project: github.com/shared-auth
+    issue: DEN-675
+    deployed_scope: auth service and NATS bridge
+    status: backlog
+  - project: github.com/quaestor-ledger
+    issue: DEN-676
+    deployed_scope: billing and ledger services
+    status: backlog
+  - project: github.com/benefactor-cc
+    issue: DEN-677
+    deployed_scope: benefactor backend
+    status: backlog
+  - project: github.com/messaging-intel
+    issue: DEN-678
+    deployed_scope: capture and research services
+    status: backlog
+  - project: github.com/ORESoftware/mip-solver-node.rs
+    issue: DEN-679
+    deployed_scope: in-house MIP solver node
+    status: backlog
+  - project: github.com/ORESoftware/ai-agent-bridge.rs
+    issue: DEN-680
+    deployed_scope: live HTTP and TCP agent bridge
+    status: backlog
+  - project: github.com/claritas-viz
+    issue: DEN-681
+    deployed_scope: data visualization server
+    status: backlog
+  - project: github.com/sagitta-stack
+    issue: DEN-682
+    deployed_scope: Dart HTTP and WebSocket server
+    status: backlog
+  - project: github.com/scintilla-run
+    issue: DEN-683
+    deployed_scope: Gleam lambda runner and monorepo services
+    status: backlog
+
+fleet_follow_ups:
+  - issue: DEN-684
+    project: Shared Platform & Portfolio Architecture
+    scope: replace static Service targets with least-privilege per-pod Kubernetes discovery
+    status: backlog
+
+completion_rule:
+  application: endpoint test passes and merged source is represented by the deployed revision
+  cluster: service DNS and port match the Prometheus target and NetworkPolicy admits the labeled Prometheus pod
+  gateway: metrics are not publicly routed unless explicitly reviewed
+  monitoring: live Prometheus reports up == 1 and target-down alert is loaded
+  replica_follow_up: migrate replica-local metrics from static Service targets to Kubernetes discovery
+  evidence: CI logs and live verification are attached to the owning Linear issue
