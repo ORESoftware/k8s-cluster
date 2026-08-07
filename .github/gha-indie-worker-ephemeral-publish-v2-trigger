@@ -1,0 +1,7 @@
+target-org=gha-indie-worker
+source-repository=ORESoftware/k8s-cluster
+source-sha=5cfac43c6900898f36f588d044ca34083da1c726
+clone-repository=gha-clone-server.rs
+worker-repository=gha-indie-worker.rs
+trusted-main=b75e0b9cdd8b1f09cc9f4a2e61c4a34e122b59fc
+protocol=rsa-oaep-sha256-v2
