@@ -1,0 +1,135 @@
+name: Publish missing organization repositories with protected project token once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-missing-org-repositories-project-token-once.yml
+      - scripts/ops/test_project_token_repository_publisher_workflow.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-missing-organization-repositories-project-token-once
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/main' &&
+      (github.actor == 'ORESoftware' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment: portfolio-project-sync
+    env:
+      GH_TOKEN: ${{ secrets.PROJECT_SYNC_GITHUB_TOKEN }}
+      GITHUB_REPOSITORY_ADMIN_TOKEN: ${{ secrets.PROJECT_SYNC_GITHUB_TOKEN }}
+      EVIDENCE_DIR: ops/evidence/missing-organization-repositories-project-token
+
+    steps:
+      - name: Check out exact trusted main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          show-progress: false
+
+      - name: Bind publication to trusted main and protected credential
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REPOSITORY" = ORESoftware/k8s-cluster
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -n "${GH_TOKEN:-}"
+          test "$GH_TOKEN" = "$GITHUB_REPOSITORY_ADMIN_TOKEN"
+          test "$(gh api user --jq .login)" = ORESoftware
+          for organization in hypesiege StreemPilot; do
+            test "$(gh api "user/memberships/orgs/$organization" --jq '.role + ":" + .state')" = admin:active
+          done
+
+      - name: Run publisher contract suites before mutation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile \
+            scripts/ops/publish_missing_org_repositories.py \
+            scripts/ops/publish_missing_org_repositories_current.py \
+            scripts/ops/private_repository_creation.py \
+            scripts/ops/repository_fleet_visibility.py \
+            scripts/ops/repository_fleet_remote_state.py
+          python3 scripts/ops/test_repository_fleet_visibility.py -v
+          python3 scripts/ops/test_repository_fleet_remote_state.py -v
+          python3 scripts/ops/test_private_fleet_publisher_contract.py -v
+          python3 scripts/ops/test_project_token_repository_publisher_workflow.py -v
+
+      - name: Publish only sealed missing repositories and verify preserved histories
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf "$EVIDENCE_DIR"
+          mkdir -p "$EVIDENCE_DIR"
+          python3 scripts/ops/publish_missing_org_repositories_current.py \
+            2>&1 | tee "$EVIDENCE_DIR/publisher.log"
+          grep -F 'VERIFIED private canonical fleet remote state' "$EVIDENCE_DIR/publisher.log"
+          grep -F 'contract=created-exact-preserved-unchanged' \
+            .github/workflows/ops-publish-missing-org-repositories-gh-profile.yml
+
+      - name: Record exact remote state for the requested gaps
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          targets = [
+              "StreemPilot/streempilot-media-router.rs",
+              "hypesiege/hypesiege-scheduler.rs",
+              "hypesiege/hypesiege-publishing-worker.rs",
+              "hypesiege/hypesiege-analytics.rs",
+          ]
+          evidence = []
+          for full_name in targets:
+              repo = json.loads(subprocess.check_output(
+                  ["gh", "api", f"repos/{full_name}"], text=True
+              ))
+              if repo.get("visibility") != "private" or repo.get("private") is not True:
+                  raise SystemExit(f"{full_name} is not private")
+              if repo.get("default_branch") != "main":
+                  raise SystemExit(f"{full_name} default branch is not main")
+              ref = json.loads(subprocess.check_output(
+                  ["gh", "api", f"repos/{full_name}/git/ref/heads/main"], text=True
+              ))
+              sha = ref.get("object", {}).get("sha")
+              if not isinstance(sha, str) or len(sha) != 40:
+                  raise SystemExit(f"{full_name} has no exact main SHA")
+              evidence.append({
+                  "full_name": full_name,
+                  "repository_id": repo.get("id"),
+                  "visibility": repo.get("visibility"),
+                  "default_branch": repo.get("default_branch"),
+                  "main_sha": sha,
+                  "html_url": repo.get("html_url"),
+              })
+
+          output = Path(os.environ["EVIDENCE_DIR"]) / "requested-gaps.json"
+          output.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")
+          print(f"VERIFIED_REQUESTED_GAPS {len(evidence)}/4")
+          PY
+
+      - name: Upload repository publication evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: missing-organization-repositories-${{ github.run_id }}
+          path: ops/evidence/missing-organization-repositories-project-token
+          if-no-files-found: error
+          retention-days: 30
+          include-hidden-files: true
