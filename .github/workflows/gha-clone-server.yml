@@ -68,7 +68,7 @@ on:
         default: false
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: gha-continuity-${{ github.event_name }}-${{ github.ref }}
