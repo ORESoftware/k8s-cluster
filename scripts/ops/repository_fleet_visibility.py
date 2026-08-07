@@ -215,6 +215,17 @@ def project_private_execution_manifest(
 
     repositories = _validate_reviewed_manifest(reviewed_manifest)
 
+    declared_count = reviewed_manifest.get("repository_count")
+    if declared_count is not None:
+        if isinstance(declared_count, bool) or not isinstance(declared_count, int):
+            raise VisibilityProjectionError(
+                "fleet manifest repository_count is not an integer"
+            )
+        if declared_count != len(repositories):
+            raise VisibilityProjectionError(
+                "fleet manifest repository_count does not match repository ledger"
+            )
+
     projected = deepcopy(reviewed_manifest)
     projected_repositories = projected.get("repositories")
     if not isinstance(projected_repositories, list):
@@ -228,10 +239,16 @@ def project_private_execution_manifest(
         execution["visibility"] = "private"
 
     restored = deepcopy(projected)
-    restored_repositories = restored["repositories"]
+    restored_repositories = restored.get("repositories")
+    if not isinstance(restored_repositories, list):
+        raise VisibilityProjectionError("restored repository ledger is malformed")
     for reviewed, restored_record in zip(
         repositories, restored_repositories, strict=True
     ):
+        if not isinstance(reviewed, dict) or not isinstance(restored_record, dict):
+            raise VisibilityProjectionError(
+                "repository record changed type during projection"
+            )
         restored_record["visibility"] = reviewed["visibility"]
     if restored != reviewed_manifest:
         raise VisibilityProjectionError(

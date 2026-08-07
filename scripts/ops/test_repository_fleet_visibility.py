@@ -83,6 +83,7 @@ class FleetVisibilityProjectionTests(unittest.TestCase):
             [repository["full_name"] for repository in repositories],
             ["example/api.rs", "example/monorepo"],
         )
+        self.assertEqual(projected["repository_count"], 2)
 
     def test_projection_is_a_deep_copy_including_nested_metadata(self) -> None:
         reviewed = self.manifest()
