@@ -32,3 +32,4 @@ Each API request may present exactly one authentication authority: either `X-Ser
 Independent execution remains disabled and the GitOps deployment remains at zero replicas until exact-head formatting, warnings-denied Clippy, all-target tests, deployment contracts, and immutable image evidence are green together.
 
 This boundary complements the AWS/Hetzner executor router: provider selection happens before submission, and status remains pinned to the accepted provider and build identity.
+This boundary complements the AWS/Hetzner executor router: provider selection happens before submission, and status remains pinned to the accepted provider and build identity.
