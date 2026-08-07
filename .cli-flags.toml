@@ -54,18 +54,6 @@ aliases = ["uds-path", "unix-socket"]
 type = "string"
 help = "Unix domain socket path for broker clients."
 
-[flags.auth_token]
-env = "LMX_AUTH_TOKEN"
-aliases = ["auth-token"]
-type = "string"
-help = "Broker client auth token."
-
-[flags.admin_token]
-env = "LMX_ADMIN_TOKEN"
-aliases = ["admin-token"]
-type = "string"
-help = "Admin endpoint auth token."
-
 [flags.status_port]
 env = "LMX_STATUS_PORT"
 aliases = ["status-port"]
@@ -92,13 +80,7 @@ help = "Apply TCP_QUICKACK after broker reads on Linux."
 env = "LMX_TLS_CERT"
 aliases = ["tls-cert"]
 type = "string"
-help = "TLS certificate PEM path."
-
-[flags.tls_key]
-env = "LMX_TLS_KEY"
-aliases = ["tls-key"]
-type = "string"
-help = "TLS private key PEM path."
+help = "TLS certificate PEM path. The private-key path remains environment-only."
 
 [flags.default_ttl_ms]
 env = "LMX_DEFAULT_TTL_MS"
@@ -365,9 +347,3 @@ type = "bool"
 true_aliases = ["t", "1", "yes", "on"]
 false_aliases = ["f", "0", "no", "off"]
 help = "Flush BrokerRaft commit hard-state writes before applying entries."
-
-[flags.raft_peer_token]
-env = "LMX_RAFT_PEER_TOKEN"
-aliases = ["raft-peer-token"]
-type = "string"
-help = "Optional shared secret required on BrokerRaft peer RPC frames."
