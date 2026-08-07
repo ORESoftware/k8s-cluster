@@ -93,6 +93,13 @@ GitOps must copy the exact `ref` from the record matching the reviewed source re
 
 ## Capacity-broker runtime boundary
 
+
+The ledger is idempotent. An identical record for the same `(source_sha, target)` marker creates no new comment. If that marker already exists with a different body or digest, publication stops as a reproducibility conflict. Publishers read every issue-comment page before classifying the marker.
+
+GitOps must copy the exact `ref` from the record matching the reviewed source revision and target. Workflow summaries, mutable `:dev` tags, and mutable or discoverable SHA tags are not release authority.
+
+## Capacity-broker runtime boundary
+
 The broker image contains only the capacity service. Its runtime configuration still requires distinct billing-read and selected-repository mutation GitHub App installations plus an operator authentication secret. Those credentials are mounted by the eventual deployment and are never embedded in the image, build context, attestations, ledger record, or publication workflow.
 
 Image publication does not authorize billing reads or variable mutation. `GHA_MUTATION_ENABLED` remains false until runner groups, official ARC scale sets, hosted-versus-ARC parity, provider-loss behavior, exact organization billing evidence, and rollback are independently certified.
