@@ -44,9 +44,11 @@ Repository-wide observability coverage requires the clone server, executor route
 6. Image scans that fail on fixable HIGH or CRITICAL findings. The scanner action is pinned to the immutable safe Trivy 0.35.0 commit using Trivy 0.69.3.
 7. Positive and adversarial tests for immutable release-metadata rendering, idempotency, conflict detection, permissions, and credential-marker rejection.
 
-The pull-request job has read-only repository permissions and does not receive package-write or issue-write permission. Repository-wide observability coverage also requires `dd-gha-executor-router` in both the exporter source default and the deployed `WATCH_APPS` override, so the runtime cannot be activated without workload-level metrics.
+The capacity-broker smoke mounts two distinct dummy GitHub App key paths, keeps `GHA_MUTATION_ENABLED=false`, and proves `/healthz`, `/readyz`, `/api/v1/capabilities`, and `/metrics` without requesting an installation token or contacting the GitHub API.
 
-The release workflow is evaluated against `dev` after `f99c1118a432d55e76d5123240bc6dc8514f68a0`. That baseline removed the redundant inline `GHA_EXECUTOR_ROUTER_SECRET_ROOT` value while preserving the same fail-closed code default, direct-child credential path, and mode-0400 projected Secret. The image and ledger PR must not reintroduce credential-shaped inline values or weaken the repository-wide secret scanner.
+Pull-request jobs have read-only repository permissions and do not receive package-write or issue-write permission. Trusted publication jobs use only the workflow-scoped `GITHUB_TOKEN`; no PAT, GitHub App private key, ARC registration credential, billing credential, mutation credential, executor credential, repository secret, or workflow-provided customer value is used.
+
+Repository-wide observability coverage requires the clone server, executor router, Sonus capacity broker, and StreemPilot capacity broker in the applicable resource-exporter inventories before activation.
 
 ## Publication
 
@@ -116,21 +118,35 @@ Image publication does not authorize billing reads or variable mutation. `GHA_MU
 
 ## GHA continuity OCI release digest ledger
 
-The trusted publisher also appends one validated machine-readable record per target to `ORESoftware/k8s-cluster#702`. Each record binds:
+The trusted publishers append one validated machine-readable record per target to `ORESoftware/k8s-cluster#702`. The allowed target/image identities are exactly:
+
+| Target | Canonical image |
+| --- | --- |
+| `clone-server` | `ghcr.io/oresoftware/gha-clone-server` |
+| `executor-router` | `ghcr.io/oresoftware/gha-executor-router` |
+| `capacity-broker` | `ghcr.io/oresoftware/gha-capacity-broker` |
+
+Each record binds:
 
 - schema version;
 - source repository;
 - exact 40-hex source revision;
-- Docker target;
+- release target;
 - canonical GHCR image;
 - lowercase `sha256:` digest;
 - canonical `image@sha256` deployment reference.
 
-Publication uses only the workflow-scoped `GITHUB_TOKEN`. The trusted publish job has `packages: write` and `issues: write`; pull-request validation remains read-only and the publish job is skipped for pull requests. No personal token, GitHub App private key, Actions runner-registration credential, executor credential, repository secret, workflow input, or customer value is required or written.
+Publication uses only the workflow-scoped `GITHUB_TOKEN`. Trusted publish jobs have `packages: write` and `issues: write`; pull-request validation remains read-only and publication is skipped for pull requests.
 
-The ledger is idempotent. An identical record for the same `(source_sha, target)` marker creates no new comment. If that marker already exists with a different body or digest, publication stops as a reproducibility conflict. The publisher reads every issue-comment page before classifying the marker.
+The ledger is idempotent. An identical record for the same `(source_sha, target)` marker creates no new comment. If that marker already exists with a different body or digest, publication stops as a reproducibility conflict. Publishers read every issue-comment page before classifying the marker.
 
-GitOps must copy the exact `ref` from the record matching the reviewed source revision and target. The workflow summary, mutable `:dev` tag, and mutable or discoverable SHA tag are not release authority.
+GitOps must copy the exact `ref` from the record matching the reviewed source revision and target. Workflow summaries, mutable `:dev` tags, and mutable or discoverable SHA tags are not release authority.
+
+## Capacity-broker runtime boundary
+
+The broker image contains only the capacity service. Its runtime configuration still requires distinct billing-read and selected-repository mutation GitHub App installations plus an operator authentication secret. Those credentials are mounted by the eventual deployment and are never embedded in the image, build context, attestations, ledger record, or publication workflow.
+
+Image publication does not authorize billing reads or variable mutation. `GHA_MUTATION_ENABLED` remains false until runner groups, official ARC scale sets, hosted-versus-ARC parity, provider-loss behavior, exact organization billing evidence, and rollback are independently certified.
 
 ## Activation boundary
 
