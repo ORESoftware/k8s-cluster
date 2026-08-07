@@ -425,10 +425,27 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
     if not isinstance(records, list) or len(records) != 32:
         fail("reviewed fleet repository ledger is malformed")
 
+    # Preserve the sealed reviewed ledger as provenance, but execute with the
+    # repository visibility currently enforced by the protected publisher.
+    # The projection helper proves that visibility is the only changed field.
+    execution_manifest = project_private_execution_manifest(generated_manifest)
+    execution_manifest_path.write_text(
+        json.dumps(execution_manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    execution_records = execution_manifest.get("repositories")
+    if not isinstance(execution_records, list) or len(execution_records) != 32:
+        fail("private execution manifest repository ledger is malformed")
+    if any(record.get("visibility") != "private" for record in execution_records):
+        fail("private execution manifest contains a non-private repository")
+    print(
+        "VERIFIED private execution projection for 32 reviewed repository histories"
+    )
+
     environment = os.environ.copy()
     environment["GITHUB_REPOSITORY_ADMIN_TOKEN"] = MODULE.TOKEN
 
-    for record in records:
+    for record in execution_records:
         if not isinstance(record, dict):
             fail("reviewed fleet contains a non-object repository record")
         full_name = record.get("full_name")
@@ -439,7 +456,7 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
                 sys.executable,
                 str(publisher),
                 "--manifest",
-                str(generated_manifest_path),
+                str(execution_manifest_path),
                 "--source-root",
                 str(source_root),
                 "--repository",
@@ -451,7 +468,7 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
             env=environment,
         )
 
-    for record in records:
+    for record in execution_records:
         full_name = str(record["full_name"])
         expected = str(record["commit"])
         actual = MODULE.main_ref(full_name)
