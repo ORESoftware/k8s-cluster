@@ -9,3 +9,6 @@ resources:
   - service.yaml
   - ingress.yaml
   - networkpolicy.yaml
+  - nightly-interdependency.configmap.yaml
+  - nightly-interdependency.cronjob.yaml
+  - nightly-interdependency.networkpolicy.yaml
