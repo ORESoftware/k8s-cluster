@@ -1,0 +1,161 @@
+name: Replay Messaging Intel hardening on current dev once
+
+on:
+  pull_request:
+    branches:
+      - dev
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - '.github/workflows/replay-msgint-current-dev-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: replay-msgint-current-dev-once
+  cancel-in-progress: false
+
+jobs:
+  replay:
+    if: ${{ github.head_ref == 'agent/msgint-gha-clone-current-dev-final-20260804' && github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      FEATURE_BRANCH: agent/msgint-gha-clone-current-dev-final-20260804
+      SOURCE_REVISION: 353b70a3c07e42d0879e3eecf7ae4230326c052a
+    steps:
+      - name: Check out the exact current-dev feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/msgint-gha-clone-current-dev-final-20260804
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Replay only reviewed non-workflow Messaging Intel files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$SOURCE_REVISION"
+          test "$(git rev-parse FETCH_HEAD)" = "$SOURCE_REVISION"
+          files=(
+            docs/gha-profile-repository-admission.md
+            remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml
+            remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml
+            remote/deployments/build-server-rs/readme.md
+            remote/deployments/build-server-rs/src/profiles.rs
+            remote/deployments/build-server-rs/src/validation.rs
+            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/package-lock.json
+            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/package.json
+            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/src/operator-config.mjs
+            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/test/operator-config.test.mjs
+            remote/deployments/gha-clone-server-rs/README.md
+            remote/deployments/gha-clone-server-rs/src/lib.rs
+            remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml
+            remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs
+            remote/deployments/gha-clone-server-rs/tests/planner_adversarial.rs
+            remote/tests/general/gha-clone-server-msgint.test.ts
+          )
+          for path in "${files[@]}"; do
+            mkdir -p -- "$(dirname -- "$path")"
+            git show "$SOURCE_REVISION:$path" >"$path"
+          done
+          git diff --check
+          test -z "$(git diff --name-only | grep '^remote/tests/general/gha-clone-server-config.test.ts$' || true)"
+          test "$(grep -c '952623b07fd83caa3a83ee27bdea293f6bd4372f' \
+            remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs)" = 1
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate the complete clone-server crate
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+          cargo test --locked --test executor_router_http -- --nocapture
+
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Validate build-server idempotency, NATS, profiles, and admission
+        working-directory: remote/deployments/build-server-rs
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 --config skip_children=true --check \
+            src/jobs.rs \
+            src/main.rs \
+            src/nats_submit.rs \
+            src/profiles.rs \
+            src/validation.rs
+          cargo check --locked --all-targets
+          cargo test --locked --bin dd-build-server -- --nocapture
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Execute the credential-free hardened Node fixture
+        working-directory: remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm run check
+          npm run test:operator-config
+          npm audit --audit-level=high
+          npm test
+
+      - name: Validate current-dev activation and Messaging Intel contracts
+        run: |
+          set -euo pipefail
+          pnpm install --dir remote/tests --frozen-lockfile
+          pnpm --dir remote/tests exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-server-msgint.test.ts \
+            general/gha-clone-webhook-config.test.ts
+          node --test remote/tests/general/gha-executor-router-activation.test.mjs
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/repo:ro" \
+            -w /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            .github/workflows/gha-clone-server.yml \
+            .github/workflows/gha-clone-server-meta.yml \
+            remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml
+
+      - name: Commit the validated non-workflow replay
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            docs/gha-profile-repository-admission.md \
+            remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml \
+            remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml \
+            remote/deployments/build-server-rs/readme.md \
+            remote/deployments/build-server-rs/src/profiles.rs \
+            remote/deployments/build-server-rs/src/validation.rs \
+            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile \
+            remote/deployments/gha-clone-server-rs/README.md \
+            remote/deployments/gha-clone-server-rs/src/lib.rs \
+            remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml \
+            remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs \
+            remote/deployments/gha-clone-server-rs/tests/planner_adversarial.rs \
+            remote/tests/general/gha-clone-server-msgint.test.ts
+          test -z "$(git diff --cached --name-only | grep '^\.github/workflows/' || true)"
+          git diff --cached --check
+          git commit -m 'test(gha-clone): replay Messaging Intel on current dev'
+          git push origin "HEAD:$FEATURE_BRANCH"
