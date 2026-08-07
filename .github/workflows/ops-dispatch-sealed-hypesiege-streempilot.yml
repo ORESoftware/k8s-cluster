@@ -1,4 +1,5 @@
 name: Dispatch sealed HypeSiege and StreemPilot publication
+run-name: Dispatch sealed fleet from trusted main ${{ github.sha }}
 
 on:
   push:
