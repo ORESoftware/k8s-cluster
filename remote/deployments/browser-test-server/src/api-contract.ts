@@ -267,8 +267,14 @@ export class ApiContractRegistry {
     this.#routes.push(route);
 
     const bodySchema = route.body;
+    // Fastify's default AJV configuration mutates objects while evaluating
+    // `oneOf` branches (`removeAdditional`). A discriminated-union scenario can
+    // therefore lose fields in an earlier branch before its matching branch is
+    // considered. Keep the generated JSON Schema for OpenAPI documentation,
+    // but make the original Zod schema the single authoritative request-body
+    // validator. Fastify still parses JSON, applies body limits, and serializes
+    // responses from the schemas below.
     const schema: FastifySchema = {
-      ...(bodySchema ? { body: jsonSchema(bodySchema) } : {}),
       response: responseSchemas(route),
     };
 

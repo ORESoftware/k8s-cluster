@@ -1,0 +1,55 @@
+name: fix browser timeout driver type once
+
+on:
+  push:
+    branches:
+      - agent/browser-test-zod-boundary-fix-20260801
+    paths:
+      - '.github/workflows/ops-fix-browser-timeout-types-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-browser-timeout-driver-type-once
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/browser-test-zod-boundary-fix-20260801
+          fetch-depth: 0
+
+      - name: Apply asserted type correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('remote/deployments/browser-test-server/src/server.ts')
+          text = path.read_text(encoding='utf-8')
+          old = '    const driver = activeDriver;\n    if (driver) await driver.close().catch(() => undefined);'
+          new = '    const driver = activeDriver as ScenarioDriver | null;\n    if (driver) await driver.close().catch(() => undefined);'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one timeout catch snapshot, found {text.count(old)}')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+          rm .github/workflows/ops-fix-browser-timeout-types-once.yml
+          git diff --check
+
+      - name: Commit correction and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'ORESoftware automation'
+          git config user.email 'actions@users.noreply.github.com'
+          git add \
+            remote/deployments/browser-test-server/src/server.ts \
+            .github/workflows/ops-fix-browser-timeout-types-once.yml
+          git commit -m 'fix(browser-test): type timeout driver snapshot'
+          git push origin HEAD:agent/browser-test-zod-boundary-fix-20260801
