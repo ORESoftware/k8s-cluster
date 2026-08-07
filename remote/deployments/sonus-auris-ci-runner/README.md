@@ -5,6 +5,8 @@ labeled `sonus-ci`. It extends GitHub's official Actions runner image and adds
 native compiler, desktop, and browser libraries used by Sonus Auris Rust,
 Node/browser, Flutter web, and Flutter Linux jobs. Package-managed browser
 binaries remain selected and installed by each repository's lockfile/workflow.
+native libraries used by Sonus Auris Rust, browser, Flutter web, and Flutter
+Linux jobs.
 
 It intentionally does **not** provide Docker-in-Docker, a host Docker socket,
 Kubernetes credentials, Android KVM, Apple toolchains, signing credentials, or
@@ -46,6 +48,8 @@ A candidate image must prove all of the following in an isolated test namespace:
 - Rust formatting, clippy, tests, docs, and packaging work;
 - Node lockfile installation and the repository-selected
   Puppeteer/Playwright/Selenium browser binaries and smokes work;
+- Node lockfile installation and Chromium-based Puppeteer/Playwright/Selenium
+  smokes work;
 - Dart formatting, analysis, tests, and package dry-runs work;
 - Flutter analysis/tests, production web builds, and Linux desktop compilation
   work;
