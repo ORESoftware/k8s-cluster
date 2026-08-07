@@ -9,11 +9,15 @@ metadata:
     app.kubernetes.io/part-of: project-automation
   annotations:
     denman.linear.app/issue: DEN-801
+    denman.linear.app/linear-reconciliation-issue: DEN-2876
     denman.linear.app/dependency-issue: DEN-2745
     dd.dev/source-repository: ORESoftware/project-registry
-    dd.dev/source-revision: 671378c1d7d91af32e68b2adb3a730c8a732b607
+    dd.dev/source-revision: 4bc6306928e6b7d2fb300ffca07a1bb667a90242
     dd.dev/readiness-threshold-exclusive: "0.995"
     dd.dev/minimum-continuous-open-hours: "55"
+    dd.dev/required-linear-opinion-agents: "chatgpt,claude"
+    dd.dev/linear-draft-status: Backlog
+    dd.dev/linear-pending-status: Todo
     dd.dev/coordinator-task-type: nightly_org_maintenance
 spec:
   schedule: "0 1 * * *"
@@ -36,11 +40,15 @@ spec:
             app.kubernetes.io/part-of: project-automation
           annotations:
             denman.linear.app/issue: DEN-801
+            denman.linear.app/linear-reconciliation-issue: DEN-2876
             denman.linear.app/dependency-issue: DEN-2745
             dd.dev/source-repository: ORESoftware/project-registry
-            dd.dev/source-revision: 671378c1d7d91af32e68b2adb3a730c8a732b607
+            dd.dev/source-revision: 4bc6306928e6b7d2fb300ffca07a1bb667a90242
             dd.dev/readiness-threshold-exclusive: "0.995"
             dd.dev/minimum-continuous-open-hours: "55"
+            dd.dev/required-linear-opinion-agents: "chatgpt,claude"
+            dd.dev/linear-draft-status: Backlog
+            dd.dev/linear-pending-status: Todo
             dd.dev/coordinator-task-type: nightly_org_maintenance
         spec:
           automountServiceAccountToken: false
@@ -65,7 +73,7 @@ spec:
                 - /etc/nightly-pr-reconciliation/bootstrap.mjs
               env:
                 - name: PROJECT_REGISTRY_REVISION
-                  value: 671378c1d7d91af32e68b2adb3a730c8a732b607
+                  value: 4bc6306928e6b7d2fb300ffca07a1bb667a90242
                 - name: AI_AGENT_COORDINATOR_URL
                   value: http://ai-agent-coordinator.ai-agent-coordinator.svc.cluster.local:8080
                 - name: COORDINATOR_TASK_TYPE
