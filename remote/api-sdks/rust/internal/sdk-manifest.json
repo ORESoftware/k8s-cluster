@@ -1,14 +1,28 @@
 {
-  "schemaVersion": 1,
-  "language": "rust",
-  "scope": "internal",
-  "packageName": "oresoftware-k8s-api-sdk-internal",
-  "generatedBy": "remote/tools/generate-api-sdks.mjs",
+  "catalogFileSha256": "64df987084745bbb80725bf6f7e59827f0f5e6fe0f83047d3fe7a64581e4a528",
   "catalogPath": "remote/api-sdks/contracts/internal.json",
   "catalogSha256": "ae1ce6bfb16657296304863f0dde0395858173c3acd113fcfa93b11dc43e1288",
-  "catalogFileSha256": "64df987084745bbb80725bf6f7e59827f0f5e6fe0f83047d3fe7a64581e4a528",
-  "serviceCount": 44,
+  "generatedBy": "remote/tools/generate-api-sdks.mjs",
+  "generatedFiles": [
+    {
+      "path": "Cargo.toml",
+      "sha256": "9b6bc555044c0baf54d77c62444e0de3ae60b89501a0234973fb236b540289a8"
+    },
+    {
+      "path": "src/lib.rs",
+      "sha256": "18b4b5e002513a0729b01cdb5a7fcdf8379045d1699cbda2d044eb8566310583"
+    },
+    {
+      "path": "src/lib.rs",
+      "sha256": "03f068ad9b30f380d890c099bf14f1aa5f27528f79760b7a5c6835786c4c3e7c"
+    }
+  ],
+  "language": "rust",
   "operationCount": 943,
+  "packageName": "oresoftware-k8s-api-sdk-internal",
+  "schemaVersion": 1,
+  "scope": "internal",
+  "serviceCount": 44,
   "skippedServices": [
     {
       "service": "billing-server-rs",
@@ -44,16 +58,6 @@
       "deploymentPath": "remote/deployments/usacc-rest-api-backend-rs",
       "sourceRepository": "git@github.com:usa-acc/rest-api-backend.rs.git",
       "reason": "uninitialized-deployment-gitlink"
-    }
-  ],
-  "generatedFiles": [
-    {
-      "path": "Cargo.toml",
-      "sha256": "9b6bc555044c0baf54d77c62444e0de3ae60b89501a0234973fb236b540289a8"
-    },
-    {
-      "path": "src/lib.rs",
-      "sha256": "18b4b5e002513a0729b01cdb5a7fcdf8379045d1699cbda2d044eb8566310583"
     }
   ]
 }

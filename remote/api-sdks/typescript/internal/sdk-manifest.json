@@ -1,14 +1,40 @@
 {
-  "schemaVersion": 1,
-  "language": "typescript",
-  "scope": "internal",
-  "packageName": "@oresoftware/k8s-api-sdk-internal",
-  "generatedBy": "remote/tools/generate-api-sdks.mjs",
+  "catalogFileSha256": "64df987084745bbb80725bf6f7e59827f0f5e6fe0f83047d3fe7a64581e4a528",
   "catalogPath": "remote/api-sdks/contracts/internal.json",
   "catalogSha256": "ae1ce6bfb16657296304863f0dde0395858173c3acd113fcfa93b11dc43e1288",
-  "catalogFileSha256": "64df987084745bbb80725bf6f7e59827f0f5e6fe0f83047d3fe7a64581e4a528",
-  "serviceCount": 44,
+  "generatedBy": "remote/tools/generate-api-sdks.mjs",
+  "generatedFiles": [
+    {
+      "path": "package.json",
+      "sha256": "bd73e76f55c023e7a85ed8984acf261de195766d00b5c1b8392b13ded16a87f5"
+    },
+    {
+      "path": "src/index.ts",
+      "sha256": "0ea1938ed38780918354553ce85bc4f16190f5e627beeadef576fdb26d8395fd"
+    },
+    {
+      "path": "test/smoke.test.mjs",
+      "sha256": "88b935cfde99458ea76b843ff24cae8a5d4c05234297f5d6ffe3aa5f441e5507"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "8389d10e7382c7963607242dd57897f99be20fed8d43cb49a612088f1dadd7a7"
+    },
+    {
+      "path": "src/index.ts",
+      "sha256": "804676b8610a3f7f108fd4d3621ba983c61d6ab132c9d045a84042e7941d2d27"
+    },
+    {
+      "path": "test/smoke.test.mjs",
+      "sha256": "3684bc3c6355c8fc9e15c9eaaa80c356e2e99e9822488fd2d0d16380c3c3fc2e"
+    }
+  ],
+  "language": "typescript",
   "operationCount": 943,
+  "packageName": "@oresoftware/k8s-api-sdk-internal",
+  "schemaVersion": 1,
+  "scope": "internal",
+  "serviceCount": 44,
   "skippedServices": [
     {
       "service": "billing-server-rs",
@@ -44,24 +70,6 @@
       "deploymentPath": "remote/deployments/usacc-rest-api-backend-rs",
       "sourceRepository": "git@github.com:usa-acc/rest-api-backend.rs.git",
       "reason": "uninitialized-deployment-gitlink"
-    }
-  ],
-  "generatedFiles": [
-    {
-      "path": "package.json",
-      "sha256": "bd73e76f55c023e7a85ed8984acf261de195766d00b5c1b8392b13ded16a87f5"
-    },
-    {
-      "path": "src/index.ts",
-      "sha256": "0ea1938ed38780918354553ce85bc4f16190f5e627beeadef576fdb26d8395fd"
-    },
-    {
-      "path": "test/smoke.test.mjs",
-      "sha256": "88b935cfde99458ea76b843ff24cae8a5d4c05234297f5d6ffe3aa5f441e5507"
-    },
-    {
-      "path": "tsconfig.json",
-      "sha256": "8389d10e7382c7963607242dd57897f99be20fed8d43cb49a612088f1dadd7a7"
     }
   ]
 }

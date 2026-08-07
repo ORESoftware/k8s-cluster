@@ -1,14 +1,28 @@
 {
-  "schemaVersion": 1,
-  "language": "rust",
-  "scope": "public",
-  "packageName": "oresoftware-k8s-api-sdk-public",
-  "generatedBy": "remote/tools/generate-api-sdks.mjs",
+  "catalogFileSha256": "466aac12982428e724553c9d33f656efaa79df4443536626ccbb06cbc24558f7",
   "catalogPath": "remote/api-sdks/contracts/public.json",
   "catalogSha256": "dd6cd2dfce13705381cfcc79c99d9f2b7e7307fc846e28609defe908e9859689",
-  "catalogFileSha256": "466aac12982428e724553c9d33f656efaa79df4443536626ccbb06cbc24558f7",
-  "serviceCount": 44,
+  "generatedBy": "remote/tools/generate-api-sdks.mjs",
+  "generatedFiles": [
+    {
+      "path": "Cargo.toml",
+      "sha256": "f0880e4b9bec0f568600b477adc912b80709610a183092ebc0201d8434341a28"
+    },
+    {
+      "path": "src/lib.rs",
+      "sha256": "888f4fe171d4d0b6cdc102f904f4e6f55c2eccad06d2f0792dc9d62ce25682c5"
+    },
+    {
+      "path": "src/lib.rs",
+      "sha256": "c80963fe5de1011de3f13fa9a7c2cea083278338311e5a7ec6251256d37e597e"
+    }
+  ],
+  "language": "rust",
   "operationCount": 279,
+  "packageName": "oresoftware-k8s-api-sdk-public",
+  "schemaVersion": 1,
+  "scope": "public",
+  "serviceCount": 44,
   "skippedServices": [
     {
       "service": "billing-server-rs",
@@ -44,16 +58,6 @@
       "deploymentPath": "remote/deployments/usacc-rest-api-backend-rs",
       "sourceRepository": "git@github.com:usa-acc/rest-api-backend.rs.git",
       "reason": "uninitialized-deployment-gitlink"
-    }
-  ],
-  "generatedFiles": [
-    {
-      "path": "Cargo.toml",
-      "sha256": "f0880e4b9bec0f568600b477adc912b80709610a183092ebc0201d8434341a28"
-    },
-    {
-      "path": "src/lib.rs",
-      "sha256": "888f4fe171d4d0b6cdc102f904f4e6f55c2eccad06d2f0792dc9d62ce25682c5"
     }
   ]
 }

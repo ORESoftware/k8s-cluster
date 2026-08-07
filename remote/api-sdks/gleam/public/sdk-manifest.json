@@ -1,14 +1,36 @@
 {
-  "schemaVersion": 1,
-  "language": "gleam",
-  "scope": "public",
-  "packageName": "oresoftware_k8s_api_sdk_public",
-  "generatedBy": "remote/tools/generate-api-sdks.mjs",
+  "catalogFileSha256": "466aac12982428e724553c9d33f656efaa79df4443536626ccbb06cbc24558f7",
   "catalogPath": "remote/api-sdks/contracts/public.json",
   "catalogSha256": "dd6cd2dfce13705381cfcc79c99d9f2b7e7307fc846e28609defe908e9859689",
-  "catalogFileSha256": "466aac12982428e724553c9d33f656efaa79df4443536626ccbb06cbc24558f7",
-  "serviceCount": 44,
+  "generatedBy": "remote/tools/generate-api-sdks.mjs",
+  "generatedFiles": [
+    {
+      "path": "gleam.toml",
+      "sha256": "d8df4ca64f5aaea70e55c24f04202b5ef83bdd100dd4165188464144a43da9fe"
+    },
+    {
+      "path": "src/dd_api_sdk.gleam",
+      "sha256": "bcb5f59dbf08a4d5ec9a28d3889b7808e687621ae80a930597e67869d150e410"
+    },
+    {
+      "path": "test/oresoftware_k8s_api_sdk_public_test.gleam",
+      "sha256": "a355aa33dca1cec47325f81fe5808e44044e8f7ca4fd955309d4b463fe3e8990"
+    },
+    {
+      "path": "src/dd_api_sdk.gleam",
+      "sha256": "ed2e8e7a56383af63a174b9c51b5af325725660be565d0f2dad20f73eedf1417"
+    },
+    {
+      "path": "test/oresoftware_k8s_api_sdk_public_test.gleam",
+      "sha256": "04ebea05e6ed677e10914a8b16f3ad14920eebad6be25853f23b106c1ec5e82f"
+    }
+  ],
+  "language": "gleam",
   "operationCount": 279,
+  "packageName": "oresoftware_k8s_api_sdk_public",
+  "schemaVersion": 1,
+  "scope": "public",
+  "serviceCount": 44,
   "skippedServices": [
     {
       "service": "billing-server-rs",
@@ -44,20 +66,6 @@
       "deploymentPath": "remote/deployments/usacc-rest-api-backend-rs",
       "sourceRepository": "git@github.com:usa-acc/rest-api-backend.rs.git",
       "reason": "uninitialized-deployment-gitlink"
-    }
-  ],
-  "generatedFiles": [
-    {
-      "path": "gleam.toml",
-      "sha256": "d8df4ca64f5aaea70e55c24f04202b5ef83bdd100dd4165188464144a43da9fe"
-    },
-    {
-      "path": "src/dd_api_sdk.gleam",
-      "sha256": "bcb5f59dbf08a4d5ec9a28d3889b7808e687621ae80a930597e67869d150e410"
-    },
-    {
-      "path": "test/oresoftware_k8s_api_sdk_public_test.gleam",
-      "sha256": "a355aa33dca1cec47325f81fe5808e44044e8f7ca4fd955309d4b463fe3e8990"
     }
   ]
 }

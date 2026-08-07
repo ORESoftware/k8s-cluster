@@ -1,14 +1,40 @@
 {
-  "schemaVersion": 1,
-  "language": "dart",
-  "scope": "public",
-  "packageName": "oresoftware_k8s_api_sdk_public",
-  "generatedBy": "remote/tools/generate-api-sdks.mjs",
+  "catalogFileSha256": "466aac12982428e724553c9d33f656efaa79df4443536626ccbb06cbc24558f7",
   "catalogPath": "remote/api-sdks/contracts/public.json",
   "catalogSha256": "dd6cd2dfce13705381cfcc79c99d9f2b7e7307fc846e28609defe908e9859689",
-  "catalogFileSha256": "466aac12982428e724553c9d33f656efaa79df4443536626ccbb06cbc24558f7",
-  "serviceCount": 44,
+  "generatedBy": "remote/tools/generate-api-sdks.mjs",
+  "generatedFiles": [
+    {
+      "path": "analysis_options.yaml",
+      "sha256": "946b7f3fd0bc57ddc0864a05f86a71732aec4dcaba3e93c756e329afcfbc1569"
+    },
+    {
+      "path": "bin/smoke.dart",
+      "sha256": "18db770f8a23806fb6946dac02992d8123794c40c439aca894734158463b3afa"
+    },
+    {
+      "path": "lib/dd_api_sdk.dart",
+      "sha256": "5fa7593d521857fa9241b52d2930b610b2c66108b35112b164fa11c4646f625c"
+    },
+    {
+      "path": "pubspec.yaml",
+      "sha256": "07ddadb73dd790dfee3f9037a2f5c3d4dc5cd0978692842d93e800226d85f4df"
+    },
+    {
+      "path": "bin/smoke.dart",
+      "sha256": "1a73cbea63ac547d056a138325c798280ec7fe6230f064395b0a87878b93cdb4"
+    },
+    {
+      "path": "lib/dd_api_sdk.dart",
+      "sha256": "4cc571c4bef4118398759d8a1903e2cc8b4ccaa5f8d64bdc54e7653268015982"
+    }
+  ],
+  "language": "dart",
   "operationCount": 279,
+  "packageName": "oresoftware_k8s_api_sdk_public",
+  "schemaVersion": 1,
+  "scope": "public",
+  "serviceCount": 44,
   "skippedServices": [
     {
       "service": "billing-server-rs",
@@ -44,24 +70,6 @@
       "deploymentPath": "remote/deployments/usacc-rest-api-backend-rs",
       "sourceRepository": "git@github.com:usa-acc/rest-api-backend.rs.git",
       "reason": "uninitialized-deployment-gitlink"
-    }
-  ],
-  "generatedFiles": [
-    {
-      "path": "analysis_options.yaml",
-      "sha256": "946b7f3fd0bc57ddc0864a05f86a71732aec4dcaba3e93c756e329afcfbc1569"
-    },
-    {
-      "path": "bin/smoke.dart",
-      "sha256": "18db770f8a23806fb6946dac02992d8123794c40c439aca894734158463b3afa"
-    },
-    {
-      "path": "lib/dd_api_sdk.dart",
-      "sha256": "5fa7593d521857fa9241b52d2930b610b2c66108b35112b164fa11c4646f625c"
-    },
-    {
-      "path": "pubspec.yaml",
-      "sha256": "07ddadb73dd790dfee3f9037a2f5c3d4dc5cd0978692842d93e800226d85f4df"
     }
   ]
 }
