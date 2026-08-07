@@ -13,6 +13,7 @@ Slack app: `alex-main-agent`
 App ID: `A0BMBAMM5NJ`  
 Workspace ID: `T01B3C83PMK`  
 Runtime source: `ORESoftware/ai-agent-bridge.rs@0ba7d2d4eb8c44583503d4567af2de1f73bc5598`
+Runtime source: `ORESoftware/ai-agent-bridge.rs@7f1ad57126231c0a27da19799a27aa71f4ffaf5d`
 
 ## Purpose
 
@@ -119,6 +120,7 @@ Before merge, require the `alex-main-agent Slack command GitOps` workflow to pro
 
 - the workflow and action dependencies are immutable;
 - the source repository checks out at exactly `0ba7d2d4eb8c44583503d4567af2de1f73bc5598`;
+- the source repository checks out at exactly `7f1ad57126231c0a27da19799a27aa71f4ffaf5d`;
 - the command binary still exists and compiles;
 - the source app manifest has six commands and the expected URLs;
 - the source routing registry has exactly thirteen unique bindings;
