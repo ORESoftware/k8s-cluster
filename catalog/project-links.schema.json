@@ -1,0 +1,106 @@
+{
+  "$id": "https://github.com/ORESoftware/k8s-cluster/catalog/project-links.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "const": "./project-links.schema.json"
+    },
+    "captured_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "notes": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "projects": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "chatgpt": {
+            "additionalProperties": false,
+            "properties": {
+              "project_name": {
+                "pattern": "^[a-z0-9][a-z0-9-]*$",
+                "type": "string"
+              }
+            },
+            "required": ["project_name"],
+            "type": "object"
+          },
+          "github": {
+            "additionalProperties": false,
+            "properties": {
+              "organization": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$",
+                "type": "string"
+              },
+              "project_number": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "project_title": {
+                "minLength": 9,
+                "type": "string"
+              }
+            },
+            "required": ["organization", "project_number", "project_title"],
+            "type": "object"
+          },
+          "key": {
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "type": "string"
+          },
+          "linear": {
+            "additionalProperties": false,
+            "properties": {
+              "project_name": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": ["project_name"],
+            "type": "object"
+          },
+          "slack": {
+            "additionalProperties": false,
+            "properties": {
+              "channel_name": {
+                "pattern": "^#[a-z0-9][a-z0-9-]*$",
+                "type": "string"
+              }
+            },
+            "required": ["channel_name"],
+            "type": "object"
+          }
+        },
+        "required": ["key", "github", "linear", "chatgpt", "slack"],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "schedule": {
+      "additionalProperties": false,
+      "properties": {
+        "local_time": {
+          "const": "03:00"
+        },
+        "timezone": {
+          "const": "America/Chicago"
+        }
+      },
+      "required": ["timezone", "local_time"],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": 1
+    }
+  },
+  "required": ["$schema", "schema_version", "captured_at", "schedule", "projects"],
+  "type": "object"
+}

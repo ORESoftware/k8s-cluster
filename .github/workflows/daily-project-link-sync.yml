@@ -1,0 +1,154 @@
+name: Daily project-link sync
+
+on:
+  pull_request:
+    paths:
+      - "catalog/project-links.json"
+      - "catalog/project-links.schema.json"
+      - "tools/project_links.py"
+      - "tools/project_sync.py"
+      - "tools/test_project_links.py"
+      - "tools/test_project_sync.py"
+      - "docs/project-link-sync.md"
+      - "catalog/README.md"
+      - ".nix/agent-check.sh"
+      - ".github/workflows/daily-project-link-sync.yml"
+      - ".github/workflows/repository-catalog.yml"
+  push:
+    branches: [main]
+    paths:
+      - "catalog/project-links.json"
+      - "catalog/project-links.schema.json"
+      - "tools/project_links.py"
+      - "tools/project_sync.py"
+      - "tools/test_project_links.py"
+      - "tools/test_project_sync.py"
+      - "docs/project-link-sync.md"
+      - "catalog/README.md"
+      - ".nix/agent-check.sh"
+      - ".github/workflows/daily-project-link-sync.yml"
+      - ".github/workflows/repository-catalog.yml"
+  schedule:
+    # GitHub cron is UTC. The script selects the lane that maps to 03:00
+    # America/Chicago for the current Central daylight/standard-time offset.
+    - cron: "0 8 * * *"
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Apply provider changes instead of validation-only dry-run
+        required: true
+        default: false
+        type: boolean
+      create_missing_slack:
+        description: Create an eponymous Slack channel when one is missing
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: project-link-sync-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate project-link contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate catalog and run unit tests
+        run: |
+          python3 tools/project_links.py validate catalog/project-links.json
+          (
+            cd tools
+            python3 -m unittest -v test_project_links.py test_project_sync.py
+          )
+
+      - name: Build a credential-free reconciliation plan
+        run: |
+          python3 tools/project_sync.py \
+            --allow-missing-credentials \
+            --json-output artifacts/project-link-sync.json \
+            --markdown-output artifacts/project-link-sync.md
+          cat artifacts/project-link-sync.md >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload validation evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: project-link-sync-validation
+          path: artifacts/project-link-sync.*
+          if-no-files-found: error
+          retention-days: 14
+
+  reconcile:
+    name: Reconcile provider metadata
+    needs: validate
+    if: >-
+      ${{
+        github.event_name == 'schedule' ||
+        (github.event_name == 'workflow_dispatch' && inputs.apply)
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: project-link-sync
+    env:
+      PROJECT_SYNC_GITHUB_TOKEN: ${{ secrets.PROJECT_SYNC_GITHUB_TOKEN }}
+      LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+      CHATGPT_PROJECT_SYNC_ENDPOINT: ${{ secrets.CHATGPT_PROJECT_SYNC_ENDPOINT }}
+      CHATGPT_PROJECT_SYNC_TOKEN: ${{ secrets.CHATGPT_PROJECT_SYNC_TOKEN }}
+      SCHEDULED_CRON: ${{ github.event.schedule }}
+      CREATE_MISSING_SLACK: ${{ github.event_name == 'schedule' || inputs.create_missing_slack }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Refuse an uncredentialed apply run
+        run: |
+          missing=0
+          for name in PROJECT_SYNC_GITHUB_TOKEN LINEAR_API_KEY SLACK_BOT_TOKEN; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing required project-link-sync credential: $name"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Reconcile all canonical project links
+        run: |
+          args=(
+            --apply
+            --json-output artifacts/project-link-sync.json
+            --markdown-output artifacts/project-link-sync.md
+            --summary-channel oresoftware
+          )
+          if [[ "$CREATE_MISSING_SLACK" == "true" ]]; then
+            args+=(--create-missing-slack)
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
+            args+=(--scheduled-cron "$SCHEDULED_CRON")
+          fi
+          python3 tools/project_sync.py "${args[@]}"
+          cat artifacts/project-link-sync.md >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload reconciliation evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: project-link-sync-${{ github.run_id }}
+          path: artifacts/project-link-sync.*
+          if-no-files-found: error
+          retention-days: 30
