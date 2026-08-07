@@ -1,0 +1,3 @@
+Trigger the self-cleaning DEN-675 validation workflow after the pull request exists.
+Retriggered after semantic pre-merge review on July 31, 2026.
+Final retry requested after confirming the live PR diff still contained only bootstrap artifacts.

@@ -1,0 +1,217 @@
+name: DEN-675 shared-auth observability bootstrap
+
+on:
+  push:
+    branches:
+      - agent/den-675-shared-auth-observability
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-675-shared-auth-observability-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apply-validate-and-clean:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TARGET_BRANCH: ${{ github.head_ref || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+          ref: ${{ env.TARGET_BRANCH }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Add scrape, alert, gateway, and test contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          config_path = Path("remote/argocd/observability/prometheus.configmap.yaml")
+          config = config_path.read_text(encoding="utf-8")
+          if "job_name: dd-shared-auth" in config:
+              raise SystemExit("shared-auth jobs already exist")
+          job_marker = "      # fiducia data-plane raft metrics."
+          jobs = '''      # DEN-675 shared-auth control-plane metrics stay cluster-internal.
+      - job_name: dd-shared-auth
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-shared-auth.shared-auth.svc.cluster.local:8120
+      - job_name: dd-shared-auth-nats-bridge
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-shared-auth-nats-bridge.shared-auth.svc.cluster.local:8121
+'''
+          if config.count(job_marker) != 1:
+              raise SystemExit("unexpected Prometheus job insertion marker")
+          config = config.replace(job_marker, jobs + job_marker)
+
+          alert_marker = "          - alert: BenefactorBackendTargetMissing"
+          alerts = '''          - alert: SharedAuthServerTargetMissing
+            expr: absent(up{job="dd-shared-auth"})
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-shared-auth
+            annotations:
+              summary: Shared Auth scrape target is missing
+              description: "Prometheus has no cluster-internal target for the Shared Auth API."
+          - alert: SharedAuthBridgeTargetMissing
+            expr: absent(up{job="dd-shared-auth-nats-bridge"})
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-shared-auth-nats-bridge
+            annotations:
+              summary: Shared Auth NATS bridge scrape target is missing
+              description: "Prometheus has no cluster-internal target for the Shared Auth NATS bridge."
+          - alert: SharedAuthMetricsTargetDown
+            expr: up{job=~"dd-shared-auth|dd-shared-auth-nats-bridge"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: shared-auth
+            annotations:
+              summary: "Shared Auth metrics target {{ $labels.job }} is down"
+              description: "Prometheus cannot scrape the cluster-internal /metrics endpoint for {{ $labels.job }}."
+          - alert: SharedAuthVerificationFailuresIncreasing
+            expr: sum(rate(shared_auth_verify_failures_total[10m])) > 0
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-shared-auth
+            annotations:
+              summary: Shared Auth token-verification failures are increasing
+              description: "The bounded verification-failure counter has increased continuously for five minutes."
+          - alert: SharedAuthBridgePublishErrorsIncreasing
+            expr: sum(rate(shared_auth_bridge_publishes_total{outcome=~"rejected|failed"}[10m])) > 0
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-shared-auth-nats-bridge
+            annotations:
+              summary: Shared Auth bridge publish errors are increasing
+              description: "Rejected or failed HTTP-to-NATS publishes have increased continuously for five minutes."
+          - alert: SharedAuthBridgeDeliveryErrorsIncreasing
+            expr: sum(rate(shared_auth_bridge_deliveries_total{outcome="failed"}[10m])) > 0
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-shared-auth-nats-bridge
+            annotations:
+              summary: Shared Auth bridge delivery errors are increasing
+              description: "Failed NATS-to-webhook deliveries have increased continuously for five minutes."
+'''
+          if config.count(alert_marker) != 1:
+              raise SystemExit("unexpected alert insertion marker")
+          config = config.replace(alert_marker, alerts + alert_marker)
+          config_path.write_text(config, encoding="utf-8")
+
+          test_path = Path("remote/tests/general/prometheus-application-scrape.test.ts")
+          tests = test_path.read_text(encoding="utf-8")
+          if "Shared Auth endpoints are cluster-internal" in tests:
+              raise SystemExit("Shared Auth test already exists")
+          test_marker = '\n\ntest("Fiducia and Akrion build the reviewed merged revisions"'
+          addition = r'''
+
+test("Shared Auth endpoints are cluster-internal, scraped, and alerted", async () => {
+  const prometheus = await read("remote/argocd/observability/prometheus.configmap.yaml");
+  const gateway = await read(
+    "remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml",
+  );
+
+  assertTarget(
+    prometheus,
+    "dd-shared-auth",
+    "dd-shared-auth.shared-auth.svc.cluster.local:8120",
+  );
+  assertTarget(
+    prometheus,
+    "dd-shared-auth-nats-bridge",
+    "dd-shared-auth-nats-bridge.shared-auth.svc.cluster.local:8121",
+  );
+  for (const alert of [
+    "SharedAuthServerTargetMissing",
+    "SharedAuthBridgeTargetMissing",
+    "SharedAuthMetricsTargetDown",
+    "SharedAuthVerificationFailuresIncreasing",
+    "SharedAuthBridgePublishErrorsIncreasing",
+    "SharedAuthBridgeDeliveryErrorsIncreasing",
+  ]) {
+    assert.ok(prometheus.includes(`alert: ${alert}`), `missing alert ${alert}`);
+  }
+  assert.match(
+    prometheus,
+    /up\{job=~"dd-shared-auth\|dd-shared-auth-nats-bridge"\}\s*==\s*0/,
+  );
+  assert.match(prometheus, /shared_auth_verify_failures_total\[10m\]/);
+  assert.match(
+    prometheus,
+    /shared_auth_bridge_publishes_total\{outcome=~"rejected\|failed"\}\[10m\]/,
+  );
+  assert.match(
+    prometheus,
+    /shared_auth_bridge_deliveries_total\{outcome="failed"\}\[10m\]/,
+  );
+
+  const metricsDeny = gateway.indexOf("location = /shared-auth/metrics");
+  const publicProxy = gateway.indexOf("location /shared-auth/");
+  assert.ok(metricsDeny >= 0 && metricsDeny < publicProxy);
+  assert.match(
+    gateway.slice(metricsDeny, publicProxy),
+    /location = \/shared-auth\/metrics \{\s*return 404;/,
+  );
+  assert.doesNotMatch(gateway, /dd-shared-auth-nats-bridge\.shared-auth/);
+});
+'''
+          if test_marker not in tests:
+              raise SystemExit("unexpected test insertion marker")
+          tests = tests.replace(test_marker, addition + test_marker)
+          test_path.write_text(tests, encoding="utf-8")
+          PY
+          git diff --check
+      - name: Run the focused immutable contract
+        working-directory: remote/tests
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+          pnpm install --frozen-lockfile
+          pnpm run test:cli:prometheus-applications
+      - name: Render affected GitOps overlays
+        run: |
+          kubectl kustomize remote/argocd/observability >/tmp/observability.yaml
+          kubectl kustomize remote/argocd/dd-next-runtime >/tmp/dd-next-runtime.yaml
+          grep -q 'name: dd-prometheus-config' /tmp/observability.yaml
+          grep -q 'location = /shared-auth/metrics' /tmp/dd-next-runtime.yaml
+      - name: Remove bootstrap and commit validated product files
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/den-675-shared-auth-observability.yml
+          git diff --check
+          changed="$(git diff --name-only)"
+          expected="remote/argocd/observability/prometheus.configmap.yaml
+remote/tests/general/prometheus-application-scrape.test.ts"
+          test "$changed" = "$expected" || {
+            echo "unexpected final diff:" >&2
+            printf '%s\n' "$changed" >&2
+            exit 1
+          }
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add remote/argocd/observability/prometheus.configmap.yaml \
+            remote/tests/general/prometheus-application-scrape.test.ts \
+            .github/workflows/den-675-shared-auth-observability.yml
+          git commit -m 'feat(DEN-675): scrape and alert on Shared Auth services'
+          git push origin "HEAD:${TARGET_BRANCH}"
