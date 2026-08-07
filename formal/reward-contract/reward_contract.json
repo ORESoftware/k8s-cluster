@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "contractName": "soccer-reward-v1",
+  "terminalDominanceMargin": 20.0,
+  "components": [
+    {"id":"goal_for","group":"terminal","polarity":"reward","minimum":1.0,"maximum":1.0,"weight":100.0},
+    {"id":"goal_against","group":"terminal","polarity":"penalty","minimum":1.0,"maximum":1.0,"weight":-100.0},
+    {"id":"xg_delta","group":"shaping","polarity":"signed","minimum":-3.0,"maximum":3.0,"weight":2.0},
+    {"id":"possession_value_delta","group":"shaping","polarity":"signed","minimum":-1.0,"maximum":1.0,"weight":0.5},
+    {"id":"progressive_action","group":"shaping","polarity":"signed","minimum":-1.0,"maximum":1.0,"weight":0.75},
+    {"id":"defensive_integrity","group":"shaping","polarity":"signed","minimum":-1.0,"maximum":1.0,"weight":0.75},
+    {"id":"foul","group":"penalty","polarity":"penalty","minimum":0.0,"maximum":1.0,"weight":-2.0},
+    {"id":"offside","group":"penalty","polarity":"penalty","minimum":0.0,"maximum":1.0,"weight":-1.0},
+    {"id":"turnover","group":"penalty","polarity":"penalty","minimum":0.0,"maximum":1.0,"weight":-2.0},
+    {"id":"infeasible_action","group":"safety","polarity":"penalty","minimum":0.0,"maximum":1.0,"weight":-5.0}
+  ]
+}

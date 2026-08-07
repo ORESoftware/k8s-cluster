@@ -1,0 +1,28 @@
+name: Reward contract sentinel
+
+on:
+  pull_request:
+    paths:
+      - 'formal/reward-contract/**'
+      - 'docs/rfcs/den-863-reward-contract.md'
+      - '.github/workflows/reward-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'formal/reward-contract/**'
+      - 'docs/rfcs/den-863-reward-contract.md'
+      - '.github/workflows/reward-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - run: python3 formal/reward-contract/verify.py
+      - run: python3 -m unittest discover -s formal/reward-contract -p 'test_*.py'
