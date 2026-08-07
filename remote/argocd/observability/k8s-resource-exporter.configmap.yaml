@@ -63,7 +63,7 @@ data:
         "dd-routing-server-worker,dd-sat-smt-server,dd-soccer-rs,dd-sonus-auris-site,"
         "fiducia-admin,fiducia-auth,fiducia-backend,fiducia-brain,fiducia-load-balance,fiducia-node,"
         "fiducia-otel-agent,threefa-sync-server,tor-client,tor-relay-a,tor-relay-b,tor-relay-c,"
-        "athleto-app-rs,canonical-session-revoker,canonical-web-server,daedalus-api-server,"
+        "athleto-app-rs,canonical-api-server,canonical-session-revoker,canonical-web-server,daedalus-api-server,"
         "daedalus-web-server,dd-soccer-commit-watcher,dd-soccer-learning-rds-continuous,"
         "dd-sonus-auris-console,drone-mngr-ctrl-server,drone-mngr-mcp-server,"
         "drone-mngr-web-server,scintilla-app,scintilla-backend,scintilla-ui,"
