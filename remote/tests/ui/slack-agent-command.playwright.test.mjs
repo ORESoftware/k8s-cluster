@@ -178,6 +178,7 @@ async function verifyDispatch(
 
   assert.equal(job.task_type, 'slack_agent_run');
   assert.equal(payload.run_id, ids.run);
+  assert.equal(payload.observable_event.correlation.run_id, ids.run);
   assert.equal(payload.provider, expectedProvider);
   assert.equal(payload.action, expectedAction);
   assert.equal(payload.prompt, expectedPrompt);

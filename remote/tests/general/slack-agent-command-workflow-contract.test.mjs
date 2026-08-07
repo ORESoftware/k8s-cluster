@@ -41,10 +41,12 @@ function recordedRef(name) {
   return match[1];
 }
 
-test('cross-repository Slack canary dependencies are immutable and provenance-aligned', () => {
+test('cross-repository Slack canary dependencies are current, immutable, and provenance-aligned', () => {
   const bridge = checkoutRef('ORESoftware/ai-agent-bridge.rs');
   const coordinator = checkoutRef('ORESoftware/ai-agent-coordinator.rs');
 
+  assert.equal(bridge, expectedBridge);
+  assert.equal(coordinator, expectedCoordinator);
   assert.equal(recordedRef('BRIDGE_REF'), bridge);
   assert.equal(recordedRef('COORDINATOR_REF'), coordinator);
   assert.doesNotMatch(workflow, /inputs\.(?:bridge_ref|coordinator_ref)/);
@@ -55,7 +57,7 @@ test('cross-repository Slack canary dependencies are immutable and provenance-al
   );
 });
 
-test('recorded revisions are verified against the checked-out commits before evidence upload', () => {
+test('recorded revisions are verified against checked-out commits before evidence upload', () => {
   assert.match(workflow, /bridge_commit="\$\(git -C \.e2e\/bridge rev-parse HEAD\)"/);
   assert.match(
     workflow,
