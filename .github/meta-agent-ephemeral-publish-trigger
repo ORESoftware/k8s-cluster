@@ -1,0 +1,4 @@
+target=meta-agents-demo/meta-agent-control-plane.rs
+trusted-main=414af21e0f34640b5b114f26e40c9554e16df76c
+bundle-sha256=1ddaa03743b864348162149b7d2d2e2dce7eab585cf092ea14547c647fcec031
+protocol=rsa-oaep-sha256-v1
