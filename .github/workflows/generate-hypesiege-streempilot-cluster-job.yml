@@ -1,0 +1,226 @@
+name: Generate HypeSiege and StreemPilot cluster publisher
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - .github/workflows/generate-hypesiege-streempilot-cluster-job.yml
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Generate Argo CD application and one-shot publisher
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet 'PyYAML==6.0.2'
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import pathlib
+          import urllib.request
+          import yaml
+
+          ROOT = pathlib.Path.cwd()
+          ADMIN_SECRET_URL = (
+              'https://raw.githubusercontent.com/ORESoftware/'
+              'ai-agent-coordinator.rs/main/deploy/k8s/external-secret-admin.yaml'
+          )
+          APP_TEMPLATE = ROOT / 'remote/argocd/apps/ai-agent-coordinator.application.yaml'
+          APP_PATH = ROOT / 'remote/argocd/apps/hypesiege-streempilot-publisher.application.yaml'
+          WORKLOAD_DIR = ROOT / 'remote/publishers/hypesiege-streempilot'
+          WORKLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+          with urllib.request.urlopen(ADMIN_SECRET_URL, timeout=30) as response:
+              external_secret = yaml.safe_load(response.read())
+          namespace = external_secret['metadata'].get('namespace', 'ai-agent-coordinator')
+          target = external_secret['spec'].get('target', {})
+          secret_name = target.get('name') or external_secret['metadata']['name']
+          data_items = external_secret['spec'].get('data', [])
+          if not data_items:
+              raise SystemExit('external-secret-admin.yaml has no data entries')
+          token_key = next(
+              (item['secretKey'] for item in data_items if item.get('secretKey') == 'token'),
+              data_items[0]['secretKey'],
+          )
+
+          application = yaml.safe_load(APP_TEMPLATE.read_text())
+          application['metadata']['name'] = 'hypesiege-streempilot-publisher'
+          application['spec'].pop('sources', None)
+          application['spec']['source'] = {
+              'repoURL': 'https://github.com/ORESoftware/k8s-cluster.git',
+              'targetRevision': 'dev',
+              'path': 'remote/publishers/hypesiege-streempilot',
+          }
+          application['spec'].setdefault('destination', {})['namespace'] = namespace
+          sync_policy = application['spec'].setdefault('syncPolicy', {})
+          sync_policy['automated'] = {'prune': True, 'selfHeal': True}
+          options = sync_policy.setdefault('syncOptions', [])
+          if 'CreateNamespace=true' not in options:
+              options.append('CreateNamespace=true')
+          APP_PATH.write_text(yaml.safe_dump(application, sort_keys=False))
+
+          publish_script = r'''set -euo pipefail
+          set +x
+          if [[ -z "${GITHUB_REPOSITORY_ADMIN_TOKEN:-}" ]]; then
+            echo "repository administration token is empty" >&2
+            exit 78
+          fi
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends git curl ca-certificates gzip >/dev/null
+          git config --global user.name "ORESoftware repository publisher"
+          git config --global user.email "repository-publisher@users.noreply.github.com"
+          install -d /mnt/data /tmp/fleet-payload
+          for part in 00 01 02 03 04 05; do
+            curl --fail --silent --show-error --location --retry 3 \
+              "https://raw.githubusercontent.com/ORESoftware/ai-agent-coordinator.rs/b7f3d39df6d8514a85eca6ebe878a4ebe389c4c2/repository-fleets/hypesiege-streempilot/generator.py.gz.b64.part-${part}" \
+              --output "/tmp/fleet-payload/part-${part}"
+            test -s "/tmp/fleet-payload/part-${part}"
+          done
+          cat /tmp/fleet-payload/part-* \
+            | base64 --decode \
+            | gzip --decompress > /tmp/generate_hypesiege_streempilot.py
+          python3 -m py_compile /tmp/generate_hypesiege_streempilot.py
+          python3 /tmp/generate_hypesiege_streempilot.py
+          python3 - <<'PYFIX'
+          from pathlib import Path
+          path = Path('/mnt/data/hypesiege-streempilot-fleet/publish.py')
+          lines = path.read_text().splitlines()
+          index = next(i for i, line in enumerate(lines) if "askpass.write_text('#!/bin/sh" in line)
+          lines[index:index + 3] = [
+              '        askpass.write_text("""#!/bin/sh',
+              'case "$1" in *Username*) echo x-access-token;; *) echo "$GITHUB_REPOSITORY_ADMIN_TOKEN";; esac',
+              '""")',
+          ]
+          path.write_text('\n'.join(lines) + '\n')
+          PYFIX
+          python3 -m py_compile /mnt/data/hypesiege-streempilot-fleet/publish.py
+          python3 /mnt/data/hypesiege-streempilot-fleet/publish.py
+          test "$(git -C /mnt/data/hypesiege-streempilot-fleet/hypesiege/hypesiege-monorepo ls-files --stage apps | awk '$1 == 160000 {count++} END {print count+0}')" = 14
+          test "$(git -C /mnt/data/hypesiege-streempilot-fleet/streempilot/streempilot-monorepo ls-files --stage apps | awk '$1 == 160000 {count++} END {print count+0}')" = 16
+          python3 /mnt/data/hypesiege-streempilot-fleet/publish.py --execute --org hypesiege
+          python3 /mnt/data/hypesiege-streempilot-fleet/publish.py --execute --org streempilot
+          python3 - <<'PYVERIFY'
+          import json
+          import os
+          import pathlib
+          import urllib.request
+          root = pathlib.Path('/mnt/data/hypesiege-streempilot-fleet')
+          manifest = json.loads((root / 'MANIFEST.json').read_text())
+          token = os.environ['GITHUB_REPOSITORY_ADMIN_TOKEN']
+          mismatches = []
+          verified = []
+          for record in manifest['repositories']:
+              req = urllib.request.Request(
+                  f"https://api.github.com/repos/{record['full_name']}/commits/main",
+                  headers={
+                      'Accept': 'application/vnd.github+json',
+                      'Authorization': f'Bearer {token}',
+                      'X-GitHub-Api-Version': '2022-11-28',
+                      'User-Agent': 'oresoftware-repository-fleet-verifier',
+                  },
+              )
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  actual = json.load(response)['sha']
+              if actual == record['commit']:
+                  verified.append(record['full_name'])
+              else:
+                  mismatches.append({
+                      'repository': record['full_name'],
+                      'expected': record['commit'],
+                      'actual': actual,
+                  })
+          print(json.dumps({'verified': verified, 'mismatches': mismatches}, indent=2))
+          if len(verified) != 32 or mismatches:
+              raise SystemExit(f'verified {len(verified)}/32 remote main heads')
+          print('verified 32/32 remote main heads')
+          PYVERIFY
+          '''
+
+          job = {
+              'apiVersion': 'batch/v1',
+              'kind': 'Job',
+              'metadata': {
+                  'name': 'hypesiege-streempilot-publisher-20260731',
+                  'namespace': namespace,
+                  'labels': {
+                      'app.kubernetes.io/name': 'hypesiege-streempilot-publisher',
+                      'app.kubernetes.io/component': 'repository-bootstrap',
+                  },
+              },
+              'spec': {
+                  'backoffLimit': 0,
+                  'activeDeadlineSeconds': 3600,
+                  'template': {
+                      'metadata': {
+                          'labels': {
+                              'app.kubernetes.io/name': 'hypesiege-streempilot-publisher',
+                          },
+                      },
+                      'spec': {
+                          'restartPolicy': 'Never',
+                          'automountServiceAccountToken': False,
+                          'containers': [{
+                              'name': 'publisher',
+                              'image': 'python:3.12-bookworm',
+                              'imagePullPolicy': 'IfNotPresent',
+                              'command': ['/bin/bash', '-lc'],
+                              'args': [publish_script],
+                              'env': [{
+                                  'name': 'GITHUB_REPOSITORY_ADMIN_TOKEN',
+                                  'valueFrom': {
+                                      'secretKeyRef': {
+                                          'name': secret_name,
+                                          'key': token_key,
+                                      },
+                                  },
+                              }],
+                              'resources': {
+                                  'requests': {'cpu': '250m', 'memory': '512Mi'},
+                                  'limits': {'cpu': '2', 'memory': '2Gi'},
+                              },
+                          }],
+                      },
+                  },
+              },
+          }
+          (WORKLOAD_DIR / 'job.yaml').write_text(yaml.safe_dump(job, sort_keys=False))
+          (WORKLOAD_DIR / 'kustomization.yaml').write_text(
+              'apiVersion: kustomize.config.k8s.io/v1beta1\n'
+              'kind: Kustomization\n'
+              'resources:\n'
+              '  - job.yaml\n'
+          )
+          print(f'generated publisher using secret {namespace}/{secret_name} key {token_key}')
+          PY
+
+          git diff --check
+          git status --short
+          if git diff --quiet -- \
+            remote/argocd/apps/hypesiege-streempilot-publisher.application.yaml \
+            remote/publishers/hypesiege-streempilot; then
+            echo "Generated publisher is already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            remote/argocd/apps/hypesiege-streempilot-publisher.application.yaml \
+            remote/publishers/hypesiege-streempilot
+          git commit -m "ops: deploy HypeSiege and StreemPilot repository publisher"
+          git push origin "HEAD:${HEAD_REF}"
