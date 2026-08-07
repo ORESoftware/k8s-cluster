@@ -43,6 +43,14 @@ function envBlock(name) {
   return deployment.slice(start, next === -1 ? deployment.length : next);
 }
 
+function shellStringAssignment(name) {
+  const match = deployment.match(
+    new RegExp(`(?:^|\\n)\\s*${name}=(["'])([^\\n]*?)\\1(?:\\s|$)`),
+  );
+  assert.ok(match, `${name} is missing from ${deploymentPath}`);
+  return match[2];
+}
+
 test('bridge deployment executes the current Rust binary', () => {
   // The deployment resolves the binary through bin_name and execs
   // "${CARGO_TARGET_DIR:-target}/release/${bin_name}". Assert the name is the
