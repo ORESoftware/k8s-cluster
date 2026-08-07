@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
-const sourceRevision = '1eaba47b70b92613c0a579567b447ddc39ca42c6';
+const sourceRevision = 'a7f8eada86a0b3c7cfcd94010b633ba716ef0f12';
 
 function findRepoRoot() {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
