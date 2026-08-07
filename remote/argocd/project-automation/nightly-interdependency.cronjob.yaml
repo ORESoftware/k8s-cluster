@@ -10,7 +10,7 @@ metadata:
   annotations:
     denman.linear.app/issue: DEN-2745
     dd.dev/source-repository: ORESoftware/project-registry
-    dd.dev/source-revision: 1eaba47b70b92613c0a579567b447ddc39ca42c6
+    dd.dev/source-revision: a7f8eada86a0b3c7cfcd94010b633ba716ef0f12
 spec:
   schedule: "0 2 * * *"
   timeZone: America/Chicago
@@ -33,7 +33,7 @@ spec:
           annotations:
             denman.linear.app/issue: DEN-2745
             dd.dev/source-repository: ORESoftware/project-registry
-            dd.dev/source-revision: 1eaba47b70b92613c0a579567b447ddc39ca42c6
+            dd.dev/source-revision: a7f8eada86a0b3c7cfcd94010b633ba716ef0f12
         spec:
           automountServiceAccountToken: false
           enableServiceLinks: false
@@ -57,7 +57,7 @@ spec:
                 - /etc/nightly-interdependency/bootstrap.mjs
               env:
                 - name: PROJECT_REGISTRY_REVISION
-                  value: 1eaba47b70b92613c0a579567b447ddc39ca42c6
+                  value: a7f8eada86a0b3c7cfcd94010b633ba716ef0f12
                 - name: AI_AGENT_COORDINATOR_URL
                   value: http://ai-agent-coordinator.ai-agent-coordinator.svc.cluster.local:8080
                 - name: GITHUB_APP_ID
