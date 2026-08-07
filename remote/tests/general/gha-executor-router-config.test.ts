@@ -132,11 +132,12 @@ test('Rust boundary fails over only before acceptance and rejects arbitrary exec
   assert.doesNotMatch(source, /Command::new|std::process::Command|docker\.sock|hostPath:/);
 });
 
-test('dedicated workflow checks Rust, static policy, and optional ARC parity', () => {
+test('dedicated workflow checks locked Rust, static policy, and optional ARC parity', () => {
   const workflow = read(workflowPath);
+  assert.match(workflow, /cargo metadata --locked/);
   assert.match(workflow, /cargo fmt --all --check/);
-  assert.match(workflow, /cargo test --manifest-path/);
-  assert.match(workflow, /cargo clippy --manifest-path/);
+  assert.match(workflow, /cargo test --locked --manifest-path/);
+  assert.match(workflow, /cargo clippy --locked --manifest-path/);
   assert.match(workflow, /-D warnings/);
   assert.match(workflow, /persist-credentials:\s*false/);
   assert.match(workflow, /runs-on:\s*\[self-hosted, linux, sonus-ci\]/);
