@@ -274,6 +274,26 @@ succeeds or fails. The execution carrier, challenge, encrypted response,
 workflow run, target repository metadata, exact ref SHAs, implementation PR,
 and Linear issue comments form the audit trail. The ciphertext is not reusable
 because each execution has a fresh private key and nonce.
+## Failure classification
+
+The broker reports bounded stage names rather than credential material or raw
+provider responses:
+
+- `decrypt-ciphertext`: RSA-OAEP/MGF1 decryption failed for the active key;
+- `validate-owner-token-shape`: plaintext was empty, whitespace-bearing, or not
+  a supported GitHub token shape;
+- `validate-owner-identity`: the GitHub `/user` request failed or did not resolve
+  to `ORESoftware`;
+- `validate-owner-membership`: the organization membership request failed or
+  was not `admin:active`;
+- `reconstruct-reviewed-history`: the pinned commit/tree/blob snapshot, bundle
+  digest, two-layer decode, repository context, exact ref inventory, or sealed
+  publisher validation failed.
+
+These stages preserve fail-closed operation while making retries actionable.
+They do not log the token, GitHub response body, ciphertext plaintext, private
+key, or credential-bearing transport configuration.
+
 ## Rotation and audit
 
 Because a credential was disclosed in chat, rotate the credential immediately
