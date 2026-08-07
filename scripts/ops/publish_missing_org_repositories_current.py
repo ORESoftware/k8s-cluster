@@ -25,6 +25,8 @@ from repository_rename_alias_guard import (
     RepositoryRenameAliasGuard,
 )
 
+from repository_fleet_visibility import project_private_execution_manifest
+
 MODULE_PATH = Path(__file__).with_name("publish_missing_org_repositories.py")
 SPEC = importlib.util.spec_from_file_location("bounded_missing_repo_publisher", MODULE_PATH)
 if SPEC is None or SPEC.loader is None:
