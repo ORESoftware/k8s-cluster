@@ -70,6 +70,30 @@ require_literal "jq -e '.private == true and .permissions.pull == true and .perm
 require_literal 'git -C "$source_root" config core.hooksPath "$secret_root/empty-hooks"'
 require_literal 'git -C "$source_root" config credential.helper '\'''\'''
 require_literal '-c protocol.ext.allow=never -c protocol.file.allow=never fetch --depth 1 --no-tags origin "$TARGET_START_SHA"'
+
+# Every path the matrix consumes -- notably `e2e/`, which exists in the target
+# repository and deliberately not in this host -- is asserted while the run is
+# still reversible, before the one-time owner credential is spent on a push.
+require_literal 'stage=verify-target-layout'
+for required_path in \
+  src/config.rs \
+  db/schema.sql \
+  Cargo.lock \
+  Dockerfile \
+  e2e/package.json \
+  e2e/package-lock.json \
+  e2e/playwright.config.js
+do
+  require_literal "            $required_path"
+done
+require_literal 'test -f "$source_root/$required" || missing+=("$required")'
+require_literal 'target %s@%s is missing required path(s): %s\n'
+
+layout_line="$(grep -nF 'stage=verify-target-layout' "$workflow" | head -n1 | cut -d: -f1)"
+push_line="$(grep -nF 'push --porcelain origin "HEAD:refs/heads/${TARGET_BRANCH}"' "$workflow" | head -n1 | cut -d: -f1)"
+patch_line="$(grep -nF 'stage=apply-deterministic-fail-closed-documentation-fix' "$workflow" | head -n1 | cut -d: -f1)"
+[[ "$layout_line" =~ ^[0-9]+$ && "$push_line" =~ ^[0-9]+$ && "$patch_line" =~ ^[0-9]+$ ]] || fail 'could not locate target layout ordering'
+(( layout_line < patch_line && layout_line < push_line )) || fail 'target layout is asserted after the run stops being reversible'
 require_literal 'git -C "$source_root" remote remove origin'
 require_literal 'unset VALIDATION_OWNER_TOKEN GH_TOKEN GITHUB_TOKEN GIT_ASKPASS'
 require_literal 'rm -f "$secret_root/git-askpass.sh"'

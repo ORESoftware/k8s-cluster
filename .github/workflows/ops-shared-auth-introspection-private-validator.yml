@@ -278,6 +278,40 @@ jobs:
           git -C "$source_root" checkout -q --detach FETCH_HEAD
           test "$(git -C "$source_root" rev-parse HEAD)" = "$TARGET_START_SHA"
 
+          # Every path the executable matrix below touches -- including `e2e/`,
+          # which the browser stage enters -- belongs to the *target* repository
+          # just cloned into "$source_root", not to this host repository. This
+          # host has no `e2e/` directory and is not supposed to have one: the
+          # workspace was emptied above and replaced with
+          # shared-auth/shared-auth-server.rs@$TARGET_START_SHA.
+          #
+          # Assert that layout here, at the last point where the run is still
+          # reversible. Below this line the one-time owner credential is spent on
+          # a real fast-forward push to the live target branch, so a moved or
+          # deleted suite must not first surface as a bare
+          # "cd: e2e: No such file or directory" ninety minutes later, after the
+          # target pull request has already been advanced.
+          stage=verify-target-layout
+          missing=()
+          for required in \
+            src/config.rs \
+            db/schema.sql \
+            Cargo.lock \
+            Dockerfile \
+            e2e/package.json \
+            e2e/package-lock.json \
+            e2e/playwright.config.js
+          do
+            test -f "$source_root/$required" || missing+=("$required")
+          done
+          if [ "${#missing[@]}" -ne 0 ]; then
+            printf 'target %s@%s is missing required path(s): %s\n' \
+              "$TARGET_REPOSITORY" "$TARGET_START_SHA" "${missing[*]}" >&2
+            false
+          fi
+          jq -e '.scripts.test | type == "string" and length > 0' \
+            "$source_root/e2e/package.json" >/dev/null
+
           stage=apply-deterministic-fail-closed-documentation-fix
           python3 - <<'PY'
           from pathlib import Path

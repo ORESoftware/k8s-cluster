@@ -63,6 +63,24 @@ plaintext token, askpass helper, RSA material, ciphertext, and GitHub credential
 environment variables. The token is never committed, printed, placed in an
 Actions output or environment file, or uploaded as an artifact.
 
+## Workspace provenance
+
+Every path the matrix touches belongs to the target repository, not to this
+host. The trusted job empties `$GITHUB_WORKSPACE` and replaces it with a shallow
+clone of `shared-auth/shared-auth-server.rs` at the exact starting commit, so
+`src/config.rs`, `db/schema.sql`, `Cargo.lock`, `Dockerfile`, and the `e2e/`
+Playwright suite are resolved against that clone. This host repository has no
+`e2e/` directory and is not meant to have one; a manifest scanner that resolves
+`cd e2e && npm ci` against this repository will report a false positive.
+
+Immediately after checkout — and deliberately before the deterministic
+documentation correction and before the one-time owner credential is spent on a
+fast-forward push — the job asserts that each of those paths exists and that the
+browser suite still declares an `npm test` script. A moved or deleted suite
+therefore fails fast, by name, while the run is still reversible, rather than as
+an unexplained missing-directory error after the target pull request has already
+been advanced.
+
 ## Executable matrix
 
 The resulting exact pull-request head is subjected to:
