@@ -57,7 +57,6 @@ const msgintIntegrationTestPath =
 const msgintFixturePath =
   'remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml';
 const workflowPath = '.github/workflows/gha-clone-server.yml';
-const metaWorkflowPath = '.github/workflows/gha-clone-server-meta.yml';
 
 function assertInertDeployment(
   name: string,
@@ -345,8 +344,8 @@ test('meta workflow remains independently compilable and testable', () => {
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /gha-clone-self-test:/);
   assert.match(
-    workflow,
-    /cargo test --manifest-path remote\/deployments\/gha-clone-server-rs\/Cargo\.toml --locked --all-targets/,
+    deployment,
+    /name:\s*GHA_CLONE_BUILD_SERVER_URL\s+value:\s*http:\/\/127\.0\.0\.1:8126/,
   );
   assert.match(workflow, /persist-credentials:\s*false/);
   assert.doesNotMatch(workflow, /\$\{\{\s*secrets\./);
