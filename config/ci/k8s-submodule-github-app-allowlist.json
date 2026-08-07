@@ -13,6 +13,7 @@
       "ai-agent-bridge.rs",
       "chat.vibe",
       "mip-solver-node.rs",
+      "push-notification-server.rs",
       "t2v-v2t.rs",
       "tor-server.rs"
     ],
