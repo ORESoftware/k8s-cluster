@@ -1,0 +1,40 @@
+schema = 1
+
+[defaults]
+classification = "source"
+zed_dependency = true
+
+[[rule]]
+suffix = "-interfaces"
+classification = "contract"
+zed_dependency = true
+
+[[rule]]
+suffix = "-clients"
+classification = "sdk"
+zed_dependency = true
+
+[[rule]]
+suffix = "-lib"
+classification = "library"
+zed_dependency = true
+
+[[rule]]
+suffix = "-libs"
+classification = "library"
+zed_dependency = true
+
+[[rule]]
+suffix = "-cli"
+classification = "tooling"
+zed_dependency = false
+
+[[rule]]
+suffix = "-infra"
+classification = "operations"
+zed_dependency = false
+
+[[rule]]
+suffix = "-e2e"
+classification = "verification"
+zed_dependency = false
