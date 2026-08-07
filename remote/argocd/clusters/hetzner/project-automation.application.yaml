@@ -1,0 +1,30 @@
+# DEN-2745 deployment bridge.
+#
+# The Hetzner root Application intentionally reconciles this cluster overlay
+# from `dev`. The reviewed project-automation package, including the active
+# nightly interdependency CronJob, is maintained on `main`. This child
+# Application therefore sources that immutable reviewed branch without
+# fast-forwarding 955 unrelated commits through the deployment branch.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-project-automation
+  namespace: argocd
+  annotations:
+    denman.linear.app/issue: DEN-2745
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: main
+    path: remote/argocd/project-automation
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
