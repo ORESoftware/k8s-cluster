@@ -17,7 +17,9 @@ from __future__ import annotations
 
 from copy import deepcopy
 import re
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
+
+from repository_fleet_aliases import RepositoryAlias
 
 
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -30,6 +32,7 @@ class RemoteFleetStateError(RuntimeError):
 
 RepositoryLookup = Callable[[str], tuple[int, dict[str, Any] | None]]
 MainRefLookup = Callable[[str], str | None]
+RepositoryAliases = Mapping[str, RepositoryAlias]
 
 
 def _split_full_name(full_name: str) -> tuple[str, str]:
@@ -94,6 +97,7 @@ def classify_remote_fleet(
     *,
     repository_lookup: RepositoryLookup,
     main_ref_lookup: MainRefLookup,
+    repository_aliases: RepositoryAliases | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
     """Return missing canonical records and immutable remote snapshots.
 
@@ -125,6 +129,10 @@ def classify_remote_fleet(
     for record, full_name, sealed_commit in validated:
         status, payload = repository_lookup(full_name)
         if status == 404:
+            if repository_aliases is not None and key in repository_aliases:
+                raise RemoteFleetStateError(
+                    f"reviewed alias source no longer resolves on GitHub: {full_name}"
+                )
             missing.append(deepcopy(record))
             continue
         if status != 200:
@@ -175,6 +183,8 @@ def classify_remote_fleet(
             "sealed_commit": sealed_commit,
             "matches_sealed_commit": head == sealed_commit,
             "repository_id": remote.get("id"),
+            "remote_full_name": remote_full_name,
+            "renamed": renamed,
         }
 
     missing.sort(
@@ -192,7 +202,11 @@ def verify_created_repositories(
     repository_lookup: RepositoryLookup,
     main_ref_lookup: MainRefLookup,
 ) -> None:
-    """Require newly created repositories to match their sealed roots exactly."""
+    """Require newly created repositories to match their sealed roots exactly.
+
+    Rename aliases are deliberately not accepted here: a newly created gap must
+    exist at the exact sealed identity requested by the reviewed manifest.
+    """
 
     for index, record in enumerate(records):
         full_name, sealed_commit = _record_identity(record, index)
@@ -201,8 +215,12 @@ def verify_created_repositories(
             raise RemoteFleetStateError(
                 f"created repository verification failed for {full_name}: HTTP {status}"
             )
-        _validate_private_remote(full_name, payload)
-        actual = main_ref_lookup(full_name)
+        _, remote_full_name, renamed = _validate_private_remote(full_name, payload)
+        if renamed:
+            raise RemoteFleetStateError(
+                f"created repository {full_name} unexpectedly resolved through an alias"
+            )
+        actual = main_ref_lookup(remote_full_name)
         if actual != sealed_commit:
             raise RemoteFleetStateError(
                 f"created repository {full_name} main drift: {actual!r} != {sealed_commit}"
@@ -214,8 +232,9 @@ def verify_preserved_existing(
     *,
     repository_lookup: RepositoryLookup,
     main_ref_lookup: MainRefLookup,
+    repository_aliases: RepositoryAliases | None = None,
 ) -> None:
-    """Prove a gap publication did not mutate pre-existing repositories."""
+    """Prove a gap publication did not mutate or redirect existing repositories."""
 
     for full_name in sorted(existing_snapshot, key=str.casefold):
         expected = existing_snapshot[full_name]
@@ -228,7 +247,7 @@ def verify_preserved_existing(
         repository_id = expected.get("repository_id")
         if repository_id is not None and remote.get("id") != repository_id:
             raise RemoteFleetStateError(f"repository identity changed for {full_name}")
-        actual = main_ref_lookup(full_name)
+        actual = main_ref_lookup(remote_full_name)
         if actual != expected.get("head"):
             raise RemoteFleetStateError(
                 f"existing repository {full_name} changed during gap publication: "
