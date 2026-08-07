@@ -1,0 +1,3 @@
+Trigger one encrypted Google Chat export for DEN-533 and DEN-266.
+Boundary: createTime >= 2026-06-05T00:00:00.000Z.
+Relay issue: #490.

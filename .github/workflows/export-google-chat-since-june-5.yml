@@ -1,0 +1,246 @@
+name: Export Google Chat since June 5
+
+on:
+  pull_request:
+    paths:
+      - .github/chat-export-june-5/**
+      - .github/workflows/export-google-chat-since-june-5.yml
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: export-google-chat-since-june-5
+  cancel-in-progress: false
+
+env:
+  RELAY_ISSUE: '490'
+  APPS_SCRIPT_EXEC_URL: https://script.google.com/macros/s/AKfycbzIMOO0eQ12WjgRvLmYAdn3zryB57Ush6uWfQWc-iHNvVu6X0ULbPfPv7WMaYdMp2Tq/exec
+  EXPECTED_SPACE: spaces/AAQAoHKdzvI
+  EXPECTED_VERSION: '1.0.1'
+  SINCE_TIME: '2026-06-05T00:00:00.000Z'
+
+jobs:
+  export:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Generate run-scoped RSA handoff key
+        id: handoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 \
+            -out "${RUNNER_TEMP}/chat-export-private.pem" >/dev/null 2>&1
+          openssl pkey -in "${RUNNER_TEMP}/chat-export-private.pem" -pubout \
+            -out "${RUNNER_TEMP}/chat-export-public.pem" >/dev/null 2>&1
+          run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
+          echo "public_key_b64=$(base64 -w0 < "${RUNNER_TEMP}/chat-export-public.pem")" >> "$GITHUB_OUTPUT"
+
+      - name: Publish public key and receive encrypted token
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.handoff.outputs.run_id }}
+          PUBLIC_KEY_B64: ${{ steps.handoff.outputs.public_key_b64 }}
+        run: |
+          set -euo pipefail
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${RELAY_ISSUE}/comments" \
+            -f "body=CHAT_EXPORT_HANDOFF run_id=${RUN_ID} key_b64=${PUBLIC_KEY_B64}" >/dev/null
+
+          prefix="CHAT_EXPORT_CIPHERTEXT run_id=${RUN_ID} data="
+          ciphertext=''
+          for _ in $(seq 1 180); do
+            ciphertext="$(gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/issues/${RELAY_ISSUE}/comments" \
+              --jq ".[] | select(.body | startswith(\"${prefix}\")) | .body" \
+              | tail -n 1 | sed "s|^${prefix}||")"
+            [ -z "$ciphertext" ] || break
+            sleep 5
+          done
+          test -n "$ciphertext" || {
+            echo 'Timed out waiting for encrypted Chat export handoff.' >&2
+            exit 1
+          }
+
+          printf '%s' "$ciphertext" | base64 --decode > "${RUNNER_TEMP}/chat-export-payload.bin"
+          openssl pkeyutl -decrypt \
+            -inkey "${RUNNER_TEMP}/chat-export-private.pem" \
+            -in "${RUNNER_TEMP}/chat-export-payload.bin" \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256 \
+            -out "${RUNNER_TEMP}/chat-export-payload.json"
+
+          jq -e '
+            (.bridge_token | type == "string" and length >= 32) and
+            (.archive_passphrase | type == "string" and length >= 32)
+          ' "${RUNNER_TEMP}/chat-export-payload.json" >/dev/null
+          jq -r '.bridge_token' "${RUNNER_TEMP}/chat-export-payload.json" > "${RUNNER_TEMP}/bridge-token"
+          jq -r '.archive_passphrase' "${RUNNER_TEMP}/chat-export-payload.json" > "${RUNNER_TEMP}/archive-passphrase"
+          echo "::add-mask::$(cat "${RUNNER_TEMP}/bridge-token")"
+          echo "::add-mask::$(cat "${RUNNER_TEMP}/archive-passphrase")"
+
+      - name: Verify bridge and export bounded history
+        id: export
+        shell: bash
+        env:
+          RUN_ID: ${{ steps.handoff.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          umask 077
+          token="$(cat "${RUNNER_TEMP}/bridge-token")"
+          out="${RUNNER_TEMP}/google-chat-june-5"
+          mkdir -p "$out/pages"
+
+          health="$out/health.json"
+          curl --fail --location --silent --show-error \
+            --retry 3 --retry-all-errors --connect-timeout 20 --max-time 120 \
+            "${APPS_SCRIPT_EXEC_URL}?action=health&run=${RUN_ID}" \
+            --output "$health"
+          jq -e --arg version "$EXPECTED_VERSION" '
+            .ok == true and
+            .service == "google-chat-linear-bridge" and
+            .version == $version and
+            .configured == true
+          ' "$health" >/dev/null
+
+          bridge_post() {
+            local action="$1"
+            local page_token="${2:-}"
+            local destination="$3"
+            jq -nc \
+              --arg action "$action" \
+              --arg token "$token" \
+              --arg pageToken "$page_token" \
+              '{action:$action,token:$token,pageSize:250,metadataOnly:false,showDeleted:true}
+               + (if $pageToken == "" then {} else {pageToken:$pageToken} end)' \
+              | curl --fail --location --silent --show-error \
+                  --retry 3 --retry-all-errors --connect-timeout 20 --max-time 120 \
+                  -H 'content-type: application/json' \
+                  --data-binary @- "$APPS_SCRIPT_EXEC_URL" \
+                  --output "$destination"
+            jq -e '.ok == true' "$destination" >/dev/null
+          }
+
+          bridge_post probe '' "$out/probe.json"
+          jq -e --arg space "$EXPECTED_SPACE" '.data.space.name == $space' "$out/probe.json" >/dev/null
+
+          : > "$out/messages.jsonl"
+          page_token=''
+          page_count=0
+          raw_count=0
+          while :; do
+            page_count=$((page_count + 1))
+            test "$page_count" -le 1000 || {
+              echo 'Pagination exceeded the hard page limit.' >&2
+              exit 1
+            }
+            page_file="$out/pages/$(printf '%05d' "$page_count").json"
+            bridge_post messages "$page_token" "$page_file"
+            count="$(jq -r '.data.messageCount' "$page_file")"
+            raw_count=$((raw_count + count))
+            jq -c --arg since "$SINCE_TIME" \
+              '.data.messages[]? | select(.createTime != null and .createTime >= $since)' \
+              "$page_file" >> "$out/messages.jsonl"
+            page_token="$(jq -r '.data.nextPageToken // empty' "$page_file")"
+            [ -n "$page_token" ] || break
+          done
+
+          jq -s \
+            --arg runId "$RUN_ID" \
+            --arg space "$EXPECTED_SPACE" \
+            --arg since "$SINCE_TIME" \
+            --arg exportedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson pageCount "$page_count" \
+            --argjson rawCount "$raw_count" \
+            '{schemaVersion:1,runId:$runId,space:$space,sinceInclusive:$since,
+              exportedAt:$exportedAt,pageCount:$pageCount,rawBridgeMessageCount:$rawCount,
+              messages:.}' \
+            "$out/messages.jsonl" > "$out/export.json"
+
+          message_count="$(jq '.messages | length' "$out/export.json")"
+          first_time="$(jq -r '[.messages[].createTime] | min // empty' "$out/export.json")"
+          last_time="$(jq -r '[.messages[].createTime] | max // empty' "$out/export.json")"
+          checksum="$(sha256sum "$out/export.json" | awk '{print $1}')"
+
+          jq -n \
+            --arg runId "$RUN_ID" \
+            --arg space "$EXPECTED_SPACE" \
+            --arg since "$SINCE_TIME" \
+            --arg firstTime "$first_time" \
+            --arg lastTime "$last_time" \
+            --arg checksum "$checksum" \
+            --argjson pageCount "$page_count" \
+            --argjson rawCount "$raw_count" \
+            --argjson messageCount "$message_count" \
+            '{runId:$runId,space:$space,sinceInclusive:$since,pageCount:$pageCount,
+              rawBridgeMessageCount:$rawCount,messageCount:$messageCount,
+              firstCreateTime:($firstTime | select(length > 0)),
+              lastCreateTime:($lastTime | select(length > 0)),sha256:$checksum}' \
+            > "$out/metadata.json"
+
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase-file "${RUNNER_TEMP}/archive-passphrase" \
+            --symmetric --cipher-algo AES256 \
+            --output "$out/google-chat-june-5.json.gpg" "$out/export.json"
+          rm -f "$out/export.json" "$out/messages.jsonl"
+          rm -rf "$out/pages"
+
+          echo "artifact_name=google-chat-june-5-${RUN_ID}" >> "$GITHUB_OUTPUT"
+          echo "message_count=${message_count}" >> "$GITHUB_OUTPUT"
+          echo "page_count=${page_count}" >> "$GITHUB_OUTPUT"
+          echo "first_time=${first_time}" >> "$GITHUB_OUTPUT"
+          echo "last_time=${last_time}" >> "$GITHUB_OUTPUT"
+          echo "checksum=${checksum}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload encrypted export
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.export.outputs.artifact_name }}
+          path: |
+            ${{ runner.temp }}/google-chat-june-5/google-chat-june-5.json.gpg
+            ${{ runner.temp }}/google-chat-june-5/metadata.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Publish metadata-only completion
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.handoff.outputs.run_id }}
+          ARTIFACT_NAME: ${{ steps.export.outputs.artifact_name }}
+          MESSAGE_COUNT: ${{ steps.export.outputs.message_count }}
+          PAGE_COUNT: ${{ steps.export.outputs.page_count }}
+          FIRST_TIME: ${{ steps.export.outputs.first_time }}
+          LAST_TIME: ${{ steps.export.outputs.last_time }}
+          CHECKSUM: ${{ steps.export.outputs.checksum }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="CHAT_EXPORT_COMPLETE run_id=${RUN_ID} artifact=${ARTIFACT_NAME} messages=${MESSAGE_COUNT} pages=${PAGE_COUNT} first=${FIRST_TIME:-none} last=${LAST_TIME:-none} sha256=${CHECKSUM}"
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${RELAY_ISSUE}/comments" \
+            -f "body=${body}" >/dev/null
+
+      - name: Destroy plaintext and handoff material
+        if: always()
+        shell: bash
+        run: |
+          rm -f \
+            "${RUNNER_TEMP}/chat-export-private.pem" \
+            "${RUNNER_TEMP}/chat-export-public.pem" \
+            "${RUNNER_TEMP}/chat-export-payload.bin" \
+            "${RUNNER_TEMP}/chat-export-payload.json" \
+            "${RUNNER_TEMP}/bridge-token" \
+            "${RUNNER_TEMP}/archive-passphrase"
+          rm -rf "${RUNNER_TEMP}/google-chat-june-5"
