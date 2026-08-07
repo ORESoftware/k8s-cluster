@@ -1104,6 +1104,109 @@ fn prune_webhook_deliveries(
     }
 }
 
+fn webhook_paths(
+    event: &str,
+    payload: &Value,
+    configured_paths: &[String],
+    failure_conclusions: &BTreeSet<String>,
+    ignored_workflows: &BTreeSet<String>,
+) -> Result<Vec<String>, String> {
+    if event != "workflow_run" {
+        return Ok(configured_paths.to_vec());
+    }
+
+    let action = payload.get("action").and_then(Value::as_str).unwrap_or("");
+    if action != "completed" {
+        return Err(format!(
+            "workflow_run action {action:?} is not the completed terminal phase"
+        ));
+    }
+
+    let workflow_name = payload
+        .pointer("/workflow_run/name")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if ignored_workflows.contains(workflow_name) {
+        return Err(format!(
+            "workflow {workflow_name:?} is excluded to prevent fallback recursion"
+        ));
+    }
+
+    let conclusion = payload
+        .pointer("/workflow_run/conclusion")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "completed workflow_run is missing a conclusion".to_string())?
+        .to_ascii_lowercase();
+    if !failure_conclusions.contains(&conclusion) {
+        return Err(format!(
+            "workflow_run conclusion {conclusion:?} is not configured for failure fallback"
+        ));
+    }
+
+    let workflow_path = payload
+        .pointer("/workflow_run/path")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "workflow_run is missing workflow_run.path".to_string())?;
+    if !configured_paths.iter().any(|path| path == workflow_path) {
+        return Err(format!(
+            "failed workflow path {workflow_path:?} is not configured for this repository"
+        ));
+    }
+    Ok(vec![workflow_path.to_string()])
+}
+
+fn github_delivery(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("x-github-delivery")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .map(|value| value.to_string())
+}
+
+async fn remember_webhook_delivery(state: &AppState, delivery: &str) -> bool {
+    let now = Instant::now();
+    let ttl = Duration::from_secs(state.config.webhook_delivery_ttl_seconds);
+    let mut deliveries = state.webhook_deliveries.write().await;
+    prune_webhook_deliveries(
+        &mut deliveries,
+        now,
+        ttl,
+        state.config.max_webhook_deliveries,
+    );
+    if deliveries.contains_key(delivery) {
+        return false;
+    }
+    deliveries.insert(delivery.to_string(), now);
+    prune_webhook_deliveries(
+        &mut deliveries,
+        now,
+        ttl,
+        state.config.max_webhook_deliveries,
+    );
+    true
+}
+
+fn prune_webhook_deliveries(
+    deliveries: &mut BTreeMap<String, Instant>,
+    now: Instant,
+    ttl: Duration,
+    max_deliveries: usize,
+) {
+    deliveries.retain(|_, seen_at| now.duration_since(*seen_at) < ttl);
+    let remove = deliveries.len().saturating_sub(max_deliveries);
+    if remove == 0 {
+        return;
+    }
+    let mut oldest = deliveries
+        .iter()
+        .map(|(delivery, seen_at)| (*seen_at, delivery.clone()))
+        .collect::<Vec<_>>();
+    oldest.sort_by_key(|(seen_at, _)| *seen_at);
+    for (_, delivery) in oldest.into_iter().take(remove) {
+        deliveries.remove(&delivery);
+    }
+}
+
 fn webhook_revision(event: &str, payload: &Value) -> Option<String> {
     match event {
         "push" => payload.get("after").and_then(Value::as_str),

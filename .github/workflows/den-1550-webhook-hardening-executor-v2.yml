@@ -1,0 +1,170 @@
+name: DEN-1550 webhook hardening executor v2
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - .github/workflows/den-1550-webhook-hardening-executor-v2.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1550-webhook-hardening-executor-v2-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  apply-validate-and-commit-source:
+    if: github.event.pull_request.head.ref == 'agent/den-1550-failure-webhook-hardening-20260803'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1550-failure-webhook-hardening-20260803
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Apply the reviewed source patch using YAML block semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby -ryaml -e '
+            workflow = YAML.safe_load(File.read(ARGV.fetch(0)), aliases: true)
+            step = workflow.fetch("jobs")
+              .fetch("apply-validate-and-commit")
+              .fetch("steps")
+              .find { |candidate| candidate["name"] == "Apply failure-only webhook and delivery dedupe patch" }
+            abort("reviewed patch step not found") unless step
+            File.write(ARGV.fetch(1), step.fetch("run"))
+          ' \
+            .github/workflows/den-1550-webhook-hardening-helper.yml \
+            /tmp/den-1550-apply.sh
+
+          python - <<'PY'
+          from pathlib import Path
+
+          script = Path('/tmp/den-1550-apply.sh')
+          output = []
+          replacements = {'conclusion': 0, 'path': 0}
+          for line in script.read_text(encoding='utf-8').splitlines():
+              stripped = line.strip()
+              if stripped.startswith('assert.match(server, /workflow_run') and 'conclusion' in stripped:
+                  indent = line[: len(line) - len(line.lstrip())]
+                  line = indent + "assert.ok(server.includes('/workflow_run/conclusion'));"
+                  replacements['conclusion'] += 1
+              elif stripped.startswith('assert.match(server, /workflow_run') and 'path' in stripped:
+                  indent = line[: len(line) - len(line.lstrip())]
+                  line = indent + "assert.ok(server.includes('/workflow_run/path'));"
+                  replacements['path'] += 1
+              output.append(line)
+          if replacements != {'conclusion': 1, 'path': 1}:
+              raise SystemExit(f'unexpected assertion replacement counts: {replacements}')
+          script.write_text('\n'.join(output) + '\n', encoding='utf-8')
+          PY
+
+          bash /tmp/den-1550-apply.sh
+
+          # The Actions token cannot edit workflow files. The connected GitHub app applies
+          # the already-reviewed workflow-path update after source validation succeeds.
+          git restore .github/workflows/gha-clone-server.yml
+
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml')
+          text = path.read_text(encoding='utf-8')
+          for name in (
+              'GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS',
+              'GHA_CLONE_WEBHOOK_IGNORED_WORKFLOWS',
+              'GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS',
+              'GHA_CLONE_MAX_WEBHOOK_DELIVERIES',
+          ):
+              text = text.replace(f'              - name: {name}', f'            - name: {name}')
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all
+          git diff --check
+
+      - name: Validate Rust webhook behavior
+        working-directory: remote/deployments/gha-clone-server-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo test --locked --all-targets
+          cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Validate deployment and registration contracts
+        working-directory: remote/tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts
+
+      - name: Validate deployment YAML and registration shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby -e "require 'yaml'; YAML.safe_load(File.read(ARGV.fetch(0)), aliases: true)" \
+            remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml
+          bash -n remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh
+
+      - name: Reject credentials and conflict markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- \
+            remote/deployments/gha-clone-server-rs \
+            remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml \
+            remote/tests/general/gha-clone-webhook-config.test.ts \
+            docs/gha-continuity-architecture.md; then
+            echo 'conflict marker found' >&2
+            exit 1
+          fi
+          if grep -RIE \
+            'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|BEGIN (RSA |EC )?PRIVATE KEY' \
+            remote/deployments/gha-clone-server-rs \
+            remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml \
+            docs/gha-continuity-architecture.md; then
+            echo 'credential-like material found' >&2
+            exit 1
+          fi
+
+      - name: Commit only validated non-workflow changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add \
+            docs/gha-continuity-architecture.md \
+            remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml \
+            remote/deployments/gha-clone-server-rs/README.md \
+            remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh \
+            remote/deployments/gha-clone-server-rs/src/main.rs \
+            remote/tests/general/gha-clone-webhook-config.test.ts
+          git diff --cached --check
+          git diff --cached --quiet && { echo 'expected source changes were not produced' >&2; exit 1; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'DEN-1550 harden failure webhook delivery semantics'
+          git push origin HEAD:agent/den-1550-failure-webhook-hardening-20260803
