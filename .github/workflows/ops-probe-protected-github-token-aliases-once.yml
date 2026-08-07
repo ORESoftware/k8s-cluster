@@ -10,6 +10,7 @@ on:
 permissions:
   contents: write
   id-token: write
+  issues: write
 
 concurrency:
   group: probe-protected-github-token-aliases-den-319
@@ -20,6 +21,9 @@ jobs:
     if: github.actor == 'ORESoftware'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      TRACKING_PR: '396'
+
     steps:
       - name: Check out trusted main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -41,6 +45,7 @@ jobs:
         shell: bash
         env:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           test -n "${INSTANCE_ID:-}"
@@ -85,6 +90,7 @@ jobs:
               raise SystemExit("protected secret is not a JSON object") from exc
           finally:
               completed.stdout = ""
+              completed.stderr = ""
 
           if not isinstance(payload, dict):
               raise SystemExit("protected secret is not a JSON object")
@@ -112,6 +118,7 @@ jobs:
                   with urllib.request.urlopen(request, timeout=20) as response:
                       return response.status, json.load(response)
               except urllib.error.HTTPError as error:
+                  error.read(4096)
                   return error.code, None
               except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
                   return None, None
