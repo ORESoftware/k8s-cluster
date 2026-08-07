@@ -8,6 +8,10 @@ App ID: `A0BMBAMM5NJ`
 
 Workspace ID: `T01B3C83PMK`
 
+Linear: `DEN-1298`  
+Slack app: `alex-main-agent`  
+App ID: `A0BMBAMM5NJ`  
+Workspace ID: `T01B3C83PMK`  
 Runtime source: `ORESoftware/ai-agent-bridge.rs@0ba7d2d4eb8c44583503d4567af2de1f73bc5598`
 
 ## Purpose
