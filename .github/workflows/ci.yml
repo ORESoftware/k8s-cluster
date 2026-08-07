@@ -9,6 +9,28 @@ permissions:
   contents: read
 
 jobs:
+  owner-authorized-mcp-publication:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.user.login == 'ORESoftware' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/publish-oresoftware-mcp-rust-libs-20260731'
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Execute exact pinned ORESoftware MCP publisher
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/publish-oresoftware-mcp-rust-libs.sh
+
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 20
