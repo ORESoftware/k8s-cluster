@@ -1,0 +1,599 @@
+{
+  "expected_repository_count": 65,
+  "fleet_id": "new-org-core-v1",
+  "organizations": [
+    {
+      "default_visibility": "private",
+      "existing_repositories": [],
+      "owner": "channelsiege",
+      "prefix": "channelsiege",
+      "product": "ChannelSiege",
+      "repositories": [
+        {
+          "description": "ChannelSiege governance repository.",
+          "name": ".github",
+          "role": "governance",
+          "seed": "governance",
+          "visibility": "public"
+        },
+        {
+          "description": "ChannelSiege interfaces repository.",
+          "name": "channelsiege-interfaces",
+          "role": "interfaces",
+          "seed": "interfaces",
+          "visibility": "private"
+        },
+        {
+          "description": "ChannelSiege clients repository.",
+          "name": "channelsiege-clients",
+          "role": "clients",
+          "seed": "clients",
+          "visibility": "private"
+        },
+        {
+          "description": "ChannelSiege cli repository.",
+          "name": "channelsiege-cli",
+          "role": "cli",
+          "seed": "cli",
+          "visibility": "private"
+        },
+        {
+          "description": "ChannelSiege sync repository.",
+          "name": "channelsiege-sync",
+          "role": "sync",
+          "seed": "sync",
+          "visibility": "private"
+        },
+        {
+          "description": "ChannelSiege mcp repository.",
+          "name": "channelsiege-mcp-server.rs",
+          "role": "mcp",
+          "seed": "mcp",
+          "visibility": "private"
+        },
+        {
+          "description": "ChannelSiege infra repository.",
+          "name": "channelsiege-infra",
+          "role": "infra",
+          "seed": "infra",
+          "visibility": "private"
+        },
+        {
+          "description": "ChannelSiege server repository.",
+          "name": "channelsiege-server.rs",
+          "role": "server",
+          "seed": "server",
+          "visibility": "private"
+        },
+        {
+          "description": "ChannelSiege e2e repository.",
+          "name": "channelsiege-e2e",
+          "role": "e2e",
+          "seed": "e2e",
+          "visibility": "private"
+        },
+        {
+          "description": "ChannelSiege monorepo repository.",
+          "name": "channelsiege-monorepo",
+          "role": "monorepo",
+          "seed": "monorepo",
+          "visibility": "private"
+        }
+      ],
+      "summary": "Channel orchestration and campaign coordination platform."
+    },
+    {
+      "default_visibility": "private",
+      "existing_repositories": [],
+      "owner": "OmniBlitz",
+      "prefix": "omniblitz",
+      "product": "OmniBlitz",
+      "repositories": [
+        {
+          "description": "OmniBlitz governance repository.",
+          "name": ".github",
+          "role": "governance",
+          "seed": "governance",
+          "visibility": "public"
+        },
+        {
+          "description": "OmniBlitz interfaces repository.",
+          "name": "omniblitz-interfaces",
+          "role": "interfaces",
+          "seed": "interfaces",
+          "visibility": "private"
+        },
+        {
+          "description": "OmniBlitz clients repository.",
+          "name": "omniblitz-clients",
+          "role": "clients",
+          "seed": "clients",
+          "visibility": "private"
+        },
+        {
+          "description": "OmniBlitz cli repository.",
+          "name": "omniblitz-cli",
+          "role": "cli",
+          "seed": "cli",
+          "visibility": "private"
+        },
+        {
+          "description": "OmniBlitz sync repository.",
+          "name": "omniblitz-sync",
+          "role": "sync",
+          "seed": "sync",
+          "visibility": "private"
+        },
+        {
+          "description": "OmniBlitz mcp repository.",
+          "name": "omniblitz-mcp-server.rs",
+          "role": "mcp",
+          "seed": "mcp",
+          "visibility": "private"
+        },
+        {
+          "description": "OmniBlitz infra repository.",
+          "name": "omniblitz-infra",
+          "role": "infra",
+          "seed": "infra",
+          "visibility": "private"
+        },
+        {
+          "description": "OmniBlitz server repository.",
+          "name": "omniblitz-server.rs",
+          "role": "server",
+          "seed": "server",
+          "visibility": "private"
+        },
+        {
+          "description": "OmniBlitz e2e repository.",
+          "name": "omniblitz-e2e",
+          "role": "e2e",
+          "seed": "e2e",
+          "visibility": "private"
+        },
+        {
+          "description": "OmniBlitz monorepo repository.",
+          "name": "omniblitz-monorepo",
+          "role": "monorepo",
+          "seed": "monorepo",
+          "visibility": "private"
+        }
+      ],
+      "summary": "Omnichannel delivery and operations platform."
+    },
+    {
+      "default_visibility": "private",
+      "existing_repositories": [],
+      "owner": "streamkore",
+      "prefix": "streamkore",
+      "product": "StreamKore",
+      "repositories": [
+        {
+          "description": "StreamKore governance repository.",
+          "name": ".github",
+          "role": "governance",
+          "seed": "governance",
+          "visibility": "public"
+        },
+        {
+          "description": "StreamKore interfaces repository.",
+          "name": "streamkore-interfaces",
+          "role": "interfaces",
+          "seed": "interfaces",
+          "visibility": "private"
+        },
+        {
+          "description": "StreamKore clients repository.",
+          "name": "streamkore-clients",
+          "role": "clients",
+          "seed": "clients",
+          "visibility": "private"
+        },
+        {
+          "description": "StreamKore cli repository.",
+          "name": "streamkore-cli",
+          "role": "cli",
+          "seed": "cli",
+          "visibility": "private"
+        },
+        {
+          "description": "StreamKore sync repository.",
+          "name": "streamkore-sync",
+          "role": "sync",
+          "seed": "sync",
+          "visibility": "private"
+        },
+        {
+          "description": "StreamKore mcp repository.",
+          "name": "streamkore-mcp-server.rs",
+          "role": "mcp",
+          "seed": "mcp",
+          "visibility": "private"
+        },
+        {
+          "description": "StreamKore infra repository.",
+          "name": "streamkore-infra",
+          "role": "infra",
+          "seed": "infra",
+          "visibility": "private"
+        },
+        {
+          "description": "StreamKore server repository.",
+          "name": "streamkore-server.rs",
+          "role": "server",
+          "seed": "server",
+          "visibility": "private"
+        },
+        {
+          "description": "StreamKore e2e repository.",
+          "name": "streamkore-e2e",
+          "role": "e2e",
+          "seed": "e2e",
+          "visibility": "private"
+        },
+        {
+          "description": "StreamKore monorepo repository.",
+          "name": "streamkore-monorepo",
+          "role": "monorepo",
+          "seed": "monorepo",
+          "visibility": "private"
+        }
+      ],
+      "summary": "Core live-streaming and media workflow platform."
+    },
+    {
+      "default_visibility": "private",
+      "existing_repositories": [],
+      "owner": "hypeblitz",
+      "prefix": "hypeblitz",
+      "product": "HypeBlitz",
+      "repositories": [
+        {
+          "description": "HypeBlitz governance repository.",
+          "name": ".github",
+          "role": "governance",
+          "seed": "governance",
+          "visibility": "public"
+        },
+        {
+          "description": "HypeBlitz interfaces repository.",
+          "name": "hypeblitz-interfaces",
+          "role": "interfaces",
+          "seed": "interfaces",
+          "visibility": "private"
+        },
+        {
+          "description": "HypeBlitz clients repository.",
+          "name": "hypeblitz-clients",
+          "role": "clients",
+          "seed": "clients",
+          "visibility": "private"
+        },
+        {
+          "description": "HypeBlitz cli repository.",
+          "name": "hypeblitz-cli",
+          "role": "cli",
+          "seed": "cli",
+          "visibility": "private"
+        },
+        {
+          "description": "HypeBlitz sync repository.",
+          "name": "hypeblitz-sync",
+          "role": "sync",
+          "seed": "sync",
+          "visibility": "private"
+        },
+        {
+          "description": "HypeBlitz mcp repository.",
+          "name": "hypeblitz-mcp-server.rs",
+          "role": "mcp",
+          "seed": "mcp",
+          "visibility": "private"
+        },
+        {
+          "description": "HypeBlitz infra repository.",
+          "name": "hypeblitz-infra",
+          "role": "infra",
+          "seed": "infra",
+          "visibility": "private"
+        },
+        {
+          "description": "HypeBlitz server repository.",
+          "name": "hypeblitz-server.rs",
+          "role": "server",
+          "seed": "server",
+          "visibility": "private"
+        },
+        {
+          "description": "HypeBlitz e2e repository.",
+          "name": "hypeblitz-e2e",
+          "role": "e2e",
+          "seed": "e2e",
+          "visibility": "private"
+        },
+        {
+          "description": "HypeBlitz monorepo repository.",
+          "name": "hypeblitz-monorepo",
+          "role": "monorepo",
+          "seed": "monorepo",
+          "visibility": "private"
+        }
+      ],
+      "summary": "Campaign distribution and audience-growth platform."
+    },
+    {
+      "default_visibility": "private",
+      "existing_repositories": [
+        {
+          "name": "meta-agents-server.rs",
+          "role": "server"
+        },
+        {
+          "name": "meta-agent-control-plane.rs",
+          "role": "control-plane"
+        },
+        {
+          "name": "metagents",
+          "role": "agent-experiments"
+        },
+        {
+          "name": "metacog",
+          "role": "metacognition-experiments"
+        }
+      ],
+      "owner": "meta-agents-demo",
+      "prefix": "meta-agents",
+      "product": "Meta Agents Demo",
+      "repositories": [
+        {
+          "description": "Meta Agents Demo governance repository.",
+          "name": ".github",
+          "role": "governance",
+          "seed": "governance",
+          "visibility": "public"
+        },
+        {
+          "description": "Meta Agents Demo interfaces repository.",
+          "name": "meta-agents-interfaces",
+          "role": "interfaces",
+          "seed": "interfaces",
+          "visibility": "private"
+        },
+        {
+          "description": "Meta Agents Demo clients repository.",
+          "name": "meta-agents-clients",
+          "role": "clients",
+          "seed": "clients",
+          "visibility": "private"
+        },
+        {
+          "description": "Meta Agents Demo cli repository.",
+          "name": "meta-agents-cli",
+          "role": "cli",
+          "seed": "cli",
+          "visibility": "private"
+        },
+        {
+          "description": "Meta Agents Demo sync repository.",
+          "name": "meta-agents-sync",
+          "role": "sync",
+          "seed": "sync",
+          "visibility": "private"
+        },
+        {
+          "description": "Meta Agents Demo mcp repository.",
+          "name": "meta-agents-mcp-server.rs",
+          "role": "mcp",
+          "seed": "mcp",
+          "visibility": "private"
+        },
+        {
+          "description": "Meta Agents Demo infra repository.",
+          "name": "meta-agents-infra",
+          "role": "infra",
+          "seed": "infra",
+          "visibility": "private"
+        },
+        {
+          "description": "Meta Agents Demo e2e repository.",
+          "name": "meta-agents-e2e",
+          "role": "e2e",
+          "seed": "e2e",
+          "visibility": "private"
+        },
+        {
+          "description": "Meta Agents Demo monorepo repository.",
+          "name": "meta-agents-monorepo",
+          "role": "monorepo",
+          "seed": "monorepo",
+          "visibility": "private"
+        }
+      ],
+      "summary": "Meta-agent introspection, memory, and control-plane demonstrations."
+    },
+    {
+      "default_visibility": "private",
+      "existing_repositories": [
+        {
+          "name": "ncc-router",
+          "role": "server"
+        },
+        {
+          "name": "ncc-dns-server",
+          "role": "dns"
+        },
+        {
+          "name": "ncc-vpn",
+          "role": "vpn"
+        },
+        {
+          "name": "ncc-load-balancer",
+          "role": "load-balancer"
+        },
+        {
+          "name": "ncc-switch",
+          "role": "switch"
+        },
+        {
+          "name": "ncc-e2e",
+          "role": "e2e"
+        }
+      ],
+      "owner": "networking-components",
+      "prefix": "ncc",
+      "product": "Networking Components",
+      "repositories": [
+        {
+          "description": "Networking Components governance repository.",
+          "name": ".github",
+          "role": "governance",
+          "seed": "governance",
+          "visibility": "public"
+        },
+        {
+          "description": "Networking Components interfaces repository.",
+          "name": "ncc-interfaces",
+          "role": "interfaces",
+          "seed": "interfaces",
+          "visibility": "private"
+        },
+        {
+          "description": "Networking Components clients repository.",
+          "name": "ncc-clients",
+          "role": "clients",
+          "seed": "clients",
+          "visibility": "private"
+        },
+        {
+          "description": "Networking Components cli repository.",
+          "name": "ncc-cli",
+          "role": "cli",
+          "seed": "cli",
+          "visibility": "private"
+        },
+        {
+          "description": "Networking Components sync repository.",
+          "name": "ncc-sync",
+          "role": "sync",
+          "seed": "sync",
+          "visibility": "private"
+        },
+        {
+          "description": "Networking Components mcp repository.",
+          "name": "ncc-mcp-server.rs",
+          "role": "mcp",
+          "seed": "mcp",
+          "visibility": "private"
+        },
+        {
+          "description": "Networking Components infra repository.",
+          "name": "ncc-infra",
+          "role": "infra",
+          "seed": "infra",
+          "visibility": "private"
+        },
+        {
+          "description": "Networking Components monorepo repository.",
+          "name": "ncc-monorepo",
+          "role": "monorepo",
+          "seed": "monorepo",
+          "visibility": "private"
+        }
+      ],
+      "summary": "Composable networking services and control-plane components."
+    },
+    {
+      "default_visibility": "public",
+      "existing_repositories": [
+        {
+          "name": "rust-engine",
+          "role": "server"
+        },
+        {
+          "name": "unreal-unity-monorepo",
+          "role": "monorepo"
+        },
+        {
+          "name": "unreal",
+          "role": "unreal-adapter"
+        },
+        {
+          "name": "unity",
+          "role": "unity-adapter"
+        },
+        {
+          "name": "wasm",
+          "role": "wasm-runtime"
+        },
+        {
+          "name": "browserffi",
+          "role": "browser-ffi"
+        }
+      ],
+      "owner": "unreal-unity-poc",
+      "prefix": "unreal-unity",
+      "product": "Unreal Unity POC",
+      "repositories": [
+        {
+          "description": "Unreal Unity POC governance repository.",
+          "name": ".github",
+          "role": "governance",
+          "seed": "governance",
+          "visibility": "public"
+        },
+        {
+          "description": "Unreal Unity POC interfaces repository.",
+          "name": "unreal-unity-interfaces",
+          "role": "interfaces",
+          "seed": "interfaces",
+          "visibility": "public"
+        },
+        {
+          "description": "Unreal Unity POC clients repository.",
+          "name": "unreal-unity-clients",
+          "role": "clients",
+          "seed": "clients",
+          "visibility": "public"
+        },
+        {
+          "description": "Unreal Unity POC cli repository.",
+          "name": "unreal-unity-cli",
+          "role": "cli",
+          "seed": "cli",
+          "visibility": "public"
+        },
+        {
+          "description": "Unreal Unity POC sync repository.",
+          "name": "unreal-unity-sync",
+          "role": "sync",
+          "seed": "sync",
+          "visibility": "public"
+        },
+        {
+          "description": "Unreal Unity POC mcp repository.",
+          "name": "unreal-unity-mcp-server.rs",
+          "role": "mcp",
+          "seed": "mcp",
+          "visibility": "public"
+        },
+        {
+          "description": "Unreal Unity POC infra repository.",
+          "name": "unreal-unity-infra",
+          "role": "infra",
+          "seed": "infra",
+          "visibility": "public"
+        },
+        {
+          "description": "Unreal Unity POC e2e repository.",
+          "name": "unreal-unity-e2e",
+          "role": "e2e",
+          "seed": "e2e",
+          "visibility": "public"
+        }
+      ],
+      "summary": "Cross-engine Rust, FFI, and browser-runtime proof-of-concept platform."
+    }
+  ],
+  "schema_version": 1
+}
