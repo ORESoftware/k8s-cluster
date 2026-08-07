@@ -9,7 +9,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/ORESoftware/k8s-cluster.git
-    targetRevision: main
+    targetRevision: dev
     path: remote/argocd/benefactor-contact-pipeline
   destination:
     server: https://kubernetes.default.svc
