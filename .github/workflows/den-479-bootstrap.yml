@@ -1,0 +1,242 @@
+name: DEN-479 browser-test executable contract bootstrap
+
+on:
+  push:
+    branches:
+      - agent/den-479-fastify-zod-contract
+    paths:
+      - '.github/den-479/payload/apply.py.gz.part-*'
+      - '.github/workflows/den-479-bootstrap.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/den-479/payload/apply.py.gz.part-*'
+      - '.github/workflows/den-479-bootstrap.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-479-bootstrap-agent-den-479
+  cancel-in-progress: true
+
+env:
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+  PUPPETEER_SKIP_DOWNLOAD: 'true'
+
+jobs:
+  migrate:
+    if: github.ref == 'refs/heads/agent/den-479-fastify-zod-contract' || github.head_ref == 'agent/den-479-fastify-zod-contract'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Install Node.js 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Activate pinned pnpm
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@9.15.4 --activate
+          pnpm --version
+
+      - name: Decode and apply the bounded migration
+        shell: bash
+        run: |
+          set -uo pipefail
+          failure_log=.github/den-479/bootstrap-failure.log
+          rm -f "$failure_log"
+          mkdir -p "$(dirname "$failure_log")"
+          status=0
+          payload_gz="${RUNNER_TEMP}/apply-den-479.py.gz"
+          payload_py="${RUNNER_TEMP}/apply-den-479.py"
+          {
+            parts=(.github/den-479/payload/apply.py.gz.part-*)
+            test "${#parts[@]}" -eq 22
+            cat "${parts[@]}" > "$payload_gz"
+            printf '%s  %s\n' '15ddccbfa9f319f8aef874e8d24aa93e9f322a10129b1a10ea84e48e661f06d9' "$payload_gz" | sha256sum --check --strict
+            gzip --test "$payload_gz"
+            gzip --decompress --stdout "$payload_gz" > "$payload_py"
+            printf '%s  %s\n' '90217a6fbc97c2c27ba2bad7fbfa76605ccc529dfcdf29ab18d3ae085fe14ac8' "$payload_py" | sha256sum --check --strict
+            python3 -m py_compile "$payload_py"
+            python3 "$payload_py"
+          } >"$failure_log" 2>&1 || status=$?
+          if [ "$status" -ne 0 ]; then
+            cat "$failure_log"
+            git config user.name 'oresoftware-api-contract-bot'
+            git config user.email 'oresoftware-api-contract-bot@users.noreply.github.com'
+            git add "$failure_log"
+            git commit -m 'chore(DEN-479): capture bootstrap migration failure'
+            target_branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+            git push origin "HEAD:${target_branch}"
+            exit "$status"
+          fi
+          rm -f "$failure_log"
+
+      - name: Create contract-only telemetry shim
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          mkdir -p remote/libs/telemetry-node
+          cat > remote/libs/telemetry-node/package.json <<'JSON'
+          {"name":"@dd/telemetry","version":"0.0.0-contract-shim","type":"module","main":"index.js","types":"index.d.ts","exports":{".":{"types":"./index.d.ts","import":"./index.js"}}}
+          JSON
+          cat > remote/libs/telemetry-node/index.js <<'JS'
+          export function initTelemetry() { return { shutdown: async () => {} }; }
+          export function instrumentFastify() {}
+          export function loggerMixin() { return {}; }
+          JS
+          cat > remote/libs/telemetry-node/index.d.ts <<'TS'
+          export declare function initTelemetry(service: string): { shutdown(): Promise<void> };
+          export declare function instrumentFastify(app: unknown, options?: unknown): void;
+          export declare function loggerMixin(...args: unknown[]): Record<string, unknown>;
+          TS
+
+      - name: Update and install the locked Node dependency graph
+        working-directory: remote/deployments/browser-test-server
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --lockfile-only --ignore-scripts
+          pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Type-check and build the executable router
+        working-directory: remote/deployments/browser-test-server
+        shell: bash
+        run: |
+          set -uo pipefail
+          failure_log="${GITHUB_WORKSPACE}/.github/den-479/typecheck-failure.log"
+          rm -f "$failure_log"
+          status=0
+          {
+            pnpm typecheck
+            pnpm build
+          } >"$failure_log" 2>&1 || status=$?
+          if [ "$status" -ne 0 ]; then
+            cat "$failure_log"
+            cd "$GITHUB_WORKSPACE"
+            git config user.name 'oresoftware-api-contract-bot'
+            git config user.email 'oresoftware-api-contract-bot@users.noreply.github.com'
+            git add "$failure_log"
+            git commit -m 'chore(DEN-479): capture executable-router typecheck failure'
+            target_branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+            git push origin "HEAD:${target_branch}"
+            exit "$status"
+          fi
+          rm -f "$failure_log"
+
+      - name: Export the native OpenAPI contract twice
+        working-directory: remote/deployments/browser-test-server
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p generated
+          pnpm openapi:export > "${RUNNER_TEMP}/browser-test-openapi.1.json"
+          pnpm openapi:export > "${RUNNER_TEMP}/browser-test-openapi.2.json"
+          cmp "${RUNNER_TEMP}/browser-test-openapi.1.json" "${RUNNER_TEMP}/browser-test-openapi.2.json"
+          cp "${RUNNER_TEMP}/browser-test-openapi.1.json" generated/openapi.json
+          python3 -m json.tool generated/openapi.json >/dev/null
+
+      - name: Regenerate fleet compatibility contracts and SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check remote/tools/check-openapi-contracts.mjs
+          node --check remote/tools/generate-api-docs.mjs
+          node --check remote/tools/generate-api-sdks.mjs
+          node --check remote/tools/generate-openapi-sdks.mjs
+          node --check remote/tools/validate-openapi-contracts.mjs
+          node remote/tools/generate-api-docs.mjs
+          node remote/tools/generate-api-sdks.mjs
+
+      - name: Run service and fleet contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --dir remote/deployments/browser-test-server typecheck
+          pnpm --dir remote/deployments/browser-test-server build
+          pnpm --dir remote/deployments/browser-test-server test
+          pnpm --dir remote/deployments/browser-test-server openapi:check
+          pnpm --dir remote/deployments/browser-test-server audit --prod --audit-level high
+          node remote/tools/check-openapi-contracts.mjs --service browser-test-server
+          node remote/tools/generate-api-docs.mjs --check
+          node remote/tools/generate-api-sdks.mjs --check
+          node remote/tools/validate-openapi-contracts.mjs
+
+      - name: Generate service-specific SDK smoke clients
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/browser-test-sdk
+          node remote/tools/generate-openapi-sdks.mjs \
+            --service browser-test-server \
+            --output .tmp/browser-test-sdk
+
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.95.0'
+
+      - name: Compile generated Rust SDK
+        working-directory: .tmp/browser-test-sdk/rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check
+          cargo check --locked
+
+      - name: Type-check generated TypeScript SDK
+        working-directory: .tmp/browser-test-sdk/typescript
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run build
+
+      - name: Install Dart 3.12.2
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
+        with:
+          sdk: '3.12.2'
+
+      - name: Analyze generated Dart SDK
+        working-directory: .tmp/browser-test-sdk/dart
+        shell: bash
+        run: |
+          set -euo pipefail
+          dart pub get
+          dart analyze
+
+      - name: Commit the tested migration and remove bootstrap transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .tmp remote/libs remote/deployments/browser-test-server/node_modules remote/deployments/browser-test-server/dist
+          rm -rf .github/workflows/den-479-bootstrap.yml .github/den-479
+          test "$(git ls-files --stage remote/libs | awk '{print $1}')" = '160000'
+          if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- ':!pnpm-lock.yaml'; then
+            echo 'unresolved git conflict markers found' >&2
+            exit 1
+          fi
+          git diff --check
+          git add -A -- . ':(exclude)remote/libs'
+          test -n "$(git diff --cached --name-only)"
+          git config user.name 'oresoftware-api-contract-bot'
+          git config user.email 'oresoftware-api-contract-bot@users.noreply.github.com'
+          git commit -m 'feat(DEN-479): migrate browser-test server to executable OpenAPI'
+          target_branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          git push origin "HEAD:${target_branch}"

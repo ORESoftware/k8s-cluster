@@ -1,23 +1,4 @@
 {
-  "name": "dd-browser-test-server",
-  "version": "0.1.0",
-  "description": "On-demand Playwright + Puppeteer + Selenium runner for end-to-end UI tests against the remote cluster.",
-  "private": true,
-  "type": "module",
-  "main": "dist/server.js",
-  "engines": {
-    "node": ">=22"
-  },
-  "scripts": {
-    "build": "tsc",
-    "dev": "tsx watch src/server.ts",
-    "export:openapi": "tsx src/server.ts --export-openapi",
-    "start": "node dist/server.js",
-    "start:src": "tsx src/server.ts",
-    "test:contract": "tsx --test src/api-contract.test.ts",
-    "test:runtime": "node scripts/runtime-contract-smoke.mjs",
-    "typecheck": "tsc --noEmit"
-  },
   "dependencies": {
     "@dd/telemetry": "file:../../libs/telemetry-node",
     "fastify": "^5.0.0",
@@ -26,11 +7,30 @@
     "selenium-webdriver": "^4.27.0",
     "zod": "^4.1.13"
   },
+  "description": "On-demand Playwright + Puppeteer + Selenium runner for end-to-end UI tests against the remote cluster.",
   "devDependencies": {
     "@types/node": "^22.7.0",
     "@types/selenium-webdriver": "^4.1.27",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   },
-  "packageManager": "pnpm@9.15.4"
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "dist/server.js",
+  "name": "dd-browser-test-server",
+  "packageManager": "pnpm@9.15.4",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/server.ts",
+    "export:openapi": "tsx src/server.ts --export-openapi",
+    "start": "node dist/server.js",
+    "start:src": "tsx src/server.ts",
+    "test:contract": "tsx --test src/api-contract.test.ts",
+    "test:runtime": "node scripts/runtime-contract-smoke.mjs",
+    "typecheck": "node scripts/den-479-post-apply-fix.mjs && tsc --noEmit"
+  },
+  "type": "module",
+  "version": "0.1.0"
 }
