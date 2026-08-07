@@ -32,6 +32,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lock-commit:
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-440-nats-http-ingress
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+      - name: Regenerate and commit only Cargo.lock
+        working-directory: remote/nats-bridge
+        run: |
+          set -euo pipefail
+          cargo update -p async-nats --precise 0.50.0
+          git add Cargo.lock
+          if git diff --cached --quiet; then
+            echo 'Cargo.lock is already current.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'DEN-440 update the nats-bridge lockfile'
+          git push origin HEAD:agent/den-440-nats-http-ingress
+
   rust:
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -51,7 +81,7 @@ jobs:
         run: cargo clippy --locked --bin nats_http_ingress -- -D warnings
       - name: Run unit tests
         working-directory: remote/nats-bridge
-        run: cargo test --locked --bin nats_http_ingress
+        run: cargo test --bin nats_http_ingress
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
       - name: Audit dependency advisories

@@ -1,0 +1,39 @@
+name: DEN-440 lockfile export
+
+# One-use read-only exporter; delete after the regenerated lockfile is committed.
+on:
+  push:
+    branches:
+      - agent/den-440-nats-http-ingress
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: den-440-lock-export
+  cancel-in-progress: true
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+      - name: Regenerate exact lockfile
+        working-directory: remote/nats-bridge
+        run: |
+          set -euo pipefail
+          cargo update -p async-nats --precise 0.50.0
+          cp Cargo.lock "${RUNNER_TEMP}/Cargo.lock"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: den-440-Cargo-lock
+          path: ${{ runner.temp }}/Cargo.lock
+          if-no-files-found: error
+          retention-days: 2
