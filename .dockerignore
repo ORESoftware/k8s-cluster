@@ -1,0 +1,18 @@
+.git
+.github
+.env
+.env.*
+target
+formal/**/target
+result
+.direnv
+.DS_Store
+*.pem
+*.key
+*.p12
+*.log
+
+# Keep the checked-out shared source in the build context, but never send its
+# Git metadata or local build outputs to the daemon.
+.build/shared-libs/.git
+.build/shared-libs/**/target
