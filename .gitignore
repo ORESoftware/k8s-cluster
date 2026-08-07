@@ -11,3 +11,7 @@
 .env.*
 !.env.example
 .DS_Store
+tmp
+temp
+tmp/worktrees
+temp/worktrees
