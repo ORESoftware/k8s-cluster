@@ -4546,6 +4546,204 @@
       ],
       "duplicate_name": false,
       "name": "sonus-ci-runner-set"
+    },
+    {
+      "declaration_count": 2,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "zed",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/apps/zed.aws.applications.yaml",
+          "project": "zed",
+          "sources": [
+            {
+              "chart": "",
+              "path": "k8s/overlays/aws",
+              "repo_url": "https://github.com/zed-pkg/zed-api-server.rs.git",
+              "target_revision": "3d2d4c98024e5bf718dc79c2648bd10d7759a31c"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "ServerSideApply=true"
+            ]
+          }
+        },
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "zed",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/apps/zed.hetzner.applications.yaml",
+          "project": "zed",
+          "sources": [
+            {
+              "chart": "",
+              "path": "k8s/overlays/hetzner",
+              "repo_url": "https://github.com/zed-pkg/zed-api-server.rs.git",
+              "target_revision": "3d2d4c98024e5bf718dc79c2648bd10d7759a31c"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": true,
+      "name": "dd-zed-api-server"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "argocd",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/aws/zed.bootstrap.application.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "main"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=false",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-zed-bootstrap-aws"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "argocd",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/hetzner/zed.bootstrap.application.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "main"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=false",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-zed-bootstrap-hetzner"
+    },
+    {
+      "declaration_count": 2,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "zed",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 1,
+          "manifest_path": "remote/argocd/apps/zed.aws.applications.yaml",
+          "project": "zed",
+          "sources": [
+            {
+              "chart": "",
+              "path": "k8s/overlays/aws",
+              "repo_url": "https://github.com/zed-pkg/zed-web-server.rs.git",
+              "target_revision": "75f5ac4e35e121485af75588ce453f350e0cabbc"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "ServerSideApply=true"
+            ]
+          }
+        },
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "zed",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 1,
+          "manifest_path": "remote/argocd/apps/zed.hetzner.applications.yaml",
+          "project": "zed",
+          "sources": [
+            {
+              "chart": "",
+              "path": "k8s/overlays/hetzner",
+              "repo_url": "https://github.com/zed-pkg/zed-web-server.rs.git",
+              "target_revision": "75f5ac4e35e121485af75588ce453f350e0cabbc"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": true,
+      "name": "dd-zed-web-server"
     }
   ],
   "policy_violations": {
