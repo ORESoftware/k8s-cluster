@@ -63,14 +63,31 @@ jobs:
       - name: check (lib + bins + tests compile)
         working-directory: akrion-soccer-engine.rs
         run: cargo check --all-targets
+      # `cargo fmt --check` is clean on main, so it is a plain blocking gate.
       - name: fmt
         working-directory: akrion-soccer-engine.rs
         run: cargo fmt --check
-        continue-on-error: true
-      - name: clippy
+
+      # Clippy is gated by a RATCHET, not by `continue-on-error`.
+      #
+      # `cargo clippy --all-targets -- -D warnings` reports 608 pre-existing
+      # findings here, concentrated in the large restored legacy files
+      # (src/des/general/soccer/tests.rs, .../world.rs, .../soccer.rs,
+      # src/des/soccer_learning.rs). Clearing them is a real but separate job.
+      #
+      # This step used to carry `continue-on-error: true`, which is strictly
+      # worse than having no step: it burned CI minutes to produce a green check
+      # mark that carried no information, and it hid every NEW finding behind the
+      # old ones. scripts/clippy_ratchet.py is the honest version — it records
+      # today's findings per (file, lint) in scripts/clippy-baseline.json and
+      #   * FAILS if any count rises or a new (file, lint) pair appears, so new
+      #     code is held to the full `-D warnings` standard;
+      #   * FAILS if a count drops without the baseline being lowered to match,
+      #     so repaid debt is booked and the budget can only ever shrink.
+      # Never add an entry to the baseline to get green — fix the finding.
+      - name: clippy (ratcheting baseline, fails on any NEW finding)
         working-directory: akrion-soccer-engine.rs
-        run: cargo clippy --all-targets -- -D warnings
-        continue-on-error: true
+        run: python3 scripts/clippy_ratchet.py
 
   # The standalone 5v5 demo is hermetic (zero deps, own [workspace] table), so
   # its suite is fast and reliably green — a real blocking gate.

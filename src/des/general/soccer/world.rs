@@ -35783,7 +35783,10 @@ impl SoccerMatch {
         }
         let delta = best - target;
         let len = delta.len();
-        if len > MPC_PITCH_VALUE_REFERENCE_MAX_NUDGE_YARDS && len > 1e-9 {
+        // The `MAX_NUDGE / len` division below needs len != 0; that is already
+        // implied by len > MPC_PITCH_VALUE_REFERENCE_MAX_NUDGE_YARDS (3.0), so
+        // the old `&& len > 1e-9` clause could never change the outcome.
+        if len > MPC_PITCH_VALUE_REFERENCE_MAX_NUDGE_YARDS {
             (target + delta * (MPC_PITCH_VALUE_REFERENCE_MAX_NUDGE_YARDS / len))
                 .clamp_to_pitch(field_width, field_length)
         } else {
@@ -57030,7 +57033,10 @@ impl WorldSnapshot {
         let target = weighted * (1.0 / total);
         let shift = target - best;
         let shift_len = shift.len();
-        let blended = if shift_len > OFF_BALL_RUN_MULTIMODAL_BLEND_MAX_YARDS && shift_len > 1e-9 {
+        // As above: shift_len > OFF_BALL_RUN_MULTIMODAL_BLEND_MAX_YARDS (7.0)
+        // already guarantees the divisor is non-zero, so the old
+        // `&& shift_len > 1e-9` clause was dead.
+        let blended = if shift_len > OFF_BALL_RUN_MULTIMODAL_BLEND_MAX_YARDS {
             best + shift * (OFF_BALL_RUN_MULTIMODAL_BLEND_MAX_YARDS / shift_len)
         } else {
             target
