@@ -96,10 +96,15 @@ pub fn validate_contact_job(job: &ContactJob) -> Result<(), Vec<ContactValidatio
                 MAX_EMAIL_NAME_BYTES,
                 &mut errors,
             );
-            if let Some(reply_to) = reply_to {
-                if !valid_email_address(reply_to) {
-                    errors.push(ContactValidationError::InvalidEmailAddress);
-                }
+            if name.as_deref().is_some_and(contains_control_characters) {
+                errors.push(ContactValidationError::InvalidCharacters {
+                    field: "target.email.name",
+                });
+            }
+            if let Some(reply_to) = reply_to
+                && !valid_email_address(reply_to)
+            {
+                errors.push(ContactValidationError::InvalidEmailAddress);
             }
             validate_email_content(
                 subject.as_deref(),
@@ -176,6 +181,11 @@ fn validate_email_content(
     }
 
     validate_optional_length("content.subject", subject, MAX_EMAIL_SUBJECT_BYTES, errors);
+    if subject.is_some_and(contains_control_characters) {
+        errors.push(ContactValidationError::InvalidCharacters {
+            field: "content.subject",
+        });
+    }
     validate_optional_length("content.text", text, MAX_EMAIL_BODY_BYTES, errors);
     validate_optional_length("content.html", html, MAX_EMAIL_BODY_BYTES, errors);
     if to_vec(dynamic_template_data)
@@ -206,6 +216,13 @@ fn validate_identifier(
     }) {
         errors.push(ContactValidationError::InvalidCharacters { field });
     }
+}
+
+// Subjects and display names are header material at the provider; CR/LF or any
+// other control character must never pass through, matching the legacy
+// dd-email-sms-contact-rs boundary.
+fn contains_control_characters(value: &str) -> bool {
+    value.chars().any(char::is_control)
 }
 
 fn validate_optional_length(
@@ -359,6 +376,39 @@ mod tests {
         assert!(errors.contains(&ContactValidationError::InvalidEmailContentMode));
         assert!(!valid_email_address("person @example.com"));
         assert!(!valid_e164("5551234567"));
+    }
+
+    #[test]
+    fn rejects_control_characters_in_subject_and_display_name() {
+        let errors = validate_contact_job(&email_job(ContactContent::Email {
+            subject: Some("Hello\r\nBcc: attacker@example.invalid".to_owned()),
+            text: Some("Body".to_owned()),
+            html: None,
+            template_id: None,
+            dynamic_template_data: BTreeMap::new(),
+            reply_to: None,
+        }))
+        .expect_err("subject with CRLF");
+        assert!(errors.contains(&ContactValidationError::InvalidCharacters {
+            field: "content.subject",
+        }));
+
+        let mut job = email_job(ContactContent::Email {
+            subject: Some("Hello".to_owned()),
+            text: Some("Body".to_owned()),
+            html: None,
+            template_id: None,
+            dynamic_template_data: BTreeMap::new(),
+            reply_to: None,
+        });
+        job.target = ContactTarget::Email {
+            address: "person@example.com".to_owned(),
+            name: Some("Evil\r\nName".to_owned()),
+        };
+        let errors = validate_contact_job(&job).expect_err("display name with CRLF");
+        assert!(errors.contains(&ContactValidationError::InvalidCharacters {
+            field: "target.email.name",
+        }));
     }
 
     #[test]

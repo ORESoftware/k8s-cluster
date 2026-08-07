@@ -437,23 +437,22 @@ fn validate_endpoint(endpoint: &str, policy: &WebPushHostPolicy) -> Result<Url, 
     if host == "localhost" || host.ends_with(".localhost") {
         return Err(blocked_endpoint("Web Push endpoint host is local"));
     }
-    if let Ok(address) = host.parse::<IpAddr>() {
-        if ip_is_blocked(address) {
-            return Err(blocked_endpoint(
-                "Web Push endpoint points at a non-public address",
-            ));
-        }
+    if let Ok(address) = host.parse::<IpAddr>()
+        && ip_is_blocked(address)
+    {
+        return Err(blocked_endpoint(
+            "Web Push endpoint points at a non-public address",
+        ));
     }
 
-    if let WebPushHostPolicy::Allowlist(allowed_hosts) = policy {
-        if !allowed_hosts
+    if let WebPushHostPolicy::Allowlist(allowed_hosts) = policy
+        && !allowed_hosts
             .iter()
             .any(|allowed| host_matches_suffix(&host, allowed))
-        {
-            return Err(blocked_endpoint(
-                "Web Push endpoint host is not in the configured push-service allowlist",
-            ));
-        }
+    {
+        return Err(blocked_endpoint(
+            "Web Push endpoint host is not in the configured push-service allowlist",
+        ));
     }
     Ok(url)
 }

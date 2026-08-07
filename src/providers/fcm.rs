@@ -184,10 +184,10 @@ impl FcmProvider {
     async fn access_token(&self) -> Result<String, ProviderError> {
         // Hold the lock through refresh so concurrent callers share one token mint.
         let mut guard = self.token.lock().await;
-        if let Some(cached) = guard.as_ref() {
-            if cached.expires_at > Instant::now() {
-                return Ok(cached.value.clone());
-            }
+        if let Some(cached) = guard.as_ref()
+            && cached.expires_at > Instant::now()
+        {
+            return Ok(cached.value.clone());
         }
 
         let refreshed = self.refresh_access_token().await?;
