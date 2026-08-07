@@ -1,4 +1,5 @@
 schema_version: 2
+schema_version: 1
 owner_issue: DEN-666
 gitops_branch: dev
 prometheus:
@@ -131,6 +132,8 @@ applications:
     metric_cardinality: bounded outcome labels; raw NATS subjects excluded
     public_gateway: no NATS bridge route exists
 
+    public_gateway: site traffic uses 8080; exporter port 9113 is not routed
+
 completion_gates:
   - application source and release artifact are immutable and deployed
   - Canonical canonical-containers/published status is success
@@ -142,3 +145,5 @@ completion_gates:
   - Sonus nginx_up equals 1
   - DEN-684 discovery identity is least privilege and uses a bounded projected token
   - pod discovery remains disabled until duplicate-target and scale-to-zero gates pass
+  - live up equals 1 for each target
+  - Sonus nginx_up equals 1
