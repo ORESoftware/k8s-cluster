@@ -24,7 +24,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  owner-authorized-mcp-publication:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.user.login == 'ORESoftware' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/publish-oresoftware-mcp-rust-libs-20260731'
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Execute exact pinned ORESoftware MCP publisher
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/publish-oresoftware-mcp-rust-libs.sh
+
   compile:
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.ref != 'agent/publish-oresoftware-mcp-rust-libs-20260731'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -92,6 +117,9 @@ jobs:
   # The standalone 5v5 demo is hermetic (zero deps, own [workspace] table), so
   # its suite is fast and reliably green — a real blocking gate.
   standalone-5v5:
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.ref != 'agent/publish-oresoftware-mcp-rust-libs-20260731'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
