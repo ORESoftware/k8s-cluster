@@ -1,0 +1,331 @@
+name: browser-test generated SDK hardening
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/browser-test-generated-sdk-hardening.yml'
+      - 'remote/deployments/browser-test-server/generated/**'
+      - 'remote/api-contracts/**'
+      - 'remote/tools/generate-openapi-sdks.mjs'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/browser-test-generated-sdk-hardening.yml'
+      - 'remote/deployments/browser-test-server/generated/**'
+      - 'remote/api-contracts/**'
+      - 'remote/tools/generate-openapi-sdks.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-test-generated-sdk-hardening-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  workflow-policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Reject mutable workflow dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('.github/workflows/browser-test-generated-sdk-hardening.yml')
+          failures = []
+          for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
+              match = re.match(r'^\s*uses:\s*([^\s#]+)', line)
+              if match:
+                  reference = match.group(1)
+                  if not reference.startswith('./') and not re.fullmatch(r'[^@]+@[0-9a-fA-F]{40}', reference):
+                      failures.append(f'{path}:{number}: mutable action reference: {reference}')
+              if re.search(r'^\s*runs-on:\s*ubuntu-latest\s*$', line):
+                  failures.append(f'{path}:{number}: mutable runner label: ubuntu-latest')
+          if failures:
+              raise SystemExit('\n'.join(failures))
+          PY
+
+  rust-client:
+    needs: workflow-policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Install Node.js 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Generate exact service clients
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/browser-test-sdk
+          node remote/tools/generate-openapi-sdks.mjs \
+            --service browser-test-server \
+            --output .tmp/browser-test-sdk \
+            2>&1 | tee "${RUNNER_TEMP}/browser-test-rust-sdk-generation.log"
+
+      - name: Install Rust 1.95.0 with rustfmt
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.95.0'
+          components: rustfmt
+
+      - name: Compile, test, document, and normalize the generated Rust client
+        shell: bash
+        run: |
+          set -euo pipefail
+          exec > >(tee "${RUNNER_TEMP}/browser-test-rust-sdk.log") 2>&1
+          cd .tmp/browser-test-sdk/rust
+          rm -f Cargo.lock
+
+          echo '=== initial compile and lock creation ==='
+          cargo check
+          test -s Cargo.lock
+          sha256sum Cargo.lock > "${RUNNER_TEMP}/browser-test-rust-sdk.Cargo.lock.sha256"
+
+          echo '=== locked compile, tests, and documentation ==='
+          cargo check --locked
+          cargo test --locked
+          cargo doc --no-deps --locked
+
+          echo '=== formatter parse and idempotence ==='
+          cargo fmt --all
+          cargo fmt --all -- --check
+
+          echo '=== compile after formatter normalization ==='
+          cargo check --locked
+
+      - name: Remove transient Rust build state
+        if: always()
+        shell: bash
+        run: rm -rf .tmp/browser-test-sdk/rust/target
+
+      - name: Upload focused Rust failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-test-rust-sdk-hardening-diagnostics
+          path: |
+            ${{ runner.temp }}/browser-test-rust-sdk-generation.log
+            ${{ runner.temp }}/browser-test-rust-sdk.log
+            ${{ runner.temp }}/browser-test-rust-sdk.Cargo.lock.sha256
+            .tmp/browser-test-sdk/rust
+            remote/deployments/browser-test-server/generated/openapi.json
+          retention-days: 3
+          if-no-files-found: warn
+
+      - name: Verify generation did not mutate tracked files
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .tmp
+          git diff --check
+          git diff --quiet
+          test -z "$(git status --short --untracked-files=no)"
+
+  typescript-client:
+    needs: workflow-policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Install Node.js 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Generate exact service clients
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/browser-test-sdk
+          node remote/tools/generate-openapi-sdks.mjs \
+            --service browser-test-server \
+            --output .tmp/browser-test-sdk \
+            2>&1 | tee "${RUNNER_TEMP}/browser-test-typescript-sdk-generation.log"
+
+      - name: Build, test, and dry-pack the generated TypeScript client
+        shell: bash
+        run: |
+          set -euo pipefail
+          exec > >(tee "${RUNNER_TEMP}/browser-test-typescript-sdk.log") 2>&1
+          cd .tmp/browser-test-sdk/typescript
+
+          echo '=== dependency installation ==='
+          npm install --ignore-scripts --no-audit --no-fund
+
+          echo '=== dual TypeScript build ==='
+          npm run build
+          test -s dist/index.js
+          test -s dist/index.d.ts
+          test -s dist/esm/index.js
+
+          echo '=== generated tests when present ==='
+          npm run test --if-present
+
+          echo '=== publish payload dry-run ==='
+          npm pack --dry-run --json > "${RUNNER_TEMP}/browser-test-typescript-sdk-pack.json"
+          node -e '
+            const { readFileSync } = require("node:fs");
+            const path = process.env.RUNNER_TEMP + "/browser-test-typescript-sdk-pack.json";
+            const result = JSON.parse(readFileSync(path, "utf8"));
+            if (!Array.isArray(result) || result.length !== 1) {
+              throw new Error("npm pack did not return exactly one package result");
+            }
+            const files = result[0].files;
+            if (!Array.isArray(files) || files.length === 0) {
+              throw new Error("generated TypeScript package would publish no files");
+            }
+            for (const required of ["dist/index.js", "dist/index.d.ts", "dist/esm/index.js"]) {
+              if (!files.some((entry) => entry.path === required)) {
+                throw new Error(`generated TypeScript package omits ${required}`);
+              }
+            }
+          '
+
+      - name: Remove transient TypeScript build state
+        if: always()
+        shell: bash
+        run: rm -rf .tmp/browser-test-sdk/typescript/node_modules
+
+      - name: Upload focused TypeScript failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-test-typescript-sdk-hardening-diagnostics
+          path: |
+            ${{ runner.temp }}/browser-test-typescript-sdk-generation.log
+            ${{ runner.temp }}/browser-test-typescript-sdk.log
+            ${{ runner.temp }}/browser-test-typescript-sdk-pack.json
+            .tmp/browser-test-sdk/typescript
+            remote/deployments/browser-test-server/generated/openapi.json
+          retention-days: 3
+          if-no-files-found: warn
+
+      - name: Verify generation did not mutate tracked files
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .tmp
+          git diff --check
+          git diff --quiet
+          test -z "$(git status --short --untracked-files=no)"
+
+  dart-client:
+    needs: workflow-policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Install Node.js 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Generate exact service clients
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/browser-test-sdk
+          node remote/tools/generate-openapi-sdks.mjs \
+            --service browser-test-server \
+            --output .tmp/browser-test-sdk \
+            2>&1 | tee "${RUNNER_TEMP}/browser-test-dart-sdk-generation.log"
+
+      - name: Install Dart 3.12.2
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
+        with:
+          sdk: '3.12.2'
+
+      - name: Resolve, analyze, normalize, and test the generated Dart client
+        shell: bash
+        run: |
+          set -euo pipefail
+          exec > >(tee "${RUNNER_TEMP}/browser-test-dart-sdk.log") 2>&1
+          cd .tmp/browser-test-sdk/dart
+
+          echo '=== dependency resolution and initial analysis ==='
+          dart pub get
+          test -s pubspec.lock
+          sha256sum pubspec.lock > "${RUNNER_TEMP}/browser-test-dart-sdk.pubspec.lock.sha256"
+          dart analyze
+
+          echo '=== formatter parse and idempotence ==='
+          dart format lib
+          dart format --output=none --set-exit-if-changed lib
+
+          echo '=== analysis after formatter normalization ==='
+          dart analyze
+
+          echo '=== generated tests when present ==='
+          if test -d test && find test -type f -name '*_test.dart' -print -quit | grep -q .; then
+            dart test
+          else
+            echo 'No generated Dart tests were emitted.'
+          fi
+
+      - name: Remove transient Dart build state
+        if: always()
+        shell: bash
+        run: |
+          rm -rf .tmp/browser-test-sdk/dart/.dart_tool \
+            .tmp/browser-test-sdk/dart/build
+
+      - name: Upload focused Dart failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-test-dart-sdk-hardening-diagnostics
+          path: |
+            ${{ runner.temp }}/browser-test-dart-sdk-generation.log
+            ${{ runner.temp }}/browser-test-dart-sdk.log
+            ${{ runner.temp }}/browser-test-dart-sdk.pubspec.lock.sha256
+            .tmp/browser-test-sdk/dart
+            remote/deployments/browser-test-server/generated/openapi.json
+          retention-days: 3
+          if-no-files-found: warn
+
+      - name: Verify generation did not mutate tracked files
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .tmp
+          git diff --check
+          git diff --quiet
+          test -z "$(git status --short --untracked-files=no)"

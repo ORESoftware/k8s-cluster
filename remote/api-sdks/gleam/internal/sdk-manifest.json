@@ -23,6 +23,14 @@
     {
       "path": "test/oresoftware_k8s_api_sdk_internal_test.gleam",
       "sha256": "8fa2b6937b6508e4423ec69b88d00bb44330a2c69ceebaecd8c518d0512879fb"
+    },
+    {
+      "path": "src/dd_api_sdk.gleam",
+      "sha256": "68b459c065513904be4c130329b872c01387175de7f4482b73844d3679e45847"
+    },
+    {
+      "path": "test/oresoftware_k8s_api_sdk_internal_test.gleam",
+      "sha256": "6ae39c6548d7c2cb99afda2ef80187838dda64c6140c15f09a743e3e1296c2e9"
     }
   ],
   "language": "gleam",

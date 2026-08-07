@@ -14090,6 +14090,594 @@
           "contractSha256": "53ddd4f71f3fcd949a4e0b62d4a0105db4b5e4c6a028c7c5429c15205e811673"
         }
       ]
+    },
+    {
+      "service": "dd-embeddings-rs",
+      "language": "rust",
+      "specPath": "remote/deployments/dd-embeddings-rs/generated/api-docs.json",
+      "specSha256": "dd637682023ee92fc15fb99e1a0e1eaa3ee4cd35c95f8db4c68f9ce32f60d3af",
+      "operationCount": 7,
+      "operations": [
+        {
+          "service": "dd-embeddings-rs",
+          "serviceLanguage": "rust",
+          "operationId": "dd_embeddings_rs_get_api_docs_6d9a44ce91c7",
+          "method": "GET",
+          "path": "/api/docs",
+          "summary": "Human-readable generated API documentation.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "edda1d7fa4330b6f81565324e30ca4159ec7243cc4164f2711fb81ba508c2083"
+        },
+        {
+          "service": "dd-embeddings-rs",
+          "serviceLanguage": "rust",
+          "operationId": "dd_embeddings_rs_get_api_docs_json_5b156aa49080",
+          "method": "GET",
+          "path": "/api/docs.json",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "b08f8127fe7393b111cb249e4c0144219c247112ebe8080e5a8657ca26fcc0bf"
+        },
+        {
+          "service": "dd-embeddings-rs",
+          "serviceLanguage": "rust",
+          "operationId": "dd_embeddings_rs_get_docs_api_dbf8547bbd66",
+          "method": "GET",
+          "path": "/docs/api",
+          "summary": "Human-readable generated API documentation.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "9a01d1f5795e5c7b9937c536072fc0fb4b01b2de2f1276590c4492acf290fd5a"
+        },
+        {
+          "service": "dd-embeddings-rs",
+          "serviceLanguage": "rust",
+          "operationId": "dd_embeddings_rs_get_healthz_c98b323dcfc7",
+          "method": "GET",
+          "path": "/healthz",
+          "summary": "Health check.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "6ed640b94f136a744fe95ddd1e86203e7cea6c5dacdb8ae56473a8fa97531763"
+        },
+        {
+          "service": "dd-embeddings-rs",
+          "serviceLanguage": "rust",
+          "operationId": "dd_embeddings_rs_get_metrics_b8de5715f91f",
+          "method": "GET",
+          "path": "/metrics",
+          "summary": "Prometheus metrics.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "133282e030b1f405ecf5fa0e9ec1c9c055c78dc51c39b918957271b2e27350e7"
+        },
+        {
+          "service": "dd-embeddings-rs",
+          "serviceLanguage": "rust",
+          "operationId": "dd_embeddings_rs_get_openapi_json_e309ad71cb55",
+          "method": "GET",
+          "path": "/openapi.json",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "0c189609d02ee04c5531c965ba69ab9747819c2c47b02df0346084ceea4f4343"
+        },
+        {
+          "service": "dd-embeddings-rs",
+          "serviceLanguage": "rust",
+          "operationId": "dd_embeddings_rs_get_readyz_1034976ffc04",
+          "method": "GET",
+          "path": "/readyz",
+          "summary": "Readiness check.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "376df2fe1aaec03aad9128cca1fa9a148c0ebb7c4b3b8719f52ae4d9075aec38"
+        }
+      ]
+    },
+    {
+      "service": "formal-methods-service-rs",
+      "language": "rust",
+      "specPath": "remote/deployments/formal-methods-service-rs/generated/api-docs.json",
+      "specSha256": "8ee36161b63e1ef53b25409b27c542e575b067f2c7b0a84a0d291643cfaf296f",
+      "operationCount": 4,
+      "operations": [
+        {
+          "service": "formal-methods-service-rs",
+          "serviceLanguage": "rust",
+          "operationId": "formal_methods_service_rs_get_api_docs_c5a3074a89a9",
+          "method": "GET",
+          "path": "/api/docs",
+          "summary": "Human-readable generated API documentation.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "68bb8cc8bb5a03232f92bd96d745562f87a449d25cf77483e52908449fa24fb8"
+        },
+        {
+          "service": "formal-methods-service-rs",
+          "serviceLanguage": "rust",
+          "operationId": "formal_methods_service_rs_get_api_docs_json_4e712a700e26",
+          "method": "GET",
+          "path": "/api/docs.json",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "c7766c32f1ef1e4406894574aa907763219c85387863e90345fb88bcce5c03d5"
+        },
+        {
+          "service": "formal-methods-service-rs",
+          "serviceLanguage": "rust",
+          "operationId": "formal_methods_service_rs_get_docs_api_a4b22bcd9b65",
+          "method": "GET",
+          "path": "/docs/api",
+          "summary": "Human-readable generated API documentation.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "708edfb3a82ba42a1fb5f084c82bbfcff3327f5214f495eae5f6ae7da65c193d"
+        },
+        {
+          "service": "formal-methods-service-rs",
+          "serviceLanguage": "rust",
+          "operationId": "formal_methods_service_rs_get_metrics_91fecfa1e3e9",
+          "method": "GET",
+          "path": "/metrics",
+          "summary": "Prometheus metrics.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "a769ee84f88040ad7abe6ee52cf38db017e12d6d910f66bdb811f811f2121d56"
+        }
+      ]
+    },
+    {
+      "service": "gleamlang-presence-server",
+      "language": "gleam",
+      "specPath": "remote/deployments/gleamlang-presence-server/generated/api-docs.json",
+      "specSha256": "a50c6dd205874076d0b5c22a3eaf018dff681044d19c43ac88ea9cd52c300719",
+      "operationCount": 5,
+      "operations": [
+        {
+          "service": "gleamlang-presence-server",
+          "serviceLanguage": "gleam",
+          "operationId": "gleamlang_presence_server_get_23af72802f06",
+          "method": "GET",
+          "path": "/",
+          "summary": "Help text.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "4580f624924c9746446ddded635d93700d5d8efbc4372526986d2061211333e7"
+        },
+        {
+          "service": "gleamlang-presence-server",
+          "serviceLanguage": "gleam",
+          "operationId": "gleamlang_presence_server_get_api_docs_7955b2b65374",
+          "method": "GET",
+          "path": "/api/docs",
+          "summary": "Human-readable generated API documentation.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "0022769d8ce84898fd9c0e6bcae7f4e46b4d1334184761c68ac6ad62974a76bb"
+        },
+        {
+          "service": "gleamlang-presence-server",
+          "serviceLanguage": "gleam",
+          "operationId": "gleamlang_presence_server_get_api_docs_json_33894b4d682c",
+          "method": "GET",
+          "path": "/api/docs.json",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "7f657d62c74b67ab45d4fd8271ac0b598744f3149e4afb7a9034daf8c4ef0f07"
+        },
+        {
+          "service": "gleamlang-presence-server",
+          "serviceLanguage": "gleam",
+          "operationId": "gleamlang_presence_server_get_docs_api_dfad3d725db1",
+          "method": "GET",
+          "path": "/docs/api",
+          "summary": "Human-readable generated API documentation.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "6493d8310b34a0f39f1f9262bd4c5dc6bedbb9b87b0a63b582f2a1e7daa47d3e"
+        },
+        {
+          "service": "gleamlang-presence-server",
+          "serviceLanguage": "gleam",
+          "operationId": "gleamlang_presence_server_get_healthz_65610a4485ce",
+          "method": "GET",
+          "path": "/healthz",
+          "summary": "JSON health check.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "2c411906b47506e8c0b4e4307c33e0d7dc9f1eb69facc6c34ac34a657a8394da"
+        }
+      ]
+    },
+    {
+      "service": "wal-gateway-rs",
+      "language": "rust",
+      "specPath": "remote/deployments/wal-gateway-rs/generated/api-docs.json",
+      "specSha256": "9066f67b6d44403f09cb6ea6ca623c4dad702457d85044cfff6d2f21569f0a7a",
+      "operationCount": 7,
+      "operations": [
+        {
+          "service": "wal-gateway-rs",
+          "serviceLanguage": "rust",
+          "operationId": "wal_gateway_rs_get_81138a5d044f",
+          "method": "GET",
+          "path": "/",
+          "summary": "Service descriptor, home redirect, or root RPC endpoint.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "c89ac1380475fdc7d55c7df0016e906ec86f9fcaffc66048a11c896aa4c466c0"
+        },
+        {
+          "service": "wal-gateway-rs",
+          "serviceLanguage": "rust",
+          "operationId": "wal_gateway_rs_get_api_docs_04ae0a7546bc",
+          "method": "GET",
+          "path": "/api/docs",
+          "summary": "Human-readable generated API documentation.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "84457bce2cead929d5cf95c9aee44974a0f819bf44f27f375e3ef952ca13d808"
+        },
+        {
+          "service": "wal-gateway-rs",
+          "serviceLanguage": "rust",
+          "operationId": "wal_gateway_rs_get_api_docs_json_6c9a38cfa455",
+          "method": "GET",
+          "path": "/api/docs.json",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "45502dcc514cdc5da2b2c049700dcd5947e6a6033d40c9663b25020fbeaff900"
+        },
+        {
+          "service": "wal-gateway-rs",
+          "serviceLanguage": "rust",
+          "operationId": "wal_gateway_rs_get_docs_api_430cec7c04e7",
+          "method": "GET",
+          "path": "/docs/api",
+          "summary": "Human-readable generated API documentation.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "92b5f85b870f44a5503294d197549e49432b45da1b052dc3dce00d4de42b3fc9"
+        },
+        {
+          "service": "wal-gateway-rs",
+          "serviceLanguage": "rust",
+          "operationId": "wal_gateway_rs_get_healthz_13ad4ec5056b",
+          "method": "GET",
+          "path": "/healthz",
+          "summary": "Health check.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "fe2f36ed94a7dd12428b00facc0be094bfdca1cbc13fe6400a8f80879bb8fb7a"
+        },
+        {
+          "service": "wal-gateway-rs",
+          "serviceLanguage": "rust",
+          "operationId": "wal_gateway_rs_get_metrics_b8a63d88661c",
+          "method": "GET",
+          "path": "/metrics",
+          "summary": "Prometheus metrics.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "7bf0825cc5c1659cd98949b4d8522467578b75fa168a8730c89eed88407472cf"
+        },
+        {
+          "service": "wal-gateway-rs",
+          "serviceLanguage": "rust",
+          "operationId": "wal_gateway_rs_get_readyz_12a0d2292af6",
+          "method": "GET",
+          "path": "/readyz",
+          "summary": "Readiness check.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "6d8ece15d56eb2ab78e4c4e45bc309478c0dd3886a75e5ed520214fc61d1d811"
+        }
+      ]
     }
   ],
   "skippedServices": [

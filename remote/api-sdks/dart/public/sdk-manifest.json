@@ -27,6 +27,14 @@
     {
       "path": "lib/dd_api_sdk.dart",
       "sha256": "4cc571c4bef4118398759d8a1903e2cc8b4ccaa5f8d64bdc54e7653268015982"
+    },
+    {
+      "path": "bin/smoke.dart",
+      "sha256": "0b47d61eb68c7f97632474cfb1131c0dc44e20599339dcf4706b7f848b21518b"
+    },
+    {
+      "path": "lib/dd_api_sdk.dart",
+      "sha256": "5ed960f71d5cf7298ab833b4f27df86f15b1b6a9fa5ae968e26c4c672092c238"
     }
   ],
   "language": "dart",

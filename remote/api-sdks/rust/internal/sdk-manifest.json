@@ -15,6 +15,10 @@
     {
       "path": "src/lib.rs",
       "sha256": "03f068ad9b30f380d890c099bf14f1aa5f27528f79760b7a5c6835786c4c3e7c"
+    },
+    {
+      "path": "src/lib.rs",
+      "sha256": "73409e40a5e74398bfb1ac5708cbaa945c1fdcba19d8a3b0a4cabd9806c7325b"
     }
   ],
   "language": "rust",

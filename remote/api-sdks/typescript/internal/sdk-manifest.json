@@ -27,6 +27,14 @@
     {
       "path": "test/smoke.test.mjs",
       "sha256": "3684bc3c6355c8fc9e15c9eaaa80c356e2e99e9822488fd2d0d16380c3c3fc2e"
+    },
+    {
+      "path": "src/index.ts",
+      "sha256": "cb497572cd083236200670ceefe1d6f1a26ba6d2133231f55524ca3764094846"
+    },
+    {
+      "path": "test/smoke.test.mjs",
+      "sha256": "19adc4eef7a2ad61500889b252023d55cd43565d384eabbe11ea2234ba469048"
     }
   ],
   "language": "typescript",
