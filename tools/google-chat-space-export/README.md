@@ -193,6 +193,26 @@ The token comes from the environment so it never lands in argv or a query string
 
 One transport detail worth knowing if you write your own client: `/exec` runs the POST and then redirects to a `googleusercontent.com` echo URL that only serves GET. Re-POSTing to that redirect target answers **HTTP 405 with an HTML body**. Let the redirect be followed as a GET and keep the token in the original POST body.
 
+## Ephemeral encrypted relay protocol 2
+
+1. The GET relay publishes a one-time 3072-bit RSA public key and run ID on the fixed relay issue.
+2. The submitter generates a unique archive passphrase and encrypts one compact JSON payload using RSA-OAEP SHA-256:
+
+   ```json
+   {
+     "run_id": "<PUBLISHED_RUN_ID>",
+     "token": "<BRIDGE_TOKEN>",
+     "archive_passphrase": "<UNIQUE_HIGH_ENTROPY_PASSPHRASE>"
+   }
+   ```
+
+3. Submit exactly one `CHAT_RELAY_GET_CIPHERTEXT` comment for that run. Duplicate matching comments reject the run after a bounded race-detection window.
+4. The workflow verifies the payload run ID, fixed space, fixed display name, and earliest boundary; paginates the GET API; writes a non-self-referential checksum manifest; encrypts the archive; and retains it for one day.
+5. The completion comment includes the ciphertext, export-manifest, and encrypted-archive SHA-256 values. Verify all three before accepting the audit evidence.
+6. Destroy the local passphrase/export and rotate or disable the bridge token after reconciliation.
+
+[`test_relay_workflows.py`](./test_relay_workflows.py) and [`.github/workflows/google-chat-relay-contract.yml`](../../.github/workflows/google-chat-relay-contract.yml) enforce the non-negotiable workflow invariants.
+
 ## Bulk page fetch
 
 [`fetch-bridge-pages.mjs`](./fetch-bridge-pages.mjs) pages through the HTTP bridge and writes raw page files that the planner reads directly.
@@ -202,9 +222,9 @@ CHAT_BRIDGE_TOKEN=<token> node tools/google-chat-space-export/fetch-bridge-pages
   --out ./private/google-chat-export
 ```
 
-The token comes from the environment so it never lands in argv or a query string. The script does not filter by date: the bridge floor is fixed and callers cannot narrow it, so windowing belongs to the planner's `--since`.
+The token comes from the environment so it never lands in argv or a query string. The script does not filter by date: the bridge floor is fixed and callers cannot widen it, so windowing belongs to the planner's `--since`.
 
-One transport detail worth knowing if you write your own client: `/exec` runs the POST and then redirects to a `googleusercontent.com` echo URL that only serves GET. Re-POSTing to that redirect target answers **HTTP 405 with an HTML body**. Let the redirect be followed as a GET and keep the token in the original POST body.
+The fetcher sends POST only to the original Apps Script `/exec` URL and allows the 302/303 redirect to become GET. Re-posting to the `googleusercontent.com` target answers HTTP 405 with an HTML body.
 
 ## Dry-run import planner
 
