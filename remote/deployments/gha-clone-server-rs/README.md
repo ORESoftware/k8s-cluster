@@ -27,6 +27,8 @@ images, or Kubernetes manifests. It submits only a trusted repository, immutable
 commit SHA, and operator-reviewed profile name to `dd-build-server`. Messaging
 Intel uses a dedicated two-job mirror: `node-hardened-verify` for the non-secret
 operator contract and `node-verify` for the complete repository test suite.
+images, or Kubernetes manifests. It submits only a trusted repository, immutable
+commit SHA, and operator-reviewed profile name to `dd-build-server`.
 
 ## API
 
@@ -49,6 +51,8 @@ constant time over SHA-256 digests.
   `X-GitHub-Delivery`, accept only configured completed failure conclusions for
   `workflow_run`, match the failed workflow path exactly, reject fallback-loop
   workflow names, and deduplicate deliveries before dispatch.
+- `POST /webhooks/github` — verify `X-Hub-Signature-256`, fetch allowlisted
+  workflow files at the event's exact SHA, and plan or execute them.
 - `GET /healthz`, `GET /readyz`.
 
 Example plan:
@@ -277,6 +281,9 @@ The Kubernetes deployment projects the installation token as a Secret volume;
 the server reads that file for every workflow fetch so broker rotation is live
 without a restart. Inline and file token sources are mutually exclusive.
 
+Use a GitHub App and External Secrets. Do not put classic PATs, private keys, or
+shared secrets in source, Argo parameters, Linear, logs, URLs, or image layers.
+
 ## Deployment state
 
 The `dd-next-runtime` manifests install the service with `replicas: 0` and
@@ -307,6 +314,7 @@ exist. Activation requires:
 6. enable API execution for immutable trusted commits;
 7. register the failure-only `workflow_run` webhook and prove HMAC, exact-path filtering,
    loop exclusion, delivery dedupe, and build-server idempotency before enabling execution.
+7. enable webhook execution only after HMAC and idempotency evidence.
 
 AWS is the initial independent executor because the existing build server,
 containerd/buildkit, ECR and Postgres are there. Hetzner can immediately host ARC
