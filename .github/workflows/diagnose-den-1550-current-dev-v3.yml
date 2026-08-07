@@ -1,0 +1,67 @@
+name: Diagnose current DEN-1550 semantic merge
+
+on:
+  pull_request:
+    branches:
+      - dev
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/diagnose-den-1550-current-dev-v3.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the current merge branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1550-msgint-current-dev-merge
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Print the exact current-dev conflict set and hunks
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --no-tags origin dev agent/den-1550-msgint-stable-final
+          git merge --no-edit origin/dev
+          set +e
+          git merge --no-commit --no-ff origin/agent/den-1550-msgint-stable-final
+          merge_status=$?
+          set -e
+          conflicts="$(git diff --name-only --diff-filter=U | sort)"
+          printf 'merge_status=%s\n' "$merge_status"
+          printf 'conflicts_begin\n%s\nconflicts_end\n' "$conflicts"
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+          import subprocess
+
+          conflict = re.compile(
+              r'<<<<<<< HEAD\n(.*?)=======\n(.*?)>>>>>>> [^\n]+\n',
+              re.DOTALL,
+          )
+          paths = subprocess.check_output(
+              ['git', 'diff', '--name-only', '--diff-filter=U'],
+              text=True,
+          ).splitlines()
+          for path_text in sorted(paths):
+              path = Path(path_text)
+              source = path.read_text(encoding='utf-8')
+              blocks = list(conflict.finditer(source))
+              print(f'FILE {path_text} BLOCKS {len(blocks)}')
+              for index, block in enumerate(blocks):
+                  print(f'--- {path_text} BLOCK {index} LEFT ---')
+                  print(block.group(1), end='')
+                  print(f'--- {path_text} BLOCK {index} RIGHT ---')
+                  print(block.group(2), end='')
+                  print(f'--- {path_text} BLOCK {index} END ---')
+          PY
+          git merge --abort 2>/dev/null || true
+          test "$merge_status" -ne 0
