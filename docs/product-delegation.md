@@ -101,3 +101,6 @@ includes both `jti` and `parent_jti`, allowing a resource server to distinguish
 the current delegated grant from its parent without receiving either bearer.
 The service credential belongs only on introspection and must never be forwarded
 to MemeBank, ClipTown clients, factor endpoints, or delegated API calls.
+services that choose revocation-aware remote introspection. The service
+credential belongs only on introspection and must never be forwarded to
+MemeBank, ClipTown clients, factor endpoints, or delegated API calls.
