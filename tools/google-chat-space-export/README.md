@@ -193,6 +193,19 @@ The token comes from the environment so it never lands in argv or a query string
 
 One transport detail worth knowing if you write your own client: `/exec` runs the POST and then redirects to a `googleusercontent.com` echo URL that only serves GET. Re-POSTing to that redirect target answers **HTTP 405 with an HTML body**. Let the redirect be followed as a GET and keep the token in the original POST body.
 
+## Bulk page fetch
+
+[`fetch-bridge-pages.mjs`](./fetch-bridge-pages.mjs) pages through the HTTP bridge and writes raw page files that the planner reads directly.
+
+```bash
+CHAT_BRIDGE_TOKEN=<token> node tools/google-chat-space-export/fetch-bridge-pages.mjs \
+  --out ./private/google-chat-export
+```
+
+The token comes from the environment so it never lands in argv or a query string. The script does not filter by date: the bridge floor is fixed and callers cannot narrow it, so windowing belongs to the planner's `--since`.
+
+One transport detail worth knowing if you write your own client: `/exec` runs the POST and then redirects to a `googleusercontent.com` echo URL that only serves GET. Re-POSTing to that redirect target answers **HTTP 405 with an HTML body**. Let the redirect be followed as a GET and keep the token in the original POST body.
+
 ## Dry-run import planner
 
 [`import-plan.mjs`](./import-plan.mjs) is a read-only gate between the raw Chat export and Linear. It accepts both HTTP bridge pages (`{ok,data.messages}`) and Gmail export attachments (`{messages,...}`), validates the fixed space/date boundary, deduplicates repeated pages, groups messages conservatively by thread, and emits deterministic JSON and Markdown reports.
