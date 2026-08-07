@@ -89,6 +89,7 @@ jobs:
           [[ "$(jq -r '.state' <<<"$workflow")" == active ]] || \
             fail 'protected publisher v2 workflow is not active' "$workflow"
 
+          request_id="carrier-${PR_NUMBER}-${TARGET_SHA}"
           runs_endpoint="repos/${repository}/actions/workflows/${PUBLISH_WORKFLOW}/runs?branch=main&event=workflow_dispatch&per_page=100"
           before="$RUNNER_TEMP/before-run-ids.txt"
           before_runs="$(gh api "$runs_endpoint" 2>&1)" || \
