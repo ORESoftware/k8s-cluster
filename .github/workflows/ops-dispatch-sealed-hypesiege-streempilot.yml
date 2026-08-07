@@ -35,6 +35,9 @@ jobs:
         run: |
           set -euo pipefail
           trigger_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          gh pr comment "$TRACKING_PR" \
+            --body "Trusted-main publication dispatcher started: ${trigger_url}" >/dev/null
+
           before="$(
             gh run list \
               --workflow "$PUBLISH_WORKFLOW" \
@@ -44,9 +47,6 @@ jobs:
               --json databaseId \
               --jq '.[0].databaseId // empty'
           )"
-
-          gh pr comment "$TRACKING_PR" \
-            --body "Trusted-main publication dispatcher started: ${trigger_url}" >/dev/null
           gh workflow run "$PUBLISH_WORKFLOW" --ref main
 
           run_id=''
@@ -100,5 +100,3 @@ jobs:
               --body "Sealed HypeSiege/StreemPilot publisher did not complete successfully. Dispatch=${PUBLISH_RESULT}; job=${WATCH_RESULT}; run=${RUN_URL:-unavailable}" >/dev/null
             exit 1
           fi
-
-# Dispatch nonce: 2026-07-31T14:09:00Z
