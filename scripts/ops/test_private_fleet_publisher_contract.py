@@ -207,6 +207,16 @@ class PrivateFleetPublisherContractTests(unittest.TestCase):
         self.assertNotIn('api("PATCH"', self.alias_guard)
         self.assertNotIn("--force", self.alias_guard)
 
+    def test_publisher_uses_race_safe_private_creation_helper(self) -> None:
+        self.assertIn(
+            "ensure_private_repository as ensure_private_repository_with_api",
+            self.publisher,
+        )
+        self.assertIn("ensure_private_repository_with_api(", self.publisher)
+        self.assertIn("MODULE.api,", self.publisher)
+        self.assertIn("_CREATE_CONFLICT_STATUSES", self.creation_helper)
+        self.assertIn("reconciliation GET returned HTTP", self.creation_helper)
+
     def test_missing_repositories_are_created_private_without_visibility_patch(self) -> None:
         self.assertIn('"private": True', self.creation_helper)
         self.assertIn('payload.get("private") is not True', self.creation_helper)

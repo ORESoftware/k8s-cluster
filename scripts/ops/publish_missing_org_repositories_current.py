@@ -26,6 +26,9 @@ from repository_rename_alias_guard import (
     RepositoryRenameAliasGuard,
 )
 
+from private_repository_creation import (
+    ensure_private_repository as ensure_private_repository_with_api,
+)
 from repository_fleet_visibility import project_private_execution_manifest
 
 MODULE_PATH = Path(__file__).with_name("publish_missing_org_repositories.py")
