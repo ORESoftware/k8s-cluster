@@ -1,0 +1,83 @@
+name: Validate DEN-371 repair
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/repair-den-371.yml'
+      - '.github/workflows/validate-den-371-repair.yml'
+      - '.github/den-371-repair-trigger'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-den-371-repair-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out generation branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-371-regenerate-api-docs
+          persist-credentials: false
+      - name: Resolve pinned shared-library source
+        id: libs-pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          pin="$(git ls-files --stage -- remote/libs | awk '$1 == 160000 { print $2; exit }')"
+          test "${#pin}" = 40
+          echo "sha=$pin" >>"$GITHUB_OUTPUT"
+      - name: Check out shared-library source at exact gitlink
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/k8s-libs-and-shared-defs
+          ref: ${{ steps.libs-pin.outputs.sha }}
+          path: remote/libs
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Extract the repair block verbatim
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/repair-den-371.yml').read_text(encoding='utf-8')
+          start_marker = '      - name: Repair generator and observability semantics\n'
+          end_marker = '      - name: Commit coherent DEN-371 repair\n'
+          if workflow.count(start_marker) != 1 or workflow.count(end_marker) != 1:
+              raise SystemExit('repair workflow markers are not unique')
+          block = workflow.split(start_marker, 1)[1].split(end_marker, 1)[0]
+          prefix = '        shell: bash\n        run: |\n'
+          if not block.startswith(prefix):
+              raise SystemExit('repair workflow block shape changed')
+          body = block[len(prefix):]
+          lines = body.splitlines()
+          if any(line and not line.startswith('          ') for line in lines):
+              raise SystemExit('repair workflow indentation changed')
+          script = '\n'.join(line[10:] if line else '' for line in lines) + '\n'
+          output = Path('/tmp/den-371-repair.sh')
+          output.write_text(script, encoding='utf-8')
+          output.chmod(0o700)
+          PY
+          bash -n /tmp/den-371-repair.sh
+      - name: Execute repair block without committing
+        id: repair
+        shell: bash
+        run: |
+          set -o pipefail
+          /tmp/den-371-repair.sh 2>&1 | tee "${RUNNER_TEMP}/den-371-repair.log"
+      - name: Upload failure-only repair diagnostics
+        if: failure() && steps.repair.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-371-repair-diagnostics
+          path: ${{ runner.temp }}/den-371-repair.log
+          retention-days: 1
+          if-no-files-found: error

@@ -1,0 +1,155 @@
+name: Regenerate API docs DEN-371
+
+on:
+  push:
+    branches:
+      - agent/den-371-regenerate-api-docs
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/regenerate-api-docs-den-371.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: regenerate-api-docs-den-371-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  regenerate:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out k8s-cluster generation branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-371-regenerate-api-docs
+      - name: Resolve the pinned API-doc source commit
+        id: libs-pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          pin="$(git ls-files --stage -- remote/libs | awk '$1 == 160000 { print $2; exit }')"
+          if [[ ! "$pin" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'remote/libs does not resolve to one pinned gitlink commit' >&2
+            exit 1
+          fi
+          echo "sha=$pin" >>"$GITHUB_OUTPUT"
+          echo "Resolved remote/libs gitlink ${pin:0:12}."
+      - name: Check out the private API-doc source at the exact gitlink
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/k8s-libs-and-shared-defs
+          ref: ${{ steps.libs-pin.outputs.sha }}
+          path: remote/libs
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify the private source checkout matches the superproject pin
+        shell: bash
+        env:
+          EXPECTED_LIBS_SHA: ${{ steps.libs-pin.outputs.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git -C remote/libs rev-parse HEAD)"
+          test "$actual" = "$EXPECTED_LIBS_SHA"
+          echo "Verified remote/libs at pinned commit ${actual:0:12}."
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - name: Install generator dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+      - name: Generate and prove idempotence
+        id: generate
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            set -euo pipefail
+            pnpm --dir remote/tests run generate:api-docs
+            first_hash="$(git diff --binary -- remote/deployments | sha256sum | awk '{print $1}')"
+            pnpm --dir remote/tests run generate:api-docs
+            second_hash="$(git diff --binary -- remote/deployments | sha256sum | awk '{print $1}')"
+            test "$first_hash" = "$second_hash"
+
+            git diff --name-status -- remote/deployments | tee "${RUNNER_TEMP}/api-doc-generated-paths.txt"
+            mapfile -t changed < <(git diff --name-only -- remote/deployments)
+            if (( ${#changed[@]} == 0 )); then
+              echo 'Generated API docs are already current.'
+              exit 0
+            fi
+
+            printf 'Generated output changes:\n'
+            printf '  - %s\n' "${changed[@]}"
+            for path in "${changed[@]}"; do
+              case "$path" in
+                remote/deployments/generated-api-docs-index.json|\
+                remote/deployments/generated-api-docs-index.html|\
+                remote/deployments/*/generated/*.json|\
+                remote/deployments/*/generated/*.html|\
+                remote/deployments/*/api_docs.gleam|\
+                remote/deployments/*/*/api_docs.gleam)
+                  ;;
+                *)
+                  echo "unexpected generator output path: $path" >&2
+                  exit 1
+                  ;;
+              esac
+            done
+
+            pnpm --dir remote/tests run check:api-docs
+          } 2>&1 | tee "${RUNNER_TEMP}/api-doc-generation.log"
+      - name: Upload failure-only generator diagnostics
+        if: failure() && steps.generate.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: api-doc-generation-diagnostics
+          path: |
+            ${{ runner.temp }}/api-doc-generation.log
+            ${{ runner.temp }}/api-doc-generated-paths.txt
+          retention-days: 1
+          if-no-files-found: warn
+      - name: Commit deterministic generated outputs
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$(git status --porcelain -- remote/deployments)" ]]; then
+            echo 'No generated outputs require a commit.'
+            exit 0
+          fi
+
+          askpass_file="$(mktemp "${RUNNER_TEMP}/github-push-askpass.XXXXXX")"
+          cleanup() { rm -f "$askpass_file"; }
+          trap cleanup EXIT
+          cat >"$askpass_file" <<'ASKPASS'
+          #!/usr/bin/env sh
+          case "${1:-}" in
+            *Username*) printf '%s\n' 'x-access-token' ;;
+            *Password*) printf '%s\n' "$GITHUB_TOKEN" ;;
+            *) printf '%s\n' '' ;;
+          esac
+          ASKPASS
+          chmod 700 "$askpass_file"
+          export GIT_ASKPASS="$askpass_file"
+          export GIT_TERMINAL_PROMPT=0
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- remote/deployments
+          git commit -m 'Regenerate deterministic API documentation'
+          git remote set-url origin https://github.com/ORESoftware/k8s-cluster.git
+          git push origin HEAD:agent/den-371-regenerate-api-docs
+      - name: Verify observability coverage separately
+        run: pnpm --dir remote/tests run check:observability-coverage
