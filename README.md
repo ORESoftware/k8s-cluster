@@ -249,3 +249,42 @@ The browser integration suite uses the explicit all-loopback customer test
 profile. Exercise registration, refresh, revocation, App-A/App-B audience
 rejection, and admin/customer rejection against disposable Postgres instances
 before schema or traffic promotion.
+
+## Cross-surface delivery
+
+A user-visible or contract-changing server change must be evaluated against the
+planned native client pair:
+
+- `shared-auth/shared-auth-flutter` for Android, iOS, Flutter Web/mobile web,
+  and Flutter desktop;
+- `shared-auth/shared-auth-desktop.rs` for the native Floem desktop app; and
+- Shared Auth interfaces, generated clients, OAuth/OIDC vectors, route fixtures,
+  and product-integration contracts.
+
+This is judgment-based coordination. Database maintenance, deployment, metrics,
+and server-only security hardening can remain server-only. Changes to sign-in,
+sign-out, passwordless flows, factors, approvals, recovery, device/session
+state, tenant/account selection, policy, delegated tokens, errors,
+notifications, or navigation normally require client changes or an explicit
+no-change rationale and tracked parity gap.
+
+Deep links are HTTPS-first:
+
+```text
+https://<verified-shared-auth-owned-host>/open/<route>?<bounded-query>
+```
+
+`sharedauth://` is reserved for non-OAuth app navigation. OAuth/OIDC must use
+the external system browser with Authorization Code + PKCE and preferably a
+verified claimed-HTTPS callback; the desktop fallback is an ephemeral listener
+bound only to `127.0.0.1` or `[::1]` for one authorization attempt. Embedded
+login WebViews are prohibited. Passwords, bearer/refresh tokens, authorization
+codes after redemption, client secrets, recovery material, TOTP seeds, private
+keys, session cookies, and sensitive identity data are prohibited in URLs.
+
+Both Flutter and Floem must share route types and fixtures; support cold start,
+already-running delivery, authentication resume, replay/expiry rejection, and
+browser fallback; and report platform/release status separately.
+
+See [`docs/CROSS_SURFACE_DELIVERY.md`](docs/CROSS_SURFACE_DELIVERY.md) and the
+[portfolio policy](https://github.com/ORESoftware/project-registry/blob/main/docs/cross-surface-delivery.md).
