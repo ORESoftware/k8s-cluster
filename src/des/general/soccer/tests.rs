@@ -94396,11 +94396,11 @@ fn static_soccer_frame_stream_uses_slim_playback_jsonl() {
     assert!(first_frame["officials"][0].get("velocity").is_some());
     assert!(first_frame["officials"][0].get("acceleration").is_some());
     assert!(first_frame["officials"][0].get("jerk").is_some());
-    assert!(!first_frame["players"][0].get("skills").is_some());
-    assert!(!first_frame["players"][0].get("positionHistory").is_some());
-    assert!(!first_frame["players"][0].get("lastDecision").is_some());
-    assert!(!first_frame.get("sharedPositions").is_some());
-    assert!(!first_frame.get("agentSchedule").is_some());
+    assert!(first_frame["players"][0].get("skills").is_none());
+    assert!(first_frame["players"][0].get("positionHistory").is_none());
+    assert!(first_frame["players"][0].get("lastDecision").is_none());
+    assert!(first_frame.get("sharedPositions").is_none());
+    assert!(first_frame.get("agentSchedule").is_none());
     assert!(first_frame.get("agentScheduleSummary").is_some());
     assert_eq!(
         first_frame["agentScheduleSummary"]["expectedTotalAgents"],

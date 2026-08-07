@@ -72054,9 +72054,7 @@ fn learned_action_label_is_legal_for_observation(
                     .any(|p| p.team != player.team && p.role == PlayerRole::Goalkeeper)
         }
         "vertical-attack" => {
-            observation.has_ball
-                || (!observation.has_ball
-                    && snapshot.controlled_possession_team() == Some(player.team))
+            observation.has_ball || snapshot.controlled_possession_team() == Some(player.team)
         }
         "turnover-burst" => {
             observation.has_ball

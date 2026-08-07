@@ -44130,7 +44130,7 @@ fn dd_soccer_disable_wingback_advanced_ball_hold_width() -> bool {
 fn outside_mid_ball_lane_width_enabled() -> bool {
     use std::sync::OnceLock;
     static V: OnceLock<bool> = OnceLock::new();
-    *V.get_or_init(|| !std::env::var("DD_SOCCER_DISABLE_OUTSIDE_MID_BALL_LANE_WIDTH").is_ok())
+    *V.get_or_init(|| std::env::var("DD_SOCCER_DISABLE_OUTSIDE_MID_BALL_LANE_WIDTH").is_err())
 }
 /// Long-pass run requirement (Part B of the long-pass-option-runs feature). ON by default: a
 /// DEEP carrier may only pre-empt-commit a long aerial to a teammate who actually made the run
@@ -66286,10 +66286,9 @@ impl WorldSnapshot {
             self.field_width,
             self.field_length,
         );
-        if !directive.flank_attack_policy.is_flank()
-            && !(crashing_box && crosser_outer_final_third)
-            && !(outside_midfielder && crosser_outer_final_third)
-        {
+        let has_crossing_role = directive.flank_attack_policy.is_flank()
+            || (crosser_outer_final_third && (crashing_box || outside_midfielder));
+        if !has_crossing_role {
             return None;
         }
         if outside_midfielder && !crosser_outer_final_third {
@@ -73636,10 +73635,9 @@ impl WorldSnapshot {
             ball_arrival,
             control_radius,
         );
-        (control_quality >= CONTROL_MIN_VIABLE_QUALITY
-            || perp_gap <= CONTROL_AT_FEET_TRAP_RADIUS_YARDS)
-            && (mpc_fit.qp_accel_fit >= MPC_BALL_CONTROL_FORCED_MIN_QP_ACCEL_FIT
-                || perp_gap <= CONTROL_AT_FEET_TRAP_RADIUS_YARDS)
+        perp_gap <= CONTROL_AT_FEET_TRAP_RADIUS_YARDS
+            || (control_quality >= CONTROL_MIN_VIABLE_QUALITY
+                && mpc_fit.qp_accel_fit >= MPC_BALL_CONTROL_FORCED_MIN_QP_ACCEL_FIT)
     }
 
     /// Movement-aware [`clear_line`]: a defender currently OUTSIDE the lane corridor
