@@ -223,6 +223,8 @@ valid digest and exact ref inventory. The workflow therefore proves the source
 checkout is a work tree and runs `git -C "$source_root" bundle verify` before the
 sealed publisher is allowed to execute. Focused tests reject both SHA-as-ref
 fetching and an unscoped workspace-level verification invocation.
+sealed publisher is allowed to execute. Focused tests reject a regression to an
+unscoped workspace-level invocation.
 
 ## Rotation and audit
 
