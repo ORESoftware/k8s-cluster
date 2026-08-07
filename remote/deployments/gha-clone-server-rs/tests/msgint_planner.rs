@@ -1,7 +1,7 @@
 use gha_clone_server::{build_plan, PlanRequest, PlannerLimits, WorkflowPlan};
 
 const REPOSITORY: &str = "messaging-intel/msgint-connectors";
-const REVISION: &str = "a9cc977d78347ec0efdbe8e6766967f80d425882";
+const REVISION: &str = "a43e11cd7610806470c0af95f4cdbe3e19b143bb";
 const WORKFLOW_PATH: &str = ".github/workflows/gha-clone-operator-config.yml";
 const WORKFLOW: &str = include_str!("../fixtures/msgint-operator-config.yml");
 

@@ -21,7 +21,7 @@ use tokio::{
 
 const SERVER_AUTH: &str = "msgint-server-auth";
 const BUILD_AUTH: &str = "msgint-build-auth";
-const REVISION: &str = "7d905806b2000479bdacb9b206f33b26a707ba5e";
+const REVISION: &str = "a43e11cd7610806470c0af95f4cdbe3e19b143bb";
 const REPOSITORY: &str = "messaging-intel/msgint-connectors";
 const WORKFLOW_PATH: &str = ".github/workflows/gha-clone-operator-config.yml";
 
@@ -242,10 +242,7 @@ async fn running_server_dispatches_exact_msgint_profiles_and_rejects_mutations()
         "node-hardened-verify"
     );
     assert_eq!(final_run["submissions"][0]["status"], "succeeded");
-    assert_eq!(
-        final_run["submissions"][1]["profile"],
-        "node-hardened-test"
-    );
+    assert_eq!(final_run["submissions"][1]["profile"], "node-hardened-test");
     assert_eq!(final_run["submissions"][1]["status"], "succeeded");
 
     let submissions = mock_state.submissions.lock().await;
@@ -300,7 +297,11 @@ async fn running_server_dispatches_exact_msgint_profiles_and_rejects_mutations()
             mutable_action,
             "exact 40-hex commit SHA",
         ),
-        ("bracket secret expression", bracket_secret, "secret-bearing"),
+        (
+            "bracket secret expression",
+            bracket_secret,
+            "secret-bearing",
+        ),
     ] {
         let response = client
             .post(format!("{server_url}/v1/runs"))
@@ -323,7 +324,10 @@ async fn running_server_dispatches_exact_msgint_profiles_and_rejects_mutations()
             .json()
             .await
             .unwrap_or_else(|error| panic!("read rejected {label} response: {error}"));
-        assert_eq!(rejected["error"], "workflow is not independently executable");
+        assert_eq!(
+            rejected["error"],
+            "workflow is not independently executable"
+        );
         assert!(
             rejected.to_string().contains(expected_reason),
             "{label} response did not explain {expected_reason}: {rejected}"

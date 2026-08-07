@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::BTreeSet,
     fs,
     net::TcpListener as StdTcpListener,
     path::PathBuf,
@@ -28,20 +28,24 @@ use tokio::{
 use uuid::Uuid;
 
 const ROUTER_BINARY: &str = env!("CARGO_BIN_EXE_gha-executor-router");
-const ROUTER_AUTH: &str = "router-test-auth";
-const AWS_AUTH: &str = "aws-test-auth";
-const HETZNER_AUTH: &str = "hetzner-test-auth";
+const ROUTER_AUTH: &str = "router-test-auth-secret-at-least-32-bytes";
+const AWS_AUTH: &str = "aws-test-auth-secret-at-least-32-bytes";
+const HETZNER_AUTH: &str = "hetzner-test-auth-secret-at-least-32-bytes";
 const REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
 const ROUTER_ENV_VARS: &[&str] = &[
     "HOST",
     "PORT",
     "GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED",
+    "GHA_EXECUTOR_ROUTER_SECRET_ROOT",
     "GHA_EXECUTOR_ROUTER_AUTH_PATH",
     "GHA_EXECUTOR_ROUTER_EXECUTORS_JSON",
-    "GHA_EXECUTOR_ROUTER_MAX_ROUTES",
+    "GHA_EXECUTOR_ROUTER_MAX_EXECUTORS",
     "GHA_EXECUTOR_ROUTER_MAX_REQUEST_BYTES",
-    "GHA_EXECUTOR_ROUTER_MAX_RESPONSE_BYTES",
-    "GHA_EXECUTOR_ROUTER_REQUEST_TIMEOUT_SECONDS",
+    "GHA_EXECUTOR_ROUTER_MAX_UPSTREAM_BODY_BYTES",
+    "GHA_EXECUTOR_ROUTER_MAX_ERROR_CHARS",
+    "GHA_EXECUTOR_ROUTER_MAX_ASSIGNMENTS",
+    "GHA_EXECUTOR_ROUTER_PROBE_TIMEOUT_MS",
+    "GHA_EXECUTOR_ROUTER_UPSTREAM_TIMEOUT_SECONDS",
 ];
 
 struct SecretFiles {
@@ -139,6 +143,7 @@ async fn spawn_executor(
         requests: Arc::new(Mutex::new(Vec::new())),
     };
     let app = Router::new()
+        .route("/readyz", get(|| async { StatusCode::OK }))
         .route("/builds", post(executor_submit))
         .route("/builds/:id", get(executor_poll))
         .with_state(state.clone());
@@ -182,11 +187,7 @@ async fn executor_submit(
         )
             .into_response()
     } else {
-        (
-            status,
-            "sensitive-upstream-submission-body-must-not-leak",
-        )
-            .into_response()
+        (status, "sensitive-upstream-submission-body-must-not-leak").into_response()
     }
 }
 
@@ -232,13 +233,15 @@ async fn spawn_router(
         {
             "id": "aws-primary",
             "provider": "aws",
-            "baseUrl": aws_url,
+            "enabled": true,
+            "url": aws_url,
             "authPath": secrets.aws.to_string_lossy()
         },
         {
             "id": "hetzner-secondary",
             "provider": "hetzner",
-            "baseUrl": hetzner_url,
+            "enabled": true,
+            "url": hetzner_url,
             "authPath": secrets.hetzner.to_string_lossy()
         }
     ]);
@@ -253,15 +256,19 @@ async fn spawn_router(
         .env("RUST_LOG", "error")
         .env("GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED", "true")
         .env(
+            "GHA_EXECUTOR_ROUTER_SECRET_ROOT",
+            secrets.directory.to_string_lossy().as_ref(),
+        )
+        .env(
             "GHA_EXECUTOR_ROUTER_AUTH_PATH",
             secrets.router.to_string_lossy().as_ref(),
         )
         .env("GHA_EXECUTOR_ROUTER_EXECUTORS_JSON", executors.to_string())
-        .env("GHA_EXECUTOR_ROUTER_MAX_ROUTES", "32")
+        .env("GHA_EXECUTOR_ROUTER_MAX_EXECUTORS", "32")
         .env("GHA_EXECUTOR_ROUTER_MAX_REQUEST_BYTES", "8192")
-        .env("GHA_EXECUTOR_ROUTER_MAX_RESPONSE_BYTES", "8192")
+        .env("GHA_EXECUTOR_ROUTER_MAX_UPSTREAM_BODY_BYTES", "8192")
         .env(
-            "GHA_EXECUTOR_ROUTER_REQUEST_TIMEOUT_SECONDS",
+            "GHA_EXECUTOR_ROUTER_UPSTREAM_TIMEOUT_SECONDS",
             request_timeout_seconds.to_string(),
         )
         .stdout(Stdio::null())
@@ -348,7 +355,13 @@ async fn response_data(response: reqwest::Response) -> ResponseData {
 
 #[tokio::test]
 async fn aws_acceptance_is_idempotent_and_polling_remains_pinned() {
-    let aws = spawn_executor(AWS_AUTH, "aws-build-1", StatusCode::ACCEPTED, StatusCode::OK).await;
+    let aws = spawn_executor(
+        AWS_AUTH,
+        "aws-build-1",
+        StatusCode::ACCEPTED,
+        StatusCode::OK,
+    )
+    .await;
     let hetzner = spawn_executor(
         HETZNER_AUTH,
         "hetzner-build-1",
@@ -383,8 +396,11 @@ async fn aws_acceptance_is_idempotent_and_polling_remains_pinned() {
 }
 
 #[tokio::test]
-async fn aws_5xx_and_429_fail_over_before_acceptance() {
-    for status in [StatusCode::SERVICE_UNAVAILABLE, StatusCode::TOO_MANY_REQUESTS] {
+async fn aws_5xx_and_429_are_ambiguous_and_never_cross_providers() {
+    for status in [
+        StatusCode::SERVICE_UNAVAILABLE,
+        StatusCode::TOO_MANY_REQUESTS,
+    ] {
         let aws = spawn_executor(AWS_AUTH, "aws-build-2", status, StatusCode::OK).await;
         let hetzner = spawn_executor(
             HETZNER_AUTH,
@@ -402,13 +418,11 @@ async fn aws_5xx_and_429_fail_over_before_acceptance() {
             &format!("gha-clone:plan:{}", status.as_u16()),
         )
         .await;
-        assert_eq!(response.status, StatusCode::ACCEPTED);
-        assert!(response.json["id"]
-            .as_str()
-            .expect("route id")
-            .starts_with("hetzner-secondary~"));
+        assert_eq!(response.status, StatusCode::BAD_GATEWAY);
+        assert_eq!(response.json["automaticFailover"], false);
+        assert_eq!(response.json["executorId"], "aws-primary");
         assert_eq!(aws.state.submissions.load(Ordering::SeqCst), 1);
-        assert_eq!(hetzner.state.submissions.load(Ordering::SeqCst), 1);
+        assert_eq!(hetzner.state.submissions.load(Ordering::SeqCst), 0);
     }
 }
 
@@ -432,7 +446,13 @@ async fn connection_refusal_fails_over_but_contract_rejection_does_not() {
         .starts_with("hetzner-secondary~"));
     assert_eq!(hetzner.state.submissions.load(Ordering::SeqCst), 1);
 
-    let aws = spawn_executor(AWS_AUTH, "aws-build-4", StatusCode::BAD_REQUEST, StatusCode::OK).await;
+    let aws = spawn_executor(
+        AWS_AUTH,
+        "aws-build-4",
+        StatusCode::BAD_REQUEST,
+        StatusCode::OK,
+    )
+    .await;
     let untouched_hetzner = spawn_executor(
         HETZNER_AUTH,
         "hetzner-build-4",
@@ -442,17 +462,26 @@ async fn connection_refusal_fails_over_but_contract_rejection_does_not() {
     .await;
     let router = spawn_router(&aws.base_url, &untouched_hetzner.base_url, 2).await;
     let rejected = post_build(&client, &router, "gha-clone:contract-rejection").await;
-    assert_eq!(rejected.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(rejected.status, StatusCode::BAD_REQUEST);
     assert!(!rejected
         .text
         .contains("sensitive-upstream-submission-body-must-not-leak"));
     assert_eq!(aws.state.submissions.load(Ordering::SeqCst), 1);
-    assert_eq!(untouched_hetzner.state.submissions.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        untouched_hetzner.state.submissions.load(Ordering::SeqCst),
+        0
+    );
 }
 
 #[tokio::test]
 async fn accepted_aws_poll_failure_is_never_resubmitted_to_hetzner() {
-    let aws = spawn_executor(AWS_AUTH, "aws-build-5", StatusCode::ACCEPTED, StatusCode::OK).await;
+    let aws = spawn_executor(
+        AWS_AUTH,
+        "aws-build-5",
+        StatusCode::ACCEPTED,
+        StatusCode::OK,
+    )
+    .await;
     let hetzner = spawn_executor(
         HETZNER_AUTH,
         "hetzner-build-5",
@@ -472,14 +501,24 @@ async fn accepted_aws_poll_failure_is_never_resubmitted_to_hetzner() {
     assert!(!failed_poll
         .text
         .contains("sensitive-upstream-poll-body-must-not-leak"));
-    assert!(failed_poll.text.contains("not resubmitted"));
+    assert_eq!(failed_poll.json["automaticFailover"], false);
+    assert!(failed_poll.json["error"]
+        .as_str()
+        .expect("bounded poll error")
+        .contains("accepting executor"));
     assert_eq!(aws.state.submissions.load(Ordering::SeqCst), 1);
     assert_eq!(hetzner.state.submissions.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]
 async fn health_capabilities_metrics_and_auth_are_source_redacted() {
-    let aws = spawn_executor(AWS_AUTH, "aws-build-6", StatusCode::ACCEPTED, StatusCode::OK).await;
+    let aws = spawn_executor(
+        AWS_AUTH,
+        "aws-build-6",
+        StatusCode::ACCEPTED,
+        StatusCode::OK,
+    )
+    .await;
     let hetzner = spawn_executor(
         HETZNER_AUTH,
         "hetzner-build-6",
@@ -519,8 +558,8 @@ async fn health_capabilities_metrics_and_auth_are_source_redacted() {
 
 #[test]
 fn router_environment_contract_is_unique() {
-    let unique = ROUTER_ENV_VARS.iter().copied().collect::<BTreeMap<_, _>>();
-    let _ = unique;
+    let unique = ROUTER_ENV_VARS.iter().copied().collect::<BTreeSet<_>>();
+    assert_eq!(unique.len(), ROUTER_ENV_VARS.len());
     let mut sorted = ROUTER_ENV_VARS.to_vec();
     sorted.sort_unstable();
     sorted.dedup();

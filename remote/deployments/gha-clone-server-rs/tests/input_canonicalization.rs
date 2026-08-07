@@ -180,8 +180,8 @@ jobs:
 #[test]
 fn deterministic_structured_garbage_never_panics_the_public_planner() {
     let alphabet = [
-        'a', 'Z', '0', ':', '-', '_', '[', ']', '{', '}', '\n', '\t', '$', '{', '}', '/', '.',
-        '%', '?', '#', '\\', '\0', 'é', '💥',
+        'a', 'Z', '0', ':', '-', '_', '[', ']', '{', '}', '\n', '\t', '$', '{', '}', '/', '.', '%',
+        '?', '#', '\\', '\0', 'é', '💥',
     ];
     let mut state = 0x5eed_u64;
 
@@ -196,6 +196,9 @@ fn deterministic_structured_garbage_never_panics_the_public_planner() {
 
         let request = request("owner/repo", ".github/workflows/ci.yml", &yaml);
         let result = std::panic::catch_unwind(|| build_plan(&request, &PlannerLimits::default()));
-        assert!(result.is_ok(), "planner panicked for generated input {yaml:?}");
+        assert!(
+            result.is_ok(),
+            "planner panicked for generated input {yaml:?}"
+        );
     }
 }

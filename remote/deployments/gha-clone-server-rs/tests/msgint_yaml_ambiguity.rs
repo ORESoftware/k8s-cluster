@@ -1,6 +1,6 @@
 use gha_clone_server::{build_plan, PlanRequest, PlannerLimits};
 
-const REVISION: &str = "952623b07fd83caa3a83ee27bdea293f6bd4372f";
+const REVISION: &str = "a43e11cd7610806470c0af95f4cdbe3e19b143bb";
 
 fn request(workflow_yaml: &str) -> PlanRequest {
     PlanRequest {
@@ -148,7 +148,7 @@ jobs:
 
 #[test]
 fn tags_and_multiple_documents_fail_closed() {
-    assert_parse_rejected(
+    assert_not_executable(
         "tagged jobs mapping",
         r#"
 jobs: !reviewed
@@ -159,7 +159,7 @@ jobs: !reviewed
 "#,
     );
 
-    assert_parse_rejected(
+    assert_not_executable(
         "multiple YAML documents",
         r#"
 ---

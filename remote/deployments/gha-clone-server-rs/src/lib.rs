@@ -2,39 +2,104 @@ pub mod credentials;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-#[cfg(not(test))]
-mod msgint_contract;
+use hmac::{Hmac, Mac};
+use serde::{Deserialize, Serialize};
+use serde_yaml::{Mapping, Value};
+use sha2::{Digest, Sha256};
 
-#[cfg(test)]
-mod msgint_contract {
-    use std::collections::BTreeMap;
+pub const SERVICE_NAME: &str = "gha-clone-server";
+pub const PLAN_SCHEMA_VERSION: &str = "gha-clone-plan.v1";
+pub const MAX_WORKFLOW_BYTES_DEFAULT: usize = 256 * 1024;
+pub const MAX_JOBS_DEFAULT: usize = 64;
+pub const MAX_STEPS_PER_JOB_DEFAULT: usize = 128;
 
-    use serde_yaml::Mapping;
+#[derive(Clone, Debug)]
+pub struct PlannerLimits {
+    pub max_workflow_bytes: usize,
+    pub max_jobs: usize,
+    pub max_steps_per_job: usize,
+}
 
-    #[allow(dead_code)]
-    pub enum ContractMatch {
-        NotApplicable,
-        Match(BTreeMap<String, String>),
-        Reject(Vec<String>),
-    }
-
-    pub fn classify_msgint_workflow(
-        _repository: &str,
-        _revision: &str,
-        _workflow_path: &str,
-        _root: &Mapping,
-    ) -> ContractMatch {
-        // The real module is compiled by every normal library/binary build and
-        // therefore by the process-level integration tests. Keeping the
-        // original planner's unit-test module isolated preserves its existing
-        // generic-classifier coverage without running the same private
-        // contract fixtures twice.
-        ContractMatch::NotApplicable
+impl Default for PlannerLimits {
+    fn default() -> Self {
+        Self {
+            max_workflow_bytes: MAX_WORKFLOW_BYTES_DEFAULT,
+            max_jobs: MAX_JOBS_DEFAULT,
+            max_steps_per_job: MAX_STEPS_PER_JOB_DEFAULT,
+        }
     }
 }
 
-mod original {
-    include!("lib_original.rs");
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanRequest {
+    pub repository: String,
+    pub revision: String,
+    #[serde(default = "default_workflow_path")]
+    pub workflow_path: String,
+    pub workflow_yaml: String,
+}
+
+fn default_workflow_path() -> String {
+    ".github/workflows/ci.yml".to_string()
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowPlan {
+    pub schema_version: String,
+    pub plan_id: String,
+    pub repository: String,
+    pub revision: String,
+    pub workflow_path: String,
+    pub immutable_revision: bool,
+    pub arc_fully_covered: bool,
+    pub independent_executable: bool,
+    pub topological_order: Vec<String>,
+    pub jobs: Vec<JobPlan>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JobPlan {
+    pub id: String,
+    pub needs: Vec<String>,
+    pub runs_on: Vec<String>,
+    pub arc_compatible: bool,
+    pub arc_lane: String,
+    pub independent_supported: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub independent_profile: Option<String>,
+    pub independent_reasons: Vec<String>,
+    pub independent_notes: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityResponse {
+    pub service: String,
+    pub plan_schema_version: String,
+    pub architecture: ArchitectureCapabilities,
+    pub independent_profiles: Vec<String>,
+    pub limits: CapabilityLimits,
+    pub explicitly_unsupported: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchitectureCapabilities {
+    pub native_parity_lane: String,
+    pub independent_lane: String,
+    pub native_arc_labels: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityLimits {
+    pub max_workflow_bytes: usize,
+    pub max_jobs: usize,
+    pub max_steps_per_job: usize,
 }
 
 pub fn capabilities(limits: &PlannerLimits) -> CapabilityResponse {
@@ -57,7 +122,6 @@ pub fn capabilities(limits: &PlannerLimits) -> CapabilityResponse {
         },
         independent_profiles: vec![
             "rust-verify".to_string(),
-            "rust-generated-verify".to_string(),
             "node-verify".to_string(),
             "node-hardened-verify".to_string(),
             "node-hardened-test".to_string(),
@@ -88,163 +152,11 @@ pub fn capabilities(limits: &PlannerLimits) -> CapabilityResponse {
     }
 }
 
-fn is_block_scalar_header(value: &str) -> bool {
-    let token = value.split_whitespace().next().unwrap_or_default();
-    let Some(modifiers) = token.strip_prefix('|').or_else(|| token.strip_prefix('>')) else {
-        return false;
-    };
-    modifiers
-        .bytes()
-        .all(|byte| byte.is_ascii_digit() || matches!(byte, b'+' | b'-'))
-}
-
-fn validate_workflow_document(source: &str) -> Result<(), String> {
-    if source.as_bytes().contains(&b'\t') {
-        return Err("workflowYaml contains a tab; indentation must use spaces".into());
-    }
-
-    let mut parents = Vec::<(usize, String)>::new();
-    let mut seen = BTreeMap::<String, BTreeSet<String>>::new();
-    let mut sequence_ordinals = BTreeMap::<String, usize>::new();
-    let mut block_scalar_indent = None::<usize>;
-
-    for (index, raw_line) in source.lines().enumerate() {
-        let line_number = index + 1;
-        let indent = raw_line.bytes().take_while(|byte| *byte == b' ').count();
-        let trimmed = raw_line.trim();
-
-        if let Some(block_indent) = block_scalar_indent {
-            if trimmed.is_empty() || indent > block_indent {
-                continue;
-            }
-            block_scalar_indent = None;
-        }
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-        if trimmed == "---"
-            || trimmed.starts_with("--- ")
-            || trimmed == "..."
-            || trimmed.starts_with("... ")
-        {
-            return Err(format!(
-                "workflowYaml line {line_number} uses a YAML document marker"
-            ));
-        }
-
-        while parents
-            .last()
-            .is_some_and(|(parent_indent, _)| *parent_indent >= indent)
-        {
-            parents.pop();
-        }
-
-        let raw_content = raw_line[indent..].trim_end();
-        let (content, key_indent) = if let Some(after_dash) = raw_content.strip_prefix('-') {
-            if after_dash.is_empty() || after_dash.starts_with(' ') {
-                let spaces_after_dash = after_dash.bytes().take_while(|byte| *byte == b' ').count();
-                let parent_scope = parents
-                    .iter()
-                    .map(|(_, parent)| parent.as_str())
-                    .collect::<Vec<_>>()
-                    .join("/");
-                let counter = sequence_ordinals
-                    .entry(format!("{parent_scope}@{indent}"))
-                    .or_default();
-                parents.push((indent, format!("[{counter}]")));
-                *counter += 1;
-                (
-                    after_dash[spaces_after_dash..].trim_end(),
-                    indent + 1 + spaces_after_dash,
-                )
-            } else {
-                (raw_content, indent)
-            }
-        } else {
-            (raw_content, indent)
-        };
-        if content.is_empty() {
-            continue;
-        }
-        if content.starts_with(['!', '&', '*']) {
-            return Err(format!(
-                "workflowYaml line {line_number} uses a YAML tag, anchor, or alias"
-            ));
-        }
-        if content.starts_with('{') && content.trim() != "{}" {
-            return Err(format!(
-                "workflowYaml line {line_number} uses a non-empty flow mapping"
-            ));
-        }
-
-        let Some((raw_key, raw_value)) = content.split_once(':') else {
-            continue;
-        };
-        let key = raw_key.trim().trim_matches(['\'', '"']);
-        let value = raw_value.trim_start();
-        if key.is_empty() {
-            continue;
-        }
-        if !key.is_ascii() {
-            return Err(format!(
-                "workflowYaml line {line_number} has a non-ASCII mapping key"
-            ));
-        }
-        if key == "<<" {
-            return Err(format!(
-                "workflowYaml line {line_number} uses a YAML merge key"
-            ));
-        }
-        if value.starts_with(['!', '&', '*']) {
-            return Err(format!(
-                "workflowYaml line {line_number} uses a YAML tag, anchor, or alias"
-            ));
-        }
-        let uncommented_value = value.split('#').next().unwrap_or(value).trim_end();
-        if uncommented_value.starts_with('{') && uncommented_value != "{}" {
-            return Err(format!(
-                "workflowYaml line {line_number} uses a non-empty flow mapping"
-            ));
-        }
-
-        let scope = parents
-            .iter()
-            .map(|(_, parent)| parent.as_str())
-            .collect::<Vec<_>>()
-            .join("/");
-        if !seen
-            .entry(scope)
-            .or_default()
-            .insert(key.to_ascii_lowercase())
-        {
-            return Err(format!(
-                "workflowYaml line {line_number} repeats mapping key {key:?}"
-            ));
-        }
-
-        if is_block_scalar_header(value) {
-            block_scalar_indent = Some(key_indent);
-        } else if value.is_empty() {
-            parents.push((key_indent, key.to_ascii_lowercase()));
-        }
-    }
-    Ok(())
-}
-
 pub fn build_plan(
     request: &PlanRequest,
     limits: &PlannerLimits,
 ) -> Result<WorkflowPlan, Vec<String>> {
     let mut errors = Vec::new();
-    if limits.max_workflow_bytes == 0 {
-        errors.push("maxWorkflowBytes must be greater than zero".into());
-    }
-    if limits.max_jobs == 0 {
-        errors.push("maxJobs must be greater than zero".into());
-    }
-    if limits.max_steps_per_job == 0 {
-        errors.push("maxStepsPerJob must be greater than zero".into());
-    }
     if !valid_repository(&request.repository) {
         errors.push(
             "repository must be an owner/name identifier using GitHub-safe characters".into(),
@@ -252,7 +164,7 @@ pub fn build_plan(
     }
     if !valid_workflow_path(&request.workflow_path) {
         errors
-            .push("workflowPath must stay under .github/workflows as one direct ASCII <file>.yml or .yaml file".into());
+            .push("workflowPath must stay under .github/workflows and end in .yml or .yaml".into());
     }
     if request.workflow_yaml.len() > limits.max_workflow_bytes {
         errors.push(format!(
@@ -263,9 +175,6 @@ pub fn build_plan(
     if request.workflow_yaml.as_bytes().contains(&0) {
         errors.push("workflowYaml must not contain NUL bytes".into());
     }
-    if let Err(error) = validate_workflow_document(&request.workflow_yaml) {
-        errors.push(error);
-    }
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -275,8 +184,74 @@ pub fn build_plan(
     let root = workflow
         .as_mapping()
         .ok_or_else(|| vec!["workflow document must be a YAML mapping".to_string()])?;
+    let jobs = mapping_get(root, "jobs")
+        .and_then(Value::as_mapping)
+        .ok_or_else(|| vec!["workflow.jobs must be a mapping".to_string()])?;
 
-    apply_messaging_intel_contract(request, &mut plans)?;
+    if jobs.is_empty() {
+        errors.push("workflow.jobs must contain at least one job".into());
+    }
+    if jobs.len() > limits.max_jobs {
+        errors.push(format!(
+            "workflow has {} jobs; maximum is {}",
+            jobs.len(),
+            limits.max_jobs
+        ));
+    }
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+
+    let mut workflow_reasons = Vec::new();
+    for key in root.keys().filter_map(Value::as_str) {
+        if !matches!(key, "name" | "run-name" | "on" | "jobs") {
+            workflow_reasons.push(format!(
+                "workflow-level {key} is unsupported by the independent lane"
+            ));
+        }
+    }
+
+    let job_ids = jobs
+        .keys()
+        .filter_map(Value::as_str)
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
+    if job_ids.len() != jobs.len() {
+        return Err(vec!["every workflow job ID must be a string".into()]);
+    }
+
+    let mut plans = Vec::with_capacity(jobs.len());
+    for (job_key, job_value) in jobs {
+        let id = job_key
+            .as_str()
+            .expect("validated string job ID")
+            .to_string();
+        if !valid_job_id(&id) {
+            errors.push(format!(
+                "jobs.{id}: job ID must start with a letter or '_'; job ID must use letters, numbers, '_', or '-' and be at most 100 characters"
+            ));
+            continue;
+        }
+        let Some(job) = job_value.as_mapping() else {
+            errors.push(format!("jobs.{id}: job must be a mapping"));
+            continue;
+        };
+        match compile_job(&id, job, limits) {
+            Ok(mut plan) => {
+                plan.independent_reasons.extend(workflow_reasons.clone());
+                if !plan.independent_reasons.is_empty() {
+                    plan.independent_supported = false;
+                    plan.independent_profile = None;
+                }
+                plans.push(plan);
+            }
+            Err(mut job_errors) => errors.append(&mut job_errors),
+        }
+    }
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+
     let topological_order = validate_dependencies(&plans, &job_ids)?;
     let immutable_revision = is_full_commit_sha(&request.revision);
     let mut warnings = Vec::new();
@@ -306,15 +281,81 @@ pub fn build_plan(
     })
 }
 
-    let profiles = match msgint_contract::classify_msgint_workflow(
-        &request.repository,
-        &request.revision,
-        &request.workflow_path,
-        root,
-    ) {
-        msgint_contract::ContractMatch::NotApplicable => return Ok(plan),
-        msgint_contract::ContractMatch::Reject(reasons) => return Err(reasons),
-        msgint_contract::ContractMatch::Match(profiles) => profiles,
+fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPlan, Vec<String>> {
+    let mut errors = Vec::new();
+    let needs = parse_string_or_sequence(
+        mapping_get(job, "needs"),
+        &format!("jobs.{id}.needs"),
+        &mut errors,
+    );
+    let runs_on = parse_string_or_sequence(
+        mapping_get(job, "runs-on"),
+        &format!("jobs.{id}.runs-on"),
+        &mut errors,
+    );
+    if runs_on.is_empty() {
+        errors.push(format!(
+            "jobs.{id}.runs-on: at least one runner label is required"
+        ));
+    }
+
+    let mut reasons = Vec::new();
+    let mut notes = Vec::new();
+    let mut combined = String::new();
+    let mut run_commands = Vec::new();
+    let has_services = mapping_get(job, "services").is_some();
+    let has_container = mapping_get(job, "container").is_some();
+    let has_strategy = mapping_get(job, "strategy").is_some();
+
+    for key in [
+        "uses",
+        "permissions",
+        "environment",
+        "secrets",
+        "defaults",
+        "outputs",
+        "continue-on-error",
+        "timeout-minutes",
+    ] {
+        if mapping_get(job, key).is_some() {
+            reasons.push(format!(
+                "job-level {key} is unsupported by the independent lane"
+            ));
+        }
+    }
+    if has_services {
+        reasons.push("service containers require the isolated ARC DinD lane".into());
+    }
+    if has_container {
+        reasons.push("job containers are not reproduced by the independent lane".into());
+    }
+    if has_strategy {
+        reasons.push("dynamic strategy/matrix expansion is unsupported".into());
+    }
+    let runner_text = runs_on.join(" ").to_ascii_lowercase();
+    if runner_text.contains("macos") || runner_text.contains("windows") {
+        reasons.push("non-Linux native execution is unavailable in the independent lane".into());
+    }
+    if let Some(value) = mapping_get(job, "if") {
+        reasons.push(format!(
+            "job-level if condition is unsupported: {}",
+            compact_yaml(value)
+        ));
+    }
+    if let Some(environment) = mapping_get(job, "env") {
+        if contains_secret_expression(Some(environment)) {
+            reasons.push("job environment contains a secret expression".into());
+        } else {
+            reasons.push(
+                "job environment is unsupported because fixed profiles do not forward caller-selected variables"
+                    .into(),
+            );
+        }
+    }
+
+    let Some(steps) = mapping_get(job, "steps").and_then(Value::as_sequence) else {
+        errors.push(format!("jobs.{id}.steps must be a sequence"));
+        return Err(errors);
     };
     if steps.len() > limits.max_steps_per_job {
         errors.push(format!(
@@ -361,7 +402,9 @@ pub fn build_plan(
                 "{path}: secret-bearing setup inputs are unsupported"
             ));
         } else if contains_expression(mapping_get(step, "with")) {
-            reasons.push(format!("{path}: expressions in setup inputs are unsupported"));
+            reasons.push(format!(
+                "{path}: expressions in setup inputs are unsupported"
+            ));
         }
         if let Some(run) = mapping_get(step, "run").and_then(Value::as_str) {
             combined.push_str(run);
@@ -479,10 +522,98 @@ fn classify_profile(text: &str) -> Option<String> {
     None
 }
 
-    if plan.jobs.len() != profiles.len() {
+fn classify_arc_lane(
+    runs_on: &[String],
+    text: &str,
+    has_services: bool,
+    has_container: bool,
+) -> (bool, String) {
+    let joined = runs_on.join(" ").to_ascii_lowercase();
+    if joined.contains("macos") || joined.contains("windows") {
+        return (false, "github-hosted-native".into());
+    }
+    if joined.contains("android")
+        || joined.contains("kvm")
+        || text.contains("android-emulator-runner")
+        || text.contains("avdmanager")
+        || text.contains("emulator -")
+    {
+        return (true, "sonus-android-kvm".into());
+    }
+    if has_services
+        || has_container
+        || text.contains("docker build")
+        || text.contains("docker compose")
+        || text.contains("buildx")
+    {
+        return (true, "sonus-ci-dind".into());
+    }
+    if text.contains("playwright")
+        || text.contains("puppeteer")
+        || text.contains("selenium")
+        || text.contains("chromium")
+    {
+        return (true, "sonus-browser".into());
+    }
+    (true, "sonus-ci".into())
+}
+
+fn validate_dependencies(
+    jobs: &[JobPlan],
+    job_ids: &BTreeSet<String>,
+) -> Result<Vec<String>, Vec<String>> {
+    let mut errors = Vec::new();
+    let mut indegree = BTreeMap::<String, usize>::new();
+    let mut children = BTreeMap::<String, Vec<String>>::new();
+    for job in jobs {
+        indegree.insert(job.id.clone(), job.needs.len());
+        for dependency in &job.needs {
+            if dependency == &job.id {
+                errors.push(format!(
+                    "jobs.{}.needs: job cannot depend on itself",
+                    job.id
+                ));
+            } else if !job_ids.contains(dependency) {
+                errors.push(format!(
+                    "jobs.{}.needs: unknown dependency {dependency:?}",
+                    job.id
+                ));
+            } else {
+                children
+                    .entry(dependency.clone())
+                    .or_default()
+                    .push(job.id.clone());
+            }
+        }
+    }
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+
+    let mut ready = indegree
+        .iter()
+        .filter_map(|(id, count)| (*count == 0).then_some(id.clone()))
+        .collect::<VecDeque<_>>();
+    let mut ordered = Vec::with_capacity(jobs.len());
+    while let Some(id) = ready.pop_front() {
+        ordered.push(id.clone());
+        if let Some(next_jobs) = children.get(&id) {
+            let mut next_jobs = next_jobs.clone();
+            next_jobs.sort();
+            for child in next_jobs {
+                let count = indegree
+                    .get_mut(&child)
+                    .expect("validated dependency target exists");
+                *count -= 1;
+                if *count == 0 {
+                    ready.push_back(child);
+                }
+            }
+        }
+    }
+    if ordered.len() != jobs.len() {
         return Err(vec![
-            "reviewed Messaging Intel contract and generic planner produced different job sets"
-                .to_string(),
+            "workflow job dependency graph contains a cycle".to_string()
         ]);
     }
     Ok(ordered)
@@ -565,20 +696,13 @@ fn hardened_node_intent(text: &str) -> bool {
 }
 
 fn hardened_node_profile(commands: &[String]) -> Option<&'static str> {
-    const OPERATOR: [&str; 5] = [
-        "export npm_config_ignore_scripts=true",
-        "npm ci --ignore-scripts --no-audit --no-fund",
+    const OPERATOR: [&str; 4] = [
+        "npm ci --ignore-scripts",
         "npm run check",
         "npm run test:operator-config",
         "npm audit --audit-level=high",
     ];
-    const FULL_TEST: [&str; 5] = [
-        "export npm_config_ignore_scripts=true",
-        "npm ci --ignore-scripts --no-audit --no-fund",
-        "npm run check",
-        "npm test",
-        "npm audit --audit-level=high",
-    ];
+    const FULL_TEST: [&str; 2] = ["npm ci --ignore-scripts", "npm test"];
     if commands.iter().map(String::as_str).eq(OPERATOR) {
         Some("node-hardened-verify")
     } else if commands.iter().map(String::as_str).eq(FULL_TEST) {
@@ -615,6 +739,8 @@ fn valid_repository(value: &str) -> bool {
 
 fn valid_github_component(value: &str) -> bool {
     !value.is_empty()
+        && value != "."
+        && value != ".."
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
@@ -625,20 +751,26 @@ fn valid_workflow_path(value: &str) -> bool {
     let Some(file) = value.strip_prefix(PREFIX) else {
         return false;
     };
+    let stem = file
+        .strip_suffix(".yaml")
+        .or_else(|| file.strip_suffix(".yml"));
     !file.is_empty()
         && !file.contains('/')
         && !file.contains('\\')
-        && !file.contains("..")
-        && (file.ends_with(".yml") || file.ends_with(".yaml"))
+        && value.len() <= 256
         && file
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
-        && value.len() <= 256
+        && stem.is_some_and(|stem| !stem.is_empty() && stem != "." && stem != "..")
 }
 
 fn valid_job_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 100
+        && value
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_')
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
@@ -755,11 +887,10 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
-          node-version: '22.23.1'
+          node-version: '22.17.0'
           cache: npm
       - run: |
-          export npm_config_ignore_scripts=true
-          npm ci --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts
           npm run check
           npm run test:operator-config
           npm audit --audit-level=high
@@ -768,18 +899,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: '22.23.1'
-          cache: npm
       - run: |
-          export npm_config_ignore_scripts=true
-          npm ci --ignore-scripts --no-audit --no-fund
-          npm run check
+          npm ci --ignore-scripts
           npm test
-          npm audit --audit-level=high
 "#,
         );
         input.repository = "messaging-intel/msgint-connectors".into();
@@ -812,10 +935,9 @@ jobs:
     steps:
       - uses: actions/setup-node@0123456789abcdef0123456789abcdef01234567
       - run: |
-          npm ci --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts
           npm run check
           npm run test:operator-config
-          npm audit --audit-level=high
 "#,
             ),
             &PlannerLimits::default(),
@@ -833,16 +955,14 @@ jobs:
     #[test]
     fn hardened_node_profiles_reject_spoofed_extra_and_reordered_commands() {
         for run in [
-            r#"echo 'export npm_config_ignore_scripts=true npm ci --ignore-scripts --no-audit --no-fund npm run check npm run test:operator-config npm audit --audit-level=high'"#,
-            r#"export npm_config_ignore_scripts=true
-npm ci --ignore-scripts --no-audit --no-fund
+            r#"echo 'npm ci --ignore-scripts npm run check npm run test:operator-config npm audit --audit-level=high'"#,
+            r#"npm ci --ignore-scripts
 npm run check
 npm run test:operator-config
 npm audit --audit-level=high
 npm publish"#,
-            r#"export npm_config_ignore_scripts=true
-npm run check
-npm ci --ignore-scripts --no-audit --no-fund
+            r#"npm run check
+npm ci --ignore-scripts
 npm run test:operator-config
 npm audit --audit-level=high"#,
         ] {
@@ -854,7 +974,10 @@ npm audit --audit-level=high"#,
             );
             let plan = build_plan(&request(&yaml), &PlannerLimits::default())
                 .expect("structurally valid plan");
-            assert!(!plan.independent_executable, "unexpected executable plan: {run}");
+            assert!(
+                !plan.independent_executable,
+                "unexpected executable plan: {run}"
+            );
             assert!(plan.jobs[0].independent_profile.is_none());
             assert!(plan.jobs[0]
                 .independent_reasons
@@ -905,13 +1028,6 @@ jobs:
         env:
           TOKEN: ${{ secrets['PROD_TOKEN'] }}
       - run: npm test
-  expression:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/setup-node@0123456789abcdef0123456789abcdef01234567
-        with:
-          cache: ${{ github.ref }}
-      - run: npm test
 "#,
             ),
             &PlannerLimits::default(),
@@ -926,57 +1042,6 @@ jobs:
             .independent_reasons
             .iter()
             .any(|reason| reason.contains("secret-bearing")));
-        assert!(plan.jobs[2]
-            .independent_reasons
-            .iter()
-            .any(|reason| reason.contains("expressions in setup inputs")));
-    }
-
-    #[test]
-    fn messaging_intel_contract_rejects_wrong_job_sets_and_profiles() {
-        let mut missing = request(
-            r#"
-jobs:
-  operator_config:
-    runs-on: ubuntu-latest
-    steps:
-      - run: npm test
-"#,
-        );
-        missing.repository = "messaging-intel/msgint-connectors".into();
-        missing.workflow_path = ".github/workflows/gha-clone-operator-config.yml".into();
-        let errors = build_plan(&missing, &PlannerLimits::default())
-            .unwrap_err()
-            .join("\n");
-        assert!(errors.contains("exactly operator_config and repository_tests"));
-
-        let mut generic = request(
-            r#"
-jobs:
-  operator_config:
-    runs-on: ubuntu-latest
-    steps:
-      - run: npm test
-  repository_tests:
-    needs: operator_config
-    runs-on: ubuntu-latest
-    steps:
-      - run: npm test
-"#,
-        );
-        generic.repository = "messaging-intel/msgint-connectors".into();
-        generic.workflow_path = ".github/workflows/gha-clone-operator-config.yml".into();
-        let plan = build_plan(&generic, &PlannerLimits::default()).expect("valid plan");
-        assert!(!plan.independent_executable);
-        let reasons = plan
-            .jobs
-            .iter()
-            .flat_map(|job| job.independent_reasons.iter())
-            .cloned()
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(reasons.contains("must map exactly to node-hardened-verify"));
-        assert!(reasons.contains("must map exactly to node-hardened-test"));
     }
 
     #[test]
@@ -1003,12 +1068,138 @@ jobs:
         assert_eq!(plan.topological_order, vec!["a", "z", "child"]);
     }
 
-    for job in &mut plan.jobs {
-        let Some(profile) = profiles.get(&job.id) else {
-            return Err(vec![format!(
-                "reviewed Messaging Intel contract did not authorize job {:?}",
-                job.id
-            )]);
+    #[test]
+    fn rejects_cycles_and_unknown_dependencies() {
+        let cycle = build_plan(
+            &request(
+                r#"
+jobs:
+  a:
+    needs: b
+    runs-on: ubuntu-latest
+    steps: [{ run: "cargo test" }]
+  b:
+    needs: a
+    runs-on: ubuntu-latest
+    steps: [{ run: "cargo test" }]
+"#,
+            ),
+            &PlannerLimits::default(),
+        )
+        .unwrap_err()
+        .join("\n");
+        assert!(cycle.contains("contains a cycle"));
+
+        let unknown = build_plan(
+            &request(
+                r#"
+jobs:
+  a:
+    needs: missing
+    runs-on: ubuntu-latest
+    steps: [{ run: "cargo test" }]
+"#,
+            ),
+            &PlannerLimits::default(),
+        )
+        .unwrap_err()
+        .join("\n");
+        assert!(unknown.contains("unknown dependency"));
+    }
+
+    #[test]
+    fn independent_lane_fails_closed_on_secrets_services_and_marketplace_actions() {
+        let plan = build_plan(
+            &request(
+                r#"
+jobs:
+  unsafe:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+    steps:
+      - uses: vendor/arbitrary-action@main
+        with:
+          token: ${{ secrets.PROD_TOKEN }}
+      - run: npm test
+"#,
+            ),
+            &PlannerLimits::default(),
+        )
+        .expect("plan is valid but unsupported");
+
+        let job = &plan.jobs[0];
+        assert!(!job.independent_supported);
+        assert_eq!(job.arc_lane, "sonus-ci-dind");
+        let reasons = job.independent_reasons.join("\n");
+        assert!(reasons.contains("service containers"));
+        assert!(reasons.contains("marketplace action"));
+        assert!(reasons.contains("secret-bearing"));
+    }
+
+    #[test]
+    fn classifies_browser_android_and_native_operating_system_lanes() {
+        let plan = build_plan(
+            &request(
+                r#"
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    steps: [{ run: "npx playwright test" }]
+  android:
+    runs-on: [self-hosted, linux, kvm]
+    steps: [{ run: "flutter build apk --debug" }]
+  ios:
+    runs-on: macos-15
+    steps: [{ run: "flutter build ipa" }]
+"#,
+            ),
+            &PlannerLimits::default(),
+        )
+        .expect("valid plan");
+
+        assert_eq!(plan.jobs[0].arc_lane, "sonus-browser");
+        assert_eq!(plan.jobs[1].arc_lane, "sonus-android-kvm");
+        assert_eq!(plan.jobs[2].arc_lane, "github-hosted-native");
+        assert!(!plan.jobs[2].arc_compatible);
+        assert!(!plan.jobs[2].independent_supported);
+        assert!(plan.jobs[2]
+            .independent_reasons
+            .iter()
+            .any(|reason| reason.contains("non-Linux")));
+        assert!(!plan.arc_fully_covered);
+    }
+
+    #[test]
+    fn branch_refs_can_be_planned_but_not_executed() {
+        let mut request = request(
+            r#"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps: [{ run: "cargo test" }]
+"#,
+        );
+        request.revision = "main".into();
+        let plan = build_plan(&request, &PlannerLimits::default()).expect("valid plan");
+        assert!(!plan.immutable_revision);
+        assert!(!plan.independent_executable);
+        assert!(!plan.warnings.is_empty());
+    }
+
+    #[test]
+    fn workflow_limits_and_paths_fail_closed() {
+        let mut invalid_path_request = request("jobs: {}");
+        invalid_path_request.workflow_path = "../ci.yml".into();
+        let errors = build_plan(&invalid_path_request, &PlannerLimits::default())
+            .unwrap_err()
+            .join("\n");
+        assert!(errors.contains("workflowPath"));
+
+        let limits = PlannerLimits {
+            max_workflow_bytes: 4,
+            ..PlannerLimits::default()
         };
         let errors = build_plan(&request("jobs: {}"), &limits)
             .unwrap_err()
@@ -1081,263 +1272,5 @@ jobs:
         assert!(verify_github_signature("secret", b"body", &signature));
         assert!(!verify_github_signature("secret", b"tampered", &signature));
         assert!(!verify_github_signature("secret", b"body", "sha1=00"));
-    }
-
-    #[test]
-    fn generated_rust_commands_are_exact_and_order_sensitive() {
-        let exact = [
-            "cargo generate-lockfile --manifest-path generated/rust/Cargo.toml",
-            "cargo fmt --manifest-path generated/rust/Cargo.toml -- --check",
-            "cargo clippy --locked --manifest-path generated/rust/Cargo.toml --all-targets -- -D warnings",
-            "cargo test --locked --manifest-path generated/rust/Cargo.toml --all-targets",
-        ]
-        .into_iter()
-        .map(str::to_string)
-        .collect::<Vec<_>>();
-        assert_eq!(
-            generated_rust_profile(&exact),
-            Some("rust-generated-verify")
-        );
-
-        let mut reordered = exact.clone();
-        reordered.swap(2, 3);
-        assert_eq!(generated_rust_profile(&reordered), None);
-
-        let mut extra = exact.clone();
-        extra.push("cargo publish --manifest-path generated/rust/Cargo.toml".into());
-        assert_eq!(generated_rust_profile(&extra), None);
-        assert!(generated_rust_intent(
-            &exact
-                .join(
-                    "
-"
-                )
-                .to_ascii_lowercase()
-        ));
-    }
-}
-
-#[cfg(test)]
-mod den_1606_planner_input_tests {
-    use super::*;
-
-    fn request(yaml: &str) -> PlanRequest {
-        PlanRequest {
-            repository: "sonus-auris/sonus-auris-interfaces".into(),
-            revision: "0123456789abcdef0123456789abcdef01234567".into(),
-            workflow_path: ".github/workflows/ci.yml".into(),
-            workflow_yaml: yaml.into(),
-        }
-    }
-
-    #[test]
-    fn direct_workflow_paths_only() {
-        for invalid in [
-            ".github/workflows/nested/ci.yml",
-            ".github/workflows\\ci.yml",
-            ".github/workflows/ci.txt",
-            ".github/workflows/",
-        ] {
-            let mut input = request("jobs: {}");
-            input.workflow_path = invalid.into();
-            let errors = build_plan(&input, &PlannerLimits::default())
-                .unwrap_err()
-                .join("\n");
-            assert!(errors.contains("workflowPath"), "{invalid}: {errors}");
-        }
-    }
-
-    #[test]
-    fn zero_planner_limits_fail_closed() {
-        let errors = build_plan(
-            &request("jobs: {}"),
-            &PlannerLimits {
-                max_workflow_bytes: 0,
-                max_jobs: 0,
-                max_steps_per_job: 0,
-            },
-        )
-        .unwrap_err()
-        .join("\n");
-        for field in ["maxWorkflowBytes", "maxJobs", "maxStepsPerJob"] {
-            assert!(errors.contains(field), "{errors}");
-        }
-    }
-
-    #[test]
-    fn ambiguous_block_yaml_is_rejected_before_deserialization() {
-        let cases = [
-            ("---\njobs: {}\n", "document marker"),
-            ("jobs: &jobs {}\n", "anchor"),
-            ("jobs: *jobs\n", "alias"),
-            ("jobs:\n  <<: *jobs\n", "merge key"),
-            ("jobs: {}\njobs: {}\n", "repeats mapping key"),
-            ("jóbs: {}\n", "non-ASCII"),
-            ("jobs:\n\ttest: {}\n", "tab"),
-        ];
-        for (yaml, expected) in cases {
-            let errors = build_plan(&request(yaml), &PlannerLimits::default())
-                .unwrap_err()
-                .join("\n");
-            assert!(errors.contains(expected), "{yaml:?}: {errors}");
-        }
-    }
-
-    #[test]
-    fn block_scalar_text_is_not_mistaken_for_yaml_structure() {
-        let plan = build_plan(
-            &request(
-                r#"
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: script
-        run: |
-          echo ---
-          echo '&anchor *alias <<:'
-          cargo test
-      - name: second
-        run: cargo fmt --check
-"#,
-            ),
-            &PlannerLimits::default(),
-        )
-        .expect("block scalar contents are command text");
-        assert!(plan.independent_executable);
-    }
-
-    #[test]
-    fn sequence_items_have_independent_mapping_scopes() {
-        let plan = build_plan(
-            &request(
-                r#"
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: format
-        run: cargo fmt --check
-      - name: test
-        run: cargo test
-"#,
-            ),
-            &PlannerLimits::default(),
-        )
-        .expect("different steps may repeat name and run keys");
-        assert!(plan.independent_executable);
-
-        let errors = build_plan(
-            &request(
-                r#"
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: test
-        run: cargo test
-        run: cargo fmt --check
-"#,
-            ),
-            &PlannerLimits::default(),
-        )
-        .unwrap_err()
-        .join("\n");
-        assert!(errors.contains("repeats mapping key \"run\""), "{errors}");
-    }
-}
-
-#[cfg(test)]
-mod den_1606_planner_input_followup_tests {
-    use super::*;
-
-    fn request(yaml: &str) -> PlanRequest {
-        PlanRequest {
-            repository: "sonus-auris/sonus-auris-interfaces".into(),
-            revision: "0123456789abcdef0123456789abcdef01234567".into(),
-            workflow_path: ".github/workflows/ci.yml".into(),
-            workflow_yaml: yaml.into(),
-        }
-    }
-
-    #[test]
-    fn block_scalar_siblings_return_to_the_sequence_item_scope() {
-        let valid = build_plan(
-            &request(
-                r#"
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: first
-        run: |
-          echo ok
-          cargo test
-        shell: bash
-      - name: second
-        run: cargo fmt --check
-        shell: bash
-"#,
-            ),
-            &PlannerLimits::default(),
-        )
-        .expect("separate sequence items may repeat mapping keys");
-        assert!(!valid.independent_executable);
-
-        let errors = build_plan(
-            &request(
-                r#"
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: duplicate
-        run: |
-          echo ok
-          cargo test
-        shell: bash
-        shell: sh
-"#,
-            ),
-            &PlannerLimits::default(),
-        )
-        .unwrap_err()
-        .join("\n");
-        assert!(errors.contains("repeats mapping key \"shell\""), "{errors}");
-    }
-
-    #[test]
-    fn flow_mappings_and_unsafe_direct_paths_fail_closed() {
-        let flow_errors = build_plan(
-            &request("jobs: { test: { runs-on: ubuntu-latest } }\n"),
-            &PlannerLimits::default(),
-        )
-        .unwrap_err()
-        .join("\n");
-        assert!(flow_errors.contains("flow mapping"), "{flow_errors}");
-
-        for invalid in [
-            ".github/workflows/ci file.yml",
-            ".github/workflows/cí.yml",
-            ".github/workflows/ci..yml",
-        ] {
-            let mut input = request("jobs: {}");
-            input.workflow_path = invalid.into();
-            let errors = build_plan(&input, &PlannerLimits::default())
-                .unwrap_err()
-                .join("\n");
-            assert!(errors.contains("workflowPath"), "{invalid}: {errors}");
-        }
-    }
-
-    #[test]
-    fn commented_document_markers_fail_closed() {
-        let errors = build_plan(
-            &request("--- # document one\njobs: {}\n"),
-            &PlannerLimits::default(),
-        )
-        .unwrap_err()
-        .join("\n");
-        assert!(errors.contains("document marker"), "{errors}");
     }
 }

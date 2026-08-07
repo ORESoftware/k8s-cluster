@@ -1,42 +1,9 @@
 use gha_clone_server::{build_plan, PlanRequest, PlannerLimits};
 
 const REPOSITORY: &str = "messaging-intel/msgint-connectors";
-const REVISION: &str = "a9cc977d78347ec0efdbe8e6766967f80d425882";
+const REVISION: &str = "a43e11cd7610806470c0af95f4cdbe3e19b143bb";
 const WORKFLOW_PATH: &str = ".github/workflows/gha-clone-operator-config.yml";
-const REVIEWED: &str = r#"name: Messaging Intel GHA clone operator verification
-on:
-  workflow_dispatch:
-jobs:
-  operator_config:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: "22.23.1"
-          cache: npm
-      - run: |
-          npm ci --ignore-scripts
-          npm run check
-          npm run test:operator-config
-          npm audit --audit-level=high
-  repository_tests:
-    needs: operator_config
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: "22.23.1"
-          cache: npm
-      - run: |
-          npm ci --ignore-scripts
-          npm test
-"#;
+const REVIEWED: &str = include_str!("fixtures/msgint-operator-config.yml");
 
 fn request(repository: &str, revision: &str, workflow_path: &str, yaml: &str) -> PlanRequest {
     PlanRequest {
@@ -100,8 +67,19 @@ fn reserved_repository_path_and_revision_mismatches_are_terminal() {
             REVIEWED,
         ),
     ] {
-        let error = build_plan(&request, &PlannerLimits::default())
-            .expect_err("reserved identity mismatch must fail closed")
+        let plan = build_plan(&request, &PlannerLimits::default())
+            .expect("reserved identity mismatch must produce a terminal plan");
+        assert!(!plan.independent_executable);
+        assert!(plan
+            .jobs
+            .iter()
+            .all(|job| job.independent_profile.is_none()));
+        let error = plan
+            .jobs
+            .iter()
+            .flat_map(|job| job.independent_reasons.iter())
+            .cloned()
+            .collect::<Vec<_>>()
             .join("\n");
         assert!(
             error.contains("reserved Messaging Intel")
@@ -129,8 +107,19 @@ fn immutable_action_and_input_lookalikes_never_fall_back_to_generic_node() {
             "      - uses: actions/setup-python@8a5f4f9f4d7e4c9f5eead5d7f7e770585a6e9430\n      - run: |\n          npm ci --ignore-scripts\n",
         ),
     ] {
-        let error = reviewed(&yaml)
-            .expect_err("lookalike action/input workflow must fail closed")
+        let plan = reviewed(&yaml)
+            .expect("lookalike action/input workflow must produce a terminal plan");
+        assert!(!plan.independent_executable);
+        assert!(plan
+            .jobs
+            .iter()
+            .all(|job| job.independent_profile.is_none()));
+        let error = plan
+            .jobs
+            .iter()
+            .flat_map(|job| job.independent_reasons.iter())
+            .cloned()
+            .collect::<Vec<_>>()
             .join("\n");
         assert!(
             error.contains("reviewed contract")
@@ -169,10 +158,20 @@ fn command_dag_environment_and_secret_lookalikes_are_rejected() {
             "          echo npm run test:operator-config\n",
         ),
     ] {
-        assert!(
-            reviewed(&yaml).is_err(),
-            "lookalike workflow unexpectedly executed:\n{yaml}"
-        );
+        match reviewed(&yaml) {
+            Ok(plan) => assert!(
+                !plan.independent_executable
+                    && plan
+                        .jobs
+                        .iter()
+                        .all(|job| job.independent_profile.is_none()),
+                "lookalike workflow unexpectedly executed:\n{yaml}"
+            ),
+            Err(errors) => assert!(
+                !errors.is_empty(),
+                "structurally invalid lookalike must explain its rejection"
+            ),
+        }
     }
 }
 

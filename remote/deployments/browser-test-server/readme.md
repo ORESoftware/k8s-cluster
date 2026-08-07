@@ -27,16 +27,6 @@ Do not run all three drivers for every job. A fallback driver is appropriate onl
 
 For the Benefactor prospecting integration, including job construction, source policy, provenance, deduplication, engine fallback, artifact handling, HubSpot/Postgres synchronization, and separation from Gmail/SendGrid delivery, see [`docs/benefactor-node-browser-automation.md`](../../../docs/benefactor-node-browser-automation.md).
 
-## Driver selection
-
-- **Playwright** is the default for most UI, discovery, and verification flows.
-- **Puppeteer** is for Chromium/CDP-specific integrations or existing Puppeteer adapters.
-- **Selenium** is for WebDriver compatibility and the dedicated Selenium/Grid lane.
-
-Do not run all three drivers for every job. A fallback driver is appropriate only for a classified rendering or driver-compatibility failure. Authentication failures, CAPTCHAs, robots/terms restrictions, and source-policy failures remain terminal or manual-review regardless of driver.
-
-For the Benefactor prospecting integration, including job construction, source policy, provenance, deduplication, engine fallback, artifact handling, HubSpot/Postgres synchronization, and separation from Gmail/SendGrid delivery, see [`docs/benefactor-node-browser-automation.md`](../../../docs/benefactor-node-browser-automation.md).
-
 ## Documentation routes
 
 Public, unauthenticated routes expose only explicitly public operations:

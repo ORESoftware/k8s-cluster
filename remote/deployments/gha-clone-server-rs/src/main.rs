@@ -52,7 +52,7 @@ struct Config {
     port: u16,
     auth_secret: Option<String>,
     webhook_secret: Option<String>,
-    github_token: Option<String>,
+    github_token_source: Option<TokenSource>,
     github_api_base_url: String,
     build_server_url: Option<String>,
     build_server_auth: Option<String>,
@@ -90,7 +90,10 @@ impl Config {
             port: env_u16("PORT", 8125)?,
             auth_secret: env_optional("GHA_CLONE_AUTH_SECRET"),
             webhook_secret: env_optional("GHA_CLONE_GITHUB_WEBHOOK_SECRET"),
-            github_token: env_optional("GHA_CLONE_GITHUB_TOKEN"),
+            github_token_source: TokenSource::from_env(
+                "GHA_CLONE_GITHUB_TOKEN",
+                "GHA_CLONE_GITHUB_TOKEN_FILE",
+            )?,
             github_api_base_url: github_api_base_url_from_env()?,
             build_server_url: build_server_url_from_env()?,
             build_server_auth: env_optional("GHA_CLONE_BUILD_SERVER_AUTH"),
@@ -139,20 +142,11 @@ impl Config {
     }
 
     fn execution_ready(&self) -> bool {
-        let independent_ready = !self.execution_enabled
+        !self.execution_enabled
             || (self.auth_secret.is_some()
                 && self.build_server_url.is_some()
                 && self.build_server_auth.is_some()
-                && !self.allowed_repositories.is_empty());
-        let webhook_ready = !self.webhook_execution_enabled
-            || (self.execution_enabled
-                && self.webhook_secret.is_some()
-                && self
-                    .github_token_source
-                    .as_ref()
-                    .is_some_and(|source| source.read().is_ok())
-                && !self.workflow_rules.is_empty());
-        independent_ready && webhook_ready
+                && !self.allowed_repositories.is_empty())
     }
 
     fn webhook_execution_ready(&self) -> bool {
@@ -160,6 +154,10 @@ impl Config {
             || (self.execution_enabled
                 && self.execution_ready()
                 && self.webhook_secret.is_some()
+                && self
+                    .github_token_source
+                    .as_ref()
+                    .is_some_and(|source| source.read().is_ok())
                 && !self.workflow_rules.is_empty())
     }
 
@@ -1116,109 +1114,6 @@ fn prune_webhook_deliveries(
     }
 }
 
-fn webhook_paths(
-    event: &str,
-    payload: &Value,
-    configured_paths: &[String],
-    failure_conclusions: &BTreeSet<String>,
-    ignored_workflows: &BTreeSet<String>,
-) -> Result<Vec<String>, String> {
-    if event != "workflow_run" {
-        return Ok(configured_paths.to_vec());
-    }
-
-    let action = payload.get("action").and_then(Value::as_str).unwrap_or("");
-    if action != "completed" {
-        return Err(format!(
-            "workflow_run action {action:?} is not the completed terminal phase"
-        ));
-    }
-
-    let workflow_name = payload
-        .pointer("/workflow_run/name")
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    if ignored_workflows.contains(workflow_name) {
-        return Err(format!(
-            "workflow {workflow_name:?} is excluded to prevent fallback recursion"
-        ));
-    }
-
-    let conclusion = payload
-        .pointer("/workflow_run/conclusion")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "completed workflow_run is missing a conclusion".to_string())?
-        .to_ascii_lowercase();
-    if !failure_conclusions.contains(&conclusion) {
-        return Err(format!(
-            "workflow_run conclusion {conclusion:?} is not configured for failure fallback"
-        ));
-    }
-
-    let workflow_path = payload
-        .pointer("/workflow_run/path")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "workflow_run is missing workflow_run.path".to_string())?;
-    if !configured_paths.iter().any(|path| path == workflow_path) {
-        return Err(format!(
-            "failed workflow path {workflow_path:?} is not configured for this repository"
-        ));
-    }
-    Ok(vec![workflow_path.to_string()])
-}
-
-fn github_delivery(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get("x-github-delivery")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| Uuid::parse_str(value).ok())
-        .map(|value| value.to_string())
-}
-
-async fn remember_webhook_delivery(state: &AppState, delivery: &str) -> bool {
-    let now = Instant::now();
-    let ttl = Duration::from_secs(state.config.webhook_delivery_ttl_seconds);
-    let mut deliveries = state.webhook_deliveries.write().await;
-    prune_webhook_deliveries(
-        &mut deliveries,
-        now,
-        ttl,
-        state.config.max_webhook_deliveries,
-    );
-    if deliveries.contains_key(delivery) {
-        return false;
-    }
-    deliveries.insert(delivery.to_string(), now);
-    prune_webhook_deliveries(
-        &mut deliveries,
-        now,
-        ttl,
-        state.config.max_webhook_deliveries,
-    );
-    true
-}
-
-fn prune_webhook_deliveries(
-    deliveries: &mut BTreeMap<String, Instant>,
-    now: Instant,
-    ttl: Duration,
-    max_deliveries: usize,
-) {
-    deliveries.retain(|_, seen_at| now.duration_since(*seen_at) < ttl);
-    let remove = deliveries.len().saturating_sub(max_deliveries);
-    if remove == 0 {
-        return;
-    }
-    let mut oldest = deliveries
-        .iter()
-        .map(|(delivery, seen_at)| (*seen_at, delivery.clone()))
-        .collect::<Vec<_>>();
-    oldest.sort_by_key(|(seen_at, _)| *seen_at);
-    for (_, delivery) in oldest.into_iter().take(remove) {
-        deliveries.remove(&delivery);
-    }
-}
-
 fn webhook_revision(event: &str, payload: &Value) -> Option<String> {
     match event {
         "push" => payload.get("after").and_then(Value::as_str),
@@ -1937,148 +1832,6 @@ mod tests {
         assert!(validate_build_submission_response(&unknown)
             .unwrap_err()
             .contains("invalid accepted status"));
-    }
-
-    #[tokio::test]
-    async fn configured_http_client_does_not_follow_redirects() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let app = Router::new()
-            .route(
-                "/start",
-                get(|| async { axum::response::Redirect::temporary("/final") }),
-            )
-            .route("/final", get(|| async { StatusCode::OK }));
-        let server = tokio::spawn(async move {
-            axum::serve(listener, app).await.unwrap();
-        });
-
-        let response = build_http_client()
-            .unwrap()
-            .get(format!("http://{address}/start"))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
-        server.abort();
-    }
-
-    #[test]
-    fn build_server_origin_is_credential_free_and_transport_safe() {
-        assert_eq!(
-            normalize_build_server_url("https://build.example.com/").unwrap(),
-            "https://build.example.com"
-        );
-        assert!(normalize_build_server_url("http://127.0.0.1:8123").is_ok());
-        assert!(normalize_build_server_url("http://localhost:8123").is_ok());
-        assert!(
-            normalize_build_server_url("http://dd-build-server.remote.svc.cluster.local:8123")
-                .is_ok()
-        );
-        assert!(normalize_build_server_url("http://dd-build-server.remote.svc:8123").is_ok());
-        assert!(normalize_build_server_url("http://10.0.0.10:8123").is_err());
-        assert!(normalize_build_server_url("http://build.example.com").is_err());
-        assert!(normalize_build_server_url("http://service.svc.evil.example").is_err());
-        assert!(normalize_build_server_url("https://user:pass@build.example.com").is_err());
-        assert!(normalize_build_server_url("https://build.example.com/api").is_err());
-        assert!(normalize_build_server_url("https://build.example.com?token=x").is_err());
-    }
-
-    #[test]
-    fn build_job_response_identity_is_validated_and_bound() {
-        let valid = BuildJobResponse {
-            id: "build:0123-abc_def.test".into(),
-            status: "queued".into(),
-            error: None,
-        };
-        assert!(validate_build_job_response_id(&valid, None).is_ok());
-        assert!(validate_build_job_response_id(&valid, Some(&valid.id)).is_ok());
-        assert!(validate_build_job_response_id(&valid, Some("different")).is_err());
-
-        let invalid = BuildJobResponse {
-            id: "../build?token=x".into(),
-            status: "queued".into(),
-            error: None,
-        };
-        assert!(validate_build_job_response_id(&invalid, None).is_err());
-    }
-
-    #[tokio::test]
-    async fn configured_http_client_does_not_follow_redirects() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let app = Router::new()
-            .route(
-                "/start",
-                get(|| async { axum::response::Redirect::temporary("/final") }),
-            )
-            .route("/final", get(|| async { StatusCode::OK }));
-        let server = tokio::spawn(async move {
-            axum::serve(listener, app).await.unwrap();
-        });
-
-        let response = build_http_client()
-            .unwrap()
-            .get(format!("http://{address}/start"))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
-        server.abort();
-    }
-
-    #[test]
-    fn build_server_origin_is_credential_free_and_transport_safe() {
-        assert_eq!(
-            normalize_build_server_url("https://build.example.com/").unwrap(),
-            "https://build.example.com"
-        );
-        assert!(normalize_build_server_url("http://127.0.0.1:8123").is_ok());
-        assert!(normalize_build_server_url("http://localhost:8123").is_ok());
-        assert!(
-            normalize_build_server_url("http://dd-build-server.remote.svc.cluster.local:8123")
-                .is_ok()
-        );
-        assert!(normalize_build_server_url("http://dd-build-server.remote.svc:8123").is_ok());
-        assert!(normalize_build_server_url("http://[::1]:8123").is_ok());
-        assert!(
-            normalize_build_server_url("http://extra.dd-build-server.remote.svc:8123").is_err()
-        );
-        assert!(normalize_build_server_url("http://dd_build.remote.svc:8123").is_err());
-        assert!(normalize_build_server_url("http://-build.remote.svc:8123").is_err());
-        assert!(normalize_build_server_url("http://10.0.0.10:8123").is_err());
-        assert!(normalize_build_server_url("http://build.example.com").is_err());
-        assert!(normalize_build_server_url("http://service.svc.evil.example").is_err());
-        assert!(normalize_build_server_url("https://user:pass@build.example.com").is_err());
-        assert!(normalize_build_server_url("https://build.example.com/api").is_err());
-        assert!(normalize_build_server_url("https://build.example.com?token=x").is_err());
-    }
-
-    #[test]
-    fn build_job_response_identity_is_validated_and_bound() {
-        let valid = BuildJobResponse {
-            id: "build:0123-abc_def.test".into(),
-            status: "queued".into(),
-            error: None,
-        };
-        assert!(validate_build_job_response_id(&valid, None).is_ok());
-        assert!(validate_build_job_response_id(&valid, Some(&valid.id)).is_ok());
-        assert!(validate_build_job_response_id(&valid, Some("different")).is_err());
-
-        for id in ["", ".", "..", "../build?token=x", "build/child"] {
-            let invalid = BuildJobResponse {
-                id: id.into(),
-                status: "queued".into(),
-                error: None,
-            };
-            assert!(validate_build_job_response_id(&invalid, None).is_err());
-        }
-        let too_long = BuildJobResponse {
-            id: "a".repeat(129),
-            status: "queued".into(),
-            error: None,
-        };
-        assert!(validate_build_job_response_id(&too_long, None).is_err());
     }
 
     #[tokio::test]

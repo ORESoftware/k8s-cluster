@@ -97,26 +97,41 @@ fn network_policy_allows_only_the_reviewed_continuity_edges() {
     ] {
         assert!(policy.contains(required), "missing {required}");
     }
-    assert!(!policy.contains("0.0.0.0/0\n      ports:\n        - protocol: TCP\n          port: 8100"));
+    assert!(
+        !policy.contains("0.0.0.0/0\n      ports:\n        - protocol: TCP\n          port: 8100")
+    );
 }
 
 #[test]
 fn router_source_preserves_the_non_duplication_and_secret_boundary() {
-    let source = read("deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs");
+    let source = [
+        "deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs",
+        "deployments/gha-clone-server-rs/src/executor_router.rs",
+        "deployments/gha-clone-server-rs/src/executor_router_service.rs",
+        "deployments/gha-clone-server-rs/src/executor_router_service/assignment.rs",
+        "deployments/gha-clone-server-rs/src/executor_router_service/security.rs",
+        "deployments/gha-clone-server-rs/src/executor_router_service/upstream.rs",
+    ]
+    .into_iter()
+    .map(read)
+    .collect::<String>();
     for required in [
-        "RedirectPolicy::none()",
-        "request_digest",
-        "duplicate_requests",
-        "ambiguous_acceptances",
-        "pinned_poll_failures",
+        ".redirect(reqwest::redirect::Policy::none())",
+        "assignment_for",
+        "duplicate_conflicts_total",
+        "ambiguous_submissions_total",
+        "AssignmentOutcome::Ambiguous",
         "StatusCode::TOO_MANY_REQUESTS",
-        "status.is_server_error()",
         "status.is_client_error()",
+        "automaticFailover",
         "x-build-server-auth",
         "auth_path",
-        "read_secret_file",
+        "read_secret",
     ] {
-        assert!(source.contains(required), "missing source contract {required}");
+        assert!(
+            source.contains(required),
+            "missing source contract {required}"
+        );
     }
     assert!(!source.contains("Command::new"));
     assert!(!source.contains("/bin/bash"));
@@ -136,7 +151,10 @@ fn runbook_states_activation_and_post_acceptance_limits() {
         "Fiducia-fenced claim",
         "Do not force a post-acceptance job onto the other provider",
     ] {
-        assert!(doc.contains(required), "missing runbook contract {required}");
+        assert!(
+            doc.contains(required),
+            "missing runbook contract {required}"
+        );
     }
 }
 
@@ -144,8 +162,12 @@ fn runbook_states_activation_and_post_acceptance_limits() {
 fn new_router_slice_contains_no_committed_github_token_or_private_key() {
     let files = [
         "deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs",
+        "deployments/gha-clone-server-rs/src/executor_router.rs",
+        "deployments/gha-clone-server-rs/src/executor_router_service.rs",
+        "deployments/gha-clone-server-rs/src/executor_router_service/assignment.rs",
+        "deployments/gha-clone-server-rs/src/executor_router_service/security.rs",
+        "deployments/gha-clone-server-rs/src/executor_router_service/upstream.rs",
         "deployments/gha-clone-server-rs/tests/executor_router.rs",
-        "deployments/gha-clone-server-rs/tests/executor_router_gitops.rs",
         "argocd/ci-runners/gha-executor-router/configmap.yaml",
         "argocd/ci-runners/gha-executor-router/externalsecrets.yaml",
         "argocd/ci-runners/gha-executor-router/deployment.yaml",
@@ -154,7 +176,10 @@ fn new_router_slice_contains_no_committed_github_token_or_private_key() {
     for file in files {
         let text = read(file);
         assert!(!text.contains("ghp_"), "classic PAT marker in {file}");
-        assert!(!text.contains("github_pat_"), "fine-grained PAT marker in {file}");
+        assert!(
+            !text.contains("github_pat_"),
+            "fine-grained PAT marker in {file}"
+        );
         assert!(!text.contains("BEGIN PRIVATE KEY"), "private key in {file}");
         assert!(!text.contains("BEGIN RSA PRIVATE KEY"), "RSA key in {file}");
     }

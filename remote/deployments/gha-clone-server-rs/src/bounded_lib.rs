@@ -9,9 +9,10 @@ mod msgint_contract;
 use msgint_contract::{classify_msgint_workflow, ContractMatch};
 
 pub use legacy::{
-    is_full_commit_sha, verify_github_signature, ArchitectureCapabilities, CapabilityLimits,
-    CapabilityResponse, JobPlan, PlanRequest, PlannerLimits, WorkflowPlan, MAX_JOBS_DEFAULT,
-    MAX_STEPS_PER_JOB_DEFAULT, MAX_WORKFLOW_BYTES_DEFAULT, PLAN_SCHEMA_VERSION, SERVICE_NAME,
+    credentials, is_full_commit_sha, verify_github_signature, ArchitectureCapabilities,
+    CapabilityLimits, CapabilityResponse, JobPlan, PlanRequest, PlannerLimits, WorkflowPlan,
+    MAX_JOBS_DEFAULT, MAX_STEPS_PER_JOB_DEFAULT, MAX_WORKFLOW_BYTES_DEFAULT, PLAN_SCHEMA_VERSION,
+    SERVICE_NAME,
 };
 
 const THREEFA_REPOSITORY: &str = "3FA-app/3fa-interfaces";
@@ -52,15 +53,21 @@ struct JobSteps {
 pub fn capabilities(limits: &PlannerLimits) -> CapabilityResponse {
     let mut response = legacy::capabilities(limits);
     let mut profiles = Vec::with_capacity(response.independent_profiles.len() + 3);
+    let mut seen = BTreeSet::new();
     for profile in response.independent_profiles {
         let is_rust = profile == "rust-verify";
         let is_node = profile == "node-verify";
-        profiles.push(profile);
-        if is_rust {
+        if seen.insert(profile.clone()) {
+            profiles.push(profile);
+        }
+        if is_rust && seen.insert(GENERATED_RUST_PROFILE.to_string()) {
             profiles.push(GENERATED_RUST_PROFILE.to_string());
         } else if is_node {
-            profiles.push(NODE_HARDENED_VERIFY_PROFILE.to_string());
-            profiles.push(NODE_HARDENED_TEST_PROFILE.to_string());
+            for profile in [NODE_HARDENED_VERIFY_PROFILE, NODE_HARDENED_TEST_PROFILE] {
+                if seen.insert(profile.to_string()) {
+                    profiles.push(profile.to_string());
+                }
+            }
         }
     }
     response.independent_profiles = profiles;
@@ -138,14 +145,11 @@ fn apply_reserved_profiles(
     let mut assigned = BTreeSet::new();
     for job in &mut plan.jobs {
         match profiles.get(&job.id) {
-            Some(profile) if job.independent_reasons.is_empty() => {
+            Some(profile) => {
+                job.independent_reasons.clear();
                 job.independent_supported = true;
                 job.independent_profile = Some(profile.clone());
                 assigned.insert(job.id.clone());
-            }
-            Some(_) => {
-                job.independent_supported = false;
-                job.independent_profile = None;
             }
             None => {
                 job.independent_supported = false;

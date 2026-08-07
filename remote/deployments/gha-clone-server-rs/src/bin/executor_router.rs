@@ -1,8 +1,4 @@
-use std::{
-    collections::BTreeSet,
-    env,
-    sync::Arc,
-};
+use std::{collections::BTreeSet, env, sync::Arc};
 
 use axum::{
     body::Bytes,
@@ -51,10 +47,8 @@ impl Config {
         let routes_json = env::var("GHA_EXECUTOR_ROUTES_JSON")
             .map_err(|_| "GHA_EXECUTOR_ROUTES_JSON is required".to_string())?;
         let routes = parse_routes(&routes_json, |name| env::var(name).ok())?;
-        let max_body_bytes = env_usize(
-            "GHA_EXECUTOR_ROUTER_MAX_BODY_BYTES",
-            DEFAULT_MAX_BODY_BYTES,
-        )?;
+        let max_body_bytes =
+            env_usize("GHA_EXECUTOR_ROUTER_MAX_BODY_BYTES", DEFAULT_MAX_BODY_BYTES)?;
         if max_body_bytes == 0 || max_body_bytes > 4 * 1024 * 1024 {
             return Err(
                 "GHA_EXECUTOR_ROUTER_MAX_BODY_BYTES must be between 1 and 4194304".to_string(),
@@ -208,7 +202,7 @@ async fn readyz(State(state): State<AppState>) -> Response {
 
 async fn list_executors(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if let Err(response) = require_auth(&headers, &state) {
-        return response;
+        return *response;
     }
     let routes = state
         .config
@@ -226,13 +220,9 @@ async fn list_executors(State(state): State<AppState>, headers: HeaderMap) -> Re
     (StatusCode::OK, Json(json!({ "executors": routes }))).into_response()
 }
 
-async fn submit_build(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Response {
+async fn submit_build(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
     if let Err(response) = require_auth(&headers, &state) {
-        return response;
+        return *response;
     }
     if body.len() > state.config.max_body_bytes {
         return (
@@ -292,23 +282,23 @@ async fn submit_build(
             .send()
             .await;
 
-        let response = match response {
-            Ok(response) => response,
-            Err(error) if error.is_connect() => {
-                warn!(
-                    route = %route.name,
-                    provider = %route.provider,
-                    "executor connection failed before an upstream response"
-                );
-                attempts.push(json!({
-                    "route": route.name,
-                    "provider": route.provider,
-                    "result": "connect-failure"
-                }));
-                continue;
-            }
-            Err(error) => {
-                return (
+        let response =
+            match response {
+                Ok(response) => response,
+                Err(error) if error.is_connect() => {
+                    warn!(
+                        route = %route.name,
+                        provider = %route.provider,
+                        "executor connection failed before an upstream response"
+                    );
+                    attempts.push(json!({
+                        "route": route.name,
+                        "provider": route.provider,
+                        "result": "connect-failure"
+                    }));
+                    continue;
+                }
+                Err(error) => return (
                     StatusCode::BAD_GATEWAY,
                     Json(json!({
                         "error": "executor submission failed ambiguously; request was not retried",
@@ -317,9 +307,8 @@ async fn submit_build(
                         "detail": bounded_text(&error.to_string(), 512)
                     })),
                 )
-                    .into_response()
-            }
-        };
+                    .into_response(),
+            };
 
         let status = response.status();
         let response_body = match response.bytes().await {
@@ -381,23 +370,20 @@ async fn submit_build(
                 )
                     .into_response();
             };
-            let token = match encode_route_token(
-                &state.config.routing_secret,
-                &route.name,
-                &upstream_id,
-            ) {
-                Ok(token) => token,
-                Err(error) => {
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(json!({
-                            "error": "failed to encode accepted executor route",
-                            "detail": error
-                        })),
-                    )
-                        .into_response()
-                }
-            };
+            let token =
+                match encode_route_token(&state.config.routing_secret, &route.name, &upstream_id) {
+                    Ok(token) => token,
+                    Err(error) => {
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(json!({
+                                "error": "failed to encode accepted executor route",
+                                "detail": error
+                            })),
+                        )
+                            .into_response()
+                    }
+                };
             let Some(object) = upstream.as_object_mut() else {
                 return (
                     StatusCode::BAD_GATEWAY,
@@ -411,7 +397,10 @@ async fn submit_build(
             };
             object.insert("id".into(), Value::String(token));
             object.insert("executorRoute".into(), Value::String(route.name.clone()));
-            object.insert("executorProvider".into(), Value::String(route.provider.clone()));
+            object.insert(
+                "executorProvider".into(),
+                Value::String(route.provider.clone()),
+            );
             return (StatusCode::ACCEPTED, Json(upstream)).into_response();
         }
 
@@ -457,16 +446,12 @@ async fn get_build(
     Path(token): Path<String>,
 ) -> Response {
     if let Err(response) = require_auth(&headers, &state) {
-        return response;
+        return *response;
     }
     let payload = match decode_route_token(&state.config.routing_secret, &token) {
         Ok(payload) => payload,
         Err(error) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": error })),
-            )
-                .into_response()
+            return (StatusCode::BAD_REQUEST, Json(json!({ "error": error }))).into_response()
         }
     };
     let Some(route) = state
@@ -564,7 +549,10 @@ async fn get_build(
     };
     object.insert("id".into(), Value::String(token));
     object.insert("executorRoute".into(), Value::String(route.name.clone()));
-    object.insert("executorProvider".into(), Value::String(route.provider.clone()));
+    object.insert(
+        "executorProvider".into(),
+        Value::String(route.provider.clone()),
+    );
     (StatusCode::OK, Json(upstream)).into_response()
 }
 
@@ -705,9 +693,7 @@ fn validate_build_request(request: &Value) -> Result<BuildMetadata, String> {
         || request_id.chars().any(char::is_whitespace)
         || request_id.chars().any(char::is_control)
     {
-        return Err(
-            "requestId must be 1-128 non-whitespace, non-control characters".to_string(),
-        );
+        return Err("requestId must be 1-128 non-whitespace, non-control characters".to_string());
     }
     Ok(BuildMetadata { profile })
 }
@@ -779,7 +765,7 @@ fn retryable_status(status: StatusCode) -> bool {
     )
 }
 
-fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Response> {
+fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Box<Response>> {
     let presented = headers
         .get("x-build-server-auth")
         .or_else(|| headers.get("x-server-auth"))
@@ -787,11 +773,13 @@ fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Response> {
     if presented.is_some_and(|value| digest_eq(value, &state.config.auth_secret)) {
         Ok(())
     } else {
-        Err((
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "error": "unauthorized" })),
-        )
-            .into_response())
+        Err(Box::new(
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": "unauthorized" })),
+            )
+                .into_response(),
+        ))
     }
 }
 
@@ -1003,9 +991,11 @@ mod tests {
         let credentialed_url = r#"[
           {"name":"bad","provider":"aws","url":"https://user:pass@a.example","authEnv":"AUTH_A","priority":1,"profiles":["rust-verify"]}
         ]"#;
-        assert!(parse_routes(credentialed_url, |_| Some("0123456789abcdef".into()))
-            .unwrap_err()
-            .contains("credential-free"));
+        assert!(
+            parse_routes(credentialed_url, |_| Some("0123456789abcdef".into()))
+                .unwrap_err()
+                .contains("credential-free")
+        );
 
         let missing_secret = r#"[
           {"name":"aws","provider":"aws","url":"https://a.example","authEnv":"AUTH_A","priority":1,"profiles":["rust-verify"]}
@@ -1030,7 +1020,10 @@ mod tests {
             .contains("40-hex"));
 
         let mut missing_request_id = valid.clone();
-        missing_request_id.as_object_mut().unwrap().remove("requestId");
+        missing_request_id
+            .as_object_mut()
+            .unwrap()
+            .remove("requestId");
         assert!(validate_build_request(&missing_request_id)
             .unwrap_err()
             .contains("requestId"));

@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use serde_yaml::{Mapping, Value};
 
 pub const MSGINT_REPOSITORY: &str = "messaging-intel/msgint-connectors";
-pub const MSGINT_REVISION: &str = "a9cc977d78347ec0efdbe8e6766967f80d425882";
+pub const MSGINT_REVISION: &str = "a43e11cd7610806470c0af95f4cdbe3e19b143bb";
 pub const MSGINT_WORKFLOW_PATH: &str = ".github/workflows/gha-clone-operator-config.yml";
 pub const MSGINT_WORKFLOW_NAME: &str = "Messaging Intel GHA clone operator verification";
 pub const MSGINT_CHECKOUT_ACTION: &str =
@@ -254,40 +254,7 @@ fn get<'a>(mapping: &'a Mapping, key: &str) -> Option<&'a Value> {
 mod tests {
     use super::*;
 
-    const REVIEWED: &str = r#"name: Messaging Intel GHA clone operator verification
-on:
-  workflow_dispatch:
-jobs:
-  operator_config:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: "22.23.1"
-          cache: npm
-      - run: |
-          npm ci --ignore-scripts
-          npm run check
-          npm run test:operator-config
-          npm audit --audit-level=high
-  repository_tests:
-    needs: operator_config
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: "22.23.1"
-          cache: npm
-      - run: |
-          npm ci --ignore-scripts
-          npm test
-"#;
+    const REVIEWED: &str = include_str!("../tests/fixtures/msgint-operator-config.yml");
 
     fn root(source: &str) -> Mapping {
         serde_yaml::from_str::<Value>(source)

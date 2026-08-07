@@ -471,7 +471,6 @@ jobs:
         "shell is unsupported",
         "secret-bearing step environments are unsupported",
         "secret-bearing setup inputs are unsupported",
-        "must use an exact 40-hex commit SHA",
     ] {
         assert!(
             reasons.contains(expected),

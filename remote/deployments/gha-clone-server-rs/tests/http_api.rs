@@ -4,7 +4,7 @@ use std::{
     process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc,
+        Arc, OnceLock,
     },
 };
 
@@ -41,6 +41,7 @@ const SERVER_ENV_VARS: &[&str] = &[
     "GHA_CLONE_AUTH_SECRET",
     "GHA_CLONE_GITHUB_WEBHOOK_SECRET",
     "GHA_CLONE_GITHUB_TOKEN",
+    "GHA_CLONE_GITHUB_TOKEN_FILE",
     "GHA_CLONE_BUILD_SERVER_URL",
     "GHA_CLONE_BUILD_SERVER_AUTH",
     "GHA_CLONE_ALLOWED_REPOSITORIES",
@@ -79,7 +80,13 @@ fn unused_port() -> u16 {
         .port()
 }
 
+fn server_start_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 async fn spawn_server(overrides: BTreeMap<&str, String>) -> ServerProcess {
+    let _start_guard = server_start_lock().lock().await;
     let port = unused_port();
     let mut command = Command::new(SERVER_BINARY);
     for &name in SERVER_ENV_VARS {
