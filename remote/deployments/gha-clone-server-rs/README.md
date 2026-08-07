@@ -23,6 +23,8 @@ trusted repository, immutable commit SHA, and operator-reviewed profile name to
 `node-hardened-verify` for the non-secret operator contract and
 `node-hardened-test` for the lifecycle-script-free complete repository test
 suite.
+images, or Kubernetes manifests. It submits only a trusted repository, immutable
+commit SHA, and operator-reviewed profile name to `dd-build-server`.
 
 ## API
 
@@ -40,6 +42,8 @@ constant time over SHA-256 digests.
   a workflow name outside the recursion-exclusion set. The service then fetches
   that path at the event's exact SHA, plans it, and either returns the plan or
   performs a bounded, deduplicated independent dispatch.
+- `POST /webhooks/github` — verify `X-Hub-Signature-256`, fetch allowlisted
+  workflow files at the event's exact SHA, and plan or execute them.
 - `GET /healthz`, `GET /readyz`.
 
 Example plan:
@@ -62,6 +66,7 @@ Example plan:
 | npm/pnpm/yarn/Node tests | `node-verify` |
 | npm install-script suppression + operator checks + high-severity audit | `node-hardened-verify` |
 | npm install-script suppression + complete repository tests | `node-hardened-test` |
+| npm/pnpm/yarn/Node tests | `node-verify` |
 | Python compile/pytest | `python-verify` |
 | Flutter analyze/tests | `flutter-verify` |
 | Flutter Android APK/App Bundle | `flutter-android-debug` |
@@ -185,6 +190,7 @@ The independent lane rejects:
 - mutable setup-action references;
 - hardened Node command sequences that are incomplete, reordered, spoofed, or
   contain any extra command;
+- secret/OIDC expressions in `env`, `with`, or commands;
 - dynamic matrices and conditional jobs/steps;
 - arbitrary marketplace actions;
 - job or service containers;
@@ -213,6 +219,12 @@ These jobs still receive an ARC classification such as `sonus-ci`,
 | `GHA_CLONE_WEBHOOK_IGNORED_WORKFLOWS` | exact workflow names excluded to prevent fallback recursion |
 | `GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS` | nonzero in-memory delivery-deduplication TTL |
 | `GHA_CLONE_MAX_WEBHOOK_DELIVERIES` | nonzero upper bound on retained delivery UUIDs |
+| `GHA_CLONE_BUILD_SERVER_URL` | internal `dd-build-server` origin |
+| `GHA_CLONE_BUILD_SERVER_AUTH` | scoped build-server auth |
+| `GHA_CLONE_ALLOWED_REPOSITORIES` | exact comma-separated `owner/repo` allowlist |
+| `GHA_CLONE_WORKFLOW_RULES_JSON` | map of repository to workflow paths |
+| `GHA_CLONE_EXECUTION_ENABLED` | independent API execution, default `false` |
+| `GHA_CLONE_WEBHOOK_EXECUTION_ENABLED` | webhook execution, default `false` |
 | `GHA_CLONE_MAX_WORKFLOW_BYTES` | parser input bound |
 | `GHA_CLONE_MAX_JOBS` | workflow job bound |
 | `GHA_CLONE_MAX_STEPS_PER_JOB` | per-job step bound |
@@ -248,6 +260,9 @@ script subscribes only to `workflow_run`; GitHub sends every completed
 conclusion and the Rust service performs the failure-only, exact-path,
 recursion, and duplicate-delivery checks.
 
+Use a GitHub App and External Secrets. Do not put classic PATs, private keys, or
+shared secrets in source, Argo parameters, Linear, logs, URLs, or image layers.
+
 ## Deployment state
 
 The `dd-next-runtime` manifests install the service with `replicas: 0` and
@@ -272,6 +287,11 @@ exist. Activation requires:
    repository admission;
 10. enable webhook execution only while the deployment remains single-replica,
     until shared delivery persistence or Fiducia fencing is implemented.
+3. confirm `dd-build-server` is healthy and its new fixed profiles are present;
+4. pin the deployment to the merged source revision;
+5. scale to one replica and run plan-only fixtures;
+6. enable API execution for immutable trusted commits;
+7. enable webhook execution only after HMAC and idempotency evidence.
 
 AWS is the initial independent executor because the existing build server,
 containerd/buildkit, ECR and Postgres are there. Hetzner can immediately host ARC
@@ -375,3 +395,7 @@ Submit an existing fixed profile to `dd-build-server`:
 cargo test --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml
 python3 -m unittest -v scripts/ops/test_gha_clone_server_contract.py
 ```
+The service is initially in `ORESoftware/k8s-cluster` so parser, executor
+profiles, deployment and policy contracts evolve atomically. Extraction to a
+standalone `ORESoftware/gha-clone-server.rs` repository is tracked after the API
+and fixtures stabilize and must use the protected repository-bootstrap path.

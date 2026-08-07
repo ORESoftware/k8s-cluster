@@ -171,6 +171,10 @@ secret.
 11. Enable webhook execution only while the deployment remains single-replica,
     until shared delivery persistence or Fiducia fencing is implemented.
 12. Keep positive GitHub-hosted budget for native platforms and emergency use.
+8. Enable API execution only for trusted immutable commits.
+9. Enable webhook execution only after HMAC, workflow fetch and idempotency
+   evidence.
+10. Keep positive GitHub-hosted budget for native platforms and emergency use.
 
 ## Rollback
 
