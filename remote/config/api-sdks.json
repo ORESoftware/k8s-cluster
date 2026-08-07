@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "sourceIndex": "remote/deployments/generated-api-docs-index.json",
+  "sourceContractConfig": "remote/config/api-contracts.json",
+  "outputIndex": "remote/deployments/generated-api-sdk-index.json",
+  "artifactRoot": ".artifacts/api-sdks",
+  "scopes": {
+    "public": "generated/api-docs.json",
+    "internal": "generated/api-docs.internal.json"
+  },
+  "operationalPaths": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json",
+    "/health",
+    "/healthz",
+    "/livez",
+    "/readyz",
+    "/metrics"
+  ],
+  "languages": {
+    "typescript": {
+      "generator": "openapi-typescript",
+      "generatorVersion": "7.13.0",
+      "runtime": "openapi-fetch",
+      "runtimeVersion": "0.17.0",
+      "compiler": "typescript",
+      "compilerVersion": "7.0.2",
+      "packagePublicTemplate": "@oresoftware/{service}-client",
+      "packageInternalTemplate": "@oresoftware-internal/{service}-client"
+    },
+    "rust": {
+      "generator": "openapi-generator",
+      "generatorVersion": "7.22.0",
+      "wrapper": "@openapitools/openapi-generator-cli",
+      "wrapperVersion": "2.40.0",
+      "target": "rust",
+      "runtime": "reqwest",
+      "compiler": "rustc",
+      "compilerVersion": "1.97.1",
+      "packagePublicTemplate": "oresoftware-{service}-client",
+      "packageInternalTemplate": "oresoftware-internal-{service}-client"
+    },
+    "dart": {
+      "generator": "openapi-generator",
+      "generatorVersion": "7.22.0",
+      "wrapper": "@openapitools/openapi-generator-cli",
+      "wrapperVersion": "2.40.0",
+      "target": "dart-dio",
+      "runtime": "dio",
+      "compiler": "dart",
+      "compilerVersion": "3.11.6",
+      "packagePublicTemplate": "oresoftware_{service}_client",
+      "packageInternalTemplate": "oresoftware_internal_{service}_client"
+    },
+    "gleam": {
+      "generator": "nori",
+      "generatorVersion": "1.1.0",
+      "runtime": "gleam_http",
+      "compiler": "gleam",
+      "compilerVersion": "1.17.0",
+      "packagePublicTemplate": "oresoftware_{service}_client",
+      "packageInternalTemplate": "oresoftware_internal_{service}_client"
+    }
+  },
+  "publication": {
+    "requireNativeTypedSource": true,
+    "requireAllConsumerOperationsTyped": true,
+    "requireExplicitAuthContract": true,
+    "requirePublicSubsetParity": true,
+    "internalPackagesArePrivate": true,
+    "requireStableOperationIds": true
+  }
+}

@@ -1,0 +1,132 @@
+name: Apply OpenAPI SDK hardening v2
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-openapi-sdk-hardening-v2.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-openapi-sdk-hardening-v2
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    if: github.head_ref == 'agent/openapi-sdk-hardening'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout writable feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/openapi-sdk-hardening
+          fetch-depth: 1
+          show-progress: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Verify and unpack bounded payload
+        run: |
+          python3 <<'PY'
+          import base64
+          import gzip
+          import hashlib
+          import json
+          from pathlib import Path
+
+          payload_dir = Path('scripts/api-contract')
+          parts = sorted(payload_dir.glob('openapi-sdk-hardening.payload.[0-9][0-9]'))
+          assert len(parts) == 6, f'expected 6 payload parts, found {len(parts)}'
+          encoded = ''.join(part.read_text() for part in parts).encode()
+          compressed = base64.b64decode(encoded)
+          decoded = gzip.decompress(compressed)
+          digests = {
+              'encoded': hashlib.sha256(encoded).hexdigest(),
+              'compressed': hashlib.sha256(compressed).hexdigest(),
+              'decoded': hashlib.sha256(decoded).hexdigest(),
+          }
+          print(json.dumps(digests, sort_keys=True))
+          assert digests['encoded'] == '7347e477406e8a72e41a9fc74267f04c3d371d5f58918b19b4ab21688ed9e094'
+          assert digests['compressed'] == '0748e8b3e21c65965290e218f826556c6826d8cf1289178c30b4250be74d4686'
+          assert digests['decoded'] == '1ac555fd6f59e40856b52b8b91f2bf09910a8976c88717a9b72627a6c7038ff7'
+
+          payload = json.loads(decoded)
+          expected = {
+              '.gitignore',
+              'docs/api-sdk-generation.md',
+              'remote/config/api-sdks.json',
+              'remote/tools/generate-api-sdk-index.mjs',
+              'remote/tools/generate-api-sdk-index.test.mjs',
+              'remote/tools/generate-api-sdk.mjs',
+              'remote/tools/generate-api-sdk.test.mjs',
+          }
+          assert set(payload) == expected, f'unexpected payload paths: {sorted(payload)}'
+          root = Path.cwd().resolve()
+          for relative_path, content in payload.items():
+              target = (root / relative_path).resolve()
+              assert target == root or root in target.parents, f'path escapes repository: {relative_path}'
+              assert not relative_path.startswith('.github/workflows/')
+              target.parent.mkdir(parents=True, exist_ok=True)
+              target.write_text(content)
+          PY
+
+      - name: Check JavaScript syntax
+        run: |
+          set -euo pipefail
+          node --check remote/tools/generate-api-sdk-index.mjs
+          node --check remote/tools/generate-api-sdk.mjs
+          node --check remote/tools/generate-api-sdk-index.test.mjs
+          node --check remote/tools/generate-api-sdk.test.mjs
+
+      - name: Run focused SDK contract tests
+        run: >-
+          node --test
+          remote/tools/generate-api-sdk-index.test.mjs
+          remote/tools/generate-api-sdk.test.mjs
+
+      - name: Generate fleet SDK inventory
+        run: node remote/tools/generate-api-sdk-index.mjs
+
+      - name: Reject stale fleet SDK inventory
+        run: node remote/tools/generate-api-sdk-index.mjs --check
+
+      - name: Verify every service, scope, and language selection
+        run: node remote/tools/generate-api-sdk.mjs --all --dry-run --force
+
+      - name: Check generated diff
+        run: git diff --check
+
+      - name: Remove transport payloads
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          for path in Path('scripts/api-contract').glob('openapi-sdk-hardening.payload.[0-9][0-9]'):
+              path.unlink()
+          PY
+
+      - name: Commit generated SDK contract tooling
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- \
+            .gitignore \
+            docs/api-sdk-generation.md \
+            remote/config/api-sdks.json \
+            remote/deployments/generated-api-sdk-index.json \
+            remote/tools/generate-api-sdk-index.mjs \
+            remote/tools/generate-api-sdk-index.test.mjs \
+            remote/tools/generate-api-sdk.mjs \
+            remote/tools/generate-api-sdk.test.mjs
+          git add -A -- scripts/api-contract/openapi-sdk-hardening.payload.*
+          git diff --cached --check
+          git diff --cached --name-status
+          git commit -m 'Harden generated OpenAPI SDK contracts [api-sdk-generated]'
+          git push origin HEAD:agent/openapi-sdk-hardening
