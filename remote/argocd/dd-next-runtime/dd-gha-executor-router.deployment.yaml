@@ -58,10 +58,14 @@ spec:
               value: "65536"
             - name: GHA_EXECUTOR_ROUTER_MAX_ERROR_CHARS
               value: "512"
+            - name: GHA_EXECUTOR_ROUTER_MAX_ASSIGNMENTS
+              value: "4096"
             - name: GHA_EXECUTOR_ROUTER_PROBE_TIMEOUT_MS
               value: "2000"
             - name: GHA_EXECUTOR_ROUTER_UPSTREAM_TIMEOUT_SECONDS
               value: "60"
+            - name: GHA_EXECUTOR_ROUTER_ASSIGNMENT_WAIT_TIMEOUT_SECONDS
+              value: "65"
           ports:
             - name: http
               containerPort: 8126
