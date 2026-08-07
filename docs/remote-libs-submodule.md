@@ -39,27 +39,35 @@ superproject gitlink; never replace it with the current head of `main` during CI
 
 ### Authentication boundaries
 
-`k8s-libs-and-shared-defs` is private. CI uses a dedicated read-only deploy key,
-`K8S_LIBS_DEPLOY_KEY`, limited to that repository. It is deliberately separate
-from the cross-organization GitHub App used for `remote/deployments/*`.
+`k8s-libs-and-shared-defs` is private. Repository CI mints an owner-scoped,
+short-lived GitHub App installation token using `K8S_SUBMODULE_APP_ID` and
+`K8S_SUBMODULE_APP_PRIVATE_KEY`. The token request is explicitly restricted to
+the reviewed repositories required by that job and carries only `contents:read`.
+It is revoked after checkout and otherwise expires automatically.
 
-- **Repository checks** — `actions/checkout` installs the narrow deploy key, then
-  runs this exact helper command:
+- **Repository checks** — the static-contract job checks out this superproject
+  without persisted credentials, then runs the reviewed App-backed helper for
+  only `remote/libs`:
 
   ```bash
-  SUBMODULE_AUTH_MODE=ssh bash scripts/ci/init-submodules-with-report.sh remote/libs
+  SUBMODULE_REPORT_PATH="$RUNNER_TEMP/static-submodule-access.tsv" \
+  K8S_SUBMODULE_APP_ID="<GitHub App ID>" \
+  K8S_SUBMODULE_APP_PRIVATE_KEY="<GitHub App private key>" \
+    bash scripts/ci/init-submodules-with-github-app.sh remote/libs
   ```
 
-  The helper recursively initializes the exact mode-`160000` gitlink, verifies
-  the checkout SHA against the superproject pin, and reports a mismatch without
+  The helper mints a repository-restricted installation token, recursively
+  initializes the exact mode-`160000` gitlink, verifies the checkout SHA against
+  the superproject pin, revokes the token, and emits a sanitized report without
   printing credentials.
 - **pg-defs checks** — `.github/actions/checkout-remote-libs` resolves the exact
   gitlink SHA, checks out `ORESoftware/k8s-libs-and-shared-defs` at that commit
   with `persist-credentials: false`, and verifies a clean checkout. A caller that
   needs nested repositories must initialize only those reviewed nested paths.
-- **Deployment fleet checks** — owner-scoped, short-lived GitHub App installation
-  tokens are used for `remote/deployments/*`. Those tokens do not replace or
-  broaden `K8S_LIBS_DEPLOY_KEY`.
+- **Deployment fleet checks** — the backend-contract job uses the same helper to
+  mint separate owner-scoped, repository-restricted installation tokens for
+  `remote/libs` and `remote/deployments/*`; one owner token is never reused as a
+  broad cross-organization credential.
 - **Runtime node maintenance** — the node deploy key runs recursive submodule
   initialization, including `remote/libs` → `async-java`.
 
@@ -79,10 +87,10 @@ pnpm run test:cli:nats-subject-contract
 
 The submodule contract locks the canonical repository URL, `main` branch,
 gitlink mode and commit, nested `async-java` pin, required shared surfaces, the
-resolved Rust/Gleam consumer paths, and the deploy-key/helper checkout policy.
-The NATS contract runs the pinned generator in `--check` mode before comparing
-every tracked workload subject to the canonical schema model. Both run in
-`repo-checks.yml`.
+resolved Rust/Gleam consumer paths, and the repository-restricted GitHub
+App/helper checkout policy. The NATS contract runs the pinned generator in
+`--check` mode before comparing every tracked workload subject to the canonical
+schema model. Both run in `repo-checks.yml`.
 
 ## Bumping the pin (it tracks `main`)
 
@@ -111,10 +119,10 @@ no longer changes inside this repository.
 - Rust/Gleam path dependencies are **unchanged** — the on-disk paths
   (`remote/libs/pg-defs/...`, etc.) are identical once the submodule is checked
   out, so no consumer manifest needed editing.
-- Repository checks gained a dedicated deploy-key helper with recursive pin
-  verification. The standalone pg-defs workflow gained the reusable
-  `.github/actions/checkout-remote-libs` exact-gitlink action, and its trigger
-  watches the `remote/libs` gitlink.
+- Repository checks use the owner-scoped GitHub App helper with recursive pin
+  verification and sanitized access reports. The standalone pg-defs workflow
+  uses the reusable `.github/actions/checkout-remote-libs` exact-gitlink action,
+  and its trigger watches the `remote/libs` gitlink.
 
 ## Migrations
 
