@@ -64,8 +64,12 @@ jobs:
 
       - name: Prepare and test idempotent managed-block reconciliation
         shell: bash
+        env:
+          GITHUB_TOKEN_VALUE: ${{ github.token }}
         run: |
           set -Eeuo pipefail
+          umask 077
+
           test "$GITHUB_REPOSITORY" = ORESoftware/k8s-cluster
           test "$GITHUB_REF" = refs/heads/main
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
