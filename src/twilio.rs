@@ -108,9 +108,21 @@ async fn check_sms_verification_at(
 
 fn credentials(config: &TwilioVerifyConfig) -> Result<(&str, &str, &str), AuthError> {
     match (
-        config.account_sid.as_deref(),
-        config.auth_token.as_deref(),
-        config.service_sid.as_deref(),
+        config
+            .account_sid
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty()),
+        config
+            .auth_token
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty()),
+        config
+            .service_sid
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty()),
     ) {
         (Some(account_sid), Some(auth_token), Some(service_sid)) => {
             Ok((account_sid, auth_token, service_sid))
