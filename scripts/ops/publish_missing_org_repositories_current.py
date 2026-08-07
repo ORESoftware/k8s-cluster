@@ -107,7 +107,7 @@ def ensure_private_repository(
     )
 
 
-def _repository_lookup(full_name: str) -> tuple[int, dict[str, Any] | None]:
+def _repository_lookup(full_name: str) -> tuple[int, dict[str, object] | None]:
     return MODULE.api("GET", f"/repos/{full_name}")
 
 
