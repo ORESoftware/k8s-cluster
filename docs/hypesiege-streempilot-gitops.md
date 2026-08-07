@@ -80,6 +80,7 @@ Cloudflare HTTP proxy.
    `dd-cluster-secrets`, including the StreemPilot browser signaling URL.
 4. Add Argo repository credentials for the private service repositories,
    including `StreemPilot/sp-web-mash`.
+4. Add Argo repository credentials for the private service repositories.
 5. Apply `hypesiege-root.application.yaml` and
    `streempilot-root.application.yaml` in the `argocd` namespace.
 6. Add reviewed Gateway/HTTPRoute and Cloudflare DNS/WAF configuration only
