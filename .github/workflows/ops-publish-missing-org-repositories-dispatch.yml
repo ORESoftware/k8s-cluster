@@ -84,8 +84,13 @@ jobs:
           test -n "$encoded_pat"
           GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode)"
           unset encoded_pat
-          test -n "$GH_TOKEN"
-          [[ "$GH_TOKEN" != *$'\n'* && "$GH_TOKEN" != *$'\r'* ]]
+          case "$GH_TOKEN" in
+            *$'\n'*|*$'\r'*)
+              printf 'publisher-stage=%s status=failed reason=invalid-credential-bytes\n' \
+                "$stage" >&2
+              exit 65
+              ;;
+          esac
           export GH_TOKEN
           export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
           printf 'publisher-stage=%s status=passed\n' "$stage"
