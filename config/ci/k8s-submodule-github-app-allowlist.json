@@ -12,6 +12,7 @@
     "ORESoftware": [
       "ai-agent-bridge.rs",
       "chat.vibe",
+      "k8s-libs-and-shared-defs",
       "mip-solver-node.rs",
       "t2v-v2t.rs",
       "tor-server.rs"

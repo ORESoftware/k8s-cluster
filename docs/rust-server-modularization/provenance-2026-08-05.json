@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-08-05",
+  "timezone": "America/Lima",
+  "program": {
+    "linear_umbrella": "DEN-1682",
+    "linear_wave2": "DEN-1757"
+  },
+  "hypesiege": {
+    "linear_project_id": "cd247cb1-870b-471e-89f6-9484df19e798",
+    "wave2_contract_pr": 1,
+    "wave2_contract_head": "2d430aeb9a61b31ecfb71a2d8e57359c24f06f4a",
+    "wave2_contract_merge": "aec0f442b1e189f16eec32ede0b4095413405073",
+    "workflow_run": 31032025476,
+    "artifact_id": 8941056209,
+    "artifact_sha256": "9040cb80f3f875e29b1a0119c26460b86e2c31be3c8bbd326d0c1208759fde69",
+    "provisioning_pr": 14,
+    "repositories": [
+      "hypesiege/hypesiege-scheduler.rs",
+      "hypesiege/hypesiege-publishing-worker.rs",
+      "hypesiege/hypesiege-analytics.rs"
+    ]
+  },
+  "streempilot": {
+    "linear_project_id": "3f5bd157-4424-42cc-94d0-0bed993cdc1d",
+    "media_router_pr": 16,
+    "repository": "StreemPilot/streempilot-media-router.rs",
+    "state": "provisioning_required",
+    "hosted_actions_blocker": "recent account payments failed or Actions spending limit must be increased",
+    "continuity_runner_labels": ["self-hosted", "linux", "sonus-ci"]
+  },
+  "github_projects": {
+    "mutation_supported_by_current_connector": false,
+    "successful_project_creation_claimed": false
+  },
+  "credential_policy": {
+    "pat_used": false,
+    "repository_creation": "reviewed GitHub App installation-token workflow only"
+  }
+}
