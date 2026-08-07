@@ -40,7 +40,12 @@ The scheduler is independent of the dormant webhook replica count. Each run:
    Markdown artifacts with SCCs and topological update waves;
 4. only after a successful graph result, dispatches the bounded organization
    update units with paired `-test` organization context;
-5. records focused update PRs, exact-marker supersession decisions, and
+5. ignores patch-only releases, tests only newer same-major minor lines at each
+   line's highest stable patch, and uses upper-bound bisect plus a bounded
+   descending fallback when compatibility is non-monotonic;
+6. always creates or updates a deduplicated Linear issue when a newer major
+   exists, even if a same-major minor update succeeds;
+7. records focused passing update PRs, exact-marker supersession decisions, and
    deduplicated Linear blockers under DEN-2745.
 
 The CronJob forbids overlap, has a 12-hour fleet deadline, runs at most six
