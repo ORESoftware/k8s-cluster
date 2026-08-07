@@ -8,6 +8,7 @@ on:
       - remote/argocd/clusters/hetzner/project-automation.application.yaml
       - remote/argocd/clusters/hetzner/kustomization.yaml
       - remote/tests/general/project-automation-gitops.test.ts
+      - remote/tests/general/nightly-interdependency-gitops.test.mjs
   push:
     branches:
       - dev
@@ -18,6 +19,7 @@ on:
       - remote/argocd/clusters/hetzner/project-automation.application.yaml
       - remote/argocd/clusters/hetzner/kustomization.yaml
       - remote/tests/general/project-automation-gitops.test.ts
+      - remote/tests/general/nightly-interdependency-gitops.test.mjs
   workflow_dispatch:
 
 permissions:
@@ -40,6 +42,8 @@ jobs:
       - name: Install test runner
         working-directory: remote/tests
         run: pnpm install --frozen-lockfile
-      - name: Verify fail-closed GitOps contract
+      - name: Verify project automation GitOps contracts
         working-directory: remote/tests
-        run: pnpm exec tsx --test general/project-automation-gitops.test.ts
+        run: |
+          pnpm exec tsx --test general/project-automation-gitops.test.ts
+          node --test general/nightly-interdependency-gitops.test.mjs
