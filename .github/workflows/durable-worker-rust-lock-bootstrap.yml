@@ -1,0 +1,54 @@
+name: durable-worker-rust-lock-bootstrap
+
+on:
+  push:
+    branches:
+      - agent/den-2392-durable-worker-rust-sdk
+    paths:
+      - '.github/workflows/durable-worker-rust-lock-bootstrap.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: durable-worker-rust-lock-bootstrap-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  materialize-compatible-lock:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout Rust SDK branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-2392-durable-worker-rust-sdk
+          fetch-depth: 1
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+
+      - name: Generate MSRV-aware dependency lock
+        working-directory: remote/worker-sdks/rust/durable-worker
+        run: cargo generate-lockfile
+
+      - name: Commit only Cargo.lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add remote/worker-sdks/rust/durable-worker/Cargo.lock
+          if git diff --cached --quiet; then
+            echo 'Cargo.lock is already committed'
+            exit 0
+          fi
+          git commit -m 'chore(workers): lock Rust SDK dependencies'
+          git push origin HEAD:agent/den-2392-durable-worker-rust-sdk
