@@ -665,6 +665,15 @@ def validate_records(
                 )
             )
 
+    if record_count == 0:
+        diagnostics.append(
+            Diagnostic(
+                "catalog.empty",
+                "no catalog records matched the configured catalog glob",
+                "catalog/gitops/apps",
+            )
+        )
+
     diagnostics.sort(
         key=lambda item: (
             item.severity != "error",
@@ -780,8 +789,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     root = args.root.resolve()
     loaded = load_records(root, args.catalog_glob)
+    report = validate_records(
+        loaded,
+        root=root,
+        gitmodules=load_gitmodules(root),
+        gitlinks=tracked_gitlinks(root),
+        strict=not getattr(args, "no_strict", False),
+    )
 
     if args.command == "render":
+        if not report.valid:
+            print_human(report)
+            return 2
         print(
             json.dumps(
                 {
@@ -795,13 +814,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 0
 
-    report = validate_records(
-        loaded,
-        root=root,
-        gitmodules=load_gitmodules(root),
-        gitlinks=tracked_gitlinks(root),
-        strict=not args.no_strict,
-    )
     if args.format == "json":
         print(json.dumps(report.to_json(), indent=2, sort_keys=True))
     else:

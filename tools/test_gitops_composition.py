@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import copy
+import io
 import json
 import subprocess
 import tempfile
@@ -13,6 +15,7 @@ from pathlib import Path
 from gitops_composition import (
     load_gitmodules,
     load_records,
+    main,
     normalize_repo_url,
     render_records,
     tracked_gitlinks,
@@ -198,6 +201,28 @@ class GitOpsCompositionTests(unittest.TestCase):
             first[0]["metadata"]["name"],
         )
         self.assertNotIn("syncPolicy", first[0]["spec"])
+
+    def test_empty_catalog_fails_closed(self):
+        report = validate_records(
+            [],
+            root=self.root,
+            gitmodules={},
+            gitlinks={},
+        )
+        rules = {item.rule_id for item in report.diagnostics}
+        self.assertIn("catalog.empty", rules)
+        self.assertFalse(report.valid)
+
+    def test_render_command_rejects_invalid_catalog(self):
+        broken = record()
+        broken["spec"]["source"]["targetRevision"] = "a" * 40
+        self.write_record(broken)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            status = main(["render", "--root", str(self.root)])
+        self.assertEqual(2, status)
+        self.assertIn("source.pin-drift", output.getvalue())
+        self.assertNotIn("GitOpsApplicationPreviewList", output.getvalue())
 
     def test_unknown_fields_fail_in_strict_mode(self):
         broken = copy.deepcopy(record())
