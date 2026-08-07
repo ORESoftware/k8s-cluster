@@ -1,0 +1,93 @@
+# Owner-authored carrier for the current reviewed #770 verifier. Both workflow
+# files are deleted before the product commit is published.
+name: Run DEN-1606 transport v3 current verifier once
+
+on:
+  push:
+    branches:
+      - agent/den-1606-transport-after-capacity-v3
+    paths:
+      - .github/workflows/run-den-1606-transport-v3-current-verifier-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1606-transport-after-capacity-v3-current
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1606-transport-after-capacity-v3
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Execute the current reviewed test augmentation
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/den-1606-transport-after-capacity-v3-pr-once.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          start = lines.index('      - name: Add live-process identity, redirect, and bound regressions')
+          end = lines.index('      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable', start + 1)
+          run_index = lines.index('        run: |', start, end)
+          prefix = '          '
+          shell = '\n'.join(
+              line[len(prefix):] if line.startswith(prefix) else line
+              for line in lines[run_index + 1:end]
+          ) + '\n'
+          target = Path('/tmp/den-1606-transport-v3-augment.sh')
+          target.write_text(shell, encoding='utf-8')
+          target.chmod(0o700)
+          PY
+          /tmp/den-1606-transport-v3-augment.sh
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate every clone-server target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Publish the product-only exact head
+        run: |
+          set -euo pipefail
+          base='a14072064f25d7b49807656d4231f93d335a6d55'
+          rm -f \
+            .github/workflows/den-1606-transport-after-capacity-v3-pr-once.yml \
+            .github/workflows/run-den-1606-transport-v3-current-verifier-once.yml
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          workflow_non_deletions="$(git diff --cached --name-only --diff-filter=ACMRTUXB -- .github/workflows || true)"
+          test -z "$workflow_non_deletions"
+          allowed='^(\.github/workflows/(den-1606-transport-after-capacity-v3-pr-once|run-den-1606-transport-v3-current-verifier-once)\.yml|docs/gha-clone-build-server-boundary\.md|remote/deployments/gha-clone-server-rs/(src/main\.rs|tests/(http_api|streempilot_http|webhook_e2e|webhook_retention)\.rs))$'
+          unexpected="$(git diff --cached --name-only | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected staged paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          git commit -m 'test(DEN-1606): prove clone transport boundaries through live process'
+          expected=$'docs/gha-clone-build-server-boundary.md\nremote/deployments/gha-clone-server-rs/src/main.rs\nremote/deployments/gha-clone-server-rs/tests/http_api.rs\nremote/deployments/gha-clone-server-rs/tests/streempilot_http.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs\nremote/deployments/gha-clone-server-rs/tests/webhook_retention.rs'
+          actual="$(git diff --name-only "$base"...HEAD | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'unexpected final product paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          git push origin HEAD:agent/den-1606-transport-after-capacity-v3
