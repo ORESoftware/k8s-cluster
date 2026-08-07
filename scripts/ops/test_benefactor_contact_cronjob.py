@@ -99,7 +99,7 @@ class BenefactorContactCronJobTests(unittest.TestCase):
     def test_argo_and_kustomize_wiring_are_exact(self) -> None:
         self.assertIn("- cronjob.yaml", self.kustomization)
         self.assertIn("name: benefactor-contact-pipeline", self.application)
-        self.assertIn("targetRevision: main", self.application)
+        self.assertIn("targetRevision: dev", self.application)
         self.assertIn("path: remote/argocd/benefactor-contact-pipeline", self.application)
         self.assertIn("namespace: default", self.application)
         self.assertIn("selfHeal: true", self.application)
