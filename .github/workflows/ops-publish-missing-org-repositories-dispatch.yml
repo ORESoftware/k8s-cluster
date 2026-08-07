@@ -35,7 +35,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Configure trusted main-ref AWS OIDC credentials
+      - name: Configure the SSM-only trusted AWS boundary
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
