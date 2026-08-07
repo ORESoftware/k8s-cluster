@@ -1,0 +1,1370 @@
+name: Finalize DEN-1597 no-post-failover hardening
+
+on:
+  push:
+    branches:
+      - agent/den-1597-no-post-failover-20260804
+    paths:
+      - .github/workflows/finalize-den-1597-no-post-failover.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-den-1597-no-post-failover
+  cancel-in-progress: false
+
+jobs:
+  harden:
+    if: github.repository == 'ORESoftware/k8s-cluster' && github.ref == 'refs/heads/agent/den-1597-no-post-failover-20260804'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out the exact isolated hardening branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1597-no-post-failover-20260804
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Apply the fail-closed routing contract and adversarial tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path('.')
+          lib_path = root / 'remote/deployments/gha-executor-router-rs/src/lib.rs'
+          readme_path = root / 'remote/deployments/gha-executor-router-rs/README.md'
+          runbook_path = root / 'docs/operations/gha-executor-router-aws-hetzner.md'
+          workflow_path = root / '.github/workflows/gha-executor-router.yml'
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              return text.replace(old, new)
+
+          def replace_regex(text: str, pattern: str, replacement: str, label: str) -> str:
+              updated, count = re.subn(pattern, replacement, text, flags=re.S)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one regex match, found {count}')
+              return updated
+
+          lib = lib_path.read_text()
+
+          fingerprint_marker = '''fn safe_token(value: &str, max: usize, punctuation: &[u8]) -> bool {
+              !value.is_empty()
+                  && value.len() <= max
+                  && value
+                      .bytes()
+                      .all(|byte| byte.is_ascii_alphanumeric() || punctuation.contains(&byte))
+          }
+
+          #[derive(Clone, Debug, Deserialize, Serialize)]
+          #[serde(rename_all = "camelCase")]
+          pub struct BuildJob'''
+          fingerprint_replacement = '''fn safe_token(value: &str, max: usize, punctuation: &[u8]) -> bool {
+              !value.is_empty()
+                  && value.len() <= max
+                  && value
+                      .bytes()
+                      .all(|byte| byte.is_ascii_alphanumeric() || punctuation.contains(&byte))
+          }
+
+          fn request_fingerprint(request: &BuildRequest) -> [u8; 32] {
+              let encoded = serde_json::to_vec(request).expect("BuildRequest serialization is infallible");
+              Sha256::digest(encoded).into()
+          }
+
+          #[derive(Clone, Debug, Deserialize, Serialize)]
+          #[serde(rename_all = "camelCase")]
+          pub struct BuildJob'''
+          lib = replace_once(lib, fingerprint_marker, fingerprint_replacement, 'request fingerprint insertion')
+
+          state_block = r'''#[derive\(Clone, Debug\)]\nstruct Route \{.*?\n#\[derive\(Clone\)\]\npub struct Engine'''
+          state_replacement = '''#[derive(Clone, Debug)]
+          struct Route {
+              request_id: String,
+              request_hash: [u8; 32],
+              external_id: String,
+              executor_id: String,
+              provider: Provider,
+              upstream_id: String,
+              accepted: BuildJob,
+              sequence: u64,
+          }
+
+          impl Route {
+              fn public_job(&self, mut job: BuildJob) -> BuildJob {
+                  job.id = self.external_id.clone();
+                  job.fields.insert(
+                      "executorId".to_string(),
+                      Value::String(self.executor_id.clone()),
+                  );
+                  job.fields.insert(
+                      "provider".to_string(),
+                      Value::String(self.provider.as_str().to_string()),
+                  );
+                  job.fields.insert(
+                      "requestId".to_string(),
+                      Value::String(self.request_id.clone()),
+                  );
+                  job
+              }
+          }
+
+          #[derive(Clone, Debug)]
+          struct AmbiguousAttempt {
+              request_hash: [u8; 32],
+              executor_id: String,
+              provider: Provider,
+              error: RouterError,
+              sequence: u64,
+          }
+
+          #[derive(Default)]
+          struct RouteMaps {
+              by_request: BTreeMap<String, Route>,
+              by_external: BTreeMap<String, Route>,
+              ambiguous_by_request: BTreeMap<String, AmbiguousAttempt>,
+          }
+
+          struct Inflight {
+              request_hash: [u8; 32],
+              result: Mutex<Option<Result<BuildJob, RouterError>>>,
+              notify: Notify,
+          }
+
+          impl Inflight {
+              fn new(request_hash: [u8; 32]) -> Self {
+                  Self {
+                      request_hash,
+                      result: Mutex::new(None),
+                      notify: Notify::new(),
+                  }
+              }
+          }
+
+          enum SubmissionFailure {
+              Rejected(RouterError),
+              Ambiguous {
+                  executor_id: String,
+                  provider: Provider,
+                  error: RouterError,
+              },
+          }
+
+          fn ambiguous_failure(
+              executor: &Executor,
+              code: &'static str,
+              message: impl Into<String>,
+          ) -> SubmissionFailure {
+              SubmissionFailure::Ambiguous {
+                  executor_id: executor.id.clone(),
+                  provider: executor.provider,
+                  error: RouterError::bad_gateway(code, message),
+              }
+          }
+
+          #[derive(Default)]
+          struct Metrics {
+              submissions: AtomicU64,
+              accepted: AtomicU64,
+              fallback_attempts: AtomicU64,
+              ambiguous_attempts: AtomicU64,
+              contract_rejections: AtomicU64,
+              request_conflicts: AtomicU64,
+              exhausted: AtomicU64,
+              duplicate_hits: AtomicU64,
+              polls: AtomicU64,
+              poll_failures: AtomicU64,
+          }
+
+          #[derive(Clone)]
+          pub struct Engine'''
+          lib = replace_regex(lib, state_block, state_replacement, 'router state replacement')
+
+          methods_pattern = r'''    pub async fn submit\(&self, request: BuildRequest\) -> Result<BuildJob, RouterError> \{.*?\n    pub async fn poll'''
+          methods_replacement = '''    fn request_conflict(&self) -> RouterError {
+                  self.metrics
+                      .request_conflicts
+                      .fetch_add(1, Ordering::Relaxed);
+                  RouterError::conflict(
+                      "request_id_conflict",
+                      "requestId is already bound to different immutable request content",
+                  )
+              }
+
+              pub async fn submit(&self, request: BuildRequest) -> Result<BuildJob, RouterError> {
+                  request.validate()?;
+                  if !self.config.execution_enabled {
+                      return Err(RouterError::unavailable(
+                          "execution_disabled",
+                          "independent executor routing is disabled",
+                      ));
+                  }
+                  if !self.config.ready() {
+                      return Err(RouterError::unavailable(
+                          "router_not_ready",
+                          "executor routing is not ready",
+                      ));
+                  }
+                  self.metrics.submissions.fetch_add(1, Ordering::Relaxed);
+                  let request_hash = request_fingerprint(&request);
+
+                  {
+                      let routes = self.routes.read().await;
+                      if let Some(route) = routes.by_request.get(&request.request_id) {
+                          if route.request_hash != request_hash {
+                              return Err(self.request_conflict());
+                          }
+                          self.metrics.duplicate_hits.fetch_add(1, Ordering::Relaxed);
+                          return Ok(route.public_job(route.accepted.clone()));
+                      }
+                      if let Some(attempt) = routes.ambiguous_by_request.get(&request.request_id) {
+                          if attempt.request_hash != request_hash {
+                              return Err(self.request_conflict());
+                          }
+                          self.metrics.duplicate_hits.fetch_add(1, Ordering::Relaxed);
+                          return Err(attempt.error.clone());
+                      }
+                  }
+
+                  let (inflight, owner) = {
+                      let mut entries = self.inflight.lock().await;
+                      match entries.get(&request.request_id) {
+                          Some(existing) => {
+                              if existing.request_hash != request_hash {
+                                  return Err(self.request_conflict());
+                              }
+                              (existing.clone(), false)
+                          }
+                          None => {
+                              let created = Arc::new(Inflight::new(request_hash));
+                              entries.insert(request.request_id.clone(), created.clone());
+                              (created, true)
+                          }
+                      }
+                  };
+
+                  if !owner {
+                      self.metrics.duplicate_hits.fetch_add(1, Ordering::Relaxed);
+                      loop {
+                          let notified = inflight.notify.notified();
+                          if let Some(result) = inflight.result.lock().await.clone() {
+                              return result;
+                          }
+                          notified.await;
+                      }
+                  }
+
+                  let result = self.submit_fresh(&request, request_hash).await;
+                  let public_result = match result {
+                      Ok(route) => {
+                          let public = route.public_job(route.accepted.clone());
+                          self.insert_route(route).await;
+                          Ok(public)
+                      }
+                      Err(SubmissionFailure::Rejected(error)) => Err(error),
+                      Err(SubmissionFailure::Ambiguous {
+                          executor_id,
+                          provider,
+                          error,
+                      }) => {
+                          self.insert_ambiguous(
+                              request.request_id.clone(),
+                              AmbiguousAttempt {
+                                  request_hash,
+                                  executor_id,
+                                  provider,
+                                  error: error.clone(),
+                                  sequence: self.sequence.fetch_add(1, Ordering::Relaxed),
+                              },
+                          )
+                          .await;
+                          Err(error)
+                      }
+                  };
+                  *inflight.result.lock().await = Some(public_result.clone());
+                  self.inflight.lock().await.remove(&request.request_id);
+                  inflight.notify.notify_waiters();
+                  public_result
+              }
+
+              async fn submit_fresh(
+                  &self,
+                  request: &BuildRequest,
+                  request_hash: [u8; 32],
+              ) -> Result<Route, SubmissionFailure> {
+                  let mut selected = None;
+                  for executor in &self.config.executors {
+                      let auth = executor.auth_secret.as_deref().ok_or_else(|| {
+                          SubmissionFailure::Rejected(RouterError::unavailable(
+                              "executor_not_ready",
+                              "executor auth is unavailable",
+                          ))
+                      })?;
+                      let readiness = self
+                          .client
+                          .get(format!("{}/readyz", executor.base_url))
+                          .header("x-build-server-auth", auth)
+                          .send()
+                          .await;
+                      match readiness {
+                          Ok(response) if response.status() == StatusCode::OK => {
+                              selected = Some(executor);
+                              break;
+                          }
+                          Ok(response) => {
+                              self.metrics
+                                  .fallback_attempts
+                                  .fetch_add(1, Ordering::Relaxed);
+                              warn!(
+                                  executor_id = %executor.id,
+                                  provider = executor.provider.as_str(),
+                                  status = %response.status(),
+                                  "executor was not ready before submission; checking the next provider"
+                              );
+                          }
+                          Err(error) => {
+                              self.metrics
+                                  .fallback_attempts
+                                  .fetch_add(1, Ordering::Relaxed);
+                              warn!(
+                                  executor_id = %executor.id,
+                                  provider = executor.provider.as_str(),
+                                  error = %error,
+                                  "executor readiness probe failed before submission; checking the next provider"
+                              );
+                          }
+                      }
+                  }
+
+                  let Some(executor) = selected else {
+                      self.metrics.exhausted.fetch_add(1, Ordering::Relaxed);
+                      return Err(SubmissionFailure::Rejected(RouterError::unavailable(
+                          "executors_unavailable",
+                          "no executor was ready; no submission was attempted",
+                      )));
+                  };
+                  let auth = executor.auth_secret.as_deref().ok_or_else(|| {
+                      SubmissionFailure::Rejected(RouterError::unavailable(
+                          "executor_not_ready",
+                          "selected executor auth is unavailable",
+                      ))
+                  })?;
+
+                  let response = self
+                      .client
+                      .post(format!("{}/builds", executor.base_url))
+                      .header("x-build-server-auth", auth)
+                      .json(request)
+                      .send()
+                      .await
+                      .map_err(|error| {
+                          ambiguous_failure(
+                              executor,
+                              "submission_outcome_ambiguous",
+                              format!(
+                                  "submission to executor {} had an ambiguous transport outcome ({error}); retry is pinned and no other provider was contacted",
+                                  executor.id
+                              ),
+                          )
+                      })?;
+                  let status = response.status();
+                  if status != StatusCode::ACCEPTED {
+                      if status.is_client_error() && status != StatusCode::TOO_MANY_REQUESTS {
+                          self.metrics
+                              .contract_rejections
+                              .fetch_add(1, Ordering::Relaxed);
+                          return Err(SubmissionFailure::Rejected(RouterError::new(
+                              StatusCode::UNPROCESSABLE_ENTITY,
+                              "upstream_contract_rejected",
+                              format!(
+                                  "executor {} rejected the fixed-profile request with HTTP {status}; fallback was not attempted",
+                                  executor.id
+                              ),
+                          )));
+                      }
+                      return Err(ambiguous_failure(
+                          executor,
+                          "submission_outcome_ambiguous",
+                          format!(
+                              "executor {} returned HTTP {status} after the only submission attempt; retry is pinned and no other provider was contacted",
+                              executor.id
+                          ),
+                      ));
+                  }
+
+                  let body = read_bounded(response, self.config.max_response_bytes)
+                      .await
+                      .map_err(|_| {
+                          ambiguous_failure(
+                              executor,
+                              "accepted_response_invalid",
+                              format!(
+                                  "executor {} returned an unreadable 202 response; retry is pinned and no other provider was contacted",
+                                  executor.id
+                              ),
+                          )
+                      })?;
+                  let accepted: BuildJob = serde_json::from_slice(&body).map_err(|_| {
+                      ambiguous_failure(
+                          executor,
+                          "accepted_response_invalid",
+                          format!(
+                              "executor {} returned invalid 202 job JSON; retry is pinned and no other provider was contacted",
+                              executor.id
+                          ),
+                      )
+                  })?;
+                  if !safe_token(&accepted.id, 128, b"-_:") {
+                      return Err(ambiguous_failure(
+                          executor,
+                          "accepted_response_invalid",
+                          format!(
+                              "executor {} returned an invalid accepted build id; retry is pinned and no other provider was contacted",
+                              executor.id
+                          ),
+                      ));
+                  }
+                  if !matches!(
+                      accepted.status.as_str(),
+                      "queued" | "running" | "succeeded" | "failed"
+                  ) {
+                      return Err(ambiguous_failure(
+                          executor,
+                          "accepted_response_invalid",
+                          format!(
+                              "executor {} returned an unknown accepted status; retry is pinned and no other provider was contacted",
+                              executor.id
+                          ),
+                      ));
+                  }
+
+                  self.metrics.accepted.fetch_add(1, Ordering::Relaxed);
+                  let external_id = format!("{}~{}", executor.id, accepted.id);
+                  Ok(Route {
+                      request_id: request.request_id.clone(),
+                      request_hash,
+                      external_id,
+                      executor_id: executor.id.clone(),
+                      provider: executor.provider,
+                      upstream_id: accepted.id.clone(),
+                      accepted,
+                      sequence: self.sequence.fetch_add(1, Ordering::Relaxed),
+                  })
+              }
+
+              async fn insert_route(&self, route: Route) {
+                  let mut routes = self.routes.write().await;
+                  routes.ambiguous_by_request.remove(&route.request_id);
+                  Self::prune_oldest(&mut routes, self.config.max_routes);
+                  routes
+                      .by_external
+                      .insert(route.external_id.clone(), route.clone());
+                  routes.by_request.insert(route.request_id.clone(), route);
+              }
+
+              async fn insert_ambiguous(&self, request_id: String, attempt: AmbiguousAttempt) {
+                  let mut routes = self.routes.write().await;
+                  Self::prune_oldest(&mut routes, self.config.max_routes);
+                  routes.ambiguous_by_request.insert(request_id, attempt);
+                  self.metrics
+                      .ambiguous_attempts
+                      .fetch_add(1, Ordering::Relaxed);
+              }
+
+              fn prune_oldest(routes: &mut RouteMaps, max_routes: usize) {
+                  while routes.by_request.len() + routes.ambiguous_by_request.len() >= max_routes {
+                      let oldest_route = routes
+                          .by_request
+                          .iter()
+                          .min_by_key(|(_, route)| route.sequence)
+                          .map(|(request_id, route)| {
+                              (request_id.clone(), route.external_id.clone(), route.sequence)
+                          });
+                      let oldest_ambiguous = routes
+                          .ambiguous_by_request
+                          .iter()
+                          .min_by_key(|(_, attempt)| attempt.sequence)
+                          .map(|(request_id, attempt)| (request_id.clone(), attempt.sequence));
+                      match (oldest_route, oldest_ambiguous) {
+                          (Some((request_id, external_id, route_sequence)), Some((ambiguous_id, ambiguous_sequence)))
+                              if route_sequence <= ambiguous_sequence =>
+                          {
+                              routes.by_request.remove(&request_id);
+                              routes.by_external.remove(&external_id);
+                          }
+                          (Some(_), Some((ambiguous_id, _))) => {
+                              routes.ambiguous_by_request.remove(&ambiguous_id);
+                          }
+                          (Some((request_id, external_id, _)), None) => {
+                              routes.by_request.remove(&request_id);
+                              routes.by_external.remove(&external_id);
+                          }
+                          (None, Some((ambiguous_id, _))) => {
+                              routes.ambiguous_by_request.remove(&ambiguous_id);
+                          }
+                          (None, None) => break,
+                      }
+                  }
+              }
+
+              pub async fn poll'''
+          lib = replace_regex(lib, methods_pattern, methods_replacement, 'submission method replacement')
+
+          metrics_pattern = r'''    async fn metrics_body\(&self\) -> String \{.*?\n    \}\n\}\n\nasync fn read_bounded'''
+          metrics_replacement = '''    async fn metrics_body(&self) -> String {
+                  let routes = self.routes.read().await;
+                  let accepted_routes = routes.by_request.len();
+                  let ambiguous_routes = routes.ambiguous_by_request.len();
+                  format!(
+                      "# HELP gha_executor_router_submissions_total Valid fixed-profile submissions received.\\n\\
+                       # TYPE gha_executor_router_submissions_total counter\\n\\
+                       gha_executor_router_submissions_total {}\\n\\
+                       # HELP gha_executor_router_accepted_total Requests accepted and pinned to one executor.\\n\\
+                       # TYPE gha_executor_router_accepted_total counter\\n\\
+                       gha_executor_router_accepted_total {}\\n\\
+                       # HELP gha_executor_router_fallback_attempts_total Readiness failures that selected a later executor before any POST.\\n\\
+                       # TYPE gha_executor_router_fallback_attempts_total counter\\n\\
+                       gha_executor_router_fallback_attempts_total {}\\n\\
+                       # HELP gha_executor_router_ambiguous_attempts_total Single-provider POST attempts retained because their outcome was ambiguous.\\n\\
+                       # TYPE gha_executor_router_ambiguous_attempts_total counter\\n\\
+                       gha_executor_router_ambiguous_attempts_total {}\\n\\
+                       # HELP gha_executor_router_contract_rejections_total Fail-closed upstream contract rejections.\\n\\
+                       # TYPE gha_executor_router_contract_rejections_total counter\\n\\
+                       gha_executor_router_contract_rejections_total {}\\n\\
+                       # HELP gha_executor_router_request_conflicts_total Reused request ids whose immutable content did not match.\\n\\
+                       # TYPE gha_executor_router_request_conflicts_total counter\\n\\
+                       gha_executor_router_request_conflicts_total {}\\n\\
+                       # HELP gha_executor_router_exhausted_total Submissions for which no executor was ready.\\n\\
+                       # TYPE gha_executor_router_exhausted_total counter\\n\\
+                       gha_executor_router_exhausted_total {}\\n\\
+                       # HELP gha_executor_router_duplicate_hits_total Exact duplicate request ids served without resubmission.\\n\\
+                       # TYPE gha_executor_router_duplicate_hits_total counter\\n\\
+                       gha_executor_router_duplicate_hits_total {}\\n\\
+                       # HELP gha_executor_router_routes Current retained assignments by state.\\n\\
+                       # TYPE gha_executor_router_routes gauge\\n\\
+                       gha_executor_router_routes{{state=\\"accepted\\"}} {}\\n\\
+                       gha_executor_router_routes{{state=\\"ambiguous\\"}} {}\\n\\
+                       # HELP gha_executor_router_polls_total Status polls sent only to the accepted executor.\\n\\
+                       # TYPE gha_executor_router_polls_total counter\\n\\
+                       gha_executor_router_polls_total {}\\n\\
+                       # HELP gha_executor_router_poll_failures_total Pinned-executor poll failures that did not trigger resubmission.\\n\\
+                       # TYPE gha_executor_router_poll_failures_total counter\\n\\
+                       gha_executor_router_poll_failures_total {}\\n",
+                      self.metrics.submissions.load(Ordering::Relaxed),
+                      self.metrics.accepted.load(Ordering::Relaxed),
+                      self.metrics.fallback_attempts.load(Ordering::Relaxed),
+                      self.metrics.ambiguous_attempts.load(Ordering::Relaxed),
+                      self.metrics.contract_rejections.load(Ordering::Relaxed),
+                      self.metrics.request_conflicts.load(Ordering::Relaxed),
+                      self.metrics.exhausted.load(Ordering::Relaxed),
+                      self.metrics.duplicate_hits.load(Ordering::Relaxed),
+                      accepted_routes,
+                      ambiguous_routes,
+                      self.metrics.polls.load(Ordering::Relaxed),
+                      self.metrics.poll_failures.load(Ordering::Relaxed),
+                  )
+              }
+          }
+
+          async fn read_bounded'''
+          lib = replace_regex(lib, metrics_pattern, metrics_replacement, 'metrics replacement')
+
+          conflict_marker = '''    fn unprocessable(code: &'static str, message: impl Into<String>) -> Self {
+                  Self::new(StatusCode::UNPROCESSABLE_ENTITY, code, message)
+              }
+
+              fn unavailable'''
+          conflict_replacement = '''    fn unprocessable(code: &'static str, message: impl Into<String>) -> Self {
+                  Self::new(StatusCode::UNPROCESSABLE_ENTITY, code, message)
+              }
+
+              fn conflict(code: &'static str, message: impl Into<String>) -> Self {
+                  Self::new(StatusCode::CONFLICT, code, message)
+              }
+
+              fn unavailable'''
+          lib = replace_once(lib, conflict_marker, conflict_replacement, 'conflict constructor')
+
+          capabilities_pattern = r'''async fn capabilities\(State\(engine\): State<Engine>\) -> Json<Value> \{.*?\n\}\n\nasync fn metrics'''
+          capabilities_replacement = '''async fn capabilities(State(engine): State<Engine>) -> Json<Value> {
+              Json(json!({
+                  "service": SERVICE_NAME,
+                  "schemaVersion": "build-server.v1",
+                  "jobKinds": ["run-profile"],
+                  "providers": engine.config.executors.iter().map(|executor| executor.provider).collect::<Vec<_>>(),
+                  "failover": {
+                      "selection": "ordered readiness probes before any POST",
+                      "preSubmissionFallback": ["readiness transport failure", "readiness non-200"],
+                      "postSubmissionFallback": false,
+                      "ambiguousPostOutcomes": ["transport", "timeout", "429", "5xx", "unexpected status", "malformed 202", "oversized 202"],
+                      "afterSubmission": "retain the request-to-executor assignment and never contact another provider"
+                  },
+                  "requestIdContentBound": true,
+                  "ambiguousAssignmentsRetainedInProcess": true,
+                  "callerSelectedEndpoint": false,
+                  "callerSelectedCommand": false,
+                  "callerSelectedImage": false,
+                  "secretsInline": false,
+              }))
+          }
+
+          async fn metrics'''
+          lib = replace_regex(lib, capabilities_pattern, capabilities_replacement, 'capabilities replacement')
+
+          health_pattern = r'''async fn healthz\(State\(engine\): State<Engine>\) -> Json<Value> \{.*?\n\}\n\nasync fn readyz'''
+          health_replacement = '''async fn healthz(State(engine): State<Engine>) -> Json<Value> {
+              let executors = engine
+                  .config
+                  .executors
+                  .iter()
+                  .map(|executor| {
+                      json!({
+                          "id": executor.id,
+                          "provider": executor.provider,
+                          "authConfigured": executor.auth_secret.is_some(),
+                      })
+                  })
+                  .collect::<Vec<_>>();
+              let routes = engine.routes.read().await;
+              let ambiguous_assignments = routes
+                  .ambiguous_by_request
+                  .values()
+                  .map(|attempt| {
+                      json!({
+                          "executorId": attempt.executor_id,
+                          "provider": attempt.provider,
+                      })
+                  })
+                  .collect::<Vec<_>>();
+              Json(json!({
+                  "ok": true,
+                  "service": SERVICE_NAME,
+                  "executionEnabled": engine.config.execution_enabled,
+                  "authConfigured": engine.config.inbound_auth_secret.is_some(),
+                  "authSecretFileConfigured": engine.config.inbound_auth_secret_file.is_some(),
+                  "executors": executors,
+                  "acceptedRoutesRetained": routes.by_request.len(),
+                  "ambiguousAssignmentsRetained": routes.ambiguous_by_request.len(),
+                  "ambiguousExecutors": ambiguous_assignments,
+              }))
+          }
+
+          async fn readyz'''
+          lib = replace_regex(lib, health_pattern, health_replacement, 'health replacement')
+
+          tests_pattern = r'''#\[cfg\(test\)\]\nmod tests \{.*\Z'''
+          tests_replacement = r'''#[cfg(test)]
+          mod tests {
+              use super::*;
+              use axum::{routing::get, routing::post};
+              use std::sync::atomic::AtomicU64;
+              use tokio::{net::TcpListener, time::sleep};
+
+              #[derive(Clone)]
+              struct DoubleState {
+                  ready_status: StatusCode,
+                  submit_status: StatusCode,
+                  poll_status: StatusCode,
+                  submit_body: Value,
+                  submit_delay: Duration,
+                  ready_count: Arc<AtomicU64>,
+                  submit_count: Arc<AtomicU64>,
+                  poll_count: Arc<AtomicU64>,
+              }
+
+              impl DoubleState {
+                  fn new(submit_status: StatusCode, poll_status: StatusCode, job_id: &str) -> Self {
+                      let submit_body = if submit_status == StatusCode::ACCEPTED {
+                          json!({ "id": job_id, "status": "queued" })
+                      } else {
+                          json!({ "error": "upstream-secret-body-must-not-leak" })
+                      };
+                      Self {
+                          ready_status: StatusCode::OK,
+                          submit_status,
+                          poll_status,
+                          submit_body,
+                          submit_delay: Duration::ZERO,
+                          ready_count: Arc::new(AtomicU64::new(0)),
+                          submit_count: Arc::new(AtomicU64::new(0)),
+                          poll_count: Arc::new(AtomicU64::new(0)),
+                      }
+                  }
+              }
+
+              fn authorized(headers: &HeaderMap) -> bool {
+                  headers
+                      .get("x-build-server-auth")
+                      .and_then(|value| value.to_str().ok())
+                      == Some("executor-secret")
+              }
+
+              async fn double_ready(
+                  State(state): State<DoubleState>,
+                  headers: HeaderMap,
+              ) -> Response {
+                  state.ready_count.fetch_add(1, Ordering::Relaxed);
+                  if !authorized(&headers) {
+                      return StatusCode::UNAUTHORIZED.into_response();
+                  }
+                  state.ready_status.into_response()
+              }
+
+              async fn double_submit(
+                  State(state): State<DoubleState>,
+                  headers: HeaderMap,
+                  Json(_request): Json<Value>,
+              ) -> Response {
+                  state.submit_count.fetch_add(1, Ordering::Relaxed);
+                  if !authorized(&headers) {
+                      return StatusCode::UNAUTHORIZED.into_response();
+                  }
+                  if !state.submit_delay.is_zero() {
+                      sleep(state.submit_delay).await;
+                  }
+                  (state.submit_status, Json(state.submit_body.clone())).into_response()
+              }
+
+              async fn double_poll(
+                  State(state): State<DoubleState>,
+                  headers: HeaderMap,
+                  AxumPath(id): AxumPath<String>,
+              ) -> Response {
+                  state.poll_count.fetch_add(1, Ordering::Relaxed);
+                  if !authorized(&headers) {
+                      return StatusCode::UNAUTHORIZED.into_response();
+                  }
+                  let body = if state.poll_status == StatusCode::OK {
+                      json!({ "id": id, "status": "succeeded" })
+                  } else {
+                      json!({ "error": "poll-body-must-not-leak" })
+                  };
+                  (state.poll_status, Json(body)).into_response()
+              }
+
+              async fn spawn_double(state: DoubleState) -> (String, DoubleState) {
+                  let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+                  let address = listener.local_addr().unwrap();
+                  let app = Router::new()
+                      .route("/readyz", get(double_ready))
+                      .route("/builds", post(double_submit))
+                      .route("/builds/:id", get(double_poll))
+                      .with_state(state.clone());
+                  tokio::spawn(async move {
+                      axum::serve(listener, app).await.unwrap();
+                  });
+                  (format!("http://{address}"), state)
+              }
+
+              fn executor(id: &str, provider: Provider, base_url: String) -> Executor {
+                  Executor {
+                      id: id.to_string(),
+                      provider,
+                      base_url,
+                      auth_secret_file: PathBuf::from(format!("/run/secrets/{id}")),
+                      auth_secret: Some("executor-secret".to_string()),
+                  }
+              }
+
+              fn config_with_timeout(executors: Vec<Executor>, request_timeout: Duration) -> Config {
+                  Config {
+                      host: "127.0.0.1".to_string(),
+                      port: 0,
+                      execution_enabled: true,
+                      max_routes: 64,
+                      max_response_bytes: 16 * 1024,
+                      request_timeout,
+                      inbound_auth_secret_file: Some(PathBuf::from("/run/secrets/operator")),
+                      inbound_auth_secret: Some("operator-secret".to_string()),
+                      executors,
+                  }
+              }
+
+              fn config(executors: Vec<Executor>) -> Config {
+                  config_with_timeout(executors, Duration::from_secs(2))
+              }
+
+              fn request(id: &str) -> BuildRequest {
+                  BuildRequest {
+                      schema_version: "build-server.v1".to_string(),
+                      job_kind: "run-profile".to_string(),
+                      repo_url: "https://github.com/ORESoftware/k8s-cluster.git".to_string(),
+                      git_ref: "0123456789abcdef0123456789abcdef01234567".to_string(),
+                      profile: "rust-ci".to_string(),
+                      request_id: id.to_string(),
+                  }
+              }
+
+              async fn wait_for_count(counter: &AtomicU64, expected: u64) {
+                  for _ in 0..100 {
+                      if counter.load(Ordering::Relaxed) >= expected {
+                          return;
+                      }
+                      sleep(Duration::from_millis(5)).await;
+                  }
+                  panic!(
+                      "counter did not reach {expected}; observed {}",
+                      counter.load(Ordering::Relaxed)
+                  );
+              }
+
+              #[tokio::test]
+              async fn aws_accepts_without_contacting_hetzner() {
+                  let (aws_url, aws) = spawn_double(DoubleState::new(
+                      StatusCode::ACCEPTED,
+                      StatusCode::OK,
+                      "aws-job",
+                  ))
+                  .await;
+                  let (hetzner_url, hetzner) = spawn_double(DoubleState::new(
+                      StatusCode::ACCEPTED,
+                      StatusCode::OK,
+                      "hetzner-job",
+                  ))
+                  .await;
+                  let engine = Engine::new(config(vec![
+                      executor("aws", Provider::Aws, aws_url),
+                      executor("hetzner", Provider::Hetzner, hetzner_url),
+                  ]))
+                  .unwrap();
+
+                  let accepted = engine.submit(request("request-one")).await.unwrap();
+                  assert_eq!(accepted.id, "aws~aws-job");
+                  assert_eq!(aws.ready_count.load(Ordering::Relaxed), 1);
+                  assert_eq!(aws.submit_count.load(Ordering::Relaxed), 1);
+                  assert_eq!(hetzner.ready_count.load(Ordering::Relaxed), 0);
+                  assert_eq!(hetzner.submit_count.load(Ordering::Relaxed), 0);
+              }
+
+              #[tokio::test]
+              async fn aws_readiness_non_200_selects_hetzner_without_aws_post() {
+                  let mut aws_state = DoubleState::new(
+                      StatusCode::ACCEPTED,
+                      StatusCode::OK,
+                      "aws-job",
+                  );
+                  aws_state.ready_status = StatusCode::SERVICE_UNAVAILABLE;
+                  let (aws_url, aws) = spawn_double(aws_state).await;
+                  let (hetzner_url, hetzner) = spawn_double(DoubleState::new(
+                      StatusCode::ACCEPTED,
+                      StatusCode::OK,
+                      "hetzner-job",
+                  ))
+                  .await;
+                  let engine = Engine::new(config(vec![
+                      executor("aws", Provider::Aws, aws_url),
+                      executor("hetzner", Provider::Hetzner, hetzner_url),
+                  ]))
+                  .unwrap();
+
+                  let accepted = engine.submit(request("readiness-fallback")).await.unwrap();
+                  assert_eq!(accepted.id, "hetzner~hetzner-job");
+                  assert_eq!(aws.ready_count.load(Ordering::Relaxed), 1);
+                  assert_eq!(aws.submit_count.load(Ordering::Relaxed), 0);
+                  assert_eq!(hetzner.ready_count.load(Ordering::Relaxed), 1);
+                  assert_eq!(hetzner.submit_count.load(Ordering::Relaxed), 1);
+              }
+
+              #[tokio::test]
+              async fn aws_readiness_transport_failure_selects_hetzner() {
+                  let (hetzner_url, hetzner) = spawn_double(DoubleState::new(
+                      StatusCode::ACCEPTED,
+                      StatusCode::OK,
+                      "hetzner-job",
+                  ))
+                  .await;
+                  let engine = Engine::new(config(vec![
+                      executor("aws", Provider::Aws, "http://127.0.0.1:9".to_string()),
+                      executor("hetzner", Provider::Hetzner, hetzner_url),
+                  ]))
+                  .unwrap();
+
+                  let accepted = engine.submit(request("readiness-transport")).await.unwrap();
+                  assert_eq!(accepted.id, "hetzner~hetzner-job");
+                  assert_eq!(hetzner.ready_count.load(Ordering::Relaxed), 1);
+                  assert_eq!(hetzner.submit_count.load(Ordering::Relaxed), 1);
+              }
+
+              async fn assert_post_status_is_ambiguous(status: StatusCode, id: &str) {
+                  let (aws_url, aws) = spawn_double(DoubleState::new(status, StatusCode::OK, "aws-job")).await;
+                  let (hetzner_url, hetzner) = spawn_double(DoubleState::new(
+                      StatusCode::ACCEPTED,
+                      StatusCode::OK,
+                      "hetzner-job",
+                  ))
+                  .await;
+                  let engine = Engine::new(config(vec![
+                      executor("aws", Provider::Aws, aws_url),
+                      executor("hetzner", Provider::Hetzner, hetzner_url),
+                  ]))
+                  .unwrap();
+
+                  let first = engine.submit(request(id)).await.unwrap_err();
+                  assert_eq!(first.code, "submission_outcome_ambiguous");
+                  let duplicate = engine.submit(request(id)).await.unwrap_err();
+                  assert_eq!(duplicate.code, first.code);
+                  assert_eq!(aws.ready_count.load(Ordering::Relaxed), 1);
+                  assert_eq!(aws.submit_count.load(Ordering::Relaxed), 1);
+                  assert_eq!(hetzner.ready_count.load(Ordering::Relaxed), 0);
+                  assert_eq!(hetzner.submit_count.load(Ordering::Relaxed), 0);
+              }
+
+              #[tokio::test]
+              async fn aws_post_500_is_retained_and_never_falls_through() {
+                  assert_post_status_is_ambiguous(StatusCode::INTERNAL_SERVER_ERROR, "post-500").await;
+              }
+
+              #[tokio::test]
+              async fn aws_post_429_is_retained_and_never_falls_through() {
+                  assert_post_status_is_ambiguous(StatusCode::TOO_MANY_REQUESTS, "post-429").await;
+              }
+
+              #[tokio::test]
+              async fn aws_post_timeout_is_retained_and_never_falls_through() {
+                  let mut aws_state = DoubleState::new(
+                      StatusCode::ACCEPTED,
+                      StatusCode::OK,
+                      "aws-job",
+                  );
+                  aws_state.submit_delay = Duration::from_millis(250);
+                  let (aws_url, aws) = spawn_double(aws_state).await;
+                  let (hetzner_url, hetzner) = spawn_double(DoubleState::new(
+                      StatusCode::ACCEPTED,
+                      StatusCode::OK,
+                      "hetzner-job",
+                  ))
+                  .await;
+                  let engine = Engine::new(config_with_timeout(
+                      vec![
+                          executor("aws", Provider::Aws, aws_url),
+                          executor("hetzner", Provider::Hetzner, hetzner_url),
+                      ],
+                      Duration::from_millis(50),
+                  ))
+                  .unwrap();
+
+                  let first = engine.submit(request("post-timeout")).await.unwrap_err();
+                  assert_eq!(first.code, "submission_outcome_ambiguous");
+                  let duplicate = engine.submit(request("post-timeout")).await.unwrap_err();
+                  assert_eq!(duplicate.code, first.code);
+                  assert_eq!(aws.ready_count.load(Ordering::Relaxed), 1);
+                  assert_eq!(aws.submit_count.load(Ordering::Relaxed), 1);
+                  assert_eq!(hetzner.ready_count.load(Ordering::Relaxed), 0);
+                  assert_eq!(hetzner.submit_count.load(Ordering::Relaxed), 0);
+              }
+
+              #[tokio::test]
+              async fn malformed_202_is_retained_and_never_retried() {
+                  let mut aws_state = DoubleState::new(
+                      StatusCode::ACCEPTED,
+                      StatusCode::OK,
+                      "aws-job",
+                  );
+                  aws_state.submit_body = json!({ "id": "", "status": "queued" });
+                  let (aws_url, aws) = spawn_double(aws_state).await;
+                  let engine = Engine::new(config(vec![executor("aws", Provider::Aws, aws_url)])).unwrap();
+
+                  let first = engine.submit(request("malformed-202")).await.unwrap_err();
+                  assert_eq!(first.code, "accepted_response_invalid");
+                  let duplicate = engine.submit(request("malformed-202")).await.unwrap_err();
+                  assert_eq!(duplicate.code, first.code);
+                  assert_eq!(aws.ready_count.load(Ordering::Relaxed), 1);
+                  assert_eq!(aws.submit_count.load(Ordering::Relaxed), 1);
+              }
+
+              #[tokio::test]
+              async fn aws_4xx_fails_closed_without_hetzner_or_body_leak() {
+                  let (aws_url, aws) = spawn_double(DoubleState::new(
+                      StatusCode::BAD_REQUEST,
+                      StatusCode::OK,
+                      "aws-job",
+                  ))
+                  .await;
+                  let (hetzner_url, hetzner) = spawn_double(DoubleState::new(
+                      StatusCode::ACCEPTED,
+                      StatusCode::OK,
+                      "hetzner-job",
+                  ))
+                  .await;
+                  let engine = Engine::new(config(vec![
+                      executor("aws", Provider::Aws, aws_url),
+                      executor("hetzner", Provider::Hetzner, hetzner_url),
+                  ]))
+                  .unwrap();
+
+                  let error = engine.submit(request("contract-rejection")).await.unwrap_err();
+                  assert_eq!(error.code, "upstream_contract_rejected");
+                  assert!(!error.message.contains("upstream-secret-body"));
+                  assert_eq!(aws.submit_count.load(Ordering::Relaxed), 1);
+                  assert_eq!(hetzner.ready_count.load(Ordering::Relaxed), 0);
+                  assert_eq!(hetzner.submit_count.load(Ordering::Relaxed), 0);
+              }
+
+              #[tokio::test]
+              async fn exact_concurrent_duplicates_submit_once() {
+                  let mut state = DoubleState::new(StatusCode::ACCEPTED, StatusCode::OK, "aws-job");
+                  state.submit_delay = Duration::from_millis(100);
+                  let (aws_url, aws) = spawn_double(state).await;
+                  let engine = Engine::new(config(vec![executor("aws", Provider::Aws, aws_url)])).unwrap();
+                  let first_engine = engine.clone();
+                  let second_engine = engine.clone();
+                  let first = tokio::spawn(async move {
+                      first_engine.submit(request("same-request")).await.unwrap()
+                  });
+                  let second = tokio::spawn(async move {
+                      second_engine.submit(request("same-request")).await.unwrap()
+                  });
+
+                  let first = first.await.unwrap();
+                  let second = second.await.unwrap();
+                  assert_eq!(first.id, second.id);
+                  assert_eq!(aws.ready_count.load(Ordering::Relaxed), 1);
+                  assert_eq!(aws.submit_count.load(Ordering::Relaxed), 1);
+              }
+
+              #[tokio::test]
+              async fn retained_request_id_reuse_with_changed_content_conflicts() {
+                  let (aws_url, aws) = spawn_double(DoubleState::new(
+                      StatusCode::ACCEPTED,
+                      StatusCode::OK,
+                      "aws-job",
+                  ))
+                  .await;
+                  let engine = Engine::new(config(vec![executor("aws", Provider::Aws, aws_url)])).unwrap();
+                  engine.submit(request("content-bound")).await.unwrap();
+                  let mut changed = request("content-bound");
+                  changed.profile = "different-profile".to_string();
+
+                  let error = engine.submit(changed).await.unwrap_err();
+                  assert_eq!(error.status, StatusCode::CONFLICT);
+                  assert_eq!(error.code, "request_id_conflict");
+                  assert_eq!(aws.submit_count.load(Ordering::Relaxed), 1);
+              }
+
+              #[tokio::test]
+              async fn inflight_request_id_reuse_with_changed_content_conflicts() {
+                  let mut state = DoubleState::new(StatusCode::ACCEPTED, StatusCode::OK, "aws-job");
+                  state.submit_delay = Duration::from_millis(100);
+                  let (aws_url, aws) = spawn_double(state).await;
+                  let engine = Engine::new(config(vec![executor("aws", Provider::Aws, aws_url)])).unwrap();
+                  let owner_engine = engine.clone();
+                  let owner = tokio::spawn(async move {
+                      owner_engine.submit(request("inflight-bound")).await.unwrap()
+                  });
+                  wait_for_count(&aws.submit_count, 1).await;
+                  let mut changed = request("inflight-bound");
+                  changed.git_ref = "fedcba9876543210fedcba9876543210fedcba98".to_string();
+
+                  let error = engine.submit(changed).await.unwrap_err();
+                  assert_eq!(error.status, StatusCode::CONFLICT);
+                  assert_eq!(error.code, "request_id_conflict");
+                  owner.await.unwrap();
+                  assert_eq!(aws.submit_count.load(Ordering::Relaxed), 1);
+              }
+
+              #[tokio::test]
+              async fn accepted_poll_failure_stays_pinned() {
+                  let (aws_url, aws) = spawn_double(DoubleState::new(
+                      StatusCode::ACCEPTED,
+                      StatusCode::INTERNAL_SERVER_ERROR,
+                      "aws-job",
+                  ))
+                  .await;
+                  let (hetzner_url, hetzner) = spawn_double(DoubleState::new(
+                      StatusCode::ACCEPTED,
+                      StatusCode::OK,
+                      "hetzner-job",
+                  ))
+                  .await;
+                  let engine = Engine::new(config(vec![
+                      executor("aws", Provider::Aws, aws_url),
+                      executor("hetzner", Provider::Hetzner, hetzner_url),
+                  ]))
+                  .unwrap();
+
+                  let accepted = engine.submit(request("pinned-request")).await.unwrap();
+                  let error = engine.poll(&accepted.id).await.unwrap_err();
+                  assert_eq!(error.code, "pinned_executor_poll_failed");
+                  assert!(!error.message.contains("poll-body"));
+                  assert_eq!(aws.submit_count.load(Ordering::Relaxed), 1);
+                  assert_eq!(aws.poll_count.load(Ordering::Relaxed), 1);
+                  assert_eq!(hetzner.submit_count.load(Ordering::Relaxed), 0);
+                  assert_eq!(hetzner.poll_count.load(Ordering::Relaxed), 0);
+              }
+
+              #[tokio::test]
+              async fn polling_preserves_executor_namespace() {
+                  let (aws_url, _) = spawn_double(DoubleState::new(
+                      StatusCode::ACCEPTED,
+                      StatusCode::OK,
+                      "aws-job",
+                  ))
+                  .await;
+                  let engine = Engine::new(config(vec![executor("aws", Provider::Aws, aws_url)])).unwrap();
+
+                  let accepted = engine.submit(request("poll-request")).await.unwrap();
+                  let terminal = engine.poll(&accepted.id).await.unwrap();
+                  assert_eq!(terminal.id, "aws~aws-job");
+                  assert_eq!(terminal.status, "succeeded");
+                  assert_eq!(
+                      terminal.fields.get("provider"),
+                      Some(&Value::String("aws".to_string()))
+                  );
+              }
+
+              #[test]
+              fn request_validation_is_immutable_and_exact() {
+                  assert!(request("valid").validate().is_ok());
+                  let mut mutable = request("mutable");
+                  mutable.git_ref = "main".to_string();
+                  assert!(mutable.validate().is_err());
+                  let mut arbitrary = request("arbitrary");
+                  arbitrary.job_kind = "build-image".to_string();
+                  assert!(arbitrary.validate().is_err());
+
+                  let with_command = json!({
+                      "schemaVersion": "build-server.v1",
+                      "jobKind": "run-profile",
+                      "repoUrl": "https://github.com/ORESoftware/k8s-cluster.git",
+                      "gitRef": "0123456789abcdef0123456789abcdef01234567",
+                      "profile": "rust-ci",
+                      "requestId": "unknown-field",
+                      "command": "curl evil"
+                  });
+                  assert!(serde_json::from_value::<BuildRequest>(with_command).is_err());
+              }
+
+              #[test]
+              fn authority_configuration_is_fail_closed() {
+                  assert!(validate_base_url("https://builds.example.com").is_ok());
+                  assert!(validate_base_url("http://127.0.0.1:8100").is_ok());
+                  assert!(validate_base_url("http://builds.example.com").is_err());
+                  assert!(validate_base_url("https://user:pass@builds.example.com").is_err());
+                  assert!(validate_base_url("https://builds.example.com/path").is_err());
+                  assert!(require_absolute_secret_path(
+                      Path::new("/run/secrets/router"),
+                      "secret"
+                  )
+                  .is_ok());
+                  assert!(require_absolute_secret_path(Path::new("relative"), "secret").is_err());
+
+                  let duplicate_provider = vec![
+                      executor("aws-a", Provider::Aws, "https://aws-a.example.com".to_string()),
+                      executor("aws-b", Provider::Aws, "https://aws-b.example.com".to_string()),
+                  ];
+                  assert!(validate_executor_set(&duplicate_provider).is_err());
+              }
+
+              #[test]
+              fn operator_auth_accepts_only_the_exact_secret() {
+                  let mut headers = HeaderMap::new();
+                  headers.insert("x-build-server-auth", "operator-secret".parse().unwrap());
+                  assert!(request_is_authorized(&headers, Some("operator-secret")).is_ok());
+                  assert!(request_is_authorized(&headers, Some("different-secret")).is_err());
+              }
+          }
+          '''
+          lib = replace_regex(lib, tests_pattern, tests_replacement, 'test module replacement')
+          lib_path.write_text(lib)
+
+          readme = readme_path.read_text()
+          readme = replace_regex(
+              readme,
+              r'''## Non-duplication invariant\n.*?\n## Accepted request surface''',
+              '''## Non-duplication invariant
+
+Provider fallback is allowed only while selecting an executor, before any
+`POST /builds` begins.
+
+1. Probe configured executors in reviewed order through bounded authenticated
+   `GET /readyz` requests.
+2. Select the first executor that returns HTTP 200.
+3. Send exactly one fixed-profile `POST /builds` to that executor.
+4. After that POST begins, never contact another provider for the request.
+   Transport failures, timeouts, 429, 5xx, unexpected statuses, oversized
+   responses, and malformed 202 responses are retained as ambiguous
+   assignments and fail closed.
+5. Bind accepted, inflight, and ambiguous request IDs to canonical immutable
+   request content. A changed payload with the same ID returns HTTP 409.
+6. Poll accepted jobs only through their namespaced accepting executor.
+
+The accepted and ambiguous maps are bounded and process-local. Production
+activation therefore remains single-replica and inert until assignment state
+is durable through Fiducia/Postgres. Cross-provider recovery requires a shared
+Fiducia-fenced claim, durable job state, and shared artifacts; it is not
+implemented here.
+
+## Accepted request surface''',
+              'README non-duplication section',
+          )
+          readme = replace_regex(
+              readme,
+              r'''## Tests\n.*?\n## GitOps state''',
+              '''## Tests
+
+The Rust suite starts real local Axum build-server doubles and proves:
+
+1. AWS acceptance prevents every Hetzner readiness/submission request;
+2. AWS readiness transport or non-200 failure selects Hetzner without an AWS
+   POST;
+3. AWS POST timeout, 429, and 5xx outcomes are retained and never fall through;
+4. malformed 202 responses are retained and exact retries do not resubmit;
+5. other AWS 4xx contract rejections fail closed without Hetzner fallback;
+6. exact concurrent duplicates produce one upstream submission;
+7. retained and inflight ID/content mismatches return HTTP 409;
+8. accepted AWS jobs remain pinned when polling fails;
+9. external IDs preserve executor namespaces;
+10. URL, provider, secret-path, mutable-revision, job-kind, and unknown-field
+    authority is fail closed.
+
+The GitHub Actions workflow runs formatting, tests, Clippy with warnings denied,
+actionlint, GitOps contracts, and credential scans on hosted Ubuntu. A manual
+opt-in repeats the Rust contract on `[self-hosted, linux, sonus-ci]` only after
+the AWS/Hetzner ARC scale set is registered.
+
+## GitOps state''',
+              'README tests section',
+          )
+          readme = readme.replace(
+              '4. AWS acceptance smoke and Hetzner pre-acceptance failover smoke;',
+              '4. AWS acceptance smoke and Hetzner readiness-selection fallback smoke;',
+          )
+          readme_path.write_text(readme)
+
+          runbook = runbook_path.read_text()
+          runbook = replace_regex(
+              runbook,
+              r'''## Pre-acceptance Hetzner failover smoke\n.*?\n## Post-acceptance provider-loss drill''',
+              '''## Readiness-selection Hetzner fallback smoke
+
+Use a reviewed reversible mechanism to make the AWS `/readyz` probe fail before
+any submission—for example a temporary HTTP 503 response from the AWS test
+endpoint. Do not induce a failure in `POST /builds` and expect automatic
+cross-provider retry.
+
+1. Submit a new deterministic request ID.
+2. Require one AWS readiness failure and zero AWS build submissions.
+3. Require one Hetzner readiness success and exactly one Hetzner submission.
+4. Require a namespaced response ID beginning with `hetzner~`.
+5. Restore AWS immediately and poll only Hetzner to completion.
+6. Verify `fallback_attempts_total` increments once.
+
+Then test the post-attempt boundary separately: allow AWS readiness to pass and
+make its POST return 429/500, time out, or lose the response. The router must
+retain an ambiguous AWS assignment, return a reconciliation error, and contact
+Hetzner zero times. Repeating the same request ID must return the retained
+error without another readiness probe or POST. A changed payload with that ID
+must return HTTP 409.
+
+## Post-acceptance provider-loss drill''',
+              'runbook fallback section',
+          )
+          runbook = runbook.replace(
+              'After enabling execution on one replica:',
+              'After enabling execution on exactly one replica (until the assignment map is durable):',
+          )
+          runbook = runbook.replace(
+              'Never delete route evidence to make a retry possible, and never resubmit an\naccepted job to another provider without the future shared-state gate.',
+              'Never delete accepted or ambiguous assignment evidence to make a retry possible,\nand never resubmit an attempted job to another provider without the future\nshared-state gate.',
+          )
+          runbook_path.write_text(runbook)
+
+          workflow = workflow_path.read_text()
+          workflow = replace_once(
+              workflow,
+              '''      - name: Generate the initial deterministic lockfile when absent
+                  run: |
+                    set -euo pipefail
+                    if [[ ! -f "$LOCKFILE" ]]; then
+                      cargo generate-lockfile --manifest-path "$MANIFEST"
+                    fi
+                    test -s "$LOCKFILE"
+          ''',
+              '''      - name: Require the committed deterministic lockfile
+                  run: test -s "$LOCKFILE"
+          ''',
+              'lockfile workflow step',
+          )
+          workflow = replace_once(
+              workflow,
+              '''          ! grep -R --line-number --extended-regexp \\
+                    'caller.*(command|image|endpoint)|Command::new|/var/run/docker.sock|hostPath:' \\
+                    remote/deployments/gha-executor-router-rs/src
+          ''',
+              '''          if grep -R --line-number --extended-regexp \\
+                    'caller.*(command|image|endpoint)|Command::new|/var/run/docker.sock|hostPath:' \\
+                    remote/deployments/gha-executor-router-rs/src; then
+                    echo 'caller-controlled execution authority found' >&2
+                    exit 1
+                  fi
+          ''',
+              'actionlint grep guard',
+          )
+          workflow = workflow.replace(
+              '''          if [[ ! -f "$LOCKFILE" ]]; then
+                    cargo generate-lockfile --manifest-path "$MANIFEST"
+                  fi
+                  cargo fmt''',
+              '''          test -s "$LOCKFILE"
+                  cargo fmt''',
+          )
+          workflow_path.write_text(workflow)
+          PY
+
+      - name: Install the Rust validation toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+
+      - name: Format, test, and lint the hardened router
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=remote/deployments/gha-executor-router-rs/Cargo.toml
+          test -s remote/deployments/gha-executor-router-rs/Cargo.lock
+          cargo fmt --all --manifest-path "$manifest"
+          cargo test --locked --manifest-path "$manifest" --all-targets --all-features
+          cargo clippy --locked --manifest-path "$manifest" --all-targets --all-features -- -D warnings
+          git diff --check
+
+      - name: Validate the permanent workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/gha-executor-router.yml
+
+      - name: Remove the one-shot helper and push only the reviewed paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/finalize-den-1597-no-post-failover.yml
+          expected="$RUNNER_TEMP/expected-paths.txt"
+          actual="$RUNNER_TEMP/actual-paths.txt"
+          printf '%s\n' \
+            .github/workflows/finalize-den-1597-no-post-failover.yml \
+            .github/workflows/gha-executor-router.yml \
+            docs/operations/gha-executor-router-aws-hetzner.md \
+            remote/deployments/gha-executor-router-rs/README.md \
+            remote/deployments/gha-executor-router-rs/src/lib.rs \
+            | sort > "$expected"
+          git diff --name-only | sort > "$actual"
+          diff -u "$expected" "$actual"
+          git config user.name 'ORESoftware CI'
+          git config user.email 'ci@oresoftware.com'
+          git add -f -- \
+            .github/workflows/finalize-den-1597-no-post-failover.yml \
+            .github/workflows/gha-executor-router.yml \
+            docs/operations/gha-executor-router-aws-hetzner.md \
+            remote/deployments/gha-executor-router-rs/README.md \
+            remote/deployments/gha-executor-router-rs/src/lib.rs
+          git commit -m 'fix(DEN-1597): forbid failover after a submission attempt'
+          git push origin HEAD:agent/den-1597-no-post-failover-20260804
