@@ -9,6 +9,7 @@ metadata:
     app.kubernetes.io/part-of: project-automation
   annotations:
     denman.linear.app/issue: DEN-801
+    denman.linear.app/linear-reconciliation-issue: DEN-2876
 data:
   bootstrap.mjs: |-
     import { createSign } from 'node:crypto';
@@ -23,11 +24,15 @@ data:
     const MAX_GITHUB_RESPONSE_BYTES = 4 * 1024 * 1024;
     const SOURCE_FILES = Object.freeze([
       'src/nightly-pr-reconciliation.mjs',
+      'src/nightly-linear-reconciliation.mjs',
+      'src/nightly-linear-reconciliation-policy.mjs',
+      'src/nightly-linear-reconciliation-stage.mjs',
       'src/nightly-org-maintenance-dispatch.mjs',
       'src/nightly-org-maintenance-plan.mjs',
       'src/nightly-org-maintenance-policy.mjs',
       'src/project-automation-policy.mjs',
       'registry/nightly-pr-reconciliation.json',
+      'registry/nightly-linear-reconciliation.json',
       'registry/nightly-interdependency.json',
       'registry/nightly-org-maintenance.json',
       'registry/project-automation.json',
@@ -46,7 +51,7 @@ data:
       process.stderr.write(`${JSON.stringify({
         schema: 'dd.log.v1',
         level: 'info',
-        service: 'nightly-pr-reconciliation-bootstrap',
+        service: 'nightly-governed-reconciliation-bootstrap',
         event,
         ...details
       })}\n`);
@@ -114,15 +119,13 @@ data:
             accept: 'application/vnd.github+json',
             authorization: `Bearer ${token}`,
             'content-type': 'application/json',
-            'user-agent': 'oresoftware-nightly-pr-reconciliation/1',
+            'user-agent': 'oresoftware-nightly-governed-reconciliation/1',
             'x-github-api-version': '2022-11-28'
           },
           body: body === undefined ? undefined : JSON.stringify(body)
         });
       } catch (error) {
-        if (error?.name === 'AbortError') {
-          throw new Error(`GitHub request timed out for ${path}`);
-        }
+        if (error?.name === 'AbortError') throw new Error(`GitHub request timed out for ${path}`);
         throw new Error(`GitHub request failed for ${path}: ${error.message}`);
       } finally {
         clearTimeout(timeout);
@@ -159,9 +162,7 @@ data:
         expectedStatuses: [201],
         body: {
           repositories: [SOURCE_REPOSITORY],
-          permissions: {
-            contents: 'read'
-          }
+          permissions: { contents: 'read' }
         }
       });
       if (typeof response?.token !== 'string' || response.token.length < 20) {
@@ -188,7 +189,7 @@ data:
       await writeFile(destination, content, { mode: 0o400 });
     }
 
-    async function loadRuntime(revision, installationToken) {
+    async function loadRuntimes(revision, installationToken) {
       const commit = await githubRequest(
         `/repos/${SOURCE_OWNER}/${SOURCE_REPOSITORY}/commits/${revision}`,
         { token: installationToken }
@@ -197,7 +198,11 @@ data:
         throw new Error(`project-registry revision mismatch: expected ${revision}`);
       }
       await Promise.all(SOURCE_FILES.map((path) => fetchSourceFile(installationToken, revision, path)));
-      return import(pathToFileURL(resolve(WORKDIR, 'src/nightly-pr-reconciliation.mjs')).href);
+      const [pullRequests, linear] = await Promise.all([
+        import(pathToFileURL(resolve(WORKDIR, 'src/nightly-pr-reconciliation.mjs')).href),
+        import(pathToFileURL(resolve(WORKDIR, 'src/nightly-linear-reconciliation.mjs')).href)
+      ]);
+      return { pullRequests, linear };
     }
 
     function coordinatorCompatiblePlan(plan, queueTaskType) {
@@ -237,46 +242,74 @@ data:
       const installationToken = await mintRepositoryToken(jwt, installation.id);
       log('source_installation_verified', { owner: SOURCE_OWNER, installation_id: installation.id });
 
-      const runtime = await loadRuntime(revision, installationToken);
+      const runtime = await loadRuntimes(revision, installationToken);
       log('source_revision_verified', {
         repository: `${SOURCE_OWNER}/${SOURCE_REPOSITORY}`,
         revision
       });
 
-      const policy = await runtime.loadNightlyPrReconciliationPolicy();
-      const logicalPlan = runtime.createNightlyPrReconciliationPlan(policy);
-      const dispatchPlan = coordinatorCompatiblePlan(logicalPlan, queueTaskType);
+      const [pullRequestPolicy, linearPolicy] = await Promise.all([
+        runtime.pullRequests.loadNightlyPrReconciliationPolicy(),
+        runtime.linear.loadNightlyLinearReconciliationPolicy()
+      ]);
+      const pullRequestPlan = coordinatorCompatiblePlan(
+        runtime.pullRequests.createNightlyPrReconciliationPlan(pullRequestPolicy),
+        queueTaskType
+      );
+      const linearPlan = coordinatorCompatiblePlan(
+        runtime.linear.createNightlyLinearReconciliationPlan(linearPolicy),
+        queueTaskType
+      );
       log('reconciliation_dispatch_started', {
-        schedule_date: dispatchPlan.scheduleDate,
-        organization_units: dispatchPlan.jobs.length,
-        concurrency: policy.execution.maxConcurrentOrganizations,
-        logical_task_type: policy.execution.taskType,
+        schedule_date: pullRequestPlan.scheduleDate,
+        organization_units: pullRequestPlan.jobs.length,
+        linear_workspace_jobs: linearPlan.jobs.length,
+        pull_request_logical_task_type: pullRequestPolicy.execution.taskType,
+        linear_logical_task_type: linearPolicy.execution.taskType,
         coordinator_task_type: queueTaskType,
-        threshold_exclusive: policy.readiness.probabilityThresholdExclusive,
-        minimum_continuous_open_hours: policy.readiness.minimumContinuousOpenHours
+        required_linear_agents: linearPolicy.execution.agents,
+        linear_draft_status: linearPolicy.statusMapping.denman.draft,
+        linear_pending_status: linearPolicy.statusMapping.denman.pending,
+        readiness_threshold_exclusive: pullRequestPolicy.readiness.probabilityThresholdExclusive,
+        minimum_continuous_open_hours: pullRequestPolicy.readiness.minimumContinuousOpenHours
       });
 
-      const summary = await runtime.dispatchNightlyPrReconciliationPlan(
-        dispatchPlan,
-        policy,
-        {
-          endpoint: coordinatorEndpoint,
-          token: coordinatorToken,
-          onProgress(event) {
-            log('coordinator_progress', { progress: event });
+      const [pullRequests, linear] = await Promise.all([
+        runtime.pullRequests.dispatchNightlyPrReconciliationPlan(
+          pullRequestPlan,
+          pullRequestPolicy,
+          {
+            endpoint: coordinatorEndpoint,
+            token: coordinatorToken,
+            onProgress(event) {
+              log('pull_request_coordinator_progress', { progress: event });
+            }
           }
-        }
-      );
+        ),
+        runtime.linear.dispatchNightlyLinearReconciliationPlan(
+          linearPlan,
+          linearPolicy,
+          {
+            endpoint: coordinatorEndpoint,
+            token: coordinatorToken,
+            onProgress(event) {
+              log('linear_coordinator_progress', { progress: event });
+            }
+          }
+        )
+      ]);
       const result = {
-        schema_version: 'nightly_pr_reconciliation_run.v1',
-        schedule_date: dispatchPlan.scheduleDate,
+        schema_version: 'nightly_governed_reconciliation_run.v1',
+        schedule_date: pullRequestPlan.scheduleDate,
         source_revision: revision,
-        logical_task_type: policy.execution.taskType,
         coordinator_task_type: queueTaskType,
-        readiness_threshold_exclusive: policy.readiness.probabilityThresholdExclusive,
-        minimum_continuous_open_hours: policy.readiness.minimumContinuousOpenHours,
-        successful: summary.successful,
-        reconciliation: summary
+        required_linear_agents: linearPolicy.execution.agents,
+        linear_status_mapping: linearPolicy.statusMapping.denman,
+        readiness_threshold_exclusive: pullRequestPolicy.readiness.probabilityThresholdExclusive,
+        minimum_continuous_open_hours: pullRequestPolicy.readiness.minimumContinuousOpenHours,
+        successful: pullRequests.successful && linear.successful,
+        pull_requests: pullRequests,
+        linear
       };
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       return result.successful ? 0 : 1;
@@ -288,7 +321,7 @@ data:
       process.stderr.write(`${JSON.stringify({
         schema: 'dd.log.v1',
         level: 'error',
-        service: 'nightly-pr-reconciliation-bootstrap',
+        service: 'nightly-governed-reconciliation-bootstrap',
         event: 'fatal',
         error: error instanceof Error ? error.message : 'unknown fatal error'
       })}\n`);
