@@ -228,3 +228,49 @@ on every dependency update.
 > `remote/deployments/fiducia-customer.rs`; make changes here, not in that
 > submodule checkout.
 <!-- END k8s-cluster-submodule-notice -->
+
+## Cross-surface delivery
+
+User-visible, account, organization, API-key, session/activity, preference,
+notification, permission, navigation, or deep-link changes in this Rust
+customer web/BFF must be evaluated for:
+
+- `fiducia-cloud/fiducia-flutter` on Android, iOS, Flutter Web/mobile web, and
+  Flutter desktop;
+- `fiducia-cloud/fiducia-desktop.rs`, the planned native GPUI desktop app; and
+- Fiducia interfaces, generated clients, account/org/API-key/activity/session
+  schemas, route types, auth fixtures, and conformance tests.
+
+This is judgment-based coordination. Static marketing fallback, browser-only
+account presentation, and server-only persistence/observability may remain
+web-specific. Native secure storage, notifications, local diagnostics,
+background operation, and OS integration may be native-specific. Account and
+organization state, API-key lifecycle, session/activity semantics, preferences,
+permissions, errors, notifications, and navigation normally require
+coordinated updates or an explicit no-change rationale and parity follow-up.
+
+The customer and admin planes remain separate. A customer-surface change must
+not silently gain operator capabilities, accept the admin cookie, or depend on
+the admin database.
+
+Deep links are HTTPS-first:
+
+```text
+https://<verified-fiducia-owned-host>/open/<route>?<bounded-query>
+```
+
+with `fiducia://` fallback. Web, Flutter, and GPUI desktop must share versioned
+route types and fixtures and support cold start, already-running delivery,
+authentication resume, replay/expiry rejection, browser fallback, and explicit
+confirmation before API-key creation/rotation/revocation, session revocation,
+organization changes, or other security-sensitive actions.
+
+API-key plaintext, verifier hashes, session tokens, cookies, organization
+secrets, credentials, private activity records, bearer/refresh tokens, and
+database identifiers are prohibited in URLs. Use bounded identifiers or
+short-lived, single-use, audience-bound codes and validate route version,
+user/org/key/session identity, action, authorization, assurance level, limits,
+and user intent.
+
+See [`docs/CROSS_SURFACE_DELIVERY.md`](docs/CROSS_SURFACE_DELIVERY.md) and the
+[portfolio policy](https://github.com/ORESoftware/project-registry/blob/main/docs/cross-surface-delivery.md).
