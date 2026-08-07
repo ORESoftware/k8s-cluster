@@ -1,0 +1,45 @@
+# meta-agents-demo: real-task execution plus Mixpanel-style public introspection.
+# Prerequisites before merge/activation:
+#   - both app repositories have deploy/k8s merged on main;
+#   - their private GHCR packages are published;
+#   - Argo has read access to both private Git repositories;
+#   - dd/remote-dev/agent-secrets has provider/GitHub/control-plane values;
+#   - dd/meta-agents-demo/linear has LINEAR_API_KEY for Linear ingestion.
+# No fallback/mock tasks are activated when a source credential is unavailable.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: meta-agent-control-plane
+  namespace: argocd
+spec:
+  project: meta-agents
+  source:
+    repoURL: git@github.com:meta-agents-demo/meta-agent-control-plane.rs.git
+    targetRevision: main
+    path: deploy/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: meta-agents
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metagents
+  namespace: argocd
+spec:
+  project: meta-agents
+  source:
+    repoURL: git@github.com:meta-agents-demo/metagents.git
+    targetRevision: main
+    path: deploy/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: meta-agents
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - ServerSideApply=true
