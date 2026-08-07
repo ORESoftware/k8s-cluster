@@ -276,6 +276,7 @@ pub fn build_plan(
         .as_mapping()
         .ok_or_else(|| vec!["workflow document must be a YAML mapping".to_string()])?;
 
+    apply_messaging_intel_contract(request, &mut plans)?;
     let topological_order = validate_dependencies(&plans, &job_ids)?;
     let immutable_revision = is_full_commit_sha(&request.revision);
     let mut warnings = Vec::new();
@@ -564,13 +565,20 @@ fn hardened_node_intent(text: &str) -> bool {
 }
 
 fn hardened_node_profile(commands: &[String]) -> Option<&'static str> {
-    const OPERATOR: [&str; 4] = [
-        "npm ci --ignore-scripts",
+    const OPERATOR: [&str; 5] = [
+        "export npm_config_ignore_scripts=true",
+        "npm ci --ignore-scripts --no-audit --no-fund",
         "npm run check",
         "npm run test:operator-config",
         "npm audit --audit-level=high",
     ];
-    const FULL_TEST: [&str; 2] = ["npm ci --ignore-scripts", "npm test"];
+    const FULL_TEST: [&str; 5] = [
+        "export npm_config_ignore_scripts=true",
+        "npm ci --ignore-scripts --no-audit --no-fund",
+        "npm run check",
+        "npm test",
+        "npm audit --audit-level=high",
+    ];
     if commands.iter().map(String::as_str).eq(OPERATOR) {
         Some("node-hardened-verify")
     } else if commands.iter().map(String::as_str).eq(FULL_TEST) {
@@ -747,10 +755,11 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
-          node-version: '22.17.0'
+          node-version: '22.23.1'
           cache: npm
       - run: |
-          npm ci --ignore-scripts
+          export npm_config_ignore_scripts=true
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run check
           npm run test:operator-config
           npm audit --audit-level=high
@@ -759,10 +768,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.23.1'
+          cache: npm
       - run: |
-          npm ci --ignore-scripts
+          export npm_config_ignore_scripts=true
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
           npm test
+          npm audit --audit-level=high
 "#,
         );
         input.repository = "messaging-intel/msgint-connectors".into();
@@ -795,9 +812,10 @@ jobs:
     steps:
       - uses: actions/setup-node@0123456789abcdef0123456789abcdef01234567
       - run: |
-          npm ci --ignore-scripts
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run check
           npm run test:operator-config
+          npm audit --audit-level=high
 "#,
             ),
             &PlannerLimits::default(),
@@ -815,14 +833,16 @@ jobs:
     #[test]
     fn hardened_node_profiles_reject_spoofed_extra_and_reordered_commands() {
         for run in [
-            r#"echo 'npm ci --ignore-scripts npm run check npm run test:operator-config npm audit --audit-level=high'"#,
-            r#"npm ci --ignore-scripts
+            r#"echo 'export npm_config_ignore_scripts=true npm ci --ignore-scripts --no-audit --no-fund npm run check npm run test:operator-config npm audit --audit-level=high'"#,
+            r#"export npm_config_ignore_scripts=true
+npm ci --ignore-scripts --no-audit --no-fund
 npm run check
 npm run test:operator-config
 npm audit --audit-level=high
 npm publish"#,
-            r#"npm run check
-npm ci --ignore-scripts
+            r#"export npm_config_ignore_scripts=true
+npm run check
+npm ci --ignore-scripts --no-audit --no-fund
 npm run test:operator-config
 npm audit --audit-level=high"#,
         ] {
@@ -885,6 +905,13 @@ jobs:
         env:
           TOKEN: ${{ secrets['PROD_TOKEN'] }}
       - run: npm test
+  expression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@0123456789abcdef0123456789abcdef01234567
+        with:
+          cache: ${{ github.ref }}
+      - run: npm test
 "#,
             ),
             &PlannerLimits::default(),
@@ -899,6 +926,57 @@ jobs:
             .independent_reasons
             .iter()
             .any(|reason| reason.contains("secret-bearing")));
+        assert!(plan.jobs[2]
+            .independent_reasons
+            .iter()
+            .any(|reason| reason.contains("expressions in setup inputs")));
+    }
+
+    #[test]
+    fn messaging_intel_contract_rejects_wrong_job_sets_and_profiles() {
+        let mut missing = request(
+            r#"
+jobs:
+  operator_config:
+    runs-on: ubuntu-latest
+    steps:
+      - run: npm test
+"#,
+        );
+        missing.repository = "messaging-intel/msgint-connectors".into();
+        missing.workflow_path = ".github/workflows/gha-clone-operator-config.yml".into();
+        let errors = build_plan(&missing, &PlannerLimits::default())
+            .unwrap_err()
+            .join("\n");
+        assert!(errors.contains("exactly operator_config and repository_tests"));
+
+        let mut generic = request(
+            r#"
+jobs:
+  operator_config:
+    runs-on: ubuntu-latest
+    steps:
+      - run: npm test
+  repository_tests:
+    needs: operator_config
+    runs-on: ubuntu-latest
+    steps:
+      - run: npm test
+"#,
+        );
+        generic.repository = "messaging-intel/msgint-connectors".into();
+        generic.workflow_path = ".github/workflows/gha-clone-operator-config.yml".into();
+        let plan = build_plan(&generic, &PlannerLimits::default()).expect("valid plan");
+        assert!(!plan.independent_executable);
+        let reasons = plan
+            .jobs
+            .iter()
+            .flat_map(|job| job.independent_reasons.iter())
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(reasons.contains("must map exactly to node-hardened-verify"));
+        assert!(reasons.contains("must map exactly to node-hardened-test"));
     }
 
     #[test]

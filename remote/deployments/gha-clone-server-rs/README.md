@@ -287,13 +287,16 @@ These jobs still receive an ARC classification such as `sonus-ci`,
 | `GHA_CLONE_BUILD_SERVER_URL` | internal `dd-build-server` origin |
 | `GHA_CLONE_BUILD_SERVER_AUTH` | scoped build-server auth |
 | `GHA_CLONE_ALLOWED_REPOSITORIES` | exact comma-separated `owner/repo` allowlist |
-| `GHA_CLONE_WORKFLOW_RULES_JSON` | map of repository to workflow paths |
+| `GHA_CLONE_WORKFLOW_RULES_JSON` | exact map of repository to one or more `.github/workflows/*.yml` or `.yaml` paths |
 | `GHA_CLONE_EXECUTION_ENABLED` | independent API execution, default `false` |
 | `GHA_CLONE_WEBHOOK_EXECUTION_ENABLED` | webhook execution, default `false` |
 | `GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS` | comma-separated terminal conclusions eligible for fallback |
 | `GHA_CLONE_WEBHOOK_IGNORED_WORKFLOWS` | exact workflow names excluded from fallback recursion |
 | `GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS` | in-memory GitHub delivery dedupe TTL |
 | `GHA_CLONE_MAX_WEBHOOK_DELIVERIES` | bounded retained delivery IDs |
+| `GHA_CLONE_WEBHOOK_IGNORED_WORKFLOWS` | exact workflow names excluded to prevent fallback recursion |
+| `GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS` | nonzero in-memory delivery-deduplication TTL |
+| `GHA_CLONE_MAX_WEBHOOK_DELIVERIES` | nonzero upper bound on retained delivery UUIDs |
 | `GHA_CLONE_MAX_WORKFLOW_BYTES` | parser input bound |
 | `GHA_CLONE_MAX_JOBS` | workflow job bound |
 | `GHA_CLONE_MAX_STEPS_PER_JOB` | per-job step bound |
@@ -337,6 +340,28 @@ without a restart. Inline and file token sources are mutually exclusive.
 
 Use a GitHub App and External Secrets. Do not put classic PATs, private keys, or
 shared secrets in source, Argo parameters, Linear, logs, URLs, or image layers.
+
+## Register the GitHub failure webhook
+
+Run `scripts/register-github-webhook.sh` only after the HTTPS ingress and
+ExternalSecret value exist. The script reads `GH_TOKEN` and
+`GITHUB_WEBHOOK_SECRET` from the environment, updates an existing hook with the
+same URL or creates one, sends request bodies through stdin, and never prints
+either secret.
+
+`ORESoftware` is a GitHub user account, so register a repository hook:
+
+```console
+GH_TOKEN=... GITHUB_WEBHOOK_SECRET=... \
+  bash scripts/register-github-webhook.sh \
+  --repo ORESoftware/k8s-cluster \
+  --url https://ci.example.com/webhooks/github
+```
+
+For an actual GitHub organization, use `--org <organization>`. The registration
+script subscribes only to `workflow_run`; GitHub sends every completed
+conclusion and the Rust service performs the failure-only, exact-path,
+recursion, and duplicate-delivery checks.
 
 ## Deployment state
 
