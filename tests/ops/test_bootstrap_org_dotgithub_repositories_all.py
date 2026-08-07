@@ -62,7 +62,7 @@ class AllOrganizationGovernancePublisherTests(unittest.TestCase):
         self.assertEqual(36, len(module.base.ORGANIZATIONS))
         self.assertEqual(36, len(module.hard.LINEAR_PROJECTS))
 
-    def test_direct_runner_delegates_to_the_dedicated_61_org_launcher(self) -> None:
+    def test_direct_runner_delegates_to_the_app_only_61_org_launcher(self) -> None:
         runner = (ROOT / "scripts" / "ops" / "run_direct_org_dotgithub_publisher.sh").read_text(
             encoding="utf-8"
         )
@@ -72,12 +72,16 @@ class AllOrganizationGovernancePublisherTests(unittest.TestCase):
 
         self.assertIn("run_protected_org_dotgithub_all_publisher.sh", runner)
         self.assertIn("bootstrap_org_dotgithub_repositories_all.py", runner)
+        self.assertIn("bootstrap_org_dotgithub_repositories_with_app.py", runner)
         self.assertNotIn("old_target_count", runner)
         self.assertNotIn("text.replace", runner)
         self.assertIn("bootstrap_org_dotgithub_repositories_all.py", launcher)
+        self.assertIn("bootstrap_org_dotgithub_repositories_with_app.py", launcher)
         self.assertIn("len(organizations) != 61", launcher)
+        self.assertIn("github_app_installation_token", launcher)
         self.assertIn("publisher.TARGET_ORGANIZATIONS", launcher)
         self.assertIn("publisher.EXCLUDED_ORGANIZATIONS", launcher)
+        self.assertNotIn("aws secretsmanager", launcher)
 
 
 if __name__ == "__main__":
