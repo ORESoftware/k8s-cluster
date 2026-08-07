@@ -25,12 +25,14 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      # fmt/clippy/test are blocking gates: a red step must fail the job, or the
+      # green check mark means nothing. Do not re-add `continue-on-error` here —
+      # fix the finding, or (if a gate genuinely cannot be green yet) replace it
+      # with an explicit ratcheting baseline that fails on any NEW violation.
       - name: fmt
         run: cargo fmt --check
-        continue-on-error: true
       - name: clippy
         run: cargo clippy --all-targets -- -D warnings
-        continue-on-error: true
       - name: test
         run: cargo test
 
