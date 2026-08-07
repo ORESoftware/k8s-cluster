@@ -472,9 +472,13 @@ jobs:
         run: bash -n remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh
       - name: Reject committed credentials
         run: |
+          set -euo pipefail
+          classic_pat_prefix='ghp'
+          fine_grained_pat_prefix='github_pat'
+          credential_pattern="${classic_pat_prefix}_[A-Za-z0-9]{20,}|${fine_grained_pat_prefix}_[A-Za-z0-9_]{20,}|BEGIN (RSA |EC )?PRIVATE KEY"
           if grep -RIE \
             --exclude='gha-clone-server.yml' \
-            'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|BEGIN (RSA |EC )?PRIVATE KEY' \
+            "$credential_pattern" \
             remote/deployments/gha-clone-server-rs \
             remote/argocd/dd-next-runtime/dd-gha-clone-server* \
             remote/argocd/dd-next-runtime/dd-gha-executor-router* \
