@@ -12,6 +12,7 @@ This repository maintains two related but intentionally different inventories.
 | Active cross-system portfolio | The 41 portfolios routed across ChatGPT project names, GitHub Projects v2, Linear, and Slack | [`ops/registries/portfolio-project-links.csv`](../../ops/registries/portfolio-project-links.csv) |
 
 The 41 active portfolios are a strict subset of the 64 managed organizations. Every overlapping organization must use the same Linear project URL in both files. `portfolio_key` is the lowercase cross-system join key and must equal `github_org.casefold()`; GitHub's canonical organization casing remains authoritative in `github_org` and the governance TSV.
+The machine-readable registry is [`ops/portfolio/github-linear-project-registry.tsv`](../../ops/portfolio/github-linear-project-registry.tsv). It contains the canonical GitHub organization login and Linear project URL for the current 64-organization fleet. The GitHub organization URL, governance repository, canonical Project title, Project number, and Project URL are derived deterministically from that source.
 
 ## Operating contract
 
@@ -32,6 +33,11 @@ The richer naming, Slack, ChatGPT, native-ID, and marker contract is documented 
 ## Derived link contract
 
 For each governance TSV row with organization `<org>`:
+- Documentation conflicts are resolved semantically against the latest default branch. Managed routing blocks are regenerated while unrelated prose is preserved; automation must never resolve conflicts by blindly choosing one side.
+
+## Derived link contract
+
+For each TSV row with organization `<org>`:
 
 | Resource | Derived value |
 | --- | --- |
@@ -46,6 +52,7 @@ The sole Project-number exception is `dancing-dragons`, whose canonical Project 
 ## Validation
 
 [`scripts/ci/check-github-linear-project-registry.mjs`](../../scripts/ci/check-github-linear-project-registry.mjs) validates the full 64-organization governance registry without network or credentials. It rejects:
+[`scripts/ci/check-github-linear-project-registry.mjs`](../../scripts/ci/check-github-linear-project-registry.mjs) validates the full registry without network or credentials. It rejects:
 
 - missing, additional, malformed, or unsorted rows;
 - duplicate organization ownership, including case variants;
@@ -102,3 +109,10 @@ Credentials belong in a protected environment or process environment. Never plac
 3. Run the standalone, cross-registry, and provider-specific validators.
 4. Reconcile provider metadata through the reviewed workflow.
 5. Commit only validated, redacted evidence. Preserve failed evidence as an explicitly quarantined incident instead of rewriting it to appear successful.
+The permanent [`github-linear-project-registry.yml`](../../.github/workflows/github-linear-project-registry.yml) workflow runs the validator, its positive and negative fixtures, whitespace checks, conflict-marker checks, and a credential-shape scan. It publishes the complete derived organization↔Project↔Linear table to the GitHub Actions step summary without mutating any organization or Project.
+
+## Reconciliation
+
+Run [`scripts/ops/sync_org_project_docs.sh`](../../scripts/ops/sync_org_project_docs.sh) with an authenticated GitHub CLI session that can administer the listed organizations. The rate-aware variant performs the same bounded semantic reconciliation when GitHub API capacity is constrained. The publisher may create or reopen the canonical Project, initialize the public `.github` repository, update only managed routing blocks, open or reuse a normal pull request, and attach the durable governance issue to the canonical Project.
+
+Fleet mutation and read-only registry validation are intentionally separate. A green registry check proves the declared mapping is internally coherent; it does not by itself claim that all Projects, repositories, issues, or pull requests were successfully reconciled remotely. Remote evidence remains under `ops/evidence/org-project-docs/` and the corresponding Linear execution ledger.
