@@ -1,0 +1,66 @@
+name: encrypted expected repository gaps contract
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/ops-publish-expected-repository-gaps-encrypted-once.yml
+      - .github/workflows/encrypted-expected-repository-gaps-contract.yml
+      - scripts/ops/verify_expected_repository_gaps.py
+      - scripts/ops/test_verify_expected_repository_gaps.py
+      - scripts/ops/test_encrypted_expected_repository_gaps_workflow.py
+      - scripts/ops/publish_missing_org_repositories.py
+      - scripts/ops/publish_missing_org_repositories_current.py
+      - scripts/ops/private_repository_creation.py
+      - scripts/ops/repository_fleet_visibility.py
+      - scripts/ops/repository_fleet_remote_state.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-expected-repository-gaps-encrypted-once.yml
+      - .github/workflows/encrypted-expected-repository-gaps-contract.yml
+      - scripts/ops/verify_expected_repository_gaps.py
+      - scripts/ops/test_verify_expected_repository_gaps.py
+      - scripts/ops/test_encrypted_expected_repository_gaps_workflow.py
+      - scripts/ops/publish_missing_org_repositories.py
+      - scripts/ops/publish_missing_org_repositories_current.py
+      - scripts/ops/private_repository_creation.py
+      - scripts/ops/repository_fleet_visibility.py
+      - scripts/ops/repository_fleet_remote_state.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: encrypted-expected-repository-gaps-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact proposed source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+          show-progress: false
+
+      - name: Compile bounded Python surfaces
+        run: |
+          python3 -m py_compile \
+            scripts/ops/verify_expected_repository_gaps.py \
+            scripts/ops/publish_missing_org_repositories.py \
+            scripts/ops/publish_missing_org_repositories_current.py \
+            scripts/ops/private_repository_creation.py \
+            scripts/ops/repository_fleet_visibility.py \
+            scripts/ops/repository_fleet_remote_state.py
+
+      - name: Run exact-gap and encrypted-workflow contracts
+        run: |
+          python3 scripts/ops/test_verify_expected_repository_gaps.py -v
+          python3 scripts/ops/test_encrypted_expected_repository_gaps_workflow.py -v
+          python3 scripts/ops/test_repository_fleet_visibility.py -v
+          python3 scripts/ops/test_repository_fleet_remote_state.py -v
+          python3 scripts/ops/test_private_fleet_publisher_contract.py -v
