@@ -6,12 +6,21 @@ import importlib.util
 import json
 import unittest
 from pathlib import Path
+from unittest import mock
 
 MODULE_PATH = Path(__file__).with_name("canonical-control-plane-preflight.py")
 SPEC = importlib.util.spec_from_file_location("canonical_control_plane_preflight", MODULE_PATH)
 assert SPEC and SPEC.loader
 TARGET = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(TARGET)
+
+ACCOUNT_MODULE_PATH = Path(__file__).with_name("canonical-account-token-preflight.py")
+ACCOUNT_SPEC = importlib.util.spec_from_file_location(
+    "canonical_account_token_preflight", ACCOUNT_MODULE_PATH
+)
+assert ACCOUNT_SPEC and ACCOUNT_SPEC.loader
+ACCOUNT_TARGET = importlib.util.module_from_spec(ACCOUNT_SPEC)
+ACCOUNT_SPEC.loader.exec_module(ACCOUNT_TARGET)
 
 WAIT_MODULE_PATH = Path(__file__).with_name("wait-for-encrypted-canonical-bundle.py")
 WAIT_SPEC = importlib.util.spec_from_file_location(
@@ -22,6 +31,7 @@ WAIT_TARGET = importlib.util.module_from_spec(WAIT_SPEC)
 WAIT_SPEC.loader.exec_module(WAIT_TARGET)
 
 CONTRACT_PATH = Path("config/ci/canonical-control-plane-preflight.json")
+ACCOUNT_HASH = "8007ba16f4d4ff2684639b28a390e8516fcf878e80a09ee32279778cf98934c8"
 
 
 class ContractTests(unittest.TestCase):
@@ -59,12 +69,12 @@ class ContractTests(unittest.TestCase):
 class CredentialTests(unittest.TestCase):
     account_id = "62b833940607839add74bd2379cac303"
 
-    def bundle(self) -> dict[str, object]:
+    def bundle(self, api_token: str = "cloudflare-token-value") -> dict[str, object]:
         return {
             "github": {"token": "github-token-value"},
             "cloudflare": {
                 "account_id": self.account_id,
-                "api_token": "cloudflare-token-value",
+                "api_token": api_token,
             },
             "r2": {
                 "access_key_id": "r2-access-key-value",
@@ -74,20 +84,54 @@ class CredentialTests(unittest.TestCase):
         }
 
     def test_bundle_accepts_only_the_reviewed_account_endpoint(self) -> None:
-        values = TARGET.validate_bundle(
-            self.bundle(),
-            "8007ba16f4d4ff2684639b28a390e8516fcf878e80a09ee32279778cf98934c8",
-        )
+        values = TARGET.validate_bundle(self.bundle(), ACCOUNT_HASH)
         self.assertEqual(self.account_id, values["cloudflare_account_id"])
 
     def test_bundle_rejects_cross_account_r2_endpoint(self) -> None:
         bundle = self.bundle()
         bundle["r2"]["endpoint"] = "https://00000000000000000000000000000000.r2.cloudflarestorage.com"
         with self.assertRaisesRegex(TARGET.PreflightError, "R2 endpoint"):
-            TARGET.validate_bundle(
-                bundle,
-                "8007ba16f4d4ff2684639b28a390e8516fcf878e80a09ee32279778cf98934c8",
+            TARGET.validate_bundle(bundle, ACCOUNT_HASH)
+
+    def test_account_adapter_requires_cfat_token_family(self) -> None:
+        values = ACCOUNT_TARGET.validate_account_bundle(
+            self.bundle("cfat_abcdefghijklmnopqrstuvwxyz1234567890ABCD"), ACCOUNT_HASH
+        )
+        self.assertTrue(values["cloudflare_api_token"].startswith("cfat_"))
+        with self.assertRaisesRegex(TARGET.PreflightError, "account-owned cfat_ token"):
+            ACCOUNT_TARGET.validate_account_bundle(
+                self.bundle("cfut_abcdefghijklmnopqrstuvwxyz1234567890ABCD"),
+                ACCOUNT_HASH,
             )
+
+
+class CloudflareAccountTokenEndpointTests(unittest.TestCase):
+    account_id = "62b833940607839add74bd2379cac303"
+
+    def test_user_verify_request_is_redirected_to_account_verify_endpoint(self) -> None:
+        client = ACCOUNT_TARGET.AccountTokenCloudflareClient("cfat_test-value", self.account_id)
+        base_client = ACCOUNT_TARGET.AccountTokenCloudflareClient.__mro__[1]
+        with mock.patch.object(
+            base_client,
+            "get",
+            return_value=(200, {"status": "active"}),
+        ) as delegated:
+            status, result = client.get("/user/tokens/verify", label="token verification")
+        self.assertEqual(200, status)
+        self.assertEqual({"status": "active"}, result)
+        delegated.assert_called_once_with(
+            f"/accounts/{self.account_id}/tokens/verify",
+            query=None,
+            label="account-owned token verification",
+            optional_statuses=(),
+        )
+
+    def test_account_verify_endpoint_is_the_only_added_read_scope(self) -> None:
+        client = ACCOUNT_TARGET.AccountTokenCloudflareClient("cfat_test-value", self.account_id)
+        self.assertTrue(client._allowed(f"/accounts/{self.account_id}/tokens/verify"))
+        self.assertFalse(client._allowed(f"/accounts/{'0' * 32}/tokens/verify"))
+        for method in ("post", "put", "patch", "delete"):
+            self.assertFalse(hasattr(client, method), method)
 
 
 class CiphertextEnvelopeTests(unittest.TestCase):
