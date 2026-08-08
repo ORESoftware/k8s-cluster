@@ -5,6 +5,7 @@ use oresoftware_durable_worker::{
 };
 use serde_json::json;
 use std::collections::HashMap;
+use std::future::pending;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -16,6 +17,10 @@ struct FakeApi {
     assignment: Arc<Mutex<Option<Assignment>>>,
     fence_heartbeat: Arc<AtomicBool>,
     fence_output: Arc<AtomicBool>,
+    block_poll: Arc<AtomicBool>,
+    block_step_heartbeat: Arc<AtomicBool>,
+    complete_protocol_error: Arc<AtomicBool>,
+    poll_observed: Arc<Notify>,
     heartbeat_observed: Arc<Notify>,
     step_heartbeat_count: Arc<AtomicUsize>,
     output_chunk_ids: Arc<Mutex<Vec<String>>>,
@@ -30,6 +35,10 @@ impl Default for FakeApi {
             assignment: Arc::new(Mutex::new(None)),
             fence_heartbeat: Arc::new(AtomicBool::new(false)),
             fence_output: Arc::new(AtomicBool::new(false)),
+            block_poll: Arc::new(AtomicBool::new(false)),
+            block_step_heartbeat: Arc::new(AtomicBool::new(false)),
+            complete_protocol_error: Arc::new(AtomicBool::new(false)),
+            poll_observed: Arc::new(Notify::new()),
             heartbeat_observed: Arc::new(Notify::new()),
             step_heartbeat_count: Arc::new(AtomicUsize::new(0)),
             output_chunk_ids: Arc::new(Mutex::new(Vec::new())),
@@ -96,6 +105,10 @@ impl WorkerApi for FakeApi {
     ) -> WorkerFuture<'a, WorkerPoll> {
         Box::pin(async move {
             self.record("poll");
+            self.poll_observed.notify_one();
+            if self.block_poll.load(Ordering::Acquire) {
+                pending::<()>().await;
+            }
             Ok(WorkerPoll {
                 assignment: self.assignment.lock().expect("assignment lock").take(),
                 retry_after_ms: 1,
@@ -115,6 +128,9 @@ impl WorkerApi for FakeApi {
             self.record("step-heartbeat");
             self.step_heartbeat_count.fetch_add(1, Ordering::AcqRel);
             self.heartbeat_observed.notify_one();
+            if self.block_step_heartbeat.load(Ordering::Acquire) {
+                pending::<()>().await;
+            }
             if self.fence_heartbeat.load(Ordering::Acquire) {
                 Err(DurableWorkerError::LeaseLost(
                     oresoftware_durable_worker::ProtocolError::new(
@@ -163,6 +179,16 @@ impl WorkerApi for FakeApi {
     ) -> WorkerFuture<'a, ()> {
         Box::pin(async move {
             self.record("complete");
+            if self.complete_protocol_error.load(Ordering::Acquire) {
+                return Err(DurableWorkerError::Protocol(
+                    oresoftware_durable_worker::ProtocolError::new(
+                        "upstream_unavailable",
+                        "completion result is unknown",
+                        Some(503),
+                        true,
+                    ),
+                ));
+            }
             *self.completion.lock().expect("completion lock") = Some(completion);
             Ok(())
         })
@@ -210,6 +236,18 @@ fn config() -> WorkerConfig {
     }
 }
 
+#[test]
+fn rejects_worker_heartbeat_cadence_that_can_expire_the_ttl() {
+    let mut worker_config = config();
+    worker_config.worker_heartbeat_ms = worker_config.ttl_ms;
+    assert!(Worker::new(
+        Arc::new(FakeApi::default()),
+        HashMap::new(),
+        worker_config,
+    )
+    .is_err());
+}
+
 #[tokio::test]
 async fn streams_progress_and_completes_under_the_same_generation() {
     let api = Arc::new(FakeApi::with_assignment(assignment()));
@@ -236,6 +274,7 @@ async fn streams_progress_and_completes_under_the_same_generation() {
     assert_eq!(summary.accepted, 1);
     assert_eq!(summary.completed, 1);
     assert_eq!(summary.failed, 0);
+    assert_eq!(summary.protocol_errors, 0);
     assert!(api.step_heartbeat_count.load(Ordering::Acquire) > 0);
     let operations = api.operations();
     assert!(operations.contains(&"output".to_owned()));
@@ -256,22 +295,12 @@ async fn streams_progress_and_completes_under_the_same_generation() {
 }
 
 #[tokio::test]
-async fn fenced_heartbeat_cancels_handler_and_suppresses_terminal_mutations() {
+async fn fenced_heartbeat_aborts_non_cooperative_handler_and_suppresses_terminal_mutations() {
     let api = Arc::new(FakeApi::with_assignment(assignment()));
     api.fence_heartbeat.store(true, Ordering::Release);
-    let heartbeat_observed = Arc::clone(&api.heartbeat_observed);
-    let observed = Arc::new(AtomicBool::new(false));
-    let handler_observed = Arc::clone(&observed);
-    let handler: Handler = Arc::new(move |context: TaskContext| {
-        let heartbeat_observed = Arc::clone(&heartbeat_observed);
-        let observed = Arc::clone(&handler_observed);
+    let handler: Handler = Arc::new(|_context: TaskContext| {
         Box::pin(async move {
-            heartbeat_observed.notified().await;
-            tokio::time::timeout(Duration::from_secs(1), context.cancellation().cancelled())
-                .await
-                .expect("lease-loss cancellation should be prompt");
-            observed.store(true, Ordering::Release);
-            context.check_cancelled()?;
+            pending::<()>().await;
             Ok(JsonObject::new())
         })
     });
@@ -281,12 +310,15 @@ async fn fenced_heartbeat_cancels_handler_and_suppresses_terminal_mutations() {
         config(),
     )
     .expect("worker");
-    let summary = worker
-        .run(Cancellation::default())
-        .await
-        .expect("worker run");
-    assert!(observed.load(Ordering::Acquire));
+    let summary = tokio::time::timeout(
+        Duration::from_millis(250),
+        worker.run(Cancellation::default()),
+    )
+    .await
+    .expect("lease loss should abort a non-cooperative handler promptly")
+    .expect("worker run");
     assert_eq!(summary.lease_lost, 1);
+    assert_eq!(summary.protocol_errors, 0);
     let operations = api.operations();
     assert!(!operations.contains(&"complete".to_owned()));
     assert!(!operations.contains(&"fail".to_owned()));
@@ -313,6 +345,7 @@ async fn fenced_progress_output_cancels_handler_and_suppresses_terminal_mutation
         .await
         .expect("worker run");
     assert_eq!(summary.lease_lost, 1);
+    assert_eq!(summary.protocol_errors, 0);
     assert_eq!(api.output_chunk_ids(), vec!["step-1:3:1".to_owned()]);
     let operations = api.operations();
     assert!(!operations.contains(&"complete".to_owned()));
@@ -336,6 +369,7 @@ async fn handler_failure_preserves_explicit_retryability() {
         .await
         .expect("worker run");
     assert_eq!(summary.failed, 1);
+    assert_eq!(summary.protocol_errors, 0);
     let failure = api
         .failure
         .lock()
@@ -355,6 +389,7 @@ async fn missing_handler_is_terminal_and_non_retryable() {
         .await
         .expect("worker run");
     assert_eq!(summary.failed, 1);
+    assert_eq!(summary.protocol_errors, 0);
     let failure = api
         .failure
         .lock()
@@ -363,4 +398,155 @@ async fn missing_handler_is_terminal_and_non_retryable() {
         .expect("failure");
     assert_eq!(failure.code, "handler_not_found");
     assert!(!failure.retryable);
+}
+
+#[tokio::test]
+async fn assignment_timeout_aborts_handler_and_reports_retryable_failure() {
+    let api = Arc::new(FakeApi::with_assignment({
+        let mut assignment = assignment();
+        assignment.timeout_ms = 20;
+        assignment
+    }));
+    let handler: Handler = Arc::new(|_context: TaskContext| {
+        Box::pin(async move {
+            pending::<()>().await;
+            Ok(JsonObject::new())
+        })
+    });
+    let worker = Worker::new(
+        api.clone(),
+        HashMap::from([("demo".to_owned(), handler)]),
+        config(),
+    )
+    .expect("worker");
+    let summary = tokio::time::timeout(
+        Duration::from_millis(250),
+        worker.run(Cancellation::default()),
+    )
+    .await
+    .expect("assignment timeout should abort the handler promptly")
+    .expect("worker run");
+    assert_eq!(summary.failed, 1);
+    assert_eq!(summary.lease_lost, 0);
+    assert_eq!(summary.protocol_errors, 0);
+    let failure = api
+        .failure
+        .lock()
+        .expect("failure lock")
+        .clone()
+        .expect("failure");
+    assert_eq!(failure.code, "handler_timeout");
+    assert!(failure.retryable);
+    assert!(!api.operations().contains(&"complete".to_owned()));
+}
+
+#[tokio::test]
+async fn blocked_step_heartbeat_aborts_non_cooperative_handler_within_local_budget() {
+    let api = Arc::new(FakeApi::with_assignment(assignment()));
+    api.block_step_heartbeat.store(true, Ordering::Release);
+    let handler: Handler = Arc::new(|_context: TaskContext| {
+        Box::pin(async move {
+            pending::<()>().await;
+            Ok(JsonObject::new())
+        })
+    });
+    let worker = Worker::new(
+        api.clone(),
+        HashMap::from([("demo".to_owned(), handler)]),
+        config(),
+    )
+    .expect("worker");
+    let summary = tokio::time::timeout(
+        Duration::from_millis(250),
+        worker.run(Cancellation::default()),
+    )
+    .await
+    .expect("heartbeat uncertainty should not occupy the slot indefinitely")
+    .expect("worker run");
+    assert_eq!(summary.lease_lost, 1);
+    assert_eq!(summary.protocol_errors, 0);
+    let operations = api.operations();
+    assert!(!operations.contains(&"complete".to_owned()));
+    assert!(!operations.contains(&"fail".to_owned()));
+}
+
+#[tokio::test]
+async fn handler_panic_is_isolated_and_reported_as_a_terminal_failure() {
+    let api = Arc::new(FakeApi::with_assignment(assignment()));
+    let handler: Handler = Arc::new(|_context: TaskContext| {
+        Box::pin(async move {
+            tokio::task::yield_now().await;
+            panic!("boom")
+        })
+    });
+    let worker = Worker::new(
+        api.clone(),
+        HashMap::from([("demo".to_owned(), handler)]),
+        config(),
+    )
+    .expect("worker");
+    let summary = worker
+        .run(Cancellation::default())
+        .await
+        .expect("worker run");
+    assert_eq!(summary.failed, 1);
+    assert_eq!(summary.protocol_errors, 0);
+    let failure = api
+        .failure
+        .lock()
+        .expect("failure lock")
+        .clone()
+        .expect("failure");
+    assert_eq!(failure.code, "handler_panic");
+    assert!(!failure.retryable);
+}
+
+#[tokio::test]
+async fn ambiguous_terminal_mutation_is_counted_separately_from_acknowledged_failure() {
+    let api = Arc::new(FakeApi::with_assignment(assignment()));
+    api.complete_protocol_error.store(true, Ordering::Release);
+    let handler: Handler = Arc::new(|_context: TaskContext| {
+        Box::pin(async move { Ok(JsonObject::new()) })
+    });
+    let worker = Worker::new(
+        api.clone(),
+        HashMap::from([("demo".to_owned(), handler)]),
+        config(),
+    )
+    .expect("worker");
+    let summary = worker
+        .run(Cancellation::default())
+        .await
+        .expect("worker run");
+    assert_eq!(summary.completed, 0);
+    assert_eq!(summary.failed, 0);
+    assert_eq!(summary.protocol_errors, 1);
+    assert!(api.failure.lock().expect("failure lock").is_none());
+    assert!(api.completion.lock().expect("completion lock").is_none());
+}
+
+#[tokio::test]
+async fn shutdown_cancels_an_in_flight_long_poll() {
+    let api = Arc::new(FakeApi::default());
+    api.block_poll.store(true, Ordering::Release);
+    let mut worker_config = config();
+    worker_config.max_assignments = None;
+    worker_config.poll_wait_ms = 30_000;
+    let worker = Worker::new(api.clone(), HashMap::new(), worker_config).expect("worker");
+    let shutdown = Cancellation::default();
+    let run_shutdown = shutdown.clone();
+    let run = tokio::spawn(async move { worker.run(run_shutdown).await });
+    api.poll_observed.notified().await;
+    shutdown.cancel();
+    let summary = tokio::time::timeout(Duration::from_millis(250), run)
+        .await
+        .expect("shutdown should interrupt the long poll")
+        .expect("worker task")
+        .expect("worker run");
+    assert_eq!(summary.accepted, 0);
+    assert_eq!(summary.protocol_errors, 0);
+    assert_eq!(
+        api.operations().last().map(String::as_str),
+        Some("worker-drain")
+    );
 }
