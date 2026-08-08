@@ -1,0 +1,71 @@
+name: Zed bootstrap contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/zed-bootstrap-contract.yml"
+      - "catalog/applications.json"
+      - "remote/argocd/apps/zed.applications.yaml"
+      - "remote/argocd/projects/zed*.yaml"
+      - "remote/argocd/clusters/aws/**"
+      - "remote/argocd/clusters/hetzner/**"
+      - "remote/tests/general/zed-bootstrap-contract.test.mjs"
+  push:
+    branches:
+      - main
+      - dev
+    paths:
+      - ".github/workflows/zed-bootstrap-contract.yml"
+      - "catalog/applications.json"
+      - "remote/argocd/apps/zed.applications.yaml"
+      - "remote/argocd/projects/zed*.yaml"
+      - "remote/argocd/clusters/aws/**"
+      - "remote/argocd/clusters/hetzner/**"
+      - "remote/tests/general/zed-bootstrap-contract.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zed-bootstrap-contract-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22"
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+        with:
+          version: v1.31.0
+
+      - name: Run Zed bootstrap contract tests
+        run: node --test remote/tests/general/zed-bootstrap-contract.test.mjs
+
+      - name: Render both cluster roots
+        shell: bash
+        run: |
+          set -euo pipefail
+          for cluster in aws hetzner; do
+            output="/tmp/${cluster}-root.yaml"
+            kubectl kustomize "remote/argocd/clusters/${cluster}" >"${output}"
+            for application in \
+              zed-tenant-bootstrap \
+              zed-project-bootstrap \
+              zed-postgres-bootstrap \
+              zed-applications-bootstrap; do
+              grep -q "name: ${application}" "${output}"
+            done
+          done
