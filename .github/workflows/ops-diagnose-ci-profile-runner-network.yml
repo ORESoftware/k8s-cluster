@@ -3,6 +3,7 @@ name: Diagnose CI profile runner network
 on:
   push:
     branches:
+      - main
       - agent/diagnose-ci-runner-network
     paths:
       - .github/workflows/ops-diagnose-ci-profile-runner-network.yml
@@ -22,6 +23,7 @@ concurrency:
 
 jobs:
   diagnose:
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
