@@ -51,6 +51,7 @@ jobs:
           tools/google-chat-space-export/test/import-plan.test.mjs
           tools/google-chat-space-export/test/reconciliation-pipeline.test.mjs
           tools/google-chat-space-export/test/audit-ledger-2026-08-04.test.mjs
+          tools/google-chat-space-export/test/audit-ledger-2026-08-08.test.mjs
 
       - name: Reject conflict markers and committed private-output paths
         shell: bash
