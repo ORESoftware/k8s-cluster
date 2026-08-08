@@ -112,6 +112,119 @@ class EmptyRepositoryRecoveryTests(unittest.TestCase):
                 metadata,
             )
 
+    def test_post_push_retry_accepts_eventually_visible_exact_ref(self) -> None:
+        full_name = str(MODULE.RECOVERABLE_EMPTY_STAGE["full_name"])
+        expected = str(MODULE.RECOVERABLE_EMPTY_STAGE["expected_sha"])
+        MODULE._RECOVERABLE_EMPTY_APPROVED = True
+        initial_failure = RuntimeError(
+            f"remote verification failed for {full_name}: None != {expected}"
+        )
+
+        with (
+            mock.patch.object(
+                MODULE,
+                "ORIGINAL_PUSH_EXACT_MAIN",
+                side_effect=initial_failure,
+            ) as original_push,
+            mock.patch.object(
+                MODULE,
+                "safe_main_ref",
+                side_effect=[None, None, expected],
+            ) as ref,
+            mock.patch.object(MODULE.time, "sleep") as sleep,
+        ):
+            MODULE.recovery_push_exact_main(Path("/tmp/sealed"), full_name, expected)
+
+        original_push.assert_called_once_with(Path("/tmp/sealed"), full_name, expected)
+        self.assertEqual(ref.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_post_push_retry_fails_immediately_on_wrong_sha(self) -> None:
+        full_name = str(MODULE.RECOVERABLE_EMPTY_STAGE["full_name"])
+        expected = str(MODULE.RECOVERABLE_EMPTY_STAGE["expected_sha"])
+        MODULE._RECOVERABLE_EMPTY_APPROVED = True
+        initial_failure = RuntimeError(
+            f"remote verification failed for {full_name}: None != {expected}"
+        )
+
+        with (
+            mock.patch.object(
+                MODULE,
+                "ORIGINAL_PUSH_EXACT_MAIN",
+                side_effect=initial_failure,
+            ),
+            mock.patch.object(MODULE, "safe_main_ref", return_value="f" * 40) as ref,
+            mock.patch.object(MODULE.time, "sleep") as sleep,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "changed after first push"):
+                MODULE.recovery_push_exact_main(Path("/tmp/sealed"), full_name, expected)
+
+        ref.assert_called_once_with(full_name)
+        sleep.assert_not_called()
+
+    def test_post_push_retry_fails_closed_after_bounded_absence(self) -> None:
+        full_name = str(MODULE.RECOVERABLE_EMPTY_STAGE["full_name"])
+        expected = str(MODULE.RECOVERABLE_EMPTY_STAGE["expected_sha"])
+        MODULE._RECOVERABLE_EMPTY_APPROVED = True
+        initial_failure = RuntimeError(
+            f"remote verification failed for {full_name}: None != {expected}"
+        )
+
+        with (
+            mock.patch.object(
+                MODULE,
+                "ORIGINAL_PUSH_EXACT_MAIN",
+                side_effect=initial_failure,
+            ),
+            mock.patch.object(MODULE, "POST_PUSH_REF_ATTEMPTS", 3),
+            mock.patch.object(MODULE, "safe_main_ref", return_value=None) as ref,
+            mock.patch.object(MODULE.time, "sleep") as sleep,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "after 3 bounded checks"):
+                MODULE.recovery_push_exact_main(Path("/tmp/sealed"), full_name, expected)
+
+        self.assertEqual(ref.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_post_push_retry_never_applies_to_other_repository_or_error(self) -> None:
+        other = "StreemPilot-test/streempilot-destinations"
+        expected = "a" * 40
+        failure = RuntimeError(
+            f"remote verification failed for {other}: None != {expected}"
+        )
+        MODULE._RECOVERABLE_EMPTY_APPROVED = True
+
+        with (
+            mock.patch.object(
+                MODULE,
+                "ORIGINAL_PUSH_EXACT_MAIN",
+                side_effect=failure,
+            ),
+            mock.patch.object(MODULE, "safe_main_ref") as ref,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "remote verification failed"):
+                MODULE.recovery_push_exact_main(Path("/tmp/sealed"), other, expected)
+        ref.assert_not_called()
+
+        full_name = str(MODULE.RECOVERABLE_EMPTY_STAGE["full_name"])
+        recoverable_sha = str(MODULE.RECOVERABLE_EMPTY_STAGE["expected_sha"])
+        other_failure = RuntimeError("git push failed")
+        with (
+            mock.patch.object(
+                MODULE,
+                "ORIGINAL_PUSH_EXACT_MAIN",
+                side_effect=other_failure,
+            ),
+            mock.patch.object(MODULE, "safe_main_ref") as ref,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "git push failed"):
+                MODULE.recovery_push_exact_main(
+                    Path("/tmp/sealed"),
+                    full_name,
+                    recoverable_sha,
+                )
+        ref.assert_not_called()
+
     def test_recovery_rejects_wrong_repository_id_without_approval(self) -> None:
         metadata = self.metadata()
         metadata["id"] = int(MODULE.RECOVERABLE_EMPTY_STAGE["repository_id"]) + 1
@@ -152,12 +265,15 @@ class EmptyRepositoryRecoveryTests(unittest.TestCase):
         self.assertIn('"StreemPilot-test/streempilot-compositor.rs"', source)
         self.assertIn("1327442276", source)
         self.assertIn('"2026-08-08T05:25:37Z"', source)
+        self.assertIn("POST_PUSH_REF_ATTEMPTS = 6", source)
+        self.assertIn("BASE.push_exact_main = recovery_push_exact_main", source)
         self.assertNotIn("StreemPilot/streempilot-compositor.rs\"", source)
         self.assertNotIn('BASE.api("DELETE"', source)
         self.assertNotIn("git push --" + "force", source)
         self.assertNotIn("--visibility " + "public", source)
         self.assertNotIn('"private": False', source)
         self.assertNotIn("--organization", source)
+        self.assertNotIn("while True", source)
 
 
 if __name__ == "__main__":

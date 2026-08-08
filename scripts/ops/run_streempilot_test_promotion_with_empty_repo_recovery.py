@@ -11,6 +11,12 @@ not have GitHub's separate delete-repository permission. Deletion is neither
 needed nor desirable: this wrapper permits only that recorded empty staging
 repository to receive its first exact sealed `main` history in place.
 
+The first successful push can also race GitHub's ref API visibility. For that
+same exact staging identity only, this wrapper permits a small bounded sequence
+of read-only ref checks after the original push has already succeeded. Any
+wrong SHA fails immediately, exhaustion fails closed, and production never
+receives this exception.
+
 Every other existing empty repository remains fail-closed, every nonempty
 history must exactly match its sealed SHA, and no production repository has a
 recovery exception.
@@ -22,6 +28,7 @@ import argparse
 import importlib.util
 from pathlib import Path
 import sys
+import time
 
 
 MODULE_PATH = Path(__file__).with_name("publish_streempilot_test_then_promote.py")
@@ -34,6 +41,7 @@ SPEC.loader.exec_module(BASE)
 
 ORIGINAL_MAIN_REF = BASE.main_ref
 ORIGINAL_EXISTING_REPOSITORY = BASE.existing_repository
+ORIGINAL_PUSH_EXACT_MAIN = BASE.push_exact_main
 
 RECOVERABLE_EMPTY_STAGE = {
     "full_name": "StreemPilot-test/streempilot-compositor.rs",
@@ -42,6 +50,8 @@ RECOVERABLE_EMPTY_STAGE = {
     "expected_sha": "ea7c1c8042122b4e4a7689aee026113fb607421d",
 }
 
+POST_PUSH_REF_ATTEMPTS = 6
+POST_PUSH_REF_DELAY_SECONDS = 1.0
 _RECOVERABLE_EMPTY_APPROVED = False
 
 
@@ -158,6 +168,51 @@ def recovery_existing_repository(
     return None
 
 
+def recovery_push_exact_main(
+    local_repository: Path,
+    full_name: str,
+    expected_sha: str,
+) -> None:
+    """Retry only API visibility after one exact approved first push succeeded."""
+    try:
+        ORIGINAL_PUSH_EXACT_MAIN(local_repository, full_name, expected_sha)
+        return
+    except RuntimeError as error:
+        recoverable_name = str(RECOVERABLE_EMPTY_STAGE["full_name"])
+        recoverable_sha = str(RECOVERABLE_EMPTY_STAGE["expected_sha"])
+        expected_failure = (
+            f"remote verification failed for {full_name}: None != {expected_sha}"
+        )
+        if (
+            not _RECOVERABLE_EMPTY_APPROVED
+            or full_name.casefold() != recoverable_name.casefold()
+            or expected_sha != recoverable_sha
+            or str(error) != expected_failure
+        ):
+            raise
+
+    for attempt in range(1, POST_PUSH_REF_ATTEMPTS + 1):
+        actual = safe_main_ref(full_name)
+        if actual == expected_sha:
+            print(
+                "VERIFIED_DEN896_FIRST_PUSH_AFTER_BOUNDED_REF_RETRY "
+                f"{full_name} attempt={attempt}"
+            )
+            return
+        if actual is not None:
+            fail(
+                "approved empty test repository changed after first push: "
+                f"{actual} != {expected_sha}"
+            )
+        if attempt < POST_PUSH_REF_ATTEMPTS:
+            time.sleep(POST_PUSH_REF_DELAY_SECONDS)
+
+    fail(
+        "remote verification remained absent after successful first push for "
+        f"{full_name} after {POST_PUSH_REF_ATTEMPTS} bounded checks"
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", required=True, choices=("stage", "production"))
@@ -175,6 +230,7 @@ def main() -> int:
 
     BASE.main_ref = safe_main_ref
     BASE.existing_repository = recovery_existing_repository
+    BASE.push_exact_main = recovery_push_exact_main
     BASE.publish(
         args.target,
         args.evidence_out.resolve(),
