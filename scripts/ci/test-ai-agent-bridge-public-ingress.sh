@@ -96,9 +96,12 @@ record_observation() {
     )
   fi
 
-  if ! curl "${curl_args[@]}" "${BASE_URL}${path}" >"${metadata_path}"; then
-    curl_exit=$?
-    record_failure "${name}:transport_failed"
+  set +e
+  curl "${curl_args[@]}" "${BASE_URL}${path}" >"${metadata_path}"
+  curl_exit=$?
+  set -e
+  if [[ "${curl_exit}" -ne 0 ]]; then
+    record_failure "${name}:transport_failed_exit_${curl_exit}"
   fi
 
   local status='000'
