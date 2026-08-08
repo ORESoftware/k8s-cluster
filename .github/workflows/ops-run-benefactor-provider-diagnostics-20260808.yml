@@ -65,7 +65,9 @@ jobs:
           grep -qF 'HUBSPOT_SYNC_AFTER_DISCOVERY' "$script"
           grep -qF 'value: "false"' "$script"
           grep -qF 'BENEFACTOR_PROVIDER_PROBE_SUMMARY' "$script"
+          grep -qF 'BENEFACTOR_PROVIDER_PROBE_FAILED' "$script"
           grep -qF 'ghcr.io/oresoftware/benefactor-contact-orchestrator@' "$script"
+          grep -qF "grep '^BENEFACTOR_PROVIDER_PROBE_FAILED '" "$workflow"
           if grep -nEi '(GMAIL_LIVE_CONFIRM|BATCH_PERSIST_CONFIRM|HUBSPOT_WRITE_CONFIRM|SENDGRID_API_KEY|messages\.send|mail/send)' "$script"; then
             echo 'live mutation or outbound transport token detected in provider probe' >&2
             exit 1
@@ -164,8 +166,16 @@ jobs:
             --output json > "$invocation"
           actual_status="$(jq -r .Status < "$invocation")"
           echo "provider_probe_status=$actual_status"
-          test "$actual_status" = Success
           stdout="$(jq -r '.Stdout // empty' < "$invocation")"
+          stderr="$(jq -r '.Stderr // empty' < "$invocation")"
+          if [[ "$actual_status" != Success ]]; then
+            failure="$(grep '^BENEFACTOR_PROVIDER_PROBE_FAILED ' <<< "$stderr" | tail -n 1 || true)"
+            if [[ -z "$failure" ]]; then
+              failure='BENEFACTOR_PROVIDER_PROBE_FAILED stage=ssm status=failed'
+            fi
+            printf '%s\n' "$failure"
+            exit 1
+          fi
           summary="$(grep '^BENEFACTOR_PROVIDER_PROBE_SUMMARY ' <<< "$stdout")"
           test -n "$summary"
           printf '%s\n' "$summary"
