@@ -467,10 +467,10 @@
             }
           ],
           "sync_policy": {
-            "automated": true,
+            "automated": false,
             "create_namespace": true,
-            "prune": true,
-            "self_heal": true,
+            "prune": false,
+            "self_heal": false,
             "sync_options": [
               "CreateNamespace=true",
               "PruneLast=true",
