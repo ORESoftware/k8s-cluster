@@ -30,6 +30,9 @@ resources:
   - dd-build-server.deployment.yaml
   - dd-build-server.service.yaml
   - dd-build-server.networkpolicy.yaml
+  - dd-ci-profile-runner.deployment.yaml
+  - dd-ci-profile-runner.service.yaml
+  - dd-ci-profile-runner.networkpolicy.yaml
   - dd-gha-clone-server.configmap.yaml
   - dd-gha-clone-server.externalsecret.yaml
   - dd-gha-clone-server.deployment.yaml
