@@ -1,9 +1,10 @@
 # Durable Worker Runtime — Dart SDK Delivery
 
-Status: in progress  
+Status: in review  
 Milestone: M3 SDK fleet  
 Linear: [DEN-2464](https://linear.app/denman/issue/DEN-2464/add-dart-sdk-and-conformance-for-durable-worker-runtime)  
-GitHub issue: [#1163](https://github.com/ORESoftware/k8s-cluster/issues/1163)
+GitHub issue: [#1163](https://github.com/ORESoftware/k8s-cluster/issues/1163)  
+Delivery PR: [#1169](https://github.com/ORESoftware/k8s-cluster/pull/1169)
 
 ## Purpose
 
@@ -37,11 +38,19 @@ idempotent or fence them with `TaskContext.fencingToken`.
 The focused workflow runs on Dart 3.4.0 and 3.12.2 with:
 
 - committed dependency-free lock enforcement;
-- formatting and analyzer infos/warnings treated as failures;
+- canonical formatting followed by a clean-tree assertion;
+- analyzer infos and warnings treated as failures;
 - client, worker, fixture, redirect, retry, response-boundary, and fencing tests;
 - fifty repeated lease-fencing cancellation passes on the current toolchain;
 - read-only, non-persistent checkout and credential-shape scanning;
 - deterministic source archive and SHA-256 publication after a trusted merge.
+
+A one-run formatter publisher was used only because direct Git transport was
+unavailable in the execution environment. It was constrained to the three
+reviewed formatter paths, committed canonical Dart 3.12.2 output, and was
+removed immediately afterward. The current branch contains only the permanent
+`contents: read`, non-persistent workflow; readiness requires validation on a
+head after that removal.
 
 ## Organization project record
 
@@ -54,9 +63,10 @@ The focused workflow runs on Dart 3.4.0 and 3.12.2 with:
 | Milestone | M3 SDK fleet |
 | Linear issue | DEN-2464 |
 | GitHub issue | #1163 |
+| Pull request | #1169 |
 | Risk | Medium |
-| Status | In progress |
+| Status | In review |
 
-This record must be updated with the delivery PR, reviewed exact head, merge
-commit, trusted push workflow, and artifact digest before DEN-2464 and #1163
-are closed.
+This record must still be updated with the reviewed exact head, merge commit,
+trusted push workflow, artifact name, and artifact digest before DEN-2464 and
+#1163 are closed.
