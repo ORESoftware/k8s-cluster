@@ -108,3 +108,27 @@ test('activation gates remain closed while the public edge is measured', () => {
   assert.match(ingress, /- name: SLACK_COMMAND_DRY_RUN\n\s+value: "true"/);
   assert.match(runner, /^\s*replicas:\s*0\s*$/m);
 });
+
+test('runner-scoped paths are resolved only inside an executing step', () => {
+  const jobEnvStart = workflow.indexOf('    env:\n');
+  const stepsStart = workflow.indexOf('    steps:\n');
+  assert.notEqual(jobEnvStart, -1, 'probe job env is missing');
+  assert.notEqual(stepsStart, -1, 'probe job steps are missing');
+  assert.ok(jobEnvStart < stepsStart, 'job env must precede steps');
+  const jobEnv = workflow.slice(jobEnvStart, stepsStart);
+  assert.doesNotMatch(jobEnv, /\$\{\{\s*runner\./);
+
+  const probeStart = workflow.indexOf(
+    '      - name: Probe public DNS TLS and fail-closed Slack routes\n',
+  );
+  const uploadStart = workflow.indexOf(
+    '      - name: Upload metadata-only public ingress evidence\n',
+  );
+  assert.notEqual(probeStart, -1, 'public probe step is missing');
+  assert.notEqual(uploadStart, -1, 'evidence upload step is missing');
+  const probeStep = workflow.slice(probeStart, uploadStart);
+  assert.match(
+    probeStep,
+    /env:\n\s+AI_BRIDGE_PUBLIC_EVIDENCE_PATH: \$\{\{ runner\.temp \}\}\/ai-agent-bridge-public-ingress\.json/,
+  );
+});
