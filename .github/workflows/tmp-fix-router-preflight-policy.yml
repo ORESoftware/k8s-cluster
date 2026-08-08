@@ -1,0 +1,67 @@
+name: Fix router preflight NetworkPolicy predicate
+
+on:
+  push:
+    branches:
+      - agent/router-aware-webhook-preflight-dev
+    paths:
+      - .github/workflows/tmp-fix-router-preflight-policy.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tmp-fix-router-preflight-policy
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/router-aware-webhook-preflight-dev
+          fetch-depth: 0
+
+      - name: Correct and prove the private-only egress predicate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/ops/preflight_gha_clone_webhook.sh')
+          text = path.read_text()
+          old = '''  ([.spec.egress[]?.to[]?.ipBlock.cidr] | length == 0) and
+            ([.spec.egress[]?.ports[]? | select(.protocol == "TCP") | .port] | index(443) == null)'''
+          new = '''  all(.spec.egress[]?.to[]?; (.ipBlock? // null) == null) and
+            all(.spec.egress[]?.ports[]?; (.protocol != "TCP") or (.port != 443))'''
+          if text.count(old) != 1:
+              raise SystemExit('expected router NetworkPolicy predicate was not found exactly once')
+          path.write_text(text.replace(old, new))
+          PY
+          bash -n scripts/ops/preflight_gha_clone_webhook.sh
+          jq -e '
+            any(.spec.egress[]?; any(.to[]?.podSelector.matchLabels.app; . == "dd-build-server") and any(.ports[]?; .protocol == "TCP" and .port == 8100)) and
+            all(.spec.egress[]?.to[]?; (.ipBlock? // null) == null) and
+            all(.spec.egress[]?.ports[]?; (.protocol != "TCP") or (.port != 443))
+          ' <<'JSON' >/dev/null
+          {"spec":{"egress":[
+            {"to":[{"namespaceSelector":{}}],"ports":[{"protocol":"UDP","port":53},{"protocol":"TCP","port":53}]},
+            {"to":[{"podSelector":{"matchLabels":{"app":"dd-build-server"}}}],"ports":[{"protocol":"TCP","port":8100}]}
+          ]}}
+          JSON
+          node --test remote/tests/general/gha-clone-webhook-preflight.test.mjs
+
+      - name: Commit the script correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/ops/preflight_gha_clone_webhook.sh
+          git diff --cached --check
+          test "$(git diff --cached --name-only | wc -l)" -eq 1
+          git commit -m 'fix(gha-indie): recognize private-only router egress'
+          git push origin HEAD:agent/router-aware-webhook-preflight-dev
