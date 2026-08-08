@@ -1,32 +1,32 @@
 {
   "after": {
     "byOwner": {
-      "benefactor-cc": 3,
-      "fiducia-cloud": 67,
-      "ores": 457,
-      "shared-auth": 11,
-      "unclassified": 596
+      "benefactor-cc": 6,
+      "fiducia-cloud": 134,
+      "ores": 914,
+      "shared-auth": 22,
+      "unclassified": 1300
     },
     "byScope": {
-      "active": 883,
+      "active": 2125,
       "documentation": 176,
       "test": 75
     },
     "byStatus": {
-      "classified": 105,
-      "review-required": 433,
-      "unclassified": 596
+      "classified": 210,
+      "review-required": 866,
+      "unclassified": 1300
     },
     "bySystem": {
-      "generated-package": 82,
-      "host-path": 190,
-      "metadata-key": 367,
-      "slash-namespace": 381,
-      "source-package": 114
+      "generated-package": 164,
+      "host-path": 380,
+      "metadata-key": 734,
+      "slash-namespace": 870,
+      "source-package": 228
     },
-    "distinctReferences": 220,
-    "total": 1134,
-    "unclassifiedActive": 484
+    "distinctReferences": 259,
+    "total": 2376,
+    "unclassifiedActive": 1188
   },
   "before": {
     "byOwner": {
@@ -57,22 +57,24 @@
     "total": 1539,
     "unclassifiedActive": 483
   },
+  "beforeSha": "fe434f4cb752c14b3f7db2d03031d57c299e2dad",
   "delta": {
     "bySystem": {
-      "generated-package": 0,
-      "host-path": -405,
-      "metadata-key": 0,
-      "slash-namespace": 1,
-      "source-package": -1
+      "generated-package": 82,
+      "host-path": -215,
+      "metadata-key": 367,
+      "slash-namespace": 490,
+      "source-package": 113
     },
-    "distinctReferences": -2,
-    "total": -405
+    "distinctReferences": 37,
+    "total": 837
   },
-  "note": "Negative deltas remove prefix-truncated false positives; positive controls remain in the source unit suite.",
+  "note": "Generated after deleting the one-shot workflow from the working tree, so the committed inventory is reproducible from the resulting exact head.",
   "sourcePatch": {
     "commit": "db017c4957bcdc63162d27a7d6ff71cd660c9fd4",
     "gitBlob": "a57aec4a06aa5559b0af56485fa478e3270f714f",
-    "repository": "fiducia-cloud-test/infra-multicloud-e2e"
+    "repository": "fiducia-cloud-test/infra-multicloud-e2e",
+    "sha256": "6ef14b922189f1d5e7ab18f55a386a117c6dbdabced9f37e82b76fcaaf81242c"
   },
   "ticket": "DEN-2926"
 }
