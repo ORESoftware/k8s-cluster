@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/ai-agent-bridge-public-ingress.yml'
       - 'scripts/ci/test-ai-agent-bridge-public-ingress.sh'
+      - 'scripts/ci/classify_ai_agent_bridge_ingress.py'
+      - 'scripts/ci/test_classify_ai_agent_bridge_ingress.py'
       - 'remote/tests/general/ai-agent-bridge-public-ingress-contract.test.mjs'
       - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml'
       - 'remote/argocd/dd-next-runtime/dd-ai-agent-runner.deployment.yaml'
@@ -14,6 +16,8 @@ on:
     paths:
       - '.github/workflows/ai-agent-bridge-public-ingress.yml'
       - 'scripts/ci/test-ai-agent-bridge-public-ingress.sh'
+      - 'scripts/ci/classify_ai_agent_bridge_ingress.py'
+      - 'scripts/ci/test_classify_ai_agent_bridge_ingress.py'
       - 'remote/tests/general/ai-agent-bridge-public-ingress-contract.test.mjs'
       - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml'
       - 'remote/argocd/dd-next-runtime/dd-ai-agent-runner.deployment.yaml'
@@ -45,19 +49,41 @@ jobs:
           show-progress: false
           submodules: false
 
-      - name: Verify credential-free public probe contract
-        run: node --test remote/tests/general/ai-agent-bridge-public-ingress-contract.test.mjs
+      - name: Verify credential-free public probe and classifier contracts
+        run: |
+          node --test remote/tests/general/ai-agent-bridge-public-ingress-contract.test.mjs
+          python3 scripts/ci/test_classify_ai_agent_bridge_ingress.py -v
 
       - name: Probe public DNS TLS and fail-closed Slack routes
+        id: public_probe
+        continue-on-error: true
         env:
           AI_BRIDGE_PUBLIC_EVIDENCE_PATH: ${{ runner.temp }}/ai-agent-bridge-public-ingress.json
         run: bash scripts/ci/test-ai-agent-bridge-public-ingress.sh
+
+      - name: Classify edge and origin reachability
+        if: always()
+        env:
+          AI_BRIDGE_PUBLIC_EVIDENCE_PATH: ${{ runner.temp }}/ai-agent-bridge-public-ingress.json
+          AI_BRIDGE_PUBLIC_DIAGNOSIS_PATH: ${{ runner.temp }}/ai-agent-bridge-public-ingress-diagnosis.json
+        run: |
+          python3 scripts/ci/classify_ai_agent_bridge_ingress.py \
+            --evidence "$AI_BRIDGE_PUBLIC_EVIDENCE_PATH" \
+            --output "$AI_BRIDGE_PUBLIC_DIAGNOSIS_PATH"
 
       - name: Upload metadata-only public ingress evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ai-agent-bridge-public-ingress-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/ai-agent-bridge-public-ingress.json
+          path: |
+            ${{ runner.temp }}/ai-agent-bridge-public-ingress.json
+            ${{ runner.temp }}/ai-agent-bridge-public-ingress-diagnosis.json
           retention-days: 14
           if-no-files-found: warn
+
+      - name: Enforce the public ingress contract after evidence upload
+        if: always()
+        env:
+          PUBLIC_PROBE_OUTCOME: ${{ steps.public_probe.outcome }}
+        run: test "$PUBLIC_PROBE_OUTCOME" = success
