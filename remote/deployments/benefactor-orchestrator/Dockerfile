@@ -1,6 +1,7 @@
 FROM node:22-bookworm-slim
 
 ENV NODE_ENV=production
+ENV NODE_OPTIONS=--import=/work/scraper-contact-preload.mjs
 WORKDIR /work
 
 COPY remote/deployments/benefactor-orchestrator/package.json ./package.json
