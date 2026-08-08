@@ -3,7 +3,9 @@ name: Namespace migration contract
 on:
   pull_request:
   push:
-    branches: [dev]
+    branches:
+      - dev
+      - codex/den-2926-scanner-boundaries
   workflow_dispatch:
 
 permissions:
@@ -85,3 +87,41 @@ jobs:
             artifacts/namespace-ratchet.json
           if-no-files-found: error
           retention-days: 14
+
+  refine-den-2926:
+    name: One-shot refined scanner evidence
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/codex/den-2926-scanner-boundaries' && github.actor != 'github-actions[bot]' }}
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out the stacked repair branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: codex/den-2926-scanner-boundaries
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Reset to the latest remote head
+        run: |
+          set -euo pipefail
+          git fetch origin codex/den-2926-scanner-boundaries
+          git reset --hard origin/codex/den-2926-scanner-boundaries
+
+      - name: Apply refinement, validate, and regenerate evidence
+        run: python3 tools/den2926_refine_once.py
+
+      - name: Restore the permanent workflow and commit the repair
+        run: |
+          set -euo pipefail
+          git show fe434f4cb752c14b3f7db2d03031d57c299e2dad:.github/workflows/namespace-migration-contract.yml \
+            > .github/workflows/namespace-migration-contract.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(DEN-2926): preserve templates and reproducible evidence'
+          git push origin HEAD:refs/heads/codex/den-2926-scanner-boundaries
