@@ -58,6 +58,7 @@ data:
     readonly PUPPETEER_URL=https://github.com/discrete-event-systems-test/des-web-puppeteer-e2e.git
     readonly PLAYWRIGHT_SCRIPT='npm ci && npx playwright test'
     readonly PUPPETEER_SCRIPT='npm ci && npm run test:puppeteer'
+    readonly AUTH_FILE=/var/run/secrets/dd-ci-profile-runner-auth/SERVER_AUTH_SECRET
 
     fallback() {
       exec "$REAL_NERDCTL" "$@"
@@ -132,9 +133,13 @@ data:
       *) fallback "$@" ;;
     esac
 
-    auth="${SERVER_AUTH_SECRET:-}"
+    [[ -r "$AUTH_FILE" ]] || {
+      echo 'dd-build-server profile adapter: runner credential file is unavailable' >&2
+      exit 69
+    }
+    auth="$(<"$AUTH_FILE")"
     [[ ${#auth} -ge 20 ]] || {
-      echo 'dd-build-server profile adapter: SERVER_AUTH_SECRET is unavailable' >&2
+      echo 'dd-build-server profile adapter: runner credential is invalid' >&2
       exit 69
     }
     body="$(printf '{\"schemaVersion\":\"ci-profile-runner.v1\",\"requestId\":\"build-adapter:%s:%s\",\"repository\":\"%s\",\"revision\":\"%s\",\"profile\":\"%s\"}' \
