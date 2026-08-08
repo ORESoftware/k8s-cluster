@@ -76,6 +76,11 @@ test('allows only the declared Fiducia production/test shared Linear route', () 
   const records = validateRegistry(rows, { expectedCount: 2 });
   assert.equal(records[0].linearUrl, records[1].linearUrl);
 
+  const markdown = renderMarkdown(records);
+  assert.match(markdown, /https:\/\/github\.com\/orgs\/fiducia-cloud\/projects\/1/);
+  assert.match(markdown, /https:\/\/github\.com\/orgs\/fiducia-cloud-test\/projects\/1/);
+  assert.equal(markdown.split(linearUrl).length - 1, 2);
+
   expectFailure(
     () =>
       validateRegistry(
