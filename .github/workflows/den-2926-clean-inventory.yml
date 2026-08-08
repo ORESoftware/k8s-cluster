@@ -1,0 +1,93 @@
+name: DEN-2926 clean inventory regeneration
+
+on:
+  push:
+    branches:
+      - codex/den-2926-scanner-boundaries
+    paths:
+      - .github/workflows/den-2926-clean-inventory.yml
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Remove one-shot workflow before scanning
+        run: rm .github/workflows/den-2926-clean-inventory.yml
+
+      - name: Generate clean fixed inventory
+        run: |
+          python3 -m py_compile tools/namespace_migration.py tools/test_namespace_migration.py
+          python3 tools/test_namespace_migration.py
+          python3 tools/namespace_migration.py inventory \
+            --root . \
+            --format json \
+            > /tmp/namespace-inventory-fixed.json
+          cp /tmp/namespace-inventory-fixed.json artifacts/namespace-inventory.json
+
+      - name: Rebuild exact before/after delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git worktree add --detach /tmp/den-2926-before fe434f4cb752c14b3f7db2d03031d57c299e2dad
+          python3 /tmp/den-2926-before/tools/namespace_migration.py inventory \
+            --root /tmp/den-2926-before \
+            --format json \
+            > /tmp/namespace-inventory-before.json
+          python3 - /tmp/namespace-inventory-before.json /tmp/namespace-inventory-fixed.json \
+            > artifacts/den-2926-inventory-delta.json <<'PY'
+          import json
+          import sys
+
+          before = json.load(open(sys.argv[1], encoding="utf-8"))
+          after = json.load(open(sys.argv[2], encoding="utf-8"))
+          before_summary = before["summary"]
+          after_summary = after["summary"]
+          systems = sorted(set(before_summary["bySystem"]) | set(after_summary["bySystem"]))
+          report = {
+              "ticket": "DEN-2926",
+              "sourcePatch": {
+                  "repository": "fiducia-cloud-test/infra-multicloud-e2e",
+                  "commit": "db017c4957bcdc63162d27a7d6ff71cd660c9fd4",
+                  "gitBlob": "a57aec4a06aa5559b0af56485fa478e3270f714f",
+                  "sha256": "6ef14b922189f1d5e7ab18f55a386a117c6dbdabced9f37e82b76fcaaf81242c",
+              },
+              "beforeSha": "fe434f4cb752c14b3f7db2d03031d57c299e2dad",
+              "before": before_summary,
+              "after": after_summary,
+              "delta": {
+                  "total": after_summary["total"] - before_summary["total"],
+                  "distinctReferences": after_summary["distinctReferences"] - before_summary["distinctReferences"],
+                  "bySystem": {
+                      name: after_summary["bySystem"].get(name, 0) - before_summary["bySystem"].get(name, 0)
+                      for name in systems
+                  },
+              },
+              "note": "Generated after deleting the one-shot workflow from the working tree, so the committed inventory is reproducible from the resulting exact head.",
+          }
+          print(json.dumps(report, indent=2, sort_keys=True))
+          PY
+          cat artifacts/den-2926-inventory-delta.json
+
+      - name: Commit clean-tree evidence and workflow deletion
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            .github/workflows/den-2926-clean-inventory.yml \
+            artifacts/namespace-inventory.json \
+            artifacts/den-2926-inventory-delta.json
+          git commit -m "test(DEN-2926): regenerate clean-tree inventory evidence"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
