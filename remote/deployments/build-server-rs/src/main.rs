@@ -22,6 +22,7 @@ mod http;
 mod jobs;
 mod lambda_exec;
 mod nats_submit;
+mod profile_exec;
 mod profiles;
 mod state;
 mod types;
