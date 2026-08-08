@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import sys
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 OPS = ROOT / "scripts" / "ops"
@@ -82,6 +83,10 @@ class CurrentRepositoryRelationshipPublisherTests(unittest.TestCase):
             module.ORGANIZATIONS,
             tuple(module.current.ORGANIZATIONS),
         )
+        self.assertIs(
+            publisher.build_plan,
+            module.build_plan_with_exact_private_references,
+        )
 
     def test_dynamic_owner_identity_is_bound_to_preflight(self) -> None:
         original = module.governance.EXPECTED_ACTOR
@@ -131,6 +136,61 @@ class CurrentRepositoryRelationshipPublisherTests(unittest.TestCase):
         self.assertFalse(
             manifest["privacy"]["private_repository_names_published"]
         )
+
+    def test_exact_privacy_adapter_ignores_incidental_name_substrings(self) -> None:
+        inventory = [
+            {
+                **self.repository(".github"),
+                "full_name": "example-internal/.github",
+            },
+            {
+                **self.repository("internal", private=True),
+                "full_name": "example-internal/internal",
+            },
+        ]
+        with mock.patch.object(publisher.base, "fetch_file", return_value=None):
+            branch, files, tokens, result = (
+                module.build_plan_with_exact_private_references(
+                    object(),
+                    "example-internal",
+                    {"default_branch": "main"},
+                    inventory,
+                )
+            )
+        self.assertEqual("main", branch)
+        self.assertEqual(1, result["private_repository_count"])
+        self.assertIn('"name": "internal"', tokens)
+        self.assertNotIn("internal", json.loads(files[publisher.JSON_PATH][0])["repositories"])
+
+    def test_exact_privacy_adapter_rejects_generated_private_identity(self) -> None:
+        inventory = [
+            {
+                **self.repository(".github"),
+                "full_name": "example-internal/.github",
+            },
+            {
+                **self.repository("internal", private=True),
+                "full_name": "example-internal/internal",
+            },
+        ]
+        leaking_block = (
+            "[`internal`](https://github.com/example-internal/internal)"
+        )
+        with (
+            mock.patch.object(publisher.base, "fetch_file", return_value=None),
+            mock.patch.object(
+                publisher,
+                "relationship_readme_block",
+                return_value=leaking_block,
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "privacy preflight failed"):
+                module.build_plan_with_exact_private_references(
+                    object(),
+                    "example-internal",
+                    {"default_branch": "main"},
+                    inventory,
+                )
 
     def test_internal_relationships_follow_contract_direction(self) -> None:
         repositories = [
