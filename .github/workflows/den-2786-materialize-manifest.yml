@@ -1,0 +1,196 @@
+name: Materialize DEN-2786 plaintext manifest
+
+on:
+  push:
+    branches:
+      - agent/den-2786-namespace-contract
+    paths:
+      - '.github/transport/den-2786-manifest-source.tar.xz'
+      - '.github/workflows/den-2786-materialize-manifest.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-2786-materialize-manifest
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out implementation branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-2786-namespace-contract
+          fetch-depth: 0
+          persist-credentials: true
+          submodules: false
+          show-progress: false
+
+      - name: Reset to latest shared branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin agent/den-2786-namespace-contract
+          git reset --hard origin/agent/den-2786-namespace-contract
+
+      - name: Verify and extract reviewed plaintext source
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive='.github/transport/den-2786-manifest-source.tar.xz'
+          printf '%s  %s\n' \
+            '2ecc83ed16c3caa5338ea20f6240a9270aa02c07bdd8e22c1de3ed771a4bff67' \
+            "$archive" | sha256sum --check --strict
+          python3 - <<'PY'
+          from pathlib import Path
+          import tarfile
+
+          archive = Path('.github/transport/den-2786-manifest-source.tar.xz')
+          allowed = {
+              'tools/namespace_manifest.py',
+              'tools/test_namespace_manifest.py',
+              'catalog/namespaces/migration-manifest.schema.json',
+              'docs/namespace-migration-manifest.md',
+          }
+          with tarfile.open(archive, mode='r:xz') as handle:
+              members = handle.getmembers()
+              names = [member.name for member in members]
+              if len(names) != len(set(names)):
+                  raise SystemExit('source archive contains duplicate paths')
+              if set(names) != allowed:
+                  raise SystemExit(
+                      f'unexpected source archive paths: {sorted(set(names) ^ allowed)}'
+                  )
+              for member in members:
+                  if not member.isfile():
+                      raise SystemExit(f'archive member is not a regular file: {member.name}')
+                  source = handle.extractfile(member)
+                  if source is None:
+                      raise SystemExit(f'cannot read archive member: {member.name}')
+                  target = Path(member.name)
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  target.write_bytes(source.read())
+                  target.chmod(member.mode & 0o777)
+          PY
+
+      - name: Generate canonical plaintext manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          find catalog/namespaces -maxdepth 1 -type f \
+            -name '.den-2786-bundle-*.hex' -delete
+          python3 tools/namespace_manifest.py generate \
+            --root . \
+            --output catalog/namespaces/migration-manifest.json \
+            --format json
+
+      - name: Validate manifest and safety invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            tools/namespace_migration.py \
+            tools/test_namespace_migration.py \
+            tools/namespace_test_owner_contract.py \
+            tools/test_namespace_test_owner_contract.py \
+            tools/namespace_manifest.py \
+            tools/test_namespace_manifest.py
+          python3 tools/test_namespace_migration.py
+          python3 tools/test_namespace_test_owner_contract.py
+          python3 tools/test_namespace_manifest.py
+          python3 tools/namespace_manifest.py check \
+            --root . \
+            --format json > /tmp/namespace-manifest-report.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path('/tmp/namespace-manifest-report.json').read_text(encoding='utf-8')
+          )
+          manifest = json.loads(
+              Path('catalog/namespaces/migration-manifest.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          spec = manifest['spec']
+          summary = spec['summary']
+          entries = spec['entries']
+          checks = {
+              'report valid': report.get('valid') is True,
+              'report row count': report.get('entryCount') == 1134,
+              'inventory row count': report.get('inventoryEntryCount') == 1134,
+              'manifest row count': len(entries) == 1134,
+              'summary row count': summary.get('total') == 1134,
+              'execution disabled': spec.get('executionAuthorized') is False,
+              'cleanup summary disabled': summary.get('destructiveCleanupAllowed') == 0,
+              'all cleanup flags disabled': all(
+                  item.get('destructiveCleanupAllowed') is False for item in entries
+              ),
+              'no encoded staging files': report.get('encodedStagingFiles') == [],
+              'zero diagnostics': report.get('diagnostics') == [],
+          }
+          failed = [name for name, valid in checks.items() if not valid]
+          if failed:
+              raise SystemExit('manifest safety checks failed: ' + ', '.join(failed))
+          print(json.dumps({'valid': True, 'checks': checks}, indent=2, sort_keys=True))
+          PY
+          test -z "$(find catalog/namespaces -maxdepth 1 -type f -name '.den-2786-bundle-*.hex' -print -quit)"
+
+      - name: Commit plaintext source and generated manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm --quiet \
+            .github/transport/den-2786-manifest-source.tar.xz \
+            .github/workflows/den-2786-materialize-manifest.yml
+          git add -A \
+            tools/namespace_manifest.py \
+            tools/test_namespace_manifest.py \
+            catalog/namespaces \
+            docs/namespace-migration-manifest.md \
+            .github/transport \
+            .github/workflows/den-2786-materialize-manifest.yml
+          git diff --cached --check
+          git commit -m 'feat(DEN-2949): materialize plaintext namespace manifest'
+
+      - name: Rebase safely, revalidate, and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch='agent/den-2786-namespace-contract'
+          for attempt in 1 2 3; do
+            git fetch origin "$branch"
+            remote_sha="$(git rev-parse "origin/$branch")"
+            if ! git merge-base --is-ancestor "$remote_sha" HEAD; then
+              git rebase "origin/$branch"
+              python3 tools/namespace_manifest.py generate \
+                --root . \
+                --output catalog/namespaces/migration-manifest.json \
+                --format json
+              python3 tools/test_namespace_manifest.py
+              python3 tools/namespace_manifest.py check --root . --format json \
+                > /tmp/namespace-manifest-report.json
+              python3 - <<'PY'
+              import json
+              report = json.load(open('/tmp/namespace-manifest-report.json', encoding='utf-8'))
+              if not report.get('valid') or report.get('entryCount') != 1134:
+                  raise SystemExit('rebased manifest is not the validated 1,134-row contract')
+              PY
+              git add catalog/namespaces/migration-manifest.json
+              git commit --amend --no-edit
+            fi
+            if git push origin "HEAD:refs/heads/$branch"; then
+              exit 0
+            fi
+            sleep "$attempt"
+          done
+          echo 'Unable to push manifest commit after three fast-forward attempts.' >&2
+          exit 1
