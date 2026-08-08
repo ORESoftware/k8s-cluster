@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 concurrency:
   group: tmp-des-playwright-pin
@@ -26,7 +25,7 @@ jobs:
           ref: agent/des-playwright-resolved-target-pin
           fetch-depth: 0
 
-      - name: Replace the obsolete immutable test revision
+      - name: Replace the non-workflow immutable pin references
         shell: bash
         env:
           OLD_SHA: 1e1116ef6811c4e3e6be34ad3e1def39bc20ef59
@@ -40,7 +39,10 @@ jobs:
 
           old = os.environ['OLD_SHA']
           new = os.environ['NEW_SHA']
-          temporary_workflow = pathlib.Path('.github/workflows/tmp-des-playwright-pin.yml')
+          excluded = {
+              pathlib.Path('.github/workflows/tmp-des-playwright-pin.yml'),
+              pathlib.Path('.github/workflows/ops-verify-des-indie-plans.yml'),
+          }
           result = subprocess.run(
               ['git', 'grep', '-Il', old, '--', '.'],
               check=False,
@@ -52,10 +54,10 @@ jobs:
           paths = [
               pathlib.Path(line)
               for line in result.stdout.splitlines()
-              if line and pathlib.Path(line) != temporary_workflow
+              if line and pathlib.Path(line) not in excluded
           ]
-          if not paths:
-              raise SystemExit(f'no canonical tracked file contains the obsolete SHA {old}')
+          if len(paths) != 6:
+              raise SystemExit(f'expected exactly six non-workflow pin files, found {paths!r}')
           for path in paths:
               text = path.read_text(encoding='utf-8')
               updated = text.replace(old, new)
@@ -64,8 +66,8 @@ jobs:
               path.write_text(updated, encoding='utf-8')
           print('\n'.join(str(path) for path in paths))
           PY
-          git rm -f .github/workflows/tmp-des-playwright-pin.yml
-          ! git grep -n "$OLD_SHA" -- .
+          old_paths="$(git grep -Il "$OLD_SHA" -- . || true)"
+          test "$old_paths" = $'.github/workflows/ops-verify-des-indie-plans.yml\n.github/workflows/tmp-des-playwright-pin.yml'
           git grep -n "$NEW_SHA" -- .
 
       - name: Run focused immutable-harness contracts
@@ -78,22 +80,20 @@ jobs:
           grep -F "PLAYWRIGHT_SHA='104a02c72ca827ec678de0ed6e71d40b6fccbb93'" \
             remote/tests/general/gha-indie-worker-yaml.test.ts >/dev/null
 
-      - name: Commit and open the narrow pin PR
+      - name: Commit and push only non-workflow files
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add --all
+          git add \
+            docs/des-browser-test-fleet.md \
+            remote/deployments/ci-profile-runner-rs/readme.md \
+            remote/deployments/ci-profile-runner-rs/src/main.rs \
+            remote/tests/general/des-indie-browser-execution-contract.test.mjs \
+            remote/tests/general/gha-indie-worker-yaml.test.ts \
+            scripts/ops/run_des_indie_browser_workflows.sh
           git diff --cached --check
+          test "$(git diff --cached --name-only | wc -l)" -eq 6
           git commit -m 'chore(gha-indie): pin resolved-target Playwright suite'
           git push origin HEAD:agent/des-playwright-resolved-target-pin
-          if ! gh pr view agent/des-playwright-resolved-target-pin --json number >/dev/null 2>&1; then
-            gh pr create \
-              --base main \
-              --head agent/des-playwright-resolved-target-pin \
-              --title 'Pin the resolved-target Playwright suite for indie execution' \
-              --body $'The latest exact-SHA indie proof reached the real Playwright runner but used the prior test revision, whose static localhost base URL ignored the target selected by global setup.\n\nThis PR replaces that immutable pin with `discrete-event-systems-test/des-web-playwright-e2e@104a02c72ca827ec678de0ed6e71d40b6fccbb93`. The test-org commit has a successful full Chromium evidence run and routes service-local contracts through the resolved target.\n\nNo repository/profile admission, worker privilege, secret, webhook, Cloudflare route, or deployment authority changes. The temporary branch-preparation workflow deletes itself before this PR is opened.'
-          fi
