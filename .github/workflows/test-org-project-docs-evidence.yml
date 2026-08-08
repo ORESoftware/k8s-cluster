@@ -11,7 +11,10 @@ on:
       - scripts/ops/test_build_org_project_docs_retry_registry.py
       - scripts/ops/tests/test_org_project_delivery_ledger.py
       - scripts/ops/tests/test_validate_org_project_docs_evidence.py
+      - scripts/ci/classify_repo_check_scope.py
+      - scripts/ci/test_classify_repo_check_scope.py
       - ops/evidence/org-project-docs/**
+      - .github/workflows/repo-checks.yml
       - .github/workflows/test-org-project-docs-evidence.yml
   push:
     branches:
@@ -25,7 +28,10 @@ on:
       - scripts/ops/test_build_org_project_docs_retry_registry.py
       - scripts/ops/tests/test_org_project_delivery_ledger.py
       - scripts/ops/tests/test_validate_org_project_docs_evidence.py
+      - scripts/ci/classify_repo_check_scope.py
+      - scripts/ci/test_classify_repo_check_scope.py
       - ops/evidence/org-project-docs/**
+      - .github/workflows/repo-checks.yml
       - .github/workflows/test-org-project-docs-evidence.yml
 
 permissions:
@@ -36,17 +42,24 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout without credentials or private gitlinks
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
 
       - name: Check shell and Python syntax
         run: |
           bash -n scripts/ops/sync_org_project_docs.sh
-          python3 -m py_compile scripts/ops/build_org_project_docs_retry_registry.py
+          python3 -m py_compile \
+            scripts/ops/build_org_project_docs_retry_registry.py \
+            scripts/ci/classify_repo_check_scope.py
 
-      - name: Run evidence, retry-plan, and ledger regression tests
+      - name: Run evidence, retry-plan, scope, and ledger regression tests
         run: |
           python3 -m unittest \
             scripts/ops/test_build_org_project_docs_retry_registry.py \
+            scripts/ci/test_classify_repo_check_scope.py \
             scripts/ops/tests/test_validate_org_project_docs_evidence.py \
             scripts/ops/tests/test_org_project_delivery_ledger.py
 
