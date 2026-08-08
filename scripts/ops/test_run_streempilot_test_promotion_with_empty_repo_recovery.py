@@ -21,6 +21,9 @@ SPEC.loader.exec_module(MODULE)
 
 
 class EmptyRepositoryRecoveryTests(unittest.TestCase):
+    def setUp(self) -> None:
+        MODULE._RECOVERABLE_EMPTY_APPROVED = False
+
     def metadata(self) -> dict[str, object]:
         return {
             "id": MODULE.RECOVERABLE_EMPTY_STAGE["repository_id"],
@@ -49,101 +52,108 @@ class EmptyRepositoryRecoveryTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Repository rule conflict"):
                 MODULE.safe_main_ref(full_name)
 
-    def test_exact_failed_run_empty_repo_is_deleted_and_verified_absent(self) -> None:
+    def test_exact_failed_run_empty_repo_is_approved_without_delete(self) -> None:
         full_name = str(MODULE.RECOVERABLE_EMPTY_STAGE["full_name"])
         calls: list[tuple[str, str]] = []
-        responses = iter(
-            [
-                (200, self.metadata()),
-                (204, None),
-                (404, None),
-            ]
-        )
 
         def fake_api(method: str, path: str, body=None):
             del body
             calls.append((method, path))
-            return next(responses)
+            return 200, self.metadata()
 
         with (
             mock.patch.object(MODULE.BASE, "api", side_effect=fake_api),
             mock.patch.object(MODULE, "safe_main_ref", return_value=None),
         ):
             self.assertEqual(
-                MODULE.recover_failed_empty_stage_repository(),
-                "deleted",
+                MODULE.prepare_failed_empty_stage_repository(),
+                "approved-empty",
             )
 
-        self.assertEqual(
-            calls,
-            [
-                ("GET", f"/repos/{full_name}"),
-                ("DELETE", f"/repos/{full_name}"),
-                ("GET", f"/repos/{full_name}"),
-            ],
-        )
-
-    def test_recovery_rejects_wrong_repository_id_without_delete(self) -> None:
-        metadata = self.metadata()
-        metadata["id"] = int(MODULE.RECOVERABLE_EMPTY_STAGE["repository_id"]) + 1
-        calls: list[tuple[str, str]] = []
-
-        def fake_api(method: str, path: str, body=None):
-            del body
-            calls.append((method, path))
-            return 200, metadata
-
-        with mock.patch.object(MODULE.BASE, "api", side_effect=fake_api):
-            with self.assertRaisesRegex(RuntimeError, "repository id changed"):
-                MODULE.recover_failed_empty_stage_repository()
-
+        self.assertTrue(MODULE._RECOVERABLE_EMPTY_APPROVED)
+        self.assertEqual(calls, [("GET", f"/repos/{full_name}")])
         self.assertFalse(any(method == "DELETE" for method, _ in calls))
 
-    def test_recovery_preserves_exact_main_without_delete(self) -> None:
+    def test_recovery_existing_repository_reuses_only_preapproved_empty_identity(self) -> None:
         full_name = str(MODULE.RECOVERABLE_EMPTY_STAGE["full_name"])
         expected = str(MODULE.RECOVERABLE_EMPTY_STAGE["expected_sha"])
-        calls: list[tuple[str, str]] = []
-
-        def fake_api(method: str, path: str, body=None):
-            del body
-            calls.append((method, path))
-            return 200, self.metadata()
+        MODULE._RECOVERABLE_EMPTY_APPROVED = True
 
         with (
-            mock.patch.object(MODULE.BASE, "api", side_effect=fake_api),
+            mock.patch.object(MODULE.BASE, "api", return_value=(200, self.metadata())),
+            mock.patch.object(MODULE, "safe_main_ref", return_value=None),
+        ):
+            self.assertIsNone(
+                MODULE.recovery_existing_repository(full_name, expected)
+            )
+
+        other = "StreemPilot-test/streempilot-destinations"
+        with mock.patch.object(
+            MODULE,
+            "ORIGINAL_EXISTING_REPOSITORY",
+            return_value={"full_name": other},
+        ) as original:
+            result = MODULE.recovery_existing_repository(other, "a" * 40)
+            self.assertEqual(result, {"full_name": other})
+            original.assert_called_once_with(other, "a" * 40)
+
+    def test_recovery_existing_repository_preserves_race_to_exact_sha(self) -> None:
+        full_name = str(MODULE.RECOVERABLE_EMPTY_STAGE["full_name"])
+        expected = str(MODULE.RECOVERABLE_EMPTY_STAGE["expected_sha"])
+        MODULE._RECOVERABLE_EMPTY_APPROVED = True
+        metadata = self.metadata()
+
+        with (
+            mock.patch.object(MODULE.BASE, "api", return_value=(200, metadata)),
             mock.patch.object(MODULE, "safe_main_ref", return_value=expected),
         ):
             self.assertEqual(
-                MODULE.recover_failed_empty_stage_repository(),
+                MODULE.recovery_existing_repository(full_name, expected),
+                metadata,
+            )
+
+    def test_recovery_rejects_wrong_repository_id_without_approval(self) -> None:
+        metadata = self.metadata()
+        metadata["id"] = int(MODULE.RECOVERABLE_EMPTY_STAGE["repository_id"]) + 1
+
+        with mock.patch.object(MODULE.BASE, "api", return_value=(200, metadata)):
+            with self.assertRaisesRegex(RuntimeError, "repository id changed"):
+                MODULE.prepare_failed_empty_stage_repository()
+
+        self.assertFalse(MODULE._RECOVERABLE_EMPTY_APPROVED)
+
+    def test_recovery_preserves_exact_main_without_empty_exception(self) -> None:
+        full_name = str(MODULE.RECOVERABLE_EMPTY_STAGE["full_name"])
+        expected = str(MODULE.RECOVERABLE_EMPTY_STAGE["expected_sha"])
+
+        with (
+            mock.patch.object(MODULE.BASE, "api", return_value=(200, self.metadata())),
+            mock.patch.object(MODULE, "safe_main_ref", return_value=expected),
+        ):
+            self.assertEqual(
+                MODULE.prepare_failed_empty_stage_repository(),
                 "already-exact",
             )
 
-        self.assertFalse(any(method == "DELETE" for method, _ in calls))
-        self.assertEqual(calls, [("GET", f"/repos/{full_name}")])
+        self.assertFalse(MODULE._RECOVERABLE_EMPTY_APPROVED)
 
     def test_recovery_rejects_any_other_nonempty_main(self) -> None:
-        calls: list[tuple[str, str]] = []
-
-        def fake_api(method: str, path: str, body=None):
-            del body
-            calls.append((method, path))
-            return 200, self.metadata()
-
         with (
-            mock.patch.object(MODULE.BASE, "api", side_effect=fake_api),
+            mock.patch.object(MODULE.BASE, "api", return_value=(200, self.metadata())),
             mock.patch.object(MODULE, "safe_main_ref", return_value="f" * 40),
         ):
-            with self.assertRaisesRegex(RuntimeError, "refusing to delete non-empty"):
-                MODULE.recover_failed_empty_stage_repository()
+            with self.assertRaisesRegex(RuntimeError, "refusing to initialize non-empty"):
+                MODULE.prepare_failed_empty_stage_repository()
 
-        self.assertFalse(any(method == "DELETE" for method, _ in calls))
+        self.assertFalse(MODULE._RECOVERABLE_EMPTY_APPROVED)
 
-    def test_source_hardcodes_only_test_org_recovery_and_no_force_or_public_path(self) -> None:
+    def test_source_hardcodes_only_test_org_recovery_and_has_no_delete_force_or_public_path(self) -> None:
         source = MODULE_PATH.read_text(encoding="utf-8")
         self.assertIn('"StreemPilot-test/streempilot-compositor.rs"', source)
         self.assertIn("1327442276", source)
         self.assertIn('"2026-08-08T05:25:37Z"', source)
         self.assertNotIn("StreemPilot/streempilot-compositor.rs\"", source)
+        self.assertNotIn('BASE.api("DELETE"', source)
         self.assertNotIn("git push --" + "force", source)
         self.assertNotIn("--visibility " + "public", source)
         self.assertNotIn('"private": False', source)
