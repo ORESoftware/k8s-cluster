@@ -1,9 +1,14 @@
 # DEN-845: zero-replica provider runner by immutable digest, replacing the
-# orphaned in-pod-build Deployment that was live-only (absent from git). Same
-# reviewed source commit and CI run as the bridge image:
-#   source commit: 63d4d9be4343d3eeba02205ec64dd443716c5249 (ancestor of main)
+# orphaned in-pod-build Deployment that was live-only (absent from git). Pinned
+# to the current reviewed image published by trusted main CI of
+# ORESoftware/ai-agent-bridge.rs:
+#   source commit: 6867b63c93adfb80a4d54ab4442d1af33cc1b85d (main HEAD, PR #105)
 #   image:         ghcr.io/oresoftware/fiducia-ai-agent-runner (public)
-#   digest:        sha256:275e10ddbaf91e8fb8a9c7cc40a63276c3592fbc0fd881f6e180ce3f37c18475
+#   digest:        sha256:f6804e961ddf483aee782ee449b98a1c3bd8f97a52fe43e85c756aa5f71cc61f
+#   CI:            container-images.yml run 31229029799 (four-image matrix, all
+#                  jobs success); digest from the run's image-digest evidence
+#                  artifact, not inferred. Bridge Deployment digest pin for the
+#                  same source SHA is handled in PR #1112.
 # replicas MUST stay 0 until DEN-391 provisions dd-ai-agent-runner-secrets
 # (provider keys) and the DEN-847 bounded activation canary authorizes exactly
 # one replica. The envFrom secret is intentionally required (not optional): a
@@ -28,7 +33,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/ai-agent-runner-revision: '2026-08-07-immutable-digest-63d4d9be'
+        dd.dev/ai-agent-runner-revision: '2026-08-08-immutable-digest-6867b63c'
       labels:
         app: dd-ai-agent-runner
     spec:
@@ -40,7 +45,7 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: ai-agent-runner
-          image: ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:275e10ddbaf91e8fb8a9c7cc40a63276c3592fbc0fd881f6e180ce3f37c18475
+          image: ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:f6804e961ddf483aee782ee449b98a1c3bd8f97a52fe43e85c756aa5f71cc61f
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
