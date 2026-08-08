@@ -10,7 +10,7 @@ const policy = fs.readFileSync(
 );
 
 const PLAYWRIGHT_SHA = '104a02c72ca827ec678de0ed6e71d40b6fccbb93';
-const PUPPETEER_SHA = '0547548429d937023a124de37afca7659a85c3dd';
+const PUPPETEER_SHA = '85f58bfa7fd7209c05c691cf6c700b412f11e7d7';
 
 test('DES indie harness uses planner-valid reviewed workflow paths', () => {
   assert.match(script, /PLAYWRIGHT_PATH='\.github\/workflows\/gha-indie-worker\.yml'/);
