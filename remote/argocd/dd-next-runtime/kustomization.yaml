@@ -120,6 +120,7 @@ resources:
   - dd-next-1-js.service.yaml
   - dd-sound-recorder-cloud-projection.cronjob.yaml
   - dd-sound-recorder-auth.externalsecret.yaml
+  - dd-sound-recorder-passwd.configmap.yaml
   - dd-sound-recorder-rs.deployment.yaml
   - dd-sound-recorder-rs.networkpolicy.yaml
   - dd-sound-recorder-rs.service.yaml
