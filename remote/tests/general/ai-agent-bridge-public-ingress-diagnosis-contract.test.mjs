@@ -65,7 +65,7 @@ test('runbook keeps activation closed and separates credential-free from operato
   assert.match(runbook, /Operator-only cluster checks/);
   assert.match(runbook, /SLACK_COMMAND_DRY_RUN=true/);
   assert.match(runbook, /provider runner replicas=0/i);
-  assert.match(runbook, /do not.*pasted.*credential/i);
+  assert.match(runbook, /do not.*credential.*pasted/i);
   assert.doesNotMatch(runbook, /ghp_[A-Za-z0-9]+/);
   assert.doesNotMatch(runbook, /cfat_[A-Za-z0-9]+/);
 });
