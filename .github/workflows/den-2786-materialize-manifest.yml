@@ -191,12 +191,7 @@ jobs:
               python3 tools/test_namespace_manifest.py
               python3 tools/namespace_manifest.py check --root . --format json \
                 > /tmp/namespace-manifest-report.json
-              python3 - <<'PY'
-              import json
-              report = json.load(open('/tmp/namespace-manifest-report.json', encoding='utf-8'))
-              if not report.get('valid') or report.get('entryCount') != 1134:
-                  raise SystemExit('rebased manifest is not the validated 1,134-row contract')
-              PY
+              python3 -c "import json; report=json.load(open('/tmp/namespace-manifest-report.json', encoding='utf-8')); assert report.get('valid') and report.get('entryCount') == 1134, 'rebased manifest is not the validated 1,134-row contract'"
               git add catalog/namespaces/migration-manifest.json
               git commit --amend --no-edit
             fi
