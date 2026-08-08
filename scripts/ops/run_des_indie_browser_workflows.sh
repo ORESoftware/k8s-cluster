@@ -28,11 +28,12 @@ export KUBECONFIG="$kubeconfig"
 
 server_auth=''
 bridge_auth=''
+bridge_auth_header=''
 bridge_channel=''
 port_forward_pid=''
 bridge_forward_pid=''
 cleanup() {
-  unset server_auth encoded_auth bridge_auth encoded_bridge_auth
+  unset server_auth encoded_auth bridge_auth bridge_auth_header encoded_bridge_auth
   if [[ -n "$port_forward_pid" ]]; then
     kill "$port_forward_pid" 2>/dev/null || true
     wait "$port_forward_pid" 2>/dev/null || true
@@ -51,7 +52,7 @@ bridge_post() {
   local path="$1"
   local payload="$2"
   curl --fail --silent --show-error \
-    --header "authorization: Bearer $bridge_auth" \
+    --header @"$bridge_auth_header" \
     --header 'content-type: application/json' \
     --data-binary "$payload" \
     "http://127.0.0.1:18142$path"
@@ -59,7 +60,7 @@ bridge_post() {
 
 bridge_message() {
   local content="$1"
-  [[ -n "$bridge_channel" && -n "$bridge_auth" ]] || return 0
+  [[ -n "$bridge_channel" && -n "$bridge_auth_header" ]] || return 0
   local payload
   payload="$(jq -nc \
     --arg from "$BRIDGE_AGENT_KEY" \
@@ -81,6 +82,10 @@ coordinate_bridge() {
     echo 'AI_AGENT_BRIDGE_COORDINATION=unavailable reason=empty-token'
     return 0
   fi
+  bridge_auth_header="$WORK_DIR/bridge-auth.header"
+  printf 'authorization: Bearer %s\n' "$bridge_auth" > "$bridge_auth_header"
+  chmod 600 "$bridge_auth_header"
+  unset bridge_auth
 
   kubectl -n default port-forward service/dd-ai-agent-bridge 18142:8142 --address 127.0.0.1 \
     > "$WORK_DIR/bridge-port-forward.log" 2>&1 &
