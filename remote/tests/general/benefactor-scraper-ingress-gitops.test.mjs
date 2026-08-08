@@ -4,11 +4,15 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
+const policyPath = 'remote/argocd/dd-next-runtime/dd-web-scraper.networkpolicy.yaml';
+
 function findRepoRoot() {
-  for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/argocd/dd-next-runtime/dd-web-scraper.networkpolicy.yaml'))) {
-      return candidate;
-    }
+  let candidate = resolve(process.cwd());
+  for (;;) {
+    if (existsSync(resolve(candidate, policyPath))) return candidate;
+    const parent = resolve(candidate, '..');
+    if (parent === candidate) break;
+    candidate = parent;
   }
   throw new Error(`Unable to locate repository root from ${process.cwd()}`);
 }
@@ -52,9 +56,7 @@ function exactSelector(name, component) {
 }
 
 test('private scraper ingress permits only exact Benefactor discovery and diagnostic workloads', async () => {
-  const policy = await readRepoFile(
-    'remote/argocd/dd-next-runtime/dd-web-scraper.networkpolicy.yaml',
-  );
+  const policy = await readRepoFile(policyPath);
 
   for (const workload of allowedWorkloads) {
     assert.ok(
@@ -103,9 +105,7 @@ test('every allowed selector is backed by the same labels on its controlled work
 });
 
 test('the scraper remains deny-by-default and keeps its SSRF egress exclusions', async () => {
-  const policy = await readRepoFile(
-    'remote/argocd/dd-next-runtime/dd-web-scraper.networkpolicy.yaml',
-  );
+  const policy = await readRepoFile(policyPath);
 
   assert.match(policy, /policyTypes:\s*\n\s*- Ingress\s*\n\s*- Egress/);
   assert.match(policy, /cidr:\s*0\.0\.0\.0\/0/);
