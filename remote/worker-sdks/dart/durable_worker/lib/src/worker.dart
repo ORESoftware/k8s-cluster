@@ -57,7 +57,10 @@ class CancellationToken {
 
   void throwIfCancelled() {
     final Object? current = _reason;
-    if (current is Exception || current is Error) {
+    if (current is Error) {
+      throw current;
+    }
+    if (current is Exception) {
       throw current;
     }
     if (current != null) {
@@ -262,8 +265,7 @@ class Worker {
           .pollWorker(config.workerId, wait: config.pollWait)
           .then<_PollOutcome>(
             _PollOutcome.success,
-            onError: (Object error, StackTrace stackTrace) =>
-                _PollOutcome.error(error, stackTrace),
+            onError: _PollOutcome.error,
           );
       final List<Future<_PollOutcome>> candidates = <Future<_PollOutcome>>[
         pollFuture,
@@ -400,8 +402,7 @@ class Worker {
       return handler(context);
     }).then<_HandlerOutcome>(
       _HandlerOutcome.success,
-      onError: (Object error, StackTrace stackTrace) =>
-          _HandlerOutcome.error(error, stackTrace),
+      onError: _HandlerOutcome.error,
     );
 
     final List<Future<_HandlerOutcome>> candidates = <Future<_HandlerOutcome>>[
