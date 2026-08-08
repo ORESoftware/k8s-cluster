@@ -54,7 +54,7 @@ data:
         "dd-ws-loadtest-rs-go-wss,dd-ws-loadtest-rs-rust-wss,gcs,gcs-kafka,"
         "gcs-mongodb,gcs-rabbitmq,gcs-router,gha-capacity-broker-sonus,gha-capacity-broker-streempilot,headlamp,minio,presence,reloader,"
         "spark,spark-master,spark-worker,airflow,benefactor-backend-rs,dd-agent-sim-server,"
-        "dd-ai-agent-bridge,dd-akrion-web-server-rs,dd-alertmanager,dd-benefactor-marketing-rs,"
+        "dd-ai-agent-bridge,dd-ai-agent-runner,dd-akrion-web-server-rs,dd-alertmanager,dd-benefactor-marketing-rs,"
         "dd-canonical-cloud,dd-chaos,dd-constraint-scheduler,dd-data-viz-rs,dd-dataset-labeling,"
         "dd-document-rs,dd-email-sms-contact-rs,dd-embeddings-rs,dd-evolution-optimizer-island,dd-happy-wakey-gateway,"
         "dd-evolution-optimizer-master,dd-fiducia-rs,dd-func-approx-rs,dd-git-rs,dd-gpu-rs,"
