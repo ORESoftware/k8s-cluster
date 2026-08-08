@@ -281,6 +281,13 @@ resources:
   - dd-ai-agent-bridge.networkpolicy.yaml
   - dd-ai-agent-bridge.pdb.yaml
   - dd-ai-agent-bridge.service.yaml
+  # ai-agent-runner: multi-provider workflow runner for the bridge (DEN-845),
+  # pinned to the reviewed immutable image digest. Held at replicas: 0 until
+  # DEN-391 provisions dd-ai-agent-runner-secrets and the DEN-847 activation
+  # canary authorizes one replica. Bridge Deployment digest pin is handled
+  # separately in PR #1112.
+  - dd-ai-agent-runner.deployment.yaml
+  - dd-ai-agent-runner.networkpolicy.yaml
   # t2v-v2t: voice-to-text / text-to-voice / translation. Two separately
   # deployed binaries built in-pod from the remote/deployments/t2v-v2t.rs
   # submodule: the JSON API (:8130, Vapi.ai webhooks, custom-FFT audio analysis)
