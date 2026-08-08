@@ -1,6 +1,6 @@
 # GitHub ↔ Linear project sync checkpoint — 2026-08-07
 
-This checkpoint records the current operating contract for the organization portfolio without duplicating the canonical registry.
+This checkpoint records the current operating contract for the organization portfolio without duplicating the canonical registry. The ORESoftware bridge section was refreshed on 2026-08-08 after the coordinated current-release follow-ups merged.
 
 ## Canonical sources
 
@@ -21,13 +21,18 @@ This document is a mapping/evidence checkpoint. It does **not** claim a GitHub P
 
 ### ORESoftware / k8s-cluster
 
-- `#1112` merged the immutable ChatGPT ↔ Claude bridge and Slack-command runtime into `dev`.
-- `#1115` merged the digest-pinned provider runner at `replicas: 0`.
-- `#1118` merged exporter watch-fallback parity plus focused runner-observability regression coverage.
-- `#1119` is the current runner-release repin. Its branch is semantically synchronized with `dev` through a two-parent merge so the newer observability fix and the reviewed current runner release are both preserved.
-- The remaining broad repository failure is the existing private-backend installation-authority gate; product-specific runner, observability, E2E, secret, no-PAT, catalog, and overlay contracts are evaluated separately.
+Canonical rollout ledger: `k8s-cluster#1111` / Linear DEN-845.
 
-Linear ownership: DEN-845 for immutable cluster rollout; DEN-847 for the bounded one-provider/one-replica canary; DEN-391 for the provider secret bundle. The runner remains held at zero until those activation gates are satisfied.
+- `#1112` merged the initial immutable ChatGPT ↔ Claude bridge and Slack-command runtime into `dev`.
+- `#1115` merged the initial digest-pinned provider runner at `replicas: 0`.
+- `#1118` merged exporter watch-fallback parity plus focused runner-observability regression coverage.
+- `#1119` merged the provider runner follow-up at source `c3e54e6cd0c6d56e3d2ed32902228d974e550a3f`, workflow run `31235992249`, digest `sha256:90a919fb28fb2bc2795a0a3735ab08993d245c3eaa2afcd5f42be9b1a4982702`, still held at zero replicas.
+- `#1120` merged the bridge and signed Slack-command follow-up from the same source/run, using bridge digest `sha256:6b7e447a9989fa127ad4b0b3edc51fcd37a6b94a96bcf61b42c22d2641bf0ea8` and Slack-command digest `sha256:01f80fbd4d3ba5226b4abdb7f5e603538924edb48e79e72b0af43246624900cb`.
+- Current rollout revision on `dev`: `c5f868b4598433d7ec5b3b96a853466ec89a9b49`.
+- Slack remains `signed-dry-run`; the provider runner remains `held-zero`. No provider activation or spend was authorized by these merges.
+- Focused bridge, Slack, runner, Kubernetes/kind, overlay, observability, E2E, OpenAPI, catalog, static, secret-scan, and no-PAT checks passed. The remaining broad repository failure is the pre-existing private-backend GitHub App installation-authority gate for unrelated private gitlinks; no PAT fallback was introduced.
+
+Linear ownership remains segmented: DEN-845 owns immutable cluster rollout and live deployment evidence; DEN-391 owns the provider secret bundle; DEN-847 owns the bounded one-provider/one-replica canary; DEN-1041 owns end-user Slack/ChatGPT/Claude acceptance. DEN-845 must remain open until ArgoCD, ExternalSecret, exact live image-ID, probe, signed dry-run, authenticated transport, and digest-only rollback evidence are attached.
 
 ### meta-agents-demo
 
