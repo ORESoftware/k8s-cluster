@@ -33,6 +33,8 @@ test('DES indie harness preserves immutable repository provenance', () => {
 test('DES indie harness keeps failures diagnosable and terminal', () => {
   assert.match(script, /--write-out '%\{http_code\}'/);
   assert.match(script, /HTTP \$code from \$url/);
+  assert.match(script, /DES_INDIE_PLAN_MISMATCH/);
+  assert.match(script, /DES_INDIE_RUN_MISMATCH/);
   assert.match(script, /status == "succeeded"/);
   assert.match(script, /\.buildId \| type == "string" and length > 0/);
 });
@@ -40,6 +42,8 @@ test('DES indie harness keeps failures diagnosable and terminal', () => {
 test('DES indie harness coordinates through the in-cluster agent bridge when available', () => {
   assert.match(script, /service\/dd-ai-agent-bridge 18142:8142/);
   assert.match(script, /dd-ai-agent-bridge-secrets/);
+  assert.match(script, /bridge-auth\.header/);
+  assert.match(script, /chmod 600 "\$bridge_auth_header"/);
   assert.match(script, /\/agents\/register/);
   assert.match(script, /\/channels\/resolve/);
   assert.match(script, /\/channels\/\$bridge_channel\/messages/);
