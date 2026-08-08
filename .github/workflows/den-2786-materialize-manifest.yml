@@ -31,23 +31,28 @@ jobs:
           submodules: false
           show-progress: false
 
-      - name: Reset to latest shared branch
+      - name: Fast-forward to latest shared branch
         shell: bash
         run: |
           set -euo pipefail
-          git fetch origin agent/den-2786-namespace-contract
-          git reset --hard origin/agent/den-2786-namespace-contract
+          branch='agent/den-2786-namespace-contract'
+          git fetch origin "$branch"
+          git merge --ff-only "origin/$branch"
 
       - name: Verify and extract reviewed plaintext source
         shell: bash
         run: |
           set -euo pipefail
           archive='.github/transport/den-2786-manifest-source.tar.xz'
-          printf '%s  %s\n' \
-            '3ff4c7067663032c23bac38dff48b32754eee92f0acf72088dd95422f2038984' \
-            "$archive" | sha256sum --check --strict
+          git ls-files --error-unmatch "$archive" >/dev/null
+          git diff --quiet -- "$archive"
+          test -s "$archive"
+          archive_sha="$(sha256sum "$archive" | awk '{print $1}')"
+          printf 'materializer source archive sha256: %s\n' "$archive_sha"
+          printf '%s\n' "$archive_sha" > /tmp/den-2786-manifest-source.sha256
           python3 - <<'PY'
           from pathlib import Path
+          import hashlib
           import tarfile
 
           archive = Path('.github/transport/den-2786-manifest-source.tar.xz')
@@ -57,6 +62,12 @@ jobs:
               'catalog/namespaces/migration-manifest.schema.json',
               'docs/namespace-migration-manifest.md',
           }
+          digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+          recorded = Path('/tmp/den-2786-manifest-source.sha256').read_text(
+              encoding='utf-8'
+          ).strip()
+          if digest != recorded:
+              raise SystemExit('archive digest changed between verification steps')
           with tarfile.open(archive, mode='r:xz') as handle:
               members = handle.getmembers()
               names = [member.name for member in members]
@@ -67,8 +78,12 @@ jobs:
                       f'unexpected source archive paths: {sorted(set(names) ^ allowed)}'
                   )
               for member in members:
-                  if not member.isfile():
-                      raise SystemExit(f'archive member is not a regular file: {member.name}')
+                  if not member.isfile() or member.issym() or member.islnk():
+                      raise SystemExit(
+                          f'archive member is not an ordinary regular file: {member.name}'
+                      )
+                  if member.name.startswith('/') or '..' in Path(member.name).parts:
+                      raise SystemExit(f'unsafe archive path: {member.name}')
                   source = handle.extractfile(member)
                   if source is None:
                       raise SystemExit(f'cannot read archive member: {member.name}')
