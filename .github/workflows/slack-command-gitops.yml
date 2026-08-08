@@ -90,7 +90,12 @@ jobs:
               match = re.match(r'^\s*uses:\s*([^\s#]+)', line)
               if match:
                   reference = match.group(1)
-                  if not reference.startswith('./') and not re.fullmatch(r'[^@]+@[0-9a-fA-F]{40}', reference):
+                  git_action = re.fullmatch(r'[^@]+@[0-9a-fA-F]{40}', reference)
+                  docker_action = re.fullmatch(
+                      r'docker://[^@\s]+@sha256:[0-9a-fA-F]{64}',
+                      reference,
+                  )
+                  if not reference.startswith('./') and not (git_action or docker_action):
                       failures.append(f'{path}:{number}: mutable action reference: {reference}')
               if re.search(r'^\s*runs-on:\s*ubuntu-latest\s*$', line):
                   failures.append(f'{path}:{number}: mutable runner label: ubuntu-latest')
