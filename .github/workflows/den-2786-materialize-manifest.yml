@@ -151,14 +151,12 @@ jobs:
           git rm --quiet \
             .github/transport/den-2786-manifest-source.tar.xz \
             .github/workflows/den-2786-materialize-manifest.yml
-          git add -A \
-            tools/namespace_manifest.py \
-            tools/test_namespace_manifest.py \
-            catalog/namespaces \
-            docs/namespace-migration-manifest.md \
-            .github/transport \
-            .github/workflows/den-2786-materialize-manifest.yml
+          git add -A
           git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'Materializer produced no staged changes.' >&2
+            exit 1
+          fi
           git commit -m 'feat(DEN-2949): materialize plaintext namespace manifest'
 
       - name: Rebase safely, revalidate, and push
