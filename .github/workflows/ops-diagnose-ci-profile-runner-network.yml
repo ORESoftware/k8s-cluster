@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - agent/diagnose-ci-runner-network
     paths:
       - .github/workflows/ops-diagnose-ci-profile-runner-network.yml
   pull_request:
