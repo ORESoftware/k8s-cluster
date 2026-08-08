@@ -1,0 +1,347 @@
+name: DEN-2050 GraphQL libs bootstrap v4
+run-name: DEN-2050 GraphQL libs v4 @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-den-2050-graphql-libs-v4.yml
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-den-2050-graphql-libs-v4.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+concurrency:
+  group: den-2050-graphql-libs-v4
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Validate GraphQL-only organization mutation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow=.github/workflows/ops-den-2050-graphql-libs-v4.yml
+          grep -qF 'ISSUE_NUMBER: 1220' "$workflow"
+          grep -qF 'RSA-OAEP-SHA256' "$workflow"
+          grep -qF 'createRepository' "$workflow"
+          grep -qF 'createRef' "$workflow"
+          grep -qF 'StreemPilot/sp-libs' "$workflow"
+          grep -qF 'hypesiege/hypesiege-libs' "$workflow"
+          grep -qF 'visibility:PRIVATE' "$workflow"
+          grep -qF 'refs/tags/v0.1.0' "$workflow"
+          credential_pattern='gh''p_|github_''pat_|BEGIN [A-Z ]*PRIVATE KEY'
+          unsafe_pattern='git push --''force|visibility:[[:space:]]*PUBLIC|deleteRepository|updateRepository'
+          if grep -nE "$credential_pattern" "$workflow"; then
+            echo 'credential-shaped source material detected' >&2
+            exit 1
+          fi
+          if grep -nE "$unsafe_pattern" "$workflow"; then
+            echo 'unsafe repository mutation path detected' >&2
+            exit 1
+          fi
+          git diff --check HEAD^ HEAD
+
+  publish:
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      ISSUE_NUMBER: 1220
+      CONFIRMATION: graphql-create-hype-and-tag-both-v4
+    steps:
+      - name: Check out exact trusted main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Publish run-bound RSA-OAEP-SHA256 key and receive one ciphertext
+        id: handoff
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+          run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$(openssl rand -hex 16)"
+          private_key="$RUNNER_TEMP/den-2050-gql-v4-private.pem"
+          public_key="$RUNNER_TEMP/den-2050-gql-v4-public.pem"
+          matches="$RUNNER_TEMP/den-2050-gql-v4-ciphertext-matches"
+          encrypted="$RUNNER_TEMP/den-2050-gql-v4-token.bin"
+          payload="$RUNNER_TEMP/den-2050-gql-v4-payload.json"
+          token_file="$RUNNER_TEMP/den-2050-gql-v4-github-token"
+
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out "$private_key" >/dev/null 2>&1
+          openssl pkey -in "$private_key" -pubout -out "$public_key" >/dev/null 2>&1
+          key_b64="$(base64 -w0 < "$public_key")"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+            -f body="DEN2050_GQL_V4_PAT_PUBLIC_KEY protocol=1 run_id=${run_id} key_b64=${key_b64} confirm=${CONFIRMATION}" >/dev/null
+          echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
+          echo "token_file=${token_file}" >> "$GITHUB_OUTPUT"
+          echo "HANDSHAKE_READY run_id=${run_id} issue=${ISSUE_NUMBER}"
+
+          prefix="DEN2050_GQL_V4_PAT_CIPHERTEXT protocol=1 run_id=${run_id} data="
+          query_matches() {
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+              --jq ".[] | select(.body | startswith(\"${prefix}\")) | .body" > "$matches"
+          }
+          reject_duplicates() {
+            local count="$1"
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+              -f body="DEN2050_GQL_V4_PAT_REJECTED protocol=1 run_id=${run_id} reason=duplicate_ciphertexts count=${count}" >/dev/null
+            echo "expected exactly one ciphertext; observed ${count}" >&2
+            exit 1
+          }
+
+          ciphertext=''
+          for _ in $(seq 1 360); do
+            query_matches
+            count="$(awk 'NF { count += 1 } END { print count + 0 }' "$matches")"
+            [ "$count" -le 1 ] || reject_duplicates "$count"
+            if [ "$count" -eq 1 ]; then
+              sleep 5
+              query_matches
+              count="$(awk 'NF { count += 1 } END { print count + 0 }' "$matches")"
+              [ "$count" -eq 1 ] || reject_duplicates "$count"
+              line="$(cat "$matches")"
+              ciphertext="${line#"$prefix"}"
+              break
+            fi
+            sleep 5
+          done
+          test -n "$ciphertext" || { echo "encrypted credential was not received for ${run_id}" >&2; exit 1; }
+
+          printf '%s' "$ciphertext" | base64 -d > "$encrypted"
+          openssl pkeyutl -decrypt -inkey "$private_key" -in "$encrypted" \
+            -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256 \
+            -out "$payload"
+          jq -e --arg run_id "$run_id" --arg confirmation "$CONFIRMATION" '
+            (.run_id == $run_id) and
+            (.confirm == $confirmation) and
+            (.token | type == "string" and length >= 20 and (test("\\s") | not))
+          ' "$payload" >/dev/null
+          token="$(jq -r .token "$payload")"
+          echo "::add-mask::${token}"
+          printf '%s' "$token" > "$token_file"
+          chmod 600 "$token_file"
+          rm -f "$matches" "$encrypted" "$payload"
+
+      - name: GraphQL stage 1 — tag StreemPilot and create HypeSiege repo
+        id: stage1
+        shell: bash
+        env:
+          TOKEN_FILE: ${{ steps.handoff.outputs.token_file }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          token="$(cat "$TOKEN_FILE")"
+          echo "::add-mask::${token}"
+          export GH_TOKEN="$token"
+
+          query_file="$RUNNER_TEMP/den-2050-gql-v4-query.graphql"
+          query_json="$RUNNER_TEMP/den-2050-gql-v4-query.json"
+          cat > "$query_file" <<'GQL'
+          query($spOwner:String!, $spName:String!, $hsOwner:String!, $hsName:String!) {
+            rateLimit { remaining resetAt cost }
+            spOrg: organization(login:$spOwner) { id }
+            hsOrg: organization(login:$hsOwner) { id }
+            sp: repository(owner:$spOwner, name:$spName) {
+              id nameWithOwner visibility
+              defaultBranchRef { name target { ... on Commit { oid } } }
+              tag: ref(qualifiedName:"refs/tags/v0.1.0") { target { ... on Commit { oid } } }
+            }
+            hs: repository(owner:$hsOwner, name:$hsName) {
+              id nameWithOwner visibility
+              defaultBranchRef { name target { ... on Commit { oid } } }
+            }
+          }
+          GQL
+          gh api graphql \
+            -f query="$(cat "$query_file")" \
+            -f spOwner='StreemPilot' -f spName='sp-libs' \
+            -f hsOwner='hypesiege' -f hsName='hypesiege-libs' \
+            > "$query_json"
+
+          jq -e '.data.rateLimit.remaining >= 10' "$query_json" >/dev/null || {
+            jq -r '.data.rateLimit | "GraphQL quota insufficient remaining=\(.remaining) resetAt=\(.resetAt)"' "$query_json" >&2
+            exit 1
+          }
+          jq -e '.data.sp.nameWithOwner == "StreemPilot/sp-libs" and .data.sp.visibility == "PRIVATE" and .data.sp.defaultBranchRef.name == "main"' "$query_json" >/dev/null
+          sp_repo_id="$(jq -r .data.sp.id "$query_json")"
+          sp_main="$(jq -r .data.sp.defaultBranchRef.target.oid "$query_json")"
+          sp_tag="$(jq -r '.data.sp.tag.target.oid // empty' "$query_json")"
+          test -n "$sp_repo_id"
+          [[ "$sp_main" =~ ^[0-9a-f]{40}$ ]]
+
+          if [ -n "$sp_tag" ]; then
+            test "$sp_tag" = "$sp_main" || {
+              echo "StreemPilot/sp-libs v0.1.0 diverges from main" >&2
+              exit 1
+            }
+          else
+            mutation='mutation($repositoryId:ID!, $oid:GitObjectID!) { createRef(input:{repositoryId:$repositoryId,name:"refs/tags/v0.1.0",oid:$oid}) { ref { name target { ... on Commit { oid } } } } }'
+            gh api graphql -f query="$mutation" -f repositoryId="$sp_repo_id" -f oid="$sp_main" \
+              | jq -e --arg oid "$sp_main" '.data.createRef.ref.name == "v0.1.0" and .data.createRef.ref.target.oid == $oid' >/dev/null
+          fi
+
+          hs_repo_id="$(jq -r '.data.hs.id // empty' "$query_json")"
+          hs_created=false
+          if [ -n "$hs_repo_id" ]; then
+            jq -e '.data.hs.nameWithOwner == "hypesiege/hypesiege-libs" and .data.hs.visibility == "PRIVATE"' "$query_json" >/dev/null
+          else
+            hs_org_id="$(jq -r .data.hsOrg.id "$query_json")"
+            test -n "$hs_org_id"
+            mutation='mutation($ownerId:ID!) { createRepository(input:{ownerId:$ownerId,name:"hypesiege-libs",description:"Shared runtime-light Zed libraries for HypeSiege",visibility:PRIVATE,hasIssuesEnabled:true,hasWikiEnabled:false}) { repository { id nameWithOwner visibility } } }'
+            created_json="$RUNNER_TEMP/den-2050-gql-v4-created.json"
+            gh api graphql -f query="$mutation" -f ownerId="$hs_org_id" > "$created_json"
+            jq -e '.data.createRepository.repository.nameWithOwner == "hypesiege/hypesiege-libs" and .data.createRepository.repository.visibility == "PRIVATE"' "$created_json" >/dev/null
+            hs_repo_id="$(jq -r .data.createRepository.repository.id "$created_json")"
+            hs_created=true
+          fi
+
+          echo "sp_main=${sp_main}" >> "$GITHUB_OUTPUT"
+          echo "hs_repo_id=${hs_repo_id}" >> "$GITHUB_OUTPUT"
+          echo "hs_created=${hs_created}" >> "$GITHUB_OUTPUT"
+          printf '{"schema_version":4,"sp_main":"%s","hs_repository_id":"%s","hs_created":%s}\n' \
+            "$sp_main" "$hs_repo_id" "$hs_created" > "$RUNNER_TEMP/den-2050-gql-v4-stage1.json"
+
+      - name: Publish stage-1 receipt and wait for HypeSiege seed completion
+        id: wait_seed
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.handoff.outputs.run_id }}
+          SP_MAIN: ${{ steps.stage1.outputs.sp_main }}
+          HS_CREATED: ${{ steps.stage1.outputs.hs_created }}
+        run: |
+          set -Eeuo pipefail
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+            -f body="DEN2050_GQL_V4_STAGE1_READY protocol=1 run_id=${RUN_ID} sp_main=${SP_MAIN} hs_created=${HS_CREATED}" >/dev/null
+
+          matches="$RUNNER_TEMP/den-2050-gql-v4-seed-matches"
+          prefix="DEN2050_GQL_V4_HS_SEEDED protocol=1 run_id=${RUN_ID} main_sha="
+          query_matches() {
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+              --jq ".[] | select(.body | startswith(\"${prefix}\")) | .body" > "$matches"
+          }
+          seeded=''
+          for _ in $(seq 1 360); do
+            query_matches
+            count="$(awk 'NF { count += 1 } END { print count + 0 }' "$matches")"
+            if [ "$count" -gt 1 ]; then
+              echo "duplicate seed completion messages: ${count}" >&2
+              exit 1
+            fi
+            if [ "$count" -eq 1 ]; then
+              line="$(cat "$matches")"
+              seeded="${line#"$prefix"}"
+              break
+            fi
+            sleep 5
+          done
+          [[ "$seeded" =~ ^[0-9a-f]{40}$ ]] || { echo 'valid HypeSiege main SHA was not received' >&2; exit 1; }
+          echo "hs_main=${seeded}" >> "$GITHUB_OUTPUT"
+          rm -f "$matches"
+
+      - name: GraphQL stage 2 — tag and verify HypeSiege release
+        id: stage2
+        shell: bash
+        env:
+          TOKEN_FILE: ${{ steps.handoff.outputs.token_file }}
+          EXPECTED_HS_MAIN: ${{ steps.wait_seed.outputs.hs_main }}
+          EXPECTED_SP_MAIN: ${{ steps.stage1.outputs.sp_main }}
+        run: |
+          set -Eeuo pipefail
+          token="$(cat "$TOKEN_FILE")"
+          echo "::add-mask::${token}"
+          export GH_TOKEN="$token"
+
+          query='query { rateLimit { remaining resetAt } sp: repository(owner:"StreemPilot",name:"sp-libs") { visibility defaultBranchRef { target { ... on Commit { oid } } } tag: ref(qualifiedName:"refs/tags/v0.1.0") { target { ... on Commit { oid } } } } hs: repository(owner:"hypesiege",name:"hypesiege-libs") { id nameWithOwner visibility defaultBranchRef { name target { ... on Commit { oid } } } tag: ref(qualifiedName:"refs/tags/v0.1.0") { target { ... on Commit { oid } } } } }'
+          state="$RUNNER_TEMP/den-2050-gql-v4-final-query.json"
+          gh api graphql -f query="$query" > "$state"
+          jq -e --arg sp "$EXPECTED_SP_MAIN" --arg hs "$EXPECTED_HS_MAIN" '
+            .data.sp.visibility == "PRIVATE" and
+            .data.sp.defaultBranchRef.target.oid == $sp and
+            .data.sp.tag.target.oid == $sp and
+            .data.hs.nameWithOwner == "hypesiege/hypesiege-libs" and
+            .data.hs.visibility == "PRIVATE" and
+            .data.hs.defaultBranchRef.name == "main" and
+            .data.hs.defaultBranchRef.target.oid == $hs
+          ' "$state" >/dev/null
+
+          hs_repo_id="$(jq -r .data.hs.id "$state")"
+          hs_tag="$(jq -r '.data.hs.tag.target.oid // empty' "$state")"
+          if [ -n "$hs_tag" ]; then
+            test "$hs_tag" = "$EXPECTED_HS_MAIN" || { echo 'HypeSiege v0.1.0 diverges from main' >&2; exit 1; }
+          else
+            mutation='mutation($repositoryId:ID!, $oid:GitObjectID!) { createRef(input:{repositoryId:$repositoryId,name:"refs/tags/v0.1.0",oid:$oid}) { ref { name target { ... on Commit { oid } } } } }'
+            gh api graphql -f query="$mutation" -f repositoryId="$hs_repo_id" -f oid="$EXPECTED_HS_MAIN" \
+              | jq -e --arg oid "$EXPECTED_HS_MAIN" '.data.createRef.ref.name == "v0.1.0" and .data.createRef.ref.target.oid == $oid' >/dev/null
+          fi
+
+          verify='query { sp: repository(owner:"StreemPilot",name:"sp-libs") { defaultBranchRef { target { ... on Commit { oid } } } tag: ref(qualifiedName:"refs/tags/v0.1.0") { target { ... on Commit { oid } } } } hs: repository(owner:"hypesiege",name:"hypesiege-libs") { defaultBranchRef { target { ... on Commit { oid } } } tag: ref(qualifiedName:"refs/tags/v0.1.0") { target { ... on Commit { oid } } } } }'
+          verified="$RUNNER_TEMP/den-2050-gql-v4-verified.json"
+          gh api graphql -f query="$verify" > "$verified"
+          jq -e --arg sp "$EXPECTED_SP_MAIN" --arg hs "$EXPECTED_HS_MAIN" '
+            .data.sp.defaultBranchRef.target.oid == $sp and .data.sp.tag.target.oid == $sp and
+            .data.hs.defaultBranchRef.target.oid == $hs and .data.hs.tag.target.oid == $hs
+          ' "$verified" >/dev/null
+          jq -n --arg sp "$EXPECTED_SP_MAIN" --arg hs "$EXPECTED_HS_MAIN" '
+            {schema_version:4,verified:2,repositories:[
+              {full_name:"StreemPilot/sp-libs",private:true,main_sha:$sp,tag:"v0.1.0",tag_sha:$sp,dependency:"streempilot/sp-interfaces@^0.1.0"},
+              {full_name:"hypesiege/hypesiege-libs",private:true,main_sha:$hs,tag:"v0.1.0",tag_sha:$hs,dependency:"hypesiege/hypesiege-interfaces@^0.1.0"}
+            ]}
+          ' > "$RUNNER_TEMP/den-2050-gql-v4-final-evidence.json"
+
+      - name: Upload non-secret final evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: den-2050-graphql-libs-v4-${{ github.run_id }}
+          path: ${{ runner.temp }}/den-2050-gql-v4-final-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish bounded completion receipt
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.handoff.outputs.run_id }}
+          SP_MAIN: ${{ steps.stage1.outputs.sp_main }}
+          HS_MAIN: ${{ steps.wait_seed.outputs.hs_main }}
+        run: |
+          set -Eeuo pipefail
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+            -f body="DEN2050_GQL_V4_COMPLETE protocol=1 run_id=${RUN_ID} verified=2 failures=0 sp_main=${SP_MAIN} hs_main=${HS_MAIN}" >/dev/null
+
+      - name: Destroy all credential material
+        if: always()
+        shell: bash
+        run: |
+          shred -u "$RUNNER_TEMP/den-2050-gql-v4-private.pem" "$RUNNER_TEMP/den-2050-gql-v4-public.pem" \
+            "$RUNNER_TEMP/den-2050-gql-v4-token.bin" "$RUNNER_TEMP/den-2050-gql-v4-payload.json" \
+            "$RUNNER_TEMP/den-2050-gql-v4-github-token" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/den-2050-gql-v4-ciphertext-matches" "$RUNNER_TEMP/den-2050-gql-v4-seed-matches"
