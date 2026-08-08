@@ -123,7 +123,7 @@ jobs:
           {
             echo '## DES browser continuity'
             echo
-            echo '- Playwright: `discrete-event-systems-test/des-web-playwright-e2e@1e1116ef6811c4e3e6be34ad3e1def39bc20ef59`'
+            echo '- Playwright: `discrete-event-systems-test/des-web-playwright-e2e@104a02c72ca827ec678de0ed6e71d40b6fccbb93`'
             echo '- Puppeteer: `discrete-event-systems-test/des-web-puppeteer-e2e@0547548429d937023a124de37afca7659a85c3dd`'
             echo '- executor: `gha-indie-worker` through `dd-build-server`'
             echo '- policy: immutable revisions, exact repository allowlist, fail-closed static planner, fixed reviewed profiles'
