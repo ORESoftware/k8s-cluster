@@ -13,6 +13,23 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+EXPECTED_RSA_CIPHERTEXT_BYTES = 512
+
+
+def decode_contents_api_ciphertext(content: str) -> bytes:
+    """Decode GitHub's file envelope and the repository's inner base64 payload."""
+    try:
+        encoded_ciphertext = base64.b64decode(content, validate=False).strip()
+        ciphertext = base64.b64decode(encoded_ciphertext, validate=True)
+    except Exception as error:
+        raise ValueError("encrypted bundle is not valid nested base64") from error
+    if len(ciphertext) != EXPECTED_RSA_CIPHERTEXT_BYTES:
+        raise ValueError(
+            "encrypted bundle is not a 4096-bit RSA ciphertext: "
+            f"received {len(ciphertext)} bytes"
+        )
+    return ciphertext
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -56,9 +73,10 @@ def main() -> int:
             content = payload.get("content")
             if not isinstance(content, str):
                 raise SystemExit("encrypted bundle file has no content")
-            ciphertext = base64.b64decode(content, validate=False)
-            if not ciphertext or len(ciphertext) > 16384:
-                raise SystemExit("encrypted bundle file has an invalid size")
+            try:
+                ciphertext = decode_contents_api_ciphertext(content)
+            except ValueError as error:
+                raise SystemExit(str(error)) from None
             Path(args.output).write_bytes(ciphertext)
             print(f"CANONICAL_ENCRYPTED_BUNDLE_RECEIVED attempt={attempt}")
             return 0
