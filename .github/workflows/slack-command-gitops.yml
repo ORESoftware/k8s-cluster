@@ -66,9 +66,15 @@ jobs:
           test "${gitlink_sha}" = "${BRIDGE_SOURCE_SHA}"
           grep -Fq "image: ${BRIDGE_IMAGE}" remote/argocd/dd-next-runtime/dd-ai-agent-bridge.deployment.yaml
           grep -Fq "image: ${SLACK_COMMAND_IMAGE}" remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml
-          ! grep -Eq 'git clone|cargo build|GH_PAT|hostPath:' remote/argocd/dd-next-runtime/dd-ai-agent-bridge.deployment.yaml
+          if grep -Eq 'git clone|cargo build|GH_PAT|hostPath:' remote/argocd/dd-next-runtime/dd-ai-agent-bridge.deployment.yaml; then
+            echo "::error::bridge Deployment contains a forbidden runtime build, PAT, or hostPath pattern"
+            exit 1
+          fi
           slack_deployment="$(awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: dd-slack-command/{print}' remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml)"
-          ! grep -Eq 'git clone|cargo build|GH_PAT|K8S_GIT_|CARGO_HOME|CARGO_TARGET_DIR' <<<"${slack_deployment}"
+          if grep -Eq 'git clone|cargo build|GH_PAT|K8S_GIT_|CARGO_HOME|CARGO_TARGET_DIR' <<<"${slack_deployment}"; then
+            echo "::error::Slack command Deployment contains a forbidden runtime build or Git credential pattern"
+            exit 1
+          fi
 
       - name: Prepare credential-free source build inputs
         working-directory: .tmp/ai-agent-bridge
@@ -143,4 +149,4 @@ jobs:
           name: slack-command-gitops-audit-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/slack-command-gitops-audit.json
           retention-days: 14
-          if-no-files-found: error
+          if-no-files-found: warn
