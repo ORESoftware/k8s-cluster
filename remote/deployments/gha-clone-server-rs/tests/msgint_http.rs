@@ -232,7 +232,15 @@ async fn wait_for_terminal_run(client: &Client, server: &ServerProcess, id: &str
 }
 
 async fn run_to_success(client: &Client, server: &ServerProcess) -> Value {
-    let response = post_run(client, server, REPOSITORY, REVISION, WORKFLOW_PATH, WORKFLOW).await;
+    let response = post_run(
+        client,
+        server,
+        REPOSITORY,
+        REVISION,
+        WORKFLOW_PATH,
+        WORKFLOW,
+    )
+    .await;
     let (status, accepted) = response_json(response).await;
     assert_eq!(status, StatusCode::ACCEPTED, "{accepted}");
     let id = accepted["id"].as_str().expect("run id");
