@@ -67,6 +67,25 @@ test('accepts sorted unique rows and renders all canonical links', () => {
   assert.match(markdown, /https:\/\/github\.com\/alpha-org\/\.github/);
 });
 
+test('allows only the declared Fiducia production/test shared Linear route', () => {
+  const linearUrl = 'https://linear.app/denman/project/githubcomfiducia-cloud-8fd5e1bec9d3';
+  const rows = [
+    { organization: 'fiducia-cloud', linearUrl, sourceLine: 2 },
+    { organization: 'fiducia-cloud-test', linearUrl, sourceLine: 3 },
+  ];
+  const records = validateRegistry(rows, { expectedCount: 2 });
+  assert.equal(records[0].linearUrl, records[1].linearUrl);
+
+  expectFailure(
+    () =>
+      validateRegistry(
+        [rows[0], { ...rows[1], organization: 'other-test' }],
+        { expectedCount: 2 },
+      ),
+    'duplicate Linear project URL without an exact declared owner set',
+  );
+});
+
 test('rejects duplicate organization and Linear ownership', () => {
   expectFailure(
     () =>
@@ -129,6 +148,7 @@ test('requires the semantic conflict-resolution and project exception contract i
     'dancing-dragons',
     'project `4`',
     'public `<org>/.github` repository',
+    'declared shared Linear project',
     'resolved semantically',
     'never resolve conflicts by blindly choosing one side',
   ].join('\n');

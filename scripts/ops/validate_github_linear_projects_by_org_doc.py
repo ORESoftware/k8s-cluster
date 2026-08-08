@@ -16,6 +16,9 @@ END_MARKER = "<!-- END GENERATED ORGANIZATION DIRECTORY -->"
 DEFAULT_REGISTRY = Path("ops/portfolio/github-linear-project-registry.tsv")
 DEFAULT_DOCUMENT = Path("docs/portfolio/github-linear-projects-by-org.md")
 ORG_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
+SHARED_LINEAR_PROJECT_OWNERS = {
+    'https://linear.app/denman/project/githubcomfiducia-cloud-8fd5e1bec9d3': frozenset({'fiducia-cloud', 'fiducia-cloud-test'}),
+}
 CREDENTIAL_RE = re.compile(
     r"(?i)(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|(?:token|password|secret)=)"
 )
@@ -85,8 +88,17 @@ def load_registry(path: Path) -> list[OrganizationLink]:
         raise DirectoryError("registry organizations must be case-insensitively sorted")
     if len({value.casefold() for value in organizations}) != len(organizations):
         raise DirectoryError("registry contains duplicate organization ownership")
-    if len({row.linear_url for row in rows}) != len(rows):
-        raise DirectoryError("registry contains duplicate Linear project URLs")
+    linear_owners: dict[str, set[str]] = {}
+    for row in rows:
+        linear_owners.setdefault(row.linear_url, set()).add(row.organization)
+    for linear_url, owners in linear_owners.items():
+        if len(owners) == 1:
+            continue
+        if frozenset(owners) != SHARED_LINEAR_PROJECT_OWNERS.get(linear_url):
+            raise DirectoryError(
+                'registry contains a duplicate Linear project URL without '
+                f'an exact declared owner set: {linear_url}'
+            )
 
     for row in rows:
         if not ORG_RE.fullmatch(row.organization):
