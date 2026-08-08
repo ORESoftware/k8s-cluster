@@ -20,8 +20,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  private-contract-scope:
+    name: classify private-contract scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      private_contracts_required: ${{ steps.scope.outputs.private_contracts_required }}
+      scope_reason: ${{ steps.scope.outputs.scope_reason }}
+    steps:
+      - name: Checkout changed-file metadata without credentials or submodules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+
+      - name: Classify whether private gitlinks are relevant
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          changed_files="${RUNNER_TEMP}/repo-checks-changed-files.zlist"
+          : > "${changed_files}"
+          if [[ "${EVENT_NAME}" == 'pull_request' ]]; then
+            test -n "${BASE_SHA}"
+            test -n "${HEAD_SHA}"
+            git diff --name-only -z "${BASE_SHA}" "${HEAD_SHA}" > "${changed_files}"
+          fi
+          python3 scripts/ci/classify_repo_check_scope.py \
+            --event-name "${EVENT_NAME}" \
+            --changed-files "${changed_files}" \
+            --nul-delimited \
+            --github-output "${GITHUB_OUTPUT}" \
+            --json-output "${RUNNER_TEMP}/repo-check-scope.json"
+
+      - name: Publish scope decision to the job summary
+        run: cat "${RUNNER_TEMP}/repo-check-scope.json" >> "${GITHUB_STEP_SUMMARY}"
+
   static-contracts:
     name: api docs + static repo contracts
+    needs: private-contract-scope
+    if: needs.private-contract-scope.outputs.private_contracts_required == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -176,6 +218,8 @@ jobs:
 
   backend-contracts:
     name: backend pins + private deployment contracts
+    needs: private-contract-scope
+    if: needs.private-contract-scope.outputs.private_contracts_required == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
