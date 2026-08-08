@@ -1,0 +1,72 @@
+name: durable-worker-dart-format-fix
+
+on:
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/durable-worker-dart-format-fix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: durable-worker-dart-format-fix-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  format-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Checkout the exact Dart SDK branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-2464-durable-worker-dart-sdk
+          persist-credentials: true
+          fetch-depth: 1
+          submodules: false
+
+      - name: Install pinned Dart formatter
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
+        with:
+          sdk: '3.12.2'
+
+      - name: Resolve lock and apply canonical formatting
+        working-directory: remote/worker-sdks/dart/durable_worker
+        run: |
+          set -euo pipefail
+          dart pub get --enforce-lockfile
+          dart format .
+          git diff --check
+
+      - name: Enforce the reviewed three-file allow-list
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' \
+            remote/worker-sdks/dart/durable_worker/example/worker.dart \
+            remote/worker-sdks/dart/durable_worker/lib/src/client.dart \
+            remote/worker-sdks/dart/durable_worker/tool/test.dart \
+            | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            echo 'unexpected formatter file set' >&2
+            diff -u <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") || true
+            exit 1
+          fi
+
+      - name: Commit only canonical Dart formatter output
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            remote/worker-sdks/dart/durable_worker/example/worker.dart \
+            remote/worker-sdks/dart/durable_worker/lib/src/client.dart \
+            remote/worker-sdks/dart/durable_worker/tool/test.dart
+          git commit -m 'style(workers): apply canonical Dart formatting'
+          git push origin HEAD:agent/den-2464-durable-worker-dart-sdk
