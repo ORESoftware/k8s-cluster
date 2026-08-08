@@ -148,8 +148,9 @@ jobs:
             remote/tests/general/ai-agent-bridge-public-ingress-contract.test.mjs \
             scripts/ci/test-ai-agent-bridge-public-ingress.sh \
             docs/ai-agent-bridge-immutable-rollout-2026-08-07.md \
-            docs/alex-main-agent-slack-command-gitops.md \
-            remote/deployments/ai-agent-bridge
+            docs/alex-main-agent-slack-command-gitops.md
+          git status --short
+          git diff --cached --stat
           if git diff --cached --quiet; then
             echo 'release pins already current'
             exit 0
