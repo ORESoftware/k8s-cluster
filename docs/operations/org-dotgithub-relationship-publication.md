@@ -38,9 +38,11 @@ The workflow must reject publication unless all of these conditions hold:
 1. The trusted repository, issue, actor, comment author, and exact trigger
    match the bounded workflow contract.
 2. The workflow source is fetched from the current trusted `main` commit.
-3. The credential resolves to the expected owner identity.
-4. The owner has active administrator membership in every organization in the
-   current 62-organization fleet.
+3. The credential resolves to a syntactically valid authenticated GitHub
+   account; the login is kept out of public reports.
+4. That authenticated account has active administrator membership in every
+   organization in the current 62-organization fleet. The membership proof,
+   rather than a hard-coded account name, is the authorization boundary.
 5. Every public `.github` repository already exists and passes identity,
    visibility, and archival checks.
 6. Pre-write and post-write privacy checks find no private repository names or
@@ -54,7 +56,10 @@ The workflow must reject publication unless all of these conditions hold:
 2. Post the exact bounded trigger on the designated operations issue.
 3. Read the public key and nonce from the newly generated challenge comment.
 4. Encrypt the owner credential locally for that nonce and post only the
-   workflow-defined ciphertext response marker.
+   workflow-defined ciphertext response marker. The trigger and response
+   comment author remain fixed to `ORESoftware`; the encrypted credential may
+   belong to any account that proves active administrator membership across
+   the complete fleet.
 5. Confirm the workflow verifies all 62 organizations and publishes its
    sanitized completion report.
 6. Independently sample the generated JSON, schema, Markdown, and profile

@@ -83,6 +83,21 @@ class CurrentRepositoryRelationshipPublisherTests(unittest.TestCase):
             tuple(module.current.ORGANIZATIONS),
         )
 
+    def test_dynamic_owner_identity_is_bound_to_preflight(self) -> None:
+        original = module.governance.EXPECTED_ACTOR
+        try:
+            observed = module.configure_expected_owner_login("fleet-admin-2")
+            self.assertEqual("fleet-admin-2", observed)
+            self.assertEqual("fleet-admin-2", module.governance.EXPECTED_ACTOR)
+        finally:
+            module.governance.EXPECTED_ACTOR = original
+
+    def test_dynamic_owner_identity_rejects_unsafe_values(self) -> None:
+        for value in ("", "-leading", "trailing-", "space owner", "owner/name"):
+            with self.subTest(value=value):
+                with self.assertRaises(RuntimeError):
+                    module.configure_expected_owner_login(value)
+
     def test_classifies_canonical_repository_roles(self) -> None:
         cases = {
             ".github": "organization_governance",
@@ -205,7 +220,7 @@ class CurrentRepositoryRelationshipPublisherTests(unittest.TestCase):
         self.assertIn("github.event.comment.user.login == 'ORESoftware'", workflow)
         self.assertIn("github.actor == 'ORESoftware'", workflow)
         self.assertIn(
-            "ops-publish-current-org-dotgithub-relationships:615:20260808-v1",
+            "ops-publish-current-org-dotgithub-relationships:615:20260808-v2",
             workflow,
         )
         self.assertIn("EXPECTED_COUNT: '62'", workflow)
@@ -213,6 +228,9 @@ class CurrentRepositoryRelationshipPublisherTests(unittest.TestCase):
         self.assertIn("openssl genpkey", workflow)
         self.assertIn("rsa_oaep_md:sha256", workflow)
         self.assertIn('select(.user.login == "ORESoftware")', workflow)
+        self.assertIn('EXPECTED_OWNER_LOGIN="$owner_login"', workflow)
+        self.assertIn("validate-owner-credential-authentication", workflow)
+        self.assertNotIn('test "$owner_login" = \'ORESoftware\'', workflow)
         self.assertIn("item.get(\"verified\") is not True", workflow)
         self.assertNotIn("GITHUB_ENV", workflow)
         self.assertNotIn("upload-artifact", workflow)
