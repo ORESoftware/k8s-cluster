@@ -1,0 +1,30 @@
+name: Temporary Daedalus turning validation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/temporary-daedalus-turning-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: daedalus-fab/fabrication-server.rs
+          ref: 7be8e798b28722fe40d5dfeab0c6b9fc3ace237e
+          token: ${{ secrets.ORG_SUBMODULE_TOKEN }}
+          persist-credentials: false
+      - name: Rust formatting for changed catalog module
+        run: rustfmt --edition 2021 --check src/turning_model_catalog.rs
+      - name: Compile and run credential-free source contract
+        run: |
+          python3 -m py_compile scripts/ci/check_turning_model_integration.py
+          python3 scripts/ci/check_turning_model_integration.py
+      - name: Verify exact validation revision
+        run: test "$(git rev-parse HEAD)" = "7be8e798b28722fe40d5dfeab0c6b9fc3ace237e"
