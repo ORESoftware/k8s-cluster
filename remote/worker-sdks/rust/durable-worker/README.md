@@ -91,4 +91,6 @@ cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo test --locked --all-targets --all-features
 ```
 
+Pull-request evidence must be evaluated against the exact head commit; formatting-only follow-up commits invalidate earlier results and require a fresh matrix.
+
 The repository workflow runs both the declared MSRV and current stable Rust, consumes the shared protocol fixture, repeats the lease-fencing cancellation test, audits dependency duplication, scans credential-shaped source, and publishes a deterministic source archive plus SHA-256 checksum after merge to `dev`.
