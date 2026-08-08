@@ -8,6 +8,7 @@ on:
       - "config/ci/canonical-control-plane-preflight.json"
       - "scripts/ci/canonical-control-plane-preflight.py"
       - "scripts/ci/canonical-account-token-preflight.py"
+      - "scripts/ci/canonical-account-token-runner.py"
       - "scripts/ci/test-canonical-control-plane-preflight.py"
       - "scripts/ci/test-canonical-account-token-preflight.py"
       - "scripts/ci/wait-for-encrypted-canonical-bundle.py"
@@ -53,6 +54,7 @@ jobs:
           python3 -m py_compile \
             scripts/ci/canonical-control-plane-preflight.py \
             scripts/ci/canonical-account-token-preflight.py \
+            scripts/ci/canonical-account-token-runner.py \
             scripts/ci/test-canonical-control-plane-preflight.py \
             scripts/ci/test-canonical-account-token-preflight.py \
             scripts/ci/wait-for-encrypted-canonical-bundle.py
@@ -63,6 +65,7 @@ jobs:
           paths = [
               Path('scripts/ci/canonical-control-plane-preflight.py'),
               Path('scripts/ci/canonical-account-token-preflight.py'),
+              Path('scripts/ci/canonical-account-token-runner.py'),
               Path('scripts/ci/wait-for-encrypted-canonical-bundle.py'),
           ]
           forbidden_prefixes = (
@@ -154,7 +157,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/ci/canonical-account-token-preflight.py \
+          python3 scripts/ci/canonical-account-token-runner.py \
             --bundle "$RUNNER_TEMP/canonical-control-plane.bundle.json" \
             --contract "$CONTRACT_PATH" \
             --evidence-dir "$EVIDENCE_DIR" \
