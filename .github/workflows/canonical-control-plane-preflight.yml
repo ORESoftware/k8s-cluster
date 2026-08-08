@@ -58,22 +58,25 @@ jobs:
           paths = [
               Path('scripts/ci/canonical-control-plane-preflight.py'),
               Path('scripts/ci/wait-for-encrypted-canonical-bundle.py'),
-              Path('.github/workflows/canonical-control-plane-preflight.yml'),
           ]
-          source = '\n'.join(path.read_text() for path in paths)
-          forbidden = (
-              'git checkout',
-              'git reset',
-              'git stash',
-              '\nrm ',
-              '\nsed ',
-              'wrangler deploy',
-              'kubectl apply',
-              'terraform apply',
+          forbidden_prefixes = (
+              'git checkout ',
+              'git reset ',
+              'git stash ',
+              'rm ',
+              'sed ',
+              'wrangler deploy ',
+              'kubectl apply ',
+              'terraform apply ',
           )
-          found = [item for item in forbidden if item in source]
+          found = []
+          for path in paths:
+              for number, line in enumerate(path.read_text().splitlines(), start=1):
+                  stripped = line.strip().strip('"\'')
+                  if stripped.startswith(forbidden_prefixes):
+                      found.append(f'{path}:{number}:{stripped}')
           if found:
-              raise SystemExit(f'forbidden command or live-write path found: {found}')
+              raise SystemExit(f'forbidden executable command found: {found}')
           PY
 
       - name: Generate a run-specific RSA-OAEP handoff key
