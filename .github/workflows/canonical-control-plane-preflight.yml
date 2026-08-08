@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  issues: read
 
 concurrency:
   group: canonical-control-plane-preflight-${{ github.event.pull_request.number }}
@@ -29,8 +30,7 @@ jobs:
       CONTRACT_PATH: config/ci/canonical-control-plane-preflight.json
       EVIDENCE_DIR: ops/evidence/canonical-control-plane-preflight
       CANONICAL_NONCE: canonical-${{ github.run_id }}-${{ github.run_attempt }}
-      CIPHERTEXT_PATH: .github/tmp/canonical-control-plane-${{ github.run_id }}-${{ github.run_attempt }}.enc.b64
-      BUNDLE_REF: ${{ github.event.pull_request.head.ref }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
 
     steps:
       - name: Check out the exact reviewed harness head
@@ -94,7 +94,7 @@ jobs:
             -pubout \
             -out "$public_key" >/dev/null 2>&1
           echo "CANONICAL_PRIVATE_KEY=$private_key" >> "$GITHUB_ENV"
-          echo "CANONICAL_CONTROL_PLANE_HANDSHAKE nonce=$CANONICAL_NONCE path=$CIPHERTEXT_PATH artifact=canonical-control-plane-public-key-${{ github.run_id }}"
+          echo "CANONICAL_CONTROL_PLANE_HANDSHAKE nonce=$CANONICAL_NONCE artifact=canonical-control-plane-public-key-${{ github.run_id }} comment_marker=canonical-control-plane-bundle:$CANONICAL_NONCE"
 
       - name: Upload the public handoff key
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -112,8 +112,8 @@ jobs:
           set -euo pipefail
           python3 scripts/ci/wait-for-encrypted-canonical-bundle.py \
             --repository "$GITHUB_REPOSITORY" \
-            --ref "$BUNDLE_REF" \
-            --path "$CIPHERTEXT_PATH" \
+            --pull-request "$PR_NUMBER" \
+            --marker "$CANONICAL_NONCE" \
             --output "$RUNNER_TEMP/canonical-control-plane.bundle.enc"
 
       - name: Decrypt the credential bundle inside the ephemeral runner
