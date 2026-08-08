@@ -1,0 +1,98 @@
+name: DEN-845 push validated non-workflow pins once
+
+on:
+  push:
+    branches:
+      - agent/den-845-bridge-digests-run-307
+    paths:
+      - .github/workflows/den-845-push-nonworkflow-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  push:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the release-pin branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-845-bridge-digests-run-307
+          fetch-depth: 1
+
+      - name: Check out the exact reviewed bridge source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/ai-agent-bridge.rs
+          ref: ec667946b1f8725b6baea8e67ae6a701d602dc04
+          path: .tmp/ai-agent-bridge
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+
+      - name: Prepare credential-free source inputs
+        working-directory: .tmp/ai-agent-bridge
+        run: bash scripts/ci/prepare-credential-free-build.sh
+
+      - name: Apply reviewed release pins in the working tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            .github/workflows/slack-command-gitops.yml
+            .github/workflows/ai-agent-bridge-public-ingress.yml
+            remote/argocd/dd-next-runtime/dd-ai-agent-bridge.deployment.yaml
+            remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml
+            remote/argocd/dd-next-runtime/dd-ai-agent-runner.deployment.yaml
+            remote/tests/general/slack-command-gitops.test.mjs
+            remote/tests/general/ai-agent-runner-k8s-contract.test.mjs
+            remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs
+            remote/tests/general/ai-agent-bridge-public-ingress-contract.test.mjs
+            scripts/ci/test-ai-agent-bridge-public-ingress.sh
+          )
+          for file in "${files[@]}"; do
+            test -f "${file}"
+            sed -i \
+              -e 's/c3e54e6cd0c6d56e3d2ed32902228d974e550a3f/ec667946b1f8725b6baea8e67ae6a701d602dc04/g' \
+              -e 's/31235992249/31264194679/g' \
+              -e 's#ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:6b7e447a9989fa127ad4b0b3edc51fcd37a6b94a96bcf61b42c22d2641bf0ea8#ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:bbf105c29cdbcec23d87ed0b21cfd548c43982cf6573aaf34a2fb1f4dc69a305#g' \
+              -e 's#ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:90a919fb28fb2bc2795a0a3735ab08993d245c3eaa2afcd5f42be9b1a4982702#ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:e78d56c95485c4aaea33621268be35c83813a06962f50bb27010df5a0859867c#g' \
+              -e 's#ghcr.io/oresoftware/fiducia-slack-command@sha256:01f80fbd4d3ba5226b4abdb7f5e603538924edb48e79e72b0af43246624900cb#ghcr.io/oresoftware/fiducia-slack-command@sha256:b726025e01652b6e5d89814a928b23bdd5dc2fcf3e461831e82c3c785fa5c64d#g' \
+              -e 's/2026-08-08-immutable-digest-c3e54e6/2026-08-08-immutable-digest-ec66794/g' \
+              "${file}"
+          done
+          git update-index --cacheinfo 160000,ec667946b1f8725b6baea8e67ae6a701d602dc04,remote/deployments/ai-agent-bridge
+
+      - name: Run exact focused release-pin contracts
+        env:
+          SLACK_COMMAND_SOURCE_ROOT: ${{ github.workspace }}/.tmp/ai-agent-bridge
+        run: |
+          set -euo pipefail
+          node --test remote/tests/general/slack-command-gitops.test.mjs
+          node --test remote/tests/general/ai-agent-runner-k8s-contract.test.mjs
+          node --test remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs
+          node --test remote/tests/general/ai-agent-bridge-public-ingress-contract.test.mjs
+          git diff --check
+          grep -Fq 'value: "true"' remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml
+          grep -Eq '^  replicas: 0$' remote/argocd/dd-next-runtime/dd-ai-agent-runner.deployment.yaml
+
+      - name: Commit and push only non-workflow release pins
+        run: |
+          set -euo pipefail
+          git add \
+            remote/argocd/dd-next-runtime/dd-ai-agent-bridge.deployment.yaml \
+            remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml \
+            remote/argocd/dd-next-runtime/dd-ai-agent-runner.deployment.yaml \
+            remote/tests/general/slack-command-gitops.test.mjs \
+            remote/tests/general/ai-agent-runner-k8s-contract.test.mjs \
+            remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs \
+            remote/tests/general/ai-agent-bridge-public-ingress-contract.test.mjs \
+            scripts/ci/test-ai-agent-bridge-public-ingress.sh
+          git status --short
+          git diff --cached --stat
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config --local commit.gpgsign false
+          git -c commit.gpgsign=false commit -m 'deploy(DEN-845): pin trusted bridge run 307 digests'
+          git push origin HEAD:agent/den-845-bridge-digests-run-307
