@@ -240,12 +240,7 @@ fn config() -> WorkerConfig {
 fn rejects_worker_heartbeat_cadence_that_can_expire_the_ttl() {
     let mut worker_config = config();
     worker_config.worker_heartbeat_ms = worker_config.ttl_ms;
-    assert!(Worker::new(
-        Arc::new(FakeApi::default()),
-        HashMap::new(),
-        worker_config,
-    )
-    .is_err());
+    assert!(Worker::new(Arc::new(FakeApi::default()), HashMap::new(), worker_config,).is_err());
 }
 
 #[tokio::test]
@@ -505,9 +500,8 @@ async fn handler_panic_is_isolated_and_reported_as_a_terminal_failure() {
 async fn ambiguous_terminal_mutation_is_counted_separately_from_acknowledged_failure() {
     let api = Arc::new(FakeApi::with_assignment(assignment()));
     api.complete_protocol_error.store(true, Ordering::Release);
-    let handler: Handler = Arc::new(|_context: TaskContext| {
-        Box::pin(async move { Ok(JsonObject::new()) })
-    });
+    let handler: Handler =
+        Arc::new(|_context: TaskContext| Box::pin(async move { Ok(JsonObject::new()) }));
     let worker = Worker::new(
         api.clone(),
         HashMap::from([("demo".to_owned(), handler)]),

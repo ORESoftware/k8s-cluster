@@ -432,9 +432,8 @@ impl Worker {
         let heartbeat_result = heartbeat_handle
             .await
             .map_err(|error| DurableWorkerError::WorkerJoin(error.to_string()))?;
-        let final_heartbeat_budget = heartbeat_request_timeout(Duration::from_millis(
-            self.config.worker_heartbeat_ms,
-        ));
+        let final_heartbeat_budget =
+            heartbeat_request_timeout(Duration::from_millis(self.config.worker_heartbeat_ms));
         let _ = tokio::time::timeout(
             final_heartbeat_budget,
             self.api
