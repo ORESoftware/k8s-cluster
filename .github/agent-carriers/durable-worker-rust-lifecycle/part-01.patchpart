@@ -1,0 +1,229 @@
++                    biased;
++                    _ = stop.cancelled() => break,
++                    result = tokio::time::timeout(
++                        request_timeout,
++                        api.heartbeat_worker(&worker_id, Some(shutdown.is_cancelled())),
++                    ) => result,
++                };
++                match heartbeat {
++                    Ok(Ok(())) => last_success = Instant::now(),
++                    Ok(Err(error)) => {
++                        if !error.retryable() || last_success.elapsed() >= ttl {
++                            shutdown.cancel();
++                            return Err(error);
++                        }
++                    }
++                    Err(_) if last_success.elapsed() >= ttl => {
+                         shutdown.cancel();
+-                        return Err(error);
++                        return Err(DurableWorkerError::Transport(TransportError::new(
++                            "worker heartbeat exceeded its local request budget until the worker TTL became uncertain",
++                            true,
++                        )));
+                     }
++                    Err(_) => {}
+                 }
+             }
+         }
+@@ -459,6 +500,7 @@ enum TaskOutcome {
+     Completed,
+     Failed,
+     LeaseLost,
++    ProtocolError,
+ }
+ 
+ fn apply_outcome(summary: &mut WorkerSummary, outcome: TaskOutcome) {
+@@ -466,9 +508,16 @@ fn apply_outcome(summary: &mut WorkerSummary, outcome: TaskOutcome) {
+         TaskOutcome::Completed => summary.completed += 1,
+         TaskOutcome::Failed => summary.failed += 1,
+         TaskOutcome::LeaseLost => summary.lease_lost += 1,
++        TaskOutcome::ProtocolError => summary.protocol_errors += 1,
+     }
+ }
+ 
++enum HandlerResolution {
++    Finished(Result<JsonObject, WorkerFailure>),
++    LeaseLost,
++    TimedOut,
++}
++
+ async fn execute_assignment(
+     api: Arc<dyn WorkerApi>,
+     worker_id: String,
+@@ -476,15 +525,20 @@ async fn execute_assignment(
+     handler: Option<Handler>,
+     heartbeat_ms: u64,
+ ) -> TaskOutcome {
+-    if assignment.step_id.is_empty() || assignment.task_type.is_empty() {
+-        return TaskOutcome::Failed;
++    if assignment.step_id.is_empty()
++        || assignment.task_type.is_empty()
++        || assignment.lease_token.is_empty()
++        || assignment.lease_generation <= 0
++        || assignment.timeout_ms == 0
++    {
++        return TaskOutcome::ProtocolError;
+     }
+     let lease = assignment.lease(worker_id);
+     if let Err(error) = api.start_step(&assignment.step_id, lease.clone()).await {
+         return if error.is_lease_lost() {
+             TaskOutcome::LeaseLost
+         } else {
+-            TaskOutcome::Failed
++            TaskOutcome::ProtocolError
+         };
+     }
+ 
+@@ -505,51 +559,127 @@ async fn execute_assignment(
+         cancellation.clone(),
+     );
+ 
+-    let result = match handler {
+-        Some(handler) => handler(context).await,
+-        None => Err(WorkerFailure::new(
+-            "handler_not_found",
+-            format!(
+-                "no handler registered for task type {}",
+-                assignment.task_type
+-            ),
+-            false,
+-        )),
+-    };
++    let resolution = run_handler(
++        handler,
++        context,
++        assignment.task_type.clone(),
++        assignment.timeout_ms,
++        cancellation.clone(),
++    )
++    .await;
+ 
+     heartbeat_stop.cancel();
+     if heartbeat_handle.await.is_err() {
+         cancellation.cancel();
+     }
+-    if cancellation.is_cancelled() {
++    if cancellation.is_cancelled() || matches!(&resolution, HandlerResolution::LeaseLost) {
+         return TaskOutcome::LeaseLost;
+     }
+ 
+-    match result {
+-        Ok(result) => match api
++    match resolution {
++        HandlerResolution::Finished(Ok(result)) => match api
+             .complete_step(&assignment.step_id, StepCompletion { lease, result })
+             .await
+         {
+             Ok(()) => TaskOutcome::Completed,
+             Err(error) if error.is_lease_lost() => TaskOutcome::LeaseLost,
+-            Err(_) => TaskOutcome::Failed,
++            Err(_) => TaskOutcome::ProtocolError,
+         },
+-        Err(failure) => match api
+-            .fail_step(
++        HandlerResolution::Finished(Err(failure)) => {
++            report_failure(&*api, &assignment.step_id, lease, failure).await
++        }
++        HandlerResolution::TimedOut => {
++            report_failure(
++                &*api,
+                 &assignment.step_id,
+-                StepFailure {
+-                    lease,
+-                    code: failure.code,
+-                    message: failure.message,
+-                    retryable: failure.retryable,
+-                },
++                lease,
++                WorkerFailure::new(
++                    "handler_timeout",
++                    format!(
++                        "handler exceeded the assignment timeout of {} ms",
++                        assignment.timeout_ms
++                    ),
++                    true,
++                ),
+             )
+             .await
+-        {
+-            Ok(()) => TaskOutcome::Failed,
+-            Err(error) if error.is_lease_lost() => TaskOutcome::LeaseLost,
+-            Err(_) => TaskOutcome::Failed,
+-        },
++        }
++        HandlerResolution::LeaseLost => TaskOutcome::LeaseLost,
++    }
++}
++
++async fn run_handler(
++    handler: Option<Handler>,
++    context: TaskContext,
++    task_type: String,
++    timeout_ms: u64,
++    cancellation: Cancellation,
++) -> HandlerResolution {
++    let Some(handler) = handler else {
++        return HandlerResolution::Finished(Err(WorkerFailure::new(
++            "handler_not_found",
++            format!("no handler registered for task type {task_type}"),
++            false,
++        )));
++    };
++
++    let mut handler_handle = tokio::spawn(handler(context));
++    let timeout = tokio::time::sleep(Duration::from_millis(timeout_ms));
++    tokio::pin!(timeout);
++    tokio::select! {
++        joined = &mut handler_handle => HandlerResolution::Finished(handler_join_result(joined)),
++        _ = cancellation.cancelled() => {
++            handler_handle.abort();
++            let _ = handler_handle.await;
++            HandlerResolution::LeaseLost
++        }
++        _ = &mut timeout => {
++            handler_handle.abort();
++            let _ = handler_handle.await;
++            HandlerResolution::TimedOut
++        }
++    }
++}
++
++fn handler_join_result(
++    joined: Result<Result<JsonObject, WorkerFailure>, JoinError>,
++) -> Result<JsonObject, WorkerFailure> {
++    match joined {
++        Ok(result) => result,
++        Err(error) if error.is_panic() => Err(WorkerFailure::new(
++            "handler_panic",
++            format!("handler task panicked: {error}"),
++            false,
++        )),
++        Err(error) => Err(WorkerFailure::new(
++            "handler_cancelled",
++            format!("handler task ended before returning a result: {error}"),
++            true,
++        )),
++    }
++}
++
++async fn report_failure(
++    api: &dyn WorkerApi,
++    step_id: &str,
++    lease: Lease,
++    failure: WorkerFailure,
++) -> TaskOutcome {
++    match api
++        .fail_step(
++            step_id,
++            StepFailure {
++                lease,
++                code: failure.code,
++                message: failure.message,
++                retryable: failure.retryable,
++            },
++        )
++        .await
++    {
++        Ok(()) => TaskOutcome::Failed,
++        Err(error) if error.is_lease_lost() => TaskOutcome::LeaseLost,
++        Err(_) => TaskOutcome::ProtocolError,
