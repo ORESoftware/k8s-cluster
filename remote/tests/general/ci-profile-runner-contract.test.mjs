@@ -116,13 +116,33 @@ test('build-server delegates only the exact fixed DES nerdctl shape', () => {
   assert.match(adapter, /\/var\/lib\/dd-build-server\/jobs\/\*\/repo/);
   assert.match(adapter, /--security-opt=no-new-privileges/);
   assert.match(adapter, /--cap-drop=ALL/);
-  assert.match(adapter, /fallback \"\$@\"/);
+  assert.match(adapter, /fallback "\$@"/);
   assert.match(adapter, /\/dev\/tcp\/\$\{RUNNER_HOST\}\/\$\{RUNNER_PORT\}/);
   assert.doesNotMatch(adapter, /curl .*SERVER_AUTH_SECRET|wget .*SERVER_AUTH_SECRET/);
 
   assert.match(buildPatch, /BUILD_SERVER_NERDCTL_BIN/);
   assert.match(buildPatch, /\/etc\/dd-build-server\/nerdctl-profile-adapter\.sh/);
   assert.match(buildPatch, /defaultMode: 0555/);
+});
+
+test('profile adapter auth is a read-only projected secret, not inherited process state', () => {
+  const adapter = extractAdapter();
+  assert.match(
+    adapter,
+    /AUTH_FILE=\/var\/run\/secrets\/dd-ci-profile-runner-auth\/SERVER_AUTH_SECRET/,
+  );
+  assert.match(adapter, /\[\[ -r "\$AUTH_FILE" \]\]/);
+  assert.ok(adapter.includes('auth="$(<"$AUTH_FILE")"'));
+  assert.doesNotMatch(adapter, /\$\{SERVER_AUTH_SECRET/);
+
+  assert.match(
+    buildPatch,
+    /volumeMounts:\n\s+- name: profile-runner-auth\n\s+mountPath: \/var\/run\/secrets\/dd-ci-profile-runner-auth\n\s+readOnly: true/,
+  );
+  assert.match(
+    buildPatch,
+    /- name: profile-runner-auth\n\s+secret:\n\s+secretName: dd-agent-secrets\n\s+defaultMode: 0400\n\s+items:\n\s+- key: SERVER_AUTH_SECRET\n\s+path: SERVER_AUTH_SECRET/,
+  );
 });
 
 test('network and kustomize wiring is narrow and complete', () => {
