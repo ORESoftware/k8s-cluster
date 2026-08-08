@@ -1,0 +1,105 @@
+name: DEN-2926 promote independent boundary patch
+
+on:
+  push:
+    branches:
+      - codex/den-2926-scanner-boundaries
+    paths:
+      - .github/workflows/den-2926-promote-test-org-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Capture pre-fix inventory
+        run: |
+          python3 tools/namespace_migration.py inventory \
+            --root . \
+            --format json \
+            > /tmp/den-2926-before.json
+
+      - name: Fetch and verify immutable test-org patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            https://raw.githubusercontent.com/fiducia-cloud-test/infra-multicloud-e2e/db017c4957bcdc63162d27a7d6ff71cd660c9fd4/patches/den-2926-scanner-boundaries.patch \
+            > /tmp/den-2926.patch
+          actual_blob="$(git hash-object /tmp/den-2926.patch)"
+          test "$actual_blob" = a57aec4a06aa5559b0af56485fa478e3270f714f
+          git apply --check /tmp/den-2926.patch
+          git apply /tmp/den-2926.patch
+
+      - name: Run source contract and boundary regressions
+        run: |
+          python3 -m py_compile \
+            tools/namespace_migration.py \
+            tools/test_namespace_migration.py
+          python3 tools/test_namespace_migration.py
+
+      - name: Regenerate corrected inventory and material delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/namespace_migration.py inventory \
+            --root . \
+            --format json \
+            > /tmp/den-2926-after.json
+          mkdir -p artifacts
+          cp /tmp/den-2926-after.json artifacts/namespace-inventory.json
+          python3 - /tmp/den-2926-before.json /tmp/den-2926-after.json \
+            > artifacts/den-2926-inventory-delta.json <<'PY'
+          import json
+          import sys
+
+          before = json.load(open(sys.argv[1], encoding="utf-8"))
+          after = json.load(open(sys.argv[2], encoding="utf-8"))
+          before_summary = before["summary"]
+          after_summary = after["summary"]
+          systems = sorted(set(before_summary["bySystem"]) | set(after_summary["bySystem"]))
+          report = {
+              "ticket": "DEN-2926",
+              "sourcePatch": {
+                  "repository": "fiducia-cloud-test/infra-multicloud-e2e",
+                  "commit": "db017c4957bcdc63162d27a7d6ff71cd660c9fd4",
+                  "gitBlob": "a57aec4a06aa5559b0af56485fa478e3270f714f",
+              },
+              "before": before_summary,
+              "after": after_summary,
+              "delta": {
+                  "total": after_summary["total"] - before_summary["total"],
+                  "distinctReferences": after_summary["distinctReferences"] - before_summary["distinctReferences"],
+                  "bySystem": {
+                      name: after_summary["bySystem"].get(name, 0) - before_summary["bySystem"].get(name, 0)
+                      for name in systems
+                  },
+              },
+              "note": "Negative deltas remove prefix-truncated false positives; positive controls remain in the source unit suite.",
+          }
+          print(json.dumps(report, indent=2, sort_keys=True))
+          PY
+          cat artifacts/den-2926-inventory-delta.json
+
+      - name: Commit promoted patch and evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            tools/namespace_migration.py \
+            tools/test_namespace_migration.py \
+            artifacts/namespace-inventory.json \
+            artifacts/den-2926-inventory-delta.json
+          git commit -m "fix(DEN-2926): enforce scanner token boundaries"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
