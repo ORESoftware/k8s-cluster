@@ -6,10 +6,14 @@ on:
     branches: [main]
     paths:
       - .github/workflows/ops-streempilot-encrypted-pat-promotion.yml
+      - scripts/ops/run_streempilot_test_promotion_with_empty_repo_recovery.py
+      - scripts/ops/test_run_streempilot_test_promotion_with_empty_repo_recovery.py
   push:
     branches: [main]
     paths:
       - .github/workflows/ops-streempilot-encrypted-pat-promotion.yml
+      - scripts/ops/run_streempilot_test_promotion_with_empty_repo_recovery.py
+      - scripts/ops/test_run_streempilot_test_promotion_with_empty_repo_recovery.py
   workflow_dispatch:
 
 permissions:
@@ -41,7 +45,7 @@ jobs:
         with:
           args: .github/workflows/ops-streempilot-encrypted-pat-promotion.yml
 
-      - name: Compile and test the existing test-first publisher
+      - name: Compile and test the test-first publisher and bounded retry
         shell: bash
         env:
           GH_TOKEN: unit-test-installation-token
@@ -50,31 +54,40 @@ jobs:
           python3 -m py_compile \
             scripts/ops/publish_streempilot_test_then_promote.py \
             scripts/ops/test_publish_streempilot_test_then_promote.py \
+            scripts/ops/run_streempilot_test_promotion_with_empty_repo_recovery.py \
+            scripts/ops/test_run_streempilot_test_promotion_with_empty_repo_recovery.py \
             scripts/ops/publish_exact_private_repository_gaps.py \
             scripts/ops/private_repository_creation.py
           python3 scripts/ops/test_publish_streempilot_test_then_promote.py -v
+          python3 scripts/ops/test_run_streempilot_test_promotion_with_empty_repo_recovery.py -v
           python3 scripts/ops/test_private_repository_creation.py -v
 
       - name: Reject credential literals and unsafe repository mutation paths
         shell: bash
         run: |
           set -euo pipefail
-          target=.github/workflows/ops-streempilot-encrypted-pat-promotion.yml
+          targets=(
+            .github/workflows/ops-streempilot-encrypted-pat-promotion.yml
+            scripts/ops/run_streempilot_test_promotion_with_empty_repo_recovery.py
+            scripts/ops/test_run_streempilot_test_promotion_with_empty_repo_recovery.py
+          )
           credential_pattern='gh''p_|github_''pat_|BEGIN [A-Z ]*PRIVATE KEY'
           unsafe_pattern='git push --''force|--visibility[ =]+public|"private"[[:space:]]*:[[:space:]]*false'
-          if grep -nE "$credential_pattern" "$target"; then
+          if grep -nE "$credential_pattern" "${targets[@]}"; then
             echo 'credential-shaped source material detected' >&2
             exit 1
           fi
-          if grep -nE "$unsafe_pattern" "$target"; then
+          if grep -nE "$unsafe_pattern" "${targets[@]}"; then
             echo 'unsafe repository mutation path detected' >&2
             exit 1
           fi
-          grep -qF 'ISSUE_NUMBER: 1146' "$target"
-          grep -qF 'RSA-OAEP-SHA256' "$target"
-          grep -qF 'StreemPilot-test' "$target"
-          grep -qF 'publish_streempilot_test_then_promote.py --target stage' "$target"
-          grep -qF 'publish_streempilot_test_then_promote.py --target production' "$target"
+          grep -qF 'ISSUE_NUMBER: 1146' "${targets[0]}"
+          grep -qF 'RSA-OAEP-SHA256' "${targets[0]}"
+          grep -qF 'run_streempilot_test_promotion_with_empty_repo_recovery.py --target stage' "${targets[0]}"
+          grep -qF 'run_streempilot_test_promotion_with_empty_repo_recovery.py --target production' "${targets[0]}"
+          grep -qF 'StreemPilot-test/streempilot-compositor.rs' "${targets[1]}"
+          grep -qF '1327442276' "${targets[1]}"
+          grep -qF '2026-08-08T05:25:37Z' "${targets[1]}"
           git diff --check HEAD^ HEAD
 
   publish:
@@ -187,7 +200,7 @@ jobs:
           chmod 600 "$token_file"
           rm -f "$matches" "$encrypted" "$payload"
 
-      - name: Stage exact histories in StreemPilot-test, then promote unchanged
+      - name: Recover exact failed-run test repo, stage all four, then promote unchanged
         id: execute
         shell: bash
         env:
@@ -204,8 +217,9 @@ jobs:
           stage="$EVIDENCE_DIR/stage.json"
           production="$EVIDENCE_DIR/production.json"
           combined="$EVIDENCE_DIR/combined.json"
+          runner=scripts/ops/run_streempilot_test_promotion_with_empty_repo_recovery.py
 
-          python3 scripts/ops/publish_streempilot_test_then_promote.py --target stage --evidence-out "$stage"
+          python3 "$runner" --target stage --evidence-out "$stage"
           jq -e '
             .target == "stage" and
             .target_organization == "StreemPilot-test" and
@@ -218,7 +232,7 @@ jobs:
 
           # Production is structurally unreachable until the same-run staging
           # receipt above proves all four exact private/main sealed histories.
-          python3 scripts/ops/publish_streempilot_test_then_promote.py --target production --stage-evidence "$stage" --evidence-out "$production"
+          python3 "$runner" --target production --stage-evidence "$stage" --evidence-out "$production"
           jq -n --slurpfile stage "$stage" --slurpfile production "$production" --arg trusted_sha "$GITHUB_SHA" '
             {
               schema_version: 1,
