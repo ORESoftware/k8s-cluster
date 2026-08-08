@@ -62,7 +62,7 @@ jobs:
       github.event.issue.number == 615 &&
       github.event.comment.user.login == 'ORESoftware' &&
       github.actor == 'ORESoftware' &&
-      github.event.comment.body == 'ops-publish-current-org-dotgithub-relationships:615:20260808-v1'
+      github.event.comment.body == 'ops-publish-current-org-dotgithub-relationships:615:20260808-v2'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
@@ -72,7 +72,7 @@ jobs:
       REPOSITORY: ORESoftware/k8s-cluster
       ISSUE_NUMBER: '615'
       EXPECTED_COUNT: '62'
-      EXACT_TRIGGER: ops-publish-current-org-dotgithub-relationships:615:20260808-v1
+      EXACT_TRIGGER: ops-publish-current-org-dotgithub-relationships:615:20260808-v2
 
     steps:
       - name: Issue one-time challenge, publish, and verify
@@ -214,11 +214,17 @@ jobs:
           [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
           echo "::add-mask::$owner_token"
 
-          stage=validate-owner-identity
-          owner_login="$(
+          stage=validate-owner-credential
+          if ! owner_login="$(
             GH_TOKEN="$owner_token" gh api user --jq '.login' 2>/dev/null
-          )"
-          test "$owner_login" = 'ORESoftware'
+          )"; then
+            stage=validate-owner-credential-authentication
+            false
+          fi
+          if ! [[ "$owner_login" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$ ]]; then
+            stage=validate-owner-credential-login
+            false
+          fi
 
           stage=trusted-source
           source_root="$work/source"
@@ -265,6 +271,7 @@ jobs:
             cd "$source_root"
             env -u GITHUB_TOKEN \
               GH_TOKEN="$owner_token" \
+              EXPECTED_OWNER_LOGIN="$owner_login" \
               python3 scripts/ops/publish_current_org_repository_relationships.py \
                 --execute \
                 --json-report "$json_report" \
