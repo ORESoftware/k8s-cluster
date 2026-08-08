@@ -267,6 +267,25 @@ class ClassificationTests(unittest.TestCase):
         )
 
 
+    def test_scanner_preserves_owner_prefix_before_template_segments(self) -> None:
+        host_line = 'path = "/home/ec2-user/codes/dd/thread-workspaces/{name}"'
+        host_references = scan_line(host_line)
+        self.assertEqual(1, len(host_references))
+        self.assertEqual("host-path", host_references[0].system)
+        self.assertEqual(
+            "/home/ec2-user/codes/dd/thread-workspaces",
+            host_references[0].value,
+        )
+
+        package_line = 'module = "github.com/oresoftware/dd/libs/{generated}"'
+        package_references = scan_line(package_line)
+        self.assertEqual(1, len(package_references))
+        self.assertEqual("source-package", package_references[0].system)
+        self.assertEqual(
+            "github.com/oresoftware/dd/libs",
+            package_references[0].value,
+        )
+
 class RepositoryInventoryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()
@@ -292,6 +311,21 @@ class RepositoryInventoryTests(unittest.TestCase):
 
     def track_all(self) -> None:
         git(self.root, "add", ".")
+
+    def test_generated_inventory_artifacts_are_governance(self) -> None:
+        self.write(
+            "artifacts/namespace-inventory.json",
+            '{"reference": "dd/should-not-rescan"}\n',
+        )
+        self.write(
+            "artifacts/den-2926-inventory-delta.json",
+            '{"reference": "/opt/dd-should-not-rescan"}\n',
+        )
+        self.track_all()
+        contract = load_contract(self.root)
+        occurrences, diagnostics = scan_repository(self.root, contract.rules)
+        self.assertEqual([], diagnostics)
+        self.assertEqual([], occurrences)
 
     def test_inventory_separates_active_documentation_and_test_scope(self) -> None:
         self.write("remote/app.yaml", "secret: dd/remote-dev/gha-clone-server-secrets\n")
@@ -353,6 +387,7 @@ class RepositoryInventoryTests(unittest.TestCase):
             include_governance=False,
         )
         self.assertEqual(0, status)
+        self.assertEqual(".", report["generatedFrom"]["root"])
         occurrence = report["occurrences"][0]
         self.assertEqual("ores", occurrence["owner"])
         self.assertEqual("ores/dev/ci/clone-server-secrets", occurrence["target_preview"])
