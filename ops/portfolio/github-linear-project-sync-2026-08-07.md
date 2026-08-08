@@ -52,11 +52,13 @@ The canonical 64-organization directory was delivered through `ORESoftware/k8s-c
 - `athlet-o/athleto-sync#7` merged at reviewed head `b5756b27e39b0e780c4a3ce854725ddc09819be5`, producing squash commit `be828c251ebfdd0bf2f672beb573949efa7c5a34`.
 - Linear DEN-1784 is Done. The event-listener upgrade and the advisory-specific, time-bounded RSA exception passed exact-head CI run `31240463205`.
 
-### opto-sync and opto-sync-test
+### opto-sync, opto-sync-test, and formal-methods extraction
 
 - `opto-sync/opto-sync-clients#73` merged from reviewed candidate `67a6912d0859e85532e9d72c379b6f2948803050` to squash commit `86b7192c6175697818d630b788705ac18a8198fa`.
 - `opto-sync-test/background-wake-e2e#2` then certified that delivered commit and its provenance across browser, TypeScript, Dart/Flutter, Rust/WASM, Android, and Apple lanes before merging to `27ec384750e6cdfe6edff64067b850b3671e3709`.
 - Linear DEN-2132 is Done.
+- `opto-sync/opto-sync-clients#79` merged the reviewed, deterministic, byte-preserving export contract for `ORESoftware/formal-methods.rs` to `c6f51462fd7d2e54d2aa3e7b684b41e5a4d7e022` after six exact-head workflows passed.
+- Linear DEN-580 remains In Progress until the standalone repository exists, receives the exact exported tree plus provenance, and passes compatibility fixtures against current consumers.
 
 ### fiducia-cloud-test
 
@@ -68,7 +70,8 @@ The canonical 64-organization directory was delivered through `ORESoftware/k8s-c
 
 - `ORESoftware/k8s-cluster#1123` merged the read-only namespace ownership registry, deterministic 1,134-row migration manifest, strict ratchets, separate test-owner contract, and fail-closed execution boundary to `c70628646600ad8f2b88bb7f684fb4cba19626e1`.
 - Linear DEN-2949 is Done. Parent DEN-2786 remains In Progress because classification cleanup, strict-mode activation, and the actual separately reviewed migration phases have not executed.
-- `ORESoftware/k8s-cluster#1154` remains the active DEN-2805 carrier for independent-runner governance keys. It must not merge until its refreshed adversarial contracts and exact-head Rust suite are green.
+- `ORESoftware/k8s-cluster#1154` merged independent-runner governance-key support to `dev` as `5aad32c37be7f29f9355f19d6ce6d316494ff141`. Permissions, statically safe concurrency, and bounded timeouts are now explicit accepted mechanisms; dynamic and secret-bearing workflow semantics remain fail closed.
+- Linear DEN-2805 is Done. The consequence-bearing Rust lane passed in run `31267509129`, and the temporary verification workflow was removed before merge.
 
 ### shared-auth and shared definitions
 
