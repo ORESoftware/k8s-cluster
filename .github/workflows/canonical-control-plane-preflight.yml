@@ -93,9 +93,8 @@ jobs:
             -in "$private_key" \
             -pubout \
             -out "$public_key" >/dev/null 2>&1
-          public_key_b64="$(base64 -w0 "$public_key")"
           echo "CANONICAL_PRIVATE_KEY=$private_key" >> "$GITHUB_ENV"
-          echo "CANONICAL_CONTROL_PLANE_HANDSHAKE nonce=$CANONICAL_NONCE path=$CIPHERTEXT_PATH public_key_b64=$public_key_b64"
+          echo "CANONICAL_CONTROL_PLANE_HANDSHAKE nonce=$CANONICAL_NONCE path=$CIPHERTEXT_PATH artifact=canonical-control-plane-public-key-${{ github.run_id }}"
 
       - name: Upload the public handoff key
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -128,7 +127,19 @@ jobs:
             -pkeyopt rsa_padding_mode:oaep \
             -pkeyopt rsa_oaep_md:sha256 \
             -pkeyopt rsa_mgf1_md:sha256 \
-            > "$RUNNER_TEMP/canonical-control-plane.bundle.json"
+            > "$RUNNER_TEMP/canonical-control-plane.bundle.zlib"
+          python3 - <<'PY'
+          import os
+          import zlib
+          from pathlib import Path
+
+          root = Path(os.environ['RUNNER_TEMP'])
+          compressed = (root / 'canonical-control-plane.bundle.zlib').read_bytes()
+          raw = zlib.decompress(compressed)
+          if not raw or len(raw) > 8192:
+              raise SystemExit('decrypted Canonical credential bundle has an invalid size')
+          (root / 'canonical-control-plane.bundle.json').write_bytes(raw)
+          PY
           chmod 600 "$RUNNER_TEMP/canonical-control-plane.bundle.json"
 
       - name: Inventory Canonical Cloudflare and stage exact heads in canonical-cloud-test
