@@ -17,7 +17,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-08-08-sonus-api-server-cutover'
+        dd.dev/telemetry-revision: '2026-08-08-sonus-api-server-cutover-uid1000-passwd'
         prometheus.io/path: /metrics
         prometheus.io/port: '8126'
         prometheus.io/scrape: 'true'
@@ -425,6 +425,17 @@ spec:
               mountPath: /var/cache/dd-sound-recorder-rs
             - name: tmp
               mountPath: /tmp
+            # Resolve the non-root uid 1000 so OpenSSH can present the deploy
+            # key (getpwuid/getgrgid must succeed on a read-only rootfs image
+            # that has no entry for this uid).
+            - name: passwd
+              mountPath: /etc/passwd
+              subPath: passwd
+              readOnly: true
+            - name: passwd
+              mountPath: /etc/group
+              subPath: group
+              readOnly: true
       volumes:
         - name: repo
           hostPath:
@@ -436,3 +447,6 @@ spec:
             type: DirectoryOrCreate
         - name: tmp
           emptyDir: {}
+        - name: passwd
+          configMap:
+            name: dd-sound-recorder-passwd
