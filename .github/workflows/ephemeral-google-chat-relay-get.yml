@@ -1,4 +1,4 @@
-name: Ephemeral encrypted Google Chat relay GET
+name: Ephemeral encrypted Google Chat relay POST
 
 on:
   pull_request:
@@ -11,13 +11,13 @@ permissions:
   issues: write
 
 concurrency:
-  group: ephemeral-google-chat-relay-get
+  group: ephemeral-google-chat-relay-post
   cancel-in-progress: false
 
 jobs:
   export:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       RELAY_ISSUE: '86'
@@ -43,7 +43,7 @@ jobs:
           echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
           gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/issues/${RELAY_ISSUE}/comments" \
-            -f body="CHAT_RELAY_GET_PUBLIC_KEY protocol=2 run_id=${run_id} key_b64=${key_b64} payload_fields=run_id,token,archive_passphrase" >/dev/null
+            -f body="CHAT_RELAY_POST_PUBLIC_KEY protocol=3 run_id=${run_id} key_b64=${key_b64} payload_fields=run_id,token,archive_passphrase" >/dev/null
 
       - name: Receive exactly one run-bound encrypted payload
         id: payload
@@ -53,7 +53,7 @@ jobs:
         run: |
           set -euo pipefail
           run_id="${{ steps.keypair.outputs.run_id }}"
-          prefix="CHAT_RELAY_GET_CIPHERTEXT run_id=${run_id} data="
+          prefix="CHAT_RELAY_POST_CIPHERTEXT run_id=${run_id} data="
           matches="${RUNNER_TEMP}/ciphertext-matches"
           ciphertext=''
 
@@ -68,7 +68,7 @@ jobs:
             local count="$1"
             gh api --method POST \
               "repos/${GITHUB_REPOSITORY}/issues/${RELAY_ISSUE}/comments" \
-              -f body="CHAT_RELAY_GET_REJECTED run_id=${run_id} reason=duplicate_ciphertexts count=${count}" >/dev/null
+              -f body="CHAT_RELAY_POST_REJECTED run_id=${run_id} reason=duplicate_ciphertexts count=${count}" >/dev/null
             echo "Expected exactly one ciphertext for ${run_id}; observed ${count}." >&2
             exit 1
           }
@@ -118,7 +118,7 @@ jobs:
           printf '%s' "$passphrase" > "${RUNNER_TEMP}/passphrase"
           rm -f "$matches" "${RUNNER_TEMP}/payload.bin" "${RUNNER_TEMP}/payload.json"
 
-      - name: Fetch and paginate fixed Chat messages with GET
+      - name: Fetch and paginate fixed Chat messages with POST
         id: fetch
         shell: bash
         env:
@@ -130,37 +130,51 @@ jobs:
           out="${RUNNER_TEMP}/chat-export"
           mkdir -p "$out/pages"
 
-          bridge_get() {
+          bridge_post() {
             local action="$1"
             local output="$2"
             local page_token="${3:-}"
-            args=(
-              --get --fail --location --silent --show-error
-              --retry 3 --retry-all-errors
-              --connect-timeout 20 --max-time 120
-              --data-urlencode "action=${action}"
-              --data-urlencode "token=${token}"
-            )
+            local body
+
             if [ "$action" = messages ]; then
-              args+=(--data-urlencode pageSize=250)
-              args+=(--data-urlencode metadataOnly=false)
-              args+=(--data-urlencode showDeleted=true)
-              if [ -n "$page_token" ]; then
-                args+=(--data-urlencode "pageToken=${page_token}")
-              fi
+              body="$(
+                jq -cn \
+                  --arg action "$action" \
+                  --arg token "$token" \
+                  --arg pageToken "$page_token" \
+                  '{
+                    action: $action,
+                    token: $token,
+                    pageSize: 250,
+                    metadataOnly: false,
+                    showDeleted: true
+                  } + (if $pageToken == "" then {} else {pageToken: $pageToken} end)'
+              )"
+            else
+              body="$(jq -cn --arg action "$action" --arg token "$token" \
+                '{action: $action, token: $token}')"
             fi
-            curl "${args[@]}" "$CHAT_EXEC_URL" -o "$output"
+
+            printf '%s' "$body" |
+              curl --fail --location --silent --show-error \
+                --retry 3 --retry-all-errors \
+                --connect-timeout 20 --max-time 120 \
+                --header 'content-type: application/json' \
+                --data-binary @- \
+                "$CHAT_EXEC_URL" \
+                --output "$output"
+
             if ! jq -e '.ok == true' "$output" >/dev/null; then
               diagnostic="$(jq -c '{ok,action,error,service,configured}' "$output" 2>/dev/null || printf '{"error":"non-json response"}')"
               gh api --method POST \
                 "repos/${GITHUB_REPOSITORY}/issues/${RELAY_ISSUE}/comments" \
-                -f body="CHAT_RELAY_GET_DIAGNOSTIC run_id=${{ steps.keypair.outputs.run_id }} action=${action} response=${diagnostic}" >/dev/null
+                -f body="CHAT_RELAY_POST_DIAGNOSTIC run_id=${{ steps.keypair.outputs.run_id }} action=${action} response=${diagnostic}" >/dev/null
               exit 1
             fi
           }
 
-          bridge_get status "$out/status.json"
-          bridge_get probe "$out/probe.json"
+          bridge_post status "$out/status.json"
+          bridge_post probe "$out/probe.json"
           jq -e --arg space "$EXPECTED_SPACE" --arg display "$EXPECTED_DISPLAY_NAME" '
             .data.space.name == $space and
             (.data.space.displayName == $display or .data.space.expectedDisplayName == $display)
@@ -175,7 +189,7 @@ jobs:
             pages=$((pages + 1))
             test "$pages" -le 1000
             file="$out/pages/messages-part-$(printf '%05d' "$pages").json"
-            bridge_get messages "$file" "$page_token"
+            bridge_post messages "$file" "$page_token"
             count="$(jq -r '.data.messageCount // 0' "$file")"
             messages=$((messages + count))
             if [ -z "$first_time" ] && [ "$count" -gt 0 ]; then
@@ -204,7 +218,7 @@ jobs:
             --arg firstMessageTime "$first_time" --arg lastMessageTime "$last_time" \
             --arg relayCiphertextSha256 "${{ steps.payload.outputs.ciphertext_sha256 }}" \
             --argjson pages "$pages" --argjson messages "$messages" \
-            '{relayProtocol:2,runId:$runId,space:$space,displayName:$displayName,startBoundary:$startBoundary,pages:$pages,messages:$messages,firstMessageTime:$firstMessageTime,lastMessageTime:$lastMessageTime,relayCiphertextSha256:$relayCiphertextSha256,exportedAt:(now|todateiso8601)}' \
+            '{relayProtocol:3,transport:"POST",runId:$runId,space:$space,displayName:$displayName,startBoundary:$startBoundary,pages:$pages,messages:$messages,firstMessageTime:$firstMessageTime,lastMessageTime:$lastMessageTime,relayCiphertextSha256:$relayCiphertextSha256,exportedAt:(now|todateiso8601)}' \
             > "$out/manifest.json"
           manifest_sha256="$(sha256sum "$out/manifest.json" | awk '{print $1}')"
           find "$out" -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > "$out/SHA256SUMS"
@@ -232,7 +246,7 @@ jobs:
       - name: Upload encrypted artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: encrypted-google-chat-export-get-${{ steps.keypair.outputs.run_id }}
+          name: encrypted-google-chat-export-post-${{ steps.keypair.outputs.run_id }}
           path: |
             ${{ runner.temp }}/chat-export.tar.gz.gpg
             ${{ runner.temp }}/chat-export.tar.gz.gpg.sha256
@@ -247,7 +261,7 @@ jobs:
         run: |
           gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/issues/${RELAY_ISSUE}/comments" \
-            -f body="CHAT_RELAY_GET_COMPLETE protocol=2 run_id=${{ steps.keypair.outputs.run_id }} artifact=encrypted-google-chat-export-get-${{ steps.keypair.outputs.run_id }} pages=${{ steps.fetch.outputs.pages }} messages=${{ steps.fetch.outputs.messages }} ciphertext_sha256=${{ steps.payload.outputs.ciphertext_sha256 }} manifest_sha256=${{ steps.fetch.outputs.manifest_sha256 }} archive_sha256=${{ steps.encrypt.outputs.archive_sha256 }}" >/dev/null
+            -f body="CHAT_RELAY_POST_COMPLETE protocol=3 run_id=${{ steps.keypair.outputs.run_id }} artifact=encrypted-google-chat-export-post-${{ steps.keypair.outputs.run_id }} pages=${{ steps.fetch.outputs.pages }} messages=${{ steps.fetch.outputs.messages }} ciphertext_sha256=${{ steps.payload.outputs.ciphertext_sha256 }} manifest_sha256=${{ steps.fetch.outputs.manifest_sha256 }} archive_sha256=${{ steps.encrypt.outputs.archive_sha256 }}" >/dev/null
 
       - name: Destroy secrets
         if: always()
