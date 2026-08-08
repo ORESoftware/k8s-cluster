@@ -1,0 +1,39 @@
+name: DEN-2881 catalog autofix
+
+on:
+  push:
+    branches:
+      - codex/den-2881-zed-bootstrap
+    paths:
+      - ".github/workflows/den-2881-catalog-autofix.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Regenerate catalog
+        run: python3 tools/application_catalog.py generate catalog/applications.json
+
+      - name: Commit generated catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- catalog/applications.json; then
+            echo "catalog already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add catalog/applications.json
+          git commit -m "chore(DEN-2881): regenerate application catalog"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
