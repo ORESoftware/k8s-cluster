@@ -80,10 +80,44 @@ The repository and workflow path form a reserved namespace. Any of these conditi
 
 Unrelated repositories and workflow paths remain on their existing reviewed classifiers.
 
-## Separation from live execution
+## Real-process execution evidence
 
-This increment only plans the exact contract. The service remains at zero replicas with API and webhook execution disabled. The build server already independently binds the exact repository to `node-hardened-verify` and `node-hardened-test`.
+The `msgint_http` integration starts the actual `gha-clone-server` binary with API execution enabled only inside the test process and points it at a recording local build-server mock.
 
-A separate PR must start the actual binary against a recording mock build server and prove ordered authenticated submissions, stable retry identities, and zero submissions for all reserved mismatches before any live private-source activation is considered.
+One accepted immutable request must produce exactly two authenticated build submissions in deterministic topological order:
 
-Live activation still requires the least-privilege GitHub App, reconciled ExternalSecret, plan-only deployment evidence, and explicit review. No classic PAT belongs in this path.
+```text
+operator_config  -> node-hardened-verify
+repository_tests -> node-hardened-test
+```
+
+Every submission must contain:
+
+- `schemaVersion=build-server.v1`;
+- `jobKind=run-profile`;
+- exact `https://github.com/messaging-intel/msgint-connectors.git`;
+- exact reviewed immutable SHA;
+- no caller-supplied command or image;
+- deterministic `gha-clone:{planId}:{jobId}` identity; and
+- `x-build-server-auth`.
+
+Repeating the exact run must reuse each job's request identity while keeping the operator and repository-test identities distinct.
+
+The actual-binary test also requires zero `/builds` submissions for:
+
+- a different revision;
+- the reserved repository under another workflow path;
+- the reserved workflow path under a lookalike repository;
+- mutable setup action refs;
+- changed checkout credential persistence;
+- changed Node version;
+- added publication commands; and
+- secret-bearing setup inputs.
+
+## Separation from live private-source execution
+
+This is local executable contract evidence against a recording build-server mock. It does not fetch the private repository with live credentials and does not activate the deployed service.
+
+The service remains at zero replicas with API and webhook execution disabled. The build server independently binds the exact repository to `node-hardened-verify` and `node-hardened-test`.
+
+Live activation still requires the least-privilege GitHub App, reconciled ExternalSecret, plan-only deployment evidence, a live immutable private-source smoke, and explicit review. No classic PAT belongs in this path.
