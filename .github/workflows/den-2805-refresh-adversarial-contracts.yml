@@ -52,7 +52,6 @@ jobs:
                   let notes = job_plan.independent_notes.join("\\n");
                   assert!(notes.contains("workflow-level permissions accepted"));
                   assert!(notes.contains("workflow-level concurrency accepted"));
-                  assert!(notes.contains("job-level permissions accepted"));
                   assert!(reasons.contains("workflow-level defaults"));'''
           if first.count(old) != 1:
               raise SystemExit('expected workflow/job adversarial assertion block exactly once')
