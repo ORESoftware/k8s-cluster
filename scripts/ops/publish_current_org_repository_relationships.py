@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import re
 import sys
 
 HERE = Path(__file__).resolve().parent
@@ -38,8 +40,18 @@ import publish_org_repository_relationships as publisher  # noqa: E402
 publisher.ORGANIZATIONS = ORGANIZATIONS
 
 
+def configure_expected_owner_login(value: str | None = None) -> str:
+    """Bind preflight to the authenticated publisher without naming it publicly."""
+    login = value if value is not None else os.environ.get("EXPECTED_OWNER_LOGIN", "")
+    if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?", login):
+        raise RuntimeError("EXPECTED_OWNER_LOGIN must be a valid GitHub login")
+    governance.EXPECTED_ACTOR = login
+    return login
+
+
 def main() -> int:
     """Validate the current fleet contract, then delegate to the engine."""
+    configure_expected_owner_login()
     current.validate_static()
     return publisher.main()
 
