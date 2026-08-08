@@ -138,7 +138,7 @@ test('ExternalSecret binds the four narrowly named runtime values', () => {
 });
 
 test('public ingress exposes only three exact Slack-signed POST routes', () => {
-  const paths = [...ingress.matchAll(/^\s*path:\s*(\S+)\s*$/gm)].map((match) => match[1]);
+  const paths = [...ingress.matchAll(/^\s*-\s+path:\s*(\S+)\s*$/gm)].map((match) => match[1]);
   assert.deepEqual(paths, [
     '/slack/commands/ores-claude',
     '/slack/commands/ores-chatgpt',
@@ -171,9 +171,9 @@ test('pod and network boundaries remain explicit', () => {
   assert.match(networkPolicy, /port: 443/);
 });
 
-test('reviewed source retains thirteen bounded channel bindings', () => {
+test('reviewed source retains fourteen bounded channel bindings', () => {
   assert.equal(registry.schema_version, 1);
-  assert.equal(registry.bindings.length, 13);
+  assert.equal(registry.bindings.length, 14);
   const channels = new Set();
   for (const binding of registry.bindings) {
     assert.equal(binding.workspace_id, 'T01B3C83PMK');
@@ -221,9 +221,12 @@ test('focused workflow pins exact source and credential-free checkout', () => {
   assert.match(workflow, /prepare-credential-free-build\.sh/);
   assert.match(workflow, new RegExp(IMAGE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.doesNotMatch(workflow, /submodules: recursive/);
-  assert.doesNotMatch(workflow, /ubuntu-latest/);
+  assert.doesNotMatch(workflow, /^\s*runs-on:\s*ubuntu-latest\s*$/m);
   for (const match of workflow.matchAll(/^\s*uses:\s*([^\s#]+)/gm)) {
-    assert.match(match[1], /^(?:\.\/|[^@]+@[0-9a-fA-F]{40})$/);
+    assert.match(
+      match[1],
+      /^(?:\.\/|[^@]+@[0-9a-fA-F]{40}|docker:\/\/[^@\s]+@sha256:[0-9a-fA-F]{64})$/,
+    );
   }
 });
 
