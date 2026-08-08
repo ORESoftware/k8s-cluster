@@ -701,7 +701,7 @@ mod tests {
 
     #[test]
     fn immutable_revision_required() {
-        assert!(valid_revision("1e1116ef6811c4e3e6be34ad3e1def39bc20ef59"));
+        assert!(valid_revision("104a02c72ca827ec678de0ed6e71d40b6fccbb93"));
         assert!(!valid_revision("main"));
         assert!(!valid_revision("1e1116"));
     }

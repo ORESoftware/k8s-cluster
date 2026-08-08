@@ -151,7 +151,7 @@ test('the activation harness pins both repositories and drives plan then run', a
   );
 
   assert.match(harness, /PLAYWRIGHT_REPO='discrete-event-systems-test\/des-web-playwright-e2e'/);
-  assert.match(harness, /PLAYWRIGHT_SHA='1e1116ef6811c4e3e6be34ad3e1def39bc20ef59'/);
+  assert.match(harness, /PLAYWRIGHT_SHA='104a02c72ca827ec678de0ed6e71d40b6fccbb93'/);
   assert.match(harness, /PUPPETEER_REPO='discrete-event-systems-test\/des-web-puppeteer-e2e'/);
   assert.match(harness, /PUPPETEER_SHA='0547548429d937023a124de37afca7659a85c3dd'/);
   assert.match(harness, /DES_REQUEST_SUFFIX:\?DES_REQUEST_SUFFIX is required/);
