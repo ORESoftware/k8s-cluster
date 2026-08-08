@@ -1,0 +1,292 @@
+name: Finalize shared Fiducia Linear routing once
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/den-2275-fiducia-linear-route-finalize-once.yml
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: den-2275-fiducia-linear-route
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-2275-share-fiducia-linear-route'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out the exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-2275-share-fiducia-linear-route
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Apply the declared shared-project routing contract
+        run: |
+          set -euo pipefail
+          base='18f1fa1dc8360c4817e1adbc1351b93f7d8604de'
+          carrier='.github/workflows/den-2275-fiducia-linear-route-finalize-once.yml'
+          actual="$(git diff --name-only "$base"...HEAD)"
+          if [[ "$actual" != "$carrier" ]]; then
+            printf 'unexpected pre-transform paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          SHARED_URL = 'https://linear.app/denman/project/githubcomfiducia-cloud-8fd5e1bec9d3'
+          OLD_TEST_URL = 'https://linear.app/denman/project/githubcomfiducia-cloud-test-ad993264fa5e'
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label} drifted: expected one match, found {count}')
+              return text.replace(old, new, 1)
+
+          registry_path = Path('ops/portfolio/github-linear-project-registry.tsv')
+          registry = registry_path.read_text(encoding='utf-8')
+          registry = replace_once(
+              registry,
+              f'fiducia-cloud-test\t{OLD_TEST_URL}',
+              f'fiducia-cloud-test\t{SHARED_URL}',
+              'fiducia-cloud-test registry row',
+          )
+          registry_path.write_text(registry, encoding='utf-8')
+
+          js_path = Path('scripts/ci/check-github-linear-project-registry.mjs')
+          js = js_path.read_text(encoding='utf-8')
+          js = replace_once(
+              js,
+              "export const PROJECT_NUMBER_EXCEPTIONS = new Map([['dancing-dragons', 4]]);\n",
+              "export const PROJECT_NUMBER_EXCEPTIONS = new Map([['dancing-dragons', 4]]);\n"
+              "export const SHARED_LINEAR_PROJECT_OWNERS = new Map([\n"
+              "  [\n"
+              f"    '{SHARED_URL}',\n"
+              "    new Set(['fiducia-cloud', 'fiducia-cloud-test']),\n"
+              "  ],\n"
+              "]);\n",
+              'shared Linear owner declaration',
+          )
+          js = replace_once(
+              js,
+              "    assert(!seenLinearUrls.has(linearUrl), `duplicate Linear project URL on line ${sourceLine}: ${linearUrl}`);\n"
+              "    seenLinearUrls.set(linearUrl, sourceLine);\n",
+              "    const owners = seenLinearUrls.get(linearUrl) ?? [];\n"
+              "    owners.push(key);\n"
+              "    seenLinearUrls.set(linearUrl, owners);\n",
+              'Linear ownership accumulation',
+          )
+          js = replace_once(
+              js,
+              "  return rows.map(deriveRecord);\n",
+              "  for (const [linearUrl, owners] of seenLinearUrls) {\n"
+              "    if (owners.length === 1) continue;\n"
+              "    const allowedOwners = SHARED_LINEAR_PROJECT_OWNERS.get(linearUrl);\n"
+              "    assert(\n"
+              "      allowedOwners\n"
+              "        && owners.length === allowedOwners.size\n"
+              "        && owners.every((owner) => allowedOwners.has(owner)),\n"
+              "      `duplicate Linear project URL without an exact declared owner set: ${linearUrl}`,\n"
+              "    );\n"
+              "  }\n\n"
+              "  return rows.map(deriveRecord);\n",
+              'shared Linear ownership validation',
+          )
+          js = replace_once(
+              js,
+              "    'public `<org>/.github` repository',\n",
+              "    'public `<org>/.github` repository',\n"
+              "    'declared shared Linear project',\n",
+              'documentation validator contract',
+          )
+          js_path.write_text(js, encoding='utf-8')
+
+          js_test_path = Path('scripts/ci/check-github-linear-project-registry.test.mjs')
+          js_test = js_test_path.read_text(encoding='utf-8')
+          js_test = replace_once(
+              js_test,
+              "  assert.match(markdown, /https:\\/\\/github\\.com\\/alpha-org\\/\\.github/);\n});\n",
+              "  assert.match(markdown, /https:\\/\\/github\\.com\\/alpha-org\\/\\.github/);\n});\n\n"
+              "test('allows only the declared Fiducia production/test shared Linear route', () => {\n"
+              f"  const linearUrl = '{SHARED_URL}';\n"
+              "  const rows = [\n"
+              "    { organization: 'fiducia-cloud', linearUrl, sourceLine: 2 },\n"
+              "    { organization: 'fiducia-cloud-test', linearUrl, sourceLine: 3 },\n"
+              "  ];\n"
+              "  const records = validateRegistry(rows, { expectedCount: 2 });\n"
+              "  assert.equal(records[0].linearUrl, records[1].linearUrl);\n\n"
+              "  expectFailure(\n"
+              "    () =>\n"
+              "      validateRegistry(\n"
+              "        [rows[0], { ...rows[1], organization: 'other-test' }],\n"
+              "        { expectedCount: 2 },\n"
+              "      ),\n"
+              "    'duplicate Linear project URL without an exact declared owner set',\n"
+              "  );\n"
+              "});\n",
+              'shared Linear ownership test',
+          )
+          js_test = replace_once(
+              js_test,
+              "    'public `<org>/.github` repository',\n",
+              "    'public `<org>/.github` repository',\n"
+              "    'declared shared Linear project',\n",
+              'documentation fixture contract',
+          )
+          js_test_path.write_text(js_test, encoding='utf-8')
+
+          py_path = Path('scripts/ops/validate_github_linear_projects_by_org_doc.py')
+          py = py_path.read_text(encoding='utf-8')
+          py = replace_once(
+              py,
+              "CREDENTIAL_RE = re.compile(\n",
+              "SHARED_LINEAR_PROJECT_OWNERS = {\n"
+              f"    '{SHARED_URL}': frozenset({{'fiducia-cloud', 'fiducia-cloud-test'}}),\n"
+              "}\n"
+              "CREDENTIAL_RE = re.compile(\n",
+              'Python shared owner declaration',
+          )
+          py = replace_once(
+              py,
+              "    if len({row.linear_url for row in rows}) != len(rows):\n"
+              "        raise DirectoryError(\"registry contains duplicate Linear project URLs\")\n\n",
+              "    linear_owners: dict[str, set[str]] = {}\n"
+              "    for row in rows:\n"
+              "        linear_owners.setdefault(row.linear_url, set()).add(row.organization)\n"
+              "    for linear_url, owners in linear_owners.items():\n"
+              "        if len(owners) == 1:\n"
+              "            continue\n"
+              "        if frozenset(owners) != SHARED_LINEAR_PROJECT_OWNERS.get(linear_url):\n"
+              "            raise DirectoryError(\n"
+              "                'registry contains a duplicate Linear project URL without '\n"
+              "                f'an exact declared owner set: {linear_url}'\n"
+              "            )\n\n",
+              'Python shared ownership validation',
+          )
+          py_path.write_text(py, encoding='utf-8')
+
+          py_test_path = Path('scripts/ops/tests/test_github_linear_projects_by_org_doc.py')
+          py_test = py_test_path.read_text(encoding='utf-8')
+          py_test = replace_once(
+              py_test,
+              "    def test_write_repairs_generated_block_without_touching_surrounding_prose(self) -> None:\n",
+              "    def test_declared_fiducia_pair_may_share_one_linear_project(self) -> None:\n"
+              "        rows = module.load_registry(module.DEFAULT_REGISTRY)\n"
+              "        production = next(row for row in rows if row.organization == 'fiducia-cloud')\n"
+              "        test_org = next(row for row in rows if row.organization == 'fiducia-cloud-test')\n"
+              "        self.assertEqual(production.linear_url, test_org.linear_url)\n\n"
+              "        with tempfile.TemporaryDirectory() as directory:\n"
+              "            path = Path(directory) / 'invalid-shared-owner.tsv'\n"
+              "            path.write_text(\n"
+              "                'organization\\tlinear_url\\n'\n"
+              "                f'fiducia-cloud\\t{production.linear_url}\\n'\n"
+              "                f'other-test\\t{production.linear_url}\\n',\n"
+              "                encoding='utf-8',\n"
+              "            )\n"
+              "            with self.assertRaisesRegex(module.DirectoryError, 'declared owner set'):\n"
+              "                module.load_registry(path)\n\n"
+              "    def test_write_repairs_generated_block_without_touching_surrounding_prose(self) -> None:\n",
+              'Python shared ownership test',
+          )
+          py_test_path.write_text(py_test, encoding='utf-8')
+
+          docs_path = Path('docs/portfolio/github-linear-project-registry.md')
+          docs = docs_path.read_text(encoding='utf-8')
+          docs = replace_once(
+              docs,
+              "- Organization names and Linear project URLs are unique, case-insensitively for GitHub organization ownership.\n",
+              "- Organization names are unique case-insensitively. Linear project URLs are unique unless an exact declared shared Linear project owner set intentionally routes a production organization and its independent test organization to one planning authority; the current declared pair is `fiducia-cloud` plus `fiducia-cloud-test`.\n",
+              'registry operating contract',
+          )
+          docs = replace_once(
+              docs,
+              "- duplicate or malformed Linear project URLs;\n",
+              "- duplicate or malformed Linear project URLs, except an exact declared shared Linear project owner set;\n",
+              'registry validation prose',
+          )
+          docs_path.write_text(docs, encoding='utf-8')
+          PY
+
+          python3 scripts/ops/validate_github_linear_projects_by_org_doc.py --write
+          git diff --check
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Validate the registry, generated docs, and negative contracts
+        run: |
+          set -euo pipefail
+          node --check scripts/ci/check-github-linear-project-registry.mjs
+          node --check scripts/ci/check-github-linear-project-registry.test.mjs
+          node --test scripts/ci/check-github-linear-project-registry.test.mjs
+          node scripts/ci/check-github-linear-project-registry.mjs > /tmp/registry.json
+          test "$(jq -r .organizationCount /tmp/registry.json)" = 64
+          python3 scripts/ops/validate_github_linear_projects_by_org_doc.py
+          python3 -m unittest scripts/ops/tests/test_github_linear_projects_by_org_doc.py
+          python3 scripts/ops/validate_github_linear_registry_relationship.py
+          git diff --check
+
+      - name: Publish a redacted verification artifact
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg schema_version 'github-linear-routing-verification.v1' \
+            --arg production_org fiducia-cloud \
+            --arg test_org fiducia-cloud-test \
+            --arg linear_url 'https://linear.app/denman/project/githubcomfiducia-cloud-8fd5e1bec9d3' \
+            --arg production_project_url 'https://github.com/orgs/fiducia-cloud/projects/1' \
+            --arg test_project_url 'https://github.com/orgs/fiducia-cloud-test/projects/1' \
+            --arg head_sha "$(git rev-parse HEAD)" \
+            --arg verified_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{schema_version:$schema_version,production_org:$production_org,test_org:$test_org,shared_linear_url:$linear_url,production_project_url:$production_project_url,test_project_url:$test_project_url,head_sha:$head_sha,verified_at:$verified_at,registry_validation:true,generated_document_validation:true,credential_material_present:false}' \
+            > /tmp/fiducia-github-linear-routing.json
+
+      - name: Upload routing verification
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fiducia-github-linear-routing-${{ github.event.pull_request.number }}
+          path: /tmp/fiducia-github-linear-routing.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Commit and push the product-only registry correction
+        run: |
+          set -euo pipefail
+          base='18f1fa1dc8360c4817e1adbc1351b93f7d8604de'
+          rm .github/workflows/den-2275-fiducia-linear-route-finalize-once.yml
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'fix(DEN-2275): route Fiducia test work to shared Linear project'
+          expected=$'docs/portfolio/github-linear-project-registry.md\ndocs/portfolio/github-linear-projects-by-org.md\nops/portfolio/github-linear-project-registry.tsv\nscripts/ci/check-github-linear-project-registry.mjs\nscripts/ci/check-github-linear-project-registry.test.mjs\nscripts/ops/tests/test_github_linear_projects_by_org_doc.py\nscripts/ops/validate_github_linear_projects_by_org_doc.py'
+          actual="$(git diff --name-only "$base"...HEAD | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'unexpected final product paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          git push origin HEAD:agent/den-2275-share-fiducia-linear-route
+
+      - name: Annotate the PR through authenticated gh
+        run: |
+          set -euo pipefail
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --body 'Exact-head materialization passed the 64-organization Node validator, generated-directory validator, Python unit suite, and cross-registry relationship validator. The self-removing carrier published a seven-file product diff and a redacted `fiducia-github-linear-routing` artifact.'
