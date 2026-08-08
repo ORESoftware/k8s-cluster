@@ -1,0 +1,23 @@
+name: Google Chat relay contract
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/ephemeral-google-chat-relay-get.yml
+      - .github/workflows/ephemeral-google-chat-relay.yml
+      - .github/workflows/google-chat-relay-contract.yml
+      - tools/google-chat-space-export/test_relay_workflows.py
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify single-submission and hash-binding invariants
+        run: python3 tools/google-chat-space-export/test_relay_workflows.py

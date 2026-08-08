@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "completed_on": "2026-08-04",
+  "canonical_mapping_count": 41,
+  "canonical_key_field": "portfolio_key",
+  "source_of_truth": "ops/registries/portfolio-project-links.csv",
+  "systems": {
+    "github_projects_v2": {
+      "mapped": 41,
+      "readmes_and_short_descriptions_linked": 41,
+      "first_sync_updated": 41,
+      "verification_sync_unchanged": 41,
+      "evidence": "ops/evidence/portfolio-project-metadata-sync.json"
+    },
+    "linear": {
+      "mapped": 41,
+      "canonical_marker_comments_written": 41,
+      "marker_format": "portfolio-link-registry:v1:<portfolio_key>",
+      "new_project": {
+        "portfolio_key": "dancing-dragons",
+        "project_id": "099aeb3b-9d3b-47a4-9fe5-ed0fd2f27763"
+      }
+    },
+    "slack": {
+      "mapped": 41,
+      "canonical_linkage_messages_written": 41,
+      "workspace_id": "T01B3C83PMK",
+      "marker_format": "portfolio-link-registry:v1:<portfolio_key>",
+      "new_channel": {
+        "portfolio_key": "dancing-dragons",
+        "channel_id": "C0BMWM4J6SH"
+      }
+    },
+    "chatgpt_projects": {
+      "canonical_names_registered": 41,
+      "linkage_mode": "exact canonical project name and portfolio_key",
+      "native_project_ids_available_to_connector": false,
+      "platform_side_id_verification_performed": false
+    }
+  },
+  "naming_exceptions": {
+    "github_native_case_preserved": {
+      "3fa-app": "3FA-app",
+      "omniblitz": "OmniBlitz",
+      "streempilot": "StreemPilot"
+    },
+    "github_project_number": {
+      "default": 1,
+      "dancing-dragons": 4
+    },
+    "linear_aliases_preserved": [
+      "memebank",
+      "meta-agents-demo"
+    ]
+  },
+  "enforcement": {
+    "validator": "scripts/ops/validate_portfolio_project_links.py",
+    "workflow": ".github/workflows/validate-portfolio-project-links.yml",
+    "latest_observed_successful_run": 23,
+    "latest_observed_successful_run_id": 30941894912,
+    "exact_key_set_enforced": true,
+    "native_ids_and_urls_unique": true,
+    "credential_like_values_rejected": true
+  },
+  "cleanup": {
+    "superseded_pull_request_closed": 832,
+    "one_time_github_project_sync_workflow_removed": true,
+    "ephemeral_public_keys_removed": true,
+    "encrypted_credential_handoff_files_removed": true,
+    "plaintext_github_token_committed": false
+  }
+}

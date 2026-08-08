@@ -169,6 +169,13 @@ test('deployment keeps the hostPath staleness guard that prevented the 2026-07-3
 
   // After building, the binary must exist before exec, failing with the real cause
   // rather than bash's bare "No such file or directory".
+  // Retained from the main-side contract: the exec'd path must be *derived* from
+  // the same checked binary variable, not written out a second time by hand.
+  assert.match(
+    deployment,
+    /built="\$\{CARGO_TARGET_DIR:-target\}\/release\/\$\{bin_name\}"/,
+    'the executable path must be derived from the checked binary variable',
+  );
   assert.match(deployment, /if \[ ! -x "\$\{built\}" \]; then/);
   assert.match(deployment, /FATAL: cargo did not produce/);
 });

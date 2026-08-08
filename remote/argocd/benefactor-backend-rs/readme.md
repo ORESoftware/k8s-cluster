@@ -34,3 +34,36 @@ kubectl -n argocd get application benefactor-backend-rs
 ```
 
 Do not apply the Deployment directly during ordinary releases.
+
+## Prometheus contract and live evidence
+
+The backend exposes `/metrics` on its HTTP port. The Service and pod both carry
+explicit scrape annotations, while central Prometheus has the stable
+`benefactor-backend-rs` job and target-down, dependency, pipeline, workload,
+CPU, and memory alerts.
+
+Static CI renders both kustomizations and runs the Prometheus wiring contracts.
+To collect the live evidence required by DEN-677, create local-only
+port-forwards in separate terminals:
+
+```sh
+kubectl -n observability port-forward svc/dd-prometheus 9090:9090
+kubectl -n default port-forward svc/benefactor-backend-rs 18135:80
+```
+
+Then run the read-only verifier:
+
+```sh
+python3 tools/verify_benefactor_observability_live.py \
+  --prometheus-url http://127.0.0.1:9090 \
+  --metrics-url http://127.0.0.1:18135/metrics \
+  --output tmp/benefactor-observability-evidence.json
+```
+
+The command succeeds only when Prometheus reports `up == 1`, the backend's
+bounded `postgres` readiness gauge is `1`, the direct endpoint contains the
+required metric families, and no metric or label name exposes email, lead,
+contact, CRM, provider-query, raw-URL, credential, or secret fields. It writes
+the evidence file atomically only after all checks pass. The evidence contains
+metric names and aggregate values, never application payloads or Kubernetes
+Secrets.

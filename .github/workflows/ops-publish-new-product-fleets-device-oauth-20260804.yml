@@ -1,0 +1,185 @@
+name: Publish new product fleets with device OAuth (2026-08-04)
+run-name: Publish 24 validated repositories through one-time device authorization
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: publish-new-product-fleets-device-oauth-20260804
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.event.issue.number == 849 &&
+      github.event.comment.body == '/start-new-product-fleets-device-oauth-v1' &&
+      (github.event.comment.user.login == 'ORESoftware' || github.event.comment.author_association == 'OWNER')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the fully validated publisher revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 3de0df0eeff6fdb3b9de91e30facad6aaf912203
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Reconstruct and bind the validated publisher
+        id: publisher
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          publisher="$RUNNER_TEMP/publish-new-product-fleets.py"
+          bash scripts/ops/materialize_new_product_fleet_publisher_20260804.sh \
+            "$publisher" "$GITHUB_WORKSPACE"
+          observed="$(sha256sum "$publisher" | awk '{print $1}')"
+          test "$observed" = abf745061eb32e01af46be6e1b5bc6f97abdb011aac87c8649e60ef06b23e274
+          printf 'publisher=%s\n' "$publisher" >> "$GITHUB_OUTPUT"
+          printf 'fleet=%s\n' "$RUNNER_TEMP/new-product-fleets-2026-08-04" >> "$GITHUB_OUTPUT"
+          printf 'publication_log=%s\n' "$RUNNER_TEMP/new-product-fleets-publication.log" >> "$GITHUB_OUTPUT"
+
+      - name: Authorize, publish, and verify all 24 repositories
+        id: publish
+        shell: bash
+        env:
+          RUN_TOKEN: ${{ github.token }}
+          TRACKING_ISSUE: '849'
+          PUBLISHER: ${{ steps.publisher.outputs.publisher }}
+          FLEET_ROOT: ${{ steps.publisher.outputs.fleet }}
+          PUBLICATION_LOG: ${{ steps.publisher.outputs.publication_log }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          profile="$RUNNER_TEMP/new-product-fleet-gh-profile"
+          auth_log="$RUNNER_TEMP/new-product-fleet-device-auth.log"
+          auth_pid=''
+          success=0
+
+          cleanup() {
+            if test -n "$auth_pid" && kill -0 "$auth_pid" 2>/dev/null; then
+              kill "$auth_pid" 2>/dev/null || true
+              wait "$auth_pid" 2>/dev/null || true
+            fi
+            unset owner_token GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+            rm -rf "$profile"
+            rm -f "$auth_log"
+          }
+          trap cleanup EXIT
+
+          rm -rf "$profile"
+          install -d -m 700 "$profile"
+          : > "$auth_log"
+          chmod 600 "$auth_log"
+
+          env \
+            -u GH_TOKEN \
+            -u GITHUB_TOKEN \
+            -u GITHUB_REPOSITORY_ADMIN_TOKEN \
+            GH_CONFIG_DIR="$profile" \
+            GH_PROMPT_DISABLED=1 \
+            gh auth login \
+              --hostname github.com \
+              --git-protocol https \
+              --web \
+              --scopes repo,read:org,workflow \
+              --skip-ssh-key \
+              --insecure-storage \
+              >"$auth_log" 2>&1 &
+          auth_pid=$!
+
+          device_code=''
+          for _ in $(seq 1 90); do
+            device_code="$(grep -Eo '[A-Z0-9]{4}-[A-Z0-9]{4}' "$auth_log" | head -n 1 || true)"
+            test -z "$device_code" || break
+            if ! kill -0 "$auth_pid" 2>/dev/null; then
+              cat "$auth_log" >&2
+              wait "$auth_pid"
+            fi
+            sleep 2
+          done
+          [[ "$device_code" =~ ^[A-Z0-9]{4}-[A-Z0-9]{4}$ ]]
+
+          authorization_body="$RUNNER_TEMP/new-product-fleet-device-authorization.md"
+          cat > "$authorization_body" <<EOF
+          GitHub device authorization is ready for the validated 24-repository publication.
+
+          1. Open https://github.com/login/device
+          2. Enter code **\`$device_code\`**
+          3. Approve the GitHub CLI request for repository and organization access
+
+          This active runner holds the authorization state only for this workflow run. The pasted PAT is not being used.
+          EOF
+          GH_TOKEN="$RUN_TOKEN" gh issue comment "$TRACKING_ISSUE" \
+            --repo "$GITHUB_REPOSITORY" --body-file "$authorization_body" >/dev/null
+
+          wait "$auth_pid"
+          auth_pid=''
+
+          owner_token="$(
+            env -u GH_TOKEN -u GITHUB_TOKEN -u GITHUB_REPOSITORY_ADMIN_TOKEN \
+              GH_CONFIG_DIR="$profile" \
+              gh auth token --hostname github.com
+          )"
+          test -n "$owner_token"
+          test "${#owner_token}" -le 1024
+          case "$owner_token" in
+            gho_*) ;;
+            ghp_*|github_pat_*)
+              echo 'personal access tokens are intentionally rejected' >&2
+              exit 65
+              ;;
+            *)
+              echo 'device authorization returned an unsupported credential type' >&2
+              exit 65
+              ;;
+          esac
+          case "$owner_token" in
+            *$'\n'*|*$'\r'*|*$'\t'*|*' '*)
+              echo 'device OAuth credential contains invalid whitespace' >&2
+              exit 65
+              ;;
+          esac
+          printf '::add-mask::%s\n' "$owner_token"
+
+          GH_TOKEN="$owner_token" python3 "$PUBLISHER" \
+            --output "$FLEET_ROOT" \
+            --execute \
+            | tee "$PUBLICATION_LOG"
+
+          test "$(jq -r .status "$FLEET_ROOT/PUBLICATION.json")" = success
+          test "$(jq -r .repository_count "$FLEET_ROOT/PUBLICATION.json")" = 24
+
+          report="$RUNNER_TEMP/new-product-fleet-publication-success.md"
+          {
+            echo '# New product repository fleets published'
+            echo
+            echo '- Organizations: `hacker-house-medellin`, `embedded-alerts`, `evento-globolo`'
+            echo '- Repositories: **24/24 created or verified**'
+            echo '- Validation: tests, Clippy with warnings denied, interface checks, and infrastructure checks passed before publication'
+            echo '- Credential path: GitHub device OAuth; pasted PAT rejected and unused'
+            echo "- Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            echo '```text'
+            tail -c 24000 "$PUBLICATION_LOG"
+            echo '```'
+          } > "$report"
+          GH_TOKEN="$RUN_TOKEN" gh issue comment "$TRACKING_ISSUE" \
+            --repo "$GITHUB_REPOSITORY" --body-file "$report" >/dev/null
+
+          success=1
+          printf 'repository_count=24\n' >> "$GITHUB_OUTPUT"
+
+      - name: Record a failed or expired authorization
+        if: ${{ failure() }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment 849 --repo "$GITHUB_REPOSITORY" --body \
+            "Device-OAuth publication did not complete. No pasted PAT was used, and the temporary local authorization profile was removed. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"

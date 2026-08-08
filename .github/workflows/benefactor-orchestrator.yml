@@ -1,0 +1,70 @@
+name: Benefactor lead pipeline
+
+on:
+  pull_request:
+    paths:
+      - 'remote/deployments/benefactor-orchestrator/**'
+      - '.github/workflows/benefactor-orchestrator.yml'
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - 'remote/deployments/benefactor-orchestrator/**'
+      - '.github/workflows/benefactor-orchestrator.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benefactor-orchestrator-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  contract:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Check syntax
+        working-directory: remote/deployments/benefactor-orchestrator
+        run: |
+          set -euo pipefail
+          node --check pipeline-lib.mjs
+          node --check providers/serper.mjs
+          node --check providers/brave.mjs
+          node --check providers/index.mjs
+          node --check orchestrate.mjs
+          node --check orchestrate.test.mjs
+
+      - name: Run focused pipeline contracts
+        working-directory: remote/deployments/benefactor-orchestrator
+        run: node --test orchestrate.test.mjs
+
+      - name: Reject unresolved conflicts and accidental credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RInE '^(<<<<<<<|=======|>>>>>>>)' remote/deployments/benefactor-orchestrator; then
+            echo 'unresolved merge marker found' >&2
+            exit 1
+          fi
+          if grep -RInE '(ghp_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,})' remote/deployments/benefactor-orchestrator; then
+            echo 'credential-shaped literal found' >&2
+            exit 1
+          fi

@@ -1,7 +1,9 @@
 # Independent CI executor routing across AWS and Hetzner
 
-Issue: DEN-1597  
-Parent: DEN-1550  
+Issue: DEN-1597
+
+Parent: DEN-1550
+
 Capacity and ARC policy: DEN-1549
 
 ## Purpose

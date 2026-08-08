@@ -1,0 +1,176 @@
+name: Run Benefactor contact batch credentialed dry run
+run-name: Benefactor contact dry run at ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-run-benefactor-contact-batch-dry-run-20260805.yml
+      - scripts/ops/run_benefactor_contact_batch_dry_run_20260805.sh
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-run-benefactor-contact-batch-dry-run-20260805.yml
+      - scripts/ops/run_benefactor_contact_batch_dry_run_20260805.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: den-260-benefactor-contact-dry-run
+  cancel-in-progress: false
+
+env:
+  ORCHESTRATOR_IMAGE_SHA: dc87c40176e897b1d8f93662711d081c8f0e6df2
+  ORCHESTRATOR_IMAGE_DIGEST: sha256:06e93d31b6d252efb98a8a0aa81fd439ee7f6d0067db11d6a2a08d3cee7b51c5
+
+jobs:
+  validate:
+    name: Validate one-shot dry-run contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/ops-run-benefactor-contact-batch-dry-run-20260805.yml
+
+      - name: Validate credentialed dry-run boundary
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          script=scripts/ops/run_benefactor_contact_batch_dry_run_20260805.sh
+          workflow=.github/workflows/ops-run-benefactor-contact-batch-dry-run-20260805.yml
+          bash -n "$script"
+          [[ "$ORCHESTRATOR_IMAGE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ORCHESTRATOR_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          git merge-base --is-ancestor "$ORCHESTRATOR_IMAGE_SHA" "$(git rev-parse HEAD)"
+          grep -qF 'BATCH_DRY_RUN' "$script"
+          grep -qF 'value: "true"' "$script"
+          grep -qF 'BATCH_TARGET_CONTACTS' "$script"
+          grep -qF 'value: "250"' "$script"
+          grep -qF 'BATCH_MINIMUM_CONTACTS' "$script"
+          grep -qF 'value: "200"' "$script"
+          grep -qF 'BATCH_MAXIMUM_CONTACTS' "$script"
+          grep -qF 'value: "300"' "$script"
+          grep -qF 'HUBSPOT_SYNC_AFTER_DISCOVERY' "$script"
+          grep -qF 'outreachDispatchRequested' "$script"
+          grep -qF 'ghcr.io/oresoftware/benefactor-contact-orchestrator@' "$script"
+          grep -qF 'orchestrator_image_sha=' "$script"
+          grep -qF 'orchestrator_image_digest=' "$script"
+          if grep -nEi '(GMAIL_LIVE_CONFIRM|BATCH_PERSIST_CONFIRM|HUBSPOT_WRITE_CONFIRM|SENDGRID_API_KEY|messages\.send|mail/send)' "$script"; then
+            echo 'live mutation or outbound transport token detected in dry-run script' >&2
+            exit 1
+          fi
+          credential_pattern='gh''p_|github_''pat_|-----BEGIN (RSA )?PRIVATE KEY-----|xox[baprs]-|AIza[0-9A-Za-z_-]{20,}'
+          if grep -nE "$credential_pattern" "$workflow" "$script"; then
+            echo 'credential-shaped source material detected' >&2
+            exit 1
+          fi
+          git diff --check HEAD^ HEAD
+
+  execute:
+    name: Run on protected AWS cluster administration host
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out trusted main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify orchestrator image revision is trusted
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$ORCHESTRATOR_IMAGE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ORCHESTRATOR_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          git merge-base --is-ancestor "$ORCHESTRATOR_IMAGE_SHA" "$(git rev-parse HEAD)"
+
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: den-260-benefactor-contact-dry-run
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Execute aggregate-only credentialed dry run
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: |
+          set -Eeuo pipefail
+          test -n "${INSTANCE_ID:-}"
+          trusted_sha="$(git rev-parse HEAD)"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ORCHESTRATOR_IMAGE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ORCHESTRATOR_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+
+          source_script=scripts/ops/run_benefactor_contact_batch_dry_run_20260805.sh
+          bash -n "$source_script"
+          encoded="$(base64 --wrap=0 < "$source_script")"
+          remote_command="remote_script=/tmp/run-benefactor-contact-dry-run.sh; printf '%s' '$encoded' | base64 --decode > \"\$remote_script\"; chmod 700 \"\$remote_script\"; status=0; bash \"\$remote_script\" '$trusted_sha' '$ORCHESTRATOR_IMAGE_SHA' '$ORCHESTRATOR_IMAGE_DIGEST' > /tmp/run-benefactor-contact-dry-run.log 2>&1 || status=\$?; tail -c 30000 /tmp/run-benefactor-contact-dry-run.log; rm -f \"\$remote_script\" /tmp/run-benefactor-contact-dry-run.log; exit \$status"
+          parameters="$RUNNER_TEMP/ssm-parameters.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "DEN-260 Benefactor contact dry run ${trusted_sha:0:12}" \
+              --parameters "file://$parameters" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+          echo "ssm_command_id=$command_id"
+
+          status=Pending
+          for _ in $(seq 1 1500); do
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query Status \
+                --output text 2>/dev/null || true
+            )"
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut|Cancelling) break ;;
+            esac
+            sleep 3
+          done
+
+          invocation="$RUNNER_TEMP/ssm-invocation.json"
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json > "$invocation"
+          jq '{Status, Stderr}' "$invocation"
+          stdout="$(jq -r '.Stdout // empty' < "$invocation")"
+          printf '%s\n' "$stdout"
+          test "$(jq -r .Status < "$invocation")" = Success
+          summary='^BENEFACTOR_CONTACT_DRY_RUN_SUMMARY categories=[1-9][0-9]* contacts_collected=[0-9]+ phones_collected=[0-9]+ queries_run=[0-9]+ urls_visited=[0-9]+ pages_with_email=[0-9]+ provider_requests=[0-9]+ provider_results=[0-9]+ provider_failures=[0-9]+ image=ghcr\.io/oresoftware/benefactor-contact-orchestrator@sha256:[0-9a-f]{64} orchestrator_image_sha=[0-9a-f]{40} orchestrator_image_digest=sha256:[0-9a-f]{64} trusted_k8s_cluster_sha=[0-9a-f]{40}$'
+          ready='^BENEFACTOR_CONTACT_DRY_RUN_READY job=benefactor-contact-dry-[0-9a-f]{8}-[0-9]{6} planned=250 categories=[1-9][0-9]* pipeline_reports=[1-9][0-9]* image=ghcr\.io/oresoftware/benefactor-contact-orchestrator@sha256:[0-9a-f]{64} orchestrator_image_sha=[0-9a-f]{40} orchestrator_image_digest=sha256:[0-9a-f]{64} trusted_k8s_cluster_sha=[0-9a-f]{40}$'
+          grep -Eq "$summary" <<< "$stdout"
+          grep -Eq "$ready" <<< "$stdout"
+          grep '^BENEFACTOR_CONTACT_DRY_RUN_SUMMARY ' <<< "$stdout"
+          grep '^BENEFACTOR_CONTACT_DRY_RUN_READY ' <<< "$stdout"

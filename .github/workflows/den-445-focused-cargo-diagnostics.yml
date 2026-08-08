@@ -1,4 +1,12 @@
 name: DEN-445 focused cargo diagnostics
+# dd:execution-carrier owner=DEN-445 expires=2026-11-01
+#
+# This workflow deliberately pins a long-running agent branch rather than
+# main/dev, so it is exempt from the branch-trigger ratchet in
+# remote/tests/general/workflow-branch-trigger-contract.test.ts. The expiry is
+# the point: carriers get a bounded life instead of accumulating silently
+# (DEN-1321). When DEN-445 lands, delete this workflow and its branch; to keep
+# it longer, extend the date and record why on DEN-445.
 
 on:
   push:

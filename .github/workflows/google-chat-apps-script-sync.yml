@@ -103,6 +103,9 @@ jobs:
       - name: Run Apps Script bridge regression tests
         run: node --test "${APPS_SCRIPT_DIR}/test/app.test.mjs"
 
+      - name: Run import planner regression tests
+        run: node --test "${APPS_SCRIPT_DIR}/test/import-plan.test.mjs"
+
   deploy:
     name: push, version, and redeploy Apps Script
     needs: validate

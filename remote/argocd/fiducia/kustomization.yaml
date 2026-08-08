@@ -19,6 +19,9 @@ resources:
   - availability-pdbs.yaml
   - fiducia-runtime-secrets.externalsecret.yaml
   - fiducia-kv-protection.externalsecret.yaml
+  # FID-SEC-1 / DEN-1240 phase 1: internal PKI (inert until the LB TLS cutover).
+  - fiducia-internal-ca.certificate.yaml
+  - fiducia-load-balance-tls.certificate.yaml
   - fiducia-revocation-secrets.externalsecret.yaml
   - fiducia-revocation-registry.externalsecret.yaml
   - fiducia-node.statefulset.yaml

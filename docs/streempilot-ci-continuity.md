@@ -1,7 +1,9 @@
 # StreemPilot CI continuity rollout
 
-Linear: DEN-1550  
-Related: DEN-1549, DEN-905, DEN-900, DEN-918  
+Linear: DEN-1550
+
+Related: DEN-1549, DEN-905, DEN-900, DEN-918
+
 Last reviewed: 2026-08-04
 
 ## Current capacity evidence
