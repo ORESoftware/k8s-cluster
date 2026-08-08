@@ -25,20 +25,35 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Require private libraries deploy key
-        env:
-          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
-        run: test -n "$K8S_LIBS_DEPLOY_KEY"
-
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+          persist-credentials: false
 
-      - name: Initialize required contract submodule
+      - name: Initialize required contract submodule with owner-scoped installation token
+        id: contract-submodule
+        continue-on-error: true
         env:
-          SUBMODULE_AUTH_MODE: ssh
-        run: bash scripts/ci/init-submodules-with-report.sh remote/libs
+          SUBMODULE_REPORT_PATH: ${{ runner.temp }}/contract-submodule-access.tsv
+          K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+          GITHUB_API_VERSION: '2026-03-10'
+        run: bash scripts/ci/init-submodules-with-github-app.sh remote/libs
+
+      - name: Upload sanitized contract submodule access report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: contract-submodule-access-report
+          path: ${{ runner.temp }}/contract-submodule-access.tsv
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Fail when the contract submodule is unavailable
+        if: steps.contract-submodule.outcome == 'failure'
+        run: |
+          echo "The shared contract repository is unavailable; inspect the sanitized access-report artifact."
+          exit 1
 
       - name: Install pnpm
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
@@ -179,22 +194,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - name: Require private libraries deploy key
-        env:
-          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
-        run: test -n "$K8S_LIBS_DEPLOY_KEY"
-
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+          persist-credentials: false
 
-      - name: Initialize pinned shared libraries
-        env:
-          SUBMODULE_AUTH_MODE: ssh
-        run: bash scripts/ci/init-submodules-with-report.sh remote/libs
-
-      - name: Initialize pinned backend repositories with owner-scoped installation tokens
+      - name: Initialize pinned private repositories with owner-scoped installation tokens
         id: backend-submodules
         continue-on-error: true
         env:
@@ -202,7 +207,7 @@ jobs:
           K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
           K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
           GITHUB_API_VERSION: '2026-03-10'
-        run: bash scripts/ci/init-submodules-with-github-app.sh remote/deployments
+        run: bash scripts/ci/init-submodules-with-github-app.sh remote/libs remote/deployments
 
       - name: Upload sanitized backend submodule access report
         if: always()
@@ -210,13 +215,13 @@ jobs:
         with:
           name: backend-submodule-access-report
           path: ${{ runner.temp }}/backend-submodule-access.tsv
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 7
 
       - name: Fail when backend submodules are unavailable
         if: steps.backend-submodules.outcome == 'failure'
         run: |
-          echo "One or more backend repositories are unavailable; inspect the sanitized access-report artifact."
+          echo "One or more private repositories are unavailable; inspect the sanitized access-report artifact."
           exit 1
 
       - name: Install pnpm
