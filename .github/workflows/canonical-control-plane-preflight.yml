@@ -9,6 +9,7 @@ on:
       - "scripts/ci/canonical-control-plane-preflight.py"
       - "scripts/ci/canonical-account-token-preflight.py"
       - "scripts/ci/test-canonical-control-plane-preflight.py"
+      - "scripts/ci/test-canonical-account-token-preflight.py"
       - "scripts/ci/wait-for-encrypted-canonical-bundle.py"
 
 permissions:
@@ -53,8 +54,10 @@ jobs:
             scripts/ci/canonical-control-plane-preflight.py \
             scripts/ci/canonical-account-token-preflight.py \
             scripts/ci/test-canonical-control-plane-preflight.py \
+            scripts/ci/test-canonical-account-token-preflight.py \
             scripts/ci/wait-for-encrypted-canonical-bundle.py
           python3 scripts/ci/test-canonical-control-plane-preflight.py -v
+          python3 scripts/ci/test-canonical-account-token-preflight.py -v
           python3 - <<'PY'
           from pathlib import Path
           paths = [
