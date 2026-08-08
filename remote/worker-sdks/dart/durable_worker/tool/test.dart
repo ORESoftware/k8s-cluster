@@ -22,7 +22,10 @@ Future<void> main(List<String> arguments) async {
         ]
       : <(String, AsyncTest)>[
           ('shared protocol fixture remains compatible', _protocolFixture),
-          ('client retry, redirect, body, and lease boundaries', _clientContract),
+          (
+            'client retry, redirect, body, and lease boundaries',
+            _clientContract
+          ),
           (
             'worker streams deterministic progress and completes',
             _workerCompletion,
@@ -80,8 +83,7 @@ Future<T> _expectThrows<T extends Object>(
 }
 
 Future<void> _protocolFixture() async {
-  final File fixture =
-      File('../../fixtures/durable-worker-protocol-v1.json');
+  final File fixture = File('../../fixtures/durable-worker-protocol-v1.json');
   final JsonObject payload =
       objectValue(jsonDecode(await fixture.readAsString()));
   _expect(payload['version'] == 1, 'fixture version drifted');
@@ -134,9 +136,8 @@ Future<void> _clientContract() async {
       await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
   Future<void> handleRequest(HttpRequest request) async {
     final String body = await utf8.decoder.bind(request).join();
-    final JsonObject payload = body.isEmpty
-        ? <String, Object?>{}
-        : objectValue(jsonDecode(body));
+    final JsonObject payload =
+        body.isEmpty ? <String, Object?>{} : objectValue(jsonDecode(body));
 
     if (request.headers.value('X-Worker-Auth') != 'test-secret') {
       request.response
@@ -457,8 +458,7 @@ Future<void> _heartbeatFencing() async {
 }
 
 Future<void> _outputFencing() async {
-  final _FakeApi api = _FakeApi(assignment: _assignment())
-    ..fenceOutput = true;
+  final _FakeApi api = _FakeApi(assignment: _assignment())..fenceOutput = true;
   final Worker worker = Worker(
     api: api,
     config: _config(),

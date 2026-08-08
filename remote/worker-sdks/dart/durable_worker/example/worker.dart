@@ -12,8 +12,7 @@ Future<void> main() async {
   }
 
   final DurableWorkerClient client = DurableWorkerClient(
-    Platform.environment['DURABLE_WORKER_URL'] ??
-        'http://127.0.0.1:8152',
+    Platform.environment['DURABLE_WORKER_URL'] ?? 'http://127.0.0.1:8152',
     secret,
   );
   final Worker worker = Worker(

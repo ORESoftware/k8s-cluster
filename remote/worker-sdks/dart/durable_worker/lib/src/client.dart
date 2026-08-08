@@ -38,8 +38,7 @@ class DurableWorkerClient implements WorkerApi {
         _initialBackoff =
             _nonNegativeDuration(initialBackoff, 'initialBackoff'),
         _maxBackoff = _nonNegativeDuration(maxBackoff, 'maxBackoff'),
-        _maxResponseBytes =
-            _positiveInt(maxResponseBytes, 'maxResponseBytes'),
+        _maxResponseBytes = _positiveInt(maxResponseBytes, 'maxResponseBytes'),
         _httpClient = httpClient ?? HttpClient(),
         _ownsHttpClient = httpClient == null,
         _sleep = sleep ?? Future<void>.delayed,
@@ -74,7 +73,8 @@ class DurableWorkerClient implements WorkerApi {
     if (!uri.hasScheme ||
         (uri.scheme != 'http' && uri.scheme != 'https') ||
         uri.host.isEmpty) {
-      throw ArgumentError.value(value, 'baseUrl', 'must be an absolute HTTP URL');
+      throw ArgumentError.value(
+          value, 'baseUrl', 'must be an absolute HTTP URL');
     }
     if (uri.userInfo.isNotEmpty || uri.hasQuery || uri.hasFragment) {
       throw ArgumentError.value(
@@ -498,9 +498,8 @@ class DurableWorkerClient implements WorkerApi {
       return Duration.zero;
     }
     final int floor = ceiling ~/ 2;
-    final int jitter = floor == ceiling
-        ? 0
-        : _random.nextInt((ceiling - floor) + 1);
+    final int jitter =
+        floor == ceiling ? 0 : _random.nextInt((ceiling - floor) + 1);
     return Duration(milliseconds: floor + jitter);
   }
 
