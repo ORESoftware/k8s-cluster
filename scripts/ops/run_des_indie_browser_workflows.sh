@@ -13,6 +13,11 @@ readonly WORK_DIR='/tmp/des-indie-browser-execution'
 readonly BRIDGE_AGENT_KEY='chatgpt-des-browser-reconciler'
 readonly BRIDGE_QUERY='DES browser automation, gha-indie-worker exact-SHA execution, and dd-build-server policy reconciliation'
 
+if [[ ! "$REQUEST_SUFFIX" =~ ^[A-Za-z0-9._-]+$ || ${#REQUEST_SUFFIX} -gt 128 ]]; then
+  echo 'DES_REQUEST_SUFFIX must use 1-128 GitHub-safe characters.' >&2
+  exit 64
+fi
+
 kubeconfig=''
 for candidate in /etc/kubernetes/admin.conf /root/.kube/config /home/ec2-user/.kube/config; do
   if [[ -r "$candidate" ]]; then
@@ -274,6 +279,12 @@ run_one() {
   curl --fail --silent --show-error --location \
     --output "$WORK_DIR/$slug-workflow.yml" \
     "$workflow_url"
+  # The workflow engine currently derives downstream build idempotency from the
+  # plan ID. Salt the raw YAML with this validated attempt ID so a new top-level
+  # retry receives a fresh build, while redelivery of the same attempt remains
+  # byte-for-byte deterministic. YAML comments do not alter workflow semantics.
+  printf '\n# gha-indie retry request: %s\n' "$REQUEST_SUFFIX" \
+    >> "$WORK_DIR/$slug-workflow.yml"
 
   jq -nc \
     --arg repository "$repository" \
