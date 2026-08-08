@@ -83,6 +83,21 @@ test('HTTP, TCP, liveness, and readiness contracts remain aligned', () => {
   assert.doesNotMatch(service, /type:\s*(?:NodePort|LoadBalancer)/);
 });
 
+test('primary bridge service excludes the Slack command pod', () => {
+  assert.match(
+    deployment,
+    /template:[\s\S]*?labels:\n\s+app: dd-ai-agent-bridge\n\s+app\.kubernetes\.io\/component: bridge/,
+  );
+  assert.match(
+    service,
+    /name: dd-ai-agent-bridge[\s\S]*?selector:\n\s+app: dd-ai-agent-bridge\n\s+app\.kubernetes\.io\/component: bridge[\s\S]*?port: 8142/,
+  );
+  assert.match(
+    service,
+    /name: dd-slack-command[\s\S]*?selector:\n\s+app: dd-ai-agent-bridge\n\s+app\.kubernetes\.io\/component: slack-command[\s\S]*?port: 8151/,
+  );
+});
+
 test('distroless pod security and resource ceilings are explicit', () => {
   assert.match(deployment, /automountServiceAccountToken: false/);
   assert.match(deployment, /enableServiceLinks: false/);
