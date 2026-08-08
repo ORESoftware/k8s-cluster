@@ -98,7 +98,10 @@ class CredentialTests(unittest.TestCase):
             self.bundle("cfat_abcdefghijklmnopqrstuvwxyz1234567890ABCD"), ACCOUNT_HASH
         )
         self.assertTrue(values["cloudflare_api_token"].startswith("cfat_"))
-        with self.assertRaisesRegex(TARGET.PreflightError, "account-owned cfat_ token"):
+        with self.assertRaisesRegex(
+            ACCOUNT_TARGET.CORE.PreflightError,
+            "account-owned cfat_ token",
+        ):
             ACCOUNT_TARGET.validate_account_bundle(
                 self.bundle("cfut_abcdefghijklmnopqrstuvwxyz1234567890ABCD"),
                 ACCOUNT_HASH,
