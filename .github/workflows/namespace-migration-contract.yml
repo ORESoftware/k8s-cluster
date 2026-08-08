@@ -19,12 +19,68 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Check out exact history without child worktrees
+      - name: Select exact source ref
+        id: source-ref
+        shell: bash
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            test -n "$PR_HEAD_SHA"
+            printf 'ref=%s\n' "$PR_HEAD_SHA" >> "$GITHUB_OUTPUT"
+          else
+            test -n "$EVENT_SHA"
+            printf 'ref=%s\n' "$EVENT_SHA" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out exact source history without child worktrees
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ steps.source-ref.outputs.ref }}
           fetch-depth: 0
           persist-credentials: false
           submodules: false
+
+      - name: Assert and record exact source checkout
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ steps.source-ref.outputs.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          actual_sha="$(git rev-parse HEAD)"
+          test "$actual_sha" = "$EXPECTED_SHA"
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          expected = os.environ["EXPECTED_SHA"]
+          actual = subprocess.check_output(
+              ["git", "rev-parse", "HEAD"], text=True
+          ).strip()
+          report = {
+              "valid": expected == actual,
+              "eventName": os.environ["GITHUB_EVENT_NAME"],
+              "expectedSourceSha": expected,
+              "checkedOutSha": actual,
+              "eventSha": os.environ["EVENT_SHA"],
+              "pullRequestHeadSha": os.environ.get("PR_HEAD_SHA") or None,
+              "pullRequestBaseSha": os.environ.get("PR_BASE_SHA") or None,
+          }
+          Path("artifacts/namespace-source-ref.json").write_text(
+              json.dumps(report, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          if not report["valid"]:
+              raise SystemExit("checked-out commit does not match selected source SHA")
+          PY
 
       - name: Compile the read-only classifier
         run: |
@@ -37,7 +93,6 @@ jobs:
 
       - name: Validate registry and summarize current debt
         run: |
-          mkdir -p artifacts
           python3 tools/namespace_migration.py check \
             --root . \
             --format json \
@@ -74,12 +129,13 @@ jobs:
             '{"valid":true,"baseRef":null,"headRef":"'"$GITHUB_SHA"'","violations":[],"diagnostics":[],"note":"new-reference ratchet runs on pull_request events"}' \
             > artifacts/namespace-ratchet.json
 
-      - name: Upload exact-head namespace evidence
+      - name: Upload exact-source namespace evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: namespace-migration-evidence
           path: |
+            artifacts/namespace-source-ref.json
             artifacts/namespace-contract-report.json
             artifacts/namespace-inventory.json
             artifacts/namespace-ratchet.json
