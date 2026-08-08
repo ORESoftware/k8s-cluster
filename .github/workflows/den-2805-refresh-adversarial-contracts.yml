@@ -34,6 +34,7 @@ jobs:
         shell: bash
         run: |
           python3 <<'PY'
+          import re
           from pathlib import Path
 
           path = Path('remote/deployments/gha-clone-server-rs/tests/planner_adversarial.rs')
@@ -51,10 +52,18 @@ jobs:
                   let notes = job_plan.independent_notes.join("\\n");
                   assert!(notes.contains("workflow-level permissions accepted"));
                   assert!(notes.contains("workflow-level concurrency accepted"));
+                  assert!(notes.contains("job-level permissions accepted"));
                   assert!(reasons.contains("workflow-level defaults"));'''
           if first.count(old) != 1:
               raise SystemExit('expected workflow/job adversarial assertion block exactly once')
           first = first.replace(old, new)
+          first, removed = re.subn(
+              r'(?m)^\s*"job-level permissions",\n',
+              '',
+              first,
+          )
+          if removed != 1:
+              raise SystemExit(f'expected one stale job-level permissions rejection, removed {removed}')
           source = source[:first_start] + first + source[first_end:]
 
           second_start = source.index('fn unsupported_step_semantics_are_never_silently_ignored()')
