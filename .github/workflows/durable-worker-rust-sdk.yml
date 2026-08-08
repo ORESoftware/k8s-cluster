@@ -60,40 +60,39 @@ jobs:
           toolchain: ${{ matrix.rust-version }}
           components: rustfmt, clippy
 
-      - name: Format sources for bootstrap review
-        run: cargo fmt --all
+      - name: Verify locked dependency graph
+        run: cargo metadata --locked --no-deps --format-version 1 >/dev/null
+
+      - name: Enforce formatting
+        run: cargo fmt --all -- --check
 
       - name: Run clippy with warnings denied
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
       - name: Run client, worker, and shared-fixture tests
-        run: cargo test --all-targets --all-features -- --nocapture
+        run: cargo test --locked --all-targets --all-features -- --nocapture
 
       - name: Inspect duplicate dependency versions
         run: |
           set -euo pipefail
-          cargo tree --duplicates || true
+          cargo tree --locked --duplicates || true
 
       - name: Stress lease-fencing cancellation
         if: matrix.rust-version == 'stable'
         run: |
           set -euo pipefail
           for attempt in $(seq 1 50); do
-            cargo test --test worker \
+            cargo test --locked --test worker \
               fenced_heartbeat_cancels_handler_and_suppresses_terminal_mutations \
               -- --exact >/dev/null
           done
 
-      - name: Upload formatted source and dependency lock for review
-        if: always() && matrix.rust-version == 'stable'
+      - name: Upload dependency lock for review
+        if: matrix.rust-version == 'stable'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: durable-worker-rust-bootstrap-${{ github.sha }}
-          path: |
-            remote/worker-sdks/rust/durable-worker/Cargo.lock
-            remote/worker-sdks/rust/durable-worker/src
-            remote/worker-sdks/rust/durable-worker/tests
-            remote/worker-sdks/rust/durable-worker/examples
+          name: durable-worker-rust-lock-${{ github.sha }}
+          path: remote/worker-sdks/rust/durable-worker/Cargo.lock
           if-no-files-found: error
           retention-days: 7
 
