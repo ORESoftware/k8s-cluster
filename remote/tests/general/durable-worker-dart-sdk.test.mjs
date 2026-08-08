@@ -30,14 +30,8 @@ test('Dart SDK is dependency-free and locked to the supported language range', (
 test('client preserves retry, redirect, response, and lease boundaries', () => {
   assert.match(client, /idempotencyKey/);
   assert.match(client, /idempotent: identity != null/);
-  assert.match(
-    client,
-    /pollWorker[\s\S]*?idempotent: false/,
-  );
-  assert.match(
-    client,
-    /signalRun[\s\S]*?idempotent: false/,
-  );
+  assert.match(client, /pollWorker[\s\S]*?idempotent: false/);
+  assert.match(client, /signalRun[\s\S]*?idempotent: false/);
   assert.match(client, /request\.followRedirects = false/);
   assert.match(client, /_maxResponseBytes/);
   assert.match(client, /response_too_large/);
@@ -74,7 +68,10 @@ test('shared fixture and delivery documentation remain explicit', () => {
   assert.match(runtimeTests, /at-least-once/);
   assert.match(readme, /at least once/i);
   assert.match(readme, /fencingToken/);
-  assert.match(readme, /worker polling, signals, and unbound task\/run submissions are sent once/i);
+  assert.match(
+    readme,
+    /worker polling, signals, and unbound task\/run submissions are sent once/i,
+  );
   assert.match(inventory, /`dart\/durable_worker`/);
   assert.match(deliveryDoc, /DEN-2464/);
   assert.match(deliveryDoc, /#1163/);
@@ -97,7 +94,7 @@ test('focused CI is pinned, read-only, multi-version, and deterministic', () => 
   assert.match(workflow, /- '3\.4\.0'/);
   assert.match(workflow, /- '3\.12\.2'/);
   assert.match(workflow, /dart pub get --enforce-lockfile/);
-  assert.match(workflow, /dart format --output=none --set-exit-if-changed \./);
+  assert.match(workflow, /dart format \.[\s\S]*?git diff --exit-code/);
   assert.match(workflow, /dart analyze --fatal-infos --fatal-warnings/);
   assert.match(workflow, /dart run tool\/test\.dart/);
   assert.match(workflow, /seq 1 50/);
