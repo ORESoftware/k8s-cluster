@@ -1,0 +1,442 @@
+{
+  "$schema": "./migration-rules.schema.json",
+  "apiVersion": "oresoftware.dev/v1alpha1",
+  "kind": "NamespaceMigrationRuleSet",
+  "metadata": {
+    "name": "dd-to-ownership-aware-namespaces"
+  },
+  "spec": {
+    "fallbackOwner": "unclassified",
+    "rules": [
+      {
+        "id": "metadata.thread-id",
+        "priority": 1000,
+        "system": "metadata-key",
+        "match": {
+          "type": "exact",
+          "value": "dd/threadId"
+        },
+        "owner": "ores",
+        "status": "classified",
+        "targetTemplate": "platform.oresoftware.com/thread-id",
+        "environment": null,
+        "workload": "platform-metadata",
+        "consumers": [],
+        "notes": "Replace the legacy label or annotation key with a fixed DNS-qualified platform key; owner identity remains a value."
+      },
+      {
+        "id": "metadata.user-id",
+        "priority": 1000,
+        "system": "metadata-key",
+        "match": {
+          "type": "exact",
+          "value": "dd/userId"
+        },
+        "owner": "ores",
+        "status": "classified",
+        "targetTemplate": "platform.oresoftware.com/user-id",
+        "environment": null,
+        "workload": "platform-metadata",
+        "consumers": [],
+        "notes": "Replace the legacy label or annotation key with a fixed DNS-qualified platform key; owner identity remains a value."
+      },
+      {
+        "id": "metadata.fiducia",
+        "priority": 950,
+        "system": "metadata-key",
+        "match": {
+          "type": "prefix",
+          "value": "dd.dev/fiducia-"
+        },
+        "owner": "fiducia-cloud",
+        "status": "classified",
+        "targetTemplate": "secrets.oresoftware.com/fiducia-{suffix}",
+        "environment": null,
+        "workload": "fiducia-secret-delivery",
+        "consumers": [
+          "ores"
+        ],
+        "notes": "Fiducia secret-delivery labels use the fixed secrets.oresoftware.com authority rather than a GitHub-owner-derived key prefix."
+      },
+      {
+        "id": "secret.shared-auth",
+        "priority": 900,
+        "system": "slash-namespace",
+        "match": {
+          "type": "prefix",
+          "value": "dd/shared-auth/"
+        },
+        "owner": "shared-auth",
+        "status": "classified",
+        "targetTemplate": "shared-auth/{environment}/shared-auth-server/{suffix}",
+        "environment": null,
+        "workload": "shared-auth-server",
+        "consumers": [
+          "3fa-app",
+          "canonical-cloud",
+          "fiducia-cloud",
+          "sonus-auris"
+        ],
+        "notes": "Shared Auth remains its own shared-service owner; each environment and realm must be selected before copying values and cross-owner reads must be explicit."
+      },
+      {
+        "id": "secret.benefactor",
+        "priority": 900,
+        "system": "slash-namespace",
+        "match": {
+          "type": "prefix",
+          "value": "dd/benefactor/"
+        },
+        "owner": "benefactor-cc",
+        "status": "classified",
+        "targetTemplate": "benefactor-cc/{environment}/{workload}/{suffix}",
+        "environment": null,
+        "workload": null,
+        "consumers": [],
+        "notes": "Benefactor secrets are product-owned and must not be laundered into the ores platform root; environment and workload are selected per occurrence."
+      },
+      {
+        "id": "remote-dev.fiducia",
+        "priority": 850,
+        "system": "slash-namespace",
+        "match": {
+          "type": "prefix",
+          "value": "dd/remote-dev/fiducia-"
+        },
+        "owner": "fiducia-cloud",
+        "status": "review-required",
+        "targetTemplate": "fiducia-cloud/dev/{suffix}",
+        "environment": "dev",
+        "workload": null,
+        "consumers": [
+          "ores"
+        ],
+        "notes": "Ownership is known, but each legacy suffix must be split into workload and secret-object segments; bootstrap and recovery dependencies require explicit review."
+      },
+      {
+        "id": "remote-dev.shared-auth",
+        "priority": 850,
+        "system": "slash-namespace",
+        "match": {
+          "type": "prefix",
+          "value": "dd/remote-dev/shared-auth-"
+        },
+        "owner": "shared-auth",
+        "status": "review-required",
+        "targetTemplate": "shared-auth/dev/{suffix}",
+        "environment": "dev",
+        "workload": null,
+        "consumers": [
+          "ores"
+        ],
+        "notes": "Ownership is known; realm, workload, and cross-owner consumer grants must be resolved before provider writes."
+      },
+      {
+        "id": "remote-dev.sonus-auris",
+        "priority": 850,
+        "system": "slash-namespace",
+        "match": {
+          "type": "prefix",
+          "value": "dd/remote-dev/sonus-auris-"
+        },
+        "owner": "sonus-auris",
+        "status": "review-required",
+        "targetTemplate": "sonus-auris/dev/{suffix}",
+        "environment": "dev",
+        "workload": null,
+        "consumers": [],
+        "notes": "Ownership is known, but workload segmentation and encryption/bootstrap dependencies must be reviewed before migration."
+      },
+      {
+        "id": "remote-dev.zed-pkg",
+        "priority": 850,
+        "system": "slash-namespace",
+        "match": {
+          "type": "prefix",
+          "value": "dd/remote-dev/zed-"
+        },
+        "owner": "zed-pkg",
+        "status": "review-required",
+        "targetTemplate": "zed-pkg/dev/{suffix}",
+        "environment": "dev",
+        "workload": null,
+        "consumers": [],
+        "notes": "Ownership is known; registry, package-signing, and GitHub App material must be split by workload."
+      },
+      {
+        "id": "remote-dev.agent-secrets",
+        "priority": 825,
+        "system": "slash-namespace",
+        "match": {
+          "type": "exact",
+          "value": "dd/remote-dev/agent-secrets"
+        },
+        "owner": "ores",
+        "status": "review-required",
+        "targetTemplate": "ores/dev/agents/provider-credentials",
+        "environment": "dev",
+        "workload": "agents",
+        "consumers": [
+          "meta-agents-demo"
+        ],
+        "notes": "The current bundle crosses platform and product concerns; split product-specific credentials before treating the proposed platform target as final."
+      },
+      {
+        "id": "remote-dev.gha",
+        "priority": 800,
+        "system": "slash-namespace",
+        "match": {
+          "type": "prefix",
+          "value": "dd/remote-dev/gha-"
+        },
+        "owner": "ores",
+        "status": "classified",
+        "targetTemplate": "ores/dev/ci/{suffix}",
+        "environment": "dev",
+        "workload": "ci-continuity",
+        "consumers": [],
+        "notes": "GitHub Actions continuity and clone-server bootstrap resources are shared ORESoftware platform assets."
+      },
+      {
+        "id": "remote-dev.build",
+        "priority": 800,
+        "system": "slash-namespace",
+        "match": {
+          "type": "prefix",
+          "value": "dd/remote-dev/build-"
+        },
+        "owner": "ores",
+        "status": "classified",
+        "targetTemplate": "ores/dev/ci/{suffix}",
+        "environment": "dev",
+        "workload": "build-server",
+        "consumers": [],
+        "notes": "Shared build-server and executor infrastructure belongs to the ORESoftware platform root."
+      },
+      {
+        "id": "remote-dev.project-automation",
+        "priority": 800,
+        "system": "slash-namespace",
+        "match": {
+          "type": "prefix",
+          "value": "dd/remote-dev/project-automation-"
+        },
+        "owner": "ores",
+        "status": "classified",
+        "targetTemplate": "ores/dev/automation/{suffix}",
+        "environment": "dev",
+        "workload": "project-automation",
+        "consumers": [],
+        "notes": "Fleet-wide GitHub and Linear reconciliation is shared platform automation."
+      },
+      {
+        "id": "host.opt-root",
+        "priority": 700,
+        "system": "host-path",
+        "match": {
+          "type": "exact",
+          "value": "/opt/dd"
+        },
+        "owner": "ores",
+        "status": "classified",
+        "targetTemplate": "/opt/ores",
+        "environment": null,
+        "workload": "node-platform",
+        "consumers": [],
+        "notes": "Shared node software keeps one platform root; compatibility symlinks are retained during rollout."
+      },
+      {
+        "id": "host.opt-subpaths",
+        "priority": 690,
+        "system": "host-path",
+        "match": {
+          "type": "prefix",
+          "value": "/opt/dd/"
+        },
+        "owner": "ores",
+        "status": "classified",
+        "targetTemplate": "/opt/ores/{suffix}",
+        "environment": null,
+        "workload": "node-platform",
+        "consumers": [],
+        "notes": "Preserve the relative subpath below the stable ORESoftware node root."
+      },
+      {
+        "id": "host.var-lib-root",
+        "priority": 700,
+        "system": "host-path",
+        "match": {
+          "type": "exact",
+          "value": "/var/lib/dd"
+        },
+        "owner": "ores",
+        "status": "review-required",
+        "targetTemplate": "/var/lib/ores",
+        "environment": null,
+        "workload": "node-state",
+        "consumers": [],
+        "notes": "The root target is known, but every stateful service requires backup, integrity, restart, and rollback evidence before movement."
+      },
+      {
+        "id": "host.var-lib-subpaths",
+        "priority": 690,
+        "system": "host-path",
+        "match": {
+          "type": "prefix",
+          "value": "/var/lib/dd/"
+        },
+        "owner": "ores",
+        "status": "review-required",
+        "targetTemplate": "/var/lib/ores/{suffix}",
+        "environment": null,
+        "workload": "node-state",
+        "consumers": [],
+        "notes": "Stateful subpaths retain relative names only after service-specific migration and restore certification."
+      },
+      {
+        "id": "host.srv-subpaths",
+        "priority": 690,
+        "system": "host-path",
+        "match": {
+          "type": "prefix",
+          "value": "/srv/dd/"
+        },
+        "owner": "ores",
+        "status": "review-required",
+        "targetTemplate": "/srv/ores/{suffix}",
+        "environment": null,
+        "workload": "node-repositories",
+        "consumers": [],
+        "notes": "Move shared-node repository checkouts under /srv/ores/repos/<owner>/<repo>; the classifier cannot infer both segments from every legacy path."
+      },
+      {
+        "id": "host.legacy-checkout",
+        "priority": 650,
+        "system": "host-path",
+        "match": {
+          "type": "regex",
+          "value": "^/home/[A-Za-z0-9._-]+/codes/dd(?:/|$)"
+        },
+        "owner": "ores",
+        "status": "review-required",
+        "targetTemplate": null,
+        "environment": null,
+        "workload": "node-repositories",
+        "consumers": [],
+        "notes": "Legacy developer checkout paths require an explicit GitHub owner and repository mapping before moving to /srv/ores/repos/<owner>/<repo>."
+      },
+      {
+        "id": "source.go-dd-module",
+        "priority": 600,
+        "system": "source-package",
+        "match": {
+          "type": "prefix",
+          "value": "github.com/oresoftware/dd"
+        },
+        "owner": "ores",
+        "status": "review-required",
+        "targetTemplate": null,
+        "environment": null,
+        "workload": "source-authority",
+        "consumers": [],
+        "notes": "Go imports must resolve to the actual repository module path; a blanket invented /ores/ infix is prohibited."
+      },
+      {
+        "id": "source.java-dd-package",
+        "priority": 600,
+        "system": "source-package",
+        "match": {
+          "type": "prefix",
+          "value": "com.oresoftware.dd"
+        },
+        "owner": "ores",
+        "status": "review-required",
+        "targetTemplate": null,
+        "environment": null,
+        "workload": "source-authority",
+        "consumers": [],
+        "notes": "Java package migration must select the owning product below the com.oresoftware authority and update all dependents."
+      },
+      {
+        "id": "generated.dd-pg-defs",
+        "priority": 600,
+        "system": "generated-package",
+        "match": {
+          "type": "prefix",
+          "value": "dd_pg_defs"
+        },
+        "owner": "ores",
+        "status": "review-required",
+        "targetTemplate": null,
+        "environment": null,
+        "workload": "generated-database-definitions",
+        "consumers": [],
+        "notes": "Change the generator authority and certify external dependents; do not hand-edit generated identifiers."
+      },
+      {
+        "id": "generated.dd-dot-pgdefs",
+        "priority": 600,
+        "system": "generated-package",
+        "match": {
+          "type": "prefix",
+          "value": "dd.pgdefs"
+        },
+        "owner": "ores",
+        "status": "review-required",
+        "targetTemplate": null,
+        "environment": null,
+        "workload": "generated-database-definitions",
+        "consumers": [],
+        "notes": "Change the generator authority and certify external dependents; do not hand-edit generated identifiers."
+      },
+      {
+        "id": "fallback.remote-dev",
+        "priority": 100,
+        "system": "slash-namespace",
+        "match": {
+          "type": "prefix",
+          "value": "dd/remote-dev/"
+        },
+        "owner": "unclassified",
+        "status": "unclassified",
+        "targetTemplate": null,
+        "environment": "dev",
+        "workload": null,
+        "consumers": [],
+        "notes": "Unknown remote-dev values are quarantined for ownership review and may not silently default to ores."
+      },
+      {
+        "id": "fallback.slash-namespace",
+        "priority": 0,
+        "system": "slash-namespace",
+        "match": {
+          "type": "prefix",
+          "value": "dd/"
+        },
+        "owner": "unclassified",
+        "status": "unclassified",
+        "targetTemplate": null,
+        "environment": null,
+        "workload": null,
+        "consumers": [],
+        "notes": "Unknown slash namespace values remain unclassified until an accountable owner and rollback plan are recorded."
+      },
+      {
+        "id": "fallback.metadata-key",
+        "priority": 0,
+        "system": "metadata-key",
+        "match": {
+          "type": "prefix",
+          "value": "dd.dev/"
+        },
+        "owner": "unclassified",
+        "status": "unclassified",
+        "targetTemplate": null,
+        "environment": null,
+        "workload": null,
+        "consumers": [],
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority."
+      }
+    ]
+  }
+}
