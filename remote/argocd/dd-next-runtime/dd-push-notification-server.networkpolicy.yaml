@@ -1,19 +1,24 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: dd-ai-agent-bridge
+  name: dd-push-notification-server
   namespace: default
   labels:
-    app: dd-ai-agent-bridge
+    app: dd-push-notification-server
 spec:
   podSelector:
     matchLabels:
-      app: dd-ai-agent-bridge
+      app: dd-push-notification-server
   policyTypes:
     - Ingress
     - Egress
   ingress:
+    # In-cluster producers. Application-layer bearer auth (SERVER_AUTH_SECRET)
+    # remains mandatory on every /v1/* route regardless of this allowlist.
     - from:
+        - podSelector:
+            matchLabels:
+              app: dd-remote-gateway
         - podSelector:
             matchLabels:
               app: dd-dev-server-api
@@ -24,38 +29,18 @@ spec:
             matchLabels:
               app.kubernetes.io/part-of: dd-remote-dev
               app.kubernetes.io/component: thread-pod
-        # DEN-845: the provider runner polls workflows over HTTP.
-        - podSelector:
-            matchLabels:
-              app: dd-ai-agent-runner
       ports:
         - protocol: TCP
-          port: 8142
-        - protocol: TCP
-          port: 8143
-    # Central Prometheus may scrape only the public HTTP metrics endpoint. TCP
-    # coordination remains inaccessible from observability.
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: observability
-          podSelector:
-            matchLabels:
-              app: dd-prometheus
-      ports:
-        - protocol: TCP
-          port: 8142
+          port: 8121
     # Warm pool workers use the node network, so pod selectors cannot identify
     # them. Keep this exception constrained to the EC2 VPC instead of the pod
-    # network; application-layer bearer auth remains mandatory on both ports.
+    # network; bearer auth remains mandatory.
     - from:
         - ipBlock:
             cidr: 172.31.0.0/16
       ports:
         - protocol: TCP
-          port: 8142
-        - protocol: TCP
-          port: 8143
+          port: 8121
   egress:
     - to:
         - namespaceSelector:
@@ -66,16 +51,20 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    # Future durable JetStream ingestion (DEN-795). Allowed now so enabling
+    # NATS_URL in the deployment is a one-line change.
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: observability
+              kubernetes.io/metadata.name: messaging
       ports:
         - protocol: TCP
-          port: 4318
-    # The current pod builds from source and may need crates.io or the guarded
-    # GitHub fallback. Exclude cluster, loopback, and metadata ranges so this
-    # rule cannot become a generic internal-network escape hatch.
+          port: 4222
+    # Provider APIs (FCM, APNs, Expo, browser Web Push services, SendGrid,
+    # Twilio) plus crates.io and the guarded GitHub fallback for the in-pod
+    # build. Exclude cluster, loopback, and metadata ranges so this rule cannot
+    # become a generic internal-network escape hatch; the server's own Web Push
+    # SSRF policy blocks private/reserved targets at the application layer too.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

@@ -181,3 +181,7 @@
 	path = remote/deployments/cliptown-monorepo
 	url = https://github.com/cliptown/cliptown-monorepo.git
 	branch = main
+[submodule "remote/deployments/push-notification-server.rs"]
+	path = remote/deployments/push-notification-server.rs
+	url = git@github.com:ORESoftware/push-notification-server.rs.git
+	branch = main
