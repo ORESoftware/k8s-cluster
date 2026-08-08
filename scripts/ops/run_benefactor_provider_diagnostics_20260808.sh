@@ -27,9 +27,15 @@ job="benefactor-provider-probe-${short_sha}-$(date -u +%H%M%S)"
 manifest="$(mktemp /tmp/benefactor-provider-probe-manifest.XXXXXX.yaml)"
 log_file="$(mktemp /tmp/benefactor-provider-probe-log.XXXXXX)"
 job_created=false
+failure_reported=false
+stage=cluster_preflight
 
 cleanup() {
   local status=$?
+  if (( status != 0 )) && [[ "$failure_reported" != true ]]; then
+    printf 'BENEFACTOR_PROVIDER_PROBE_FAILED stage=%s status=script_error exit_code=%s trusted_k8s_cluster_sha=%s\n' \
+      "$stage" "$status" "$trusted_sha" >&2
+  fi
   if [[ "$job_created" == true ]]; then
     "$KUBECTL" --kubeconfig "$KUBECONFIG_PATH" -n "$namespace" delete job "$job" \
       --ignore-not-found=true --wait=false >/dev/null 2>&1 || true
@@ -54,6 +60,7 @@ scraper_endpoints="$(
 )"
 test -n "$scraper_endpoints"
 
+stage=secret_preflight
 "$KUBECTL" --kubeconfig "$KUBECONFIG_PATH" -n "$namespace" get secret benefactor-ghcr >/dev/null
 secret_has_key dd-remote-rest-api-secrets AGENT_TASKS_RDS_DATABASE_URL
 secret_has_key dd-agent-secrets SERVER_AUTH_SECRET
@@ -78,6 +85,7 @@ if [[ ! "$provider_secret" =~ ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$ ]]; then
   exit 69
 fi
 
+stage=manifest_apply
 cat > "$manifest" <<YAML
 apiVersion: batch/v1
 kind: Job
@@ -129,7 +137,7 @@ spec:
               const response = await fetch('https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem', {
                 redirect: 'error',
                 signal: AbortSignal.timeout(30000),
-                headers: { 'User-Agent': 'benefactor-provider-probe/1' },
+                headers: { 'User-Agent': 'benefactor-provider-probe/2' },
               });
               if (!response.ok) throw new Error('rds_ca_http_' + response.status);
               const declared = Number(response.headers.get('content-length') || 0);
@@ -165,8 +173,56 @@ spec:
         - name: provider-probe
           image: ${image}
           imagePullPolicy: Always
+          command:
+            - node
+            - --input-type=module
+            - -e
           args:
-            - contact-batch.mjs
+            - |
+              import { spawnSync } from 'node:child_process';
+              import { readFileSync } from 'node:fs';
+              import { createRequire } from 'node:module';
+              const require = createRequire('/work/package.json');
+              const pg = require('pg');
+              const databaseUrl = new URL(process.env.RDS_URL);
+              databaseUrl.searchParams.delete('sslmode');
+              databaseUrl.searchParams.delete('uselibpqcompat');
+              const client = new pg.Client({
+                connectionString: databaseUrl.toString(),
+                ssl: {
+                  ca: readFileSync(process.env.PG_SSL_CA_FILE, 'utf8'),
+                  rejectUnauthorized: true,
+                },
+                statement_timeout: 30000,
+                query_timeout: 35000,
+                application_name: 'benefactor-provider-probe',
+              });
+              await client.connect();
+              let category = '';
+              try {
+                const result = await client.query(`
+                  SELECT service_category
+                  FROM benefactor.benefactor_scrape_queries
+                  WHERE is_active = true
+                    AND is_soft_deleted = false
+                    AND service_category IS NOT NULL
+                    AND BTRIM(service_category) <> ''
+                    AND (cooldown_until IS NULL OR cooldown_until <= now())
+                  GROUP BY service_category
+                  ORDER BY MAX(priority) DESC, MIN(total_runs) ASC, service_category ASC
+                  LIMIT 1
+                `);
+                category = String(result.rows[0]?.service_category || '').trim();
+              } finally {
+                await client.end().catch(() => {});
+              }
+              if (!category) throw new Error('no_active_probe_category');
+              const child = spawnSync(process.execPath, ['/work/orchestrate.mjs'], {
+                env: { ...process.env, ICP_CATEGORY: category },
+                stdio: 'inherit',
+              });
+              if (child.error) throw child.error;
+              process.exit(child.status ?? 1);
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -176,28 +232,10 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           env:
-            - name: BATCH_DRY_RUN
+            - name: PIPELINE_DRY_RUN
               value: "true"
-            - name: BATCH_TARGET_CONTACTS
+            - name: TARGET_EMAILS
               value: "1"
-            - name: BATCH_MINIMUM_CONTACTS
-              value: "1"
-            - name: BATCH_MAXIMUM_CONTACTS
-              value: "1"
-            - name: BATCH_MAX_CONTACTS_PER_CATEGORY
-              value: "1"
-            - name: BATCH_MAX_CATEGORIES
-              value: "1"
-            - name: HUBSPOT_SYNC_AFTER_DISCOVERY
-              value: "false"
-            - name: HUBSPOT_DRY_RUN
-              value: "true"
-            - name: SCRAPER_URL
-              value: http://dd-web-scraper.default.svc.cluster.local:8097
-            - name: SCRAPER_ALLOWED_HOSTS
-              value: dd-web-scraper.default.svc.cluster.local
-            - name: REQUIRE_ROLE_EMAIL
-              value: "true"
             - name: MAX_QUERIES
               value: "1"
             - name: MAX_PAGES_PER_QUERY
@@ -208,6 +246,12 @@ spec:
               value: "0"
             - name: DEADLINE_SECONDS
               value: "180"
+            - name: SCRAPER_URL
+              value: http://dd-web-scraper.default.svc.cluster.local:8097
+            - name: SCRAPER_ALLOWED_HOSTS
+              value: dd-web-scraper.default.svc.cluster.local
+            - name: REQUIRE_ROLE_EMAIL
+              value: "true"
             - name: RDS_URL
               valueFrom:
                 secretKeyRef:
@@ -257,6 +301,7 @@ YAML
 "$KUBECTL" --kubeconfig "$KUBECONFIG_PATH" apply -f "$manifest" >/dev/null
 job_created=true
 
+stage=job_wait
 terminal_status=timeout
 for _ in $(seq 1 120); do
   complete="$(
@@ -278,6 +323,7 @@ for _ in $(seq 1 120); do
   sleep 5
 done
 
+stage=log_collection
 "$KUBECTL" --kubeconfig "$KUBECONFIG_PATH" -n "$namespace" logs "job/$job" \
   -c provider-probe > "$log_file" 2>/dev/null || true
 
@@ -305,11 +351,13 @@ for pod in obj.get("items", []):
 print(json.dumps(summary, separators=(",", ":")))
 '
   )"
-  printf 'BENEFACTOR_PROVIDER_PROBE_FAILED status=%s pod_status=%s trusted_k8s_cluster_sha=%s\n' \
+  failure_reported=true
+  printf 'BENEFACTOR_PROVIDER_PROBE_FAILED stage=job_wait status=%s pod_status=%s trusted_k8s_cluster_sha=%s\n' \
     "$terminal_status" "$safe_status" "$trusted_sha" >&2
   exit 1
 fi
 
+stage=report_validation
 python3 - "$log_file" "$trusted_sha" "$orchestrator_sha" "$orchestrator_digest" "$image" <<'PYREPORT'
 import json
 import pathlib
@@ -317,26 +365,26 @@ import sys
 
 log_path, trusted_sha, orchestrator_sha, orchestrator_digest, image = sys.argv[1:]
 lines = pathlib.Path(log_path).read_text(encoding='utf-8', errors='replace').splitlines()
-batch_lines = [line for line in lines if line.startswith('BENEFACTOR_CONTACT_BATCH_REPORT ')]
+pipeline_lines = [line for line in lines if line.startswith('BENEFACTOR_PIPELINE_REPORT ')]
 diagnostic_lines = [line for line in lines if line.startswith('BENEFACTOR_PROVIDER_DIAGNOSTICS ')]
-if len(batch_lines) != 1:
-    raise SystemExit(f'expected one batch report, found {len(batch_lines)}')
+if len(pipeline_lines) != 1:
+    raise SystemExit(f'expected one pipeline report, found {len(pipeline_lines)}')
 if len(diagnostic_lines) != 1:
     raise SystemExit(f'expected one provider diagnostic report, found {len(diagnostic_lines)}')
 
-batch = json.loads(batch_lines[0].split(' ', 1)[1])
-if batch.get('dryRun') is not True:
-    raise SystemExit('provider probe batch is not a dry run')
-if batch.get('targetContacts') != 1 or batch.get('minimumContacts') != 1 or batch.get('maximumContacts') != 1:
-    raise SystemExit('provider probe bounds are not exactly one contact')
-if batch.get('outreachDispatchRequested') is not False:
-    raise SystemExit('provider probe requested outreach')
-if batch.get('contactsTagged') != 0 or batch.get('approvedForOutreach') != 0:
-    raise SystemExit('provider probe mutated or approved contacts')
-if (batch.get('hubspot') or {}).get('attempted') is not False:
-    raise SystemExit('provider probe attempted HubSpot synchronization')
-if int(batch.get('categoriesRun') or 0) != 1:
-    raise SystemExit('provider probe did not run exactly one category')
+pipeline = json.loads(pipeline_lines[0].split(' ', 1)[1])
+counters = pipeline.get('counters') or {}
+queries_run = int(counters.get('queriesRun') or 0)
+urls_visited = int(counters.get('urlsVisited') or 0)
+contacts_collected = int(counters.get('contactsCollected') or 0)
+phones_collected = int(counters.get('phonesCollected') or 0)
+provider_failures = int(counters.get('providerFailures') or 0)
+if queries_run != 1:
+    raise SystemExit('provider probe did not run exactly one query')
+if urls_visited < 0 or urls_visited > 1:
+    raise SystemExit('provider probe exceeded one candidate page')
+if min(contacts_collected, phones_collected, provider_failures) < 0:
+    raise SystemExit('pipeline counters are invalid')
 
 diagnostic = json.loads(diagnostic_lines[0].split(' ', 1)[1])
 if diagnostic.get('reportVersion') != 'benefactor.provider-diagnostics.v1':
@@ -345,6 +393,7 @@ providers = diagnostic.get('providers')
 if not isinstance(providers, list) or not providers:
     raise SystemExit('provider diagnostics are missing')
 normalized = []
+total_requests = 0
 for provider in providers:
     if not isinstance(provider, dict):
         raise SystemExit('provider diagnostic entry is invalid')
@@ -355,7 +404,7 @@ for provider in providers:
     successes = int(provider.get('successes') or 0)
     failures = int(provider.get('failures') or 0)
     codes = provider.get('failureCodes') or {}
-    if requests < 0 or successes < 0 or failures < 0 or successes + failures != requests:
+    if requests < 0 or requests > 1 or successes < 0 or failures < 0 or successes + failures != requests:
         raise SystemExit('provider diagnostic counters are inconsistent')
     if not isinstance(codes, dict):
         raise SystemExit('provider diagnostic codes are invalid')
@@ -364,6 +413,7 @@ for provider in providers:
             raise SystemExit('provider failure code is invalid')
         if not isinstance(count, int) or count < 1:
             raise SystemExit('provider failure count is invalid')
+    total_requests += requests
     normalized.append({
         'provider': name,
         'requests': requests,
@@ -371,10 +421,19 @@ for provider in providers:
         'failures': failures,
         'failureCodes': dict(sorted(codes.items())),
     })
+if total_requests < 1 or total_requests > 2:
+    raise SystemExit('provider probe request count is outside the expected range')
 normalized.sort(key=lambda item: item['provider'])
 summary = {
-    'reportVersion': 'benefactor.provider-probe.v1',
+    'reportVersion': 'benefactor.provider-probe.v2',
     'providers': normalized,
+    'counters': {
+        'queriesRun': queries_run,
+        'urlsVisited': urls_visited,
+        'contactsCollected': contacts_collected,
+        'phonesCollected': phones_collected,
+        'providerFailures': provider_failures,
+    },
     'image': image,
     'orchestratorImageSha': orchestrator_sha,
     'orchestratorImageDigest': orchestrator_digest,
