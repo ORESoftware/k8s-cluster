@@ -12,6 +12,15 @@ SPEC = importlib.util.spec_from_file_location("canonical_account_token_preflight
 assert SPEC and SPEC.loader
 TARGET = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(TARGET)
+
+RUNNER_PATH = Path(__file__).with_name("canonical-account-token-runner.py")
+RUNNER_SPEC = importlib.util.spec_from_file_location(
+    "canonical_account_token_runner", RUNNER_PATH
+)
+assert RUNNER_SPEC and RUNNER_SPEC.loader
+RUNNER = importlib.util.module_from_spec(RUNNER_SPEC)
+RUNNER_SPEC.loader.exec_module(RUNNER)
+
 CONTRACT = json.loads(
     Path("config/ci/canonical-control-plane-preflight.json").read_text()
 )
@@ -145,6 +154,59 @@ class PartialEvidenceTests(unittest.TestCase):
             (f"/zones/{ZONE_ID}/dns_records", {"name": "app.canonical.plus", "per_page": "100"}),
             calls,
         )
+
+    def test_markdown_distinguishes_unreadable_from_absent(self) -> None:
+        evidence = {
+            "generated_at": "2026-08-08T00:00:00Z",
+            "blockers": [],
+            "errors": [],
+            "github": None,
+            "cloudflare": {
+                "token": {"family": "account-owned", "status": "active"},
+                "account": {"id_sha256": "account-hash"},
+                "zone": {"name": "canonical.plus", "status": "active"},
+                "worker": {
+                    "script_inventory_readable": True,
+                    "exists": False,
+                },
+                "routes": [
+                    {
+                        "pattern": "app.canonical.plus/u/*",
+                        "readable": False,
+                        "exists": None,
+                        "conflict": None,
+                        "script": None,
+                    },
+                    {
+                        "pattern": "api.canonical.plus/v1/ws*",
+                        "readable": True,
+                        "exists": False,
+                        "conflict": False,
+                        "script": None,
+                    },
+                ],
+                "dns": [
+                    {
+                        "name": "app.canonical.plus",
+                        "readable": False,
+                        "exists": None,
+                        "record": None,
+                    },
+                    {
+                        "name": "api.canonical.plus",
+                        "readable": True,
+                        "exists": False,
+                        "record": None,
+                    },
+                ],
+            },
+        }
+        report = RUNNER.markdown_report(evidence)
+        self.assertIn("unreadable (missing Workers Routes Read)", report)
+        self.assertIn("unreadable (missing DNS Read)", report)
+        self.assertIn("`api.canonical.plus/v1/ws*` — absent", report)
+        self.assertIn("`api.canonical.plus` — absent", report)
+        self.assertNotIn("missing/conflict", report)
 
 
 if __name__ == "__main__":
