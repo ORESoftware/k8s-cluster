@@ -35,6 +35,9 @@ test('DES indie harness keeps failures diagnosable and terminal', () => {
   assert.match(script, /HTTP \$code from \$url/);
   assert.match(script, /DES_INDIE_PLAN_MISMATCH/);
   assert.match(script, /DES_INDIE_RUN_MISMATCH/);
+  assert.match(script, /DES_INDIE_BUILD_LOG_BEGIN/);
+  assert.match(script, /\/builds\/\$build_id\/logs/);
+  assert.match(script, /tail -c 16000/);
   assert.match(script, /status == "succeeded"/);
   assert.match(script, /\.buildId \| type == "string" and length > 0/);
 });
