@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import base64
 import importlib.util
 import json
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -12,6 +12,15 @@ SPEC = importlib.util.spec_from_file_location("canonical_control_plane_preflight
 assert SPEC and SPEC.loader
 TARGET = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(TARGET)
+
+WAIT_MODULE_PATH = Path(__file__).with_name("wait-for-encrypted-canonical-bundle.py")
+WAIT_SPEC = importlib.util.spec_from_file_location(
+    "wait_for_encrypted_canonical_bundle", WAIT_MODULE_PATH
+)
+assert WAIT_SPEC and WAIT_SPEC.loader
+WAIT_TARGET = importlib.util.module_from_spec(WAIT_SPEC)
+WAIT_SPEC.loader.exec_module(WAIT_TARGET)
+
 CONTRACT_PATH = Path("config/ci/canonical-control-plane-preflight.json")
 
 
@@ -79,6 +88,23 @@ class CredentialTests(unittest.TestCase):
                 bundle,
                 "8007ba16f4d4ff2684639b28a390e8516fcf878e80a09ee32279778cf98934c8",
             )
+
+
+class CiphertextEnvelopeTests(unittest.TestCase):
+    def test_nested_contents_api_base64_decodes_to_exact_rsa_ciphertext(self) -> None:
+        ciphertext = bytes((index % 251 for index in range(512)))
+        inner = base64.b64encode(ciphertext)
+        outer = base64.b64encode(inner).decode()
+        self.assertEqual(
+            ciphertext,
+            WAIT_TARGET.decode_contents_api_ciphertext(outer),
+        )
+
+    def test_ciphertext_rejects_wrong_modulus_length(self) -> None:
+        inner = base64.b64encode(b"not-a-4096-bit-rsa-ciphertext")
+        outer = base64.b64encode(inner).decode()
+        with self.assertRaisesRegex(ValueError, "4096-bit RSA ciphertext"):
+            WAIT_TARGET.decode_contents_api_ciphertext(outer)
 
 
 class ClientBoundaryTests(unittest.TestCase):
