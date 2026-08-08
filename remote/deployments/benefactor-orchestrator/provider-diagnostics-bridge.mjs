@@ -13,11 +13,33 @@ const PROVIDERS = Object.freeze({
   },
 });
 
+const NETWORK_ERROR_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+]);
+
+function createProviderRecord() {
+  return {
+    requests: 0,
+    failures: 0,
+    failureCodes: {},
+    pendingFailureWarnings: 0,
+  };
+}
+
 function createProviderState() {
   return {
-    brave: { requests: 0, successes: 0, failures: 0, failureCodes: {} },
-    serper: { requests: 0, successes: 0, failures: 0, failureCodes: {} },
+    brave: createProviderRecord(),
+    serper: createProviderRecord(),
   };
+}
+
+function providerStateFor(state, provider) {
+  return state[provider] || (state[provider] = createProviderRecord());
 }
 
 function asUrl(input) {
@@ -70,7 +92,7 @@ export function providerFailureCode(error, responseStatus = null) {
     return message.replace('upstream_', '');
   }
   if (
-    ['ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENETUNREACH', 'ENOTFOUND', 'EAI_AGAIN'].includes(code)
+    NETWORK_ERROR_CODES.has(code)
     || /\b(?:dns|network|socket|connection reset|fetch failed)\b/.test(message)
   ) {
     return 'network';
@@ -78,9 +100,10 @@ export function providerFailureCode(error, responseStatus = null) {
   return 'unknown';
 }
 
-function incrementFailure(state, code) {
+function incrementFailure(state, code, { expectWarning = false } = {}) {
   state.failures += 1;
   state.failureCodes[code] = Number(state.failureCodes[code] || 0) + 1;
+  if (expectWarning) state.pendingFailureWarnings += 1;
 }
 
 export function createProviderDiagnosticsFetch(originalFetch, state = createProviderState()) {
@@ -90,24 +113,49 @@ export function createProviderDiagnosticsFetch(originalFetch, state = createProv
     const provider = providerForRequest(input);
     if (!provider) return originalFetch(input, init);
 
-    const providerState = state[provider] || (state[provider] = {
-      requests: 0,
-      successes: 0,
-      failures: 0,
-      failureCodes: {},
-    });
+    const providerState = providerStateFor(state, provider);
     providerState.requests += 1;
 
     try {
       const response = await originalFetch(input, init);
-      if (response?.ok) providerState.successes += 1;
-      else incrementFailure(providerState, providerFailureCode(null, Number(response?.status)));
+      if (!response?.ok) {
+        incrementFailure(
+          providerState,
+          providerFailureCode(null, Number(response?.status)),
+          { expectWarning: true },
+        );
+      }
       return response;
     } catch (error) {
-      incrementFailure(providerState, providerFailureCode(error));
+      incrementFailure(providerState, providerFailureCode(error), { expectWarning: true });
       throw error;
     }
   };
+}
+
+function warningFailureCode(errorName, errorCode) {
+  const name = String(errorName || '').toLowerCase();
+  const code = String(errorCode || '').toUpperCase();
+  if (name === 'responselimiterror') return 'response_limit';
+  if (name === 'aborterror' || name === 'timeouterror') return 'timeout';
+  if (NETWORK_ERROR_CODES.has(code)) return 'network';
+  return 'unknown';
+}
+
+export function recordProviderWarning(state, message) {
+  const match = String(message || '').match(
+    /^\[benefactor-pipeline\] provider=(brave|serper) search_failed ([A-Za-z][A-Za-z0-9]*)(?: code=([A-Za-z0-9_]+))?/,
+  );
+  if (!match) return false;
+
+  const providerState = providerStateFor(state, match[1]);
+  if (providerState.pendingFailureWarnings > 0) {
+    providerState.pendingFailureWarnings -= 1;
+    return true;
+  }
+
+  incrementFailure(providerState, warningFailureCode(match[2], match[3]));
+  return true;
 }
 
 function stableFailureCodes(value) {
@@ -123,11 +171,13 @@ export function buildProviderDiagnostics(state = createProviderState()) {
     reportVersion: PROVIDER_DIAGNOSTICS_VERSION,
     providers: Object.keys(PROVIDERS).sort().map((provider) => {
       const value = state[provider] || {};
+      const requests = Number(value.requests || 0);
+      const failures = Number(value.failures || 0);
       return {
         provider,
-        requests: Number(value.requests || 0),
-        successes: Number(value.successes || 0),
-        failures: Number(value.failures || 0),
+        requests,
+        successes: Math.max(0, requests - failures),
+        failures,
         failureCodes: stableFailureCodes(value.failureCodes),
       };
     }),
@@ -140,6 +190,14 @@ export function installProviderDiagnostics({ target = globalThis } = {}) {
   const originalFetch = target.fetch;
   if (typeof originalFetch !== 'function') throw new TypeError('global fetch is unavailable');
   target.fetch = createProviderDiagnosticsFetch(originalFetch.bind(target), state);
+
+  const originalWarn = target.console?.warn?.bind(target.console);
+  if (typeof originalWarn === 'function') {
+    target.console.warn = (...args) => {
+      originalWarn(...args);
+      recordProviderWarning(state, args.map((value) => String(value)).join(' '));
+    };
+  }
 
   const originalLog = target.console?.log?.bind(target.console);
   if (typeof originalLog === 'function') {
