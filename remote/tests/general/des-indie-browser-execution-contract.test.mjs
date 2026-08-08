@@ -30,6 +30,24 @@ test('DES indie harness preserves immutable repository provenance', () => {
   assert.match(script, /immutableRevision == true/);
 });
 
+test('each explicit retry has a fresh deterministic plan identity', () => {
+  assert.match(script, /DES_REQUEST_SUFFIX must use 1-128 GitHub-safe characters/);
+  assert.match(script, /\^\[A-Za-z0-9\._-\]\+\$/);
+  assert.match(script, /\$\{#REQUEST_SUFFIX\} -gt 128/);
+  assert.match(
+    script,
+    /# gha-indie retry request: %s\\n' "\$REQUEST_SUFFIX"/,
+  );
+  assert.match(
+    script,
+    /YAML comments do not alter workflow semantics/,
+  );
+  assert.match(
+    script,
+    /--arg requestId "des-browser-\$slug-\$revision-\$REQUEST_SUFFIX"/,
+  );
+});
+
 test('DES indie harness keeps failures diagnosable and terminal', () => {
   assert.match(script, /--write-out '%\{http_code\}'/);
   assert.match(script, /HTTP \$code from \$url/);
