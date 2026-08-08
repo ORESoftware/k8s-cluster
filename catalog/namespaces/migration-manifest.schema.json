@@ -1,0 +1,473 @@
+{
+  "$id": "https://schemas.oresoftware.com/namespaces/migration-manifest.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "const": "./migration-manifest.schema.json"
+    },
+    "apiVersion": {
+      "const": "oresoftware.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "NamespaceMigrationManifest"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "entryCount": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "generatedBy": {
+          "const": "tools/namespace_manifest.py"
+        },
+        "inventory": {
+          "$ref": "#/$defs/repositoryRelativePath"
+        },
+        "inventorySha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "name": {
+          "const": "den-2786-phase-0"
+        },
+        "phase": {
+          "const": "phase-0"
+        },
+        "registry": {
+          "$ref": "#/$defs/repositoryRelativePath"
+        },
+        "registrySha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "rules": {
+          "$ref": "#/$defs/repositoryRelativePath"
+        },
+        "rulesSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "required": [
+        "name",
+        "phase",
+        "generatedBy",
+        "inventory",
+        "inventorySha256",
+        "registry",
+        "registrySha256",
+        "rules",
+        "rulesSha256",
+        "entryCount"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/entry"
+          },
+          "type": "array"
+        },
+        "executionAuthorized": {
+          "const": false
+        },
+        "identityFields": {
+          "const": [
+            "path",
+            "line",
+            "column",
+            "system",
+            "current"
+          ]
+        },
+        "summary": {
+          "$ref": "#/$defs/summary"
+        }
+      },
+      "required": [
+        "executionAuthorized",
+        "identityFields",
+        "summary",
+        "entries"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "$schema",
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "ORESoftware ownership-aware namespace migration manifest",
+  "type": "object",
+  "$defs": {
+    "consumerGrant": {
+      "additionalProperties": false,
+      "properties": {
+        "access": {
+          "const": "read"
+        },
+        "consumer": {
+          "$ref": "#/$defs/dnsLabel"
+        },
+        "state": {
+          "enum": [
+            "required",
+            "approved",
+            "revoked"
+          ]
+        }
+      },
+      "required": [
+        "consumer",
+        "access",
+        "state"
+      ],
+      "type": "object"
+    },
+    "dnsLabel": {
+      "maxLength": 63,
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+      "type": "string"
+    },
+    "entry": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "owner": {
+                "const": "unclassified"
+              }
+            },
+            "required": [
+              "owner"
+            ]
+          },
+          "then": {
+            "properties": {
+              "consumerGrants": {
+                "maxItems": 0
+              },
+              "consumers": {
+                "maxItems": 0
+              },
+              "destructiveCleanupAllowed": {
+                "const": false
+              },
+              "migrationMode": {
+                "const": "manual-review"
+              },
+              "reviewState": {
+                "const": "blocked"
+              },
+              "target": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "classificationStatus": {
+          "enum": [
+            "classified",
+            "review-required",
+            "unclassified"
+          ]
+        },
+        "column": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "consumerGrants": {
+          "items": {
+            "$ref": "#/$defs/consumerGrant"
+          },
+          "type": "array"
+        },
+        "consumers": {
+          "items": {
+            "$ref": "#/$defs/dnsLabel"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "current": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "destructiveCleanupAllowed": {
+          "const": false
+        },
+        "environment": {
+          "oneOf": [
+            {
+              "enum": [
+                "dev",
+                "staging",
+                "prod",
+                "shared"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "pattern": "^nsocc-[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "line": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "migrationMode": {
+          "enum": [
+            "copy-verify-cutover",
+            "dual-write-cutover",
+            "service-specific-move",
+            "dependent-update",
+            "regenerate",
+            "manual-review"
+          ]
+        },
+        "notes": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "owner": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "path": {
+          "$ref": "#/$defs/repositoryRelativePath"
+        },
+        "platformTargetException": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/platformTargetException"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reviewState": {
+          "enum": [
+            "classified",
+            "review-required",
+            "blocked"
+          ]
+        },
+        "rollback": {
+          "$ref": "#/$defs/procedure"
+        },
+        "ruleId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "active",
+            "documentation",
+            "test"
+          ]
+        },
+        "system": {
+          "enum": [
+            "slash-namespace",
+            "metadata-key",
+            "host-path",
+            "source-package",
+            "generated-package"
+          ]
+        },
+        "target": {
+          "oneOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "targetTemplate": {
+          "oneOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verification": {
+          "$ref": "#/$defs/procedure"
+        },
+        "workload": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/dnsLabel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "path",
+        "line",
+        "column",
+        "scope",
+        "system",
+        "current",
+        "ruleId",
+        "classificationStatus",
+        "owner",
+        "target",
+        "targetTemplate",
+        "environment",
+        "workload",
+        "consumers",
+        "consumerGrants",
+        "migrationMode",
+        "reviewState",
+        "verification",
+        "rollback",
+        "platformTargetException",
+        "destructiveCleanupAllowed",
+        "notes"
+      ],
+      "type": "object"
+    },
+    "platformTargetException": {
+      "additionalProperties": false,
+      "properties": {
+        "approved": {
+          "const": true
+        },
+        "approvedBy": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "issue": {
+          "format": "uri",
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "approved",
+        "approvedBy",
+        "issue",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "procedure": {
+      "additionalProperties": false,
+      "properties": {
+        "procedure": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "required",
+            "defined",
+            "verified"
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "procedure"
+      ],
+      "type": "object"
+    },
+    "repositoryRelativePath": {
+      "minLength": 1,
+      "not": {
+        "pattern": "^(?:/|.*(?:^|/)\\.\\.(?:/|$))"
+      },
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "summary": {
+      "additionalProperties": false,
+      "properties": {
+        "byClassificationStatus": {
+          "$ref": "#/$defs/stringCountMap"
+        },
+        "byOwner": {
+          "$ref": "#/$defs/stringCountMap"
+        },
+        "byReviewState": {
+          "$ref": "#/$defs/stringCountMap"
+        },
+        "byScope": {
+          "$ref": "#/$defs/stringCountMap"
+        },
+        "bySystem": {
+          "$ref": "#/$defs/stringCountMap"
+        },
+        "concreteTargets": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "crossOwnerGrants": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "destructiveCleanupAllowed": {
+          "const": 0
+        },
+        "total": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unresolvedTargetTemplates": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total",
+        "byScope",
+        "bySystem",
+        "byClassificationStatus",
+        "byReviewState",
+        "byOwner",
+        "concreteTargets",
+        "unresolvedTargetTemplates",
+        "crossOwnerGrants",
+        "destructiveCleanupAllowed"
+      ],
+      "type": "object"
+    },
+    "stringCountMap": {
+      "additionalProperties": {
+        "minimum": 0,
+        "type": "integer"
+      },
+      "type": "object"
+    }
+  }
+}
