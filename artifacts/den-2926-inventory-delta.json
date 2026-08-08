@@ -1,0 +1,78 @@
+{
+  "after": {
+    "byOwner": {
+      "benefactor-cc": 3,
+      "fiducia-cloud": 67,
+      "ores": 457,
+      "shared-auth": 11,
+      "unclassified": 596
+    },
+    "byScope": {
+      "active": 883,
+      "documentation": 176,
+      "test": 75
+    },
+    "byStatus": {
+      "classified": 105,
+      "review-required": 433,
+      "unclassified": 596
+    },
+    "bySystem": {
+      "generated-package": 82,
+      "host-path": 190,
+      "metadata-key": 367,
+      "slash-namespace": 381,
+      "source-package": 114
+    },
+    "distinctReferences": 220,
+    "total": 1134,
+    "unclassifiedActive": 484
+  },
+  "before": {
+    "byOwner": {
+      "benefactor-cc": 3,
+      "fiducia-cloud": 67,
+      "ores": 863,
+      "shared-auth": 11,
+      "unclassified": 595
+    },
+    "byScope": {
+      "active": 1246,
+      "documentation": 210,
+      "test": 83
+    },
+    "byStatus": {
+      "classified": 453,
+      "review-required": 491,
+      "unclassified": 595
+    },
+    "bySystem": {
+      "generated-package": 82,
+      "host-path": 595,
+      "metadata-key": 367,
+      "slash-namespace": 380,
+      "source-package": 115
+    },
+    "distinctReferences": 222,
+    "total": 1539,
+    "unclassifiedActive": 483
+  },
+  "delta": {
+    "bySystem": {
+      "generated-package": 0,
+      "host-path": -405,
+      "metadata-key": 0,
+      "slash-namespace": 1,
+      "source-package": -1
+    },
+    "distinctReferences": -2,
+    "total": -405
+  },
+  "note": "Negative deltas remove prefix-truncated false positives; positive controls remain in the source unit suite.",
+  "sourcePatch": {
+    "commit": "db017c4957bcdc63162d27a7d6ff71cd660c9fd4",
+    "gitBlob": "a57aec4a06aa5559b0af56485fa478e3270f714f",
+    "repository": "fiducia-cloud-test/infra-multicloud-e2e"
+  },
+  "ticket": "DEN-2926"
+}

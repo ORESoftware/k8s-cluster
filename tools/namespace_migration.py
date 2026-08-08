@@ -35,13 +35,60 @@ GOVERNANCE = (
     ".github/workflows/namespace-migration-contract.yml",
 )
 PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("metadata-key", re.compile(r"(?<![A-Za-z0-9_.-])dd/(?:threadId|userId)")),
-    ("metadata-key", re.compile(r"(?<![A-Za-z0-9_.-])dd\.dev/[A-Za-z0-9][A-Za-z0-9._~-]*")),
-    ("source-package", re.compile(r"(?<![A-Za-z0-9_.-])github\.com/oresoftware/dd(?:/[A-Za-z0-9._~:@%+,/-]+)*", re.I)),
-    ("source-package", re.compile(r"(?<![A-Za-z0-9_.-])com\.oresoftware\.dd(?:\.[A-Za-z0-9_]+)*")),
-    ("generated-package", re.compile(r"(?<![A-Za-z0-9_.-])(?:dd_pg_defs|dd\.pgdefs)(?:[A-Za-z0-9_.-]*)?")),
-    ("host-path", re.compile(r"(?:/opt/dd|/var/lib/dd|/srv/dd|/home/[A-Za-z0-9._-]+/codes/dd)(?:/[A-Za-z0-9._~:@%+,=-]+)*")),
-    ("slash-namespace", re.compile(r"(?<![A-Za-z0-9_.-])dd/[A-Za-z0-9][A-Za-z0-9._~:@%+,/=-]*")),
+    (
+        "metadata-key",
+        re.compile(
+            r"(?<![A-Za-z0-9_.-])dd/(?:threadId|userId)"
+            r"(?![A-Za-z0-9._~/-])"
+        ),
+    ),
+    (
+        "metadata-key",
+        re.compile(
+            r"(?<![A-Za-z0-9_.-])dd\.dev/[A-Za-z0-9][A-Za-z0-9._~-]*"
+            r"(?![A-Za-z0-9._~/-])"
+        ),
+    ),
+    (
+        "source-package",
+        re.compile(
+            r"(?<![A-Za-z0-9_.-])github\.com/oresoftware/dd"
+            r"(?:/[A-Za-z0-9._~:@%+,/-]+)*"
+            r"(?![A-Za-z0-9._~:@%+=/-])",
+            re.I,
+        ),
+    ),
+    (
+        "source-package",
+        re.compile(
+            r"(?<![A-Za-z0-9_.-])com\.oresoftware\.dd"
+            r"(?:\.[A-Za-z0-9_]+)*"
+            r"(?![A-Za-z0-9_.-])"
+        ),
+    ),
+    (
+        "generated-package",
+        re.compile(
+            r"(?<![A-Za-z0-9_.-])(?:dd_pg_defs|dd\.pgdefs)"
+            r"(?:[A-Za-z0-9_.-]*)?"
+        ),
+    ),
+    (
+        "host-path",
+        re.compile(
+            r"(?:/opt/dd|/var/lib/dd|/srv/dd|"
+            r"/home/[A-Za-z0-9._-]+/codes/dd)"
+            r"(?:/[A-Za-z0-9._~:@%+,=-]+)*"
+            r"(?![A-Za-z0-9._~@%+=/-])"
+        ),
+    ),
+    (
+        "slash-namespace",
+        re.compile(
+            r"(?<![A-Za-z0-9_.-])dd/"
+            r"[A-Za-z0-9][A-Za-z0-9._~:@%+,/=-]*"
+        ),
+    ),
 )
 TRAILING = ".,;:)]}>'\"`"
 

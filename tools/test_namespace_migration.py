@@ -209,6 +209,63 @@ class ClassificationTests(unittest.TestCase):
         references = scan_line("- secret: `dd/remote-dev/gha-clone-server-secrets`,")
         self.assertEqual("dd/remote-dev/gha-clone-server-secrets", references[0].value)
 
+    def test_scanner_does_not_truncate_hyphenated_host_siblings(self) -> None:
+        for line in (
+            "WORKDIR /opt/dd-akka-ws-server",
+            "cache=/var/lib/dd-cache",
+            "checkout=/srv/dd-next",
+            "checkout=/home/ec2-user/codes/dd-next-1",
+        ):
+            with self.subTest(line=line):
+                self.assertEqual([], scan_line(line))
+
+    def test_scanner_does_not_truncate_repository_owner_prefix(self) -> None:
+        self.assertEqual(
+            [],
+            scan_line("module github.com/oresoftware/dd-next-1/remote/service"),
+        )
+        references = scan_line(
+            "require github.com/oresoftware/dd/libs/telemetry-go v0.0.0"
+        )
+        self.assertEqual(1, len(references))
+        self.assertEqual(
+            "github.com/oresoftware/dd/libs/telemetry-go",
+            references[0].value,
+        )
+
+    def test_scanner_does_not_truncate_reverse_dns_package_prefix(self) -> None:
+        self.assertEqual([], scan_line("package com.oresoftware.ddnext.service"))
+        references = scan_line("package com.oresoftware.dd.runtime")
+        self.assertEqual(1, len(references))
+        self.assertEqual("com.oresoftware.dd.runtime", references[0].value)
+
+    def test_scanner_does_not_misclassify_longer_metadata_name(self) -> None:
+        references = scan_line('labels: {"dd/threadIdentifier": "abc"}')
+        self.assertEqual(1, len(references))
+        self.assertEqual("slash-namespace", references[0].system)
+        self.assertEqual("dd/threadIdentifier", references[0].value)
+
+    def test_scanner_does_not_truncate_dd_dev_metadata_name(self) -> None:
+        self.assertEqual([], scan_line('annotations: {"dd.dev/fiducia-key/child": "1"}'))
+        references = scan_line('annotations: {"dd.dev/fiducia-key": "1"}')
+        self.assertEqual(1, len(references))
+        self.assertEqual("dd.dev/fiducia-key", references[0].value)
+
+    def test_scanner_keeps_real_host_subpaths(self) -> None:
+        references = scan_line(
+            "install=/opt/dd/bin/bootstrap-cluster.sh "
+            "state=/var/lib/dd/nats "
+            "repo=/home/ec2-user/codes/dd/dd-next-1"
+        )
+        self.assertEqual(
+            [
+                "/opt/dd/bin/bootstrap-cluster.sh",
+                "/var/lib/dd/nats",
+                "/home/ec2-user/codes/dd/dd-next-1",
+            ],
+            [item.value for item in references],
+        )
+
 
 class RepositoryInventoryTests(unittest.TestCase):
     def setUp(self) -> None:
