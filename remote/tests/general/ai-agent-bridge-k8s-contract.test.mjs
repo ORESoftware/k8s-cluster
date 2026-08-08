@@ -17,7 +17,7 @@ const kindScriptPath = 'scripts/ci/test-ai-agent-bridge-kind.sh';
 const SOURCE_SHA = 'ec667946b1f8725b6baea8e67ae6a701d602dc04';
 const WORKFLOW_RUN = '31264194679';
 const IMAGE =
-  'ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:bbf105c29cdbcec23d87ed0b21cfd548c43982cf6573aaf34a2fb1f4dc69a305';
+  'ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:465803624fe98294620a644d6620ff8e179e7082a3142a4dd7bed68d1c9279d6';
 const SECRET_NAME = 'dd-ai-agent-bridge-secrets';
 const SECRET_KEY = 'inbox_token';
 
