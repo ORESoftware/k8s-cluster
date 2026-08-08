@@ -3,11 +3,11 @@
 # ORESoftware/ai-agent-bridge.rs:
 #   source commit: ec667946b1f8725b6baea8e67ae6a701d602dc04 (main, PR #106)
 #   image:         ghcr.io/oresoftware/fiducia-ai-agent-runner (public)
-#   digest:        sha256:90a919fb28fb2bc2795a0a3735ab08993d245c3eaa2afcd5f42be9b1a4982702
+#   digest:        sha256:e18c1ea7113f40e303379bd75bfd32b41ba00137a91e965ea67dca591e8105f4
 #   CI:            container-images.yml run 31264194679, attempt 1; digest from
 #                  the run's machine-readable image-digest evidence artifact.
 #                  Bridge and Slack-command pins for the same source are handled
-#                  in PR #1112.
+#                  in the same immutable release family.
 # replicas MUST stay 0 until DEN-391 provisions dd-ai-agent-runner-secrets
 # (provider keys) and the DEN-847 bounded activation canary authorizes exactly
 # one replica. The envFrom secret is intentionally required (not optional): a
@@ -25,7 +25,7 @@ metadata:
     dd.dev/source-repository: ORESoftware/ai-agent-bridge.rs
     dd.dev/source-revision: 'ec667946b1f8725b6baea8e67ae6a701d602dc04'
     dd.dev/release-workflow-run: '31264194679'
-    dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:e78d56c95485c4aaea33621268be35c83813a06962f50bb27010df5a0859867c'
+    dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:e18c1ea7113f40e303379bd75bfd32b41ba00137a91e965ea67dca591e8105f4'
   labels:
     app: dd-ai-agent-runner
 spec:
@@ -42,7 +42,7 @@ spec:
         dd.dev/source-repository: ORESoftware/ai-agent-bridge.rs
         dd.dev/source-revision: 'ec667946b1f8725b6baea8e67ae6a701d602dc04'
         dd.dev/release-workflow-run: '31264194679'
-        dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:e78d56c95485c4aaea33621268be35c83813a06962f50bb27010df5a0859867c'
+        dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:e18c1ea7113f40e303379bd75bfd32b41ba00137a91e965ea67dca591e8105f4'
         dd.dev/activation-mode: held-zero
       labels:
         app: dd-ai-agent-runner
@@ -55,7 +55,7 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: ai-agent-runner
-          image: ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:e78d56c95485c4aaea33621268be35c83813a06962f50bb27010df5a0859867c
+          image: ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:e18c1ea7113f40e303379bd75bfd32b41ba00137a91e965ea67dca591e8105f4
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
