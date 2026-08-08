@@ -13,6 +13,7 @@ metadata:
     dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:bbf105c29cdbcec23d87ed0b21cfd548c43982cf6573aaf34a2fb1f4dc69a305'
   labels:
     app: dd-ai-agent-bridge
+    app.kubernetes.io/component: bridge
 spec:
   replicas: 1
   minReadySeconds: 5
@@ -35,6 +36,7 @@ spec:
         dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:bbf105c29cdbcec23d87ed0b21cfd548c43982cf6573aaf34a2fb1f4dc69a305'
       labels:
         app: dd-ai-agent-bridge
+        app.kubernetes.io/component: bridge
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
