@@ -33,15 +33,64 @@ GOVERNANCE = (
     "tools/test_namespace_migration.py",
     "docs/namespace-migration.md",
     ".github/workflows/namespace-migration-contract.yml",
+    "artifacts/namespace-inventory.json",
+    "artifacts/den-2926-inventory-delta.json",
 )
 PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("metadata-key", re.compile(r"(?<![A-Za-z0-9_.-])dd/(?:threadId|userId)")),
-    ("metadata-key", re.compile(r"(?<![A-Za-z0-9_.-])dd\.dev/[A-Za-z0-9][A-Za-z0-9._~-]*")),
-    ("source-package", re.compile(r"(?<![A-Za-z0-9_.-])github\.com/oresoftware/dd(?:/[A-Za-z0-9._~:@%+,/-]+)*", re.I)),
-    ("source-package", re.compile(r"(?<![A-Za-z0-9_.-])com\.oresoftware\.dd(?:\.[A-Za-z0-9_]+)*")),
-    ("generated-package", re.compile(r"(?<![A-Za-z0-9_.-])(?:dd_pg_defs|dd\.pgdefs)(?:[A-Za-z0-9_.-]*)?")),
-    ("host-path", re.compile(r"(?:/opt/dd|/var/lib/dd|/srv/dd|/home/[A-Za-z0-9._-]+/codes/dd)(?:/[A-Za-z0-9._~:@%+,=-]+)*")),
-    ("slash-namespace", re.compile(r"(?<![A-Za-z0-9_.-])dd/[A-Za-z0-9][A-Za-z0-9._~:@%+,/=-]*")),
+    (
+        "metadata-key",
+        re.compile(
+            r"(?<![A-Za-z0-9_.-])dd/(?:threadId|userId)"
+            r"(?![A-Za-z0-9._~/-])"
+        ),
+    ),
+    (
+        "metadata-key",
+        re.compile(
+            r"(?<![A-Za-z0-9_.-])dd\.dev/[A-Za-z0-9][A-Za-z0-9._~-]*"
+            r"(?![A-Za-z0-9._~/-])"
+        ),
+    ),
+    (
+        "source-package",
+        re.compile(
+            r"(?<![A-Za-z0-9_.-])github\.com/oresoftware/dd"
+            r"(?:/[A-Za-z0-9._~:@%+,-]+)*"
+            r"(?![A-Za-z0-9._~:@%+=-])",
+            re.I,
+        ),
+    ),
+    (
+        "source-package",
+        re.compile(
+            r"(?<![A-Za-z0-9_.-])com\.oresoftware\.dd"
+            r"(?:\.[A-Za-z0-9_]+)*"
+            r"(?![A-Za-z0-9_.-])"
+        ),
+    ),
+    (
+        "generated-package",
+        re.compile(
+            r"(?<![A-Za-z0-9_.-])(?:dd_pg_defs|dd\.pgdefs)"
+            r"(?:[A-Za-z0-9_.-]*)?"
+        ),
+    ),
+    (
+        "host-path",
+        re.compile(
+            r"(?:/opt/dd|/var/lib/dd|/srv/dd|"
+            r"/home/[A-Za-z0-9._-]+/codes/dd)"
+            r"(?:/[A-Za-z0-9._~:@%+,=-]+)*"
+            r"(?![A-Za-z0-9._~@%+=-])"
+        ),
+    ),
+    (
+        "slash-namespace",
+        re.compile(
+            r"(?<![A-Za-z0-9_.-])dd/"
+            r"[A-Za-z0-9][A-Za-z0-9._~:@%+,/=-]*"
+        ),
+    ),
 )
 TRAILING = ".,;:)]}>'\"`"
 
@@ -534,7 +583,7 @@ def inventory_report(root: Path, *, registry_path: str, rules_path: str, include
     occurrences, scan_diagnostics = scan_repository(root, contract.rules, include_governance=include_governance) if contract.rules else ([], [])
     diagnostics += scan_diagnostics
     valid = not any(item.severity == "error" for item in diagnostics)
-    report = {"valid": valid, "generatedFrom": {"root": root.resolve().as_posix(), "registry": registry_path, "rules": rules_path}, "summary": inventory_summary(occurrences), "occurrences": [asdict(item) for item in occurrences], "diagnostics": [asdict(item) for item in diagnostics]}
+    report = {"valid": valid, "generatedFrom": {"root": ".", "registry": registry_path, "rules": rules_path}, "summary": inventory_summary(occurrences), "occurrences": [asdict(item) for item in occurrences], "diagnostics": [asdict(item) for item in diagnostics]}
     return report, 0 if valid else 2
 
 

@@ -209,6 +209,82 @@ class ClassificationTests(unittest.TestCase):
         references = scan_line("- secret: `dd/remote-dev/gha-clone-server-secrets`,")
         self.assertEqual("dd/remote-dev/gha-clone-server-secrets", references[0].value)
 
+    def test_scanner_does_not_truncate_hyphenated_host_siblings(self) -> None:
+        for line in (
+            "WORKDIR /opt/dd-akka-ws-server",
+            "cache=/var/lib/dd-cache",
+            "checkout=/srv/dd-next",
+            "checkout=/home/ec2-user/codes/dd-next-1",
+        ):
+            with self.subTest(line=line):
+                self.assertEqual([], scan_line(line))
+
+    def test_scanner_does_not_truncate_repository_owner_prefix(self) -> None:
+        self.assertEqual(
+            [],
+            scan_line("module github.com/oresoftware/dd-next-1/remote/service"),
+        )
+        references = scan_line(
+            "require github.com/oresoftware/dd/libs/telemetry-go v0.0.0"
+        )
+        self.assertEqual(1, len(references))
+        self.assertEqual(
+            "github.com/oresoftware/dd/libs/telemetry-go",
+            references[0].value,
+        )
+
+    def test_scanner_does_not_truncate_reverse_dns_package_prefix(self) -> None:
+        self.assertEqual([], scan_line("package com.oresoftware.ddnext.service"))
+        references = scan_line("package com.oresoftware.dd.runtime")
+        self.assertEqual(1, len(references))
+        self.assertEqual("com.oresoftware.dd.runtime", references[0].value)
+
+    def test_scanner_does_not_misclassify_longer_metadata_name(self) -> None:
+        references = scan_line('labels: {"dd/threadIdentifier": "abc"}')
+        self.assertEqual(1, len(references))
+        self.assertEqual("slash-namespace", references[0].system)
+        self.assertEqual("dd/threadIdentifier", references[0].value)
+
+    def test_scanner_does_not_truncate_dd_dev_metadata_name(self) -> None:
+        self.assertEqual([], scan_line('annotations: {"dd.dev/fiducia-key/child": "1"}'))
+        references = scan_line('annotations: {"dd.dev/fiducia-key": "1"}')
+        self.assertEqual(1, len(references))
+        self.assertEqual("dd.dev/fiducia-key", references[0].value)
+
+    def test_scanner_keeps_real_host_subpaths(self) -> None:
+        references = scan_line(
+            "install=/opt/dd/bin/bootstrap-cluster.sh "
+            "state=/var/lib/dd/nats "
+            "repo=/home/ec2-user/codes/dd/dd-next-1"
+        )
+        self.assertEqual(
+            [
+                "/opt/dd/bin/bootstrap-cluster.sh",
+                "/var/lib/dd/nats",
+                "/home/ec2-user/codes/dd/dd-next-1",
+            ],
+            [item.value for item in references],
+        )
+
+
+    def test_scanner_preserves_owner_prefix_before_template_segments(self) -> None:
+        host_line = 'path = "/home/ec2-user/codes/dd/thread-workspaces/{name}"'
+        host_references = scan_line(host_line)
+        self.assertEqual(1, len(host_references))
+        self.assertEqual("host-path", host_references[0].system)
+        self.assertEqual(
+            "/home/ec2-user/codes/dd/thread-workspaces",
+            host_references[0].value,
+        )
+
+        package_line = 'module = "github.com/oresoftware/dd/libs/{generated}"'
+        package_references = scan_line(package_line)
+        self.assertEqual(1, len(package_references))
+        self.assertEqual("source-package", package_references[0].system)
+        self.assertEqual(
+            "github.com/oresoftware/dd/libs",
+            package_references[0].value,
+        )
 
 class RepositoryInventoryTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -235,6 +311,21 @@ class RepositoryInventoryTests(unittest.TestCase):
 
     def track_all(self) -> None:
         git(self.root, "add", ".")
+
+    def test_generated_inventory_artifacts_are_governance(self) -> None:
+        self.write(
+            "artifacts/namespace-inventory.json",
+            '{"reference": "dd/should-not-rescan"}\n',
+        )
+        self.write(
+            "artifacts/den-2926-inventory-delta.json",
+            '{"reference": "/opt/dd-should-not-rescan"}\n',
+        )
+        self.track_all()
+        contract = load_contract(self.root)
+        occurrences, diagnostics = scan_repository(self.root, contract.rules)
+        self.assertEqual([], diagnostics)
+        self.assertEqual([], occurrences)
 
     def test_inventory_separates_active_documentation_and_test_scope(self) -> None:
         self.write("remote/app.yaml", "secret: dd/remote-dev/gha-clone-server-secrets\n")
@@ -296,6 +387,7 @@ class RepositoryInventoryTests(unittest.TestCase):
             include_governance=False,
         )
         self.assertEqual(0, status)
+        self.assertEqual(".", report["generatedFrom"]["root"])
         occurrence = report["occurrences"][0]
         self.assertEqual("ores", occurrence["owner"])
         self.assertEqual("ores/dev/ci/clone-server-secrets", occurrence["target_preview"])
