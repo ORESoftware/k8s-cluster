@@ -19,10 +19,11 @@ metadata:
     dd.dev/linear-draft-status: Backlog
     dd.dev/linear-pending-status: Todo
     dd.dev/coordinator-task-type: nightly_org_maintenance
+    dd.dev/activation-state: suspended-pending-trusted-finalizer
 spec:
   schedule: "0 1 * * *"
   timeZone: America/Chicago
-  suspend: false
+  suspend: true
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 3
@@ -50,6 +51,7 @@ spec:
             dd.dev/linear-draft-status: Backlog
             dd.dev/linear-pending-status: Todo
             dd.dev/coordinator-task-type: nightly_org_maintenance
+            dd.dev/activation-state: suspended-pending-trusted-finalizer
         spec:
           automountServiceAccountToken: false
           enableServiceLinks: false
