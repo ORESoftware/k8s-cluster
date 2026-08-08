@@ -5,15 +5,15 @@ GitHub returns HTTP 409 (`Git Repository is empty.`) for a newly created
 repository before its first ref exists. The reviewed publisher treated that as
 an unexpected API failure and stopped after creating the first staging repo.
 
-This wrapper changes only two semantics:
+The failed run left one known private, size-zero repository in StreemPilot-test.
+The supplied publication credential can create and push repositories but does
+not have GitHub's separate delete-repository permission. Deletion is neither
+needed nor desirable: this wrapper permits only that recorded empty staging
+repository to receive its first exact sealed `main` history in place.
 
-1. that exact 409 is interpreted as "main ref absent" while every other API
-   error continues to fail closed; and
-2. the one empty StreemPilot-test repository created by failed workflow run
-   31241585746 may be deleted/recreated, but only if its immutable repository
-   identity and empty/private metadata still exactly match the recorded facts.
-
-No production repository is recoverable through this wrapper.
+Every other existing empty repository remains fail-closed, every nonempty
+history must exactly match its sealed SHA, and no production repository has a
+recovery exception.
 """
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ sys.modules[SPEC.name] = BASE
 SPEC.loader.exec_module(BASE)
 
 ORIGINAL_MAIN_REF = BASE.main_ref
+ORIGINAL_EXISTING_REPOSITORY = BASE.existing_repository
 
 RECOVERABLE_EMPTY_STAGE = {
     "full_name": "StreemPilot-test/streempilot-compositor.rs",
@@ -40,6 +41,8 @@ RECOVERABLE_EMPTY_STAGE = {
     "created_at": "2026-08-08T05:25:37Z",
     "expected_sha": "ea7c1c8042122b4e4a7689aee026113fb607421d",
 }
+
+_RECOVERABLE_EMPTY_APPROVED = False
 
 
 def fail(message: str) -> None:
@@ -89,15 +92,18 @@ def _validate_recovery_metadata(payload: object) -> dict[str, object]:
     return payload
 
 
-def recover_failed_empty_stage_repository() -> str:
-    """Delete only the exact empty test repo left by failed run 31241585746."""
+def prepare_failed_empty_stage_repository() -> str:
+    """Approve in-place initialization only for the exact failed-run test repo."""
+    global _RECOVERABLE_EMPTY_APPROVED
+    _RECOVERABLE_EMPTY_APPROVED = False
+
     full_name = str(RECOVERABLE_EMPTY_STAGE["full_name"])
     status, payload = BASE.api("GET", f"/repos/{full_name}")
     if status == 404:
         return "absent"
     if status != 200:
         fail(f"unable to inspect recoverable test repository: HTTP {status}")
-    _validate_recovery_metadata(payload)
+    metadata = _validate_recovery_metadata(payload)
 
     actual = safe_main_ref(full_name)
     expected_sha = str(RECOVERABLE_EMPTY_STAGE["expected_sha"])
@@ -105,21 +111,51 @@ def recover_failed_empty_stage_repository() -> str:
         return "already-exact"
     if actual is not None:
         fail(
-            "refusing to delete non-empty recoverable test repository: "
+            "refusing to initialize non-empty recoverable test repository: "
             f"{actual} != {expected_sha}"
         )
 
-    status, _ = BASE.api("DELETE", f"/repos/{full_name}")
-    if status != 204:
-        fail(f"failed to delete exact failed-run test repository: HTTP {status}")
-    status, _ = BASE.api("GET", f"/repos/{full_name}")
-    if status != 404:
-        fail("deleted failed-run test repository is still visible")
+    _RECOVERABLE_EMPTY_APPROVED = True
     print(
-        "RECOVERED_DEN896_EMPTY_TEST_REPOSITORY "
-        f"{full_name} id={RECOVERABLE_EMPTY_STAGE['repository_id']}"
+        "APPROVED_DEN896_EMPTY_TEST_REPOSITORY_INITIALIZATION "
+        f"{metadata['full_name']} id={metadata['id']}"
     )
-    return "deleted"
+    return "approved-empty"
+
+
+def recovery_existing_repository(
+    full_name: str,
+    expected_sha: str,
+) -> dict[str, object] | None:
+    """Treat exactly one prevalidated empty staging repo as ready for first push."""
+    recoverable_name = str(RECOVERABLE_EMPTY_STAGE["full_name"])
+    recoverable_sha = str(RECOVERABLE_EMPTY_STAGE["expected_sha"])
+    if (
+        full_name.casefold() != recoverable_name.casefold()
+        or expected_sha != recoverable_sha
+    ):
+        return ORIGINAL_EXISTING_REPOSITORY(full_name, expected_sha)
+
+    if not _RECOVERABLE_EMPTY_APPROVED:
+        return ORIGINAL_EXISTING_REPOSITORY(full_name, expected_sha)
+
+    status, payload = BASE.api("GET", f"/repos/{full_name}")
+    if status != 200:
+        fail(f"approved empty test repository disappeared: HTTP {status}")
+    metadata = _validate_recovery_metadata(payload)
+    actual = safe_main_ref(full_name)
+    if actual == expected_sha:
+        return metadata
+    if actual is not None:
+        fail(
+            "approved empty test repository changed before initialization: "
+            f"{actual} != {expected_sha}"
+        )
+    # Returning None intentionally enters the reviewed create/reconcile path.
+    # ensure_private_repository re-reads the exact identity, returns the already
+    # private repository without mutation, then push_exact_main installs its
+    # first sealed history. No repository deletion is required.
+    return None
 
 
 def parse_args() -> argparse.Namespace:
@@ -133,14 +169,12 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     if args.target == "stage":
-        recover_failed_empty_stage_repository()
+        prepare_failed_empty_stage_repository()
     elif args.stage_evidence is None:
         fail("production promotion requires --stage-evidence")
 
-    # Patch the reviewed publisher only after the one bounded recovery check.
-    # Existing empty repositories still fail in BASE.existing_repository because
-    # `None != expected sealed SHA`; only freshly created repos reach push_exact_main.
     BASE.main_ref = safe_main_ref
+    BASE.existing_repository = recovery_existing_repository
     BASE.publish(
         args.target,
         args.evidence_out.resolve(),
