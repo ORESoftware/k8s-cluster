@@ -56,8 +56,8 @@ jobs:
               for line in result.stdout.splitlines()
               if line and pathlib.Path(line) not in excluded
           ]
-          if len(paths) != 6:
-              raise SystemExit(f'expected exactly six non-workflow pin files, found {paths!r}')
+          if len(paths) != 4:
+              raise SystemExit(f'expected exactly four non-workflow pin files, found {paths!r}')
           for path in paths:
               text = path.read_text(encoding='utf-8')
               updated = text.replace(old, new)
@@ -88,12 +88,10 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
             docs/des-browser-test-fleet.md \
-            remote/deployments/ci-profile-runner-rs/readme.md \
-            remote/deployments/ci-profile-runner-rs/src/main.rs \
             remote/tests/general/des-indie-browser-execution-contract.test.mjs \
             remote/tests/general/gha-indie-worker-yaml.test.ts \
             scripts/ops/run_des_indie_browser_workflows.sh
           git diff --cached --check
-          test "$(git diff --cached --name-only | wc -l)" -eq 6
+          test "$(git diff --cached --name-only | wc -l)" -eq 4
           git commit -m 'chore(gha-indie): pin extractor-backed Puppeteer suite'
           git push origin HEAD:agent/des-puppeteer-extractor-pin
