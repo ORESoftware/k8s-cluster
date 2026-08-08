@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - ".gitmodules"
+      - "remote/deployments/**"
       - "catalog/gitops/**"
       - "docs/gitops-application-fleet.md"
       - "remote/argocd/application-sets/gitops-composition-catalog-pilot.applicationset.yaml"
@@ -15,6 +16,7 @@ on:
     branches: [dev]
     paths:
       - ".gitmodules"
+      - "remote/deployments/**"
       - "catalog/gitops/**"
       - "docs/gitops-application-fleet.md"
       - "remote/argocd/application-sets/gitops-composition-catalog-pilot.applicationset.yaml"
