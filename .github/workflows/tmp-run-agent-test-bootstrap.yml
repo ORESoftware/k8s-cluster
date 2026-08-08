@@ -34,5 +34,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash -n scripts/ops/tmp-bootstrap-agent-test-orgs.sh
-          exec bash scripts/ops/tmp-bootstrap-agent-test-orgs.sh
+          source_script=scripts/ops/tmp-bootstrap-agent-test-orgs.sh
+          runtime_script="$RUNNER_TEMP/bootstrap-agent-test-orgs.sh"
+          bash -n "$source_script"
+          cp "$source_script" "$runtime_script"
+          python3 - "$runtime_script" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8")
+          replacements = {
+              'for organization in ("agent-pontifex-test", "fiducia-cloud-test"):\n':
+                  'for organization in ("fiducia-cloud-test",):\n',
+              '"organization": "agent-pontifex-test",\n        "name": "agent-conformance",':
+                  '"organization": "fiducia-cloud-test",\n        "name": "agent-pontifex-conformance",',
+              'Created and verified the independent test repositories in \\`agent-pontifex-test\\` and \\`fiducia-cloud-test\\`.':
+                  'Created and verified both independent conformance repositories under \\`fiducia-cloud-test\\` because \\`agent-pontifex-test\\` does not yet exist.',
+          }
+          for old, new in replacements.items():
+              if text.count(old) != 1:
+                  raise SystemExit(f"expected exactly one bootstrap replacement: {old!r}")
+              text = text.replace(old, new, 1)
+          path.write_text(text, encoding="utf-8")
+          PY
+          bash -n "$runtime_script"
+          exec bash "$runtime_script"
