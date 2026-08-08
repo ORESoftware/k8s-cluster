@@ -48,9 +48,15 @@ The focused workflow runs on Dart 3.4.0 and 3.12.2 with:
 A one-run formatter publisher was used only because direct Git transport was
 unavailable in the execution environment. It was constrained to the three
 reviewed formatter paths, committed canonical Dart 3.12.2 output, and was
-removed immediately afterward. The current branch contains only the permanent
-`contents: read`, non-persistent workflow; readiness requires validation on a
-head after that removal.
+removed immediately afterward.
+
+The first real analyzer pass then identified one nullable throw and two closure
+wrappers. A second one-run repair was constrained to `lib/src/worker.dart`; it
+had to pass canonical formatting, the fatal analyzer, and the complete client,
+fixture, worker, and fencing harness before publishing. That workflow was also
+removed immediately. The current branch contains only the permanent
+`contents: read`, non-persistent workflow; readiness requires a clean-head
+matrix after both removals.
 
 ## Organization project record
 
