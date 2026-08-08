@@ -30,6 +30,30 @@ class RepoCheckScopeTests(unittest.TestCase):
         self.assertTrue(result["governance_only"])
         self.assertFalse(result["private_contracts_required"])
 
+    def test_current_relationship_publisher_is_governance_only(self):
+        result = MODULE.classify(
+            "pull_request",
+            [
+                ".github/workflows/ops-current-org-dotgithub-relationships-ephemeral-publish.yml",
+                "docs/operations/org-dotgithub-relationship-publication.md",
+                "scripts/ci/classify_repo_check_scope.py",
+                "scripts/ci/test_classify_repo_check_scope.py",
+                "scripts/ops/org_repository_relationships_graph.py",
+                "scripts/ops/org_repository_relationships_model.py",
+                "scripts/ops/org_repository_relationships_render.py",
+                "scripts/ops/org_repository_relationships_roles.py",
+                "scripts/ops/publish_current_org_repository_relationships.py",
+                "scripts/ops/publish_org_repository_relationships.py",
+                "tests/ops/test_publish_current_org_repository_relationships.py",
+            ],
+        )
+        self.assertTrue(result["governance_only"])
+        self.assertFalse(result["private_contracts_required"])
+        self.assertEqual(
+            "governance_only_no_private_gitlinks",
+            result["reason"],
+        )
+
     def test_scope_control_change_requires_a_governance_payload(self):
         result = MODULE.classify(
             "pull_request",

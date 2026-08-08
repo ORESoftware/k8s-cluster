@@ -16,12 +16,20 @@ CONTROL_FILES = {
 }
 
 GOVERNANCE_FILES = {
+    ".github/workflows/ops-current-org-dotgithub-relationships-ephemeral-publish.yml",
     ".github/workflows/ops-sync-org-project-docs-rate-aware-once.yml",
     ".github/workflows/test-org-project-docs-evidence.yml",
+    "docs/operations/org-dotgithub-relationship-publication.md",
     "docs/org-project-delivery-ledger-2026-08-05.md",
     "ops/portfolio/github-linear-project-registry.tsv",
     "scripts/ops/build_org_project_docs_retry_registry.py",
+    "scripts/ops/org_repository_relationships_graph.py",
+    "scripts/ops/org_repository_relationships_model.py",
+    "scripts/ops/org_repository_relationships_render.py",
+    "scripts/ops/org_repository_relationships_roles.py",
     "scripts/ops/prepare_org_project_docs_reconciler.py",
+    "scripts/ops/publish_current_org_repository_relationships.py",
+    "scripts/ops/publish_org_repository_relationships.py",
     "scripts/ops/sync_org_project_docs.sh",
     "scripts/ops/sync_org_project_docs_rate_aware.py",
     "scripts/ops/test_build_org_project_docs_retry_registry.py",
@@ -31,6 +39,7 @@ GOVERNANCE_FILES = {
     "scripts/ops/validate_org_project_docs_evidence.py",
     "scripts/ops/tests/test_org_project_delivery_ledger.py",
     "scripts/ops/tests/test_validate_org_project_docs_evidence.py",
+    "tests/ops/test_publish_current_org_repository_relationships.py",
 }
 
 GOVERNANCE_PREFIXES = (
