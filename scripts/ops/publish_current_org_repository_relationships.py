@@ -3,10 +3,12 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import re
 import sys
+from typing import Any
 
 HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
@@ -38,6 +40,81 @@ governance.ORGANIZATIONS = ORGANIZATIONS
 import publish_org_repository_relationships as publisher  # noqa: E402
 
 publisher.ORGANIZATIONS = ORGANIZATIONS
+_ORIGINAL_BUILD_PLAN = publisher.build_plan
+
+
+def is_private(repository: dict[str, Any]) -> bool:
+    return bool(
+        repository.get("private")
+        or repository.get("visibility") == "private"
+    )
+
+
+def private_reference_tokens(
+    organization: str,
+    private_names: set[str],
+) -> set[str]:
+    """Return exact generated-registry tokens that would reveal private identities."""
+    tokens: set[str] = set()
+    for name in private_names:
+        if not name:
+            continue
+        full_name = f"{organization}/{name}"
+        quoted_name = json.dumps(name)
+        quoted_full_name = json.dumps(full_name)
+        tokens.update(
+            {
+                f'"name": {quoted_name}',
+                f'"full_name": {quoted_full_name}',
+                f'"from": {quoted_full_name}',
+                f'"to": {quoted_full_name}',
+                f'[`{name}`](https://github.com/{full_name})',
+                f'`{full_name}`',
+            }
+        )
+    return tokens
+
+
+def build_plan_with_exact_private_references(
+    api: Any,
+    organization: str,
+    dotgithub: dict[str, Any],
+    inventory: list[dict[str, Any]],
+) -> tuple[str, dict[str, tuple[str, Any]], set[str], dict[str, Any]]:
+    """Build a plan without treating incidental substrings as private-name leaks."""
+    private_names = {
+        str(repository.get("name", ""))
+        for repository in inventory
+        if is_private(repository)
+    }
+    masked_inventory: list[dict[str, Any]] = []
+    for index, repository in enumerate(inventory):
+        masked = dict(repository)
+        if is_private(repository):
+            masked_name = f"__withheld_private_repository_{index}__"
+            masked["name"] = masked_name
+            masked["full_name"] = f"{organization}/{masked_name}"
+        masked_inventory.append(masked)
+
+    branch, files, _, result = _ORIGINAL_BUILD_PLAN(
+        api,
+        organization,
+        dotgithub,
+        masked_inventory,
+    )
+    tokens = private_reference_tokens(organization, private_names)
+    if any(
+        token in content
+        for content, _ in files.values()
+        for token in tokens
+    ):
+        raise RuntimeError(
+            f"privacy preflight failed for {organization}/.github"
+        )
+    return branch, files, tokens, result
+
+
+publisher.build_plan = build_plan_with_exact_private_references
 
 
 def configure_expected_owner_login(value: str | None = None) -> str:
