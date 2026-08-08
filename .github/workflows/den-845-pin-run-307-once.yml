@@ -131,7 +131,7 @@ jobs:
           node --test remote/tests/general/ai-agent-bridge-public-ingress-contract.test.mjs
           git diff --check
 
-      - name: Commit the exact pin set once
+      - name: Stage the exact pin set
         shell: bash
         run: |
           set -euo pipefail
@@ -152,10 +152,28 @@ jobs:
           git status --short
           git diff --cached --stat
           if git diff --cached --quiet; then
-            echo 'release pins already current'
-            exit 0
+            echo '::error::release-pin patch unexpectedly contains no staged changes'
+            exit 1
           fi
+
+      - name: Create the exact release-pin commit
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'deploy(DEN-845): pin trusted bridge run 307 digests'
-          git push origin HEAD:agent/den-845-bridge-digests-run-307
+          git config --local commit.gpgsign false
+          git -c commit.gpgsign=false commit -m 'deploy(DEN-845): pin trusted bridge run 307 digests'
+          commit_sha="$(git rev-parse HEAD)"
+          echo "sha=${commit_sha}" >> "${GITHUB_OUTPUT}"
+          echo "created ${commit_sha}"
+
+      - name: Push the exact release-pin commit
+        env:
+          COMMIT_SHA: ${{ steps.commit.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${COMMIT_SHA}"
+          git push origin "${COMMIT_SHA}:refs/heads/agent/den-845-bridge-digests-run-307"
