@@ -56,13 +56,16 @@ jobs:
           if first.count(old) != 1:
               raise SystemExit('expected workflow/job adversarial assertion block exactly once')
           first = first.replace(old, new)
-          first, removed = re.subn(
-              r'(?m)^\s*"job-level permissions",\n',
-              '',
-              first,
-          )
-          if removed != 1:
-              raise SystemExit(f'expected one stale job-level permissions rejection, removed {removed}')
+          for stale_reason in ('job-level permissions', 'job-level timeout-minutes'):
+              first, removed = re.subn(
+                  rf'(?m)^\s*"{re.escape(stale_reason)}",\n',
+                  '',
+                  first,
+              )
+              if removed != 1:
+                  raise SystemExit(
+                      f'expected one stale {stale_reason} rejection, removed {removed}'
+                  )
           source = source[:first_start] + first + source[first_end:]
 
           second_start = source.index('fn unsupported_step_semantics_are_never_silently_ignored()')
