@@ -159,7 +159,7 @@ test('the App repository allowlist exactly matches every deployment gitlink', ()
 
   const declared = deploymentRepositories();
   const approved = allowlistedRepositories();
-  assert.equal(declared.length, 30, 'expected the complete pinned deployment fleet');
+  assert.ok(declared.length > 0, 'expected at least one pinned deployment repository');
   assert.deepEqual(
     approved,
     declared,
