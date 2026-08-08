@@ -115,11 +115,35 @@ test('GitOps binds each reviewed repository to only its fixed profiles', () => {
       profiles: ['rust-verify'],
     },
   ]);
-  assert.doesNotMatch(patch, /msgint-connectors[^\n]*node-verify/);
-  assert.doesNotMatch(patch, /msgint-connectors[^\n]*(playwright|python-verify|rust-verify)/);
-  assert.doesNotMatch(patch, /3fa-interfaces[^\n]*"rust-verify"/);
-  assert.doesNotMatch(patch, /3fa-interfaces[^\n]*(playwright|python-verify|node-verify)/);
-  assert.doesNotMatch(patch, /zed-cli[^\n]*(node-verify|playwright|python-verify|flutter-verify)/);
+
+  const byRepository = new Map(
+    rules.map(({ repository, profiles: allowed }) => [repository, allowed]),
+  );
+  for (const denied of ['node-verify', 'playwright', 'python-verify', 'rust-verify']) {
+    assert.equal(
+      byRepository
+        .get('https://github.com/messaging-intel/msgint-connectors.git')
+        .includes(denied),
+      false,
+      `Messaging Intel unexpectedly admits ${denied}`,
+    );
+  }
+  for (const denied of ['rust-verify', 'playwright', 'python-verify', 'node-verify']) {
+    assert.equal(
+      byRepository
+        .get('https://github.com/3FA-app/3fa-interfaces.git')
+        .includes(denied),
+      false,
+      `3FA interfaces unexpectedly admits ${denied}`,
+    );
+  }
+  for (const denied of ['node-verify', 'playwright', 'python-verify', 'flutter-verify']) {
+    assert.equal(
+      byRepository.get('https://github.com/zed-pkg/zed-cli.git').includes(denied),
+      false,
+      `Zed CLI unexpectedly admits ${denied}`,
+    );
+  }
   assert.doesNotMatch(patch, /messaging-intel\/\*|3FA-app\/\*|zed-pkg\/\*/);
 });
 
