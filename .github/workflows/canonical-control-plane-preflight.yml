@@ -97,6 +97,14 @@ jobs:
           echo "CANONICAL_PRIVATE_KEY=$private_key" >> "$GITHUB_ENV"
           echo "CANONICAL_CONTROL_PLANE_HANDSHAKE nonce=$CANONICAL_NONCE path=$CIPHERTEXT_PATH public_key_b64=$public_key_b64"
 
+      - name: Upload the public handoff key
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: canonical-control-plane-public-key-${{ github.run_id }}
+          path: ${{ runner.temp }}/canonical-control-plane.public.pem
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Receive the encrypted run-scoped credential bundle
         shell: bash
         env:
