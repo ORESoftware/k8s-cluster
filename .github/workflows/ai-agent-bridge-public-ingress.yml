@@ -37,9 +37,10 @@ jobs:
       BRIDGE_SOURCE_REVISION: c3e54e6cd0c6d56e3d2ed32902228d974e550a3f
       AI_BRIDGE_PUBLIC_EVIDENCE_PATH: ${{ runner.temp }}/ai-agent-bridge-public-ingress.json
     steps:
-      - name: Checkout without credentials or private gitlinks
+      - name: Checkout the measured dev revision without credentials or private gitlinks
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event_name == 'push' && github.sha || 'dev' }}
           fetch-depth: 1
           persist-credentials: false
           show-progress: false
