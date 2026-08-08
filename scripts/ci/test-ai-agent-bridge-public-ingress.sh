@@ -297,7 +297,7 @@ payload = {
     "host": host,
     "source_contract": {
         "repository": "ORESoftware/ai-agent-bridge.rs",
-        "revision": "c3e54e6cd0c6d56e3d2ed32902228d974e550a3f",
+        "revision": "ec667946b1f8725b6baea8e67ae6a701d602dc04",
         "command_and_interaction_unsigned_status": 401,
         "exact_command_get_status": 405,
         "unknown_route_status": 404,
