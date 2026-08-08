@@ -1,0 +1,170 @@
+name: DEN-845 create exact workflow commit once
+
+on:
+  push:
+    branches:
+      - agent/den-845-bridge-digests-run-307
+    paths:
+      - .github/workflows/den-845-create-workflow-commit-once.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  create-commit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the release-pin branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-845-bridge-digests-run-307
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Reproduce and hash the exact reviewed workflow files
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              'c3e54e6cd0c6d56e3d2ed32902228d974e550a3f': 'ec667946b1f8725b6baea8e67ae6a701d602dc04',
+              '31235992249': '31264194679',
+              'ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:6b7e447a9989fa127ad4b0b3edc51fcd37a6b94a96bcf61b42c22d2641bf0ea8': 'ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:bbf105c29cdbcec23d87ed0b21cfd548c43982cf6573aaf34a2fb1f4dc69a305',
+              'ghcr.io/oresoftware/fiducia-slack-command@sha256:01f80fbd4d3ba5226b4abdb7f5e603538924edb48e79e72b0af43246624900cb': 'ghcr.io/oresoftware/fiducia-slack-command@sha256:b726025e01652b6e5d89814a928b23bdd5dc2fcf3e461831e82c3c785fa5c64d',
+              'Bridge Deployment digest pin is handled\n#                  separately in PR #1112.': 'Bridge and Slack command pins are advanced\n#                  by the same reviewed DEN-845 release-pin change.',
+              'Bridge and Slack-command pins for the same source are handled\n#                  in PR #1112.': 'Bridge and Slack-command pins for the same source are advanced\n#                  by the same reviewed DEN-845 release-pin change.',
+          }
+
+          for relative in (
+              '.github/workflows/slack-command-gitops.yml',
+              '.github/workflows/ai-agent-bridge-public-ingress.yml',
+          ):
+              path = Path(relative)
+              original = path.read_text(encoding='utf-8')
+              updated = original
+              for old, new in replacements.items():
+                  updated = updated.replace(old, new)
+              if updated == original:
+                  raise SystemExit(f'expected release-pin replacements were absent in {relative}')
+              path.write_text(updated, encoding='utf-8')
+          PY
+
+          test "$(git hash-object .github/workflows/slack-command-gitops.yml)" = a955439523b396bc59b7e1f1a9b7af01c11b3088
+          test "$(git hash-object .github/workflows/ai-agent-bridge-public-ingress.yml)" = f2a51af512cc6a501d330402098380454ecc7e8e
+          git diff --check -- \
+            .github/workflows/slack-command-gitops.yml \
+            .github/workflows/ai-agent-bridge-public-ingress.yml
+
+      - name: Create the exact Git objects without advancing a ref
+        id: objects
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          parent="$(git rev-parse HEAD)"
+          base_tree="$(git show -s --format=%T HEAD)"
+          headers=(
+            --header "Authorization: Bearer ${GITHUB_TOKEN}"
+            --header "Accept: application/vnd.github+json"
+            --header "X-GitHub-Api-Version: 2022-11-28"
+          )
+
+          create_blob() {
+            local file="$1"
+            local payload
+            payload="$(mktemp)"
+            jq -n --arg content "$(base64 -w0 "${file}")" \
+              '{content: $content, encoding: "base64"}' >"${payload}"
+            curl --fail-with-body --silent --show-error \
+              "${headers[@]}" \
+              --request POST \
+              --data @"${payload}" \
+              "${api}/git/blobs" | jq -er '.sha'
+          }
+
+          slack_blob="$(create_blob .github/workflows/slack-command-gitops.yml)"
+          ingress_blob="$(create_blob .github/workflows/ai-agent-bridge-public-ingress.yml)"
+          test "${slack_blob}" = a955439523b396bc59b7e1f1a9b7af01c11b3088
+          test "${ingress_blob}" = f2a51af512cc6a501d330402098380454ecc7e8e
+
+          tree_payload="$(mktemp)"
+          jq -n \
+            --arg base_tree "${base_tree}" \
+            --arg slack_blob "${slack_blob}" \
+            --arg ingress_blob "${ingress_blob}" \
+            '{
+              base_tree: $base_tree,
+              tree: [
+                {path: ".github/workflows/slack-command-gitops.yml", mode: "100644", type: "blob", sha: $slack_blob},
+                {path: ".github/workflows/ai-agent-bridge-public-ingress.yml", mode: "100644", type: "blob", sha: $ingress_blob},
+                {path: ".github/workflows/den-845-pin-run-307-once.yml", mode: "100644", type: "blob", sha: null},
+                {path: ".github/workflows/den-845-publish-validated-tree-once.yml", mode: "100644", type: "blob", sha: null},
+                {path: ".github/workflows/den-845-push-nonworkflow-once.yml", mode: "100644", type: "blob", sha: null},
+                {path: ".github/workflows/den-845-create-workflow-commit-once.yml", mode: "100644", type: "blob", sha: null}
+              ]
+            }' >"${tree_payload}"
+          tree_sha="$(curl --fail-with-body --silent --show-error \
+            "${headers[@]}" \
+            --request POST \
+            --data @"${tree_payload}" \
+            "${api}/git/trees" | jq -er '.sha')"
+
+          commit_payload="$(mktemp)"
+          jq -n \
+            --arg message 'deploy(DEN-845): pin trusted bridge run 307 workflow contracts' \
+            --arg tree "${tree_sha}" \
+            --arg parent "${parent}" \
+            '{message: $message, tree: $tree, parents: [$parent]}' >"${commit_payload}"
+          commit_sha="$(curl --fail-with-body --silent --show-error \
+            "${headers[@]}" \
+            --request POST \
+            --data @"${commit_payload}" \
+            "${api}/git/commits" | jq -er '.sha')"
+
+          curl --fail-with-body --silent --show-error \
+            "${headers[@]}" \
+            "${api}/git/commits/${commit_sha}" | \
+            jq -e --arg tree "${tree_sha}" --arg parent "${parent}" \
+              '.tree.sha == $tree and .parents[0].sha == $parent' >/dev/null
+
+          evidence_dir="${RUNNER_TEMP}/den-845-workflow-commit"
+          mkdir -p "${evidence_dir}"
+          jq -n \
+            --arg commit "${commit_sha}" \
+            --arg parent "${parent}" \
+            --arg tree "${tree_sha}" \
+            --arg slack_blob "${slack_blob}" \
+            --arg ingress_blob "${ingress_blob}" \
+            '{
+              commit: $commit,
+              parent: $parent,
+              tree: $tree,
+              slack_workflow_blob: $slack_blob,
+              public_ingress_workflow_blob: $ingress_blob,
+              temporary_helpers_deleted: true,
+              ref_advanced: false
+            }' >"${evidence_dir}/commit.json"
+          echo "commit_sha=${commit_sha}" >>"${GITHUB_OUTPUT}"
+          echo "created unreferenced commit ${commit_sha}"
+
+      - name: Upload exact commit evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: den-845-workflow-commit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/den-845-workflow-commit/commit.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Record the unreferenced commit for app publication
+        run: |
+          {
+            echo '### DEN-845 exact workflow commit'
+            echo
+            echo "Created unreferenced commit: \`${{ steps.objects.outputs.commit_sha }}\`"
+            echo
+            echo 'The workflow did not update any Git ref. The connected GitHub app must verify and advance the release-pin branch.'
+          } >>"${GITHUB_STEP_SUMMARY}"
