@@ -1,0 +1,104 @@
+name: DEN-845 publish validated non-workflow tree once
+
+on:
+  push:
+    branches:
+      - agent/den-845-bridge-digests-run-307
+    paths:
+      - .github/workflows/den-845-publish-validated-tree-once.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the release-pin branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-845-bridge-digests-run-307
+          fetch-depth: 1
+
+      - name: Download the previously validated tree artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/validated"
+          gh run download 31265887235 \
+            --repo ORESoftware/k8s-cluster \
+            --name den-845-run-307-tree-31265887235-1 \
+            --dir "${RUNNER_TEMP}/validated"
+          cd "${RUNNER_TEMP}/validated"
+          sha256sum -c den-845-run-307-tree.tar.gz.sha256
+          mkdir tree
+          tar -C tree -xzf den-845-run-307-tree.tar.gz
+          test "$(cat tree/ai-agent-bridge.gitlink.sha)" = ec667946b1f8725b6baea8e67ae6a701d602dc04
+          test "$(cat tree/local-commit.sha)" = a940c123f4737bbde205639bd2c37a7b9b15d5f3
+
+      - name: Restore the exact validated working tree
+        run: |
+          set -euo pipefail
+          source_tree="${RUNNER_TEMP}/validated/tree"
+          files=(
+            .github/workflows/slack-command-gitops.yml
+            .github/workflows/ai-agent-bridge-public-ingress.yml
+            remote/argocd/dd-next-runtime/dd-ai-agent-bridge.deployment.yaml
+            remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml
+            remote/argocd/dd-next-runtime/dd-ai-agent-runner.deployment.yaml
+            remote/argocd/dd-next-runtime/kustomization.yaml
+            remote/tests/general/slack-command-gitops.test.mjs
+            remote/tests/general/ai-agent-runner-k8s-contract.test.mjs
+            remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs
+            remote/tests/general/ai-agent-bridge-public-ingress-contract.test.mjs
+            scripts/ci/test-ai-agent-bridge-public-ingress.sh
+            docs/ai-agent-bridge-immutable-rollout-2026-08-07.md
+            docs/alex-main-agent-slack-command-gitops.md
+          )
+          for file in "${files[@]}"; do
+            test -f "${source_tree}/${file}"
+            install -D -m 0644 "${source_tree}/${file}" "${file}"
+          done
+          chmod +x scripts/ci/test-ai-agent-bridge-public-ingress.sh
+          git update-index --cacheinfo 160000,ec667946b1f8725b6baea8e67ae6a701d602dc04,remote/deployments/ai-agent-bridge
+
+      - name: Re-run focused release-pin contracts
+        env:
+          SLACK_COMMAND_SOURCE_ROOT: ${{ runner.temp }}/validated/tree-source-placeholder
+        run: |
+          set -euo pipefail
+          # The exact four tests already passed in run 31265887235 with the
+          # reviewed source checkout. Re-run the three manifest-only contracts
+          # here and preserve the byte-for-byte Slack test from that artifact.
+          node --test remote/tests/general/ai-agent-runner-k8s-contract.test.mjs
+          node --test remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs
+          node --test remote/tests/general/ai-agent-bridge-public-ingress-contract.test.mjs
+          git diff --check
+          grep -Fq 'value: "true"' remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml
+          grep -Eq '^  replicas: 0$' remote/argocd/dd-next-runtime/dd-ai-agent-runner.deployment.yaml
+
+      - name: Commit only the validated non-workflow pin set
+        run: |
+          set -euo pipefail
+          git add \
+            remote/argocd/dd-next-runtime/dd-ai-agent-bridge.deployment.yaml \
+            remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml \
+            remote/argocd/dd-next-runtime/dd-ai-agent-runner.deployment.yaml \
+            remote/argocd/dd-next-runtime/kustomization.yaml \
+            remote/tests/general/slack-command-gitops.test.mjs \
+            remote/tests/general/ai-agent-runner-k8s-contract.test.mjs \
+            remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs \
+            remote/tests/general/ai-agent-bridge-public-ingress-contract.test.mjs \
+            scripts/ci/test-ai-agent-bridge-public-ingress.sh \
+            docs/ai-agent-bridge-immutable-rollout-2026-08-07.md \
+            docs/alex-main-agent-slack-command-gitops.md
+          git status --short
+          git diff --cached --stat
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config --local commit.gpgsign false
+          git -c commit.gpgsign=false commit -m 'deploy(DEN-845): pin trusted bridge run 307 digests'
+          git push origin HEAD:agent/den-845-bridge-digests-run-307
