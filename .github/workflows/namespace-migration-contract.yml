@@ -1,0 +1,87 @@
+name: Namespace migration contract
+
+on:
+  pull_request:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: namespace-migration-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Ownership registry, inventory, and new-debt ratchet
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact history without child worktrees
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+
+      - name: Compile the read-only classifier
+        run: |
+          python3 -m py_compile \
+            tools/namespace_migration.py \
+            tools/test_namespace_migration.py
+
+      - name: Run unit and adversarial tests
+        run: python3 tools/test_namespace_migration.py
+
+      - name: Validate registry and summarize current debt
+        run: |
+          mkdir -p artifacts
+          python3 tools/namespace_migration.py check \
+            --root . \
+            --format json \
+            > artifacts/namespace-contract-report.json
+
+      - name: Generate complete read-only inventory
+        run: |
+          python3 tools/namespace_migration.py inventory \
+            --root . \
+            --format json \
+            > artifacts/namespace-inventory.json
+
+      - name: Reject newly added legacy namespace references
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test -n "$BASE_SHA"
+          test -n "$HEAD_SHA"
+          git cat-file -e "$BASE_SHA^{commit}"
+          git cat-file -e "$HEAD_SHA^{commit}"
+          python3 tools/namespace_migration.py ratchet \
+            --root . \
+            --base-ref "$BASE_SHA" \
+            --head-ref "$HEAD_SHA" \
+            --format json \
+            > artifacts/namespace-ratchet.json
+
+      - name: Record non-PR ratchet scope
+        if: ${{ github.event_name != 'pull_request' }}
+        run: |
+          printf '%s\n' \
+            '{"valid":true,"baseRef":null,"headRef":"'"$GITHUB_SHA"'","violations":[],"diagnostics":[],"note":"new-reference ratchet runs on pull_request events"}' \
+            > artifacts/namespace-ratchet.json
+
+      - name: Upload exact-head namespace evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: namespace-migration-evidence
+          path: |
+            artifacts/namespace-contract-report.json
+            artifacts/namespace-inventory.json
+            artifacts/namespace-ratchet.json
+          if-no-files-found: error
+          retention-days: 14
