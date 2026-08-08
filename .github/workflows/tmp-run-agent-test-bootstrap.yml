@@ -1,0 +1,38 @@
+name: Temporary run agent test-org bootstrap
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/tmp-run-agent-test-bootstrap.yml
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: run-agent-test-org-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    if: github.repository == 'ORESoftware/k8s-cluster' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TRACKING_ISSUE: '1175'
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Validate and run bounded bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ops/tmp-bootstrap-agent-test-orgs.sh
+          exec bash scripts/ops/tmp-bootstrap-agent-test-orgs.sh
