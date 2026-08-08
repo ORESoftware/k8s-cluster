@@ -6,8 +6,9 @@ metadata:
   labels:
     app: dd-gha-executor-router
 spec:
-  # Deliberately non-runnable until an immutable reviewed image replaces the
-  # all-zero digest. Merge must not change the live execution path.
+  # The reviewed, signed, scanned image is pinned below, but the service remains
+  # deliberately non-runnable. A separate activation change must scale replicas
+  # and must leave execution disabled until provider readiness is proven.
   replicas: 0
   strategy:
     type: Recreate
@@ -29,9 +30,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gha-executor-router
-          # Activation gate: replace this sentinel with a signed, scanned,
-          # SBOM-attested image digest built from the exact merged router commit.
-          image: ghcr.io/oresoftware/gha-executor-router@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          # Published from k8s-cluster dev@5aad32c37be7f29f9355f19d6ce6d316494ff141
+          # with SPDX SBOM, max SLSA provenance, and zero Trivy HIGH/CRITICAL findings.
+          image: ghcr.io/oresoftware/gha-executor-router@sha256:59a31a496e5c528f89acb7643b8ced1ea14bc6c15b1d83b22a37f4ba529708e6
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/gha-executor-router"]
           env:
