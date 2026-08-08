@@ -8,20 +8,24 @@ const script = readFileSync(
   resolve(root, 'scripts/ops/preflight_gha_clone_webhook.sh'),
   'utf8',
 );
+const workflow = readFileSync(
+  resolve(root, '.github/workflows/ops-preflight-gha-clone-router.yml'),
+  'utf8',
+);
 
 const cloneDigest =
   'ghcr.io/oresoftware/gha-clone-server@sha256:44684171d909f96fe216d529bfc14f6f32a11e87c0f339d1877ac20606223c97';
 const routerDigest =
   'ghcr.io/oresoftware/gha-executor-router@sha256:59a31a496e5c528f89acb7643b8ced1ea14bc6c15b1d83b22a37f4ba529708e6';
 
-function requireAll(values) {
+function requireAll(text, values) {
   for (const value of values) {
-    assert.ok(script.includes(value), `preflight is missing ${value}`);
+    assert.ok(text.includes(value), `preflight is missing ${value}`);
   }
 }
 
 test('preflight requires the exact reviewed images and inert replica gates', () => {
-  requireAll([
+  requireAll(script, [
     cloneDigest,
     routerDigest,
     'static preflight requires clone/router replicas=0',
@@ -36,7 +40,7 @@ test('preflight requires the exact reviewed images and inert replica gates', () 
 });
 
 test('preflight models split clone, router, and AWS build-server authority', () => {
-  requireAll([
+  requireAll(script, [
     'secret_has_keys "$clone_secret" auth_secret github_webhook_secret github_app_installation_token',
     'secret_has_keys "$router_secret" inbound_auth',
     'secret_has_keys "$build_secret" SERVER_AUTH_SECRET',
@@ -51,7 +55,7 @@ test('preflight models split clone, router, and AWS build-server authority', () 
 });
 
 test('preflight enforces exact AWS-only router placement and no direct clone executor path', () => {
-  requireAll([
+  requireAll(script, [
     'id:"aws-primary", provider:"aws", enabled:true',
     'id:"hetzner-secondary", provider:"hetzner", enabled:false',
     'clone server must address only the executor router',
@@ -79,7 +83,7 @@ test('preflight never mutates Kubernetes or decodes secret values', () => {
 });
 
 test('live probe verifies both services in execution-disabled ready mode', () => {
-  requireAll([
+  requireAll(script, [
     'service/$clone_name',
     'service/$router_name',
     'clone-health.json',
@@ -89,4 +93,20 @@ test('live probe verifies both services in execution-disabled ready mode', () =>
     '.readyExecutors == []',
     'live clone and router health/readiness passed with every execution gate false',
   ]);
+});
+
+test('cluster execution is restricted to trusted dev and checksum-pinned SSM', () => {
+  requireAll(workflow, [
+    'branches: [dev]',
+    'ref: dev',
+    'id-token: write',
+    'contents: read',
+    'sha256sum --check --status',
+    'AWS-RunShellScript',
+    'Read-only router-aware GHA webhook preflight',
+    'retention-days: 30',
+  ]);
+  assert.doesNotMatch(workflow, /pull_request(?:_target)?:/);
+  assert.doesNotMatch(workflow, /kubectl\s+(?:apply|create|delete|patch|scale|set)\b/);
+  assert.doesNotMatch(workflow, /agent\/router-aware-webhook-preflight-dev/);
 });
