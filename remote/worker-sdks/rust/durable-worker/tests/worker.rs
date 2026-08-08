@@ -110,11 +110,7 @@ impl WorkerApi for FakeApi {
         })
     }
 
-    fn heartbeat_step<'a>(
-        &'a self,
-        _step_id: &'a str,
-        _lease: Lease,
-    ) -> WorkerFuture<'a, ()> {
+    fn heartbeat_step<'a>(&'a self, _step_id: &'a str, _lease: Lease) -> WorkerFuture<'a, ()> {
         Box::pin(async move {
             self.record("step-heartbeat");
             self.step_heartbeat_count.fetch_add(1, Ordering::AcqRel);
@@ -172,11 +168,7 @@ impl WorkerApi for FakeApi {
         })
     }
 
-    fn fail_step<'a>(
-        &'a self,
-        _step_id: &'a str,
-        failure: StepFailure,
-    ) -> WorkerFuture<'a, ()> {
+    fn fail_step<'a>(&'a self, _step_id: &'a str, failure: StepFailure) -> WorkerFuture<'a, ()> {
         Box::pin(async move {
             self.record("fail");
             *self.failure.lock().expect("failure lock") = Some(failure);
@@ -331,13 +323,7 @@ async fn fenced_progress_output_cancels_handler_and_suppresses_terminal_mutation
 async fn handler_failure_preserves_explicit_retryability() {
     let api = Arc::new(FakeApi::with_assignment(assignment()));
     let handler: Handler = Arc::new(|_context: TaskContext| {
-        Box::pin(async move {
-            Err(WorkerFailure::new(
-                "upstream_busy",
-                "try later",
-                true,
-            ))
-        })
+        Box::pin(async move { Err(WorkerFailure::new("upstream_busy", "try later", true)) })
     });
     let worker = Worker::new(
         api.clone(),
