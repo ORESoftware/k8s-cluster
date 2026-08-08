@@ -27,14 +27,15 @@ async function readRepoFile(path) {
   return readFile(resolve(repoRoot, path), 'utf8');
 }
 
-test('nightly governed reconciliation schedule is DST-aware, active, bounded, and immutable', async () => {
+test('nightly governed reconciliation schedule is DST-aware, staged, bounded, and immutable', async () => {
   const cronjob = await readRepoFile(`${overlay}/nightly-pr-reconciliation.cronjob.yaml`);
 
   assert.match(cronjob, /kind: CronJob/);
   assert.match(cronjob, /name: dd-nightly-pr-reconciliation/);
   assert.match(cronjob, /schedule: "0 1 \* \* \*"/);
   assert.match(cronjob, /timeZone: America\/Chicago/);
-  assert.match(cronjob, /suspend: false/);
+  assert.match(cronjob, /suspend: true/);
+  assert.match(cronjob, /dd\.dev\/activation-state: suspended-pending-trusted-finalizer/);
   assert.match(cronjob, /concurrencyPolicy: Forbid/);
   assert.match(cronjob, /startingDeadlineSeconds: 3600/);
   assert.match(cronjob, /activeDeadlineSeconds: 43200/);
