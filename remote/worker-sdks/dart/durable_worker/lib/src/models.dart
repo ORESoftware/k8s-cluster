@@ -42,7 +42,7 @@ JsonObject objectValue(Object? value, {JsonObject? fallback}) {
   if (value is Map<String, Object?>) {
     return cloneJson(value);
   }
-  if (value is Map) {
+  if (value is Map<Object?, Object?>) {
     final JsonObject result = <String, Object?>{};
     for (final MapEntry<Object?, Object?> entry in value.entries) {
       final Object? key = entry.key;
