@@ -45,9 +45,20 @@ spec:
               value: '3600'
             - name: BUILD_SERVER_GHA_MAX_RUNS
               value: '512'
+          volumeMounts:
+            - name: profile-runner-auth
+              mountPath: /var/run/secrets/dd-ci-profile-runner-auth
+              readOnly: true
       volumes:
         - name: rules
           configMap:
             name: dd-build-server-rules
             optional: true
             defaultMode: 0555
+        - name: profile-runner-auth
+          secret:
+            secretName: dd-agent-secrets
+            defaultMode: 0400
+            items:
+              - key: SERVER_AUTH_SECRET
+                path: SERVER_AUTH_SECRET
