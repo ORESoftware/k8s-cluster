@@ -161,6 +161,36 @@ http_post_json() {
   fi
 }
 
+print_plan_failure() {
+  local slug="$1"
+  local plan_file="$2"
+  echo "DES_INDIE_PLAN_MISMATCH slug=$slug" >&2
+  jq -c '{
+    schemaVersion,
+    repository,
+    revision,
+    workflowPath,
+    immutableRevision,
+    executable,
+    warnings,
+    jobs:[.jobs[]? | {id,runsOn,supported,profile,reasons,notes}]
+  }' "$plan_file" >&2 2>/dev/null || cat "$plan_file" >&2
+}
+
+print_run_failure() {
+  local slug="$1"
+  local run_file="$2"
+  echo "DES_INDIE_RUN_MISMATCH slug=$slug" >&2
+  jq -c '{
+    id,
+    requestId,
+    status,
+    error,
+    plan:{repository:.plan.repository,revision:.plan.revision,workflowPath:.plan.workflowPath,executable:.plan.executable},
+    jobs:[.jobs[]? | {id,profile,status,buildId,error}]
+  }' "$run_file" >&2 2>/dev/null || cat "$run_file" >&2
+}
+
 coordinate_bridge
 
 policy_ready=false
@@ -243,7 +273,7 @@ run_one() {
     'http://127.0.0.1:18100/gha/workflows/plan' \
     "$WORK_DIR/$slug-request.json" \
     "$WORK_DIR/$slug-plan.json"
-  jq -e --arg repository "$repository" --arg revision "$revision" --arg profile "$expected_profile" '
+  if ! jq -e --arg repository "$repository" --arg revision "$revision" --arg profile "$expected_profile" '
     .schemaVersion == "gha-indie-plan.v1" and
     .repository == $repository and
     .revision == $revision and
@@ -252,7 +282,11 @@ run_one() {
     (.jobs | length == 1) and
     .jobs[0].supported == true and
     .jobs[0].profile == $profile
-  ' "$WORK_DIR/$slug-plan.json" >/dev/null
+  ' "$WORK_DIR/$slug-plan.json" >/dev/null; then
+    print_plan_failure "$slug" "$WORK_DIR/$slug-plan.json"
+    bridge_message "Blocked: $slug returned a valid planner response that did not satisfy the executable/profile contract."
+    return 65
+  fi
 
   http_post_json \
     'http://127.0.0.1:18100/gha/workflows/runs' \
@@ -274,13 +308,17 @@ run_one() {
     sleep 3
   done
 
-  jq -e --arg repository "$repository" --arg revision "$revision" '
+  if ! jq -e --arg repository "$repository" --arg revision "$revision" '
     .status == "succeeded" and
     .plan.repository == $repository and
     .plan.revision == $revision and
     (.jobs | length == 1) and
     (all(.jobs[]; .status == "succeeded" and (.buildId | type == "string" and length > 0)))
-  ' "$WORK_DIR/$slug-final.json" >/dev/null
+  ' "$WORK_DIR/$slug-final.json" >/dev/null; then
+    print_run_failure "$slug" "$WORK_DIR/$slug-final.json"
+    bridge_message "Blocked: $slug reached a terminal indie-worker result that did not satisfy the success/build-ID contract."
+    return 66
+  fi
   bridge_message "Succeeded: $slug completed through gha-indie-worker at $repository@$revision."
   jq -c '{
     id,
