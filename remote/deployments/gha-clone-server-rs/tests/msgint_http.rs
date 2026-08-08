@@ -250,7 +250,6 @@ async fn run_to_success(client: &Client, server: &ServerProcess) -> Value {
 }
 
 async fn assert_rejected_without_dispatch(
-    client: &Client,
     server: &ServerProcess,
     mock: &MockBuildServer,
     repository: &str,
@@ -259,8 +258,9 @@ async fn assert_rejected_without_dispatch(
     workflow: &str,
     expected_status: StatusCode,
 ) {
+    let client = Client::new();
     let response = post_run(
-        client,
+        &client,
         server,
         repository,
         revision,
@@ -339,10 +339,8 @@ async fn exact_retry_reuses_each_deterministic_build_request_identity() {
 async fn reserved_identity_action_input_and_command_mutations_dispatch_nothing() {
     let mock = MockBuildServer::start().await;
     let server = spawn_server(&mock).await;
-    let client = Client::new();
 
     assert_rejected_without_dispatch(
-        &client,
         &server,
         &mock,
         REPOSITORY,
@@ -353,7 +351,6 @@ async fn reserved_identity_action_input_and_command_mutations_dispatch_nothing()
     )
     .await;
     assert_rejected_without_dispatch(
-        &client,
         &server,
         &mock,
         REPOSITORY,
@@ -364,7 +361,6 @@ async fn reserved_identity_action_input_and_command_mutations_dispatch_nothing()
     )
     .await;
     assert_rejected_without_dispatch(
-        &client,
         &server,
         &mock,
         "lookalike/msgint-connectors",
@@ -395,7 +391,6 @@ async fn reserved_identity_action_input_and_command_mutations_dispatch_nothing()
         ),
     ] {
         assert_rejected_without_dispatch(
-            &client,
             &server,
             &mock,
             REPOSITORY,
