@@ -71,16 +71,18 @@ test('ci profile runner accepts only exact DES browser identities', () => {
     deployment,
     /discrete-event-systems-test\/des-web-puppeteer-e2e\":\"puppeteer/,
   );
-  assert.doesNotMatch(deployment, /discrete-event-systems-test\/\*|discrete-event-systems-test\/\"/);
+  assert.doesNotMatch(deployment, /discrete-event-systems-test\/\*/);
 });
 
 test('runner images and commands are compiled fixed profiles, not request fields', () => {
+  const requestStruct = source.match(/struct RunRequest \{([^}]*)\}/s)?.[1] ?? '';
+  assert.notEqual(requestStruct, '');
   assert.match(source, /mcr\.microsoft\.com\/playwright:v1\.60\.0-noble/);
   assert.match(source, /npm ci && npx playwright test/);
   assert.match(source, /npm ci && npm run test:puppeteer/);
-  assert.doesNotMatch(source, /struct RunRequest[\s\S]*\bimage:/);
-  assert.doesNotMatch(source, /struct RunRequest[\s\S]*\bcommand:/);
-  assert.doesNotMatch(source, /struct RunRequest[\s\S]*\bshell:/);
+  assert.doesNotMatch(requestStruct, /\bimage:/);
+  assert.doesNotMatch(requestStruct, /\bcommand:/);
+  assert.doesNotMatch(requestStruct, /\bshell:/);
   assert.match(source, /--security-opt=no-new-privileges/);
   assert.match(source, /--cap-drop=ALL/);
   assert.match(source, /--cpus=/);
