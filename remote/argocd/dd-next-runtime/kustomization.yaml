@@ -263,18 +263,18 @@ resources:
   - dd-idle-reaper.deployment.yaml
   - dd-headlamp-cron-sentinel.cronjob.yaml
   # ai-agent-bridge: inter-agent conversation bus (HTTP :8142 + TCP :8143).
-  # Runs the reviewed immutable image digest from ORESoftware/ai-agent-bridge.rs
-  # main CI (DEN-845) — no in-pod build; synced on both AWS and Hetzner via the
-  # dd-next-runtime app. The source submodule pin is no longer runtime-relevant
-  # for this workload.
+  # Built in-pod from the remote/deployments/ai-agent-bridge submodule; synced on
+  # both AWS and Hetzner via the dd-next-runtime app.
   - dd-ai-agent-bridge.externalsecret.yaml
   - dd-ai-agent-bridge.deployment.yaml
   - dd-ai-agent-bridge.networkpolicy.yaml
   - dd-ai-agent-bridge.pdb.yaml
   - dd-ai-agent-bridge.service.yaml
-  # ai-agent-runner: multi-provider workflow runner for the bridge, pinned to
-  # the same reviewed digest lineage. Held at replicas: 0 until DEN-391 secrets
-  # land and the DEN-847 activation canary authorizes one replica.
+  # ai-agent-runner: multi-provider workflow runner for the bridge (DEN-845),
+  # pinned to the reviewed immutable image digest. Held at replicas: 0 until
+  # DEN-391 provisions dd-ai-agent-runner-secrets and the DEN-847 activation
+  # canary authorizes one replica. Bridge Deployment digest pin is handled
+  # separately in PR #1112.
   - dd-ai-agent-runner.deployment.yaml
   - dd-ai-agent-runner.networkpolicy.yaml
   # t2v-v2t: voice-to-text / text-to-voice / translation. Two separately
