@@ -61,6 +61,7 @@ jobs:
 
           git apply --check /tmp/durable-worker-rust-lifecycle.patch
           git apply /tmp/durable-worker-rust-lifecycle.patch
+          cargo fmt --manifest-path remote/worker-sdks/rust/durable-worker/Cargo.toml --all
           git diff --check
 
       - name: Run repository contract
