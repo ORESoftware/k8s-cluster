@@ -40,6 +40,7 @@ jobs:
 
           old = os.environ['OLD_SHA']
           new = os.environ['NEW_SHA']
+          temporary_workflow = pathlib.Path('.github/workflows/tmp-des-playwright-pin.yml')
           result = subprocess.run(
               ['git', 'grep', '-Il', old, '--', '.'],
               check=False,
@@ -48,9 +49,13 @@ jobs:
           )
           if result.returncode not in (0, 1):
               raise SystemExit(result.stderr)
-          paths = [pathlib.Path(line) for line in result.stdout.splitlines() if line]
+          paths = [
+              pathlib.Path(line)
+              for line in result.stdout.splitlines()
+              if line and pathlib.Path(line) != temporary_workflow
+          ]
           if not paths:
-              raise SystemExit(f'no tracked file contains the obsolete SHA {old}')
+              raise SystemExit(f'no canonical tracked file contains the obsolete SHA {old}')
           for path in paths:
               text = path.read_text(encoding='utf-8')
               updated = text.replace(old, new)
@@ -59,7 +64,7 @@ jobs:
               path.write_text(updated, encoding='utf-8')
           print('\n'.join(str(path) for path in paths))
           PY
-          git rm .github/workflows/tmp-des-playwright-pin.yml
+          git rm -f .github/workflows/tmp-des-playwright-pin.yml
           ! git grep -n "$OLD_SHA" -- .
           git grep -n "$NEW_SHA" -- .
 
