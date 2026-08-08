@@ -11,7 +11,7 @@ const kustomizationPath = 'remote/argocd/dd-next-runtime/kustomization.yaml';
 const SOURCE_SHA = 'ec667946b1f8725b6baea8e67ae6a701d602dc04';
 const WORKFLOW_RUN = '31264194679';
 const IMAGE =
-  'ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:e78d56c95485c4aaea33621268be35c83813a06962f50bb27010df5a0859867c';
+  'ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:e18c1ea7113f40e303379bd75bfd32b41ba00137a91e965ea67dca591e8105f4';
 
 const deployment = readFileSync(deploymentPath, 'utf8');
 const networkPolicy = readFileSync(networkPolicyPath, 'utf8');
