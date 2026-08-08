@@ -10,7 +10,7 @@ metadata:
     dd.dev/source-repository: ORESoftware/ai-agent-bridge.rs
     dd.dev/source-revision: 'ec667946b1f8725b6baea8e67ae6a701d602dc04'
     dd.dev/release-workflow-run: '31264194679'
-    dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:bbf105c29cdbcec23d87ed0b21cfd548c43982cf6573aaf34a2fb1f4dc69a305'
+    dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:465803624fe98294620a644d6620ff8e179e7082a3142a4dd7bed68d1c9279d6'
   labels:
     app: dd-ai-agent-bridge
     app.kubernetes.io/component: bridge
@@ -33,7 +33,7 @@ spec:
         dd.dev/source-repository: ORESoftware/ai-agent-bridge.rs
         dd.dev/source-revision: 'ec667946b1f8725b6baea8e67ae6a701d602dc04'
         dd.dev/release-workflow-run: '31264194679'
-        dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:bbf105c29cdbcec23d87ed0b21cfd548c43982cf6573aaf34a2fb1f4dc69a305'
+        dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:465803624fe98294620a644d6620ff8e179e7082a3142a4dd7bed68d1c9279d6'
       labels:
         app: dd-ai-agent-bridge
         app.kubernetes.io/component: bridge
@@ -51,7 +51,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ai-agent-bridge
-          image: ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:bbf105c29cdbcec23d87ed0b21cfd548c43982cf6573aaf34a2fb1f4dc69a305
+          image: ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:465803624fe98294620a644d6620ff8e179e7082a3142a4dd7bed68d1c9279d6
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
