@@ -44,7 +44,7 @@ jobs:
           set -euo pipefail
           archive='.github/transport/den-2786-manifest-source.tar.xz'
           printf '%s  %s\n' \
-            '2ecc83ed16c3caa5338ea20f6240a9270aa02c07bdd8e22c1de3ed771a4bff67' \
+            '3ff4c7067663032c23bac38dff48b32754eee92f0acf72088dd95422f2038984' \
             "$archive" | sha256sum --check --strict
           python3 - <<'PY'
           from pathlib import Path
