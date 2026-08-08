@@ -249,8 +249,8 @@ jq -e '
   any(.spec.ingress[]?.from[]?.podSelector.matchLabels.app; . == "dd-gha-clone-server") and
   any(.spec.ingress[]?.ports[]?; .protocol == "TCP" and .port == 8126) and
   any(.spec.egress[]?; any(.to[]?.podSelector.matchLabels.app; . == "dd-build-server") and any(.ports[]?; .protocol == "TCP" and .port == 8100)) and
-  ([.spec.egress[]?.to[]?.ipBlock.cidr] | length == 0) and
-  ([.spec.egress[]?.ports[]? | select(.protocol == "TCP") | .port] | index(443) == null)
+  all(.spec.egress[]?.to[]?; (.ipBlock? // null) == null) and
+  all(.spec.egress[]?.ports[]?; (.protocol != "TCP") or (.port != 443))
 ' <<<"$router_policy" >/dev/null || fail 'router NetworkPolicy must allow clone ingress and AWS build-server egress with no public/Hetzner path'
 pass 'NetworkPolicies enforce gateway -> clone -> router -> AWS build-server only'
 
