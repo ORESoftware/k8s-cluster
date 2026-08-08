@@ -34,6 +34,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # agent-pontifex-test is not currently provisioned. Keep the source
+          # script untouched and derive a runner-local bounded variant that
+          # creates both independent conformance repositories only in the
+          # existing fiducia-cloud-test organization. A fresh encrypted owner
+          # credential is required for every run; no credential is persisted.
           source_script=scripts/ops/tmp-bootstrap-agent-test-orgs.sh
           runtime_script="$RUNNER_TEMP/bootstrap-agent-test-orgs.sh"
           bash -n "$source_script"
