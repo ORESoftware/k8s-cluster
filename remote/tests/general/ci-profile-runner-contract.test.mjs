@@ -125,7 +125,7 @@ test('build-server delegates only the exact fixed DES nerdctl shape', () => {
   assert.match(buildPatch, /defaultMode: 0555/);
 });
 
-test('profile adapter auth is a read-only projected secret, not inherited process state', () => {
+test('profile adapter auth is a bounded read-only projected secret', () => {
   const adapter = extractAdapter();
   assert.match(
     adapter,
@@ -133,7 +133,14 @@ test('profile adapter auth is a read-only projected secret, not inherited proces
   );
   assert.match(adapter, /\[\[ -r "\$AUTH_FILE" \]\]/);
   assert.ok(adapter.includes('auth="$(<"$AUTH_FILE")"'));
+  assert.ok(
+    adapter.includes(
+      "if [[ -z \"$auth\" || ${#auth} -gt 4096 || \"$auth\" == *$'\\n'* || \"$auth\" == *$'\\r'* ]]; then",
+    ),
+  );
+  assert.ok(!adapter.includes('${#auth} -ge 20'));
   assert.doesNotMatch(adapter, /\$\{SERVER_AUTH_SECRET/);
+  assert.match(source, /env_string\("SERVER_AUTH_SECRET"\)/);
 
   assert.match(
     buildPatch,
