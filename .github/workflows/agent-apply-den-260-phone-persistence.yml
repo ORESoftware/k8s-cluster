@@ -33,6 +33,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          git checkout HEAD -- .github/workflows/benefactor-orchestrator.yml
           rm -rf .agent-patch .github/workflows/agent-apply-den-260-phone-persistence.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
