@@ -64,8 +64,10 @@ jobs:
           dart pub get --enforce-lockfile
           git diff --exit-code -- pubspec.lock
 
-      - name: Enforce formatting
-        run: dart format --output=none --set-exit-if-changed .
+      - name: Enforce formatting and print any drift
+        run: |
+          dart format .
+          git diff --exit-code
 
       - name: Analyze with warnings and infos fatal
         run: dart analyze --fatal-infos --fatal-warnings
