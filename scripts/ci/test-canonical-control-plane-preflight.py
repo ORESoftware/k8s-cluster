@@ -91,20 +91,19 @@ class CredentialTests(unittest.TestCase):
 
 
 class CiphertextEnvelopeTests(unittest.TestCase):
-    def test_nested_contents_api_base64_decodes_to_exact_rsa_ciphertext(self) -> None:
+    def test_owner_comment_base64_decodes_to_exact_rsa_ciphertext(self) -> None:
         ciphertext = bytes((index % 251 for index in range(512)))
-        inner = base64.b64encode(ciphertext)
-        outer = base64.b64encode(inner).decode()
-        self.assertEqual(
-            ciphertext,
-            WAIT_TARGET.decode_contents_api_ciphertext(outer),
-        )
+        encoded = base64.b64encode(ciphertext).decode()
+        self.assertEqual(ciphertext, WAIT_TARGET.decode_comment_ciphertext(encoded))
 
     def test_ciphertext_rejects_wrong_modulus_length(self) -> None:
-        inner = base64.b64encode(b"not-a-4096-bit-rsa-ciphertext")
-        outer = base64.b64encode(inner).decode()
+        encoded = base64.b64encode(b"not-a-4096-bit-rsa-ciphertext").decode()
         with self.assertRaisesRegex(ValueError, "4096-bit RSA ciphertext"):
-            WAIT_TARGET.decode_contents_api_ciphertext(outer)
+            WAIT_TARGET.decode_comment_ciphertext(encoded)
+
+    def test_ciphertext_rejects_non_base64_comment_data(self) -> None:
+        with self.assertRaisesRegex(ValueError, "not valid base64"):
+            WAIT_TARGET.decode_comment_ciphertext("not base64!!")
 
 
 class ClientBoundaryTests(unittest.TestCase):
