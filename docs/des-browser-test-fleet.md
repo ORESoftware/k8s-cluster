@@ -44,7 +44,7 @@ The current merged suite revisions are:
 
 ```text
 discrete-event-systems-test/des-web-playwright-e2e@104a02c72ca827ec678de0ed6e71d40b6fccbb93
-discrete-event-systems-test/des-web-puppeteer-e2e@0547548429d937023a124de37afca7659a85c3dd
+discrete-event-systems-test/des-web-puppeteer-e2e@85f58bfa7fd7209c05c691cf6c700b412f11e7d7
 ```
 
 ## `gha-indie-worker` lane
