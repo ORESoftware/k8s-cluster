@@ -22,7 +22,7 @@ test('failure classification is bounded and does not retain error messages', () 
   assert.equal(providerFailureCode({ name: 'AbortError', message: 'operation aborted' }), 'timeout');
   assert.equal(providerFailureCode({ name: 'ResponseLimitError', message: 'too large' }), 'response_limit');
   assert.equal(providerFailureCode({ code: 'ENOTFOUND', message: 'getaddrinfo ENOTFOUND key.example' }), 'network');
-  assert.equal(providerFailureCode({ message: 'secret response body should not be retained' }), 'unknown');
+  assert.equal(providerFailureCode({ message: 'sensitive response detail should not be retained' }), 'unknown');
 });
 
 test('fetch wrapper counts successes and categorized failures per provider', async () => {
@@ -34,8 +34,8 @@ test('fetch wrapper counts successes and categorized failures per provider', asy
   const wrapped = createProviderDiagnosticsFetch(async (input) => {
     call += 1;
     if (String(input).includes('brave')) return new Response('{}', { status: 200 });
-    if (call === 2) return new Response('{"message":"quota key must not leak"}', { status: 429 });
-    const error = new Error('fetch failed for token=super-secret');
+    if (call === 2) return new Response('{"message":"quota detail must not leak"}', { status: 429 });
+    const error = new Error('fetch failed with sensitive detail');
     error.code = 'ECONNRESET';
     throw error;
   }, state);
@@ -97,5 +97,5 @@ test('installed bridge emits diagnostics only after a pipeline report', async ()
     http_403: 1,
   });
   const serialized = JSON.stringify(diagnostic);
-  assert.doesNotMatch(serialized, /synthetic|secret|token|query|url/i);
+  assert.doesNotMatch(serialized, /synthetic|sensitive|quota|query|url/i);
 });
