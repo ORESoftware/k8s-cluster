@@ -40,21 +40,21 @@ test('classifier recognizes the observed all-522 incident with metadata only', (
   assert.match(classifier, /write_atomic/);
   assert.doesNotMatch(classifier, /SLACK_SIGNING_SECRET/);
   assert.doesNotMatch(classifier, /CLOUDFLARE_API_TOKEN/);
-  assert.doesNotMatch(classifier, /authorization:\s*bearer/i);
+  assert.doesNotMatch(classifier, /os\.environ\[["'](?:TOKEN|SECRET|PASSWORD)/);
 });
 
 test('workflow executes static contracts and classifier self-test before live probe', () => {
-  const staticPosition = workflow.indexOf(
-    'ai-agent-bridge-public-ingress-diagnosis-contract.test.mjs',
+  const verificationStep = workflow.indexOf(
+    'Verify credential-free public probe and diagnosis contracts',
   );
   const selfTestPosition = workflow.indexOf(
     'classify-ai-agent-bridge-public-ingress.py --self-test',
   );
-  const probePosition = workflow.indexOf(
-    'run-ai-agent-bridge-public-ingress-diagnostic.sh',
+  const probePosition = workflow.lastIndexOf(
+    'run: bash scripts/ci/run-ai-agent-bridge-public-ingress-diagnostic.sh',
   );
-  assert.ok(staticPosition >= 0);
-  assert.ok(selfTestPosition > staticPosition);
+  assert.ok(verificationStep >= 0);
+  assert.ok(selfTestPosition > verificationStep);
   assert.ok(probePosition > selfTestPosition);
   assert.match(workflow, /if: always\(\)/);
   assert.match(workflow, /permissions:\n\s+contents: read/);
@@ -64,7 +64,7 @@ test('runbook keeps activation closed and separates credential-free from operato
   assert.match(runbook, /Credential-free evidence/);
   assert.match(runbook, /Operator-only cluster checks/);
   assert.match(runbook, /SLACK_COMMAND_DRY_RUN=true/);
-  assert.match(runbook, /provider runner.*zero/i);
+  assert.match(runbook, /provider runner replicas=0/i);
   assert.match(runbook, /do not.*pasted.*credential/i);
   assert.doesNotMatch(runbook, /ghp_[A-Za-z0-9]+/);
   assert.doesNotMatch(runbook, /cfat_[A-Za-z0-9]+/);
