@@ -1,22 +1,42 @@
 use oresoftware_durable_worker::{
-    Assignment, Cancellation, DurableWorkerError, Handler, JsonObject, Lease,
-    StepCompletion, StepFailure, StepOutput, TaskContext, Worker, WorkerApi,
-    WorkerConfig, WorkerFailure, WorkerFuture, WorkerPoll, WorkerRegistration,
+    Assignment, Cancellation, DurableWorkerError, Handler, JsonObject, Lease, StepCompletion,
+    StepFailure, StepOutput, TaskContext, Worker, WorkerApi, WorkerConfig, WorkerFailure,
+    WorkerFuture, WorkerPoll, WorkerRegistration,
 };
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::sync::Notify;
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct FakeApi {
     calls: Arc<Mutex<Vec<String>>>,
     assignment: Arc<Mutex<Option<Assignment>>>,
     fence_heartbeat: Arc<AtomicBool>,
+    fence_output: Arc<AtomicBool>,
+    heartbeat_observed: Arc<Notify>,
     step_heartbeat_count: Arc<AtomicUsize>,
+    output_chunk_ids: Arc<Mutex<Vec<String>>>,
     failure: Arc<Mutex<Option<StepFailure>>>,
     completion: Arc<Mutex<Option<StepCompletion>>>,
+}
+
+impl Default for FakeApi {
+    fn default() -> Self {
+        Self {
+            calls: Arc::new(Mutex::new(Vec::new())),
+            assignment: Arc::new(Mutex::new(None)),
+            fence_heartbeat: Arc::new(AtomicBool::new(false)),
+            fence_output: Arc::new(AtomicBool::new(false)),
+            heartbeat_observed: Arc::new(Notify::new()),
+            step_heartbeat_count: Arc::new(AtomicUsize::new(0)),
+            output_chunk_ids: Arc::new(Mutex::new(Vec::new())),
+            failure: Arc::new(Mutex::new(None)),
+            completion: Arc::new(Mutex::new(None)),
+        }
+    }
 }
 
 impl FakeApi {
@@ -36,6 +56,13 @@ impl FakeApi {
 
     fn operations(&self) -> Vec<String> {
         self.calls.lock().expect("calls lock").clone()
+    }
+
+    fn output_chunk_ids(&self) -> Vec<String> {
+        self.output_chunk_ids
+            .lock()
+            .expect("output chunk IDs lock")
+            .clone()
     }
 }
 
@@ -91,6 +118,7 @@ impl WorkerApi for FakeApi {
         Box::pin(async move {
             self.record("step-heartbeat");
             self.step_heartbeat_count.fetch_add(1, Ordering::AcqRel);
+            self.heartbeat_observed.notify_one();
             if self.fence_heartbeat.load(Ordering::Acquire) {
                 Err(DurableWorkerError::LeaseLost(
                     oresoftware_durable_worker::ProtocolError::new(
@@ -109,11 +137,26 @@ impl WorkerApi for FakeApi {
     fn append_step_output<'a>(
         &'a self,
         _step_id: &'a str,
-        _output: StepOutput,
+        output: StepOutput,
     ) -> WorkerFuture<'a, ()> {
         Box::pin(async move {
             self.record("output");
-            Ok(())
+            self.output_chunk_ids
+                .lock()
+                .expect("output chunk IDs lock")
+                .push(output.chunk_id);
+            if self.fence_output.load(Ordering::Acquire) {
+                Err(DurableWorkerError::LeaseLost(
+                    oresoftware_durable_worker::ProtocolError::new(
+                        "lease_lost",
+                        "output fenced",
+                        Some(409),
+                        false,
+                    ),
+                ))
+            } else {
+                Ok(())
+            }
         })
     }
 
@@ -182,6 +225,7 @@ async fn streams_progress_and_completes_under_the_same_generation() {
         Box::pin(async move {
             context.emit("working", "progress", false).await?;
             tokio::time::sleep(Duration::from_millis(15)).await;
+            context.emit("done", "progress", true).await?;
             let mut result = JsonObject::new();
             result.insert("answer".to_owned(), json!(14));
             Ok(result)
@@ -205,6 +249,10 @@ async fn streams_progress_and_completes_under_the_same_generation() {
     assert!(operations.contains(&"output".to_owned()));
     assert!(operations.contains(&"complete".to_owned()));
     assert_eq!(operations.last().map(String::as_str), Some("worker-drain"));
+    assert_eq!(
+        api.output_chunk_ids(),
+        vec!["step-1:3:1".to_owned(), "step-1:3:2".to_owned()]
+    );
     let completion = api
         .completion
         .lock()
@@ -219,18 +267,18 @@ async fn streams_progress_and_completes_under_the_same_generation() {
 async fn fenced_heartbeat_cancels_handler_and_suppresses_terminal_mutations() {
     let api = Arc::new(FakeApi::with_assignment(assignment()));
     api.fence_heartbeat.store(true, Ordering::Release);
+    let heartbeat_observed = Arc::clone(&api.heartbeat_observed);
     let observed = Arc::new(AtomicBool::new(false));
     let handler_observed = Arc::clone(&observed);
     let handler: Handler = Arc::new(move |context: TaskContext| {
+        let heartbeat_observed = Arc::clone(&heartbeat_observed);
         let observed = Arc::clone(&handler_observed);
         Box::pin(async move {
-            for _ in 0..200 {
-                if context.cancellation().is_cancelled() {
-                    observed.store(true, Ordering::Release);
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(1)).await;
-            }
+            heartbeat_observed.notified().await;
+            tokio::time::timeout(Duration::from_secs(1), context.cancellation().cancelled())
+                .await
+                .expect("lease-loss cancellation should be prompt");
+            observed.store(true, Ordering::Release);
             context.check_cancelled()?;
             Ok(JsonObject::new())
         })
@@ -247,6 +295,33 @@ async fn fenced_heartbeat_cancels_handler_and_suppresses_terminal_mutations() {
         .expect("worker run");
     assert!(observed.load(Ordering::Acquire));
     assert_eq!(summary.lease_lost, 1);
+    let operations = api.operations();
+    assert!(!operations.contains(&"complete".to_owned()));
+    assert!(!operations.contains(&"fail".to_owned()));
+}
+
+#[tokio::test]
+async fn fenced_progress_output_cancels_handler_and_suppresses_terminal_mutations() {
+    let api = Arc::new(FakeApi::with_assignment(assignment()));
+    api.fence_output.store(true, Ordering::Release);
+    let handler: Handler = Arc::new(|context: TaskContext| {
+        Box::pin(async move {
+            context.emit("stale", "progress", false).await?;
+            Ok(JsonObject::new())
+        })
+    });
+    let worker = Worker::new(
+        api.clone(),
+        HashMap::from([("demo".to_owned(), handler)]),
+        config(),
+    )
+    .expect("worker");
+    let summary = worker
+        .run(Cancellation::default())
+        .await
+        .expect("worker run");
+    assert_eq!(summary.lease_lost, 1);
+    assert_eq!(api.output_chunk_ids(), vec!["step-1:3:1".to_owned()]);
     let operations = api.operations();
     assert!(!operations.contains(&"complete".to_owned()));
     assert!(!operations.contains(&"fail".to_owned()));
