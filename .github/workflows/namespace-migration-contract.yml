@@ -15,9 +15,9 @@ concurrency:
 
 jobs:
   validate:
-    name: Ownership registry, inventory, and new-debt ratchet
+    name: Ownership registry, inventory, manifest, and new-debt ratchet
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Select exact source ref
         id: source-ref
@@ -82,14 +82,18 @@ jobs:
               raise SystemExit("checked-out commit does not match selected source SHA")
           PY
 
-      - name: Compile the read-only classifier
+      - name: Compile namespace validators and manifest generator
         run: |
           python3 -m py_compile \
             tools/namespace_migration.py \
-            tools/test_namespace_migration.py
+            tools/test_namespace_migration.py \
+            tools/namespace_manifest.py \
+            tools/test_namespace_manifest.py
 
-      - name: Run unit and adversarial tests
-        run: python3 tools/test_namespace_migration.py
+      - name: Run classifier and manifest adversarial tests
+        run: |
+          python3 tools/test_namespace_migration.py
+          python3 tools/test_namespace_manifest.py
 
       - name: Validate registry and summarize current debt
         run: |
@@ -104,6 +108,54 @@ jobs:
             --root . \
             --format json \
             > artifacts/namespace-inventory.json
+
+      - name: Validate deterministic plaintext migration manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/namespace_manifest.py check \
+            --root . \
+            --format json \
+            > artifacts/namespace-manifest-report.json
+          sha256sum catalog/namespaces/migration-manifest.json \
+            > artifacts/namespace-manifest.sha256
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path('artifacts/namespace-manifest-report.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          manifest = json.loads(
+              Path('catalog/namespaces/migration-manifest.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          spec = manifest['spec']
+          entries = spec['entries']
+          checks = {
+              'valid report': report.get('valid') is True,
+              'manifest entries': report.get('entryCount') == 1134,
+              'inventory entries': report.get('inventoryEntryCount') == 1134,
+              'zero diagnostics': report.get('diagnostics') == [],
+              'no encoded staging': report.get('encodedStagingFiles') == [],
+              'execution disabled': spec.get('executionAuthorized') is False,
+              'cleanup disabled': all(
+                  entry.get('destructiveCleanupAllowed') is False
+                  for entry in entries
+              ),
+          }
+          failed = [name for name, valid in checks.items() if not valid]
+          if failed:
+              raise SystemExit('manifest checks failed: ' + ', '.join(failed))
+          Path('artifacts/namespace-manifest-invariants.json').write_text(
+              json.dumps({'valid': True, 'checks': checks}, indent=2, sort_keys=True)
+              + '\n',
+              encoding='utf-8',
+          )
+          PY
 
       - name: Reject newly added legacy namespace references
         if: ${{ github.event_name == 'pull_request' }}
@@ -138,6 +190,9 @@ jobs:
             artifacts/namespace-source-ref.json
             artifacts/namespace-contract-report.json
             artifacts/namespace-inventory.json
+            artifacts/namespace-manifest-report.json
+            artifacts/namespace-manifest-invariants.json
+            artifacts/namespace-manifest.sha256
             artifacts/namespace-ratchet.json
           if-no-files-found: error
           retention-days: 14
