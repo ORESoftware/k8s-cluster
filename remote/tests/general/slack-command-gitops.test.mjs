@@ -10,10 +10,10 @@ const workflowPath = '.github/workflows/slack-command-gitops.yml';
 const sourceRoot = process.env.SLACK_COMMAND_SOURCE_ROOT;
 assert.ok(sourceRoot, 'SLACK_COMMAND_SOURCE_ROOT must select the exact reviewed source');
 
-const SOURCE_SHA = '01abb601a3b6a6cfa917094daf17cb9fe1c54f21';
-const WORKFLOW_RUN = '31215966809';
+const SOURCE_SHA = 'c3e54e6cd0c6d56e3d2ed32902228d974e550a3f';
+const WORKFLOW_RUN = '31235992249';
 const IMAGE =
-  'ghcr.io/oresoftware/fiducia-slack-command@sha256:cba2bf92408589df478ebfb19ce3db01d7eafbbf05e2a0ead3afb843a690b72d';
+  'ghcr.io/oresoftware/fiducia-slack-command@sha256:01f80fbd4d3ba5226b4abdb7f5e603538924edb48e79e72b0af43246624900cb';
 
 const bundle = readFileSync(bundlePath, 'utf8');
 const kustomization = readFileSync(kustomizationPath, 'utf8');
