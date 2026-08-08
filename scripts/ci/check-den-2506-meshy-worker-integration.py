@@ -62,7 +62,7 @@ def main() -> None:
         "crates/meshy-job/Cargo.toml",
         "crates/meshy-r2-archive/Cargo.toml",
         "crates/meshy-worker/Cargo.toml",
-        "crates/meshy-worker/prepare-lock.sh",
+        "./prepare-lock.sh",
         "crates/meshy-worker/Dockerfile",
         "cargo check --locked",
         "cargo test --locked",
