@@ -23,7 +23,7 @@ spec:
     metadata:
       annotations:
         dd.dev/soccer-server-revision: '7946296b91af8f32de91f9826abcebf583015430'
-        dd.dev/soccer-engine-revision: 'ee7aecb6ba6cae24cefe6cfca6700964357ed12c'
+        dd.dev/soccer-engine-revision: '7df4e559e07cee18141da03b0ce262bf1d992338'
         dd.dev/des-engine-revision: '894e86fb188b88b0e2c734b5cf7caa27c6b18e00'
       labels:
         app: dd-soccer-rs
@@ -178,7 +178,7 @@ spec:
             - name: SOCCER_ENGINE_GIT_URL
               value: https://github.com/akrion-sim/akrion-soccer-engine-rs.git
             - name: SOCCER_ENGINE_GIT_REF
-              value: ee7aecb6ba6cae24cefe6cfca6700964357ed12c
+              value: 7df4e559e07cee18141da03b0ce262bf1d992338
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF

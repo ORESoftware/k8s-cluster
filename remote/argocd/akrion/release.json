@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "promotedAt": "2026-08-03T20:35:55Z",
+  "promotedAt": "2026-08-08T17:52:30Z",
   "source": {
     "repository": "akrion-sim/akrion-monorepo",
-    "revision": "7781bcada4e907cf6a43125ce3ea80484709dd1b",
+    "revision": "db02574e731f3b27d52f27d940e4bf67349bb280",
     "workflow": "ci.yml"
   },
   "components": {
@@ -19,7 +19,7 @@
     },
     "soccer": {
       "repository": "akrion-sim/akrion-soccer-engine-rs",
-      "revision": "ee7aecb6ba6cae24cefe6cfca6700964357ed12c",
+      "revision": "7df4e559e07cee18141da03b0ce262bf1d992338",
       "workflow": "ci.yml"
     },
     "des": {
