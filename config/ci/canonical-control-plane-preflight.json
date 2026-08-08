@@ -35,15 +35,15 @@
     },
     "canonical-monorepo": {
       "repository": "canonical-cloud/canonical-monorepo",
-      "sha": "a434c91c4eccb8c759c51cbb69753d3e21d28cf8"
+      "sha": "1615affc1defcb20741cd5d7b59c416f73b5f356"
     },
     "canonical-e2e": {
       "repository": "canonical-cloud/canonical-e2e",
-      "sha": "da2075e570ddd7a1eb154860f7172b7b6cae53cd"
+      "sha": "c1dca4b91f8c2fc3e9731a27572ec71f0c7ac1a7"
     },
     "canonical-infra": {
       "repository": "canonical-cloud/canonical-infra",
-      "sha": "535ea8fdd1f76e51ef39d9e100ff684c3cd6a9da"
+      "sha": "f5412f8c87ee9e5a4306fb75241b706d5ccc0549"
     }
   },
   "test_repositories": [
