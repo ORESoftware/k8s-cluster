@@ -47,6 +47,13 @@ Linear ownership remains segmented: DEN-845 owns immutable cluster rollout and l
 
 The canonical 64-organization directory was delivered through `ORESoftware/k8s-cluster#1056`. This section records delivery state only; it does not replace that generated mapping.
 
+### 3FA-app and 3fa-app-test
+
+- `3FA-app/3fa-clients#37` delivered Java and Swift clients from reviewed head `6e96098b7099b4cda2581ba113c00eec24b9c9b9` as merge commit `f77081638b838abb59ef86807bf29f94bcda5c11`.
+- The source organization’s hosted workflows were not valid evidence because of the separately tracked runner/billing incident, and the scheduled test-org consumer matrix skipped the SDK job when its private-source token was absent.
+- `3fa-app-test/clients-consumer-matrix#9` replaced that skipped lane with a credential-free proof: exact Java/Swift source blobs, package manifests, tests, and Zed metadata were materialized with their original Git object IDs and executed independently on Ubuntu and macOS.
+- Test-org runs `31268317634` and `31268317617` passed before proof merge `740afb4e11ed787e16835f785779b47d61a9f35c`. Linear DEN-2612 is Done; DEN-539 continues to own the broader source-runner admission incident.
+
 ### athlet-o
 
 - `athlet-o/athleto-sync#7` merged at reviewed head `b5756b27e39b0e780c4a3ce854725ddc09819be5`, producing squash commit `be828c251ebfdd0bf2f672beb573949efa7c5a34`.
