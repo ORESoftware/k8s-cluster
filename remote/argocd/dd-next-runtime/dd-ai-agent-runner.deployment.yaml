@@ -1,0 +1,121 @@
+# DEN-845: zero-replica provider runner by immutable digest, replacing the
+# orphaned in-pod-build Deployment that was live-only (absent from git). Same
+# reviewed source commit and CI run as the bridge image:
+#   source commit: 63d4d9be4343d3eeba02205ec64dd443716c5249 (ancestor of main)
+#   image:         ghcr.io/oresoftware/fiducia-ai-agent-runner (public)
+#   digest:        sha256:275e10ddbaf91e8fb8a9c7cc40a63276c3592fbc0fd881f6e180ce3f37c18475
+# replicas MUST stay 0 until DEN-391 provisions dd-ai-agent-runner-secrets
+# (provider keys) and the DEN-847 bounded activation canary authorizes exactly
+# one replica. The envFrom secret is intentionally required (not optional): a
+# scale-up without the secret bundle fails visibly at pod creation instead of
+# starting an unconfigured provider runner.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-ai-agent-runner
+  namespace: default
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+  labels:
+    app: dd-ai-agent-runner
+spec:
+  replicas: 0
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-ai-agent-runner
+  template:
+    metadata:
+      annotations:
+        dd.dev/ai-agent-runner-revision: '2026-08-07-immutable-digest-63d4d9be'
+      labels:
+        app: dd-ai-agent-runner
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 120
+      securityContext:
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: ai-agent-runner
+          image: ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:275e10ddbaf91e8fb8a9c7cc40a63276c3592fbc0fd881f6e180ce3f37c18475
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: AI_AGENT_RUNNER_BRIDGE_URL
+              value: http://dd-ai-agent-bridge.default.svc.cluster.local:8142/
+            - name: AI_AGENT_RUNNER_BRIDGE_BEARER
+              valueFrom:
+                secretKeyRef:
+                  name: dd-ai-agent-bridge-secrets
+                  key: inbox_token
+            - name: AI_AGENT_RUNNER_POLL_INTERVAL_MS
+              value: '5000'
+            - name: AI_AGENT_RUNNER_MAX_CONCURRENCY
+              value: '4'
+            - name: AI_AGENT_RUNNER_MAX_OUTPUT_TOKENS
+              value: '4096'
+            - name: AI_AGENT_RUNNER_LEASE_SAFETY_MARGIN_MS
+              value: '15000'
+            # Health server (src/runner_health.rs): /healthz + /readyz on :8144.
+            # Bind non-loopback so kubelet probes reach it.
+            - name: AI_AGENT_RUNNER_HEALTH_HOST
+              value: 0.0.0.0
+            - name: AI_AGENT_RUNNER_HEALTH_PORT
+              value: '8144'
+            - name: LOG_FORMAT
+              value: json
+            - name: RUST_LOG
+              value: info,ai_agent_bridge=info,reqwest=warn,hyper=warn
+            - name: RUST_BACKTRACE
+              value: '0'
+          # DEN-391 provider secret bundle (OpenAI/Anthropic/etc. keys, pricing
+          # and capability config). Required by design — see the header comment.
+          envFrom:
+            - secretRef:
+                name: dd-ai-agent-runner-secrets
+          ports:
+            - name: health
+              containerPort: 8144
+          resources:
+            requests:
+              cpu: '50m'
+              memory: 128Mi
+              ephemeral-storage: 32Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+              ephemeral-storage: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

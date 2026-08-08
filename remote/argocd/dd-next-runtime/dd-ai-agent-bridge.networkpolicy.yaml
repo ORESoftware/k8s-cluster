@@ -24,6 +24,10 @@ spec:
             matchLabels:
               app.kubernetes.io/part-of: dd-remote-dev
               app.kubernetes.io/component: thread-pod
+        # DEN-845: the provider runner polls workflows over HTTP.
+        - podSelector:
+            matchLabels:
+              app: dd-ai-agent-runner
       ports:
         - protocol: TCP
           port: 8142
@@ -69,18 +73,7 @@ spec:
       ports:
         - protocol: TCP
           port: 4318
-    # The current pod builds from source and may need crates.io or the guarded
-    # GitHub fallback. Exclude cluster, loopback, and metadata ranges so this
-    # rule cannot become a generic internal-network escape hatch.
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8
-              - 127.0.0.0/8
-              - 169.254.0.0/16
-              - 172.16.0.0/12
-              - 192.168.0.0/16
-      ports:
-        - protocol: TCP
-          port: 443
+    # DEN-845: the external HTTPS egress that existed for the in-pod build
+    # (crates.io / GitHub fallback) is removed with the switch to the immutable
+    # image digest — the runtime pod needs only DNS and OTLP. Re-add a scoped
+    # rule if an external embeddings or control-plane endpoint is enabled.
