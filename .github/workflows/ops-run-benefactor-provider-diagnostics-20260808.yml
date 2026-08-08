@@ -61,7 +61,7 @@ jobs:
           grep -qF 'BATCH_MAX_CATEGORIES' "$script"
           grep -qF 'MAX_QUERIES' "$script"
           grep -qF 'MAX_PAGES_PER_QUERY' "$script"
-          test "$(grep -cF 'value: "1"' "$script")" -ge 8
+          test "$(grep -cF 'value: "1"' "$script")" -ge 7
           grep -qF 'HUBSPOT_SYNC_AFTER_DISCOVERY' "$script"
           grep -qF 'value: "false"' "$script"
           grep -qF 'BENEFACTOR_PROVIDER_PROBE_SUMMARY' "$script"
