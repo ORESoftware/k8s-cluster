@@ -124,8 +124,12 @@ spec:
               mountPath: /var/lib/dd-ci-profile-runner
             - name: tmp
               mountPath: /tmp
-            - name: containerd-sock
-              mountPath: /run/containerd/containerd.sock
+            # nerdctl creates task FIFOs under /run/containerd. The host
+            # containerd shim opens those paths in the host mount namespace, so
+            # the whole runtime directory—not only containerd.sock—must be the
+            # same bind mount on both sides.
+            - name: containerd-run
+              mountPath: /run/containerd
             - name: containerd-root
               mountPath: /var/lib/containerd
               mountPropagation: Bidirectional
@@ -147,10 +151,10 @@ spec:
         - name: tmp
           emptyDir:
             sizeLimit: 8Gi
-        - name: containerd-sock
+        - name: containerd-run
           hostPath:
-            path: /run/containerd/containerd.sock
-            type: Socket
+            path: /run/containerd
+            type: Directory
         - name: containerd-root
           hostPath:
             path: /var/lib/containerd

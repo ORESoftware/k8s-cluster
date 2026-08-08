@@ -106,6 +106,25 @@ test('privilege is isolated to the dedicated host-containerd runner', () => {
   assert.doesNotMatch(buildRbac, /resources:\s*\[[^\]]*jobs/i);
 });
 
+test('host containerd runtime state is shared with the shim, not socket-only', () => {
+  assert.match(
+    deployment,
+    /- name: containerd-run\n\s+mountPath: \/run\/containerd/,
+  );
+  assert.match(
+    deployment,
+    /- name: containerd-run\n\s+hostPath:\n\s+path: \/run\/containerd\n\s+type: Directory/,
+  );
+  assert.doesNotMatch(
+    deployment,
+    /mountPath: \/run\/containerd\/containerd\.sock/,
+  );
+  assert.doesNotMatch(
+    deployment,
+    /path: \/run\/containerd\/containerd\.sock\n\s+type: Socket/,
+  );
+});
+
 test('build-server delegates only the exact fixed DES nerdctl shape', () => {
   const adapter = extractAdapter();
   const syntax = spawnSync('bash', ['-n'], { input: adapter, encoding: 'utf8' });
