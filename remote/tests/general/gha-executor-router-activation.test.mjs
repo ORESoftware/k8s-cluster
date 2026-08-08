@@ -23,6 +23,13 @@ const files = {
 
 const zeroDigest =
   'sha256:0000000000000000000000000000000000000000000000000000000000000000';
+const publishedRevision = '5aad32c37be7f29f9355f19d6ce6d316494ff141';
+const publishedImages = {
+  clone:
+    'ghcr.io/oresoftware/gha-clone-server@sha256:44684171d909f96fe216d529bfc14f6f32a11e87c0f339d1877ac20606223c97',
+  router:
+    'ghcr.io/oresoftware/gha-executor-router@sha256:59a31a496e5c528f89acb7643b8ced1ea14bc6c15b1d83b22a37f4ba529708e6',
+};
 
 function requireAll(text, values, label) {
   for (const value of values) {
@@ -40,19 +47,20 @@ function literalEnv(text, name) {
   return (match[1] ?? match[2]).trim();
 }
 
-test('clone and router cannot be activated by merging the scaffold', () => {
+test('digest-pinned clone and router remain inert after image promotion', () => {
   const clone = read(files.cloneDeployment);
   const router = read(files.routerDeployment);
 
-  for (const [label, deployment, binary] of [
-    ['clone', clone, 'gha-clone-server'],
-    ['router', router, 'gha-executor-router'],
+  for (const [label, deployment, binary, image] of [
+    ['clone', clone, 'gha-clone-server', publishedImages.clone],
+    ['router', router, 'gha-executor-router', publishedImages.router],
   ]) {
     requireAll(
       deployment,
       [
         'replicas: 0',
-        zeroDigest,
+        image,
+        publishedRevision,
         `command: ["/usr/local/bin/${binary}"]`,
         'automountServiceAccountToken: false',
         'readOnlyRootFilesystem: true',
@@ -60,6 +68,10 @@ test('clone and router cannot be activated by merging the scaffold', () => {
         'drop: ["ALL"]',
       ],
       `${label} deployment`,
+    );
+    assert.ok(
+      !deployment.includes(zeroDigest),
+      `${label} deployment still uses the all-zero image sentinel`,
     );
     assert.doesNotMatch(
       deployment,

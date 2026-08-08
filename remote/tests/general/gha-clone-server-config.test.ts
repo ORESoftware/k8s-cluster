@@ -66,7 +66,12 @@ function assertInertDeployment(
     `${name} must not receive cluster identity`,
   );
   assert.match(deployment, executionGate, `${name} execution must remain disabled`);
-  assert.match(deployment, image, `${name} must retain the non-runnable digest sentinel`);
+  assert.match(deployment, image, `${name} must use the reviewed immutable image`);
+  assert.doesNotMatch(
+    deployment,
+    /@sha256:0{64}/,
+    `${name} must not retain the all-zero digest sentinel`,
+  );
   assert.match(deployment, command, `${name} must use a compiled entrypoint`);
   assert.match(deployment, /readOnlyRootFilesystem:\s*true/);
   assert.match(deployment, /capabilities:\s+drop:\s*\["ALL"\]/);
@@ -84,7 +89,7 @@ test('clone server and executor router are immutable and inert by merge', () => 
   assertInertDeployment(
     'clone server',
     clone,
-    /image:\s*ghcr\.io\/oresoftware\/gha-clone-server@sha256:0{64}/,
+    /image:\s*ghcr\.io\/oresoftware\/gha-clone-server@sha256:44684171d909f96fe216d529bfc14f6f32a11e87c0f339d1877ac20606223c97/,
     /command:\s*\["\/usr\/local\/bin\/gha-clone-server"\]/,
     /name:\s*GHA_CLONE_EXECUTION_ENABLED\s+value:\s*"false"/,
   );
@@ -97,7 +102,7 @@ test('clone server and executor router are immutable and inert by merge', () => 
   assertInertDeployment(
     'executor router',
     router,
-    /image:\s*ghcr\.io\/oresoftware\/gha-executor-router@sha256:0{64}/,
+    /image:\s*ghcr\.io\/oresoftware\/gha-executor-router@sha256:59a31a496e5c528f89acb7643b8ced1ea14bc6c15b1d83b22a37f4ba529708e6/,
     /command:\s*\["\/usr\/local\/bin\/gha-executor-router"\]/,
     /name:\s*GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED\s+value:\s*"false"/,
   );
