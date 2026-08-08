@@ -1,0 +1,94 @@
+name: Prepare resolved-target Playwright indie pin
+
+on:
+  push:
+    branches:
+      - agent/des-playwright-resolved-target-pin
+    paths:
+      - .github/workflows/tmp-des-playwright-pin.yml
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: tmp-des-playwright-pin
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the exact preparation branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/des-playwright-resolved-target-pin
+          fetch-depth: 0
+
+      - name: Replace the obsolete immutable test revision
+        shell: bash
+        env:
+          OLD_SHA: 1e1116ef6811c4e3e6be34ad3e1def39bc20ef59
+          NEW_SHA: 104a02c72ca827ec678de0ed6e71d40b6fccbb93
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import subprocess
+
+          old = os.environ['OLD_SHA']
+          new = os.environ['NEW_SHA']
+          result = subprocess.run(
+              ['git', 'grep', '-Il', old, '--', '.'],
+              check=False,
+              text=True,
+              capture_output=True,
+          )
+          if result.returncode not in (0, 1):
+              raise SystemExit(result.stderr)
+          paths = [pathlib.Path(line) for line in result.stdout.splitlines() if line]
+          if not paths:
+              raise SystemExit(f'no tracked file contains the obsolete SHA {old}')
+          for path in paths:
+              text = path.read_text(encoding='utf-8')
+              updated = text.replace(old, new)
+              if updated == text:
+                  raise SystemExit(f'expected replacement was not made in {path}')
+              path.write_text(updated, encoding='utf-8')
+          print('\n'.join(str(path) for path in paths))
+          PY
+          git rm .github/workflows/tmp-des-playwright-pin.yml
+          ! git grep -n "$OLD_SHA" -- .
+          git grep -n "$NEW_SHA" -- .
+
+      - name: Run focused immutable-harness contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ops/run_des_indie_browser_workflows.sh
+          node --check remote/tests/general/des-indie-browser-execution-contract.test.mjs
+          node --test remote/tests/general/des-indie-browser-execution-contract.test.mjs
+          grep -F "PLAYWRIGHT_SHA='104a02c72ca827ec678de0ed6e71d40b6fccbb93'" \
+            remote/tests/general/gha-indie-worker-yaml.test.ts >/dev/null
+
+      - name: Commit and open the narrow pin PR
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all
+          git diff --cached --check
+          git commit -m 'chore(gha-indie): pin resolved-target Playwright suite'
+          git push origin HEAD:agent/des-playwright-resolved-target-pin
+          if ! gh pr view agent/des-playwright-resolved-target-pin --json number >/dev/null 2>&1; then
+            gh pr create \
+              --base main \
+              --head agent/des-playwright-resolved-target-pin \
+              --title 'Pin the resolved-target Playwright suite for indie execution' \
+              --body $'The latest exact-SHA indie proof reached the real Playwright runner but used the prior test revision, whose static localhost base URL ignored the target selected by global setup.\n\nThis PR replaces that immutable pin with `discrete-event-systems-test/des-web-playwright-e2e@104a02c72ca827ec678de0ed6e71d40b6fccbb93`. The test-org commit has a successful full Chromium evidence run and routes service-local contracts through the resolved target.\n\nNo repository/profile admission, worker privilege, secret, webhook, Cloudflare route, or deployment authority changes. The temporary branch-preparation workflow deletes itself before this PR is opened.'
+          fi
