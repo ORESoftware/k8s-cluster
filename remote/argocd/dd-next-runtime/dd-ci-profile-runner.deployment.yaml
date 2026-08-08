@@ -28,8 +28,6 @@ spec:
     spec:
       serviceAccountName: dd-ci-profile-runner
       automountServiceAccountToken: false
-      hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
       terminationGracePeriodSeconds: 30
       containers:
         - name: ci-profile-runner
@@ -44,7 +42,14 @@ spec:
             - |
               set -euo pipefail
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-              cd /opt/dd-next-1/remote/deployments/ci-profile-runner-rs
+              export CARGO_HOME=/tmp/cargo
+              export CARGO_TARGET_DIR=/tmp/dd-ci-profile-runner-target
+              source_root=/tmp/dd-ci-profile-runner-source
+              rm -rf "$source_root"
+              mkdir -p "$source_root/remote/deployments" "$source_root/remote"
+              cp -a /opt/dd-next-1/remote/deployments/ci-profile-runner-rs "$source_root/remote/deployments/"
+              cp -a /opt/dd-next-1/remote/libs "$source_root/remote/libs"
+              cd "$source_root/remote/deployments/ci-profile-runner-rs"
               exec /usr/local/cargo/bin/cargo run --release
           env:
             - name: HOST
@@ -117,6 +122,8 @@ spec:
               readOnly: true
             - name: work
               mountPath: /var/lib/dd-ci-profile-runner
+            - name: tmp
+              mountPath: /tmp
             - name: containerd-sock
               mountPath: /run/containerd/containerd.sock
             - name: containerd-root
@@ -137,6 +144,9 @@ spec:
           hostPath:
             path: /var/lib/dd-ci-profile-runner
             type: DirectoryOrCreate
+        - name: tmp
+          emptyDir:
+            sizeLimit: 8Gi
         - name: containerd-sock
           hostPath:
             path: /run/containerd/containerd.sock
