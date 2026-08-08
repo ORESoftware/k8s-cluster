@@ -1,0 +1,148 @@
+name: Canonical test-org and Cloudflare read-only preflight
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - ".github/workflows/canonical-control-plane-preflight.yml"
+      - "config/ci/canonical-control-plane-preflight.json"
+      - "scripts/ci/canonical-control-plane-preflight.py"
+      - "scripts/ci/test-canonical-control-plane-preflight.py"
+      - "scripts/ci/wait-for-encrypted-canonical-bundle.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: canonical-control-plane-preflight-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'ci/canonical-test-org-cloudflare-preflight'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      CONTRACT_PATH: config/ci/canonical-control-plane-preflight.json
+      EVIDENCE_DIR: ops/evidence/canonical-control-plane-preflight
+      CANONICAL_NONCE: canonical-${{ github.run_id }}-${{ github.run_attempt }}
+      CIPHERTEXT_PATH: .github/tmp/canonical-control-plane-${{ github.run_id }}-${{ github.run_attempt }}.enc.b64
+      BUNDLE_REF: ${{ github.event.pull_request.head.ref }}
+
+    steps:
+      - name: Check out the exact reviewed harness head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+          submodules: false
+
+      - name: Validate the fail-closed contracts before receiving credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = ORESoftware/k8s-cluster
+          test "$GITHUB_HEAD_REF" = ci/canonical-test-org-cloudflare-preflight
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          python3 -m py_compile \
+            scripts/ci/canonical-control-plane-preflight.py \
+            scripts/ci/test-canonical-control-plane-preflight.py \
+            scripts/ci/wait-for-encrypted-canonical-bundle.py
+          python3 scripts/ci/test-canonical-control-plane-preflight.py -v
+          python3 - <<'PY'
+          from pathlib import Path
+          paths = [
+              Path('scripts/ci/canonical-control-plane-preflight.py'),
+              Path('scripts/ci/wait-for-encrypted-canonical-bundle.py'),
+              Path('.github/workflows/canonical-control-plane-preflight.yml'),
+          ]
+          source = '\n'.join(path.read_text() for path in paths)
+          forbidden = (
+              'git checkout',
+              'git reset',
+              'git stash',
+              '\nrm ',
+              '\nsed ',
+              'wrangler deploy',
+              'kubectl apply',
+              'terraform apply',
+          )
+          found = [item for item in forbidden if item in source]
+          if found:
+              raise SystemExit(f'forbidden command or live-write path found: {found}')
+          PY
+
+      - name: Generate a run-specific RSA-OAEP handoff key
+        shell: bash
+        run: |
+          set -euo pipefail
+          private_key="$RUNNER_TEMP/canonical-control-plane.private.pem"
+          public_key="$RUNNER_TEMP/canonical-control-plane.public.pem"
+          openssl genpkey \
+            -algorithm RSA \
+            -pkeyopt rsa_keygen_bits:4096 \
+            -out "$private_key" >/dev/null 2>&1
+          openssl pkey \
+            -in "$private_key" \
+            -pubout \
+            -out "$public_key" >/dev/null 2>&1
+          public_key_b64="$(base64 -w0 "$public_key")"
+          echo "CANONICAL_PRIVATE_KEY=$private_key" >> "$GITHUB_ENV"
+          echo "CANONICAL_CONTROL_PLANE_HANDSHAKE nonce=$CANONICAL_NONCE path=$CIPHERTEXT_PATH public_key_b64=$public_key_b64"
+
+      - name: Receive the encrypted run-scoped credential bundle
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/wait-for-encrypted-canonical-bundle.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --ref "$BUNDLE_REF" \
+            --path "$CIPHERTEXT_PATH" \
+            --output "$RUNNER_TEMP/canonical-control-plane.bundle.enc"
+
+      - name: Decrypt the credential bundle inside the ephemeral runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          openssl pkeyutl \
+            -decrypt \
+            -inkey "$CANONICAL_PRIVATE_KEY" \
+            -in "$RUNNER_TEMP/canonical-control-plane.bundle.enc" \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256 \
+            > "$RUNNER_TEMP/canonical-control-plane.bundle.json"
+          chmod 600 "$RUNNER_TEMP/canonical-control-plane.bundle.json"
+
+      - name: Inventory Canonical Cloudflare and stage exact heads in canonical-cloud-test
+        id: preflight
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/canonical-control-plane-preflight.py \
+            --bundle "$RUNNER_TEMP/canonical-control-plane.bundle.json" \
+            --contract "$CONTRACT_PATH" \
+            --evidence-dir "$EVIDENCE_DIR" \
+            --nonce "$CANONICAL_NONCE"
+
+      - name: Upload redacted Canonical evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: canonical-control-plane-preflight-${{ github.run_id }}
+          path: ops/evidence/canonical-control-plane-preflight
+          if-no-files-found: warn
+          retention-days: 30
+          include-hidden-files: true
+
+      - name: Enforce the preflight result
+        if: always()
+        shell: bash
+        run: test '${{ steps.preflight.outcome }}' = success
