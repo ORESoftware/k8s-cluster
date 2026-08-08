@@ -35,7 +35,6 @@ jobs:
     timeout-minutes: 10
     env:
       BRIDGE_SOURCE_REVISION: c3e54e6cd0c6d56e3d2ed32902228d974e550a3f
-      AI_BRIDGE_PUBLIC_EVIDENCE_PATH: ${{ runner.temp }}/ai-agent-bridge-public-ingress.json
     steps:
       - name: Checkout the measured dev revision without credentials or private gitlinks
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,6 +49,8 @@ jobs:
         run: node --test remote/tests/general/ai-agent-bridge-public-ingress-contract.test.mjs
 
       - name: Probe public DNS TLS and fail-closed Slack routes
+        env:
+          AI_BRIDGE_PUBLIC_EVIDENCE_PATH: ${{ runner.temp }}/ai-agent-bridge-public-ingress.json
         run: bash scripts/ci/test-ai-agent-bridge-public-ingress.sh
 
       - name: Upload metadata-only public ingress evidence
