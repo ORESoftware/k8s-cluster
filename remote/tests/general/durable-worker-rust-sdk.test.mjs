@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -46,6 +46,9 @@ test('worker owns bounded heartbeats, progress identity, cancellation, and stale
   assert.match(worker, /if cancellation\.is_cancelled\(\) \{[\s\S]*?TaskOutcome::LeaseLost/);
   assert.match(worker, /tokio::select!/);
   assert.match(tests, /fenced_heartbeat_cancels_handler_and_suppresses_terminal_mutations/);
+  assert.match(tests, /fenced_progress_output_cancels_handler_and_suppresses_terminal_mutations/);
+  assert.match(tests, /step-1:3:1/);
+  assert.match(tests, /step-1:3:2/);
   assert.match(tests, /!operations\.contains\(&"complete"\.to_owned\(\)\)/);
   assert.match(tests, /!operations\.contains\(&"fail"\.to_owned\(\)\)/);
 });
@@ -63,15 +66,26 @@ test('shared fixture and docs retain the protocol safety contract', () => {
   assert.match(deliveryDoc, /stale lease generation/);
 });
 
-test('focused CI is read-only, pinned, multi-version, and publishes a deterministic artifact', () => {
+test('focused CI is locked, read-only, pinned, multi-version, and deterministic', () => {
   assert.match(workflow, /permissions:\n  contents: read/);
   assert.match(workflow, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/);
+  assert.match(workflow, /persist-credentials: false/);
+  assert.match(workflow, /submodules: false/);
   assert.match(workflow, /dtolnay\/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30/);
   assert.match(workflow, /- '1\.85\.0'/);
   assert.match(workflow, /- stable/);
-  assert.match(workflow, /cargo clippy --all-targets --all-features -- -D warnings/);
+  assert.match(workflow, /cargo metadata --locked --no-deps --format-version 1/);
+  assert.match(workflow, /cargo fmt --all -- --check/);
+  assert.match(workflow, /cargo clippy --locked --all-targets --all-features -- -D warnings/);
+  assert.match(workflow, /cargo test --locked --all-targets --all-features -- --nocapture/);
+  assert.match(workflow, /cargo tree --locked --duplicates/);
   assert.match(workflow, /seq 1 50/);
   assert.match(workflow, /tar[\s\S]*?--sort=name[\s\S]*?--mtime='UTC 1970-01-01'[\s\S]*?gzip -n/);
   assert.match(workflow, /actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/);
   assert.doesNotMatch(workflow, /contents: write|pull-requests: write|persist-credentials: true/);
+  assert.equal(
+    existsSync(resolve(repoRoot, '.github/workflows/durable-worker-rust-lock-bootstrap.yml')),
+    false,
+    'the temporary write-capable Cargo.lock bootstrap workflow must stay removed',
+  );
 });
