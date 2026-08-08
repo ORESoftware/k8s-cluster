@@ -177,6 +177,27 @@ print_plan_failure() {
   }' "$plan_file" >&2 2>/dev/null || cat "$plan_file" >&2
 }
 
+print_build_logs() {
+  local slug="$1"
+  local run_file="$2"
+  local build_id log_file
+  while IFS= read -r build_id; do
+    [[ -n "$build_id" ]] || continue
+    log_file="$WORK_DIR/$slug-$build_id.log"
+    echo "DES_INDIE_BUILD_LOG_BEGIN slug=$slug buildId=$build_id" >&2
+    if curl --fail --silent --show-error \
+      --header "x-server-auth: $server_auth" \
+      "http://127.0.0.1:18100/builds/$build_id/logs" \
+      > "$log_file"; then
+      tail -c 16000 "$log_file" >&2
+      printf '\n' >&2
+    else
+      echo "DES_INDIE_BUILD_LOG_UNAVAILABLE slug=$slug buildId=$build_id" >&2
+    fi
+    echo "DES_INDIE_BUILD_LOG_END slug=$slug buildId=$build_id" >&2
+  done < <(jq -r '.jobs[]?.buildId // empty' "$run_file")
+}
+
 print_run_failure() {
   local slug="$1"
   local run_file="$2"
@@ -189,6 +210,7 @@ print_run_failure() {
     plan:{repository:.plan.repository,revision:.plan.revision,workflowPath:.plan.workflowPath,executable:.plan.executable},
     jobs:[.jobs[]? | {id,profile,status,buildId,error}]
   }' "$run_file" >&2 2>/dev/null || cat "$run_file" >&2
+  print_build_logs "$slug" "$run_file"
 }
 
 coordinate_bridge
