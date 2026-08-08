@@ -13,7 +13,7 @@ assert.ok(sourceRoot, 'SLACK_COMMAND_SOURCE_ROOT must select the exact reviewed 
 const SOURCE_SHA = 'ec667946b1f8725b6baea8e67ae6a701d602dc04';
 const WORKFLOW_RUN = '31264194679';
 const IMAGE =
-  'ghcr.io/oresoftware/fiducia-slack-command@sha256:b726025e01652b6e5d89814a928b23bdd5dc2fcf3e461831e82c3c785fa5c64d';
+  'ghcr.io/oresoftware/fiducia-slack-command@sha256:2edbd96bc02780d951425b6688e5b555ced445ba568576b1b9db56fc417b60ae';
 
 const bundle = readFileSync(bundlePath, 'utf8');
 const kustomization = readFileSync(kustomizationPath, 'utf8');
