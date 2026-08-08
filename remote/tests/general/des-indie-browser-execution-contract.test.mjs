@@ -9,7 +9,7 @@ const policy = fs.readFileSync(
   'utf8',
 );
 
-const PLAYWRIGHT_SHA = '1e1116ef6811c4e3e6be34ad3e1def39bc20ef59';
+const PLAYWRIGHT_SHA = '104a02c72ca827ec678de0ed6e71d40b6fccbb93';
 const PUPPETEER_SHA = '0547548429d937023a124de37afca7659a85c3dd';
 
 test('DES indie harness uses planner-valid reviewed workflow paths', () => {

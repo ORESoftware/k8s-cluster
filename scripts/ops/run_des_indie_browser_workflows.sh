@@ -3,7 +3,7 @@ set -Eeuo pipefail
 umask 077
 
 readonly PLAYWRIGHT_REPO='discrete-event-systems-test/des-web-playwright-e2e'
-readonly PLAYWRIGHT_SHA='1e1116ef6811c4e3e6be34ad3e1def39bc20ef59'
+readonly PLAYWRIGHT_SHA='104a02c72ca827ec678de0ed6e71d40b6fccbb93'
 readonly PLAYWRIGHT_PATH='.github/workflows/gha-indie-worker.yml'
 readonly PUPPETEER_REPO='discrete-event-systems-test/des-web-puppeteer-e2e'
 readonly PUPPETEER_SHA='0547548429d937023a124de37afca7659a85c3dd'

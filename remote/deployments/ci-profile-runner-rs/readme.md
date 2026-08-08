@@ -13,7 +13,7 @@ Authenticated `POST /run` accepts only `ci-profile-runner.v1`:
   "schemaVersion": "ci-profile-runner.v1",
   "requestId": "gha:example",
   "repository": "discrete-event-systems-test/des-web-playwright-e2e",
-  "revision": "1e1116ef6811c4e3e6be34ad3e1def39bc20ef59",
+  "revision": "104a02c72ca827ec678de0ed6e71d40b6fccbb93",
   "profile": "playwright"
 }
 ```
