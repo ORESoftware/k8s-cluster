@@ -26,7 +26,7 @@ const runbook = readFileSync(
 const immutableAction = /^(?:\.\/|[^@\s]+@[0-9a-fA-F]{40})$/;
 
 function actionReferences(workflow) {
-  return [...workflow.matchAll(/(?m)^\s*-?\s*uses:\s*([^\s#]+)/g)].map(
+  return [...workflow.matchAll(/^\s*-?\s*uses:\s*([^\s#]+)/gm)].map(
     (match) => match[1],
   );
 }
@@ -67,10 +67,13 @@ test('pull-request contract is static, immutable, bounded, and credential-free',
   assert.match(contractWorkflow, /python3 -m py_compile/);
   assert.match(contractWorkflow, /node --test/);
   assert.match(contractWorkflow, /--self-test/);
-  assert.match(contractWorkflow, /bash -n scripts\/ci\/run-ai-agent-bridge-public-ingress-diagnostic\.sh/);
+  assert.match(
+    contractWorkflow,
+    /bash -n scripts\/ci\/run-ai-agent-bridge-public-ingress-diagnostic\.sh/,
+  );
   assert.doesNotMatch(
     contractWorkflow,
-    /run-ai-agent-bridge-public-ingress-diagnostic\.sh\s*$/m,
+    /^\s*run:\s*bash scripts\/ci\/run-ai-agent-bridge-public-ingress-diagnostic\.sh\s*$/m,
   );
   for (const action of actionReferences(contractWorkflow)) {
     assert.match(action, immutableAction);
