@@ -1,0 +1,183 @@
+     }
+ }
+ 
+@@ -562,15 +692,20 @@ async fn step_heartbeat_loop(
+     cancellation: Cancellation,
+ ) {
+     let interval = Duration::from_millis(interval_ms);
++    let request_timeout = heartbeat_request_timeout(interval);
+     loop {
+         tokio::select! {
+             _ = stop.cancelled() => break,
+             _ = tokio::time::sleep(interval) => {
+-                if api
+-                    .heartbeat_step(&step_id, lease.clone())
+-                    .await
+-                    .is_err()
+-                {
++                let heartbeat = tokio::select! {
++                    biased;
++                    _ = stop.cancelled() => break,
++                    result = tokio::time::timeout(
++                        request_timeout,
++                        api.heartbeat_step(&step_id, lease.clone()),
++                    ) => result,
++                };
++                if !matches!(heartbeat, Ok(Ok(()))) {
+                     cancellation.cancel();
+                     break;
+                 }
+@@ -578,3 +713,7 @@ async fn step_heartbeat_loop(
+         }
+     }
+ }
++
++fn heartbeat_request_timeout(interval: Duration) -> Duration {
++    std::cmp::min(interval, Duration::from_secs(10))
++}
+diff --git a/remote/worker-sdks/rust/durable-worker/tests/worker.rs b/remote/worker-sdks/rust/durable-worker/tests/worker.rs
+index ed090f8..4e19c82 100644
+--- a/remote/worker-sdks/rust/durable-worker/tests/worker.rs
++++ b/remote/worker-sdks/rust/durable-worker/tests/worker.rs
+@@ -5,6 +5,7 @@ use oresoftware_durable_worker::{
+ };
+ use serde_json::json;
+ use std::collections::HashMap;
++use std::future::pending;
+ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+ use std::sync::{Arc, Mutex};
+ use std::time::Duration;
+@@ -16,6 +17,10 @@ struct FakeApi {
+     assignment: Arc<Mutex<Option<Assignment>>>,
+     fence_heartbeat: Arc<AtomicBool>,
+     fence_output: Arc<AtomicBool>,
++    block_poll: Arc<AtomicBool>,
++    block_step_heartbeat: Arc<AtomicBool>,
++    complete_protocol_error: Arc<AtomicBool>,
++    poll_observed: Arc<Notify>,
+     heartbeat_observed: Arc<Notify>,
+     step_heartbeat_count: Arc<AtomicUsize>,
+     output_chunk_ids: Arc<Mutex<Vec<String>>>,
+@@ -30,6 +35,10 @@ impl Default for FakeApi {
+             assignment: Arc::new(Mutex::new(None)),
+             fence_heartbeat: Arc::new(AtomicBool::new(false)),
+             fence_output: Arc::new(AtomicBool::new(false)),
++            block_poll: Arc::new(AtomicBool::new(false)),
++            block_step_heartbeat: Arc::new(AtomicBool::new(false)),
++            complete_protocol_error: Arc::new(AtomicBool::new(false)),
++            poll_observed: Arc::new(Notify::new()),
+             heartbeat_observed: Arc::new(Notify::new()),
+             step_heartbeat_count: Arc::new(AtomicUsize::new(0)),
+             output_chunk_ids: Arc::new(Mutex::new(Vec::new())),
+@@ -96,6 +105,10 @@ impl WorkerApi for FakeApi {
+     ) -> WorkerFuture<'a, WorkerPoll> {
+         Box::pin(async move {
+             self.record("poll");
++            self.poll_observed.notify_one();
++            if self.block_poll.load(Ordering::Acquire) {
++                pending::<()>().await;
++            }
+             Ok(WorkerPoll {
+                 assignment: self.assignment.lock().expect("assignment lock").take(),
+                 retry_after_ms: 1,
+@@ -115,6 +128,9 @@ impl WorkerApi for FakeApi {
+             self.record("step-heartbeat");
+             self.step_heartbeat_count.fetch_add(1, Ordering::AcqRel);
+             self.heartbeat_observed.notify_one();
++            if self.block_step_heartbeat.load(Ordering::Acquire) {
++                pending::<()>().await;
++            }
+             if self.fence_heartbeat.load(Ordering::Acquire) {
+                 Err(DurableWorkerError::LeaseLost(
+                     oresoftware_durable_worker::ProtocolError::new(
+@@ -163,6 +179,16 @@ impl WorkerApi for FakeApi {
+     ) -> WorkerFuture<'a, ()> {
+         Box::pin(async move {
+             self.record("complete");
++            if self.complete_protocol_error.load(Ordering::Acquire) {
++                return Err(DurableWorkerError::Protocol(
++                    oresoftware_durable_worker::ProtocolError::new(
++                        "upstream_unavailable",
++                        "completion result is unknown",
++                        Some(503),
++                        true,
++                    ),
++                ));
++            }
+             *self.completion.lock().expect("completion lock") = Some(completion);
+             Ok(())
+         })
+@@ -210,6 +236,18 @@ fn config() -> WorkerConfig {
+     }
+ }
+ 
++#[test]
++fn rejects_worker_heartbeat_cadence_that_can_expire_the_ttl() {
++    let mut worker_config = config();
++    worker_config.worker_heartbeat_ms = worker_config.ttl_ms;
++    assert!(Worker::new(
++        Arc::new(FakeApi::default()),
++        HashMap::new(),
++        worker_config,
++    )
++    .is_err());
++}
++
+ #[tokio::test]
+ async fn streams_progress_and_completes_under_the_same_generation() {
+     let api = Arc::new(FakeApi::with_assignment(assignment()));
+@@ -236,6 +274,7 @@ async fn streams_progress_and_completes_under_the_same_generation() {
+     assert_eq!(summary.accepted, 1);
+     assert_eq!(summary.completed, 1);
+     assert_eq!(summary.failed, 0);
++    assert_eq!(summary.protocol_errors, 0);
+     assert!(api.step_heartbeat_count.load(Ordering::Acquire) > 0);
+     let operations = api.operations();
+     assert!(operations.contains(&"output".to_owned()));
+@@ -256,22 +295,12 @@ async fn streams_progress_and_completes_under_the_same_generation() {
+ }
+ 
+ #[tokio::test]
+-async fn fenced_heartbeat_cancels_handler_and_suppresses_terminal_mutations() {
++async fn fenced_heartbeat_aborts_non_cooperative_handler_and_suppresses_terminal_mutations() {
+     let api = Arc::new(FakeApi::with_assignment(assignment()));
+     api.fence_heartbeat.store(true, Ordering::Release);
+-    let heartbeat_observed = Arc::clone(&api.heartbeat_observed);
+-    let observed = Arc::new(AtomicBool::new(false));
+-    let handler_observed = Arc::clone(&observed);
+-    let handler: Handler = Arc::new(move |context: TaskContext| {
+-        let heartbeat_observed = Arc::clone(&heartbeat_observed);
+-        let observed = Arc::clone(&handler_observed);
++    let handler: Handler = Arc::new(|_context: TaskContext| {
+         Box::pin(async move {
+-            heartbeat_observed.notified().await;
+-            tokio::time::timeout(Duration::from_secs(1), context.cancellation().cancelled())
+-                .await
+-                .expect("lease-loss cancellation should be prompt");
+-            observed.store(true, Ordering::Release);
+-            context.check_cancelled()?;
++            pending::<()>().await;
+             Ok(JsonObject::new())
+         })
+     });
+@@ -281,12 +310,15 @@ async fn fenced_heartbeat_cancels_handler_and_suppresses_terminal_mutations() {
+         config(),
+     )
+     .expect("worker");
+-    let summary = worker
+-        .run(Cancellation::default())
+-        .await
+-        .expect("worker run");
+-    assert!(observed.load(Ordering::Acquire));
++    let summary = tokio::time::timeout(
++        Duration::from_millis(250),
++        worker.run(Cancellation::default()),
++    )
++    .await
++    .expect("lease loss should abort a non-cooperative handler promptly")
++    .expect("worker run");
+     assert_eq!(summary.lease_lost, 1);
++    assert_eq!(summary.protocol_errors, 0);
+     let operations = api.operations();
+     assert!(!operations.contains(&"complete".to_owned()));
+     assert!(!operations.contains(&"fail".to_owned()));
