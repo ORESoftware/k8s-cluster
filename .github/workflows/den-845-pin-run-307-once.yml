@@ -13,13 +13,27 @@ permissions:
 jobs:
   pin:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Check out the release-pin branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: agent/den-845-bridge-digests-run-307
           fetch-depth: 1
+
+      - name: Check out the exact reviewed bridge source without private gitlinks
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/ai-agent-bridge.rs
+          ref: ec667946b1f8725b6baea8e67ae6a701d602dc04
+          path: .tmp/ai-agent-bridge
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+
+      - name: Prepare credential-free source inputs for the Slack contract
+        working-directory: .tmp/ai-agent-bridge
+        run: bash scripts/ci/prepare-credential-free-build.sh
 
       - name: Apply the exact reviewed source and digest replacements
         shell: bash
@@ -106,6 +120,8 @@ jobs:
           git update-index --cacheinfo 160000,ec667946b1f8725b6baea8e67ae6a701d602dc04,remote/deployments/ai-agent-bridge
 
       - name: Run focused release-pin contracts
+        env:
+          SLACK_COMMAND_SOURCE_ROOT: ${{ github.workspace }}/.tmp/ai-agent-bridge
         shell: bash
         run: |
           set -euo pipefail
