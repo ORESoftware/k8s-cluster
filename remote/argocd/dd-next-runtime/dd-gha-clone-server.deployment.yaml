@@ -6,8 +6,9 @@ metadata:
   labels:
     app: dd-gha-clone-server
 spec:
-  # Deliberately non-runnable until an immutable reviewed image replaces the
-  # all-zero digest. Merge must not enable API, webhook, or build execution.
+  # The reviewed, signed, scanned image is pinned below, but the service remains
+  # deliberately non-runnable. A separate activation change must scale replicas
+  # and must not enable API, webhook, or build execution without proof.
   replicas: 0
   strategy:
     type: Recreate
@@ -29,9 +30,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gha-clone-server
-          # Activation gate: replace this sentinel with a signed, scanned,
-          # SBOM-attested image digest built from the exact merged clone commit.
-          image: ghcr.io/oresoftware/gha-clone-server@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          # Published from k8s-cluster dev@5aad32c37be7f29f9355f19d6ce6d316494ff141
+          # with SPDX SBOM, max SLSA provenance, and zero Trivy HIGH/CRITICAL findings.
+          image: ghcr.io/oresoftware/gha-clone-server@sha256:44684171d909f96fe216d529bfc14f6f32a11e87c0f339d1877ac20606223c97
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/gha-clone-server"]
           env:
