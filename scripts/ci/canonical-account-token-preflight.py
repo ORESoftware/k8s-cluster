@@ -9,15 +9,20 @@ surface intact while selecting the correct reviewed endpoint.
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 from typing import Any
 
 CORE_PATH = Path(__file__).with_name("canonical-control-plane-preflight.py")
-SPEC = importlib.util.spec_from_file_location("canonical_control_plane_preflight_core", CORE_PATH)
-if SPEC is None or SPEC.loader is None:
-    raise RuntimeError("failed to load Canonical control-plane preflight core")
-CORE = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(CORE)
+CORE = sys.modules.get("canonical_control_plane_preflight")
+if CORE is None:
+    SPEC = importlib.util.spec_from_file_location(
+        "canonical_control_plane_preflight_core", CORE_PATH
+    )
+    if SPEC is None or SPEC.loader is None:
+        raise RuntimeError("failed to load Canonical control-plane preflight core")
+    CORE = importlib.util.module_from_spec(SPEC)
+    SPEC.loader.exec_module(CORE)
 
 
 class AccountTokenCloudflareClient(CORE.CloudflareClient):
