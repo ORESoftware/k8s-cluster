@@ -4,7 +4,7 @@
 #   - their private GHCR packages are published;
 #   - Argo has read access to both private Git repositories;
 #   - dd/remote-dev/agent-secrets has provider/GitHub/control-plane values;
-#   - dd/meta-agents-demo/linear has LINEAR_API_KEY for Linear ingestion.
+#   - dd/remote-dev/project-automation-secrets has linear_api_key for Linear ingestion.
 # No fallback/mock tasks are activated when a source credential is unavailable.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
