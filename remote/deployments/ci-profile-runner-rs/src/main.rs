@@ -127,14 +127,22 @@ fn authorized(headers: &HeaderMap, config: &Config) -> bool {
         .iter()
         .filter_map(|name| headers.get(*name))
         .filter_map(|value| value.to_str().ok())
-        .map(|value| value.trim_start_matches("Bearer ").trim_start_matches("bearer "))
+        .map(|value| {
+            value
+                .trim_start_matches("Bearer ")
+                .trim_start_matches("bearer ")
+        })
         .any(|candidate| constant_time_equals(candidate, &config.server_auth_secret))
 }
 
 fn valid_repository(value: &str) -> bool {
     let mut parts = value.split('/');
-    let Some(owner) = parts.next() else { return false; };
-    let Some(repo) = parts.next() else { return false; };
+    let Some(owner) = parts.next() else {
+        return false;
+    };
+    let Some(repo) = parts.next() else {
+        return false;
+    };
     if parts.next().is_some() || owner.is_empty() || repo.is_empty() {
         return false;
     }
@@ -184,7 +192,9 @@ fn config_from_env() -> Config {
         &env_string("CI_PROFILE_RUNNER_RULES_JSON").unwrap_or_else(|| "{}".to_string()),
     );
     if allowed.is_empty() {
-        panic!("CI_PROFILE_RUNNER_RULES_JSON must contain at least one exact repository/profile rule");
+        panic!(
+            "CI_PROFILE_RUNNER_RULES_JSON must contain at least one exact repository/profile rule"
+        );
     }
     Config {
         host: env_value("HOST", "0.0.0.0"),
@@ -306,14 +316,7 @@ fn restricted_git_args() -> Vec<String> {
 }
 
 async fn git_checked(config: &Config, args: Vec<String>, cwd: &Path) -> Result<(), String> {
-    let result = run_capped(
-        &config.git_bin,
-        args,
-        cwd,
-        120,
-        config.max_output_bytes,
-    )
-    .await?;
+    let result = run_capped(&config.git_bin, args, cwd, 120, config.max_output_bytes).await?;
     if result.success {
         Ok(())
     } else {
@@ -456,7 +459,10 @@ async fn run_profile(
         "--cap-drop=ALL".to_string(),
         "--env=CI=true".to_string(),
         "--mount".to_string(),
-        format!("type=bind,src={},dst=/workspace", repo_dir.to_string_lossy()),
+        format!(
+            "type=bind,src={},dst=/workspace",
+            repo_dir.to_string_lossy()
+        ),
         "--workdir".to_string(),
         "/workspace".to_string(),
         image.to_string(),
@@ -486,7 +492,9 @@ fn validate_request(request: &RunRequest, config: &Config) -> Result<(), String>
         return Err(format!("schemaVersion must be {SCHEMA}"));
     }
     if !valid_repository(&request.repository) {
-        return Err("repository must be owner/name with a conservative GitHub-safe spelling".to_string());
+        return Err(
+            "repository must be owner/name with a conservative GitHub-safe spelling".to_string(),
+        );
     }
     if !valid_revision(&request.revision) {
         return Err("revision must be an exact 40-hex commit SHA".to_string());
@@ -506,9 +514,9 @@ fn validate_request(request: &RunRequest, config: &Config) -> Result<(), String>
     }
     if let Some(request_id) = request.request_id.as_deref() {
         if request_id.len() > 160
-            || !request_id
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'))
+            || !request_id.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':')
+            })
         {
             return Err("requestId contains unsupported characters or is too long".to_string());
         }
@@ -647,8 +655,14 @@ fn router(state: AppState) -> Router {
                 async move { Json(descriptor(&state)) }
             }),
         )
-        .route("/healthz", get(|| async { Json(json!({"ok": true, "service": SERVICE})) }))
-        .route("/readyz", get(|| async { Json(json!({"ok": true, "service": SERVICE})) }))
+        .route(
+            "/healthz",
+            get(|| async { Json(json!({"ok": true, "service": SERVICE})) }),
+        )
+        .route(
+            "/readyz",
+            get(|| async { Json(json!({"ok": true, "service": SERVICE})) }),
+        )
         .route("/run", post(handle_run))
         .with_state(state)
 }
@@ -670,12 +684,15 @@ async fn main() {
         .await
         .unwrap_or_else(|error| panic!("failed to bind {bind}: {error}"));
     tracing::info!("{SERVICE} listening on {bind}");
-    axum::serve(listener, router(state).layer(dd_telemetry::http_trace_layer()))
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await
-        .expect("server error");
+    axum::serve(
+        listener,
+        router(state).layer(dd_telemetry::http_trace_layer()),
+    )
+    .with_graceful_shutdown(async {
+        let _ = tokio::signal::ctrl_c().await;
+    })
+    .await
+    .expect("server error");
 }
 
 #[cfg(test)]
@@ -691,7 +708,9 @@ mod tests {
 
     #[test]
     fn repository_spelling_is_conservative() {
-        assert!(valid_repository("discrete-event-systems-test/des-web-playwright-e2e"));
+        assert!(valid_repository(
+            "discrete-event-systems-test/des-web-playwright-e2e"
+        ));
         assert!(!valid_repository("discrete-event-systems-test/../secret"));
         assert!(!valid_repository("https://github.com/a/b"));
     }
