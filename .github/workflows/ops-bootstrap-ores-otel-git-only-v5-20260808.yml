@@ -1,0 +1,109 @@
+name: Bootstrap ORES OTEL Git-only test fleet v5
+run-name: Bootstrap ORES OTEL Git-only test fleet v5 from ${{ github.sha }}
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ops-bootstrap-ores-otel-git-only-v5-20260808.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ops-bootstrap-ores-otel-git-only-v5-20260808
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out exact trusted trigger revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          clean: true
+          show-progress: false
+
+      - name: Configure trusted main-ref AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: bootstrap-ores-otel-git-only-v5
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Validate exact reviewed Git-only publisher inputs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git hash-object scripts/ops/bootstrap_ores_otel_test_fleet_git_only_20260808.sh)" = \
+            'b7a4bc2846969504f7c2e1c61ddab9f6a0e01076'
+          test "$(git hash-object scripts/ops/envelopes/ores_otel_git_only_publisher_20260808_v5.json)" = \
+            '3fa2c138012abaa2a73905ebfa700371018a2f33'
+          test "$(git hash-object scripts/ops/run_protected_ores_otel_git_only_20260808_v5.sh)" = \
+            '2fcb6a84cb0322996212db67c083ecd2c357b82f'
+          bash -n scripts/ops/bootstrap_ores_otel_test_fleet_git_only_20260808.sh
+          bash -n scripts/ops/run_protected_ores_otel_git_only_20260808_v5.sh
+          python3 -m json.tool \
+            scripts/ops/envelopes/ores_otel_git_only_publisher_20260808_v5.json \
+            >/dev/null
+
+      - name: Publish and independently verify through the protected SSM host
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: |
+          set -Eeuo pipefail
+          test -n "${INSTANCE_ID:-}"
+          trusted_sha="$(git rev-parse HEAD)"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          broker='scripts/ops/run_protected_ores_otel_git_only_20260808_v5.sh'
+          encoded_broker="$(base64 --wrap=0 "$broker")"
+          remote_root="/tmp/ores-otel-git-only-v5-${trusted_sha:0:12}"
+          remote_command="root='$remote_root'; broker=\"\$root/publisher-v5.sh\"; log=\"\$root/publisher-v5.log\"; rm -rf \"\$root\"; mkdir -p \"\$root\"; chmod 700 \"\$root\"; printf '%s' '$encoded_broker' | base64 --decode > \"\$broker\"; chmod 700 \"\$broker\"; status=0; bash \"\$broker\" '$trusted_sha' >\"\$log\" 2>&1 || status=\$?; if test -f \"\$log\"; then tail -c 120000 \"\$log\"; fi; rm -rf \"\$root\"; exit \$status"
+          parameters="$RUNNER_TEMP/ssm-parameters.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "Publish ORES OTEL Git-only test fleet v5 from $trusted_sha" \
+              --parameters "file://$parameters" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+          echo "ssm_command_id=$command_id"
+
+          status=Pending
+          for _ in $(seq 1 1500); do
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query Status \
+                --output text 2>/dev/null || true
+            )"
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut|Cancelling)
+                break
+                ;;
+            esac
+            sleep 3
+          done
+
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json
+          test "$status" = Success
