@@ -8,10 +8,10 @@ const networkPolicyPath =
   'remote/argocd/dd-next-runtime/dd-ai-agent-runner.networkpolicy.yaml';
 const kustomizationPath = 'remote/argocd/dd-next-runtime/kustomization.yaml';
 
-const SOURCE_SHA = 'ec667946b1f8725b6baea8e67ae6a701d602dc04';
-const WORKFLOW_RUN = '31264194679';
+const SOURCE_SHA = 'd4ade93a01f79b0347e36c48e6d26b236f83f011';
+const WORKFLOW_RUN = '31278723389';
 const IMAGE =
-  'ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:e18c1ea7113f40e303379bd75bfd32b41ba00137a91e965ea67dca591e8105f4';
+  'ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:940ce31bd425081efc925fafe9065ab77e301addb3b916eba620c156658c7161';
 
 const deployment = readFileSync(deploymentPath, 'utf8');
 const networkPolicy = readFileSync(networkPolicyPath, 'utf8');
