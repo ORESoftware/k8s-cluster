@@ -1,0 +1,375 @@
+name: Create cliptown-lib through GraphQL once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-create-cliptown-lib-graphql-once.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: create-cliptown-lib-encrypted-once
+  cancel-in-progress: false
+
+jobs:
+  create:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      CONTROL_REPOSITORY: ${{ github.repository }}
+      CONTROL_BRANCH: main
+      TARGET_ORGANIZATION: cliptown
+      TARGET_REPOSITORY: cliptown-lib
+      TARGET_DESCRIPTION: Shared Rust library for ClipTown domain logic, authorization-safe primitives, and reusable application services.
+      HANDSHAKE_NONCE: b5936e4a68c34fde82f4fce9dc94831d
+      PUBLIC_KEY_PATH: .github/tmp/cliptown-lib-b5936e4a68c34fde82f4fce9dc94831d.pub.pem
+      CIPHERTEXT_PATH: .github/tmp/cliptown-lib-b5936e4a68c34fde82f4fce9dc94831d.enc.b64
+      ORIGINAL_WORKFLOW_PATH: .github/workflows/ops-create-cliptown-lib-encrypted-once.yml
+      RETRY_WORKFLOW_PATH: .github/workflows/ops-create-cliptown-lib-encrypted-retry.yml
+      GRAPHQL_WORKFLOW_PATH: .github/workflows/ops-create-cliptown-lib-graphql-once.yml
+
+    steps:
+      - name: Check out exact trusted main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+          show-progress: false
+
+      - name: Validate exact create-only target
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REPOSITORY" = ORESoftware/k8s-cluster
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$TARGET_ORGANIZATION/$TARGET_REPOSITORY" = cliptown/cliptown-lib
+          command -v gh >/dev/null
+          command -v git >/dev/null
+          command -v jq >/dev/null
+          command -v openssl >/dev/null
+          command -v shred >/dev/null
+
+      - name: Receive one-time encrypted owner credential
+        shell: bash
+        env:
+          CONTROL_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          control_api="https://api.github.com/repos/${CONTROL_REPOSITORY}"
+
+          control_call() {
+            local method="$1" url="$2" data="${3:-}"
+            local args=(
+              --fail-with-body --silent --show-error
+              --request "$method"
+              --url "$url"
+              --header 'Accept: application/vnd.github+json'
+              --header "Authorization: Bearer ${CONTROL_TOKEN}"
+              --header 'X-GitHub-Api-Version: 2022-11-28'
+            )
+            if [[ -n "$data" ]]; then
+              args+=(--data-binary "$data")
+            fi
+            curl "${args[@]}"
+          }
+
+          delete_control_file() {
+            local path="$1" message="$2"
+            local metadata sha payload
+            if metadata="$(control_call GET "${control_api}/contents/${path}?ref=${CONTROL_BRANCH}" 2>/dev/null)"; then
+              sha="$(jq -r '.sha // empty' <<<"$metadata")"
+              if [[ -n "$sha" ]]; then
+                payload="$(jq -nc --arg message "$message" --arg sha "$sha" --arg branch "$CONTROL_BRANCH" \
+                  '{message:$message,sha:$sha,branch:$branch}')"
+                control_call DELETE "${control_api}/contents/${path}" "$payload" >/dev/null || true
+              fi
+            fi
+          }
+
+          put_control_file() {
+            local path="$1" source="$2" message="$3"
+            local encoded payload
+            encoded="$(base64 -w0 "$source")"
+            payload="$(jq -nc --arg message "$message" --arg content "$encoded" --arg branch "$CONTROL_BRANCH" \
+              '{message:$message,content:$content,branch:$branch}')"
+            control_call PUT "${control_api}/contents/${path}" "$payload" >/dev/null
+          }
+
+          cleanup() {
+            delete_control_file "$PUBLIC_KEY_PATH" 'ops: remove expired cliptown-lib GraphQL public key'
+            delete_control_file "$CIPHERTEXT_PATH" 'ops: remove encrypted cliptown-lib GraphQL credential'
+            shred -u \
+              /tmp/cliptown-lib-graphql-private.pem \
+              /tmp/cliptown-lib-graphql-public.pem \
+              /tmp/cliptown-lib-graphql-token.enc \
+              /tmp/cliptown-lib-graphql-token.txt \
+              2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          delete_control_file "$PUBLIC_KEY_PATH" 'ops: remove stale cliptown-lib GraphQL public key'
+          delete_control_file "$CIPHERTEXT_PATH" 'ops: remove stale encrypted cliptown-lib GraphQL credential'
+
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 \
+            -out /tmp/cliptown-lib-graphql-private.pem >/dev/null 2>&1
+          openssl pkey -in /tmp/cliptown-lib-graphql-private.pem -pubout \
+            -out /tmp/cliptown-lib-graphql-public.pem >/dev/null 2>&1
+          put_control_file "$PUBLIC_KEY_PATH" /tmp/cliptown-lib-graphql-public.pem \
+            'ops: publish ephemeral cliptown-lib GraphQL key'
+          echo "HANDSHAKE_READY nonce=${HANDSHAKE_NONCE} path=${PUBLIC_KEY_PATH}"
+
+          ciphertext=''
+          for _ in $(seq 1 720); do
+            if metadata="$(control_call GET "${control_api}/contents/${CIPHERTEXT_PATH}?ref=${CONTROL_BRANCH}" 2>/dev/null)"; then
+              ciphertext="$(jq -r '.content // empty' <<<"$metadata" | tr -d '\n' | base64 -d | tr -d '\r\n')"
+              [[ -z "$ciphertext" ]] || break
+            fi
+            sleep 5
+          done
+          test -n "$ciphertext"
+
+          printf '%s' "$ciphertext" | base64 -d > /tmp/cliptown-lib-graphql-token.enc
+          openssl pkeyutl -decrypt \
+            -inkey /tmp/cliptown-lib-graphql-private.pem \
+            -in /tmp/cliptown-lib-graphql-token.enc \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256 \
+            > /tmp/cliptown-lib-graphql-token.txt
+
+          OWNER_TOKEN="$(tr -d '\r\n' < /tmp/cliptown-lib-graphql-token.txt)"
+          test "${#OWNER_TOKEN}" -ge 20
+          echo "::add-mask::$OWNER_TOKEN"
+          printf 'GH_TOKEN=%s\n' "$OWNER_TOKEN" >> "$GITHUB_ENV"
+          cleanup
+          trap - EXIT
+
+      - name: Create exact repository through GraphQL
+        id: create
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          graphql_call() {
+            local response error_file=/tmp/cliptown-lib-graphql-error.txt
+            for attempt in $(seq 1 40); do
+              : > "$error_file"
+              if response="$(gh api graphql "$@" 2>"$error_file")"; then
+                if jq -e '.errors and (.errors | length > 0)' >/dev/null 2>&1 <<<"$response"; then
+                  jq -r '.errors[].message' <<<"$response" > "$error_file"
+                else
+                  printf '%s' "$response"
+                  return 0
+                fi
+              fi
+
+              error_text="$(cat "$error_file")"
+              if grep -Eqi 'rate limit|secondary rate|abuse|temporarily unavailable|timeout' <<<"$error_text"; then
+                sleep_for=$(( attempt * 15 ))
+                (( sleep_for <= 120 )) || sleep_for=120
+                echo "GraphQL temporarily unavailable; retry ${attempt}/40 in ${sleep_for}s" >&2
+                sleep "$sleep_for"
+                continue
+              fi
+              cat "$error_file" >&2
+              return 1
+            done
+            echo 'GraphQL did not recover within the bounded retry window' >&2
+            return 1
+          }
+
+          inventory_query='query($login:String!,$name:String!){viewer{login} organization(login:$login){id login repository(name:$name){id nameWithOwner url visibility isArchived isDisabled defaultBranchRef{name target{oid}}}} rateLimit{limit cost remaining resetAt}}'
+          inventory="$(graphql_call -f query="$inventory_query" -f login="$TARGET_ORGANIZATION" -f name="$TARGET_REPOSITORY")"
+          viewer="$(jq -r '.data.viewer.login // empty' <<<"$inventory")"
+          owner_id="$(jq -r '.data.organization.id // empty' <<<"$inventory")"
+          organization="$(jq -r '.data.organization.login // empty' <<<"$inventory")"
+          test -n "$viewer"
+          test -n "$owner_id"
+          test "$organization" = "$TARGET_ORGANIZATION"
+          echo "VERIFIED_GRAPHQL_IDENTITY viewer=${viewer} organization=${organization}"
+
+          repository_id="$(jq -r '.data.organization.repository.id // empty' <<<"$inventory")"
+          if [[ -n "$repository_id" ]]; then
+            test "$(jq -r '.data.organization.repository.nameWithOwner' <<<"$inventory")" = "${TARGET_ORGANIZATION}/${TARGET_REPOSITORY}"
+            test "$(jq -r '.data.organization.repository.visibility' <<<"$inventory")" = PUBLIC
+            test "$(jq -r '.data.organization.repository.isArchived' <<<"$inventory")" = false
+            test "$(jq -r '.data.organization.repository.isDisabled' <<<"$inventory")" = false
+            echo "PRESERVED_EXISTING_PUBLIC ${TARGET_ORGANIZATION}/${TARGET_REPOSITORY}"
+          else
+            mutation='mutation($name:String!,$ownerId:ID!,$description:String!,$visibility:RepositoryVisibility!){createRepository(input:{name:$name,ownerId:$ownerId,description:$description,visibility:$visibility,hasIssuesEnabled:true,hasWikiEnabled:false}){repository{id nameWithOwner url visibility isArchived isDisabled}}}'
+            created="$(graphql_call \
+              -f query="$mutation" \
+              -f name="$TARGET_REPOSITORY" \
+              -f ownerId="$owner_id" \
+              -f description="$TARGET_DESCRIPTION" \
+              -f visibility=PUBLIC)"
+            repository_id="$(jq -r '.data.createRepository.repository.id // empty' <<<"$created")"
+            test -n "$repository_id"
+            test "$(jq -r '.data.createRepository.repository.nameWithOwner' <<<"$created")" = "${TARGET_ORGANIZATION}/${TARGET_REPOSITORY}"
+            test "$(jq -r '.data.createRepository.repository.visibility' <<<"$created")" = PUBLIC
+            echo "CREATED_PUBLIC ${TARGET_ORGANIZATION}/${TARGET_REPOSITORY}"
+          fi
+
+          printf 'repository_id=%s\n' "$repository_id" >> "$GITHUB_OUTPUT"
+
+      - name: Initialize main through credential-safe Git push
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          work=/tmp/cliptown-lib-initial
+          rm -rf "$work"
+          mkdir -p "$work/src"
+
+          cat > "$work/README.md" <<'EOF'
+          # ClipTown Lib
+
+          Shared Rust library for ClipTown domain logic, authorization-safe
+          primitives, and reusable application services.
+
+          The initial repository establishes the independent library boundary.
+          Public APIs, Zed package metadata, and consumer migrations are tracked
+          through Linear DEN-3287 and reviewed pull requests.
+          EOF
+
+          cat > "$work/Cargo.toml" <<'EOF'
+          [package]
+          name = "cliptown-lib"
+          version = "0.1.0"
+          edition = "2021"
+          rust-version = "1.88"
+          license = "MIT"
+          repository = "https://github.com/cliptown/cliptown-lib"
+          description = "Shared Rust domain and application library for ClipTown"
+
+          [lib]
+          path = "src/lib.rs"
+          EOF
+
+          cat > "$work/src/lib.rs" <<'EOF'
+          #![forbid(unsafe_code)]
+          //! Shared Rust domain and application library for ClipTown.
+          //!
+          //! Public APIs are introduced through reviewed changes tied to the
+          //! canonical ClipTown interfaces and DEN-3287 dependency graph.
+          EOF
+
+          cat > "$work/.gitignore" <<'EOF'
+          /target/
+          **/*.rs.bk
+          Cargo.lock
+          .env
+          .env.*
+          !.env.example
+          .direnv/
+          result
+          EOF
+
+          cat > "$work/LICENSE" <<'EOF'
+          MIT License
+
+          Copyright (c) 2026 ORESoftware
+
+          Permission is hereby granted, free of charge, to any person obtaining a copy
+          of this software and associated documentation files (the "Software"), to deal
+          in the Software without restriction, including without limitation the rights
+          to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+          copies of the Software, and to permit persons to whom the Software is
+          furnished to do so, subject to the following conditions:
+
+          The above copyright notice and this permission notice shall be included in all
+          copies or substantial portions of the Software.
+
+          THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+          IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+          FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+          AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+          LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+          OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+          SOFTWARE.
+          EOF
+
+          cat > /tmp/cliptown-lib-askpass <<'EOF'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s\n' x-access-token ;;
+            *Password*) printf '%s\n' "$GH_TOKEN" ;;
+            *) printf '\n' ;;
+          esac
+          EOF
+          chmod 700 /tmp/cliptown-lib-askpass
+
+          git -C "$work" init -b main
+          git -C "$work" config user.name 'github-actions[bot]'
+          git -C "$work" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C "$work" add README.md Cargo.toml src/lib.rs .gitignore LICENSE
+          git -C "$work" commit -m 'chore: initialize canonical ClipTown library repository'
+
+          GIT_ASKPASS=/tmp/cliptown-lib-askpass \
+          GIT_TERMINAL_PROMPT=0 \
+            git -C "$work" push \
+              "https://github.com/${TARGET_ORGANIZATION}/${TARGET_REPOSITORY}.git" \
+              HEAD:refs/heads/main
+          shred -u /tmp/cliptown-lib-askpass
+
+      - name: Verify public main through GraphQL
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          query='query($login:String!,$name:String!){organization(login:$login){repository(name:$name){id nameWithOwner url visibility isArchived isDisabled defaultBranchRef{name target{oid}}}}}'
+          verified=''
+          for _ in $(seq 1 60); do
+            if verified="$(gh api graphql -f query="$query" -f login="$TARGET_ORGANIZATION" -f name="$TARGET_REPOSITORY" 2>/dev/null)"; then
+              branch="$(jq -r '.data.organization.repository.defaultBranchRef.name // empty' <<<"$verified")"
+              [[ -z "$branch" ]] || break
+            fi
+            sleep 2
+          done
+          test "$(jq -r '.data.organization.repository.nameWithOwner' <<<"$verified")" = "${TARGET_ORGANIZATION}/${TARGET_REPOSITORY}"
+          test "$(jq -r '.data.organization.repository.visibility' <<<"$verified")" = PUBLIC
+          test "$(jq -r '.data.organization.repository.isArchived' <<<"$verified")" = false
+          test "$(jq -r '.data.organization.repository.isDisabled' <<<"$verified")" = false
+          test "$branch" = main
+          main_sha="$(jq -r '.data.organization.repository.defaultBranchRef.target.oid' <<<"$verified")"
+          test "${#main_sha}" = 40
+          url="$(jq -r '.data.organization.repository.url' <<<"$verified")"
+          echo "VERIFIED_REPOSITORY full_name=${TARGET_ORGANIZATION}/${TARGET_REPOSITORY} branch=${branch} sha=${main_sha} url=${url}"
+
+      - name: Remove all completed one-shot workflows
+        shell: bash
+        env:
+          CONTROL_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          api="https://api.github.com/repos/${CONTROL_REPOSITORY}"
+          for path in "$ORIGINAL_WORKFLOW_PATH" "$RETRY_WORKFLOW_PATH" "$GRAPHQL_WORKFLOW_PATH"; do
+            if metadata="$(curl --fail-with-body --silent --show-error \
+              --url "${api}/contents/${path}?ref=${CONTROL_BRANCH}" \
+              --header 'Accept: application/vnd.github+json' \
+              --header "Authorization: Bearer ${CONTROL_TOKEN}" \
+              --header 'X-GitHub-Api-Version: 2022-11-28' 2>/dev/null)"; then
+              sha="$(jq -r '.sha' <<<"$metadata")"
+              payload="$(jq -nc --arg message 'ops: remove completed cliptown-lib repository creator' \
+                --arg sha "$sha" --arg branch "$CONTROL_BRANCH" \
+                '{message:$message,sha:$sha,branch:$branch}')"
+              curl --fail-with-body --silent --show-error \
+                --request DELETE \
+                --url "${api}/contents/${path}" \
+                --header 'Accept: application/vnd.github+json' \
+                --header "Authorization: Bearer ${CONTROL_TOKEN}" \
+                --header 'X-GitHub-Api-Version: 2022-11-28' \
+                --data-binary "$payload" >/dev/null
+            fi
+          done
+          echo 'REMOVED_ONE_SHOT_WORKFLOWS'
