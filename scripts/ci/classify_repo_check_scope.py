@@ -56,6 +56,16 @@ GOVERNANCE_PREFIXES = (
     "ops/evidence/org-project-docs-rate-aware/",
 )
 
+# These files are validated by dedicated, credential-free workflows. A change
+# limited to this exact set has no dependency on remote/libs or private
+# deployment gitlinks, so the broad credential-backed jobs add no coverage.
+CREDENTIAL_FREE_CONTRACT_FILES = {
+    ".github/workflows/den-319-private-fleet-contracts.yml",
+    ".github/workflows/repo-check-scope-contract.yml",
+    "scripts/ops/repository_rename_alias_guard.py",
+    "scripts/ops/test_repository_rename_alias_guard.py",
+}
+
 
 class ScopeError(RuntimeError):
     """Raised when changed-file evidence cannot be trusted."""
@@ -76,6 +86,10 @@ def is_governance_path(path: str) -> bool:
     )
 
 
+def is_credential_free_contract_path(path: str) -> bool:
+    return path in CREDENTIAL_FREE_CONTRACT_FILES
+
+
 def classify(event_name: str, changed_files: Iterable[str]) -> dict[str, object]:
     changed = sorted({validate_path(path) for path in changed_files})
     if event_name != "pull_request":
@@ -84,6 +98,7 @@ def classify(event_name: str, changed_files: Iterable[str]) -> dict[str, object]
             "event_name": event_name,
             "changed_files": changed,
             "governance_only": False,
+            "credential_free_contract_only": False,
             "private_contracts_required": True,
             "reason": "non_pull_request_runs_are_full_fleet_checks",
         }
@@ -99,17 +114,31 @@ def classify(event_name: str, changed_files: Iterable[str]) -> dict[str, object]
             for path in changed
         )
     )
+    credential_free_contract_only = (
+        bool(non_control)
+        and all(is_credential_free_contract_path(path) for path in non_control)
+        and all(
+            path in CONTROL_FILES or is_credential_free_contract_path(path)
+            for path in changed
+        )
+    )
+    private_contracts_required = not (
+        governance_only or credential_free_contract_only
+    )
+    reason = "repository_or_private_contract_surface_changed"
+    if governance_only:
+        reason = "governance_only_no_private_gitlinks"
+    elif credential_free_contract_only:
+        reason = "credential_free_contract_only_no_private_gitlinks"
+
     return {
         "schema_version": 1,
         "event_name": event_name,
         "changed_files": changed,
         "governance_only": governance_only,
-        "private_contracts_required": not governance_only,
-        "reason": (
-            "governance_only_no_private_gitlinks"
-            if governance_only
-            else "repository_or_private_contract_surface_changed"
-        ),
+        "credential_free_contract_only": credential_free_contract_only,
+        "private_contracts_required": private_contracts_required,
+        "reason": reason,
     }
 
 
