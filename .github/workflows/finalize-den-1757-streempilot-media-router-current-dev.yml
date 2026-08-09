@@ -41,6 +41,102 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Repair finalizer invariants discovered by the first hosted run
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/finalize-den-1757-streempilot-media-router-current-dev.py')
+          source = path.read_text(encoding='utf-8')
+
+          function_start = source.index('def update_policy_test() -> None:\n')
+          call_start = source.index('    text = replace_once(\n', function_start)
+          call_end_marker = '        "expect media-router exact rule",\n    )\n'
+          call_end = source.index(call_end_marker, call_start) + len(call_end_marker)
+          targeted_replacement = '''    expected_start = text.index("  assert.deepEqual(rules, [")
+              expected_end = text.index("  ]);", expected_start)
+              zed_rule = (
+                  "    {\\n"
+                  "      repository: 'https://github.com/zed-pkg/zed-cli.git',\\n"
+                  "      profiles: ['rust-verify'],\\n"
+                  "    },\\n"
+              )
+              media_and_zed_rules = (
+                  "    {\\n"
+                  f"      repository: '{REPOSITORY_URL}',\\n"
+                  f"      profiles: ['{PROFILE}'],\\n"
+                  "    },\\n"
+                  "    {\\n"
+                  "      repository: 'https://github.com/zed-pkg/zed-cli.git',\\n"
+                  "      profiles: ['rust-verify'],\\n"
+                  "    },\\n"
+              )
+              if text.count(zed_rule, expected_start, expected_end) != 1:
+                  raise SystemExit("expected media-router insertion point is not unique inside the GitOps rule array")
+              zed_index = text.index(zed_rule, expected_start, expected_end)
+              text = text[:zed_index] + media_and_zed_rules + text[zed_index + len(zed_rule):]
+          '''
+          targeted_replacement = '\n'.join(
+              line[10:] if line.startswith('          ') else line
+              for line in targeted_replacement.splitlines()
+          ) + '\n'
+          source = source[:call_start] + targeted_replacement + source[call_end:]
+
+          validation_start = source.index('def validate_result() -> None:\n')
+          patch_start = source.index('    patch_text = read(PATCH)\n', validation_start)
+          validation_prefix = '''def validate_result() -> None:
+              marker_paths = [
+                  PROFILES,
+                  PLANNER,
+                  PATCH,
+                  README,
+                  STREEMPILOT_DOC,
+                  POLICY_DOC,
+                  POLICY_TEST,
+                  CONTRACT_TEST,
+              ]
+              for marker_path in marker_paths:
+                  if PROFILE not in read(marker_path):
+                      raise SystemExit(
+                          f"{marker_path}: missing profile marker after transformation"
+                      )
+
+              config_snapshot = read(CONFIG)
+              if REPOSITORY not in config_snapshot or WORKFLOW_PATH not in config_snapshot:
+                  raise SystemExit("clone admission is missing the exact repository/workflow pair")
+
+              workflow_snapshot = read(PERMANENT_WORKFLOW)
+              if "general/streempilot-media-router-continuity.test.mjs" not in workflow_snapshot:
+                  raise SystemExit("permanent GHA coverage is missing the media-router static contract")
+
+          '''
+          validation_prefix = '\n'.join(
+              line[10:] if line.startswith('          ') else line
+              for line in validation_prefix.splitlines()
+          )
+          source = source[:validation_start] + validation_prefix + source[patch_start:]
+
+          source = source.replace(
+              'rustup component add rustfmt clippy\\n',
+              'rustfmt --version\\ncargo clippy --version\\n',
+              1,
+          )
+          source = source.replace(
+              '            "cargo publish",\n            "kubectl",',
+              '            "cargo publish",\n            "rustup component add",\n            "kubectl",',
+              1,
+          )
+          source = source.replace(
+              '/cargo publish|kubectl|curl |wget |apt-get|pip install|git clone|docker |nerdctl|\\|\\| true/',
+              '/cargo publish|rustup component add|kubectl|curl |wget |apt-get|pip install|git clone|docker |nerdctl|\\|\\| true/',
+              1,
+          )
+
+          path.write_text(source, encoding='utf-8')
+          PY
+
       - name: Compile and apply the semantic current-dev transformation
         shell: bash
         run: |
