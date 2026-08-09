@@ -743,7 +743,7 @@ test('planner selects only the exact token and tests an adjacent lookalike', () 
   assert.match(planner, /fn contains_exact_profile_marker/);
   assert.match(
     planner,
-    /contains_exact_profile_marker\(text, STREEMPILOT_MEDIA_ROUTER_PROFILE\)/,
+    /contains_exact_profile_marker\(\s*text,\s*STREEMPILOT_MEDIA_ROUTER_PROFILE,\s*\)/,
   );
   assert.match(planner, /maps_only_the_exact_streempilot_media_router_marker/);
   assert.match(planner, /streempilot-media-router-starter-verify-adjacent/);
