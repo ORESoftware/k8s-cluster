@@ -51,15 +51,21 @@ jobs:
           done
           python3 -m py_compile scripts/ops/recover_streempilot_foundation_snapshots.py
 
-          payload_marker="<!-- streempilot-history-recovery-payload:${PAYLOAD_SHA256} -->"
           comments="$(gh api --paginate "repos/${REPOSITORY}/issues/${CARRIER_NUMBER}/comments?per_page=100" --slurp)"
-          payload_comment="$(jq -c --arg marker "$payload_marker" '[.[][] | select(.user.login == "ORESoftware") | select(.body | startswith($marker + "\n"))] | sort_by(.id) | last // empty' <<<"$comments")"
-          [[ -n "$payload_comment" ]]
-          payload_comment_id="$(jq -r '.id' <<<"$payload_comment")"
-          payload_body="$(jq -r '.body' <<<"$payload_comment")"
-          [[ "$(grep -c '^payload-base64=' <<<"$payload_body")" == 1 ]]
-          payload="$(sed -n 's/^payload-base64=//p' <<<"$payload_body")"
-          [[ "$payload" =~ ^[A-Za-z0-9+/=]+$ ]]
+          payload=''
+          payload_comment_ids=()
+          for chunk in 0 1 2 3 4; do
+            marker="<!-- streempilot-history-recovery-payload:${PAYLOAD_SHA256}:chunk-${chunk}-of-5 -->"
+            payload_comment="$(jq -c --arg marker "$marker" '[.[][] | select(.user.login == "ORESoftware") | select(.body | startswith($marker + "\n"))] | sort_by(.id) | last // empty' <<<"$comments")"
+            [[ -n "$payload_comment" ]]
+            payload_comment_ids+=("$(jq -r '.id' <<<"$payload_comment")")
+            payload_body="$(jq -r '.body' <<<"$payload_comment")"
+            [[ "$(grep -c '^payload-base64-chunk=' <<<"$payload_body")" == 1 ]]
+            payload_chunk="$(sed -n 's/^payload-base64-chunk=//p' <<<"$payload_body")"
+            [[ "$payload_chunk" =~ ^[A-Za-z0-9+/=]+$ ]]
+            if [[ "$chunk" -lt 4 ]]; then [[ "${#payload_chunk}" == 10000 ]]; else [[ "${#payload_chunk}" == 9288 ]]; fi
+            payload+="$payload_chunk"
+          done
           [[ "${#payload}" == 49288 ]]
 
           archive="$RUNNER_TEMP/streempilot-recovery-payload.tar.xz"
@@ -72,7 +78,7 @@ jobs:
           [[ "$(jq -er '.schema_version' "$payload_root/manifest.json")" == 2 ]]
           [[ "$(jq -er '.repositories | length' "$payload_root/manifest.json")" == 8 ]]
           printf 'PAYLOAD_ROOT=%s\n' "$payload_root" >> "$GITHUB_ENV"
-          printf 'PAYLOAD_COMMENT_ID=%s\n' "$payload_comment_id" >> "$GITHUB_ENV"
+          printf 'PAYLOAD_COMMENT_IDS=%s\n' "$(IFS=,; echo "${payload_comment_ids[*]}")" >> "$GITHUB_ENV"
 
       - name: Broker one-time owner credential, publish recovery branches, and verify
         shell: bash
@@ -218,8 +224,11 @@ jobs:
             -f content="$(base64 -w0 < "$completed")" \
             -f branch="$CHALLENGE_BRANCH" \
             -f sha="$challenge_sha" >/dev/null
-          gh api --method PATCH "repos/${REPOSITORY}/issues/comments/${PAYLOAD_COMMENT_ID}" \
-            -f body="<!-- streempilot-history-recovery-payload:${PAYLOAD_SHA256} -->\npayload consumed by verified run ${GITHUB_RUN_ID}; plaintext credential was never stored" >/dev/null
+          IFS=',' read -r -a payload_comment_ids <<<"$PAYLOAD_COMMENT_IDS"
+          for index in "${!payload_comment_ids[@]}"; do
+            gh api --method PATCH "repos/${REPOSITORY}/issues/comments/${payload_comment_ids[$index]}" \
+              -f body="<!-- streempilot-history-recovery-payload:${PAYLOAD_SHA256}:chunk-${index}-of-5 -->\npayload chunk consumed by verified run ${GITHUB_RUN_ID}; plaintext credential was never stored" >/dev/null
+          done
           if [[ -n "$response_comment_id" ]]; then
             gh api --method PATCH "repos/${REPOSITORY}/issues/comments/${response_comment_id}" \
               -f body="<!-- streempilot-history-recovery-credential-response:${nonce} -->\nencrypted response consumed by verified run ${GITHUB_RUN_ID}; ciphertext removed" >/dev/null
