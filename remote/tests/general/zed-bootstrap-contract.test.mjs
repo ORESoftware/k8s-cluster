@@ -10,7 +10,7 @@ const canonicalApplicationsPath = "remote/argocd/apps/zed.applications.yaml";
 const canonicalProjectPath = "remote/argocd/projects/zed.appproject.yaml";
 const candidateApplicationName = "dd-zed-account-registry-candidate";
 const candidateInfraRepository = "https://github.com/zed-pkg/zed-infra.git";
-const candidateInfraRevision = "14cf61e795e3d4763785aebc9498c96c23dab60f";
+const candidateInfraRevision = "a48040bbb18cf3d6455ff986918825db84a45e26";
 const candidateInfraPath = "k8s/overlays/k8s-cluster";
 
 const stages = [
@@ -74,7 +74,7 @@ for (const cluster of ["aws", "hetzner"]) {
       );
       assert.match(
         section,
-        new RegExp(`include:\\s+${escapeRegExp(stage.include)}(?:\\s|$)`)
+        new RegExp(`include:\s+${escapeRegExp(stage.include)}(?:\s|$)`)
       );
       previousIndex = stageIndex;
     }
@@ -113,9 +113,9 @@ test("the account registry candidate is exact-pinned, manual, and collision-safe
   const applications = await readFile(resolve(repoRoot, canonicalApplicationsPath), "utf8");
   const section = applicationSection(applications, candidateApplicationName);
 
-  assert.match(section, new RegExp(`repoURL:\\s+${escapeRegExp(candidateInfraRepository)}`));
-  assert.match(section, new RegExp(`targetRevision:\\s+${candidateInfraRevision}\\b`));
-  assert.match(section, new RegExp(`path:\\s+${escapeRegExp(candidateInfraPath)}\\b`));
+  assert.match(section, new RegExp(`repoURL:\s+${escapeRegExp(candidateInfraRepository)}`));
+  assert.match(section, new RegExp(`targetRevision:\s+${candidateInfraRevision}\b`));
+  assert.match(section, new RegExp(`path:\s+${escapeRegExp(candidateInfraPath)}\b`));
   assert.match(section, /^\s*namespace:\s+zed\s*$/m);
   assert.match(section, /^\s*-\s+FailOnSharedResource=true\s*$/m);
   assert.doesNotMatch(
@@ -127,7 +127,7 @@ test("the account registry candidate is exact-pinned, manual, and collision-safe
   for (const bootstrapApplication of ["dd-zed-api-server", "dd-zed-web-server"]) {
     assert.match(
       applications,
-      new RegExp(`name:\\s+${escapeRegExp(bootstrapApplication)}\\b`),
+      new RegExp(`name:\s+${escapeRegExp(bootstrapApplication)}\b`),
       `${bootstrapApplication} must remain during candidate review`
     );
   }
@@ -135,7 +135,7 @@ test("the account registry candidate is exact-pinned, manual, and collision-safe
   const project = await readFile(resolve(repoRoot, canonicalProjectPath), "utf8");
   assert.match(
     project,
-    new RegExp(`-\\s+"${escapeRegExp(candidateInfraRepository)}"`),
+    new RegExp(`-\s+"${escapeRegExp(candidateInfraRepository)}"`),
     "the strict Zed AppProject must explicitly allow the reviewed render source"
   );
   assert.match(project, /clusterResourceWhitelist:\s*\[\]/);
