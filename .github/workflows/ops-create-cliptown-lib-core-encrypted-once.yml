@@ -1,0 +1,218 @@
+name: Create cliptown-lib-core with encrypted credential handoff
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-create-cliptown-lib-core-encrypted-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ops-create-cliptown-lib-core
+  cancel-in-progress: false
+
+jobs:
+  create:
+    if: github.repository == 'ORESoftware/k8s-cluster' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      TARGET_OWNER: cliptown
+      TARGET_NAME: cliptown-lib-core
+      TARGET_FULL_NAME: cliptown/cliptown-lib-core
+      TARGET_ORG_NODE_ID: O_kgDOEnJ6zg
+      KEY_PATH: tmp/ops/cliptown-lib-core-public.pem
+      CIPHERTEXT_PATH: tmp/ops/cliptown-lib-core-token.b64
+    steps:
+      - name: Create exact repository through GraphQL and seed main
+        id: create
+        env:
+          CONTROL_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+
+          private_key="$RUNNER_TEMP/cliptown-lib-core-private.pem"
+          encrypted_token="$RUNNER_TEMP/cliptown-lib-core-token.enc"
+          decrypted_token="$RUNNER_TEMP/cliptown-lib-core-token.txt"
+          askpass="$RUNNER_TEMP/cliptown-lib-core-askpass.sh"
+
+          control_delete() {
+            local path="$1"
+            local message="$2"
+            local sha
+            sha="$(GH_TOKEN="$CONTROL_TOKEN" gh api \
+              "repos/$GITHUB_REPOSITORY/contents/$path?ref=main" \
+              --jq '.sha' 2>/dev/null || true)"
+            if [[ -n "$sha" ]]; then
+              GH_TOKEN="$CONTROL_TOKEN" gh api --method DELETE \
+                "repos/$GITHUB_REPOSITORY/contents/$path" \
+                -f message="$message" \
+                -f sha="$sha" \
+                -f branch=main >/dev/null
+            fi
+          }
+
+          cleanup() {
+            set +e
+            shred -u "$private_key" "$encrypted_token" "$decrypted_token" "$askpass" \
+              2>/dev/null || rm -f "$private_key" "$encrypted_token" "$decrypted_token" "$askpass"
+            control_delete "$CIPHERTEXT_PATH" \
+              'ops: remove encrypted cliptown-lib-core credential'
+            control_delete "$KEY_PATH" \
+              'ops: remove ephemeral cliptown-lib-core public key'
+          }
+          trap cleanup EXIT
+
+          control_delete "$CIPHERTEXT_PATH" \
+            'ops: clear stale encrypted cliptown-lib-core credential'
+          control_delete "$KEY_PATH" \
+            'ops: clear stale cliptown-lib-core public key'
+
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 \
+            -out "$private_key" >/dev/null 2>&1
+          public_key_b64="$(openssl pkey -in "$private_key" -pubout | base64 -w0)"
+          GH_TOKEN="$CONTROL_TOKEN" gh api --method PUT \
+            "repos/$GITHUB_REPOSITORY/contents/$KEY_PATH" \
+            -f message='ops: publish ephemeral cliptown-lib-core repository-creation key' \
+            -f content="$public_key_b64" \
+            -f branch=main >/dev/null
+          echo 'HANDSHAKE_READY'
+
+          ciphertext_file_b64=''
+          for _ in $(seq 1 360); do
+            ciphertext_file_b64="$(GH_TOKEN="$CONTROL_TOKEN" gh api \
+              "repos/$GITHUB_REPOSITORY/contents/$CIPHERTEXT_PATH?ref=main" \
+              --jq '.content' 2>/dev/null | tr -d '\n' || true)"
+            [[ -z "$ciphertext_file_b64" ]] || break
+            sleep 5
+          done
+          [[ -n "$ciphertext_file_b64" ]]
+
+          printf '%s' "$ciphertext_file_b64" | base64 -d | tr -d '\r\n' | \
+            base64 -d > "$encrypted_token"
+          openssl pkeyutl -decrypt \
+            -inkey "$private_key" \
+            -in "$encrypted_token" \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256 \
+            -out "$decrypted_token"
+
+          GH_TOKEN="$(tr -d '\r\n' < "$decrypted_token")"
+          [[ ${#GH_TOKEN} -ge 20 ]]
+          echo "::add-mask::$GH_TOKEN"
+          export GH_TOKEN
+          shred -u "$decrypted_token" 2>/dev/null || rm -f "$decrypted_token"
+
+          graphql() {
+            local query="$1"
+            local variables="$2"
+            local response
+            response="$(jq -nc --arg query "$query" --argjson variables "$variables" \
+              '{query:$query,variables:$variables}' | \
+              curl --fail-with-body --silent --show-error \
+                --request POST \
+                --url https://api.github.com/graphql \
+                --header 'Accept: application/vnd.github+json' \
+                --header "Authorization: Bearer $GH_TOKEN" \
+                --header 'Content-Type: application/json' \
+                --header 'X-GitHub-Api-Version: 2022-11-28' \
+                --data-binary @-)"
+            if [[ "$(jq -r '.errors | length // 0' <<<"$response")" != 0 ]]; then
+              jq -r '.errors[].message' <<<"$response" >&2
+              return 1
+            fi
+            jq -c '.data' <<<"$response"
+          }
+
+          preflight_query='query Preflight($org:String!){viewer{login} organization(login:$org){id viewerCanAdminister} rateLimit{remaining resetAt}}'
+          preflight_vars="$(jq -nc --arg org "$TARGET_OWNER" '{org:$org}')"
+          for _ in $(seq 1 30); do
+            preflight="$(graphql "$preflight_query" "$preflight_vars")"
+            remaining="$(jq -r '.rateLimit.remaining' <<<"$preflight")"
+            [[ "$remaining" -ge 20 ]] && break
+            reset_at="$(jq -r '.rateLimit.resetAt' <<<"$preflight")"
+            reset_epoch="$(date -u -d "$reset_at" +%s)"
+            now_epoch="$(date -u +%s)"
+            delay=$((reset_epoch - now_epoch + 3))
+            (( delay < 5 )) && delay=5
+            (( delay > 300 )) && delay=300
+            sleep "$delay"
+          done
+          [[ "$(jq -r '.organization.id' <<<"$preflight")" = "$TARGET_ORG_NODE_ID" ]]
+          [[ "$(jq -r '.organization.viewerCanAdminister' <<<"$preflight")" = true ]]
+          [[ "$remaining" -ge 20 ]]
+
+          inspect_query='query Inspect($owner:String!,$name:String!){repository(owner:$owner,name:$name){id nameWithOwner isPrivate isArchived defaultBranchRef{name target{oid}}}}'
+          inspect_vars="$(jq -nc --arg owner "$TARGET_OWNER" --arg name "$TARGET_NAME" '{owner:$owner,name:$name}')"
+          repository="$(graphql "$inspect_query" "$inspect_vars" | jq -c '.repository')"
+          status=preserved_existing
+
+          if [[ "$repository" = null ]]; then
+            create_mutation='mutation Create($input:CreateRepositoryInput!){createRepository(input:$input){repository{id nameWithOwner isPrivate isArchived defaultBranchRef{name target{oid}}}}}'
+            create_vars="$(jq -nc \
+              --arg ownerId "$TARGET_ORG_NODE_ID" \
+              --arg name "$TARGET_NAME" \
+              --arg description 'Transport-neutral ClipTown domain, authorization, encrypted-object, and synchronization invariants.' \
+              '{input:{ownerId:$ownerId,name:$name,description:$description,visibility:"PUBLIC",hasIssuesEnabled:true,hasWikiEnabled:false}}')"
+            repository="$(graphql "$create_mutation" "$create_vars" | jq -c '.createRepository.repository')"
+            status=created
+          fi
+
+          [[ "$(jq -r '.nameWithOwner' <<<"$repository")" = "$TARGET_FULL_NAME" ]]
+          [[ "$(jq -r '.isPrivate' <<<"$repository")" = false ]]
+          [[ "$(jq -r '.isArchived' <<<"$repository")" = false ]]
+
+          cat > "$askpass" <<'ASKPASS'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s\n' 'x-access-token' ;;
+            *Password*) printf '%s\n' "$GH_TOKEN" ;;
+            *) exit 1 ;;
+          esac
+          ASKPASS
+          chmod 700 "$askpass"
+          export GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never
+
+          if ! git ls-remote --exit-code "https://github.com/$TARGET_FULL_NAME.git" \
+            refs/heads/main >/dev/null 2>&1; then
+            seed="$RUNNER_TEMP/cliptown-lib-core-seed"
+            rm -rf "$seed"
+            mkdir -p "$seed"
+            git -C "$seed" init --initial-branch=main
+            git -C "$seed" config user.name 'ClipTown Publisher'
+            git -C "$seed" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            printf '# cliptown-lib-core\n\nRepository bootstrap in progress.\n' > "$seed/README.md"
+            git -C "$seed" add README.md
+            git -C "$seed" commit -m 'chore: seed cliptown-lib-core repository'
+            git -C "$seed" remote add origin "https://github.com/$TARGET_FULL_NAME.git"
+            git -C "$seed" -c credential.helper= push origin refs/heads/main:refs/heads/main
+          fi
+
+          repository="$(graphql "$inspect_query" "$inspect_vars" | jq -c '.repository')"
+          [[ "$(jq -r '.defaultBranchRef.name' <<<"$repository")" = main ]]
+          head="$(jq -r '.defaultBranchRef.target.oid' <<<"$repository")"
+          [[ ${#head} -eq 40 ]]
+
+          topics_mutation='mutation Topics($input:ReplaceRepositoryTopicsInput!){replaceRepositoryTopics(input:$input){repository{id}}}'
+          topics_vars="$(jq -nc --arg id "$(jq -r '.id' <<<"$repository")" \
+            '{input:{repositoryId:$id,topicNames:["cliptown","rust","shared-library","zed-pkg","encrypted-sync"]}}')"
+          graphql "$topics_mutation" "$topics_vars" >/dev/null
+
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+
+      - name: Record repository seed
+        run: |
+          {
+            echo '## cliptown/cliptown-lib-core'
+            echo
+            echo "- Repository: created or verified public"
+            echo "- Seed main: \`${{ steps.create.outputs.head }}\`"
+            echo "- Status: \`${{ steps.create.outputs.status }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
