@@ -8,18 +8,22 @@ readonly expected_master='9a2ca7840150e558e9b03f4f677d28ba0c43580d'
 readonly expected_part1='9c599bb13de986cb2c188a73bf43dfaf952f060b'
 readonly expected_part2='d33ef865aee5be3bbd2d99c4bc26eb90f7604cf5'
 readonly expected_part3='24e28b0a5df6ed77f3a3daf02f010c5d4f48d2b7'
+readonly expected_envelope='75831eaa3697e055909bc05cd9ad73066af85449'
+readonly envelope_path='scripts/ops/envelopes/ores_otel_publisher_20260808_v2.json'
 
 [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
 stage=initialization
 work="$(mktemp -d /tmp/ores-otel-protected-publisher.XXXXXX)"
-resolved_token=''
-credential_source=''
+private_key=''
 
 cleanup() {
-  unset resolved_token raw_token encoded_token secret_json
-  unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+  unset raw_token GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+  unset ciphertext_b64 key_id algorithm public_key_sha256 ciphertext_sha256
   unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
   unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+  if [[ -n "${private_key:-}" ]]; then
+    rm -f "$private_key"
+  fi
   rm -rf "$work"
 }
 report_failure() {
@@ -40,93 +44,85 @@ valid_token() {
   [[ "$candidate" != *' '* ]] || return 1
 }
 
-stage=protected-credential
-publisher_region="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
-if command -v aws >/dev/null 2>&1; then
-  secret_json="$(
-    aws secretsmanager get-secret-value \
-      --region "$publisher_region" \
-      --secret-id dd/remote-dev/agent-secrets \
-      --query SecretString \
-      --output text 2>/dev/null || true
-  )"
-  if [[ -n "$secret_json" ]]; then
-    raw_token="$(
-      printf '%s' "$secret_json" | python3 -c '
+stage=trusted-control-source
+control="$work/k8s-cluster"
+git init "$control"
+git -C "$control" remote add origin https://github.com/ORESoftware/k8s-cluster.git
+git -C "$control" fetch --depth=1 origin "$trusted_sha"
+git -C "$control" checkout --detach FETCH_HEAD
+test "$(git -C "$control" rev-parse HEAD)" = "$trusted_sha"
+printf 'ores-otel-publisher stage=%s status=passed sha=%s\n' "$stage" "$trusted_sha"
+
+stage=publisher-validation
+master='scripts/ops/bootstrap_ores_otel_repositories_20260808.sh'
+part1='scripts/ops/bootstrap_ores_otel_repositories_20260808_part1.sh'
+part2='scripts/ops/bootstrap_ores_otel_repositories_20260808_part2.sh'
+part3='scripts/ops/bootstrap_ores_otel_repositories_20260808_part3.sh'
+test "$(git -C "$control" rev-parse "HEAD:$master")" = "$expected_master"
+test "$(git -C "$control" rev-parse "HEAD:$part1")" = "$expected_part1"
+test "$(git -C "$control" rev-parse "HEAD:$part2")" = "$expected_part2"
+test "$(git -C "$control" rev-parse "HEAD:$part3")" = "$expected_part3"
+test "$(git -C "$control" rev-parse "HEAD:$envelope_path")" = "$expected_envelope"
+for script in "$master" "$part1" "$part2" "$part3"; do
+  test "$(git -C "$control" hash-object "$script")" = "$(git -C "$control" rev-parse "HEAD:$script")"
+  bash -n "$control/$script"
+done
+printf 'ores-otel-publisher stage=%s status=passed\n' "$stage"
+
+stage=encrypted-envelope
+mapfile -t envelope_fields < <(
+  python3 - "$control/$envelope_path" <<'PY'
 import json
 import sys
-try:
-    value = json.load(sys.stdin).get("GH_PAT")
-except (json.JSONDecodeError, OSError, AttributeError):
-    value = None
-if isinstance(value, str):
-    sys.stdout.write(value)
-' 2>/dev/null || true
-    )"
-    if valid_token "$raw_token"; then
-      resolved_token="$raw_token"
-      credential_source=aws-secrets-manager
-    fi
-  fi
-fi
-unset raw_token secret_json
+from pathlib import Path
+record = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+assert record['schema_version'] == 1
+assert record['purpose'] == 'one-time ORES OTEL repository fleet publication'
+assert record['key_id'] == 'ores-otel-20260808-v2'
+assert record['algorithm'] == 'RSA-OAEP-SHA256'
+assert record['targets'] == ['ores-otel/ores.otel.log', 'ores-otel-test/*']
+assert record['delete_after_use'] is True
+for field in ('key_id', 'algorithm', 'public_key_sha256', 'ciphertext_sha256', 'ciphertext_b64'):
+    value = record[field]
+    assert isinstance(value, str) and value
+    print(value)
+PY
+)
+test "${#envelope_fields[@]}" = 5
+key_id="${envelope_fields[0]}"
+algorithm="${envelope_fields[1]}"
+public_key_sha256="${envelope_fields[2]}"
+ciphertext_sha256="${envelope_fields[3]}"
+ciphertext_b64="${envelope_fields[4]}"
+test "$key_id" = ores-otel-20260808-v2
+test "$algorithm" = RSA-OAEP-SHA256
+[[ "$public_key_sha256" =~ ^[0-9a-f]{64}$ ]]
+[[ "$ciphertext_sha256" =~ ^[0-9a-f]{64}$ ]]
+private_key="/var/lib/oresoftware/ores-otel-publisher/$key_id.pem"
+test -r "$private_key"
+test "$(stat -c '%a' "$private_key")" = 600
 
-if [[ -z "$resolved_token" ]] && command -v kubectl >/dev/null 2>&1; then
-  for kubeconfig in \
-    /etc/kubernetes/admin.conf \
-    /root/.kube/config \
-    /home/ec2-user/.kube/config
-  do
-    [[ -r "$kubeconfig" ]] || continue
-    encoded_token="$(
-      KUBECONFIG="$kubeconfig" \
-        kubectl -n default get secret dd-agent-secrets \
-        -o jsonpath='{.data.GH_PAT}' 2>/dev/null || true
-    )"
-    [[ -n "$encoded_token" ]] || continue
-    raw_token="$(printf '%s' "$encoded_token" | base64 --decode 2>/dev/null || true)"
-    unset encoded_token
-    if valid_token "$raw_token"; then
-      resolved_token="$raw_token"
-      credential_source="kubernetes-secret:${kubeconfig}"
-      break
-    fi
-  done
-fi
-unset raw_token encoded_token
-
-if [[ -z "$resolved_token" ]] && \
-   command -v sudo >/dev/null 2>&1 && \
-   command -v getent >/dev/null 2>&1; then
-  ec2_home="$(getent passwd ec2-user | awk -F: '$1 == "ec2-user" {print $6}')"
-  case "$ec2_home" in
-    /*)
-      raw_token="$(
-        sudo -u ec2-user -H env \
-          -u GH_TOKEN -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN \
-          -u GITHUB_REPOSITORY_ADMIN_TOKEN -u GH_CONFIG_DIR \
-          HOME="$ec2_home" XDG_CONFIG_HOME="$ec2_home/.config" \
-          bash -c 'command -v gh >/dev/null 2>&1 && gh auth token --hostname github.com' \
-          2>/dev/null || true
-      )"
-      ;;
-    *) raw_token='' ;;
-  esac
-  if valid_token "$raw_token"; then
-    resolved_token="$raw_token"
-    credential_source=protected-gh-profile
-  fi
-fi
-unset raw_token ec2_home
-
-if [[ -z "$resolved_token" ]]; then
-  printf 'ores-otel-publisher stage=%s status=failed reason=no-readable-protected-github-credential\n' "$stage" >&2
-  exit 65
-fi
-export GH_TOKEN="$resolved_token"
-export GITHUB_REPOSITORY_ADMIN_TOKEN="$resolved_token"
-unset resolved_token
-printf 'ores-otel-publisher stage=%s status=passed source=%s\n' "$stage" "$credential_source"
+public_key="$work/public.pem"
+ciphertext="$work/token.ciphertext"
+openssl pkey -in "$private_key" -pubout > "$public_key"
+test "$(sha256sum "$public_key" | awk '{print $1}')" = "$public_key_sha256"
+printf '%s' "$ciphertext_b64" | base64 --decode > "$ciphertext"
+test "$(sha256sum "$ciphertext" | awk '{print $1}')" = "$ciphertext_sha256"
+raw_token="$(
+  openssl pkeyutl -decrypt \
+    -inkey "$private_key" \
+    -in "$ciphertext" \
+    -pkeyopt rsa_padding_mode:oaep \
+    -pkeyopt rsa_oaep_md:sha256 \
+    -pkeyopt rsa_mgf1_md:sha256
+)"
+valid_token "$raw_token"
+export GH_TOKEN="$raw_token"
+export GITHUB_REPOSITORY_ADMIN_TOKEN="$raw_token"
+unset raw_token ciphertext_b64 envelope_fields
+rm -f "$ciphertext" "$public_key"
+printf 'ores-otel-publisher stage=%s status=passed key_id=%s algorithm=%s\n' \
+  "$stage" "$key_id" "$algorithm"
 
 stage=github-cli
 if ! command -v gh >/dev/null 2>&1; then
@@ -191,30 +187,6 @@ for organization in ores-otel ores-otel-test; do
   )"
   test "$membership" = admin:active
   printf 'VERIFIED_OWNER %s\n' "$organization"
-done
-printf 'ores-otel-publisher stage=%s status=passed\n' "$stage"
-
-stage=trusted-control-source
-control="$work/k8s-cluster"
-git init "$control"
-git -C "$control" remote add origin https://github.com/ORESoftware/k8s-cluster.git
-git -C "$control" fetch --depth=1 origin "$trusted_sha"
-git -C "$control" checkout --detach FETCH_HEAD
-test "$(git -C "$control" rev-parse HEAD)" = "$trusted_sha"
-printf 'ores-otel-publisher stage=%s status=passed sha=%s\n' "$stage" "$trusted_sha"
-
-stage=publisher-validation
-master='scripts/ops/bootstrap_ores_otel_repositories_20260808.sh'
-part1='scripts/ops/bootstrap_ores_otel_repositories_20260808_part1.sh'
-part2='scripts/ops/bootstrap_ores_otel_repositories_20260808_part2.sh'
-part3='scripts/ops/bootstrap_ores_otel_repositories_20260808_part3.sh'
-test "$(git -C "$control" rev-parse "HEAD:$master")" = "$expected_master"
-test "$(git -C "$control" rev-parse "HEAD:$part1")" = "$expected_part1"
-test "$(git -C "$control" rev-parse "HEAD:$part2")" = "$expected_part2"
-test "$(git -C "$control" rev-parse "HEAD:$part3")" = "$expected_part3"
-for script in "$master" "$part1" "$part2" "$part3"; do
-  test "$(git -C "$control" hash-object "$script")" = "$(git -C "$control" rev-parse "HEAD:$script")"
-  bash -n "$control/$script"
 done
 printf 'ores-otel-publisher stage=%s status=passed\n' "$stage"
 
