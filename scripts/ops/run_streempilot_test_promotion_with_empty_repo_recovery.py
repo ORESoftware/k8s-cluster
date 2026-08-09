@@ -24,7 +24,10 @@ exception.
 
 The supplied publication credential can create and push repositories but does
 not have GitHub's separate delete-repository permission. Deletion is neither
-needed nor desirable. Every other existing empty repository remains
+needed nor desirable. If its primary GitHub REST quota is already exhausted,
+the wrapper consults the non-counting ``/rate_limit`` endpoint, waits once until
+the declared reset with a small leeway and a hard 3,700-second cap, then retries
+the exact request once. Every other existing empty repository remains
 fail-closed, every nonempty history must exactly match its sealed SHA, and no
 production repository has a recovery exception.
 """
@@ -49,6 +52,7 @@ BASE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = BASE
 SPEC.loader.exec_module(BASE)
 
+ORIGINAL_API = BASE.api
 ORIGINAL_MAIN_REF = BASE.main_ref
 ORIGINAL_EXISTING_REPOSITORY = BASE.existing_repository
 ORIGINAL_PUSH_EXACT_MAIN = BASE.push_exact_main
@@ -62,13 +66,80 @@ RECOVERABLE_EMPTY_STAGE = {
 
 POST_PUSH_REF_ATTEMPTS = 6
 POST_PUSH_REF_DELAY_SECONDS = 1.0
+RATE_LIMIT_MAX_WAIT_SECONDS = 3700
+RATE_LIMIT_RESET_LEEWAY_SECONDS = 5
 _RECOVERABLE_EMPTY_APPROVED = False
 _CURRENT_TARGET: str | None = None
 _CURRENT_RUN_STAGE_CREATIONS: set[tuple[str, str]] = set()
+_RATE_LIMIT_WAIT_USED = False
 
 
 def fail(message: str) -> None:
     raise RuntimeError(message)
+
+
+def _core_rate_limit(payload: object) -> tuple[int, int]:
+    if not isinstance(payload, dict):
+        fail("GitHub rate-limit response is not an object")
+    resources = payload.get("resources")
+    if not isinstance(resources, dict):
+        fail("GitHub rate-limit response is missing resources")
+    core = resources.get("core")
+    if not isinstance(core, dict):
+        fail("GitHub rate-limit response is missing the core resource")
+    remaining = core.get("remaining")
+    reset = core.get("reset")
+    if (
+        isinstance(remaining, bool)
+        or not isinstance(remaining, int)
+        or remaining < 0
+    ):
+        fail(f"GitHub core rate-limit remaining value is invalid: {remaining!r}")
+    if isinstance(reset, bool) or not isinstance(reset, int) or reset <= 0:
+        fail(f"GitHub core rate-limit reset value is invalid: {reset!r}")
+    return remaining, reset
+
+
+def rate_limit_aware_api(
+    method: str,
+    path: str,
+    body: dict[str, object] | None = None,
+) -> tuple[int, object | None]:
+    """Wait once for an exhausted primary REST quota, then retry exactly once."""
+    global _RATE_LIMIT_WAIT_USED
+    try:
+        return ORIGINAL_API(method, path, body)
+    except RuntimeError as error:
+        message = str(error)
+        if (
+            _RATE_LIMIT_WAIT_USED
+            or "GitHub API 403" not in message
+            or "API rate limit exceeded" not in message
+        ):
+            raise
+
+    status, payload = ORIGINAL_API("GET", "/rate_limit")
+    if status != 200:
+        fail(f"unable to inspect GitHub core rate limit: HTTP {status}")
+    remaining, reset = _core_rate_limit(payload)
+    now = int(time.time())
+    wait_seconds = 0
+    if remaining == 0:
+        wait_seconds = max(0, reset - now) + RATE_LIMIT_RESET_LEEWAY_SECONDS
+    if wait_seconds > RATE_LIMIT_MAX_WAIT_SECONDS:
+        fail(
+            "GitHub core rate-limit reset exceeds bounded wait: "
+            f"{wait_seconds} > {RATE_LIMIT_MAX_WAIT_SECONDS} seconds"
+        )
+
+    _RATE_LIMIT_WAIT_USED = True
+    print(
+        "WAITING_DEN896_GITHUB_CORE_RATE_LIMIT_RESET "
+        f"seconds={wait_seconds} reset={reset}"
+    )
+    if wait_seconds:
+        time.sleep(wait_seconds)
+    return ORIGINAL_API(method, path, body)
 
 
 def safe_main_ref(full_name: str) -> str | None:
@@ -301,10 +372,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
-    global _CURRENT_TARGET
+    global _CURRENT_TARGET, _RATE_LIMIT_WAIT_USED
     args = parse_args()
     _CURRENT_TARGET = args.target
     _CURRENT_RUN_STAGE_CREATIONS.clear()
+    _RATE_LIMIT_WAIT_USED = False
+    BASE.api = rate_limit_aware_api
 
     if args.target == "stage":
         prepare_failed_empty_stage_repository()
