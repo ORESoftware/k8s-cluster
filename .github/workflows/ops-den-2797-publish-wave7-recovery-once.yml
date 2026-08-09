@@ -126,7 +126,6 @@ jobs:
           runtime.write_text(text)
           runtime.chmod(0o700)
           PY
-          sed -i 's/^          //' /tmp/den-2797-wave7-prepare-runtime.sh
           bash /tmp/den-2797-wave7-prepare-runtime.sh
 
       - name: Receive one-time encrypted owner credential
