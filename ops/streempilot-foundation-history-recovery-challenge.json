@@ -1,0 +1,12 @@
+{
+  "state": "awaiting-encrypted-response",
+  "purpose": "recover-preserved-streempilot-foundation-histories",
+  "nonce": "32987c9c3fddad7ecbe47894e123a219249e460f34175be0",
+  "publicKey": "-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAp7nF/mdtBpKBXjSle1NG\n4bjZBfwGBRgujkHB4nn+MtbjtJNfNgq3c/VT51eGOFjhEg13QMTTkbEv5TxXyx/7\n3VHG6JMuawBKWFbG9NbncX8l2uQta53eHODYLT5vLG1FC4KhBXDPwZYyw3mr6TiR\nCLakGNi+TSGCfKK+WLwjTO4KbnVsZhWDt66tA5R4EaD0jauSR934Vv8ObyYuv7HU\nviSePevuN8c7hF3UYhYB8FoEMwR+fdt+JG0Vpp782YWfL2LGYDn8Bd1VTiY/DUAA\nhvvrpmW5Thh5eC8Xaxy/6pSqUVnw57SDFBo/FM7jlfu3f8X0Wo2Zmv8y9uLPx1uv\n3SC2Dm0N5H9Gagdjm/dmlWjK/hqXye6pyct2KeKD5uiSwKm36br2k+psdVbcmq7D\nwabytYbRvQxlER3czNz37qzXzTJQcXFFuYO6es4jXDKa8C1JESAQAR2e2keg80Nh\n3PP2nceXA6tE1UcJ6bccXMyhZQdi8hTwjx6UpWIhgVwPAgMBAAE=\n-----END PUBLIC KEY-----\n",
+  "algorithm": "RSA-OAEP-SHA256-MGF1-SHA256",
+  "runId": "31297720582",
+  "sourceCommit": "456d4d95fe182deefd977390de06087b3e560eba",
+  "recoveryBranch": "recovery/streamyard-parity-foundation-20260809",
+  "privateKeyStored": false,
+  "plaintextCredentialStored": false
+}
