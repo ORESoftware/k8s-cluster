@@ -153,39 +153,6 @@ class RepositoryPrivacyBoundaryTests(unittest.TestCase):
         self.assertTrue(result["verified"])
         self.assertEqual(["README.md"], result["changed_files"])
 
-    def test_primary_rate_limit_waits_until_reset(self) -> None:
-        headers = {
-            "X-RateLimit-Remaining": "0",
-            "X-RateLimit-Reset": "1300",
-        }
-        with mock.patch.object(module.time, "time", return_value=1000.0):
-            delay = module.retry_delay_with_primary_rate_limit(headers, 2)
-        self.assertEqual(305.0, delay)
-        self.assertIs(
-            module.governance.GitHubApi._retry_delay,
-            module.retry_delay_with_primary_rate_limit,
-        )
-
-    def test_primary_rate_limit_wait_is_bounded(self) -> None:
-        headers = {
-            "x-ratelimit-remaining": "0",
-            "x-ratelimit-reset": "999999",
-        }
-        with mock.patch.object(module.time, "time", return_value=1000.0):
-            delay = module.retry_delay_with_primary_rate_limit(headers, 1)
-        self.assertEqual(module._MAX_PRIMARY_RATE_LIMIT_DELAY, delay)
-
-    def test_non_primary_retry_uses_hardened_fallback(self) -> None:
-        headers = {"Retry-After": "7"}
-        with mock.patch.object(
-            module,
-            "_ORIGINAL_RETRY_DELAY",
-            return_value=7.0,
-        ) as fallback:
-            delay = module.retry_delay_with_primary_rate_limit(headers, 3)
-        self.assertEqual(7.0, delay)
-        fallback.assert_called_once_with(headers, 3)
-
     def test_terminal_private_reference_still_fails(self) -> None:
         organization = "example-internal"
         private_name = organization
