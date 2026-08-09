@@ -1,0 +1,77 @@
+name: GHCR manifest existence contract
+
+on:
+  pull_request:
+    branches: [dev, agent/den-845-artifact-digest-reconciliation]
+    paths:
+      - '.github/workflows/ghcr-manifest-existence.yml'
+      - 'scripts/ci/verify_ghcr_manifest_digests.py'
+      - 'tests/test_verify_ghcr_manifest_digests.py'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.deployment.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-runner.deployment.yaml'
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/ghcr-manifest-existence.yml'
+      - 'scripts/ci/verify_ghcr_manifest_digests.py'
+      - 'tests/test_verify_ghcr_manifest_digests.py'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.deployment.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-runner.deployment.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ghcr-manifest-existence-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout without credentials or child repositories
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Compile and run adversarial verifier tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/verify_ghcr_manifest_digests.py \
+            tests/test_verify_ghcr_manifest_digests.py
+          python3 -m unittest -v tests.test_verify_ghcr_manifest_digests
+
+      - name: Validate focused workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: ./.github/workflows/ghcr-manifest-existence.yml
+
+      - name: Prove every selected AI release digest exists in GHCR
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/verify_ghcr_manifest_digests.py \
+            --manifest remote/argocd/dd-next-runtime/dd-ai-agent-bridge.deployment.yaml \
+            --manifest remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml \
+            --manifest remote/argocd/dd-next-runtime/dd-ai-agent-runner.deployment.yaml \
+            --attempts 2 \
+            --timeout-seconds 10 \
+            --audit "${RUNNER_TEMP}/ghcr-manifest-existence.json"
+
+      - name: Upload content-free digest evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ghcr-manifest-existence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ghcr-manifest-existence.json
+          retention-days: 14
+          if-no-files-found: error
