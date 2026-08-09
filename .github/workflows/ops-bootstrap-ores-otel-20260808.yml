@@ -29,7 +29,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Configure AWS credentials for the protected publisher
+      - name: Configure trusted main-ref AWS OIDC credentials
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
@@ -37,23 +37,6 @@ jobs:
           role-session-name: bootstrap-ores-otel-repositories
           retry-max-attempts: 2
           mask-aws-account-id: true
-
-      - name: Load and mask the protected GitHub publisher
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          umask 077
-          secret_json="$(aws secretsmanager get-secret-value \
-            --secret-id dd/remote-dev/agent-secrets \
-            --query SecretString \
-            --output text)"
-          token="$(jq -er '.GH_PAT | select(type == "string" and length > 0)' <<<"$secret_json")"
-          echo "::add-mask::$token"
-          {
-            printf 'GH_TOKEN=%s\n' "$token"
-            printf 'GITHUB_REPOSITORY_ADMIN_TOKEN=%s\n' "$token"
-          } >> "$GITHUB_ENV"
-          unset token secret_json
 
       - name: Verify the reviewed publisher
         shell: bash
@@ -71,6 +54,156 @@ jobs:
             bash -n "$script"
           done
 
-      - name: Create, mirror, populate, and verify the ORES OTEL fleet
+      - name: Publish and verify from the protected SSM host
         shell: bash
-        run: bash scripts/ops/bootstrap_ores_otel_repositories_20260808.sh
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: |
+          set -Eeuo pipefail
+          test -n "${INSTANCE_ID:-}"
+          trusted_sha="$(git rev-parse HEAD)"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          remote_script="$RUNNER_TEMP/bootstrap-ores-otel-repositories.sh"
+          cat > "$remote_script" <<'REMOTE_EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          umask 077
+
+          trusted_sha="${1:?trusted SHA required}"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          stage=initialization
+          work="$(mktemp -d /tmp/ores-otel-publisher.XXXXXX)"
+
+          cleanup() {
+            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN encoded_pat
+            unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
+            rm -rf "$work"
+          }
+          trap cleanup EXIT
+          trap 'rc=$?; printf "remote-stage=%s status=failed rc=%s\n" "$stage" "$rc" >&2; exit "$rc"' ERR
+
+          stage=protected-credential
+          command -v kubectl >/dev/null
+          test -r /etc/kubernetes/admin.conf
+          encoded_pat="$(
+            KUBECONFIG=/etc/kubernetes/admin.conf \
+              kubectl -n default get secret dd-agent-secrets \
+              -o jsonpath='{.data.GH_PAT}'
+          )"
+          test -n "$encoded_pat"
+          GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode)"
+          unset encoded_pat
+          test -n "$GH_TOKEN"
+          [[ "$GH_TOKEN" != *$'\n'* && "$GH_TOKEN" != *$'\r'* ]]
+          export GH_TOKEN
+          export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
+          printf 'remote-stage=%s status=passed\n' "$stage"
+
+          stage=github-cli
+          if ! command -v gh >/dev/null; then
+            command -v python3 >/dev/null
+            command -v tar >/dev/null
+            cli_tag="$(python3 - <<'PY'
+          import json
+          import urllib.request
+          request = urllib.request.Request(
+              'https://api.github.com/repos/cli/cli/releases/latest',
+              headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'ores-otel-bootstrap'},
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              print(json.load(response)['tag_name'])
+          PY
+          )"
+            cli_version="${cli_tag#v}"
+            case "$(uname -m)" in
+              x86_64) cli_arch=amd64 ;;
+              aarch64|arm64) cli_arch=arm64 ;;
+              *) printf 'unsupported architecture: %s\n' "$(uname -m)" >&2; exit 1 ;;
+            esac
+            cli_archive="$work/gh.tar.gz"
+            cli_url="https://github.com/cli/cli/releases/download/$cli_tag/gh_${cli_version}_linux_${cli_arch}.tar.gz"
+            python3 - "$cli_url" "$cli_archive" <<'PY'
+          import sys
+          import urllib.request
+          urllib.request.urlretrieve(sys.argv[1], sys.argv[2])
+          PY
+            tar -xzf "$cli_archive" -C "$work"
+            export PATH="$work/gh_${cli_version}_linux_${cli_arch}/bin:$PATH"
+          fi
+          command -v gh >/dev/null
+          test "$(gh api user --jq .login)" = ORESoftware
+          printf 'remote-stage=%s status=passed\n' "$stage"
+
+          stage=trusted-publisher-source
+          git init "$work/k8s-cluster"
+          git -C "$work/k8s-cluster" remote add origin \
+            https://github.com/ORESoftware/k8s-cluster.git
+          git -C "$work/k8s-cluster" fetch --depth=1 origin "$trusted_sha"
+          git -C "$work/k8s-cluster" checkout --detach FETCH_HEAD
+          test "$(git -C "$work/k8s-cluster" rev-parse HEAD)" = "$trusted_sha"
+          printf 'remote-stage=%s status=passed sha=%s\n' "$stage" "$trusted_sha"
+
+          stage=publisher-static-validation
+          cd "$work/k8s-cluster"
+          test "$(sha256sum scripts/ops/bootstrap_ores_otel_repositories_20260808.sh | awk '{print $1}')" = \
+            '6ca6795212c5701e42ace66c390cc2ceb7c0152cb3a5f12d01061a9175d76074'
+          test "$(sha256sum scripts/ops/bootstrap_ores_otel_repositories_20260808_part1.sh | awk '{print $1}')" = \
+            '2adf73e0f6cc50f96a3e8180200a55b9c7e020f79301f3f03a06e2af7231436d'
+          test "$(sha256sum scripts/ops/bootstrap_ores_otel_repositories_20260808_part2.sh | awk '{print $1}')" = \
+            '29ab3644f9bb7214dd9359337e6be61709574912bb5065bfc99db3e724b2181e'
+          test "$(sha256sum scripts/ops/bootstrap_ores_otel_repositories_20260808_part3.sh | awk '{print $1}')" = \
+            '3c81cbd6e8696ae54eee9bdce2ef601033f7409bab33417cc17774ce65118446'
+          for script in scripts/ops/bootstrap_ores_otel_repositories_20260808*.sh; do
+            bash -n "$script"
+          done
+          printf 'remote-stage=%s status=passed\n' "$stage"
+
+          stage=bounded-repository-publication
+          bash scripts/ops/bootstrap_ores_otel_repositories_20260808.sh
+          printf 'remote-stage=%s status=passed\n' "$stage"
+
+          stage=complete
+          printf 'remote-stage=%s status=success\n' "$stage"
+          REMOTE_EOF
+          chmod 700 "$remote_script"
+
+          encoded_script="$(base64 --wrap=0 "$remote_script")"
+          remote_command="printf '%s' '$encoded_script' | base64 --decode > /tmp/bootstrap-ores-otel-repositories.sh; chmod 700 /tmp/bootstrap-ores-otel-repositories.sh; bash /tmp/bootstrap-ores-otel-repositories.sh '$trusted_sha' > /tmp/bootstrap-ores-otel-repositories.log 2>&1; status=\$?; if test -f /tmp/bootstrap-ores-otel-repositories.log; then tail -c 30000 /tmp/bootstrap-ores-otel-repositories.log; fi; rm -f /tmp/bootstrap-ores-otel-repositories.sh /tmp/bootstrap-ores-otel-repositories.log; exit \$status"
+          parameters="$RUNNER_TEMP/ssm-parameters.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "Bootstrap ORES OTEL repositories from $trusted_sha" \
+              --parameters "file://$parameters" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+          echo "ssm_command_id=$command_id"
+
+          status=Pending
+          for _ in $(seq 1 840); do
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query Status \
+                --output text 2>/dev/null || true
+            )"
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut|Cancelling)
+                break
+                ;;
+            esac
+            sleep 3
+          done
+
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json
+          test "$status" = Success
