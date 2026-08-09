@@ -20,18 +20,24 @@ function usage() {
   return `Usage:
   node tools/google-chat-space-export/import-plan.mjs \\
     --input <export-file-or-directory> [--input <another-path>] \\
+    [--since <ISO-8601 timestamp>] \\
     [--existing-index <linear-issues.json>] \\
     [--project-map <project-map.json>] \\
     [--json <plan.json>] [--markdown <plan.md>]
 
 The command is read-only. It validates, deduplicates, and groups exported Google
 Chat messages, then emits a dry-run plan. It never calls Linear or creates issues.
+
+--since narrows the plan to messages created at or after the given instant. It can
+only narrow: a value earlier than ${START_TIME_INCLUSIVE} is rejected, so the fixed
+space/date boundary can never be widened from the command line.
 `;
 }
 
 function parseArgs(argv) {
   const options = {
     inputs: [],
+    since: null,
     existingIndex: null,
     projectMap: null,
     jsonOutput: null,
@@ -52,6 +58,9 @@ function parseArgs(argv) {
     switch (arg) {
       case '--input':
         options.inputs.push(next());
+        break;
+      case '--since':
+        options.since = next();
         break;
       case '--existing-index':
         options.existingIndex = next();
@@ -135,6 +144,25 @@ function validateTimestamp(value, label) {
     throw new Error(`${label} is missing or is not an RFC-3339 timestamp: ${value}`);
   }
   return timestamp;
+}
+
+/**
+ * Resolves the effective window start. The fixed boundary is a security property,
+ * so --since may only move the start forward; anything earlier is rejected rather
+ * than silently clamped, which would hide a caller's intent to widen history.
+ */
+export function resolveWindowStart(since) {
+  const boundary = Date.parse(START_TIME_INCLUSIVE);
+  if (since === null || since === undefined || since === '') {
+    return { iso: START_TIME_INCLUSIVE, timestamp: boundary, narrowed: false };
+  }
+  const timestamp = validateTimestamp(since, '--since');
+  if (timestamp < boundary) {
+    throw new Error(
+      `--since ${since} predates the fixed boundary ${START_TIME_INCLUSIVE}; it can only narrow the window.`,
+    );
+  }
+  return { iso: new Date(timestamp).toISOString(), timestamp, narrowed: timestamp > boundary };
 }
 
 function canonicalSourceKey(message) {
@@ -492,6 +520,7 @@ function issueSummary(issue) {
 export function buildImportPlan(pageDocuments, options = {}) {
   const projectMap = normalizeProjectMap(options.projectMap);
   const existing = buildExistingIndex(options.existingIndex || []);
+  const window = resolveWindowStart(options.since);
   const uniqueMessages = new Map();
   const pageRuns = new Set();
   let rawMessageCount = 0;
@@ -522,12 +551,17 @@ export function buildImportPlan(pageDocuments, options = {}) {
     }
   }
 
-  const messages = [...uniqueMessages.values()]
+  const deduped = [...uniqueMessages.values()]
     .map((entry) => entry.message)
     .sort((left, right) => {
       const time = left.createTime.localeCompare(right.createTime);
       return time || left.sourceKey.localeCompare(right.sourceKey);
     });
+
+  const messages = window.narrowed
+    ? deduped.filter((message) => Date.parse(message.createTime) >= window.timestamp)
+    : deduped;
+  const windowedOutMessages = deduped.length - messages.length;
 
   const groups = new Map();
   for (const message of messages) {
@@ -617,8 +651,10 @@ export function buildImportPlan(pageDocuments, options = {}) {
     ignoredJsonFiles,
     exportRuns: pageRuns.size,
     rawMessages: rawMessageCount,
-    uniqueMessages: messages.length,
-    duplicateMessages: rawMessageCount - messages.length,
+    uniqueMessages: deduped.length,
+    duplicateMessages: rawMessageCount - deduped.length,
+    windowedOutMessages,
+    plannedMessages: messages.length,
     threads: groups.size,
     candidates: candidates.length,
     create: candidates.filter((candidate) => candidate.action === 'create').length,
@@ -639,6 +675,7 @@ export function buildImportPlan(pageDocuments, options = {}) {
       spaceName: EXPECTED_SPACE_NAME,
       spaceId: EXPECTED_SPACE_ID,
       startTimeInclusive: START_TIME_INCLUSIVE,
+      windowStartInclusive: window.iso,
       runIds: [...pageRuns].sort(),
     },
     stats,
@@ -659,6 +696,10 @@ export function renderMarkdown(plan) {
     `Plan ID: \`${plan.planId}\``,
     '',
     `Source: \`${plan.source.spaceName}\` from \`${plan.source.startTimeInclusive}\``,
+    ...(plan.source.windowStartInclusive &&
+    plan.source.windowStartInclusive !== plan.source.startTimeInclusive
+      ? [`Window narrowed to messages at or after \`${plan.source.windowStartInclusive}\`.`]
+      : []),
     '',
     '## Reconciliation summary',
     '',
@@ -724,7 +765,7 @@ export async function main(argv = process.argv.slice(2)) {
   }
   const existingIndex = options.existingIndex ? await readJson(options.existingIndex) : [];
   const projectMap = options.projectMap ? await readJson(options.projectMap) : null;
-  const plan = buildImportPlan(pageDocuments, { existingIndex, projectMap });
+  const plan = buildImportPlan(pageDocuments, { existingIndex, projectMap, since: options.since });
   const json = `${JSON.stringify(plan, null, 2)}\n`;
   const markdown = renderMarkdown(plan);
 

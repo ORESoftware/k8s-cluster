@@ -197,15 +197,21 @@ test("AI agent bridge is authenticated, observable, isolated, and disruption-pro
 
   assert.match(deployment, /automountServiceAccountToken:\s*false/);
   assert.match(deployment, /enableServiceLinks:\s*false/);
+  // The bridge is backed by its own dedicated secret (dd-ai-agent-bridge-secrets/
+  // inbox_token), provisioned by dd-ai-agent-bridge.externalsecret.yaml — not the
+  // shared cluster credential. This is the single source of truth asserted by the
+  // k8s contract test, the kind smoke fixture, and scripts/ci/test-ai-agent-bridge-kind.sh;
+  // reusing dd-agent-secrets/SERVER_AUTH_SECRET here would widen the bridge's blast
+  // radius to every service that shares that credential.
   assert.match(
     deployment,
-    /name:\s*API_AUTH_BEARER[\s\S]*name:\s*dd-agent-secrets[\s\S]*key:\s*SERVER_AUTH_SECRET/,
+    /name:\s*API_AUTH_BEARER[\s\S]*name:\s*dd-ai-agent-bridge-secrets[\s\S]*key:\s*inbox_token/,
   );
   assert.match(
     deployment,
-    /name:\s*AI_AGENT_BRIDGE_TOKEN[\s\S]*name:\s*dd-agent-secrets[\s\S]*key:\s*SERVER_AUTH_SECRET/,
+    /name:\s*AI_AGENT_BRIDGE_TOKEN[\s\S]*name:\s*dd-ai-agent-bridge-secrets[\s\S]*key:\s*inbox_token/,
   );
-  assert.doesNotMatch(deployment, /name:\s*dd-ai-agent-bridge-secrets/);
+  assert.doesNotMatch(deployment, /name:\s*dd-agent-secrets/);
   assert.match(deployment, /name:\s*OTEL_SERVICE_NAME[\s\S]*value:\s*dd-ai-agent-bridge/);
   assert.match(
     deployment,

@@ -1,0 +1,117 @@
+# Root-managed bootstrap chain for the Zed tenant.
+#
+# These Applications deliberately run in the infrastructure AppProject: the Zed
+# AppProject is itself one of the resources being bootstrapped. The child Zed
+# service Applications use the dedicated `zed` AppProject after it exists.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: zed-tenant-bootstrap
+  namespace: argocd
+  labels:
+    dd.dev/app: zed
+    dd.dev/bootstrap-stage: tenant
+  annotations:
+    argocd.argoproj.io/sync-wave: "-40"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: main
+    path: remote/argocd/projects
+    directory:
+      include: zed.tenant.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: zed-project-bootstrap
+  namespace: argocd
+  labels:
+    dd.dev/app: zed
+    dd.dev/bootstrap-stage: project
+  annotations:
+    argocd.argoproj.io/sync-wave: "-30"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: main
+    path: remote/argocd/projects
+    directory:
+      include: zed.appproject.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: zed-postgres-bootstrap
+  namespace: argocd
+  labels:
+    dd.dev/app: zed
+    dd.dev/bootstrap-stage: postgres
+  annotations:
+    argocd.argoproj.io/sync-wave: "-20"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: main
+    path: remote/argocd/projects
+    directory:
+      include: zed.bootstrap-postgres.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: zed
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: zed-applications-bootstrap
+  namespace: argocd
+  labels:
+    dd.dev/app: zed
+    dd.dev/bootstrap-stage: applications
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: main
+    path: remote/argocd/apps
+    directory:
+      include: zed.applications.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

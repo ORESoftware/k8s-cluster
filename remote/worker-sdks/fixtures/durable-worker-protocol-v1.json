@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "delivery": "at-least-once",
+  "effectSafety": ["idempotency-key", "fencing-token"],
+  "transientStatuses": [408, 425, 429, 500, 502, 503, 504],
+  "leaseLostStatuses": [404, 409],
+  "neverRetryWithoutIdentity": [
+    "submit-task-without-idempotency-key",
+    "submit-run-without-idempotency-key",
+    "signal-run",
+    "worker-poll"
+  ],
+  "idempotentOperations": [
+    "get-run",
+    "pause-run",
+    "resume-run",
+    "cancel-run",
+    "register-worker",
+    "heartbeat-worker",
+    "start-step",
+    "heartbeat-step",
+    "append-step-output-with-chunk-id",
+    "complete-step-with-lease-generation",
+    "fail-step-with-lease-generation"
+  ],
+  "endpointFragments": [
+    "/api/v1/tasks",
+    "/api/v1/runs",
+    "/api/v1/workers/register",
+    "/heartbeat",
+    "/poll?waitMs=",
+    "/api/v1/steps/",
+    "/output",
+    "/complete",
+    "/fail"
+  ],
+  "progressChunkId": "{stepId}:{leaseGeneration}:{sequence}",
+  "assignment": {
+    "runId": "run-fixture",
+    "stepId": "step-fixture",
+    "stepKey": "task",
+    "taskType": "fixture:task",
+    "queue": "default",
+    "input": {"value": 7},
+    "attempt": 1,
+    "leaseToken": "lease-fixture",
+    "leaseGeneration": 3,
+    "fencingToken": 9,
+    "leaseExpiresAtMs": 4102444800000,
+    "timeoutMs": 60000,
+    "affinityKey": null
+  }
+}

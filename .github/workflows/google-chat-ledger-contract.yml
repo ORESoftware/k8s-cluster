@@ -1,0 +1,91 @@
+name: Google Chat reconciliation ledger
+
+on:
+  pull_request:
+    paths:
+      - docs/audits/google-chat/alex-alex-me-since-2026-06-05/**
+      - scripts/ops/verify_google_chat_reconciliation_ledger.py
+      - tests/ops/test_verify_google_chat_reconciliation_ledger.py
+      - .github/workflows/google-chat-ledger-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - docs/audits/google-chat/alex-alex-me-since-2026-06-05/**
+      - scripts/ops/verify_google_chat_reconciliation_ledger.py
+      - tests/ops/test_verify_google_chat_reconciliation_ledger.py
+      - .github/workflows/google-chat-ledger-contract.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: google-chat-ledger-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Check out without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/google-chat-ledger-contract.yml
+
+      - name: Compile and run verifier tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            scripts/ops/verify_google_chat_reconciliation_ledger.py \
+            tests/ops/test_verify_google_chat_reconciliation_ledger.py
+          python -m unittest -v tests/ops/test_verify_google_chat_reconciliation_ledger.py
+
+      - name: Verify exact content-free ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/google-chat-ledger-report.json"
+          python scripts/ops/verify_google_chat_reconciliation_ledger.py \
+            --json-output "$report" >/dev/null
+          jq -e '
+            .records == 955 and
+            .duplicates == 16 and
+            .sha256 == "8f24e09b4bffe35973ed7cf5c891a431cfd8f91995d90e777ea7bb3bd778e588" and
+            .source.spaceName == "spaces/AAQAoHKdzvI" and
+            .source.displayName == "alex-alex-me" and
+            .privacy.containsMessageBodies == false and
+            .privacy.containsMatchedCredentialValues == false and
+            .privacy.containsContactValues == false and
+            .privacy.rawExportCommitted == false
+          ' "$report" >/dev/null
+          jq '{records, duplicates, sha256, privacy}' "$report" >>"$GITHUB_STEP_SUMMARY"
+          rm -f "$report"
+
+      - name: Reject conflict markers and raw/private export paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -nE '^(<{7}|={7}|>{7})' -- \
+            .github/workflows/google-chat-ledger-contract.yml \
+            docs/audits/google-chat/alex-alex-me-since-2026-06-05 \
+            scripts/ops/verify_google_chat_reconciliation_ledger.py \
+            tests/ops/test_verify_google_chat_reconciliation_ledger.py; then
+            echo 'Git conflict markers are forbidden.' >&2
+            exit 1
+          fi
+          if git ls-files | grep -E '(^|/)(private|raw-export|sanitized-export)/'; then
+            echo 'Private Google Chat export material must not be committed.' >&2
+            exit 1
+          fi

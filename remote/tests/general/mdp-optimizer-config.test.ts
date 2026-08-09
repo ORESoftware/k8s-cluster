@@ -35,7 +35,7 @@ test('rust mdp optimizer is deployed, scraped, and connected to nats', async () 
   );
   const otel = await readRepoFile('remote/argocd/observability/otel-collector.configmap.yaml');
   const prometheus = await readRepoFile('remote/argocd/observability/prometheus.configmap.yaml');
-  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const home = await readRepoFile('remote/deployments/web-home-rs/src/home.rs');
 
   assert.match(cargo, /name\s*=\s*"dd-mdp-optimizer"/);
   assert.match(cargo, /async-nats\s*=\s*"=0\.38\.0"/);
@@ -52,7 +52,7 @@ test('rust mdp optimizer is deployed, scraped, and connected to nats', async () 
   assert.match(source, /gamma must be finite and in \[0, 1\)/);
   assert.match(source, /value iteration|mdp\.value-iteration/);
   assert.match(source, /BeliefSummary/);
-  assert.match(source, /queue_subscribe\(subject, queue_group\)/);
+  assert.match(source, /queue_subscribe\(subject\.clone\(\), queue_group\.clone\(\)\)/);
   assert.match(source, /TelemetryLearningRequest/);
   assert.match(source, /optimize_telemetry_in_background/);
   assert.match(source, /spawn_blocking\(move \|\| optimize_telemetry\(request\)\)/);

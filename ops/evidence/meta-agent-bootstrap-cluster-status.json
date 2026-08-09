@@ -1,0 +1,31 @@
+{
+  "admin_secret": {
+    "exists": false,
+    "repository_admin_token_key_present": false
+  },
+  "bootstrap_job": {
+    "active": 0,
+    "completion_time": "",
+    "conditions": [],
+    "exists": false,
+    "failed": 0,
+    "start_time": "",
+    "status_lines": [],
+    "succeeded": 0
+  },
+  "observed_at": "2026-08-02T02:16:13Z",
+  "platform_application": {
+    "exists": false,
+    "health_status": "",
+    "sync_status": "",
+    "target_revision": ""
+  },
+  "schema_version": 1,
+  "workload_application": {
+    "exists": false,
+    "health_status": "",
+    "operation_phase": "",
+    "sync_status": "",
+    "target_revision": ""
+  }
+}

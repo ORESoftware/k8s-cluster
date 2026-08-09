@@ -1,0 +1,39 @@
+# Partial server-side-applied configuration for the phone account. Pruning is
+# disabled because these foundational Argo CD ConfigMaps can contain keys owned
+# by the installation and other configuration paths.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+  labels:
+    app.kubernetes.io/name: argocd-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  accounts.argocd-mobile: login
+  accounts.argocd-mobile.enabled: "true"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-rbac-cm
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+  labels:
+    app.kubernetes.io/name: argocd-rbac-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  # Read-only by default. A project-scoped sync permission can be added after
+  # phone enrollment and an explicit operational review; never grant pod exec,
+  # resource actions, application update, or delete to this account.
+  policy.mobile.csv: |
+    p, argocd-mobile, applications, get, */*, allow
+    p, argocd-mobile, applicationsets, get, */*, allow
+    p, argocd-mobile, certificates, get, *, allow
+    p, argocd-mobile, clusters, get, *, allow
+    p, argocd-mobile, repositories, get, *, allow
+    p, argocd-mobile, projects, get, *, allow
+    p, argocd-mobile, logs, get, */*, allow

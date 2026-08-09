@@ -1,0 +1,83 @@
+name: durable-worker-typescript-sdk-compatibility
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/durable-worker-typescript-sdk-repair.yml'
+      - 'remote/worker-sdks/typescript/durable-worker/**'
+      - 'remote/tests/general/durable-worker-typescript-sdk.test.mjs'
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - '.github/workflows/durable-worker-typescript-sdk-repair.yml'
+      - 'remote/worker-sdks/typescript/durable-worker/**'
+      - 'remote/tests/general/durable-worker-typescript-sdk.test.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: durable-worker-typescript-sdk-compatibility-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node-runtime-matrix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version:
+          - '22.18.0'
+          - '22'
+          - '24'
+    steps:
+      - name: Checkout without persistent credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Setup Node ${{ matrix.node-version }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Verify syntax, runtime contracts, and repository ratchets
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix remote/worker-sdks/typescript/durable-worker run check
+          npm --prefix remote/worker-sdks/typescript/durable-worker test
+          node --test remote/tests/general/durable-worker-typescript-sdk.test.mjs
+
+      - name: Stress abort and lease-fencing lifecycle
+        working-directory: remote/worker-sdks/typescript/durable-worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 12); do
+            node --test \
+              --test-name-pattern='aborts the handler and suppresses completion' \
+              test/client.test.mjs >/dev/null
+          done
+
+      - name: Verify intentional dependency-free package payload
+        working-directory: remote/worker-sdks/typescript/durable-worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm pack --dry-run --json > "${RUNNER_TEMP}/durable-worker-sdk-pack.json"
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          const report = JSON.parse(await readFile(process.env.RUNNER_TEMP + '/durable-worker-sdk-pack.json', 'utf8'));
+          const files = new Set(report[0].files.map((entry) => entry.path));
+          for (const expected of ['README.md', 'index.d.ts', 'index.mjs', 'package.json']) {
+            if (!files.has(expected)) throw new Error(`package payload is missing ${expected}`);
+          }
+          if (files.has('test/client.test.mjs')) throw new Error('package payload leaked tests');
+          if (report[0].entryCount !== files.size) throw new Error('package report contains duplicate entries');
+          NODE

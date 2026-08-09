@@ -24,7 +24,7 @@ patches:
         template:
           metadata:
             annotations:
-              dd.dev/soccer-engine-revision: 2550d1225db3e85935fe6a127795a6b612e6388b
+              dd.dev/soccer-engine-revision: ee7aecb6ba6cae24cefe6cfca6700964357ed12c
               dd.dev/des-engine-revision: 894e86fb188b88b0e2c734b5cf7caa27c6b18e00
           spec:
             containers:
@@ -33,7 +33,7 @@ patches:
                   - name: SOCCER_SOURCE_REPO
                     value: https://github.com/akrion-sim/akrion-soccer-engine-rs.git
                   - name: SOCCER_SOURCE_REF
-                    value: 2550d1225db3e85935fe6a127795a6b612e6388b
+                    value: ee7aecb6ba6cae24cefe6cfca6700964357ed12c
                   - name: SOCCER_ENGINE_SOURCE_REPO
                     value: https://github.com/ORESoftware/discrete-event-system.rs.git
                   - name: SOCCER_ENGINE_SOURCE_REF

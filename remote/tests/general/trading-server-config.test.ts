@@ -22,7 +22,21 @@ async function readRepoFile(relativePath: string): Promise<string> {
 
 test('rust trading server scores signals and emits gated order intents', async () => {
   const cargo = await readRepoFile('remote/deployments/trading-server-rs/Cargo.toml');
-  const source = await readRepoFile('remote/deployments/trading-server-rs/src/main.rs');
+  const sourceFiles = [
+  'remote/deployments/trading-server-rs/src/main.rs',
+  'remote/deployments/trading-server-rs/src/app_config.rs',
+  'remote/deployments/trading-server-rs/src/decision.rs',
+  'remote/deployments/trading-server-rs/src/http.rs',
+  'remote/deployments/trading-server-rs/src/nats.rs',
+  'remote/deployments/trading-server-rs/src/platforms.rs',
+  'remote/deployments/trading-server-rs/src/state.rs',
+  'remote/deployments/trading-server-rs/src/types.rs',
+  'remote/deployments/trading-server-rs/src/util.rs',
+  'remote/deployments/trading-server-rs/src/validation.rs',
+];
+const source = (
+  await Promise.all(sourceFiles.map((path) => readRepoFile(path)))
+).join('\n');
   const readme = await readRepoFile('remote/deployments/trading-server-rs/readme.md');
   const appConfigSeed = await readRepoFile(
     'remote/databases/pg/seeds/trading-platform-app-config.sql',
@@ -134,7 +148,7 @@ test('trading server is deployed through runtime manifests, gateway, and observa
   );
   const prometheus = await readRepoFile('remote/argocd/observability/prometheus.configmap.yaml');
   const otel = await readRepoFile('remote/argocd/observability/otel-collector.configmap.yaml');
-  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const home = await readRepoFile('remote/deployments/web-home-rs/src/home.rs');
   const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
   const remoteReadme = await readRepoFile('remote/readme.md');
 

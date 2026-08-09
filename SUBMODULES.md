@@ -42,6 +42,7 @@ always lives at `~/codes/ores/k8s-cluster/<submodule path>`.
 | `remote/deployments/fiducia-monorepo` | [fiducia-cloud/fiducia-monorepo](https://github.com/fiducia-cloud/fiducia-monorepo) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/tor-server.rs` | [ORESoftware/tor-server.rs](https://github.com/ORESoftware/tor-server.rs) | `main` | `~/codes/ores/tor-server.rs` |
 | `remote/deployments/ai-agent-bridge` | [ORESoftware/ai-agent-bridge.rs](https://github.com/ORESoftware/ai-agent-bridge.rs) | `main` | `~/codes/ores/ai-agent-bridge` |
+| `remote/deployments/push-notification-server.rs` | [ORESoftware/push-notification-server.rs](https://github.com/ORESoftware/push-notification-server.rs) | `main` | `~/codes/ores/push-notification-server.rs` |
 | `remote/deployments/fabrication-server-rs` | [daedalus-fab/fabrication-server.rs](https://github.com/daedalus-fab/fabrication-server.rs) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/gleam-lambda-runner` | [scintilla-run/gleam-lambda-runner](https://github.com/scintilla-run/gleam-lambda-runner) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/billing-server-rs` | [quaestor-ledger/billing-server.rs](https://github.com/quaestor-ledger/billing-server.rs) | `main` | — _(submodule checkout only)_ |

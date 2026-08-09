@@ -44,9 +44,10 @@ test('Gleam MCP server is a standalone OTP runtime', async () => {
   assert.match(gleamToml, /dd_cli_config_client/);
   assert.match(main, /supervisor\.new\(supervisor\.OneForOne\)/);
   assert.match(main, /metrics\.start\(named_as: metrics_name\)/);
-  assert.match(main, /http_server\.supervised\(metrics_name\)/);
+  assert.match(main, /http_server\.supervised\(metrics_name, nats_handle\)/);
   assert.match(httpServer, /@external\(erlang, "gleam_mcp_runtime_env", "getenv"\)/);
-  assert.match(httpServer, /@external\(erlang, "gleam_mcp_json", "request_id"\)/);
+  assert.match(httpServer, /@external\(erlang, "gleam_mcp_json", "parse_request"\)/);
+  assert.match(httpServer, /fn parse_request\(body: String\) -> #\(String, String, String, String\)/);
   assert.match(httpServer, /const default_port = 8090/);
   assert.match(httpServer, /pub fn bind_host\(\)/);
   assert.match(httpServer, /pub fn bind_port\(\)/);
@@ -56,11 +57,11 @@ test('Gleam MCP server is a standalone OTP runtime', async () => {
   assert.match(runtimeEnv, /-module\(gleam_mcp_runtime_env\)/);
   assert.match(runtimeEnv, /dd_cli_config_client_ffi:getenv\(Name, <<>>\)/);
   assert.match(jsonFfi, /-module\(gleam_mcp_json\)/);
-  assert.match(jsonFfi, /request_id\/1/);
-  assert.match(jsonFfi, /method\/1/);
-  assert.match(jsonFfi, /tool_name\/1/);
+  assert.match(jsonFfi, /parse_request\/1/);
+  assert.match(jsonFfi, /tool_name\(Params\)/);
   assert.match(jsonFfi, /json:decode\(Body\)/);
-  assert.doesNotMatch(jsonFfi, /re:run\(Body, Pattern/);
+  assert.match(jsonFfi, /case decode_json\(Body\) of[\s\S]*\{ok, Decoded\} -> from_decoded\(Decoded\);[\s\S]*no_json -> legacy_parse\(Body\)/);
+  assert.match(jsonFfi, /legacy_id\(Body\) ->[\s\S]*re:run\(Body, Pattern/);
   assert.doesNotMatch(httpServer, /method_from_body/);
   assert.doesNotMatch(httpServer, /tool_from_body/);
   assert.match(httpServer, /Get, \["healthz"\] -> healthz\(\)/);
@@ -69,9 +70,11 @@ test('Gleam MCP server is a standalone OTP runtime', async () => {
   assert.match(httpServer, /"initialize"/);
   assert.match(httpServer, /"tools\/list"/);
   assert.match(httpServer, /"tools\/call"/);
-  assert.match(httpServer, /initialize_result\(request_id\)/);
-  assert.match(httpServer, /tools_list_result\(request_id\)/);
-  assert.match(httpServer, /tools_call_result\(json_tool_name\(body\), request_id\)/);
+  assert.match(httpServer, /let #\(status, method, id_json, tool\) = parse_request\(body\)/);
+  assert.match(httpServer, /initialize_result\(id_json\)/);
+  assert.match(httpServer, /tools_list_result\(id_json\)/);
+  assert.match(httpServer, /tools_call_result\(tool, id_json\)/);
+  assert.match(httpServer, /json_rpc_error_with_id\("method not found", -32_601, id_json\)/);
   assert.match(httpServer, /import gleam_mcp_server\/k8s/);
   assert.match(httpServer, /"kubernetes_inventory"/);
   assert.match(httpServer, /"kubernetes_deployments"/);
@@ -324,11 +327,11 @@ test('Gleam MCP server uses EC2 inventory RBAC', async () => {
   assert.doesNotMatch(ec2NetworkPolicy, /to:\s*\[\s*\]/);
   assert.doesNotMatch(ec2NetworkPolicy, /to:\s*\{\s*\}/);
   // Warm worker containers spawned by `dd-container-pool` reach MCP from
-  // the EC2 node host network, so the policy must allow RFC1918 ingress
-  // on :8090 in addition to the labelled podSelector clauses above.
+  // the EC2 node host network. Restrict that exception to the exact VPC
+  // CIDR; broad RFC1918 ranges would also admit unrelated pod networks.
   assert.match(
     ec2NetworkPolicy,
-    /ipBlock:\s*\n\s+cidr:\s*10\.0\.0\.0\/8[\s\S]*ipBlock:\s*\n\s+cidr:\s*172\.16\.0\.0\/12[\s\S]*ipBlock:\s*\n\s+cidr:\s*192\.168\.0\.0\/16[\s\S]*ports:[\s\S]*port:\s*8090/,
+    /ipBlock:\s*\n\s+cidr:\s*172\.31\.0\.0\/16[\s\S]*ports:[\s\S]*port:\s*8090/,
   );
   // dd-runtime-config wires through env (RUNTIME_CONFIG_REGISTER_URL +
   // RUNTIME_CONFIG_APPLY_URL). Egress on :8110 lets the pod subscribe;
