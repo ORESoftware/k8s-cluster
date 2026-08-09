@@ -119,9 +119,10 @@ def private_reference_patterns(
                     rf'"(?:full_name|from|to)"\s*:\s*'
                     rf"{re.escape(json.dumps(full_name))}(?=\s*[,}}])"
                 ),
-                re.compile(rf"`{re.escape(name)}`"),
             )
         )
+        if name.lower() != organization.lower():
+            patterns.append(re.compile(rf"`{re.escape(name)}`"))
     return tuple(patterns)
 
 
