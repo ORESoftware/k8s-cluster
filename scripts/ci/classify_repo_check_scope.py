@@ -17,6 +17,7 @@ CONTROL_FILES = {
 
 GOVERNANCE_FILES = {
     ".github/workflows/ops-current-org-dotgithub-relationships-ephemeral-publish.yml",
+    ".github/workflows/ops-publish-test-org-expansion-20260808.yml",
     ".github/workflows/ops-sync-org-project-docs-rate-aware-once.yml",
     ".github/workflows/test-org-project-docs-evidence.yml",
     "docs/operations/org-dotgithub-relationship-publication.md",
@@ -30,8 +31,10 @@ GOVERNANCE_FILES = {
     "scripts/ops/prepare_org_project_docs_reconciler.py",
     "scripts/ops/publish_current_org_repository_relationships.py",
     "scripts/ops/publish_org_repository_relationships.py",
+    "scripts/ops/publish_test_org_expansion_20260808.py.gz.b64",
     "scripts/ops/sync_org_project_docs.sh",
     "scripts/ops/sync_org_project_docs_rate_aware.py",
+    "scripts/ops/test-org-expansion-20260808.json.gz.b64",
     "scripts/ops/test_build_org_project_docs_retry_registry.py",
     "scripts/ops/test_sync_org_project_docs_rate_aware.py",
     "scripts/ops/test_upsert_managed_markdown_block.py",
