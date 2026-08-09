@@ -1,11 +1,13 @@
-# zed-pkg org — two Applications, one per service, both in the `zed` tenant.
+# zed-pkg org — the two existing service Applications remain the disposable
+# bootstrap profile. A third, manual-only candidate pins the reviewed combined
+# account/registry runtime from zed-infra without taking ownership yet.
 #
-# ⚠️ WHY repoURL IS THE PER-APP REPO, NOT zed-monorepo
+# ⚠️ WHY THE EXISTING APPLICATIONS STILL POINT AT PER-APP REPOS
 # zed-monorepo/apps/* are all submodules (mode 160000) pointing at the individual
 # app repos, and the monorepo tracks ZERO files under apps/*/k8s. Combined with
 # repo-server's `reposerver.enable.git.submodule=false`, an Application pointed at
-# the monorepo renders EMPTY — twice over. So manifests live in each APP repo at
-# `k8s/`, and Argo tracks that repo directly. The submodule chain
+# the monorepo renders EMPTY — twice over. So bootstrap manifests live in each
+# APP repo at `k8s/`, and Argo tracks that repo directly. The submodule chain
 # (k8s-cluster -> zed-monorepo -> apps/*) is INVENTORY + PIN: it records which
 # commit of each app is current and is how CI promotes. See docs/app-deploy-contract.md.
 #
@@ -14,18 +16,24 @@
 #   and the app manifests use the namespace-local Postgres DSN directly. This
 #   makes the whole registry disposable and immediately testable.
 #
-# PREREQS before applying:
-#   1. apply remote/argocd/projects/zed.tenant.yaml     (Namespace + quota + default-deny)
+# CANDIDATE ACCOUNT/REGISTRY PROFILE:
+#   dd-zed-account-registry-candidate points at one exact zed-infra commit and
+#   renders the strict-tenant overlay for app.zpkg.net and api.zpkg.net. It has
+#   no automated sync and FailOnSharedResource=true, so it cannot accidentally
+#   take resources from the two bootstrap Applications. Follow
+#   docs/zed-pkg-account-rollout.md for the explicit ownership handoff.
+#
+# PREREQS before applying the bootstrap profile:
+#   1. apply remote/argocd/projects/zed.tenant.yaml      (Namespace + quota + default-deny)
 #   2. apply remote/argocd/projects/zed.appproject.yaml (the enforced boundary)
 #   3. apply remote/argocd/projects/zed.bootstrap-postgres.yaml
 #   4. commit + push each app repo's k8s/ dir to its main
 #   5. publish images ghcr.io/zed-pkg/zed-{api,web}-server:main
 #   6. provision a read-only `zed-ghcr` pull secret in namespace zed
 #
-# Before production, replace the bootstrap database with durable Postgres,
-# restore the ExternalSecrets, enable auth/rate limiting, and use object storage.
-#
-# Promotion knob: flip targetRevision from `main` to a pinned tag/sha per the contract.
+# The candidate is review evidence, not a live rollout. Do not sync it while its
+# source still contains candidate image tags or while the bootstrap Applications
+# own overlapping resources.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -63,3 +71,24 @@ spec:
     automated: { prune: true, selfHeal: true }
     syncOptions:
       - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-zed-account-registry-candidate
+  namespace: argocd
+  annotations:
+    zpkg.net/activation-state: suspended-pending-release-gates
+spec:
+  project: zed
+  source:
+    repoURL: https://github.com/zed-pkg/zed-infra.git
+    targetRevision: 14cf61e795e3d4763785aebc9498c96c23dab60f
+    path: k8s/overlays/k8s-cluster
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: zed
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true
+      - FailOnSharedResource=true
