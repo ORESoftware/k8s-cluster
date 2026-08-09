@@ -160,7 +160,58 @@ class CurrentRepositoryRelationshipPublisherTests(unittest.TestCase):
         self.assertEqual("main", branch)
         self.assertEqual(1, result["private_repository_count"])
         self.assertIn('"name": "internal"', tokens)
+        self.assertIn("example-internal/internal", tokens)
         self.assertNotIn("internal", json.loads(files[publisher.JSON_PATH][0])["repositories"])
+
+    def test_existing_readme_private_identity_is_redacted(self) -> None:
+        organization = "example-internal"
+        private_name = "private-control-plane"
+        private_full_name = f"{organization}/{private_name}"
+        existing_readme = mock.Mock(
+            content=(
+                "# Existing heading\n\n"
+                "Owner-authored public context.\n\n"
+                f"The projection includes [`{private_full_name}`]"
+                f"(https://github.com/{private_full_name}) with role `cli`.\n\n"
+                "Keep this owner-authored conclusion.\n"
+            ),
+            sha="readme-sha",
+        )
+
+        def fetch_existing(_api, _organization, path, _branch):
+            if path == "README.md":
+                return existing_readme
+            return None
+
+        inventory = [
+            {
+                **self.repository(".github"),
+                "full_name": f"{organization}/.github",
+            },
+            {
+                **self.repository(private_name, private=True),
+                "full_name": private_full_name,
+            },
+        ]
+        with mock.patch.object(
+            publisher.base,
+            "fetch_file",
+            side_effect=fetch_existing,
+        ):
+            _, files, tokens, _ = module.build_plan_with_exact_private_references(
+                object(),
+                organization,
+                {"default_branch": "main"},
+                inventory,
+            )
+
+        rendered = files["README.md"][0]
+        self.assertNotIn(private_full_name, rendered)
+        self.assertNotIn(f"https://github.com/{private_full_name}", rendered)
+        self.assertIn(module.PRIVATE_REFERENCE_REDACTION, rendered)
+        self.assertIn("Owner-authored public context.", rendered)
+        self.assertIn("Keep this owner-authored conclusion.", rendered)
+        self.assertIn(private_full_name, tokens)
 
     def test_exact_privacy_adapter_rejects_generated_private_identity(self) -> None:
         inventory = [
@@ -307,6 +358,7 @@ class CurrentRepositoryRelationshipPublisherTests(unittest.TestCase):
         self.assertNotIn("exactly 36", runbook)
         self.assertIn("repository-relationships.json", runbook)
         self.assertIn("RSA-OAEP-SHA256", runbook)
+        self.assertIn("private repository identity", runbook)
 
     def test_workflow_avoids_destructive_recovery_commands(self) -> None:
         lowered = WORKFLOW_PATH.read_text(encoding="utf-8").lower()
