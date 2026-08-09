@@ -152,13 +152,18 @@ jobs:
           [[ "$(jq -r '.organization.viewerCanAdminister' <<<"$preflight")" = true ]]
           [[ "$remaining" -ge 20 ]]
 
-          inspect_query='query Inspect($owner:String!,$name:String!){organization(login:$owner){repository(name:$name){id nameWithOwner isPrivate isArchived defaultBranchRef{name target{oid}}}}}'
-          inspect_vars="$(jq -nc --arg owner "$TARGET_OWNER" --arg name "$TARGET_NAME" '{owner:$owner,name:$name}')"
-          repository="$(graphql "$inspect_query" "$inspect_vars" | jq -c '.organization.repository')"
-          status=preserved_existing
+          inspect_query='query Inspect($owner:String!){organization(login:$owner){repositories(first:100){nodes{id name nameWithOwner isPrivate isArchived defaultBranchRef{name target{oid}}}}}}'
+          inspect_vars="$(jq -nc --arg owner "$TARGET_OWNER" '{owner:$owner}')"
+          inspect_repository() {
+            graphql "$inspect_query" "$inspect_vars" | \
+              jq -c --arg name "$TARGET_NAME" \
+                '.organization.repositories.nodes | map(select(.name == $name)) | first'
+          }
 
+          repository="$(inspect_repository)"
+          status=preserved_existing
           if [[ "$repository" = null ]]; then
-            create_mutation='mutation Create($input:CreateRepositoryInput!){createRepository(input:$input){repository{id nameWithOwner isPrivate isArchived defaultBranchRef{name target{oid}}}}}'
+            create_mutation='mutation Create($input:CreateRepositoryInput!){createRepository(input:$input){repository{id name nameWithOwner isPrivate isArchived defaultBranchRef{name target{oid}}}}}'
             create_vars="$(jq -nc \
               --arg ownerId "$TARGET_ORG_NODE_ID" \
               --arg name "$TARGET_NAME" \
@@ -198,7 +203,7 @@ jobs:
           fi
 
           for _ in $(seq 1 30); do
-            repository="$(graphql "$inspect_query" "$inspect_vars" | jq -c '.organization.repository')"
+            repository="$(inspect_repository)"
             head="$(jq -r '.defaultBranchRef.target.oid // empty' <<<"$repository")"
             [[ ${#head} -eq 40 ]] && break
             sleep 2
