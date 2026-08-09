@@ -11,8 +11,13 @@ const browserTestPath = path.resolve(
   process.cwd(),
   'remote/tests/ui/slack-agent-command.playwright.test.mjs',
 );
+const deploymentPath = path.resolve(
+  process.cwd(),
+  'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.deployment.yaml',
+);
 const workflow = readFileSync(workflowPath, 'utf8');
 const browserTest = readFileSync(browserTestPath, 'utf8');
+const deployment = readFileSync(deploymentPath, 'utf8');
 
 const expectedAliases = [
   '/ores-claude',
@@ -41,6 +46,16 @@ function recordedRef(name) {
   return match[1];
 }
 
+function deployedBridgeRefs() {
+  return [
+    ...new Set(
+      [...deployment.matchAll(/dd\.dev\/source-revision:\s*'([0-9a-f]{40})'/g)].map(
+        (match) => match[1],
+      ),
+    ),
+  ];
+}
+
 test('cross-repository Slack canary dependencies are immutable and provenance-aligned', () => {
   const bridge = checkoutRef('ORESoftware/ai-agent-bridge.rs');
   const coordinator = checkoutRef('ORESoftware/ai-agent-coordinator.rs');
@@ -55,6 +70,20 @@ test('cross-repository Slack canary dependencies are immutable and provenance-al
   );
 });
 
+test('the bridge checkout is the immutable source revision declared by Argo', () => {
+  const bridge = checkoutRef('ORESoftware/ai-agent-bridge.rs');
+  assert.deepEqual(deployedBridgeRefs(), [bridge]);
+
+  const deploymentPathOccurrences = workflow.match(
+    /remote\/argocd\/dd-next-runtime\/dd-ai-agent-bridge\.deployment\.yaml/g,
+  );
+  assert.ok(deploymentPathOccurrences, 'deployment path is missing from the workflow');
+  assert.ok(
+    deploymentPathOccurrences.length >= 3,
+    `expected deployment path in pull-request, push, and execution contracts; found ${deploymentPathOccurrences.length}`,
+  );
+});
+
 test('recorded revisions are verified against the checked-out commits before evidence upload', () => {
   assert.match(workflow, /bridge_commit="\$\(git -C \.e2e\/bridge rev-parse HEAD\)"/);
   assert.match(
@@ -63,7 +92,8 @@ test('recorded revisions are verified against the checked-out commits before evi
   );
   assert.match(workflow, /test "\$bridge_commit" = "\$BRIDGE_REF"/);
   assert.match(workflow, /test "\$coordinator_commit" = "\$COORDINATOR_REF"/);
-  assert.match(workflow, /schema_version:\s*5/);
+  assert.match(workflow, /schema_version:\s*6/);
+  assert.match(workflow, /deployment_contract:\s*"bridge_ref_matches_argocd_source_revision"/);
   assert.match(workflow, /alias_contract:\s*"six_manifest_commands_to_two_canonical_endpoints"/);
   assert.match(workflow, /idempotency_contract:\s*"header_equals_payload_run_id"/);
   assert.match(workflow, /observable_event_contract:\s*"validated_sanitized_task_created_v1"/);
@@ -97,14 +127,15 @@ test('browser coverage declares exactly the six installed slash-command aliases'
   assert.match(browserTest, /'idempotency-key': `slack-command:\$\{ids\.run\}`/);
 });
 
-test('workflow validates alias routing, observable events, and exact run idempotency in checked-out source', () => {
+test('workflow validates deployment routing, observable events, and exact run idempotency', () => {
   assert.match(
     workflow,
-    /Verify Slack alias, observable-event, and idempotency source contracts/,
+    /Verify Slack alias, deployment, observable-event, and idempotency source contracts/,
   );
   for (const command of expectedAliases) {
     assert.match(workflow, new RegExp(escapeRegExp(command)));
   }
+  assert.match(workflow, /deployed_refs == \{bridge_ref\}/);
   assert.match(workflow, /observable_event/);
   assert.match(workflow, /Idempotency-Key must equal payload\.run_id/);
 });
