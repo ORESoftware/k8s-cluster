@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import random
 import re
 import sys
 import time
@@ -38,43 +39,47 @@ import publish_org_repository_relationships as publisher  # noqa: E402
 
 publisher.ORGANIZATIONS = ORGANIZATIONS
 _ORIGINAL_BUILD_PLAN = publisher.build_plan
-_RETRY_DELAY_ORIGINAL_ATTRIBUTE = "_relationship_original_retry_delay"
-_ORIGINAL_RETRY_DELAY = getattr(
-    governance.GitHubApi,
-    _RETRY_DELAY_ORIGINAL_ATTRIBUTE,
-    governance.GitHubApi._retry_delay,
-)
-setattr(
-    governance.GitHubApi,
-    _RETRY_DELAY_ORIGINAL_ATTRIBUTE,
-    _ORIGINAL_RETRY_DELAY,
-)
-_MAX_PRIMARY_RATE_LIMIT_DELAY = 3900.0
 PRIVATE_REFERENCE_REDACTION = (
     "Private repository details are intentionally withheld from this public "
     "document."
 )
 _REFERENCE_BOUNDARY = r"(?:$|[\s`'\"\)\]\}>/?#]|[.,;:!?](?=$|\s))"
+MAX_PRIMARY_RATE_LIMIT_WAIT_SECONDS = 3700.0
+MAX_RETRY_AFTER_SECONDS = 300.0
+RATE_LIMIT_RESET_SAFETY_SECONDS = 2.0
 PrivatePatterns = tuple[re.Pattern[str], ...]
 
 
-def retry_delay_with_primary_rate_limit(
+def rate_limit_retry_delay(
     headers: dict[str, str],
     attempt: int,
+    *,
+    now: float | None = None,
 ) -> float:
-    """Wait for the primary core-limit reset instead of retrying every minute."""
-    normalized = {key.lower(): value for key, value in headers.items()}
-    remaining = normalized.get("x-ratelimit-remaining")
-    reset = normalized.get("x-ratelimit-reset")
-    if remaining == "0" and reset and reset.isdigit():
-        until_reset = float(reset) - time.time() + 5.0
-        return max(1.0, min(until_reset, _MAX_PRIMARY_RATE_LIMIT_DELAY))
-    return _ORIGINAL_RETRY_DELAY(headers, attempt)
+    """Honor GitHub's full primary reset window while bounding every wait."""
+    normalized = {
+        str(key).lower(): str(value).strip()
+        for key, value in headers.items()
+    }
+    retry_after = normalized.get("retry-after", "")
+    if retry_after.isdigit():
+        return max(1.0, min(float(retry_after), MAX_RETRY_AFTER_SECONDS))
 
+    remaining = normalized.get("x-ratelimit-remaining", "")
+    reset = normalized.get("x-ratelimit-reset", "")
+    if remaining == "0" and reset.isdigit():
+        current_time = time.time() if now is None else now
+        delay = (
+            float(reset)
+            - current_time
+            + RATE_LIMIT_RESET_SAFETY_SECONDS
+        )
+        return max(
+            1.0,
+            min(delay, MAX_PRIMARY_RATE_LIMIT_WAIT_SECONDS),
+        )
 
-governance.GitHubApi._retry_delay = staticmethod(
-    retry_delay_with_primary_rate_limit
-)
+    return min(2 ** attempt, 20) + random.random()
 
 
 class PrivateReferences(set[str]):
@@ -314,6 +319,8 @@ def run_plan_with_exact_private_references(
 
 publisher.build_plan = build_plan_with_exact_private_references
 publisher.run_plan = run_plan_with_exact_private_references
+governance.GitHubApi._retry_delay = staticmethod(rate_limit_retry_delay)
+publisher.base.GitHubApi._retry_delay = staticmethod(rate_limit_retry_delay)
 
 
 def configure_expected_owner_login(value: str | None = None) -> str:
