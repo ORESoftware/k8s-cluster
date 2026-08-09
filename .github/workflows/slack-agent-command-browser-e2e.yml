@@ -70,7 +70,18 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Checkout bridge source
+      - name: Initialize private evidence directories
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p \
+            "$RUNNER_TEMP/slack-command-e2e-results" \
+            "$RUNNER_TEMP/slack-command-e2e-logs"
+          chmod 700 \
+            "$RUNNER_TEMP/slack-command-e2e-results" \
+            "$RUNNER_TEMP/slack-command-e2e-logs"
+
+      - name: Checkout bridge source without private submodules
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ORESoftware/ai-agent-bridge.rs
@@ -78,7 +89,7 @@ jobs:
           path: .e2e/bridge
           fetch-depth: 1
           persist-credentials: false
-          submodules: recursive
+          submodules: false
 
       - name: Checkout coordinator source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -88,6 +99,15 @@ jobs:
           path: .e2e/coordinator
           fetch-depth: 1
           persist-credentials: false
+
+      - name: Prepare credential-free bridge build inputs
+        working-directory: .e2e/bridge
+        env:
+          EXPECTED_SHARED_COMMIT: c8bdc06d74746acc6439f9527ebd02697fdf028b
+        run: |
+          set -euo pipefail
+          bash scripts/ci/prepare-credential-free-build.sh \
+            | tee "$RUNNER_TEMP/slack-command-e2e-results/bridge-source-preparation.txt"
 
       - name: Validate workflow syntax
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
@@ -108,16 +128,6 @@ jobs:
           cache: pnpm
           cache-dependency-path: remote/tests/pnpm-lock.yaml
 
-      - name: Initialize private evidence directories
-        run: |
-          umask 077
-          mkdir -p \
-            "$RUNNER_TEMP/slack-command-e2e-results" \
-            "$RUNNER_TEMP/slack-command-e2e-logs"
-          chmod 700 \
-            "$RUNNER_TEMP/slack-command-e2e-results" \
-            "$RUNNER_TEMP/slack-command-e2e-logs"
-
       - name: Install browser-test dependencies without lifecycle scripts
         working-directory: remote/tests
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -131,21 +141,26 @@ jobs:
             tools/google-chat-space-export/test/import-plan.test.mjs \
             | tee "$RUNNER_TEMP/slack-command-e2e-results/google-chat-tests.tap"
 
-      - name: Verify Slack alias, deployment, observable-event, and idempotency source contracts
+      - name: Verify Slack alias, deployment, source graph, observable-event, and idempotency contracts
         env:
           BRIDGE_REF: c3e54e6cd0c6d56e3d2ed32902228d974e550a3f
           COORDINATOR_REF: 5b5113b9fedece30d9910f87a03f399df4cc5133
+          BRIDGE_FLAGS_REF: 8a978aef0cc9b12bdd0791d93bbf3a374c517ee2
+          BRIDGE_SHARED_SCHEMA_REF: c8bdc06d74746acc6439f9527ebd02697fdf028b
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
           import os
           import re
+          import subprocess
 
           bridge_ref = os.environ['BRIDGE_REF']
           coordinator_ref = os.environ['COORDINATOR_REF']
-          assert re.fullmatch(r'[0-9a-f]{40}', bridge_ref)
-          assert re.fullmatch(r'[0-9a-f]{40}', coordinator_ref)
+          flags_ref = os.environ['BRIDGE_FLAGS_REF']
+          shared_schema_ref = os.environ['BRIDGE_SHARED_SCHEMA_REF']
+          for value in (bridge_ref, coordinator_ref, flags_ref, shared_schema_ref):
+              assert re.fullmatch(r'[0-9a-f]{40}', value), value
 
           bridge = Path('.e2e/bridge')
           coordinator = Path('.e2e/coordinator')
@@ -163,6 +178,22 @@ jobs:
               re.findall(r"dd\.dev/source-revision:\s*'([0-9a-f]{40})'", deployment)
           )
           assert deployed_refs == {bridge_ref}, deployed_refs
+
+          def git_output(*args):
+              return subprocess.check_output(['git', '-C', str(bridge), *args], text=True).strip()
+
+          assert git_output('rev-parse', 'HEAD') == bridge_ref
+          assert git_output('ls-tree', 'HEAD', 'vendor/flags-2-env').split()[2] == flags_ref
+          assert (
+              git_output('ls-tree', 'HEAD', 'vendor/k8s-libs-and-shared-defs').split()[2]
+              == shared_schema_ref
+          )
+          assert git_output('-C', 'vendor/flags-2-env', 'rev-parse', 'HEAD') == flags_ref
+          placeholder = bridge / 'vendor/k8s-libs-and-shared-defs/pg-defs/generated/rust/sea-orm'
+          assert (placeholder / 'Cargo.toml').is_file()
+          assert 'name = "dd-pg-defs-sea-orm"' in (placeholder / 'Cargo.toml').read_text()
+          assert 'compile_error!' in (placeholder / 'src/lib.rs').read_text()
+          assert not (bridge / 'vendor/k8s-libs-and-shared-defs/.git').exists()
 
           aliases = {
               '/ores-claude': '/slack/commands/ores-claude',
@@ -209,26 +240,37 @@ jobs:
         env:
           BRIDGE_REF: c3e54e6cd0c6d56e3d2ed32902228d974e550a3f
           COORDINATOR_REF: 5b5113b9fedece30d9910f87a03f399df4cc5133
+          BRIDGE_FLAGS_REF: 8a978aef0cc9b12bdd0791d93bbf3a374c517ee2
+          BRIDGE_SHARED_SCHEMA_REF: c8bdc06d74746acc6439f9527ebd02697fdf028b
         run: |
           set -euo pipefail
           bridge_commit="$(git -C .e2e/bridge rev-parse HEAD)"
           coordinator_commit="$(git -C .e2e/coordinator rev-parse HEAD)"
+          flags_commit="$(git -C .e2e/bridge/vendor/flags-2-env rev-parse HEAD)"
           test "$bridge_commit" = "$BRIDGE_REF"
           test "$coordinator_commit" = "$COORDINATOR_REF"
+          test "$flags_commit" = "$BRIDGE_FLAGS_REF"
           jq -n \
             --arg harness "$GITHUB_SHA" \
             --arg bridge_ref "$BRIDGE_REF" \
             --arg bridge_commit "$bridge_commit" \
             --arg coordinator_ref "$COORDINATOR_REF" \
             --arg coordinator_commit "$coordinator_commit" \
+            --arg flags_ref "$BRIDGE_FLAGS_REF" \
+            --arg flags_commit "$flags_commit" \
+            --arg shared_schema_ref "$BRIDGE_SHARED_SCHEMA_REF" \
             --arg postgres_image "$POSTGRES_TEST_IMAGE" \
             '{
-              schema_version: 6,
+              schema_version: 7,
               harness_commit: $harness,
               bridge_ref: $bridge_ref,
               bridge_commit: $bridge_commit,
               coordinator_ref: $coordinator_ref,
               coordinator_commit: $coordinator_commit,
+              flags_ref: $flags_ref,
+              flags_commit: $flags_commit,
+              shared_schema_ref: $shared_schema_ref,
+              shared_schema_mode: "credential_free_non_postgres_fixture",
               deployment_contract: "bridge_ref_matches_argocd_source_revision",
               alias_contract: "six_manifest_commands_to_two_canonical_endpoints",
               idempotency_contract: "header_equals_payload_run_id",
@@ -252,6 +294,8 @@ jobs:
             echo "- Harness: \`${GITHUB_SHA}\`"
             echo "- Deployed bridge: c3e54e6cd0c6d56e3d2ed32902228d974e550a3f"
             echo "- Coordinator: 5b5113b9fedece30d9910f87a03f399df4cc5133"
+            echo "- Public flags dependency: 8a978aef0cc9b12bdd0791d93bbf3a374c517ee2"
+            echo "- Private shared-schema gitlink: c8bdc06d74746acc6439f9527ebd02697fdf028b (credential-free non-Postgres fixture)"
             echo "- Commands: /ores-claude, /x-claude, /my-claude, /ores-chatgpt, /x-chatgpt, /my-chatgpt"
             echo "- Deployment contract: bridge checkout equals the Argo source revision"
             echo "- Idempotency: Idempotency-Key == payload.run_id"
