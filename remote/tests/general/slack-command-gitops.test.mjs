@@ -171,9 +171,9 @@ test('pod and network boundaries remain explicit', () => {
   assert.match(networkPolicy, /port: 443/);
 });
 
-test('reviewed source retains fourteen bounded channel bindings', () => {
+test('reviewed source retains fifteen bounded channel bindings', () => {
   assert.equal(registry.schema_version, 1);
-  assert.equal(registry.bindings.length, 14);
+  assert.equal(registry.bindings.length, 15);
   const channels = new Set();
   for (const binding of registry.bindings) {
     assert.equal(binding.workspace_id, 'T01B3C83PMK');
