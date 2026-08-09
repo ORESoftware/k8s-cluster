@@ -4,10 +4,10 @@ umask 077
 
 readonly trusted_sha="${1:?trusted k8s-cluster SHA required}"
 readonly api_version='2022-11-28'
-readonly expected_master='49e194f206ce8bdacff6f643e021253b5b588f89'
-readonly expected_part1='4bbf7f841a14421b3a6fb568f0a68eeb5c9e2adb'
-readonly expected_part2='48faf2fbeb2f908ca0ec9a2e33f248eec1eed27a'
-readonly expected_part3='bcb5db345e0b419cc07ad9c1039e250452c530ce'
+readonly expected_master='9a2ca7840150e558e9b03f4f677d28ba0c43580d'
+readonly expected_part1='9c599bb13de986cb2c188a73bf43dfaf952f060b'
+readonly expected_part2='d33ef865aee5be3bbd2d99c4bc26eb90f7604cf5'
+readonly expected_part3='24e28b0a5df6ed77f3a3daf02f010c5d4f48d2b7'
 
 [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
 stage=initialization
