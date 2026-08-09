@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "execute": true,
+  "tracking_issue": "DEN-3286",
+  "recipient_id": "den-3286-publish-20260809-2b9b8273dfbbc871",
+  "recipient_fingerprint": "44c9ff2b406366b1b8b798afe786c49c3a3939145080eb75c6cd9810359c3943",
+  "recipient_expires_at": 1786274415,
+  "recipient_source_commit": "66ccb0a0f640b2775cc65ff8fe9df81fc8c4b273",
+  "encryption": "RSA-4096-OAEP-SHA256",
+  "manifest_sha256": "5d1cf8cb7af82a81660bf2fe7536759c7b15bd01bef4a4a04730095ad998d056",
+  "publisher_sha256": "7578de348dab3221e70ed9b02ab22c99c624fe3c02dff8b0fd89a77ec34f71bb",
+  "expected_organization_count": 25,
+  "repositories_per_organization": 4,
+  "expected_repository_count": 100,
+  "ciphertext_base64": "IETJa58SSA91LkmgtsH9yYBd0EIFuVl1DSlUsgeYXjmkocah/KKmZF6czupuHufPwEuVKJrUU7b6xRukHbtgRE2VB+q2U2B0LsSwM1o7+Kgd/o+iv3IFib14o5Luz3iG2Gz8HvbgeFdjOsuIr/lZhK6yIviODS2KROH8GTYhtYIpkJO+h5yt/AB9SJoa75IDMVEiwu305YS44+RfLKZtB+/ojPPeMfnz5PRskKqW5nA3rXPjOVgIaSQNRPVsHRoPT+BsPtq0+KMWN2sJ91wXU7OjWLPTOe+r2iTLAsejVXc45y1zs0tBJhjKcWKQr9zhDmQ0cEIOT/IMRdHT1yTCggXcwbq5lCoagJhtBrZuSp6TWb+reWSS6qgWovj5xBcl+ILYyle+jO0PJJ+8vkOZaOzpcJsvSMsvB50IlaPpSgV69vp6MQ0TrXBnNDe7MpFoXG2fIntZmcNp+j5vND9FtlPCfnyvMkHRIIDXn0LcaYCaecIDsdkhsPnQ0xQcLc8mIY5pWhZhhFry3+wA09FngGN0d58n1HVGMb1xM2GYnm0r+cpxA1ppLfg/3FBp61yL+xiPKSoaTUZXks7YU+EMSnfoJZ8vKMLN8pUAL/gDIuQ2KugfGTWygrzs3pEiqau/tG0Zlc4ij855bDAsCMYuCuB4uhB5QGwpZn6gbMpGG/I="
+}
