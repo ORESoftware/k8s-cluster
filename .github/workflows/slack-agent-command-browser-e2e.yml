@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/slack-agent-command-browser-e2e.yml'
       - 'scripts/ci/run-slack-command-e2e.sh'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.deployment.yaml'
       - 'remote/tests/fixtures/slack-command-*'
       - 'remote/tests/ui/slack-agent-command*.playwright.test.mjs'
       - 'remote/tests/package.json'
@@ -17,6 +18,7 @@ on:
     paths:
       - '.github/workflows/slack-agent-command-browser-e2e.yml'
       - 'scripts/ci/run-slack-command-e2e.sh'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.deployment.yaml'
       - 'remote/tests/fixtures/slack-command-*'
       - 'remote/tests/ui/slack-agent-command*.playwright.test.mjs'
       - 'remote/tests/package.json'
@@ -72,7 +74,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ORESoftware/ai-agent-bridge.rs
-          ref: 63d4d9be4343d3eeba02205ec64dd443716c5249
+          ref: c3e54e6cd0c6d56e3d2ed32902228d974e550a3f
           path: .e2e/bridge
           fetch-depth: 1
           persist-credentials: false
@@ -82,7 +84,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ORESoftware/ai-agent-coordinator.rs
-          ref: 06ff42f28d8795c8f39c3ca48259602fbadf62e8
+          ref: 5b5113b9fedece30d9910f87a03f399df4cc5133
           path: .e2e/coordinator
           fetch-depth: 1
           persist-credentials: false
@@ -129,12 +131,21 @@ jobs:
             tools/google-chat-space-export/test/import-plan.test.mjs \
             | tee "$RUNNER_TEMP/slack-command-e2e-results/google-chat-tests.tap"
 
-      - name: Verify Slack alias, observable-event, and idempotency source contracts
+      - name: Verify Slack alias, deployment, observable-event, and idempotency source contracts
+        env:
+          BRIDGE_REF: c3e54e6cd0c6d56e3d2ed32902228d974e550a3f
+          COORDINATOR_REF: 5b5113b9fedece30d9910f87a03f399df4cc5133
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import os
           import re
+
+          bridge_ref = os.environ['BRIDGE_REF']
+          coordinator_ref = os.environ['COORDINATOR_REF']
+          assert re.fullmatch(r'[0-9a-f]{40}', bridge_ref)
+          assert re.fullmatch(r'[0-9a-f]{40}', coordinator_ref)
 
           bridge = Path('.e2e/bridge')
           coordinator = Path('.e2e/coordinator')
@@ -144,6 +155,14 @@ jobs:
           manifest = (bridge / 'slack-app/manifest.yaml').read_text()
           coordinator_jobs = (coordinator / 'src/jobs.rs').read_text()
           coordinator_slack = (coordinator / 'src/slack_run.rs').read_text()
+          deployment = Path(
+              'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.deployment.yaml'
+          ).read_text()
+
+          deployed_refs = set(
+              re.findall(r"dd\.dev/source-revision:\s*'([0-9a-f]{40})'", deployment)
+          )
+          assert deployed_refs == {bridge_ref}, deployed_refs
 
           aliases = {
               '/ores-claude': '/slack/commands/ores-claude',
@@ -188,8 +207,8 @@ jobs:
 
       - name: Record and verify tested revisions
         env:
-          BRIDGE_REF: 63d4d9be4343d3eeba02205ec64dd443716c5249
-          COORDINATOR_REF: 06ff42f28d8795c8f39c3ca48259602fbadf62e8
+          BRIDGE_REF: c3e54e6cd0c6d56e3d2ed32902228d974e550a3f
+          COORDINATOR_REF: 5b5113b9fedece30d9910f87a03f399df4cc5133
         run: |
           set -euo pipefail
           bridge_commit="$(git -C .e2e/bridge rev-parse HEAD)"
@@ -204,12 +223,13 @@ jobs:
             --arg coordinator_commit "$coordinator_commit" \
             --arg postgres_image "$POSTGRES_TEST_IMAGE" \
             '{
-              schema_version: 5,
+              schema_version: 6,
               harness_commit: $harness,
               bridge_ref: $bridge_ref,
               bridge_commit: $bridge_commit,
               coordinator_ref: $coordinator_ref,
               coordinator_commit: $coordinator_commit,
+              deployment_contract: "bridge_ref_matches_argocd_source_revision",
               alias_contract: "six_manifest_commands_to_two_canonical_endpoints",
               idempotency_contract: "header_equals_payload_run_id",
               observable_event_contract: "validated_sanitized_task_created_v1",
@@ -230,9 +250,10 @@ jobs:
             echo '## Slack agent command browser E2E'
             echo
             echo "- Harness: \`${GITHUB_SHA}\`"
-            echo "- Bridge: 63d4d9be4343d3eeba02205ec64dd443716c5249"
-            echo "- Coordinator: 06ff42f28d8795c8f39c3ca48259602fbadf62e8"
+            echo "- Deployed bridge: c3e54e6cd0c6d56e3d2ed32902228d974e550a3f"
+            echo "- Coordinator: 5b5113b9fedece30d9910f87a03f399df4cc5133"
             echo "- Commands: /ores-claude, /x-claude, /my-claude, /ores-chatgpt, /x-chatgpt, /my-chatgpt"
+            echo "- Deployment contract: bridge checkout equals the Argo source revision"
             echo "- Idempotency: Idempotency-Key == payload.run_id"
             echo "- Observable event: validated sanitized task_created v1"
             echo "- Run attempt: \`${GITHUB_RUN_ATTEMPT}\`"
