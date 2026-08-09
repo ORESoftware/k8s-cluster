@@ -164,6 +164,20 @@ jobs:
           '''.rstrip() + '\n'
           source = source[:validation_start] + validation_tail
 
+          duplicate_path_updates = '''    text = replace_once(text, anchor, replacement, "add pull-request test path")
+              text = replace_once(text, anchor, replacement, "add push test path")
+          '''.rstrip() + '\n'
+          bounded_path_update = '''    anchor_count = text.count(anchor)
+              if anchor_count != 2:
+                  raise SystemExit(
+                      f"permanent workflow path anchor count drifted: {anchor_count}"
+                  )
+              text = text.replace(anchor, replacement, 2)
+          '''.rstrip() + '\n'
+          if source.count(duplicate_path_updates) != 1:
+              raise SystemExit("permanent workflow duplicate path-update block is not unique")
+          source = source.replace(duplicate_path_updates, bounded_path_update, 1)
+
           source = source.replace(
               'rustup component add rustfmt clippy\\n',
               'rustfmt --version\\ncargo clippy --version\\n',
