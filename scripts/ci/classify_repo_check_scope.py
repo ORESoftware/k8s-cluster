@@ -17,6 +17,7 @@ CONTROL_FILES = {
 
 GOVERNANCE_FILES = {
     ".github/workflows/ops-current-org-dotgithub-relationships-ephemeral-publish.yml",
+    ".github/workflows/ops-den-2797-publish-wave7-recovery-once.yml",
     ".github/workflows/ops-provision-den-3286-pat-recipient-20260809.yml",
     ".github/workflows/ops-publish-den-3286-encrypted-pat-20260809.yml",
     ".github/workflows/ops-publish-test-org-expansion-20260808.yml",
@@ -27,6 +28,12 @@ GOVERNANCE_FILES = {
     "ops/portfolio/github-linear-project-registry.tsv",
     "ops/requests/den-3286-encrypted-pat-20260809.json",
     "ops/requests/den-3286-pat-recipient-20260809.json",
+    "scripts/den-2797-wave7-finalize.sh",
+    "scripts/den-2797-wave7-prepare.sh",
+    "scripts/den-2797-wave7-publish.sh",
+    "scripts/den-2797-wave7-receive.sh",
+    "scripts/den-2797-wave7-scrub.sh",
+    "scripts/den-2797-wave7-validate.sh",
     "scripts/ops/build_org_project_docs_retry_registry.py",
     "scripts/ops/org_repository_relationships_graph.py",
     "scripts/ops/org_repository_relationships_model.py",
@@ -56,6 +63,19 @@ GOVERNANCE_PREFIXES = (
     "ops/evidence/org-project-docs-rate-aware/",
 )
 
+# These files are validated by dedicated, credential-free workflows. A change
+# limited to this exact set has no dependency on remote/libs or private
+# deployment gitlinks, so the broad credential-backed jobs add no coverage.
+CREDENTIAL_FREE_CONTRACT_FILES = {
+    ".github/workflows/ephemeral-google-chat-relay-cleanup.yml",
+    ".github/workflows/google-chat-relay-contract.yml",
+    ".github/workflows/den-319-private-fleet-contracts.yml",
+    ".github/workflows/repo-check-scope-contract.yml",
+    "scripts/ops/repository_rename_alias_guard.py",
+    "scripts/ops/test_repository_rename_alias_guard.py",
+    "tools/google-chat-space-export/test_relay_workflows.py",
+}
+
 
 class ScopeError(RuntimeError):
     """Raised when changed-file evidence cannot be trusted."""
@@ -76,6 +96,10 @@ def is_governance_path(path: str) -> bool:
     )
 
 
+def is_credential_free_contract_path(path: str) -> bool:
+    return path in CREDENTIAL_FREE_CONTRACT_FILES
+
+
 def classify(event_name: str, changed_files: Iterable[str]) -> dict[str, object]:
     changed = sorted({validate_path(path) for path in changed_files})
     if event_name != "pull_request":
@@ -84,6 +108,7 @@ def classify(event_name: str, changed_files: Iterable[str]) -> dict[str, object]
             "event_name": event_name,
             "changed_files": changed,
             "governance_only": False,
+            "credential_free_contract_only": False,
             "private_contracts_required": True,
             "reason": "non_pull_request_runs_are_full_fleet_checks",
         }
@@ -99,17 +124,31 @@ def classify(event_name: str, changed_files: Iterable[str]) -> dict[str, object]
             for path in changed
         )
     )
+    credential_free_contract_only = (
+        bool(non_control)
+        and all(is_credential_free_contract_path(path) for path in non_control)
+        and all(
+            path in CONTROL_FILES or is_credential_free_contract_path(path)
+            for path in changed
+        )
+    )
+    private_contracts_required = not (
+        governance_only or credential_free_contract_only
+    )
+    reason = "repository_or_private_contract_surface_changed"
+    if governance_only:
+        reason = "governance_only_no_private_gitlinks"
+    elif credential_free_contract_only:
+        reason = "credential_free_contract_only_no_private_gitlinks"
+
     return {
         "schema_version": 1,
         "event_name": event_name,
         "changed_files": changed,
         "governance_only": governance_only,
-        "private_contracts_required": not governance_only,
-        "reason": (
-            "governance_only_no_private_gitlinks"
-            if governance_only
-            else "repository_or_private_contract_surface_changed"
-        ),
+        "credential_free_contract_only": credential_free_contract_only,
+        "private_contracts_required": private_contracts_required,
+        "reason": reason,
     }
 
 

@@ -18,6 +18,7 @@ class RepoCheckScopeTests(unittest.TestCase):
     def test_non_pull_request_always_runs_private_contracts(self):
         result = MODULE.classify("push", ["docs/readme.md"])
         self.assertTrue(result["private_contracts_required"])
+        self.assertFalse(result["credential_free_contract_only"])
 
     def test_governance_only_pull_request_skips_private_gitlinks(self):
         result = MODULE.classify(
@@ -28,6 +29,7 @@ class RepoCheckScopeTests(unittest.TestCase):
             ],
         )
         self.assertTrue(result["governance_only"])
+        self.assertFalse(result["credential_free_contract_only"])
         self.assertFalse(result["private_contracts_required"])
 
     def test_current_relationship_publisher_is_governance_only(self):
@@ -48,6 +50,7 @@ class RepoCheckScopeTests(unittest.TestCase):
             ],
         )
         self.assertTrue(result["governance_only"])
+        self.assertFalse(result["credential_free_contract_only"])
         self.assertFalse(result["private_contracts_required"])
         self.assertEqual(
             "governance_only_no_private_gitlinks",
@@ -66,6 +69,7 @@ class RepoCheckScopeTests(unittest.TestCase):
             ],
         )
         self.assertTrue(result["governance_only"])
+        self.assertFalse(result["credential_free_contract_only"])
         self.assertFalse(result["private_contracts_required"])
         self.assertEqual(
             "governance_only_no_private_gitlinks",
@@ -87,11 +91,47 @@ class RepoCheckScopeTests(unittest.TestCase):
             ],
         )
         self.assertTrue(result["governance_only"])
+        self.assertFalse(result["credential_free_contract_only"])
         self.assertFalse(result["private_contracts_required"])
         self.assertEqual(
             "governance_only_no_private_gitlinks",
             result["reason"],
         )
+
+    def test_den_2797_wave7_recovery_publisher_is_governance_only(self):
+        result = MODULE.classify(
+            "pull_request",
+            [
+                ".github/workflows/ops-den-2797-publish-wave7-recovery-once.yml",
+                "scripts/ci/classify_repo_check_scope.py",
+                "scripts/ci/test_classify_repo_check_scope.py",
+                "scripts/den-2797-wave7-finalize.sh",
+                "scripts/den-2797-wave7-prepare.sh",
+                "scripts/den-2797-wave7-publish.sh",
+                "scripts/den-2797-wave7-receive.sh",
+                "scripts/den-2797-wave7-scrub.sh",
+                "scripts/den-2797-wave7-validate.sh",
+            ],
+        )
+        self.assertTrue(result["governance_only"])
+        self.assertFalse(result["credential_free_contract_only"])
+        self.assertFalse(result["private_contracts_required"])
+        self.assertEqual(
+            "governance_only_no_private_gitlinks",
+            result["reason"],
+        )
+
+    def test_unreviewed_den_2797_wave7_publisher_requires_private_contracts(self):
+        result = MODULE.classify(
+            "pull_request",
+            [
+                ".github/workflows/ops-den-2797-publish-wave8-recovery-once.yml",
+                "scripts/den-2797-wave8-publish.sh",
+            ],
+        )
+        self.assertFalse(result["governance_only"])
+        self.assertFalse(result["credential_free_contract_only"])
+        self.assertTrue(result["private_contracts_required"])
 
     def test_unreviewed_den_3286_encrypted_recovery_requires_private_contracts(self):
         result = MODULE.classify(
@@ -103,6 +143,7 @@ class RepoCheckScopeTests(unittest.TestCase):
             ],
         )
         self.assertFalse(result["governance_only"])
+        self.assertFalse(result["credential_free_contract_only"])
         self.assertTrue(result["private_contracts_required"])
 
     def test_unreviewed_publisher_path_still_requires_private_contracts(self):
@@ -114,14 +155,82 @@ class RepoCheckScopeTests(unittest.TestCase):
             ],
         )
         self.assertFalse(result["governance_only"])
+        self.assertFalse(result["credential_free_contract_only"])
         self.assertTrue(result["private_contracts_required"])
 
-    def test_scope_control_change_requires_a_governance_payload(self):
+    def test_den_319_rename_alias_contract_is_credential_free(self):
+        result = MODULE.classify(
+            "pull_request",
+            [
+                ".github/workflows/den-319-private-fleet-contracts.yml",
+                ".github/workflows/repo-check-scope-contract.yml",
+                "scripts/ci/classify_repo_check_scope.py",
+                "scripts/ci/test_classify_repo_check_scope.py",
+                "scripts/ops/repository_rename_alias_guard.py",
+                "scripts/ops/test_repository_rename_alias_guard.py",
+            ],
+        )
+        self.assertFalse(result["governance_only"])
+        self.assertTrue(result["credential_free_contract_only"])
+        self.assertFalse(result["private_contracts_required"])
+        self.assertEqual(
+            "credential_free_contract_only_no_private_gitlinks",
+            result["reason"],
+        )
+
+    def test_den_533_google_chat_cleanup_contract_is_credential_free(self):
+        result = MODULE.classify(
+            "pull_request",
+            [
+                ".github/workflows/ephemeral-google-chat-relay-cleanup.yml",
+                ".github/workflows/google-chat-relay-contract.yml",
+                "scripts/ci/classify_repo_check_scope.py",
+                "scripts/ci/test_classify_repo_check_scope.py",
+                "tools/google-chat-space-export/test_relay_workflows.py",
+            ],
+        )
+        self.assertFalse(result["governance_only"])
+        self.assertTrue(result["credential_free_contract_only"])
+        self.assertFalse(result["private_contracts_required"])
+        self.assertEqual(
+            "credential_free_contract_only_no_private_gitlinks",
+            result["reason"],
+        )
+
+    def test_den_533_cleanup_mixed_with_unknown_requires_private_contracts(self):
+        result = MODULE.classify(
+            "pull_request",
+            [
+                ".github/workflows/ephemeral-google-chat-relay-cleanup.yml",
+                ".github/workflows/google-chat-relay-contract.yml",
+                "tools/google-chat-space-export/test_relay_workflows.py",
+                "README.md",
+            ],
+        )
+        self.assertFalse(result["governance_only"])
+        self.assertFalse(result["credential_free_contract_only"])
+        self.assertTrue(result["private_contracts_required"])
+
+    def test_credential_free_contract_mixed_with_unknown_requires_private_contracts(self):
+        result = MODULE.classify(
+            "pull_request",
+            [
+                ".github/workflows/den-319-private-fleet-contracts.yml",
+                "scripts/ops/test_repository_rename_alias_guard.py",
+                "README.md",
+            ],
+        )
+        self.assertFalse(result["governance_only"])
+        self.assertFalse(result["credential_free_contract_only"])
+        self.assertTrue(result["private_contracts_required"])
+
+    def test_scope_control_change_requires_a_payload(self):
         result = MODULE.classify(
             "pull_request",
             [".github/workflows/repo-checks.yml"],
         )
         self.assertTrue(result["private_contracts_required"])
+        self.assertFalse(result["credential_free_contract_only"])
 
     def test_scope_control_plus_governance_payload_is_credential_free(self):
         result = MODULE.classify(
@@ -134,6 +243,7 @@ class RepoCheckScopeTests(unittest.TestCase):
             ],
         )
         self.assertFalse(result["private_contracts_required"])
+        self.assertFalse(result["credential_free_contract_only"])
 
     def test_remote_or_unknown_change_runs_private_contracts(self):
         for path in [
@@ -144,6 +254,7 @@ class RepoCheckScopeTests(unittest.TestCase):
             with self.subTest(path=path):
                 result = MODULE.classify("pull_request", [path])
                 self.assertTrue(result["private_contracts_required"])
+                self.assertFalse(result["credential_free_contract_only"])
 
     def test_empty_pull_request_fails_closed(self):
         with self.assertRaises(MODULE.ScopeError):
