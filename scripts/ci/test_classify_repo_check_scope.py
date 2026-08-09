@@ -98,6 +98,41 @@ class RepoCheckScopeTests(unittest.TestCase):
             result["reason"],
         )
 
+    def test_den_2797_wave7_recovery_publisher_is_governance_only(self):
+        result = MODULE.classify(
+            "pull_request",
+            [
+                ".github/workflows/ops-den-2797-publish-wave7-recovery-once.yml",
+                "scripts/ci/classify_repo_check_scope.py",
+                "scripts/ci/test_classify_repo_check_scope.py",
+                "scripts/den-2797-wave7-finalize.sh",
+                "scripts/den-2797-wave7-prepare.sh",
+                "scripts/den-2797-wave7-publish.sh",
+                "scripts/den-2797-wave7-receive.sh",
+                "scripts/den-2797-wave7-scrub.sh",
+                "scripts/den-2797-wave7-validate.sh",
+            ],
+        )
+        self.assertTrue(result["governance_only"])
+        self.assertFalse(result["credential_free_contract_only"])
+        self.assertFalse(result["private_contracts_required"])
+        self.assertEqual(
+            "governance_only_no_private_gitlinks",
+            result["reason"],
+        )
+
+    def test_unreviewed_den_2797_wave7_publisher_requires_private_contracts(self):
+        result = MODULE.classify(
+            "pull_request",
+            [
+                ".github/workflows/ops-den-2797-publish-wave8-recovery-once.yml",
+                "scripts/den-2797-wave8-publish.sh",
+            ],
+        )
+        self.assertFalse(result["governance_only"])
+        self.assertFalse(result["credential_free_contract_only"])
+        self.assertTrue(result["private_contracts_required"])
+
     def test_unreviewed_den_3286_encrypted_recovery_requires_private_contracts(self):
         result = MODULE.classify(
             "pull_request",

@@ -17,6 +17,7 @@ CONTROL_FILES = {
 
 GOVERNANCE_FILES = {
     ".github/workflows/ops-current-org-dotgithub-relationships-ephemeral-publish.yml",
+    ".github/workflows/ops-den-2797-publish-wave7-recovery-once.yml",
     ".github/workflows/ops-provision-den-3286-pat-recipient-20260809.yml",
     ".github/workflows/ops-publish-den-3286-encrypted-pat-20260809.yml",
     ".github/workflows/ops-publish-test-org-expansion-20260808.yml",
@@ -27,6 +28,12 @@ GOVERNANCE_FILES = {
     "ops/portfolio/github-linear-project-registry.tsv",
     "ops/requests/den-3286-encrypted-pat-20260809.json",
     "ops/requests/den-3286-pat-recipient-20260809.json",
+    "scripts/den-2797-wave7-finalize.sh",
+    "scripts/den-2797-wave7-prepare.sh",
+    "scripts/den-2797-wave7-publish.sh",
+    "scripts/den-2797-wave7-receive.sh",
+    "scripts/den-2797-wave7-scrub.sh",
+    "scripts/den-2797-wave7-validate.sh",
     "scripts/ops/build_org_project_docs_retry_registry.py",
     "scripts/ops/org_repository_relationships_graph.py",
     "scripts/ops/org_repository_relationships_model.py",
