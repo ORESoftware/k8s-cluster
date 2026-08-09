@@ -1,7 +1,11 @@
 name: Retry current organization .github governance publication
-run-name: Reconcile 71 organization defaults @ ${{ github.sha }}
+run-name: Reconcile 71 organization .github repositories @ ${{ github.sha }}
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-org-dotgithub-governance-retry.yml
   push:
     branches: [main]
     paths:
@@ -16,137 +20,193 @@ concurrency:
   group: current-org-dotgithub-governance-retry
   cancel-in-progress: false
 
-jobs:
-  publish:
-    if: >-
-      github.repository == 'ORESoftware/k8s-cluster' &&
-      github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 180
-    env:
-      TRACKING_ISSUE: '1222'
-      BUNDLE_COMMENT_ID: '5228711767'
-      BUNDLE_SHA256: '9d4eda8c53d5dd1000615cd1b2e0e10d54f3ef47a1d086c1fc87498fc154eefe'
-      BUNDLE_PROTOCOL: org-dotgithub-bundle-v1
-      EXPECTED_LOGIN: ORESoftware
-    steps:
-      - name: Check out exact trusted main revision
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 1
-          persist-credentials: false
-          clean: false
+env:
+  TRACKING_ISSUE: '1222'
+  EXPECTED_LOGIN: ORESoftware
+  BUNDLE_COMMENT_ID: '5228711767'
+  BUNDLE_SHA256: '9d4eda8c53d5dd1000615cd1b2e0e10d54f3ef47a1d086c1fc87498fc154eefe'
+  BUNDLE_PROTOCOL: org-dotgithub-bundle-v1
 
-      - name: Verify bundle, receive encrypted credential, and reconcile fleet
-        id: publication
+jobs:
+  validate:
+    name: Validate fixed reviewed publisher bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Fetch, authenticate, and test exact bundle comment
         shell: bash
         env:
           ISSUE_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
           umask 077
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-
-          private_key="$RUNNER_TEMP/org-dotgithub-private.pem"
-          public_key="$RUNNER_TEMP/org-dotgithub-public.pem"
-          recipient_id_file="$RUNNER_TEMP/org-dotgithub-recipient-id"
-          response_id_file="$RUNNER_TEMP/org-dotgithub-response-id"
-          archive="$RUNNER_TEMP/org-dotgithub-bundle.tgz"
-          bundle_dir="$RUNNER_TEMP/org-dotgithub-bundle"
-          report_json="$RUNNER_TEMP/org-dotgithub-governance.json"
-          report_md="$RUNNER_TEMP/org-dotgithub-governance.md"
-          owner_token=''
-
-          cleanup() {
-            set +e
-            for file in "$response_id_file" "$recipient_id_file"; do
-              if [[ -s "$file" ]]; then
-                id="$(cat "$file")"
-                if [[ "$id" =~ ^[0-9]+$ ]]; then
-                  GH_TOKEN="$ISSUE_TOKEN" gh api --method DELETE \
-                    "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" >/dev/null 2>&1 || true
-                fi
-              fi
-            done
-            unset owner_token GH_TOKEN GITHUB_TOKEN
-            rm -f "$private_key" "$public_key" "$RUNNER_TEMP/org-dotgithub-token.enc"
-          }
-          trap cleanup EXIT
-
           prefix="${BUNDLE_PROTOCOL}:${BUNDLE_SHA256}:"
           comment="$(GH_TOKEN="$ISSUE_TOKEN" gh api \
             "repos/${GITHUB_REPOSITORY}/issues/comments/${BUNDLE_COMMENT_ID}")"
-          test "$(jq -er .user.login <<<"$comment")" = "$EXPECTED_LOGIN"
-          test "$(jq -er .author_association <<<"$comment")" = OWNER
-          body="$(jq -er .body <<<"$comment")"
+          test "$(jq -r '.user.login' <<<"$comment")" = "$EXPECTED_LOGIN"
+          body="$(jq -er '.body' <<<"$comment")"
           [[ "$body" == "$prefix"* ]]
-          encoded="${body#${prefix}}"
+          encoded="${body#"$prefix"}"
           [[ "$encoded" =~ ^[A-Za-z0-9+/=]+$ ]]
-          test "${#encoded}" -gt 0
-          test "${#encoded}" -le 60000
+          test "${#encoded}" -le 65536
+
+          archive="$RUNNER_TEMP/org-dotgithub-governance-bundle.tgz"
+          directory="$RUNNER_TEMP/org-dotgithub-governance-bundle"
           printf '%s' "$encoded" | base64 --decode > "$archive"
           test "$(sha256sum "$archive" | awk '{print $1}')" = "$BUNDLE_SHA256"
 
           ARCHIVE="$archive" python3 - <<'PY'
           import os
-          import tarfile
           from pathlib import PurePosixPath
+          import tarfile
 
-          expected = {
+          archive = os.environ["ARCHIVE"]
+          allowed_files = {
               "MANIFEST.sha256",
               "scripts/ops/publish_current_org_dotgithub_governance.py",
               "tests/ops/test_publish_current_org_dotgithub_governance.py",
           }
-          observed = set()
-          with tarfile.open(os.environ["ARCHIVE"], "r:gz") as handle:
+          observed_files = set()
+          with tarfile.open(archive, "r:gz") as handle:
               for member in handle.getmembers():
-                  path = PurePosixPath(member.name.removeprefix("./"))
+                  normalized = member.name.removeprefix("./")
+                  path = PurePosixPath(normalized)
                   if path.is_absolute() or ".." in path.parts:
                       raise SystemExit(f"unsafe archive path: {member.name}")
                   if member.issym() or member.islnk() or member.isdev():
-                      raise SystemExit(f"unsafe archive member: {member.name}")
+                      raise SystemExit(f"unsafe archive member type: {member.name}")
                   if member.isfile():
-                      observed.add(str(path))
-          if observed != expected:
-              raise SystemExit(f"unexpected archive files: {sorted(observed)}")
+                      observed_files.add(normalized)
+              if observed_files != allowed_files:
+                  raise SystemExit(
+                      f"unexpected archive files: expected={sorted(allowed_files)} "
+                      f"observed={sorted(observed_files)}"
+                  )
           PY
-          mkdir -p "$bundle_dir"
-          tar -xzf "$archive" -C "$bundle_dir"
+
+          mkdir -p "$directory"
+          tar -xzf "$archive" -C "$directory"
           (
-            cd "$bundle_dir"
+            cd "$directory"
             sha256sum -c MANIFEST.sha256
             python3 -m py_compile scripts/ops/publish_current_org_dotgithub_governance.py
-            python3 tests/ops/test_publish_current_org_dotgithub_governance.py
+            python3 tests/ops/test_publish_current_org_dotgithub_governance.py -v
           )
+          echo "retry_bundle_validation_complete sha256=${BUNDLE_SHA256}"
 
-          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 \
+  publish:
+    name: Create, reconcile, merge, and verify organization defaults
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Fetch and validate exact reviewed publisher bundle
+        id: bundle
+        shell: bash
+        env:
+          ISSUE_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          prefix="${BUNDLE_PROTOCOL}:${BUNDLE_SHA256}:"
+          comment="$(GH_TOKEN="$ISSUE_TOKEN" gh api \
+            "repos/${GITHUB_REPOSITORY}/issues/comments/${BUNDLE_COMMENT_ID}")"
+          test "$(jq -r '.user.login' <<<"$comment")" = "$EXPECTED_LOGIN"
+          body="$(jq -er '.body' <<<"$comment")"
+          [[ "$body" == "$prefix"* ]]
+          encoded="${body#"$prefix"}"
+          [[ "$encoded" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#encoded}" -le 65536
+
+          archive="$RUNNER_TEMP/org-dotgithub-governance-bundle.tgz"
+          directory="$RUNNER_TEMP/org-dotgithub-governance-bundle"
+          printf '%s' "$encoded" | base64 --decode > "$archive"
+          test "$(sha256sum "$archive" | awk '{print $1}')" = "$BUNDLE_SHA256"
+
+          ARCHIVE="$archive" python3 - <<'PY'
+          import os
+          from pathlib import PurePosixPath
+          import tarfile
+
+          archive = os.environ["ARCHIVE"]
+          allowed_files = {
+              "MANIFEST.sha256",
+              "scripts/ops/publish_current_org_dotgithub_governance.py",
+              "tests/ops/test_publish_current_org_dotgithub_governance.py",
+          }
+          observed_files = set()
+          with tarfile.open(archive, "r:gz") as handle:
+              for member in handle.getmembers():
+                  normalized = member.name.removeprefix("./")
+                  path = PurePosixPath(normalized)
+                  if path.is_absolute() or ".." in path.parts:
+                      raise SystemExit(f"unsafe archive path: {member.name}")
+                  if member.issym() or member.islnk() or member.isdev():
+                      raise SystemExit(f"unsafe archive member type: {member.name}")
+                  if member.isfile():
+                      observed_files.add(normalized)
+              if observed_files != allowed_files:
+                  raise SystemExit(
+                      f"unexpected archive files: expected={sorted(allowed_files)} "
+                      f"observed={sorted(observed_files)}"
+                  )
+          PY
+
+          mkdir -p "$directory"
+          tar -xzf "$archive" -C "$directory"
+          (
+            cd "$directory"
+            sha256sum -c MANIFEST.sha256
+            python3 -m py_compile scripts/ops/publish_current_org_dotgithub_governance.py
+            python3 tests/ops/test_publish_current_org_dotgithub_governance.py -v
+          )
+          echo "directory=$directory" >> "$GITHUB_OUTPUT"
+
+      - name: Publish one-run RSA recipient and await encrypted owner credential
+        id: carrier
+        shell: bash
+        env:
+          ISSUE_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          private_key="$RUNNER_TEMP/org-dotgithub-carrier-private.pem"
+          public_key="$RUNNER_TEMP/org-dotgithub-carrier-public.pem"
+          encrypted="$RUNNER_TEMP/org-dotgithub-carrier-token.enc"
+          response_id_file="$RUNNER_TEMP/org-dotgithub-response-comment-id"
+
+          openssl genpkey -algorithm RSA \
+            -pkeyopt rsa_keygen_bits:4096 \
             -out "$private_key" >/dev/null 2>&1
-          openssl pkey -in "$private_key" -pubout -out "$public_key" >/dev/null 2>&1
+          openssl pkey -in "$private_key" -pubout \
+            -out "$public_key" >/dev/null 2>&1
           chmod 600 "$private_key" "$public_key"
+
           fingerprint="$(openssl pkey -pubin -in "$public_key" -outform DER | sha256sum | awk '{print $1}')"
           nonce="$(openssl rand -hex 24)"
           public_b64="$(base64 --wrap=0 "$public_key")"
           recipient_body="org-dotgithub-pat-recipient-v1:${nonce}:${fingerprint}:${public_b64}"
-          recipient="$(GH_TOKEN="$ISSUE_TOKEN" gh api --method POST \
+          recipient_json="$(GH_TOKEN="$ISSUE_TOKEN" gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_ISSUE}/comments" \
             -f body="$recipient_body")"
-          recipient_id="$(jq -er .id <<<"$recipient")"
-          printf '%s' "$recipient_id" > "$recipient_id_file"
-          echo "ephemeral_recipient_published comment_id=${recipient_id} fingerprint=${fingerprint}"
+          recipient_id="$(jq -er '.id' <<<"$recipient_json")"
+          echo "ephemeral_recipient_published comment_id=$recipient_id fingerprint=$fingerprint"
 
+          prefix="org-dotgithub-pat-v1:${nonce}:"
           response=''
-          response_prefix="org-dotgithub-pat-v1:${nonce}:"
           for _ in $(seq 1 240); do
-            pages="$(GH_TOKEN="$ISSUE_TOKEN" gh api --paginate \
+            comments="$(GH_TOKEN="$ISSUE_TOKEN" gh api --paginate \
               "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_ISSUE}/comments?per_page=100" --slurp)"
             response="$(jq -r \
-              --arg prefix "$response_prefix" \
+              --arg prefix "$prefix" \
               --arg login "$EXPECTED_LOGIN" \
               --argjson after "$recipient_id" '
                 [
-                  (if (type == "array" and length > 0 and (.[0] | type) == "array")
-                   then .[][] else .[] end)
+                  .[][]
                   | select(.id > $after)
                   | select(.user.login == $login)
                   | select(.body | startswith($prefix))
@@ -155,49 +215,135 @@ jobs:
                 | (last // empty)
                 | [.id, .body]
                 | @tsv
-              ' <<<"$pages")"
-            [[ -n "$response" ]] && break
+              ' <<<"$comments")"
+            if [[ -n "$response" ]]; then
+              break
+            fi
             sleep 5
           done
-          [[ -n "$response" ]]
+          test -n "$response"
 
           response_id="${response%%$'\t'*}"
           response_body="${response#*$'\t'}"
-          encrypted_b64="${response_body#${response_prefix}}"
+          encoded="${response_body#"$prefix"}"
           [[ "$response_id" =~ ^[0-9]+$ ]]
-          [[ "$encrypted_b64" =~ ^[A-Za-z0-9+/=]+$ ]]
-          test "${#encrypted_b64}" -le 16384
+          [[ "$encoded" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#encoded}" -le 16384
           printf '%s' "$response_id" > "$response_id_file"
-          printf '%s' "$encrypted_b64" | base64 --decode > "$RUNNER_TEMP/org-dotgithub-token.enc"
+          printf '%s' "$encoded" | base64 --decode > "$encrypted"
+          test -s "$encrypted"
 
           owner_token="$(openssl pkeyutl -decrypt \
             -inkey "$private_key" \
-            -in "$RUNNER_TEMP/org-dotgithub-token.enc" \
+            -in "$encrypted" \
             -pkeyopt rsa_padding_mode:oaep \
             -pkeyopt rsa_oaep_md:sha256 \
-            -pkeyopt rsa_mgf1_md:sha256 2>/dev/null)"
-          [[ -n "$owner_token" ]]
+            -pkeyopt rsa_mgf1_md:sha256 \
+            2>/dev/null)"
+          test -n "$owner_token"
           [[ ! "$owner_token" =~ [[:space:]] ]]
           echo "::add-mask::$owner_token"
-          test "$(GH_TOKEN="$owner_token" gh api user --jq .login)" = "$EXPECTED_LOGIN"
+          test "$(GH_TOKEN="$owner_token" gh api user --jq '.login')" = "$EXPECTED_LOGIN"
 
+          token_file="$RUNNER_TEMP/org-dotgithub-owner-token"
+          printf '%s' "$owner_token" > "$token_file"
+          chmod 600 "$token_file"
+          echo "token_file=$token_file" >> "$GITHUB_OUTPUT"
+          echo "recipient_comment_id=$recipient_id" >> "$GITHUB_OUTPUT"
+          echo "response_comment_id=$response_id" >> "$GITHUB_OUTPUT"
+          unset owner_token GH_TOKEN GITHUB_TOKEN
+
+      - name: Reconcile exact reviewed organization fleet
+        id: publication
+        continue-on-error: true
+        shell: bash
+        env:
+          BUNDLE_DIRECTORY: ${{ steps.bundle.outputs.directory }}
+          TOKEN_FILE: ${{ steps.carrier.outputs.token_file }}
+        run: |
+          set -Eeuo pipefail
+          owner_token="$(cat "$TOKEN_FILE")"
+          test -n "$owner_token"
+          echo "::add-mask::$owner_token"
           GH_TOKEN="$owner_token" python3 \
-            "$bundle_dir/scripts/ops/publish_current_org_dotgithub_governance.py" \
+            "$BUNDLE_DIRECTORY/scripts/ops/publish_current_org_dotgithub_governance.py" \
             --execute \
-            --json-report "$report_json" \
-            --markdown-report "$report_md"
+            --json-report "$RUNNER_TEMP/org-dotgithub-governance.json" \
+            --markdown-report "$RUNNER_TEMP/org-dotgithub-governance.md" \
+            >"$RUNNER_TEMP/org-dotgithub-publisher.stdout" \
+            2>"$RUNNER_TEMP/org-dotgithub-publisher.stderr"
 
           jq -e '
             .mode == "execute"
             and .expected_login == "ORESoftware"
             and (.organizations | length) == 71
             and ([.organizations[] | select(.verified == true)] | length) == 71
-          ' "$report_json" >/dev/null
-          grep -Fq '<!-- org-dotgithub-governance-publication-complete -->' "$report_md"
-          GH_TOKEN="$ISSUE_TOKEN" gh issue comment "$TRACKING_ISSUE" \
-            --repo "$GITHUB_REPOSITORY" --body-file "$report_md"
+          ' "$RUNNER_TEMP/org-dotgithub-governance.json" >/dev/null
+          grep -Fq '<!-- org-dotgithub-governance-publication-complete -->' \
+            "$RUNNER_TEMP/org-dotgithub-governance.md"
+          unset owner_token GH_TOKEN GITHUB_TOKEN
 
-      - name: Upload non-secret verification report
+      - name: Publish redacted audit result
+        if: always()
+        shell: bash
+        env:
+          ISSUE_TOKEN: ${{ github.token }}
+          PUBLICATION_OUTCOME: ${{ steps.publication.outcome }}
+          RECIPIENT_COMMENT_ID: ${{ steps.carrier.outputs.recipient_comment_id }}
+          RESPONSE_COMMENT_ID: ${{ steps.carrier.outputs.response_comment_id }}
+        run: |
+          set -Eeuo pipefail
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          body="$RUNNER_TEMP/org-dotgithub-result.md"
+          report="$RUNNER_TEMP/org-dotgithub-governance.md"
+          if [[ "$PUBLICATION_OUTCOME" == success && -s "$report" ]]; then
+            cat "$report" > "$body"
+            {
+              echo
+              echo "Trusted-main workflow run: ${run_url}"
+              echo "One-run carrier audit: recipient comment ${RECIPIENT_COMMENT_ID}; encrypted response comment ${RESPONSE_COMMENT_ID}."
+            } >> "$body"
+          else
+            STDOUT="$RUNNER_TEMP/org-dotgithub-publisher.stdout" \
+            STDERR="$RUNNER_TEMP/org-dotgithub-publisher.stderr" \
+              python3 - <<'PY' > "$RUNNER_TEMP/org-dotgithub-redacted.log"
+          import os
+          import re
+          from pathlib import Path
+
+          fragments = []
+          for variable in ("STDERR", "STDOUT"):
+              path = Path(os.environ[variable])
+              if path.exists():
+                  fragments.append(path.read_text(errors="replace"))
+          text = "\n".join(fragments) if fragments else "publisher output was not created"
+          patterns = [
+              (r"https://x-access-token:[^@\s]+@github\.com/", "https://x-access-token:***@github.com/"),
+              (r"github_pat_[A-Za-z0-9_]{20,}", "github_pat_***"),
+              (r"gh[pousr]_[A-Za-z0-9_]{20,}", "gh*_***"),
+              (r"lin_api_[A-Za-z0-9_]{20,}", "lin_api_***"),
+              (r"cfat_[A-Za-z0-9_]{20,}", "cfat_***"),
+              (r"(Authorization:\s*Bearer\s+)[A-Za-z0-9._-]{20,}", r"\1***"),
+          ]
+          for pattern, replacement in patterns:
+              text = re.sub(pattern, replacement, text, flags=re.I)
+          print("\n".join(text.splitlines()[-240:])[-28000:])
+          PY
+            {
+              echo '# Current organization `.github` governance publication failed'
+              echo
+              echo "Trusted-main workflow run: ${run_url}"
+              echo "One-run carrier audit: recipient comment ${RECIPIENT_COMMENT_ID:-unknown}; encrypted response comment ${RESPONSE_COMMENT_ID:-unknown}."
+              echo
+              echo '```text'
+              cat "$RUNNER_TEMP/org-dotgithub-redacted.log"
+              echo '```'
+            } > "$body"
+          fi
+          GH_TOKEN="$ISSUE_TOKEN" gh issue comment "$TRACKING_ISSUE" \
+            --repo "$GITHUB_REPOSITORY" --body-file "$body"
+
+      - name: Upload non-secret governance evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -207,3 +353,9 @@ jobs:
             ${{ runner.temp }}/org-dotgithub-governance.md
           if-no-files-found: ignore
           retention-days: 30
+
+      - name: Enforce fleet publication result
+        if: always()
+        env:
+          PUBLICATION_OUTCOME: ${{ steps.publication.outcome }}
+        run: test "$PUBLICATION_OUTCOME" = success
