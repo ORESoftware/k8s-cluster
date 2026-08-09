@@ -54,6 +54,35 @@ class RepoCheckScopeTests(unittest.TestCase):
             result["reason"],
         )
 
+    def test_den_3286_sealed_publisher_is_governance_only(self):
+        result = MODULE.classify(
+            "pull_request",
+            [
+                ".github/workflows/ops-publish-test-org-expansion-20260808.yml",
+                "scripts/ci/classify_repo_check_scope.py",
+                "scripts/ci/test_classify_repo_check_scope.py",
+                "scripts/ops/publish_test_org_expansion_20260808.py.gz.b64",
+                "scripts/ops/test-org-expansion-20260808.json.gz.b64",
+            ],
+        )
+        self.assertTrue(result["governance_only"])
+        self.assertFalse(result["private_contracts_required"])
+        self.assertEqual(
+            "governance_only_no_private_gitlinks",
+            result["reason"],
+        )
+
+    def test_unreviewed_publisher_path_still_requires_private_contracts(self):
+        result = MODULE.classify(
+            "pull_request",
+            [
+                ".github/workflows/ops-publish-test-org-expansion-20260809.yml",
+                "scripts/ops/publish_test_org_expansion_20260809.py.gz.b64",
+            ],
+        )
+        self.assertFalse(result["governance_only"])
+        self.assertTrue(result["private_contracts_required"])
+
     def test_scope_control_change_requires_a_governance_payload(self):
         result = MODULE.classify(
             "pull_request",
