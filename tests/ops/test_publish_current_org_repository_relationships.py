@@ -103,6 +103,51 @@ class CurrentRepositoryRelationshipPublisherTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     module.configure_expected_owner_login(value)
 
+    def test_primary_rate_limit_delay_honors_full_reset_window(self) -> None:
+        with mock.patch.object(
+            module.governance.time,
+            "time",
+            return_value=1_000.0,
+        ):
+            delay = module.retry_delay_with_primary_rate_limit(
+                {
+                    "X-RateLimit-Remaining": "0",
+                    "X-RateLimit-Reset": "1300",
+                },
+                1,
+            )
+        self.assertEqual(302.0, delay)
+        self.assertGreater(delay, 60.0)
+
+    def test_primary_rate_limit_delay_is_bounded_to_workflow_budget(self) -> None:
+        with mock.patch.object(
+            module.governance.time,
+            "time",
+            return_value=0.0,
+        ):
+            delay = module.retry_delay_with_primary_rate_limit(
+                {
+                    "x-ratelimit-remaining": "0",
+                    "x-ratelimit-reset": "999999",
+                },
+                1,
+            )
+        self.assertEqual(
+            module.MAX_PRIMARY_RATE_LIMIT_WAIT_SECONDS,
+            delay,
+        )
+
+    def test_non_primary_retry_delay_uses_existing_backoff(self) -> None:
+        headers = {"X-RateLimit-Remaining": "1"}
+        with mock.patch.object(
+            module,
+            "_ORIGINAL_RETRY_DELAY",
+            return_value=7.5,
+        ) as fallback:
+            delay = module.retry_delay_with_primary_rate_limit(headers, 3)
+        self.assertEqual(7.5, delay)
+        fallback.assert_called_once_with(headers, 3)
+
     def test_classifies_canonical_repository_roles(self) -> None:
         cases = {
             ".github": "organization_governance",
