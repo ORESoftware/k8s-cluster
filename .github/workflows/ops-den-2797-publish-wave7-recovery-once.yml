@@ -57,7 +57,43 @@ jobs:
         run: bash scripts/den-2797-wave7-validate.sh
 
       - name: Prepare and validate exact recovery sources
-        run: bash scripts/den-2797-wave7-prepare.sh
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          real_npm="$(command -v npm)"
+          test -x "$real_npm"
+          npm_wrapper_dir=/tmp/den-2797-wave7-npm-wrapper
+          rm -rf "$npm_wrapper_dir"
+          mkdir -p "$npm_wrapper_dir"
+          cat > "$npm_wrapper_dir/npm" <<'EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          real_npm="${DEN_2797_REAL_NPM:?DEN_2797_REAL_NPM is required}"
+          test -x "$real_npm"
+          if [[ "${1:-}" == --prefix && -n "${2:-}" ]]; then
+            prefix="$2"
+            shift 2
+            case "${1:-}" in
+              install|ci)
+                test -d "$prefix"
+                test -f "$prefix/package.json"
+                cd "$prefix"
+                "$real_npm" "$@" --package-lock=true
+                if [[ "${1:-}" == install && " $* " == *" --package-lock-only "* ]]; then
+                  test -s package-lock.json
+                fi
+                exit 0
+                ;;
+            esac
+          fi
+          exec "$real_npm" "$@"
+          EOF
+          sed -i 's/^          //' "$npm_wrapper_dir/npm"
+          chmod 700 "$npm_wrapper_dir/npm"
+          export DEN_2797_REAL_NPM="$real_npm"
+          export PATH="$npm_wrapper_dir:$PATH"
+          export NPM_CONFIG_PACKAGE_LOCK=true
+          bash scripts/den-2797-wave7-prepare.sh
 
       - name: Receive one-time encrypted owner credential
         run: bash scripts/den-2797-wave7-receive.sh
