@@ -117,6 +117,12 @@ jobs:
                   'node --test "$work/hhm-e2e"/tests/contracts/*.test.mjs',
                   '( cd "$work/hhm-e2e" && node --test tests/contracts/*.test.mjs )',
               ),
+              (
+                  'git -C "$work/hhm-e2e" add --all',
+                  'git -C "$work/hhm-e2e" config user.name "ORESoftware automation"\n'
+                  'git -C "$work/hhm-e2e" config user.email "11139560+ORESoftware@users.noreply.github.com"\n'
+                  'git -C "$work/hhm-e2e" add --all',
+              ),
           )
           for old, new in replacements:
               count = text.count(old)
