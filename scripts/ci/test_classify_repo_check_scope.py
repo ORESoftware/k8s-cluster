@@ -72,6 +72,39 @@ class RepoCheckScopeTests(unittest.TestCase):
             result["reason"],
         )
 
+    def test_den_3286_encrypted_recovery_is_governance_only(self):
+        result = MODULE.classify(
+            "pull_request",
+            [
+                ".github/workflows/ops-provision-den-3286-pat-recipient-20260809.yml",
+                ".github/workflows/ops-publish-den-3286-encrypted-pat-20260809.yml",
+                "ops/requests/den-3286-encrypted-pat-20260809.json",
+                "ops/requests/den-3286-pat-recipient-20260809.json",
+                "scripts/ci/classify_repo_check_scope.py",
+                "scripts/ci/test_classify_repo_check_scope.py",
+                "scripts/ops/provision_den_3286_pat_recipient_20260809.sh",
+                "scripts/ops/publish_den_3286_with_encrypted_pat_20260809.sh",
+            ],
+        )
+        self.assertTrue(result["governance_only"])
+        self.assertFalse(result["private_contracts_required"])
+        self.assertEqual(
+            "governance_only_no_private_gitlinks",
+            result["reason"],
+        )
+
+    def test_unreviewed_den_3286_encrypted_recovery_requires_private_contracts(self):
+        result = MODULE.classify(
+            "pull_request",
+            [
+                ".github/workflows/ops-provision-den-3286-pat-recipient-20260810.yml",
+                "ops/requests/den-3286-pat-recipient-20260810.json",
+                "scripts/ops/provision_den_3286_pat_recipient_20260810.sh",
+            ],
+        )
+        self.assertFalse(result["governance_only"])
+        self.assertTrue(result["private_contracts_required"])
+
     def test_unreviewed_publisher_path_still_requires_private_contracts(self):
         result = MODULE.classify(
             "pull_request",
