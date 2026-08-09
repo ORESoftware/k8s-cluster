@@ -25,11 +25,12 @@ exception.
 The supplied publication credential can create and push repositories but does
 not have GitHub's separate delete-repository permission. Deletion is neither
 needed nor desirable. If its primary GitHub REST quota is already exhausted,
-the wrapper consults the non-counting ``/rate_limit`` endpoint, waits once until
-the declared reset with a small leeway and a hard 3,700-second cap, then retries
-the exact request once. Every other existing empty repository remains
-fail-closed, every nonempty history must exactly match its sealed SHA, and no
-production repository has a recovery exception.
+the wrapper consults the non-counting ``/rate_limit`` endpoint, honors the
+returned core reset even when its remaining counter is stale, waits once with a
+small leeway and a hard 3,700-second cap, then retries the exact request once.
+Every other existing empty repository remains fail-closed, every nonempty
+history must exactly match its sealed SHA, and no production repository has a
+recovery exception.
 """
 
 from __future__ import annotations
@@ -105,7 +106,7 @@ def rate_limit_aware_api(
     path: str,
     body: dict[str, object] | None = None,
 ) -> tuple[int, object | None]:
-    """Wait once for an exhausted primary REST quota, then retry exactly once."""
+    """Wait once for an explicit primary REST-limit 403, then retry once."""
     global _RATE_LIMIT_WAIT_USED
     try:
         return ORIGINAL_API(method, path, body)
@@ -123,9 +124,10 @@ def rate_limit_aware_api(
         fail(f"unable to inspect GitHub core rate limit: HTTP {status}")
     remaining, reset = _core_rate_limit(payload)
     now = int(time.time())
-    wait_seconds = 0
-    if remaining == 0:
-        wait_seconds = max(0, reset - now) + RATE_LIMIT_RESET_LEEWAY_SECONDS
+    # The triggering request is an explicit authenticated primary-limit 403.
+    # GitHub's /rate_limit remaining field can lag that failure, so the reset
+    # timestamp—not the stale remaining counter—controls this one bounded wait.
+    wait_seconds = max(0, reset - now) + RATE_LIMIT_RESET_LEEWAY_SECONDS
     if wait_seconds > RATE_LIMIT_MAX_WAIT_SECONDS:
         fail(
             "GitHub core rate-limit reset exceeds bounded wait: "
@@ -135,10 +137,9 @@ def rate_limit_aware_api(
     _RATE_LIMIT_WAIT_USED = True
     print(
         "WAITING_DEN896_GITHUB_CORE_RATE_LIMIT_RESET "
-        f"seconds={wait_seconds} reset={reset}"
+        f"seconds={wait_seconds} remaining={remaining} reset={reset}"
     )
-    if wait_seconds:
-        time.sleep(wait_seconds)
+    time.sleep(wait_seconds)
     return ORIGINAL_API(method, path, body)
 
 
