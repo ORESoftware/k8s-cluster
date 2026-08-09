@@ -1,5 +1,7 @@
 name: GHCR manifest existence contract
 
+# Registry existence is necessary but not sufficient: source provenance,
+# vulnerability, runtime, rollout, and signed-canary gates remain independent.
 on:
   pull_request:
     branches: [dev]
