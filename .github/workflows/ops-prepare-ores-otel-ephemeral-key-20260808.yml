@@ -47,7 +47,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           test -n "${INSTANCE_ID:-}"
-          key_id='ores-otel-20260808-v3'
+          key_id='ores-otel-20260808-v4'
           remote_command="set -Eeuo pipefail; umask 077; command -v openssl >/dev/null; root=/var/lib/oresoftware/ores-otel-publisher; private=\"\$root/$key_id.pem\"; mkdir -p \"\$root\"; chmod 700 \"\$root\"; rm -f \"\$private\"; openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out \"\$private\" >/dev/null 2>&1; chmod 600 \"\$private\"; public_b64=\$(openssl pkey -in \"\$private\" -pubout | base64 --wrap=0); printf 'EPHEMERAL_KEY_ID=%s\\nEPHEMERAL_PUBLIC_KEY_B64=%s\\n' '$key_id' \"\$public_b64\""
           parameters="$RUNNER_TEMP/ssm-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
