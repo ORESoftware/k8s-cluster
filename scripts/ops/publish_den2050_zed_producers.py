@@ -23,6 +23,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+# Keep auxiliary Python probes indistinguishable from the pinned Zed CLI's
+# registry client. Cloudflare explicitly rejects Python urllib's default
+# browser signature on registry.zpkg.net, while zed-cli sets this exact UA.
+REGISTRY_USER_AGENT = "zed-cli/0.1.0"
+
+
 @dataclass(frozen=True)
 class Producer:
     repository: str
@@ -107,7 +113,10 @@ def run(
 
 def http_json(url: str, *, method: str = "GET", body: dict | None = None) -> tuple[int, dict]:
     data = None
-    headers = {"Accept": "application/json"}
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": REGISTRY_USER_AGENT,
+    }
     if body is not None:
         data = json.dumps(body, separators=(",", ":")).encode()
         headers["Content-Type"] = "application/json"
