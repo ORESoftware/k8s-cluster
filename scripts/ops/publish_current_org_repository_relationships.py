@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import time
 from typing import Any
 
 HERE = Path(__file__).resolve().parent
@@ -37,12 +38,43 @@ import publish_org_repository_relationships as publisher  # noqa: E402
 
 publisher.ORGANIZATIONS = ORGANIZATIONS
 _ORIGINAL_BUILD_PLAN = publisher.build_plan
+_RETRY_DELAY_ORIGINAL_ATTRIBUTE = "_relationship_original_retry_delay"
+_ORIGINAL_RETRY_DELAY = getattr(
+    governance.GitHubApi,
+    _RETRY_DELAY_ORIGINAL_ATTRIBUTE,
+    governance.GitHubApi._retry_delay,
+)
+setattr(
+    governance.GitHubApi,
+    _RETRY_DELAY_ORIGINAL_ATTRIBUTE,
+    _ORIGINAL_RETRY_DELAY,
+)
+_MAX_PRIMARY_RATE_LIMIT_DELAY = 3900.0
 PRIVATE_REFERENCE_REDACTION = (
     "Private repository details are intentionally withheld from this public "
     "document."
 )
 _REFERENCE_BOUNDARY = r"(?:$|[\s`'\"\)\]\}>/?#]|[.,;:!?](?=$|\s))"
 PrivatePatterns = tuple[re.Pattern[str], ...]
+
+
+def retry_delay_with_primary_rate_limit(
+    headers: dict[str, str],
+    attempt: int,
+) -> float:
+    """Wait for the primary core-limit reset instead of retrying every minute."""
+    normalized = {key.lower(): value for key, value in headers.items()}
+    remaining = normalized.get("x-ratelimit-remaining")
+    reset = normalized.get("x-ratelimit-reset")
+    if remaining == "0" and reset and reset.isdigit():
+        until_reset = float(reset) - time.time() + 5.0
+        return max(1.0, min(until_reset, _MAX_PRIMARY_RATE_LIMIT_DELAY))
+    return _ORIGINAL_RETRY_DELAY(headers, attempt)
+
+
+governance.GitHubApi._retry_delay = staticmethod(
+    retry_delay_with_primary_rate_limit
+)
 
 
 class PrivateReferences(set[str]):
@@ -242,10 +274,13 @@ def run_plan_with_exact_private_references(
 ) -> None:
     """Write and verify files with boundary-aware private-reference checks."""
     organization, branch, files, references, result = plan
+    changed_paths: list[str] = []
     for path, (desired, existing) in files.items():
         changed = not existing or existing.content != desired
         target = result["changed_files"] if changed else result["unchanged_files"]
         target.append(path)
+        if changed:
+            changed_paths.append(path)
         if execute and changed:
             publisher.write_file(
                 api,
@@ -259,7 +294,11 @@ def run_plan_with_exact_private_references(
 
     if not execute:
         return
-    for path, (desired, _) in files.items():
+    # Unchanged files were already fetched, compared byte-for-byte, and passed
+    # privacy preflight while the plan was built. Re-read only files written by
+    # this execution, cutting resume traffic without weakening write checks.
+    for path in changed_paths:
+        desired, _ = files[path]
         observed = publisher.base.fetch_file(api, organization, path, branch)
         leaked = observed and contains_private_reference(
             observed.content,
