@@ -16,6 +16,7 @@ import re
 import shlex
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -23,6 +24,67 @@ from pathlib import Path
 TERMINAL = {"Success", "Failed", "Cancelled", "TimedOut", "Cancelling"}
 TOKEN_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,120}$")
 SECRET_RE = re.compile(r"zpkg_[A-Za-z0-9]+")
+
+# The protected host has several kubeconfigs and its ambient/current context is
+# not guaranteed to be the live cluster. Reuse the same bounded locations as
+# the existing protected-source selector and choose only a context that can
+# read the `zed` namespace. No kubeconfig contents are printed.
+KUBE_CONTEXT_SHELL = r'''
+select_zed_context() {
+  candidates_file=$(mktemp /tmp/den2050-kubeconfigs.XXXXXX)
+  {
+    printf '%s\n' \
+      /etc/kubernetes/admin.conf \
+      /etc/rancher/k3s/k3s.yaml \
+      /root/.kube/config \
+      /home/ec2-user/.kube/config \
+      /home/ubuntu/.kube/config
+    for root in /etc/kubernetes /etc/rancher /root/.kube /home/ec2-user/.kube /home/ubuntu/.kube; do
+      if [ -d "$root" ]; then
+        find "$root" -type f -size -1048576c \
+          \( -name '*.conf' -o -name 'config' -o -name '*.yaml' -o -name '*.yml' \) \
+          -print 2>/dev/null || true
+      fi
+    done
+  } | awk 'NF && !seen[$0]++' > "$candidates_file"
+
+  try_kubeconfig() {
+    config="$1"
+    [ -r "$config" ] || return 1
+    contexts_file=$(mktemp /tmp/den2050-contexts.XXXXXX)
+    if ! kubectl --kubeconfig "$config" config get-contexts -o name > "$contexts_file" 2>/dev/null; then
+      rm -f "$contexts_file"
+      return 1
+    fi
+    while IFS= read -r context; do
+      [ -n "$context" ] || continue
+      if kubectl --kubeconfig "$config" --context "$context" \
+          get namespace zed --request-timeout=8s >/dev/null 2>&1; then
+        ZED_KUBECONFIG="$config"
+        ZED_KUBE_CONTEXT="$context"
+        export ZED_KUBECONFIG ZED_KUBE_CONTEXT
+        rm -f "$contexts_file"
+        return 0
+      fi
+    done < "$contexts_file"
+    rm -f "$contexts_file"
+    return 1
+  }
+
+  while IFS= read -r config; do
+    if try_kubeconfig "$config"; then
+      rm -f "$candidates_file"
+      return 0
+    fi
+  done < "$candidates_file"
+  rm -f "$candidates_file"
+  return 1
+}
+
+zkubectl() {
+  kubectl --kubeconfig "$ZED_KUBECONFIG" --context "$ZED_KUBE_CONTEXT" "$@"
+}
+'''
 
 
 def redact(value: str) -> str:
@@ -110,13 +172,16 @@ def revoke(instance_id: str, region: str, token_name: str) -> None:
         raise RuntimeError("invalid bounded token name")
     q_name = shlex.quote(token_name)
     remote = f"""set -euo pipefail
+{KUBE_CONTEXT_SHELL}
 work=$(mktemp -d /tmp/den2050-zed-revoke.XXXXXX)
 trap 'rm -rf "$work"' EXIT
+printf 'stage=context_selection\n'
+select_zed_context
 printf 'stage=pod_lookup\n'
-pod=$(kubectl -n zed get pods -l app=dd-zed-api-server -o jsonpath='{{.items[0].metadata.name}}')
+pod=$(zkubectl -n zed get pods -l app=dd-zed-api-server -o jsonpath='{{.items[0].metadata.name}}')
 test -n "$pod"
 printf 'stage=revoke_token\n'
-if ! kubectl -n zed exec "$pod" -c zed-api-server -- /usr/local/bin/zed-api-server revoke-token --name {q_name} >"$work/out" 2>"$work/err"; then
+if ! zkubectl -n zed exec "$pod" -c zed-api-server -- /usr/local/bin/zed-api-server revoke-token --name {q_name} >"$work/out" 2>"$work/err"; then
   if grep -qF 'no token matched' "$work/err" "$work/out"; then
     printf 'DEN2050_ZED_TOKEN_ALREADY_ABSENT name=%s\n' {q_name}
     exit 0
@@ -153,20 +218,23 @@ def mint(instance_id: str, region: str, token_name: str, token_file: Path) -> No
         q_name = shlex.quote(token_name)
         q_key = shlex.quote(public_b64)
         remote = f"""set -euo pipefail
+{KUBE_CONTEXT_SHELL}
 umask 077
 work=$(mktemp -d /tmp/den2050-zed-token.XXXXXX)
 cleanup() {{ rm -rf "$work"; }}
 trap cleanup EXIT
 printf 'stage=prerequisites\n'
-for command in kubectl openssl base64 tail grep; do command -v "$command" >/dev/null; done
+for command in kubectl openssl base64 tail grep find awk; do command -v "$command" >/dev/null; done
 printf '%s' {q_key} | base64 -d > "$work/pub.pem"
+printf 'stage=context_selection\n'
+select_zed_context
 printf 'stage=pod_lookup\n'
-pod=$(kubectl -n zed get pods -l app=dd-zed-api-server -o jsonpath='{{.items[0].metadata.name}}')
+pod=$(zkubectl -n zed get pods -l app=dd-zed-api-server -o jsonpath='{{.items[0].metadata.name}}')
 test -n "$pod"
 printf 'stage=container_healthcheck\n'
-kubectl -n zed exec "$pod" -c zed-api-server -- /usr/local/bin/zed-api-server healthcheck >/dev/null
+zkubectl -n zed exec "$pod" -c zed-api-server -- /usr/local/bin/zed-api-server healthcheck >/dev/null
 printf 'stage=create_token\n'
-created=$(kubectl -n zed exec "$pod" -c zed-api-server -- /usr/local/bin/zed-api-server create-token --name {q_name} --expires-in-days 1)
+created=$(zkubectl -n zed exec "$pod" -c zed-api-server -- /usr/local/bin/zed-api-server create-token --name {q_name} --expires-in-days 1)
 token=$(printf '%s\n' "$created" | tail -n 1)
 printf '%s' "$token" | grep -Eq '^zpkg_[A-Za-z0-9]+$'
 printf '%s' "$token" > "$work/token"
@@ -245,5 +313,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    import sys
     raise SystemExit(main())
