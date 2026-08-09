@@ -87,6 +87,14 @@ class CurrentRepositoryRelationshipPublisherTests(unittest.TestCase):
             publisher.build_plan,
             module.build_plan_with_exact_private_references,
         )
+        self.assertIs(
+            module.governance.GitHubApi._retry_delay,
+            module.rate_limit_retry_delay,
+        )
+        self.assertIs(
+            publisher.base.GitHubApi._retry_delay,
+            module.rate_limit_retry_delay,
+        )
 
     def test_dynamic_owner_identity_is_bound_to_preflight(self) -> None:
         original = module.governance.EXPECTED_ACTOR
@@ -102,6 +110,42 @@ class CurrentRepositoryRelationshipPublisherTests(unittest.TestCase):
             with self.subTest(value=value):
                 with self.assertRaises(RuntimeError):
                     module.configure_expected_owner_login(value)
+
+    def test_primary_rate_limit_wait_honors_full_reset_window(self) -> None:
+        delay = module.rate_limit_retry_delay(
+            {
+                "x-ratelimit-remaining": "0",
+                "x-ratelimit-reset": "1900",
+            },
+            1,
+            now=1000.0,
+        )
+        self.assertEqual(902.0, delay)
+        self.assertGreater(delay, 60.0)
+
+    def test_primary_rate_limit_wait_is_safely_bounded(self) -> None:
+        delay = module.rate_limit_retry_delay(
+            {
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset": "10000",
+            },
+            1,
+            now=1000.0,
+        )
+        self.assertEqual(module.MAX_PRIMARY_RATE_LIMIT_WAIT_SECONDS, delay)
+
+    def test_retry_after_is_case_insensitive_and_bounded(self) -> None:
+        delay = module.rate_limit_retry_delay(
+            {"retry-after": "480"},
+            1,
+            now=1000.0,
+        )
+        self.assertEqual(module.MAX_RETRY_AFTER_SECONDS, delay)
+
+    def test_fallback_retry_delay_remains_short_and_jittered(self) -> None:
+        with mock.patch.object(module.random, "random", return_value=0.25):
+            delay = module.rate_limit_retry_delay({}, 3, now=1000.0)
+        self.assertEqual(8.25, delay)
 
     def test_classifies_canonical_repository_roles(self) -> None:
         cases = {
