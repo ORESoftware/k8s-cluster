@@ -1,0 +1,76 @@
+name: Bootstrap ORES OTEL repositories (one shot)
+run-name: Bootstrap ORES OTEL repositories from ${{ github.sha }}
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ops-bootstrap-ores-otel-20260808.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ops-bootstrap-ores-otel-20260808
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out the trusted main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Configure AWS credentials for the protected publisher
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: bootstrap-ores-otel-repositories
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Load and mask the protected GitHub publisher
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          secret_json="$(aws secretsmanager get-secret-value \
+            --secret-id dd/remote-dev/agent-secrets \
+            --query SecretString \
+            --output text)"
+          token="$(jq -er '.GH_PAT | select(type == "string" and length > 0)' <<<"$secret_json")"
+          echo "::add-mask::$token"
+          {
+            printf 'GH_TOKEN=%s\n' "$token"
+            printf 'GITHUB_REPOSITORY_ADMIN_TOKEN=%s\n' "$token"
+          } >> "$GITHUB_ENV"
+          unset token secret_json
+
+      - name: Verify the reviewed publisher
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(sha256sum scripts/ops/bootstrap_ores_otel_repositories_20260808.sh | awk '{print $1}')" = \
+            '6ca6795212c5701e42ace66c390cc2ceb7c0152cb3a5f12d01061a9175d76074'
+          test "$(sha256sum scripts/ops/bootstrap_ores_otel_repositories_20260808_part1.sh | awk '{print $1}')" = \
+            '2adf73e0f6cc50f96a3e8180200a55b9c7e020f79301f3f03a06e2af7231436d'
+          test "$(sha256sum scripts/ops/bootstrap_ores_otel_repositories_20260808_part2.sh | awk '{print $1}')" = \
+            '29ab3644f9bb7214dd9359337e6be61709574912bb5065bfc99db3e724b2181e'
+          test "$(sha256sum scripts/ops/bootstrap_ores_otel_repositories_20260808_part3.sh | awk '{print $1}')" = \
+            '3c81cbd6e8696ae54eee9bdce2ef601033f7409bab33417cc17774ce65118446'
+          for script in scripts/ops/bootstrap_ores_otel_repositories_20260808*.sh; do
+            bash -n "$script"
+          done
+
+      - name: Create, mirror, populate, and verify the ORES OTEL fleet
+        shell: bash
+        run: bash scripts/ops/bootstrap_ores_otel_repositories_20260808.sh
