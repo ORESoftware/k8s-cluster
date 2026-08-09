@@ -254,10 +254,10 @@ def validate_relationship(
             )
         if portfolio_key != normalized_org:
             raise RegistryRelationshipError(
-                f"{portfolio.path}:{line_number}: portfolio_key {portfolio_key!r} "
+                f"{portfolio_path}:{line_number}: portfolio_key {portfolio_key!r} "
                 f"must equal case-folded github_org {normalized_org!r}"
             )
-        if portfolio.key in seen_keys:
+        if portfolio_key in seen_keys:
             raise RegistryRelationshipError(
                 f"{portfolio_path}:{line_number}: duplicate portfolio_key {portfolio_key!r}"
             )
@@ -271,17 +271,17 @@ def validate_relationship(
         governance_row = governance.get(normalized_org)
         if governance_row is None:
             raise RegistryRelationshipError(
-                f"{portfolio.path}:{line_number}: {github_org} is absent from the "
+                f"{portfolio_path}:{line_number}: {github_org} is absent from the "
                 "71-organization governance registry"
             )
         if row["linear_project_url"] != governance_row["linear_url"]:
             raise RegistryRelationshipError(
-                f"{portfolio.path}:{line_number}: Linear URL differs from governance "
+                f"{portfolio_path}:{line_number}: Linear URL differs from governance "
                 f"registry for {github_org}"
             )
         validate_linear_url(
             row["linear_project_url"],
-            context=f"{portfolio.path}:{line_number} {github_org}",
+            context=f"{portfolio_path}:{line_number} {github_org}",
         )
 
         expected_number = PROJECT_NUMBER_EXCEPTION.get(portfolio_key, 1)
@@ -301,7 +301,7 @@ def validate_relationship(
         )
         if row["github_project_url"] != expected_url:
             raise RegistryRelationshipError(
-                f"{portfolio.path}:{line_number}: expected project URL {expected_url!r}"
+                f"{portfolio_path}:{line_number}: expected project URL {expected_url!r}"
             )
 
     governance_only = sorted(set(governance) - seen_orgs)
