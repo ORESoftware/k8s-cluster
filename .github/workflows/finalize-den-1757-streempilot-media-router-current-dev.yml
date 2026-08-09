@@ -41,7 +41,7 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Repair finalizer invariants discovered by hosted runs
+      - name: Repair the branch-local transformer from hosted evidence
         shell: bash
         run: |
           set -euo pipefail
@@ -77,11 +77,7 @@ jobs:
                   raise SystemExit("expected media-router insertion point is not unique inside the GitOps rule array")
               zed_index = text.index(zed_rule, expected_start, expected_end)
               text = text[:zed_index] + media_and_zed_rules + text[zed_index + len(zed_rule):]
-          '''
-          targeted_replacement = '\n'.join(
-              line[10:] if line.startswith('          ') else line
-              for line in targeted_replacement.splitlines()
-          ) + '\n'
+          '''.rstrip() + '\n'
           source = source[:call_start] + targeted_replacement + source[call_end:]
 
           validation_start = source.index('def validate_result() -> None:\n')
@@ -165,11 +161,7 @@ jobs:
 
           if __name__ == "__main__":
               main()
-          '''
-          validation_tail = '\n'.join(
-              line[10:] if line.startswith('          ') else line
-              for line in validation_tail.splitlines()
-          ) + '\n'
+          '''.rstrip() + '\n'
           source = source[:validation_start] + validation_tail
 
           source = source.replace(
@@ -273,5 +265,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m 'feat(DEN-1757): add exact StreemPilot media-router continuity profile'
+          git commit -m 'feat(DEN-3298): add exact StreemPilot media-router continuity profile'
           git push origin HEAD:agent/den-1757-streempilot-media-router-current-dev-20260809
