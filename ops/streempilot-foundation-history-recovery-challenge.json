@@ -1,12 +1,68 @@
 {
-  "state": "awaiting-encrypted-response",
+  "state": "completed",
   "purpose": "recover-preserved-streempilot-foundation-histories",
-  "nonce": "32987c9c3fddad7ecbe47894e123a219249e460f34175be0",
-  "publicKey": "-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAp7nF/mdtBpKBXjSle1NG\n4bjZBfwGBRgujkHB4nn+MtbjtJNfNgq3c/VT51eGOFjhEg13QMTTkbEv5TxXyx/7\n3VHG6JMuawBKWFbG9NbncX8l2uQta53eHODYLT5vLG1FC4KhBXDPwZYyw3mr6TiR\nCLakGNi+TSGCfKK+WLwjTO4KbnVsZhWDt66tA5R4EaD0jauSR934Vv8ObyYuv7HU\nviSePevuN8c7hF3UYhYB8FoEMwR+fdt+JG0Vpp782YWfL2LGYDn8Bd1VTiY/DUAA\nhvvrpmW5Thh5eC8Xaxy/6pSqUVnw57SDFBo/FM7jlfu3f8X0Wo2Zmv8y9uLPx1uv\n3SC2Dm0N5H9Gagdjm/dmlWjK/hqXye6pyct2KeKD5uiSwKm36br2k+psdVbcmq7D\nwabytYbRvQxlER3czNz37qzXzTJQcXFFuYO6es4jXDKa8C1JESAQAR2e2keg80Nh\n3PP2nceXA6tE1UcJ6bccXMyhZQdi8hTwjx6UpWIhgVwPAgMBAAE=\n-----END PUBLIC KEY-----\n",
-  "algorithm": "RSA-OAEP-SHA256-MGF1-SHA256",
   "runId": "31297720582",
   "sourceCommit": "456d4d95fe182deefd977390de06087b3e560eba",
+  "authenticatedActor": "ORESoftware",
   "recoveryBranch": "recovery/streamyard-parity-foundation-20260809",
+  "repositoriesRecovered": 8,
+  "pullRequestsOpen": 8,
+  "pushedBranches": 8,
+  "classificationTotals": {
+    "already-integrated-exactly": 8,
+    "absent-from-current-main": 24,
+    "diverged-or-superseded": 12
+  },
   "privateKeyStored": false,
-  "plaintextCredentialStored": false
+  "plaintextCredentialStored": false,
+  "repositories": [
+    {
+      "repository": "StreemPilot/sp-api",
+      "branch_sha": "d6fd35d3edf4a0995877197176b85a91de9e0ff1",
+      "pull_request_number": 4,
+      "pull_request_url": "https://github.com/StreemPilot/sp-api/pull/4"
+    },
+    {
+      "repository": "StreemPilot/sp-cli",
+      "branch_sha": "68e43c0f0cbef64426840abf71d224c4b745c563",
+      "pull_request_number": 10,
+      "pull_request_url": "https://github.com/StreemPilot/sp-cli/pull/10"
+    },
+    {
+      "repository": "StreemPilot/sp-infra",
+      "branch_sha": "182b97542337406c0606b3d28490d26aabb12c7d",
+      "pull_request_number": 7,
+      "pull_request_url": "https://github.com/StreemPilot/sp-infra/pull/7"
+    },
+    {
+      "repository": "StreemPilot/sp-interfaces",
+      "branch_sha": "b4a539bfd91a87867755799be0a5c6b2281fc3b1",
+      "pull_request_number": 19,
+      "pull_request_url": "https://github.com/StreemPilot/sp-interfaces/pull/19"
+    },
+    {
+      "repository": "StreemPilot/sp-sync",
+      "branch_sha": "4c3f3673b77ac68ef25401115f3daf2be2187309",
+      "pull_request_number": 6,
+      "pull_request_url": "https://github.com/StreemPilot/sp-sync/pull/6"
+    },
+    {
+      "repository": "StreemPilot/sp-web-dioxus",
+      "branch_sha": "b24e4620a26bb94e2a6edc485284a684e2bc52c7",
+      "pull_request_number": 9,
+      "pull_request_url": "https://github.com/StreemPilot/sp-web-dioxus/pull/9"
+    },
+    {
+      "repository": "StreemPilot/sp-web-leptos",
+      "branch_sha": "e2a9084dd03b2ff929a4986895676217394c6736",
+      "pull_request_number": 9,
+      "pull_request_url": "https://github.com/StreemPilot/sp-web-leptos/pull/9"
+    },
+    {
+      "repository": "StreemPilot/sp-web-mash",
+      "branch_sha": "79af90056397082577468200051b5e9860d50e8d",
+      "pull_request_number": 15,
+      "pull_request_url": "https://github.com/StreemPilot/sp-web-mash/pull/15"
+    }
+  ]
 }
