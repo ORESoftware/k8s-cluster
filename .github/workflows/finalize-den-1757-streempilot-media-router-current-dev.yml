@@ -1,5 +1,7 @@
 name: DEN-1757 finalize StreemPilot media-router continuity on current dev
 
+# Connector-side retrigger after the exact-token assertion repair. GitHub
+# suppresses workflow cascades from commits created with GITHUB_TOKEN.
 on:
   push:
     branches:
