@@ -21,16 +21,16 @@ jobs:
       github.repository == 'ORESoftware/k8s-cluster' &&
       github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 150
     env:
       CONTROL_REPOSITORY: ${{ github.repository }}
       CONTROL_BRANCH: main
       TARGET_ORGANIZATION: cliptown
       TARGET_REPOSITORY: cliptown-lib
       TARGET_DESCRIPTION: Shared Rust library for ClipTown domain logic, authorization-safe primitives, and reusable application services.
-      HANDSHAKE_NONCE: 6e9c4db2d7814b0fb0a711f8f0b66a42
-      PUBLIC_KEY_PATH: .github/tmp/cliptown-lib-6e9c4db2d7814b0fb0a711f8f0b66a42.pub.pem
-      CIPHERTEXT_PATH: .github/tmp/cliptown-lib-6e9c4db2d7814b0fb0a711f8f0b66a42.enc.b64
+      HANDSHAKE_NONCE: 8231521cc368a3cfef6a5fc5794d96c3
+      PUBLIC_KEY_PATH: .github/tmp/cliptown-lib-8231521cc368a3cfef6a5fc5794d96c3.pub.pem
+      CIPHERTEXT_PATH: .github/tmp/cliptown-lib-8231521cc368a3cfef6a5fc5794d96c3.enc.b64
       WORKFLOW_PATH: .github/workflows/ops-create-cliptown-lib-encrypted-once.yml
 
     steps:
@@ -183,10 +183,39 @@ jobs:
           cleanup_credentials
           trap - EXIT
 
-      - name: Verify organization ownership and create canonical repository
+      - name: Wait for quota and create canonical repository
         shell: bash
         run: |
           set -Eeuo pipefail
+
+          wait_for_core_quota() {
+            local minimum=20
+            local rate remaining reset now delay
+            rate="$(gh api rate_limit)"
+            remaining="$(jq -er '.resources.core.remaining' <<<"$rate")"
+            reset="$(jq -er '.resources.core.reset' <<<"$rate")"
+            if (( remaining < minimum )); then
+              now="$(date +%s)"
+              delay=$((reset - now + 20))
+              (( delay > 0 )) || delay=20
+              if (( delay > 7200 )); then
+                echo "GitHub core quota reset is outside the bounded two-hour wait" >&2
+                exit 1
+              fi
+              echo "CORE_RATE_WAIT remaining=${remaining} reset=${reset} delay_seconds=${delay}"
+              sleep "$delay"
+              rate="$(gh api rate_limit)"
+              remaining="$(jq -er '.resources.core.remaining' <<<"$rate")"
+            fi
+            if (( remaining < minimum )); then
+              echo "GitHub core quota is still below the safe creation threshold" >&2
+              exit 1
+            fi
+            echo "CORE_RATE_READY remaining=${remaining}"
+          }
+
+          wait_for_core_quota
+
           login="$(gh api user --jq .login)"
           membership="$(gh api "user/memberships/orgs/${TARGET_ORGANIZATION}" --jq '.role + ":" + .state')"
           test "$membership" = admin:active
