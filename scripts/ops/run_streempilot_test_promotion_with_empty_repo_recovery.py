@@ -17,10 +17,10 @@ permits only two states for that immutable repository identity:
 
 A successful first push can also race GitHub's ref API visibility. The wrapper
 permits a small bounded sequence of read-only ref checks only for either that
-immutable recovery identity or an exact allowlisted StreemPilot-test repository
-that this same stage process observed absent before creating. Any wrong SHA
-fails immediately, exhaustion fails closed, and production never receives this
-exception.
+immutable recovery identity or an exact allowlisted staging/production
+repository that the current process observed absent before creating. Any wrong
+SHA fails immediately, exhaustion fails closed, and no pre-existing production
+repository receives this exception.
 
 GitHub preserves repository-login identity case-insensitively and may return a
 normalized owner spelling that differs from the reviewed constant. Evidence is
@@ -35,8 +35,8 @@ the wrapper consults the non-counting ``/rate_limit`` endpoint, honors the
 returned core reset even when its remaining counter is stale, waits once with a
 small leeway and a hard 3,700-second cap, then retries the exact request once.
 Every other existing empty repository remains fail-closed, every nonempty
-history must exactly match its sealed SHA, and no production repository has a
-recovery exception.
+history must exactly match its sealed SHA, and no pre-existing production
+repository has a recovery exception.
 """
 
 from __future__ import annotations
@@ -79,6 +79,7 @@ RATE_LIMIT_RESET_LEEWAY_SECONDS = 5
 _RECOVERABLE_EMPTY_APPROVED = False
 _CURRENT_TARGET: str | None = None
 _CURRENT_RUN_STAGE_CREATIONS: set[tuple[str, str]] = set()
+_CURRENT_RUN_PRODUCTION_CREATIONS: set[tuple[str, str]] = set()
 _RATE_LIMIT_WAIT_USED = False
 
 
@@ -220,18 +221,39 @@ def _is_exact_stage_target(full_name: str) -> bool:
     return canonical in BASE.EXPECTED_REPOSITORIES
 
 
+def _is_exact_production_target(full_name: str) -> bool:
+    owner, separator, name = full_name.partition("/")
+    if (
+        separator != "/"
+        or owner.casefold() != str(BASE.CANONICAL_ORGANIZATION).casefold()
+    ):
+        return False
+    canonical = f"{BASE.CANONICAL_ORGANIZATION}/{name}"
+    return canonical in BASE.EXPECTED_REPOSITORIES
+
+
 def _record_current_stage_creation(
     full_name: str,
     expected_sha: str,
     existing: dict[str, object] | None,
 ) -> dict[str, object] | None:
-    if existing is not None or _CURRENT_TARGET != "stage":
+    if existing is not None:
         return existing
-    if not _is_exact_stage_target(full_name):
-        fail(f"refusing to record repository outside exact staging allowlist: {full_name}")
-    _CURRENT_RUN_STAGE_CREATIONS.add(
-        _stage_creation_key(full_name, expected_sha)
-    )
+    if _CURRENT_TARGET == "stage":
+        if not _is_exact_stage_target(full_name):
+            fail(f"refusing to record repository outside exact staging allowlist: {full_name}")
+        _CURRENT_RUN_STAGE_CREATIONS.add(
+            _stage_creation_key(full_name, expected_sha)
+        )
+    elif _CURRENT_TARGET == "production":
+        if not _is_exact_production_target(full_name):
+            fail(
+                "refusing to record repository outside exact production allowlist: "
+                f"{full_name}"
+            )
+        _CURRENT_RUN_PRODUCTION_CREATIONS.add(
+            _stage_creation_key(full_name, expected_sha)
+        )
     return None
 
 
@@ -276,7 +298,7 @@ def recovery_existing_repository(
     full_name: str,
     expected_sha: str,
 ) -> dict[str, object] | None:
-    """Preserve exact repos and record only same-run allowlisted stage creation."""
+    """Preserve exact repos and record only same-run allowlisted creation."""
     recoverable_name = str(RECOVERABLE_EMPTY_STAGE["full_name"])
     recoverable_sha = str(RECOVERABLE_EMPTY_STAGE["expected_sha"])
     is_recoverable_identity = (
@@ -323,10 +345,19 @@ def _post_push_retry_kind(full_name: str, expected_sha: str) -> str | None:
     ):
         return "immutable-recovery"
 
-    if _CURRENT_TARGET == "stage":
-        key = _stage_creation_key(full_name, expected_sha)
-        if _is_exact_stage_target(full_name) and key in _CURRENT_RUN_STAGE_CREATIONS:
-            return "current-run-stage-creation"
+    key = _stage_creation_key(full_name, expected_sha)
+    if (
+        _CURRENT_TARGET == "stage"
+        and _is_exact_stage_target(full_name)
+        and key in _CURRENT_RUN_STAGE_CREATIONS
+    ):
+        return "current-run-stage-creation"
+    if (
+        _CURRENT_TARGET == "production"
+        and _is_exact_production_target(full_name)
+        and key in _CURRENT_RUN_PRODUCTION_CREATIONS
+    ):
+        return "current-run-production-creation"
     return None
 
 
@@ -335,7 +366,7 @@ def recovery_push_exact_main(
     full_name: str,
     expected_sha: str,
 ) -> None:
-    """Retry only API visibility after an approved successful staging push."""
+    """Retry only API visibility after an approved successful first push."""
     try:
         ORIGINAL_PUSH_EXACT_MAIN(local_repository, full_name, expected_sha)
         return
@@ -350,16 +381,17 @@ def recovery_push_exact_main(
     for attempt in range(1, POST_PUSH_REF_ATTEMPTS + 1):
         actual = safe_main_ref(full_name)
         if actual == expected_sha:
-            marker = (
-                "VERIFIED_DEN896_FIRST_PUSH_AFTER_BOUNDED_REF_RETRY"
-                if retry_kind == "immutable-recovery"
-                else "VERIFIED_DEN896_CURRENT_RUN_STAGE_FIRST_PUSH_AFTER_BOUNDED_REF_RETRY"
-            )
+            if retry_kind == "immutable-recovery":
+                marker = "VERIFIED_DEN896_FIRST_PUSH_AFTER_BOUNDED_REF_RETRY"
+            elif retry_kind == "current-run-stage-creation":
+                marker = "VERIFIED_DEN896_CURRENT_RUN_STAGE_FIRST_PUSH_AFTER_BOUNDED_REF_RETRY"
+            else:
+                marker = "VERIFIED_DEN896_CURRENT_RUN_PRODUCTION_FIRST_PUSH_AFTER_BOUNDED_REF_RETRY"
             print(f"{marker} {full_name} attempt={attempt}")
             return
         if actual is not None:
             fail(
-                "approved staging repository changed after first push: "
+                "approved current-run repository changed after first push: "
                 f"{actual} != {expected_sha}"
             )
         if attempt < POST_PUSH_REF_ATTEMPTS:
@@ -406,6 +438,7 @@ def main() -> int:
     args = parse_args()
     _CURRENT_TARGET = args.target
     _CURRENT_RUN_STAGE_CREATIONS.clear()
+    _CURRENT_RUN_PRODUCTION_CREATIONS.clear()
     _RATE_LIMIT_WAIT_USED = False
     BASE.api = rate_limit_aware_api
 
