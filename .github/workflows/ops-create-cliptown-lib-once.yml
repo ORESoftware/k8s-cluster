@@ -1,5 +1,5 @@
 name: Create cliptown-lib once
-run-name: Create cliptown/cliptown-lib (${{ github.sha }})
+run-name: Create cliptown/cliptown-lib via GraphQL (${{ github.sha }})
 
 on:
   push:
@@ -26,20 +26,13 @@ jobs:
       CONTROL_REPOSITORY: ORESoftware/k8s-cluster
       TARGET_REPOSITORY: cliptown/cliptown-lib
       TARGET_ORGANIZATION: cliptown
+      TARGET_ORGANIZATION_NODE_ID: O_kgDOEnJ6zg
       TARGET_NAME: cliptown-lib
-      TARGET_DESCRIPTION: Shared Rust domain library and policy core for ClipTown applications, services, and SDKs
-      HANDSHAKE_NONCE: a4689658c22d373739e6320d
-      PUBLIC_KEY_PATH: .github/tmp/cliptown-lib-a4689658c22d373739e6320d.pub.pem
-      CIPHERTEXT_PATH: .github/tmp/cliptown-lib-a4689658c22d373739e6320d.enc.b64
+      HANDSHAKE_NONCE: c380f6aa69388fdef1ba0bcd
+      PUBLIC_KEY_PATH: .github/tmp/cliptown-lib-c380f6aa69388fdef1ba0bcd.pub.pem
+      CIPHERTEXT_PATH: .github/tmp/cliptown-lib-c380f6aa69388fdef1ba0bcd.enc.b64
 
     steps:
-      - name: Check out the exact trusted workflow revision
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 1
-          persist-credentials: false
-
       - name: Receive the repository-admin credential through an encrypted handoff
         shell: bash
         env:
@@ -95,10 +88,10 @@ jobs:
           cleanup() {
             delete_file_if_present \
               "$PUBLIC_KEY_PATH" \
-              'ops: remove expired cliptown-lib handoff key'
+              'ops: remove expired cliptown-lib GraphQL handoff key'
             delete_file_if_present \
               "$CIPHERTEXT_PATH" \
-              'ops: remove consumed cliptown-lib credential ciphertext'
+              'ops: remove consumed cliptown-lib GraphQL ciphertext'
             shred -u \
               "$RUNNER_TEMP/cliptown-lib-private.pem" \
               "$RUNNER_TEMP/cliptown-lib-public.pem" \
@@ -110,10 +103,10 @@ jobs:
 
           delete_file_if_present \
             "$PUBLIC_KEY_PATH" \
-            'ops: remove stale cliptown-lib handoff key'
+            'ops: remove stale cliptown-lib GraphQL handoff key'
           delete_file_if_present \
             "$CIPHERTEXT_PATH" \
-            'ops: remove stale cliptown-lib credential ciphertext'
+            'ops: remove stale cliptown-lib GraphQL ciphertext'
 
           openssl genpkey \
             -algorithm RSA \
@@ -128,7 +121,7 @@ jobs:
           put_file \
             "$PUBLIC_KEY_PATH" \
             "$RUNNER_TEMP/cliptown-lib-public.pem" \
-            'ops: publish ephemeral cliptown-lib handoff key'
+            'ops: publish ephemeral cliptown-lib GraphQL handoff key'
           echo "HANDSHAKE_READY nonce=${HANDSHAKE_NONCE} path=${PUBLIC_KEY_PATH}"
 
           ciphertext=''
@@ -176,86 +169,47 @@ jobs:
           trap - EXIT
           echo 'HANDSHAKE_CONSUMED'
 
-      - name: Verify owner authority and create only the missing repository
+      - name: Create the exact public repository with the GraphQL mutation API
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(gh api user --jq .login)" = ORESoftware
-          test "$(
-            gh api "user/memberships/orgs/${TARGET_ORGANIZATION}" \
-              --jq '.role + ":" + .state'
-          )" = admin:active
+          preflight_query='query {
+            viewer { login }
+            organization(login: "cliptown") {
+              id
+              repository(name: "cliptown-lib") {
+                nameWithOwner
+                url
+                visibility
+              }
+            }
+          }'
+          preflight="$(gh api graphql -f query="$preflight_query")"
+          test "$(jq -r '.data.viewer.login' <<<"$preflight")" = ORESoftware
+          test "$(jq -r '.data.organization.id' <<<"$preflight")" = "$TARGET_ORGANIZATION_NODE_ID"
 
-          if gh api "repos/${TARGET_REPOSITORY}" \
-            > "$RUNNER_TEMP/target-repository.json" 2>/dev/null; then
-            test "$(jq -r .full_name "$RUNNER_TEMP/target-repository.json")" = "$TARGET_REPOSITORY"
-            test "$(jq -r .visibility "$RUNNER_TEMP/target-repository.json")" = public
+          if [[ "$(jq -r '.data.organization.repository == null' <<<"$preflight")" = false ]]; then
+            test "$(jq -r '.data.organization.repository.nameWithOwner' <<<"$preflight")" = "$TARGET_REPOSITORY"
+            test "$(jq -r '.data.organization.repository.visibility' <<<"$preflight")" = PUBLIC
             echo "PRESERVE_EXISTING_REPOSITORY ${TARGET_REPOSITORY}"
-          else
-            jq -nc \
-              --arg name "$TARGET_NAME" \
-              --arg description "$TARGET_DESCRIPTION" \
-              '{
-                name:$name,
-                description:$description,
-                private:false,
-                has_issues:true,
-                has_projects:true,
-                has_wiki:false,
-                has_downloads:true,
-                is_template:false,
-                auto_init:true
-              }' \
-              | gh api \
-                  --method POST \
-                  "orgs/${TARGET_ORGANIZATION}/repos" \
-                  --input - \
-                  > "$RUNNER_TEMP/target-repository.json"
-            test "$(jq -r .full_name "$RUNNER_TEMP/target-repository.json")" = "$TARGET_REPOSITORY"
-            test "$(jq -r .visibility "$RUNNER_TEMP/target-repository.json")" = public
-            echo "CREATED_PUBLIC_REPOSITORY ${TARGET_REPOSITORY}"
+            exit 0
           fi
 
-      - name: Apply repository settings, topics, and verify main
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          jq -nc \
-            --arg description "$TARGET_DESCRIPTION" \
-            '{
-              description:$description,
-              default_branch:"main",
-              has_issues:true,
-              has_projects:true,
-              has_wiki:false,
-              has_downloads:true,
-              delete_branch_on_merge:true,
-              allow_squash_merge:true,
-              allow_merge_commit:true,
-              allow_rebase_merge:true
-            }' \
-            | gh api \
-                --method PATCH \
-                "repos/${TARGET_REPOSITORY}" \
-                --input - \
-                >/dev/null
-
-          jq -nc '{names:["cliptown","rust","clipboard","sync","e2ee","zpkg"]}' \
-            | gh api \
-                --method PUT \
-                "repos/${TARGET_REPOSITORY}/topics" \
-                --input - \
-                >/dev/null
-
-          repository="$(gh api "repos/${TARGET_REPOSITORY}")"
-          test "$(jq -r .full_name <<<"$repository")" = "$TARGET_REPOSITORY"
-          test "$(jq -r .visibility <<<"$repository")" = public
-          test "$(jq -r .private <<<"$repository")" = false
-          test "$(jq -r .default_branch <<<"$repository")" = main
-          main_sha="$(
-            gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/main" \
-              --jq '.object.sha'
-          )"
-          [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]]
-          echo "VERIFIED_REPOSITORY https://github.com/${TARGET_REPOSITORY}"
-          echo "VERIFIED_MAIN ${main_sha}"
+          mutation='mutation {
+            createRepository(input: {
+              name: "cliptown-lib"
+              ownerId: "O_kgDOEnJ6zg"
+              visibility: PUBLIC
+            }) {
+              repository {
+                nameWithOwner
+                url
+                visibility
+              }
+            }
+          }'
+          created="$(gh api graphql -f query="$mutation")"
+          test "$(jq -r '.data.createRepository.repository.nameWithOwner' <<<"$created")" = "$TARGET_REPOSITORY"
+          test "$(jq -r '.data.createRepository.repository.visibility' <<<"$created")" = PUBLIC
+          echo "CREATED_PUBLIC_REPOSITORY ${TARGET_REPOSITORY}"
+          echo "VERIFIED_REPOSITORY $(jq -r '.data.createRepository.repository.url' <<<"$created")"
