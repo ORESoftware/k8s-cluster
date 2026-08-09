@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/zed-bootstrap-contract.yml"
       - "catalog/applications.json"
+      - "docs/zed-pkg-account-rollout.md"
       - "remote/argocd/apps/zed.applications.yaml"
       - "remote/argocd/projects/zed*.yaml"
       - "remote/argocd/clusters/aws/**"
@@ -17,6 +18,7 @@ on:
     paths:
       - ".github/workflows/zed-bootstrap-contract.yml"
       - "catalog/applications.json"
+      - "docs/zed-pkg-account-rollout.md"
       - "remote/argocd/apps/zed.applications.yaml"
       - "remote/argocd/projects/zed*.yaml"
       - "remote/argocd/clusters/aws/**"
@@ -53,6 +55,75 @@ jobs:
 
       - name: Run Zed bootstrap contract tests
         run: node --test remote/tests/general/zed-bootstrap-contract.test.mjs
+
+      - name: Extract the exact account-registry source pin
+        id: account-candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision="$(node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const document = readFileSync("remote/argocd/apps/zed.applications.yaml", "utf8");
+          const marker = "name: dd-zed-account-registry-candidate";
+          const markerIndex = document.indexOf(marker);
+          if (markerIndex === -1) throw new Error("candidate Application is missing");
+          const nextSeparator = document.indexOf("\n---\n", markerIndex);
+          const section = document.slice(
+            markerIndex,
+            nextSeparator === -1 ? document.length : nextSeparator
+          );
+          const match = section.match(/targetRevision:\s+([0-9a-f]{40})\b/);
+          if (!match) throw new Error("candidate targetRevision must be an exact 40-hex commit");
+          process.stdout.write(match[1]);
+          NODE
+          )"
+          test "${#revision}" -eq 40
+          echo "revision=${revision}" >>"$GITHUB_OUTPUT"
+
+      - name: Check out the exact reviewed zed-infra candidate
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: zed-pkg/zed-infra
+          ref: ${{ steps.account-candidate.outputs.revision }}
+          path: .candidate/zed-infra
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Render and certify the exact strict-tenant overlay
+        shell: bash
+        env:
+          EXPECTED_REVISION: ${{ steps.account-candidate.outputs.revision }}
+        run: |
+          set -euo pipefail
+          test "$(git -C .candidate/zed-infra rev-parse HEAD)" = "$EXPECTED_REVISION"
+          kubectl kustomize .candidate/zed-infra/k8s/overlays/k8s-cluster \
+            >/tmp/zed-account-registry-candidate.yaml
+
+          rendered=/tmp/zed-account-registry-candidate.yaml
+          if grep -q '^kind: Namespace$' "$rendered"; then
+            echo 'The strict tenant overlay must not create a Namespace.' >&2
+            exit 1
+          fi
+          if grep -q '^kind: Secret$' "$rendered"; then
+            echo 'Plain Secret manifests are prohibited.' >&2
+            exit 1
+          fi
+          if grep -q 'namespace: zed-pkg' "$rendered"; then
+            echo 'The candidate must target the existing zed namespace.' >&2
+            exit 1
+          fi
+          grep -q 'namespace: zed' "$rendered"
+          grep -q 'host: app.zpkg.net' "$rendered"
+          grep -q 'host: api.zpkg.net' "$rendered"
+          grep -q 'argocd.argoproj.io/hook: PreSync' "$rendered"
+          grep -q 'AUTO_MIGRATE: "false"' "$rendered"
+          grep -q 'replace-with-git-sha' "$rendered"
+          test "$(grep -c '^kind: Job$' "$rendered")" -eq 1
+          test "$(grep -c '^kind: Deployment$' "$rendered")" -eq 2
+          test "$(grep -c 'image: ghcr.io/zed-pkg/zed-api-server.rs:' "$rendered")" -eq 2
+          api_images="$(grep 'image: ghcr.io/zed-pkg/zed-api-server.rs:' "$rendered" | sed 's/^[[:space:]]*//' | sort -u)"
+          test "$(printf '%s\n' "$api_images" | grep -c .)" -eq 1
 
       - name: Render both cluster roots
         shell: bash
