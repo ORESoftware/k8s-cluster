@@ -2,7 +2,7 @@ name: GHCR manifest existence contract
 
 on:
   pull_request:
-    branches: [dev, agent/den-845-artifact-digest-reconciliation]
+    branches: [dev]
     paths:
       - '.github/workflows/ghcr-manifest-existence.yml'
       - 'scripts/ci/verify_ghcr_manifest_digests.py'
