@@ -1,0 +1,238 @@
+#!/usr/bin/env python3
+"""Mint/revoke a short-lived Zed registry token through a protected SSM host.
+
+Minting generates an ephemeral RSA key on the Actions runner. The protected host
+executes `zed-api-server create-token` inside the live registry pod, encrypts the
+one-time plaintext to that public key, and returns only ciphertext over SSM.
+The runner decrypts it directly into a mode-0600 file. SSM and GitHub never
+receive the plaintext registry token.
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import os
+import re
+import shlex
+import stat
+import subprocess
+import tempfile
+import time
+from pathlib import Path
+
+TERMINAL = {"Success", "Failed", "Cancelled", "TimedOut", "Cancelling"}
+TOKEN_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,120}$")
+
+
+def run(argv: list[str], *, capture: bool = True) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        argv,
+        text=True,
+        check=True,
+        stdout=subprocess.PIPE if capture else None,
+        stderr=subprocess.PIPE if capture else None,
+    )
+
+
+def send_ssm(instance_id: str, region: str, command: str) -> dict:
+    with tempfile.TemporaryDirectory(prefix="den2050-ssm-") as tmp:
+        params = Path(tmp) / "parameters.json"
+        params.write_text(json.dumps({"commands": [command]}), encoding="utf-8")
+        command_id = run(
+            [
+                "aws",
+                "ssm",
+                "send-command",
+                "--region",
+                region,
+                "--instance-ids",
+                instance_id,
+                "--document-name",
+                "AWS-RunShellScript",
+                "--comment",
+                "DEN-2050 bounded Zed registry token operation",
+                "--parameters",
+                f"file://{params}",
+                "--query",
+                "Command.CommandId",
+                "--output",
+                "text",
+            ]
+        ).stdout.strip()
+        if not command_id:
+            raise RuntimeError("SSM did not return a command id")
+
+        status = "Pending"
+        for _ in range(120):
+            result = subprocess.run(
+                [
+                    "aws",
+                    "ssm",
+                    "get-command-invocation",
+                    "--region",
+                    region,
+                    "--command-id",
+                    command_id,
+                    "--instance-id",
+                    instance_id,
+                    "--query",
+                    "Status",
+                    "--output",
+                    "text",
+                ],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+            status = result.stdout.strip() if result.returncode == 0 else "Pending"
+            if status in TERMINAL:
+                break
+            time.sleep(2)
+        if status != "Success":
+            raise RuntimeError(f"SSM registry-token command ended with status {status}")
+
+        invocation = json.loads(
+            run(
+                [
+                    "aws",
+                    "ssm",
+                    "get-command-invocation",
+                    "--region",
+                    region,
+                    "--command-id",
+                    command_id,
+                    "--instance-id",
+                    instance_id,
+                    "--query",
+                    "{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}",
+                    "--output",
+                    "json",
+                ]
+            ).stdout
+        )
+        if invocation.get("Status") != "Success":
+            raise RuntimeError("SSM invocation did not report Success")
+        return invocation
+
+
+def mint(instance_id: str, region: str, token_name: str, token_file: Path) -> None:
+    if not TOKEN_NAME_RE.fullmatch(token_name):
+        raise RuntimeError("invalid bounded token name")
+    with tempfile.TemporaryDirectory(prefix="den2050-zed-token-") as tmp:
+        root = Path(tmp)
+        private_key = root / "private.pem"
+        public_key = root / "public.pem"
+        encrypted = root / "token.bin"
+        run(
+            [
+                "openssl",
+                "genpkey",
+                "-algorithm",
+                "RSA",
+                "-pkeyopt",
+                "rsa_keygen_bits:4096",
+                "-out",
+                str(private_key),
+            ],
+            capture=False,
+        )
+        run(
+            ["openssl", "pkey", "-in", str(private_key), "-pubout", "-out", str(public_key)],
+            capture=False,
+        )
+        public_b64 = base64.b64encode(public_key.read_bytes()).decode("ascii")
+        q_name = shlex.quote(token_name)
+        q_key = shlex.quote(public_b64)
+        remote = f"""set -euo pipefail
+umask 077
+work=$(mktemp -d /tmp/den2050-zed-token.XXXXXX)
+cleanup() {{ rm -rf \"$work\"; }}
+trap cleanup EXIT
+for command in kubectl openssl base64 tail grep; do command -v \"$command\" >/dev/null; done
+printf '%s' {q_key} | base64 -d > \"$work/pub.pem\"
+pod=$(kubectl -n zed get pods -l app=dd-zed-api-server -o jsonpath='{{.items[0].metadata.name}}')
+test -n \"$pod\"
+created=$(kubectl -n zed exec \"$pod\" -c zed-api-server -- zed-api-server create-token --name {q_name} --expires-in-days 1)
+token=$(printf '%s\n' \"$created\" | tail -n 1)
+printf '%s' \"$token\" | grep -Eq '^zpkg_[A-Za-z0-9]+$'
+printf '%s' \"$token\" > \"$work/token\"
+openssl pkeyutl -encrypt -pubin -inkey \"$work/pub.pem\" -in \"$work/token\" \
+  -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256 \
+  -out \"$work/token.bin\"
+printf 'DEN2050_ZED_TOKEN_CIPHERTEXT=%s\n' \"$(base64 -w0 \"$work/token.bin\")\"
+unset token created
+"""
+        invocation = send_ssm(instance_id, region, remote)
+        stdout = invocation.get("Stdout") or ""
+        matches = [
+            line.split("=", 1)[1]
+            for line in stdout.splitlines()
+            if line.startswith("DEN2050_ZED_TOKEN_CIPHERTEXT=")
+        ]
+        if len(matches) != 1:
+            raise RuntimeError(f"expected exactly one encrypted Zed token, got {len(matches)}")
+        encrypted.write_bytes(base64.b64decode(matches[0], validate=True))
+        decrypted = run(
+            [
+                "openssl",
+                "pkeyutl",
+                "-decrypt",
+                "-inkey",
+                str(private_key),
+                "-in",
+                str(encrypted),
+                "-pkeyopt",
+                "rsa_padding_mode:oaep",
+                "-pkeyopt",
+                "rsa_oaep_md:sha256",
+                "-pkeyopt",
+                "rsa_mgf1_md:sha256",
+            ]
+        ).stdout.strip()
+        if not re.fullmatch(r"zpkg_[A-Za-z0-9]+", decrypted):
+            raise RuntimeError("decrypted Zed registry token has an invalid shape")
+        token_file.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(token_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.write(fd, decrypted.encode("utf-8"))
+        finally:
+            os.close(fd)
+        token_file.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    print(f"DEN2050_ZED_TOKEN_MINTED name={token_name}")
+
+
+def revoke(instance_id: str, region: str, token_name: str) -> None:
+    if not TOKEN_NAME_RE.fullmatch(token_name):
+        raise RuntimeError("invalid bounded token name")
+    q_name = shlex.quote(token_name)
+    remote = f"""set -euo pipefail
+pod=$(kubectl -n zed get pods -l app=dd-zed-api-server -o jsonpath='{{.items[0].metadata.name}}')
+test -n \"$pod\"
+kubectl -n zed exec \"$pod\" -c zed-api-server -- zed-api-server revoke-token --name {q_name} >/dev/null
+printf 'DEN2050_ZED_TOKEN_REVOKED name=%s\n' {q_name}
+"""
+    send_ssm(instance_id, region, remote)
+    print(f"DEN2050_ZED_TOKEN_REVOKED name={token_name}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="command", required=True)
+    mint_parser = sub.add_parser("mint")
+    revoke_parser = sub.add_parser("revoke")
+    for target in (mint_parser, revoke_parser):
+        target.add_argument("--instance-id", required=True)
+        target.add_argument("--region", required=True)
+        target.add_argument("--token-name", required=True)
+    mint_parser.add_argument("--token-file", type=Path, required=True)
+    args = parser.parse_args()
+    if args.command == "mint":
+        mint(args.instance_id, args.region, args.token_name, args.token_file)
+    else:
+        revoke(args.instance_id, args.region, args.token_name)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
