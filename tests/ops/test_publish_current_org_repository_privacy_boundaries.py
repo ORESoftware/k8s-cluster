@@ -102,11 +102,7 @@ class RepositoryPrivacyBoundaryTests(unittest.TestCase):
         )
 
         with (
-            mock.patch.object(
-                publisher.base,
-                "fetch_file",
-                return_value=existing,
-            ),
+            mock.patch.object(publisher.base, "fetch_file") as fetch_file,
             mock.patch.object(publisher, "write_file") as write_file,
         ):
             module.run_plan_with_exact_private_references(
@@ -116,8 +112,79 @@ class RepositoryPrivacyBoundaryTests(unittest.TestCase):
             )
 
         write_file.assert_not_called()
+        fetch_file.assert_not_called()
         self.assertTrue(result["verified"])
         self.assertEqual(["README.md"], result["unchanged_files"])
+
+    def test_changed_file_is_re_read_after_write(self) -> None:
+        organization = "example-internal"
+        desired = "managed relationship content\n"
+        observed = mock.Mock(content=desired)
+        references = module.private_references(organization, set())
+        result = {
+            "changed_files": [],
+            "unchanged_files": [],
+            "verified": False,
+        }
+        plan = (
+            organization,
+            "main",
+            {"README.md": (desired, None)},
+            references,
+            result,
+        )
+
+        with (
+            mock.patch.object(
+                publisher.base,
+                "fetch_file",
+                return_value=observed,
+            ) as fetch_file,
+            mock.patch.object(publisher, "write_file") as write_file,
+        ):
+            module.run_plan_with_exact_private_references(
+                object(),
+                plan,
+                True,
+            )
+
+        write_file.assert_called_once()
+        fetch_file.assert_called_once()
+        self.assertTrue(result["verified"])
+        self.assertEqual(["README.md"], result["changed_files"])
+
+    def test_primary_rate_limit_waits_until_reset(self) -> None:
+        headers = {
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": "1300",
+        }
+        with mock.patch.object(module.time, "time", return_value=1000.0):
+            delay = module.retry_delay_with_primary_rate_limit(headers, 2)
+        self.assertEqual(305.0, delay)
+        self.assertIs(
+            module.governance.GitHubApi._retry_delay,
+            module.retry_delay_with_primary_rate_limit,
+        )
+
+    def test_primary_rate_limit_wait_is_bounded(self) -> None:
+        headers = {
+            "x-ratelimit-remaining": "0",
+            "x-ratelimit-reset": "999999",
+        }
+        with mock.patch.object(module.time, "time", return_value=1000.0):
+            delay = module.retry_delay_with_primary_rate_limit(headers, 1)
+        self.assertEqual(module._MAX_PRIMARY_RATE_LIMIT_DELAY, delay)
+
+    def test_non_primary_retry_uses_hardened_fallback(self) -> None:
+        headers = {"Retry-After": "7"}
+        with mock.patch.object(
+            module,
+            "_ORIGINAL_RETRY_DELAY",
+            return_value=7.0,
+        ) as fallback:
+            delay = module.retry_delay_with_primary_rate_limit(headers, 3)
+        self.assertEqual(7.0, delay)
+        fallback.assert_called_once_with(headers, 3)
 
     def test_terminal_private_reference_still_fails(self) -> None:
         organization = "example-internal"
