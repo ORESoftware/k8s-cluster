@@ -40,33 +40,25 @@ jobs:
           encrypted_token="$RUNNER_TEMP/cliptown-lib-core-token.enc"
           decrypted_token="$RUNNER_TEMP/cliptown-lib-core-token.txt"
           askpass="$RUNNER_TEMP/cliptown-lib-core-askpass.sh"
-
           control_api="https://api.github.com/repos/$GITHUB_REPOSITORY"
+
           control_call() {
-            local method="$1"
-            local url="$2"
-            local data="${3:-}"
+            local method="$1" url="$2" data="${3:-}"
+            local args=(
+              --fail-with-body --silent --show-error
+              --request "$method" --url "$url"
+              --header 'Accept: application/vnd.github+json'
+              --header "Authorization: Bearer $CONTROL_TOKEN"
+              --header 'X-GitHub-Api-Version: 2022-11-28'
+            )
             if [[ -n "$data" ]]; then
-              curl --fail-with-body --silent --show-error \
-                --request "$method" --url "$url" \
-                --header 'Accept: application/vnd.github+json' \
-                --header "Authorization: Bearer $CONTROL_TOKEN" \
-                --header 'X-GitHub-Api-Version: 2022-11-28' \
-                --header 'Content-Type: application/json' \
-                --data-binary "$data"
-            else
-              curl --fail-with-body --silent --show-error \
-                --request "$method" --url "$url" \
-                --header 'Accept: application/vnd.github+json' \
-                --header "Authorization: Bearer $CONTROL_TOKEN" \
-                --header 'X-GitHub-Api-Version: 2022-11-28'
+              args+=(--header 'Content-Type: application/json' --data-binary "$data")
             fi
+            curl "${args[@]}"
           }
 
           control_delete() {
-            local path="$1"
-            local message="$2"
-            local metadata sha payload
+            local path="$1" message="$2" metadata sha payload
             if metadata="$(control_call GET "$control_api/contents/$path?ref=main" 2>/dev/null)"; then
               sha="$(jq -r '.sha // empty' <<<"$metadata")"
               if [[ -n "$sha" ]]; then
@@ -78,10 +70,7 @@ jobs:
           }
 
           control_put() {
-            local path="$1"
-            local content="$2"
-            local message="$3"
-            local payload
+            local path="$1" content="$2" message="$3" payload
             payload="$(jq -nc --arg message "$message" --arg content "$content" \
               '{message:$message,content:$content,branch:"main"}')"
             control_call PUT "$control_api/contents/$path" "$payload" >/dev/null
@@ -91,17 +80,13 @@ jobs:
             set +e
             shred -u "$private_key" "$encrypted_token" "$decrypted_token" "$askpass" \
               2>/dev/null || rm -f "$private_key" "$encrypted_token" "$decrypted_token" "$askpass"
-            control_delete "$CIPHERTEXT_PATH" \
-              'ops: remove encrypted cliptown-lib-core credential'
-            control_delete "$KEY_PATH" \
-              'ops: remove ephemeral cliptown-lib-core public key'
+            control_delete "$CIPHERTEXT_PATH" 'ops: remove encrypted cliptown-lib-core credential'
+            control_delete "$KEY_PATH" 'ops: remove ephemeral cliptown-lib-core public key'
           }
           trap cleanup EXIT
 
-          control_delete "$CIPHERTEXT_PATH" \
-            'ops: clear stale encrypted cliptown-lib-core credential'
-          control_delete "$KEY_PATH" \
-            'ops: clear stale cliptown-lib-core public key'
+          control_delete "$CIPHERTEXT_PATH" 'ops: clear stale encrypted cliptown-lib-core credential'
+          control_delete "$KEY_PATH" 'ops: clear stale cliptown-lib-core public key'
 
           openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 \
             -out "$private_key" >/dev/null 2>&1
@@ -120,15 +105,12 @@ jobs:
           done
           [[ -n "$ciphertext_file_b64" ]]
 
-          printf '%s' "$ciphertext_file_b64" | base64 -d | tr -d '\r\n' | \
-            base64 -d > "$encrypted_token"
+          printf '%s' "$ciphertext_file_b64" | base64 -d | tr -d '\r\n' | base64 -d > "$encrypted_token"
           openssl pkeyutl -decrypt \
-            -inkey "$private_key" \
-            -in "$encrypted_token" \
+            -inkey "$private_key" -in "$encrypted_token" -out "$decrypted_token" \
             -pkeyopt rsa_padding_mode:oaep \
             -pkeyopt rsa_oaep_md:sha256 \
-            -pkeyopt rsa_mgf1_md:sha256 \
-            -out "$decrypted_token"
+            -pkeyopt rsa_mgf1_md:sha256
 
           GH_TOKEN="$(tr -d '\r\n' < "$decrypted_token")"
           [[ ${#GH_TOKEN} -ge 20 ]]
@@ -137,14 +119,11 @@ jobs:
           shred -u "$decrypted_token" 2>/dev/null || rm -f "$decrypted_token"
 
           graphql() {
-            local query="$1"
-            local variables="$2"
-            local response
+            local query="$1" variables="$2" response
             response="$(jq -nc --arg query "$query" --argjson variables "$variables" \
               '{query:$query,variables:$variables}' | \
               curl --fail-with-body --silent --show-error \
-                --request POST \
-                --url https://api.github.com/graphql \
+                --request POST --url https://api.github.com/graphql \
                 --header 'Accept: application/vnd.github+json' \
                 --header "Authorization: Bearer $GH_TOKEN" \
                 --header 'Content-Type: application/json' \
@@ -164,9 +143,7 @@ jobs:
             remaining="$(jq -r '.rateLimit.remaining' <<<"$preflight")"
             [[ "$remaining" -ge 20 ]] && break
             reset_at="$(jq -r '.rateLimit.resetAt' <<<"$preflight")"
-            reset_epoch="$(date -u -d "$reset_at" +%s)"
-            now_epoch="$(date -u +%s)"
-            delay=$((reset_epoch - now_epoch + 3))
+            delay=$(( $(date -u -d "$reset_at" +%s) - $(date -u +%s) + 3 ))
             (( delay < 5 )) && delay=5
             (( delay > 300 )) && delay=300
             sleep "$delay"
@@ -175,9 +152,9 @@ jobs:
           [[ "$(jq -r '.organization.viewerCanAdminister' <<<"$preflight")" = true ]]
           [[ "$remaining" -ge 20 ]]
 
-          inspect_query='query Inspect($owner:String!,$name:String!){repository(owner:$owner,name:$name){id nameWithOwner isPrivate isArchived defaultBranchRef{name target{oid}}}}'
+          inspect_query='query Inspect($owner:String!,$name:String!){organization(login:$owner){repository(name:$name){id nameWithOwner isPrivate isArchived defaultBranchRef{name target{oid}}}}}'
           inspect_vars="$(jq -nc --arg owner "$TARGET_OWNER" --arg name "$TARGET_NAME" '{owner:$owner,name:$name}')"
-          repository="$(graphql "$inspect_query" "$inspect_vars" | jq -c '.repository')"
+          repository="$(graphql "$inspect_query" "$inspect_vars" | jq -c '.organization.repository')"
           status=preserved_existing
 
           if [[ "$repository" = null ]]; then
@@ -209,7 +186,6 @@ jobs:
           if ! git ls-remote --exit-code "https://github.com/$TARGET_FULL_NAME.git" \
             refs/heads/main >/dev/null 2>&1; then
             seed="$RUNNER_TEMP/cliptown-lib-core-seed"
-            rm -rf "$seed"
             mkdir -p "$seed"
             git -C "$seed" init --initial-branch=main
             git -C "$seed" config user.name 'ClipTown Publisher'
@@ -221,9 +197,13 @@ jobs:
             git -C "$seed" -c credential.helper= push origin refs/heads/main:refs/heads/main
           fi
 
-          repository="$(graphql "$inspect_query" "$inspect_vars" | jq -c '.repository')"
+          for _ in $(seq 1 30); do
+            repository="$(graphql "$inspect_query" "$inspect_vars" | jq -c '.organization.repository')"
+            head="$(jq -r '.defaultBranchRef.target.oid // empty' <<<"$repository")"
+            [[ ${#head} -eq 40 ]] && break
+            sleep 2
+          done
           [[ "$(jq -r '.defaultBranchRef.name' <<<"$repository")" = main ]]
-          head="$(jq -r '.defaultBranchRef.target.oid' <<<"$repository")"
           [[ ${#head} -eq 40 ]]
 
           topics_mutation='mutation Topics($input:ReplaceRepositoryTopicsInput!){replaceRepositoryTopics(input:$input){repository{id}}}'
