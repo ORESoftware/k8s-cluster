@@ -12,7 +12,10 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / "scripts/ops/run_streempilot_test_promotion_with_empty_repo_recovery.py"
 os.environ.setdefault("GH_TOKEN", "unit-test-installation-token")
-SPEC = importlib.util.spec_from_file_location("den896_empty_repo_recovery", MODULE_PATH)
+SPEC = importlib.util.spec_from_file_location(
+    "den896_empty_repo_recovery",
+    MODULE_PATH,
+)
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError(f"unable to load {MODULE_PATH}")
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -24,14 +27,14 @@ class EmptyRepositoryRecoveryTests(unittest.TestCase):
     def setUp(self) -> None:
         MODULE._RECOVERABLE_EMPTY_APPROVED = False
 
-    def metadata(self) -> dict[str, object]:
+    def metadata(self, *, size: int = 0) -> dict[str, object]:
         return {
             "id": MODULE.RECOVERABLE_EMPTY_STAGE["repository_id"],
             "full_name": MODULE.RECOVERABLE_EMPTY_STAGE["full_name"],
             "private": True,
             "visibility": "private",
             "default_branch": "main",
-            "size": 0,
+            "size": size,
             "created_at": MODULE.RECOVERABLE_EMPTY_STAGE["created_at"],
         }
 
@@ -112,6 +115,25 @@ class EmptyRepositoryRecoveryTests(unittest.TestCase):
                 metadata,
             )
 
+    def test_recovery_existing_repository_rejects_content_without_visible_main(self) -> None:
+        full_name = str(MODULE.RECOVERABLE_EMPTY_STAGE["full_name"])
+        expected = str(MODULE.RECOVERABLE_EMPTY_STAGE["expected_sha"])
+        MODULE._RECOVERABLE_EMPTY_APPROVED = True
+
+        with (
+            mock.patch.object(
+                MODULE.BASE,
+                "api",
+                return_value=(200, self.metadata(size=8)),
+            ),
+            mock.patch.object(MODULE, "safe_main_ref", return_value=None),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "content without the exact sealed main ref",
+            ):
+                MODULE.recovery_existing_repository(full_name, expected)
+
     def test_post_push_retry_accepts_eventually_visible_exact_ref(self) -> None:
         full_name = str(MODULE.RECOVERABLE_EMPTY_STAGE["full_name"])
         expected = str(MODULE.RECOVERABLE_EMPTY_STAGE["expected_sha"])
@@ -153,11 +175,19 @@ class EmptyRepositoryRecoveryTests(unittest.TestCase):
                 "ORIGINAL_PUSH_EXACT_MAIN",
                 side_effect=initial_failure,
             ),
-            mock.patch.object(MODULE, "safe_main_ref", return_value="f" * 40) as ref,
+            mock.patch.object(
+                MODULE,
+                "safe_main_ref",
+                return_value="f" * 40,
+            ) as ref,
             mock.patch.object(MODULE.time, "sleep") as sleep,
         ):
             with self.assertRaisesRegex(RuntimeError, "changed after first push"):
-                MODULE.recovery_push_exact_main(Path("/tmp/sealed"), full_name, expected)
+                MODULE.recovery_push_exact_main(
+                    Path("/tmp/sealed"),
+                    full_name,
+                    expected,
+                )
 
         ref.assert_called_once_with(full_name)
         sleep.assert_not_called()
@@ -181,7 +211,11 @@ class EmptyRepositoryRecoveryTests(unittest.TestCase):
             mock.patch.object(MODULE.time, "sleep") as sleep,
         ):
             with self.assertRaisesRegex(RuntimeError, "after 3 bounded checks"):
-                MODULE.recovery_push_exact_main(Path("/tmp/sealed"), full_name, expected)
+                MODULE.recovery_push_exact_main(
+                    Path("/tmp/sealed"),
+                    full_name,
+                    expected,
+                )
 
         self.assertEqual(ref.call_count, 3)
         self.assertEqual(sleep.call_count, 2)
@@ -203,7 +237,11 @@ class EmptyRepositoryRecoveryTests(unittest.TestCase):
             mock.patch.object(MODULE, "safe_main_ref") as ref,
         ):
             with self.assertRaisesRegex(RuntimeError, "remote verification failed"):
-                MODULE.recovery_push_exact_main(Path("/tmp/sealed"), other, expected)
+                MODULE.recovery_push_exact_main(
+                    Path("/tmp/sealed"),
+                    other,
+                    expected,
+                )
         ref.assert_not_called()
 
         full_name = str(MODULE.RECOVERABLE_EMPTY_STAGE["full_name"])
@@ -250,15 +288,58 @@ class EmptyRepositoryRecoveryTests(unittest.TestCase):
 
         self.assertFalse(MODULE._RECOVERABLE_EMPTY_APPROVED)
 
+    def test_recovery_preserves_exact_nonempty_main_as_idempotent_replay(self) -> None:
+        full_name = str(MODULE.RECOVERABLE_EMPTY_STAGE["full_name"])
+        expected = str(MODULE.RECOVERABLE_EMPTY_STAGE["expected_sha"])
+
+        with (
+            mock.patch.object(
+                MODULE.BASE,
+                "api",
+                return_value=(200, self.metadata(size=8)),
+            ),
+            mock.patch.object(MODULE, "safe_main_ref", return_value=expected),
+        ):
+            self.assertEqual(
+                MODULE.prepare_failed_empty_stage_repository(),
+                "already-exact",
+            )
+
+        self.assertFalse(MODULE._RECOVERABLE_EMPTY_APPROVED)
+
+    def test_recovery_rejects_nonzero_size_without_exact_main(self) -> None:
+        with (
+            mock.patch.object(
+                MODULE.BASE,
+                "api",
+                return_value=(200, self.metadata(size=8)),
+            ),
+            mock.patch.object(MODULE, "safe_main_ref", return_value=None),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "content without the exact sealed main ref",
+            ):
+                MODULE.prepare_failed_empty_stage_repository()
+
+        self.assertFalse(MODULE._RECOVERABLE_EMPTY_APPROVED)
+
     def test_recovery_rejects_any_other_nonempty_main(self) -> None:
         with (
-            mock.patch.object(MODULE.BASE, "api", return_value=(200, self.metadata())),
+            mock.patch.object(MODULE.BASE, "api", return_value=(200, self.metadata(size=8))),
             mock.patch.object(MODULE, "safe_main_ref", return_value="f" * 40),
         ):
             with self.assertRaisesRegex(RuntimeError, "refusing to initialize non-empty"):
                 MODULE.prepare_failed_empty_stage_repository()
 
         self.assertFalse(MODULE._RECOVERABLE_EMPTY_APPROVED)
+
+    def test_recovery_rejects_invalid_size_metadata(self) -> None:
+        metadata = self.metadata()
+        metadata["size"] = "8"
+        with mock.patch.object(MODULE.BASE, "api", return_value=(200, metadata)):
+            with self.assertRaisesRegex(RuntimeError, "size is invalid"):
+                MODULE.prepare_failed_empty_stage_repository()
 
     def test_source_hardcodes_only_test_org_recovery_and_has_no_delete_force_or_public_path(self) -> None:
         source = MODULE_PATH.read_text(encoding="utf-8")

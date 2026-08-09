@@ -1,15 +1,24 @@
 #!/usr/bin/env python3
-"""Run the DEN-896 test-first promotion with one bounded empty-repo recovery.
+"""Run the DEN-896 test-first promotion with one bounded staging recovery.
 
-GitHub returns HTTP 409 (`Git Repository is empty.`) for a newly created
+GitHub returns HTTP 409 (``Git Repository is empty.``) for a newly created
 repository before its first ref exists. The reviewed publisher treated that as
 an unexpected API failure and stopped after creating the first staging repo.
 
-The failed run left one known private, size-zero repository in StreemPilot-test.
+The failed run originally left one known private, size-zero repository in
+StreemPilot-test. A later bounded attempt may already have installed that
+repository's exact sealed ``main`` before a downstream check stopped. This
+wrapper therefore permits only two states for that immutable repository
+identity:
+
+* no ``main`` ref and repository size zero, which may receive its first sealed
+  history in place; or
+* the exact expected sealed ``main`` SHA, which is treated as an idempotent
+  replay regardless of GitHub's derived repository-size value.
+
 The supplied publication credential can create and push repositories but does
 not have GitHub's separate delete-repository permission. Deletion is neither
-needed nor desirable: this wrapper permits only that recorded empty staging
-repository to receive its first exact sealed `main` history in place.
+needed nor desirable.
 
 The first successful push can also race GitHub's ref API visibility. For that
 same exact staging identity only, this wrapper permits a small bounded sequence
@@ -32,7 +41,10 @@ import time
 
 
 MODULE_PATH = Path(__file__).with_name("publish_streempilot_test_then_promote.py")
-SPEC = importlib.util.spec_from_file_location("streempilot_test_then_promote_base", MODULE_PATH)
+SPEC = importlib.util.spec_from_file_location(
+    "streempilot_test_then_promote_base",
+    MODULE_PATH,
+)
 if SPEC is None or SPEC.loader is None:
     raise SystemExit(f"unable to load {MODULE_PATH}")
 BASE = importlib.util.module_from_spec(SPEC)
@@ -76,6 +88,13 @@ def safe_main_ref(full_name: str) -> str | None:
         raise
 
 
+def _repository_size(payload: dict[str, object]) -> int:
+    size = payload.get("size")
+    if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+        fail(f"recoverable test repository size is invalid: {size!r}")
+    return size
+
+
 def _validate_recovery_metadata(payload: object) -> dict[str, object]:
     expected = RECOVERABLE_EMPTY_STAGE
     if not isinstance(payload, dict):
@@ -97,13 +116,21 @@ def _validate_recovery_metadata(payload: object) -> dict[str, object]:
         fail("recoverable test repository is not private")
     if payload.get("default_branch") != "main":
         fail("recoverable test repository default branch changed")
-    if payload.get("size") != 0:
-        fail("recoverable test repository is no longer empty by repository size")
+    _repository_size(payload)
     return payload
 
 
+def _require_empty_without_main(metadata: dict[str, object]) -> None:
+    size = _repository_size(metadata)
+    if size != 0:
+        fail(
+            "recoverable test repository has content without the exact sealed "
+            f"main ref: size={size}"
+        )
+
+
 def prepare_failed_empty_stage_repository() -> str:
-    """Approve in-place initialization only for the exact failed-run test repo."""
+    """Approve an exact empty repo or preserve its already-exact sealed main."""
     global _RECOVERABLE_EMPTY_APPROVED
     _RECOVERABLE_EMPTY_APPROVED = False
 
@@ -118,6 +145,11 @@ def prepare_failed_empty_stage_repository() -> str:
     actual = safe_main_ref(full_name)
     expected_sha = str(RECOVERABLE_EMPTY_STAGE["expected_sha"])
     if actual == expected_sha:
+        print(
+            "VERIFIED_DEN896_RECOVERABLE_TEST_REPOSITORY_ALREADY_EXACT "
+            f"{metadata['full_name']} id={metadata['id']} "
+            f"size={_repository_size(metadata)} sha={actual}"
+        )
         return "already-exact"
     if actual is not None:
         fail(
@@ -125,6 +157,7 @@ def prepare_failed_empty_stage_repository() -> str:
             f"{actual} != {expected_sha}"
         )
 
+    _require_empty_without_main(metadata)
     _RECOVERABLE_EMPTY_APPROVED = True
     print(
         "APPROVED_DEN896_EMPTY_TEST_REPOSITORY_INITIALIZATION "
@@ -161,6 +194,8 @@ def recovery_existing_repository(
             "approved empty test repository changed before initialization: "
             f"{actual} != {expected_sha}"
         )
+    _require_empty_without_main(metadata)
+
     # Returning None intentionally enters the reviewed create/reconcile path.
     # ensure_private_repository re-reads the exact identity, returns the already
     # private repository without mutation, then push_exact_main installs its
@@ -235,7 +270,9 @@ def main() -> int:
         args.target,
         args.evidence_out.resolve(),
         stage_evidence=(
-            args.stage_evidence.resolve() if args.stage_evidence is not None else None
+            args.stage_evidence.resolve()
+            if args.stage_evidence is not None
+            else None
         ),
     )
     return 0
