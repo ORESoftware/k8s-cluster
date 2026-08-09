@@ -41,6 +41,10 @@ import publish_org_repository_relationships as publisher  # noqa: E402
 
 publisher.ORGANIZATIONS = ORGANIZATIONS
 _ORIGINAL_BUILD_PLAN = publisher.build_plan
+PRIVATE_REFERENCE_REDACTION = (
+    "Private repository details are intentionally withheld from this public "
+    "document."
+)
 
 
 def is_private(repository: dict[str, Any]) -> bool:
@@ -64,6 +68,8 @@ def private_reference_tokens(
         quoted_full_name = json.dumps(full_name)
         tokens.update(
             {
+                full_name,
+                f"https://github.com/{full_name}",
                 f'"name": {quoted_name}',
                 f'"full_name": {quoted_full_name}',
                 f'"from": {quoted_full_name}',
@@ -73,6 +79,38 @@ def private_reference_tokens(
             }
         )
     return tokens
+
+
+def redact_existing_private_reference_lines(
+    content: str | None,
+    tokens: set[str],
+) -> str | None:
+    """Replace only existing public lines that expose an exact private identity."""
+    if not content or not tokens:
+        return content
+
+    redacted: list[str] = []
+    for line in content.splitlines(keepends=True):
+        if not any(token in line for token in tokens):
+            redacted.append(line)
+            continue
+
+        if line.endswith("\r\n"):
+            ending = "\r\n"
+        elif line.endswith("\n"):
+            ending = "\n"
+        else:
+            ending = ""
+        stripped = line.lstrip()
+        indentation = line[: len(line) - len(stripped)]
+        list_prefix = "- " if stripped.startswith(("- ", "* ", "+ ")) else ""
+        replacement = (
+            f"{indentation}{list_prefix}{PRIVATE_REFERENCE_REDACTION}{ending}"
+        )
+        if redacted and redacted[-1].strip() == replacement.strip():
+            continue
+        redacted.append(replacement)
+    return "".join(redacted)
 
 
 def build_plan_with_exact_private_references(
@@ -103,6 +141,26 @@ def build_plan_with_exact_private_references(
         masked_inventory,
     )
     tokens = private_reference_tokens(organization, private_names)
+
+    # Existing README/profile prose can predate this privacy contract. Redact
+    # only lines containing exact private repository identities, then rebuild
+    # the managed relationship block from trusted generated content. A leak in
+    # that generated block still fails the preflight below.
+    for path in publisher.README_PATHS:
+        _, existing = files[path]
+        existing_content = existing.content if existing else None
+        privacy_safe_existing = redact_existing_private_reference_lines(
+            existing_content,
+            tokens,
+        )
+        files[path] = (
+            publisher.merge_managed_block(
+                privacy_safe_existing,
+                publisher.relationship_readme_block(organization),
+            ),
+            existing,
+        )
+
     if any(
         token in content
         for content, _ in files.values()
