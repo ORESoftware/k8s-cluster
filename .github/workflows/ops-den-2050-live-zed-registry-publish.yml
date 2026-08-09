@@ -207,9 +207,11 @@ jobs:
             --token-file "$token_file"
           token="$(cat "$token_file")"
           echo "::add-mask::${token}"
-          echo "token_name=${token_name}" >> "$GITHUB_OUTPUT"
-          echo "token_file=${token_file}" >> "$GITHUB_OUTPUT"
-          echo "minted=true" >> "$GITHUB_OUTPUT"
+          {
+            echo "token_name=${token_name}"
+            echo "token_file=${token_file}"
+            echo "minted=true"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Publish and resolve the exact producer graph
         shell: bash
