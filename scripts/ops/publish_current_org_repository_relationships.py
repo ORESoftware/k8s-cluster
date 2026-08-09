@@ -37,12 +37,44 @@ import publish_org_repository_relationships as publisher  # noqa: E402
 
 publisher.ORGANIZATIONS = ORGANIZATIONS
 _ORIGINAL_BUILD_PLAN = publisher.build_plan
+_ORIGINAL_RETRY_DELAY = governance.GitHubApi._retry_delay
+MAX_PRIMARY_RATE_LIMIT_WAIT_SECONDS = 3600.0
+PRIMARY_RATE_LIMIT_SAFETY_SECONDS = 2.0
 PRIVATE_REFERENCE_REDACTION = (
     "Private repository details are intentionally withheld from this public "
     "document."
 )
 _REFERENCE_BOUNDARY = r"(?:$|[\s`'\"\)\]\}>/?#]|[.,;:!?](?=$|\s))"
 PrivatePatterns = tuple[re.Pattern[str], ...]
+
+
+def retry_delay_with_primary_rate_limit(
+    headers: dict[str, str],
+    attempt: int,
+) -> float:
+    """Wait through GitHub's primary quota reset before retrying safely."""
+    normalized_headers = {
+        key.lower(): value.strip()
+        for key, value in headers.items()
+    }
+    remaining = normalized_headers.get("x-ratelimit-remaining")
+    reset = normalized_headers.get("x-ratelimit-reset")
+    if remaining == "0" and reset and reset.isdigit():
+        delay = (
+            float(reset)
+            - governance.time.time()
+            + PRIMARY_RATE_LIMIT_SAFETY_SECONDS
+        )
+        return max(
+            1.0,
+            min(delay, MAX_PRIMARY_RATE_LIMIT_WAIT_SECONDS),
+        )
+    return _ORIGINAL_RETRY_DELAY(headers, attempt)
+
+
+governance.GitHubApi._retry_delay = staticmethod(
+    retry_delay_with_primary_rate_limit
+)
 
 
 class PrivateReferences(set[str]):
