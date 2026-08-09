@@ -48,6 +48,7 @@ jq -e '
   (.recipient_fingerprint | type == "string" and test("^[0-9a-f]{64}$")) and
   .manifest_sha256 == "5d1cf8cb7af82a81660bf2fe7536759c7b15bd01bef4a4a04730095ad998d056" and
   .publisher_sha256 == "7578de348dab3221e70ed9b02ab22c99c624fe3c02dff8b0fd89a77ec34f71bb" and
+  .runtime_patch_sha256 == "c4fd9a6ac616e83a48228b6a689f4a28428c7a6242c03e261a95b6cee9c01f03" and
   .expected_organization_count == 25 and
   .repositories_per_organization == 4 and
   .expected_repository_count == 100 and
@@ -122,6 +123,41 @@ printf '%s  %s\n' \
   "$manifest" | sha256sum --check --strict
 printf '%s  %s\n' \
   '7578de348dab3221e70ed9b02ab22c99c624fe3c02dff8b0fd89a77ec34f71bb' \
+  "$publisher" | sha256sum --check --strict
+
+python3 - "$publisher" <<'PY'
+import ast
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+replacements = {
+    'target.write_text(content, encoding="utf-8", newline="\\n")':
+        'target.write_text(content, encoding="utf-8")',
+    '            encoding="utf-8",\n            newline="\\n",\n':
+        '            encoding="utf-8",\n',
+    'args.markdown.write_text(markdown, encoding="utf-8", newline="\\n")':
+        'args.markdown.write_text(markdown, encoding="utf-8")',
+}
+for old, new in replacements.items():
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f"host compatibility patch anchor count={count}: {old!r}")
+    text = text.replace(old, new, 1)
+path.write_bytes(text.encode("utf-8"))
+tree = ast.parse(text, filename=str(path))
+for node in ast.walk(tree):
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+        if node.func.attr == "write_text" and any(
+            keyword.arg == "newline" for keyword in node.keywords
+        ):
+            raise SystemExit(
+                f"version-coupled Path.write_text(newline=) remains at line {node.lineno}"
+            )
+PY
+printf '%s  %s\n' \
+  'c4fd9a6ac616e83a48228b6a689f4a28428c7a6242c03e261a95b6cee9c01f03' \
   "$publisher" | sha256sum --check --strict
 python3 -m py_compile "$publisher"
 
