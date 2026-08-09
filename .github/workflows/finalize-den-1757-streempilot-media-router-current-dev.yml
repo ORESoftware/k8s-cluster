@@ -41,7 +41,7 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Repair finalizer invariants discovered by the first hosted run
+      - name: Repair finalizer invariants discovered by hosted runs
         shell: bash
         run: |
           set -euo pipefail
@@ -115,7 +115,7 @@ jobs:
           validation_prefix = '\n'.join(
               line[10:] if line.startswith('          ') else line
               for line in validation_prefix.splitlines()
-          )
+          ) + '\n'
           source = source[:validation_start] + validation_prefix + source[patch_start:]
 
           source = source.replace(
