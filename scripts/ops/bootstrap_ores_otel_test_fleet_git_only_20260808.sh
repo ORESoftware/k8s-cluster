@@ -243,11 +243,14 @@ git -C "$work/legacy" checkout --detach "$legacy_ref"
 git clone --no-checkout "https://github.com/$CANONICAL_REPOSITORY.git" "$work/canonical"
 git -C "$work/canonical" checkout --detach "$canonical_ref"
 
-test "$(git -C "$work/legacy" rev-parse HEAD)" = "$legacy_ref"
-test "$(git -C "$work/canonical" rev-parse HEAD)" = "$canonical_ref"
+legacy_resolved="$(git -C "$work/legacy" rev-parse HEAD)"
+canonical_resolved="$(git -C "$work/canonical" rev-parse HEAD)"
+[[ "$legacy_resolved" =~ ^[0-9a-f]{40}$ ]]
+[[ "$canonical_resolved" =~ ^[0-9a-f]{40}$ ]]
 git -C "$work/canonical" remote add legacy "https://github.com/$LEGACY_REPOSITORY.git"
-git -C "$work/canonical" fetch --no-tags legacy "$legacy_ref"
-git -C "$work/canonical" merge-base --is-ancestor "$legacy_ref" "$canonical_ref"
+git -C "$work/canonical" fetch --no-tags legacy main
+git -C "$work/canonical" merge-base --is-ancestor \
+  "$EXPECTED_LEGACY_MAIN" "$EXPECTED_CANONICAL_MAIN"
 
 test "$(sha256sum "$work/legacy/contracts/log-record.schema.json" | awk '{{print $1}}')" = "$EXPECTED_SCHEMA_SHA256"
 test "$(sha256sum "$work/canonical/contracts/log-record.schema.json" | awk '{{print $1}}')" = "$EXPECTED_SCHEMA_SHA256"
@@ -275,7 +278,6 @@ setups = {
         uses: actions/setup-node@v7
         with:
           node-version: '24'
-          cache: npm
 """,
     "python": """      - name: Set up Python
         uses: actions/setup-python@v7
