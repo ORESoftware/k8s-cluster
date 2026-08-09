@@ -170,7 +170,7 @@ publish_one \
   led-dynamo/leddy-mcp-server.rs \
   'Read-only MCP server for the Leddy fleet' \
   "$work/leddy-mcp-server.rs" \
-  "$LEDDY_MCP_HEAD"
+  "$LEDDY_MCP_EXPECTED_SHA"
 publish_one \
   canonical-cloud/canonical-docs \
   'Canonical Cloud architecture, operations, and business documentation' \
@@ -196,7 +196,7 @@ cat > /tmp/den-2797-wave7-evidence.json <<EOF
   "force_push": false,
   "repositories": [
     {"name":"led-dynamo/leddy-sync","main":"$LEDDY_SYNC_HEAD","history":"exact-recovered"},
-    {"name":"led-dynamo/leddy-mcp-server.rs","main":"$LEDDY_MCP_HEAD","history":"exact-recovered"},
+    {"name":"led-dynamo/leddy-mcp-server.rs","main":"$LEDDY_MCP_EXPECTED_SHA","recovered_head":"$LEDDY_MCP_HEAD","history":"exact-recovered-plus-formatting-fix"},
     {"name":"canonical-cloud/canonical-docs","main":"$CANONICAL_EXPECTED_SHA","history":"explicitly-reconstructed"},
     {"name":"evento-globolo/evgl-e2e","main":"$EVENTO_EXPECTED_SHA","history":"reviewed-seed"},
     {"name":"hacker-house-medellin-test/hhm-e2e","main":"$HHM_EXPECTED_SHA","history":"exact-recovered-plus-reviewed-overlay"}

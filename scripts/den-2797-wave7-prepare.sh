@@ -31,7 +31,8 @@ init_reconstructed_repo() {
     git -C "$directory" commit --quiet --file "$message_file"
 }
 
-rustup component add rustfmt clippy
+rust_toolchain=1.97.1
+rustup toolchain install "$rust_toolchain" --profile minimal --component rustfmt --component clippy
 
 checkout_exact led-dynamo/.github "$LED_SOURCE_SHA" "$work/led-source"
 base64 --decode \
@@ -46,12 +47,33 @@ git clone --quiet "$work/leddy-sync.bundle" "$work/leddy-sync"
 git clone --quiet "$work/leddy-mcp-server.rs.bundle" "$work/leddy-mcp-server.rs"
 test "$(git -C "$work/leddy-sync" rev-parse HEAD)" = "$LEDDY_SYNC_HEAD"
 test "$(git -C "$work/leddy-mcp-server.rs" rev-parse HEAD)" = "$LEDDY_MCP_HEAD"
-cargo fmt --manifest-path "$work/leddy-sync/Cargo.toml" --all -- --check
-cargo clippy --manifest-path "$work/leddy-sync/Cargo.toml" --all-targets --all-features -- -D warnings
-cargo test --manifest-path "$work/leddy-sync/Cargo.toml" --all-targets --all-features
-cargo fmt --manifest-path "$work/leddy-mcp-server.rs/Cargo.toml" --all -- --check
-cargo clippy --manifest-path "$work/leddy-mcp-server.rs/Cargo.toml" --all-targets --all-features -- -D warnings
-cargo test --manifest-path "$work/leddy-mcp-server.rs/Cargo.toml" --all-targets --all-features
+cargo +"$rust_toolchain" fmt --manifest-path "$work/leddy-sync/Cargo.toml" --all -- --check
+cargo +"$rust_toolchain" clippy --manifest-path "$work/leddy-sync/Cargo.toml" --all-targets --all-features -- -D warnings
+cargo +"$rust_toolchain" test --manifest-path "$work/leddy-sync/Cargo.toml" --all-targets --all-features
+
+# Preserve the recovered MCP commit as immutable ancestry, then add the exact
+# formatting-only repair required by the pinned Rust 1.97.1/rustfmt 1.9.0 CI
+# contract. Fail closed unless rustfmt produces only the reviewed one-file diff.
+git -C "$work/leddy-mcp-server.rs" config user.name "ORESoftware automation"
+git -C "$work/leddy-mcp-server.rs" config user.email "11139560+ORESoftware@users.noreply.github.com"
+cargo +"$rust_toolchain" fmt --manifest-path "$work/leddy-mcp-server.rs/Cargo.toml" --all
+test "$(git -C "$work/leddy-mcp-server.rs" diff --name-only)" = "src/main.rs"
+git -C "$work/leddy-mcp-server.rs" diff --check
+git -C "$work/leddy-mcp-server.rs" diff -- src/main.rs > "$work/leddy-mcp-rustfmt.patch"
+test "$(sha256sum "$work/leddy-mcp-rustfmt.patch" | awk '{print $1}')" = \
+  b51ffee7cdaeea73461f9740e058b0f2d6e949111f544d25c9a80724e543a0b4
+git -C "$work/leddy-mcp-server.rs" add src/main.rs
+GIT_AUTHOR_DATE=2026-08-09T20:03:00Z GIT_COMMITTER_DATE=2026-08-09T20:03:00Z \
+  git -C "$work/leddy-mcp-server.rs" commit --quiet \
+    -m "style: normalize MCP source with Rust 1.97.1 rustfmt" \
+    -m "Preserve recovered commit 6b8df986bcdd37a3aafdd1a97e1703c8db0379f6 as the parent; this formatting-only commit makes the stable Rust 1.97.1 CI contract reproducible without rewriting recovered history."
+LEDDY_MCP_EXPECTED_SHA="$(git -C "$work/leddy-mcp-server.rs" rev-parse HEAD)"
+test "$LEDDY_MCP_EXPECTED_SHA" = 45253d520208a1358bd150290eddd5a6eecc5f5e
+test "$(git -C "$work/leddy-mcp-server.rs" rev-parse HEAD^)" = "$LEDDY_MCP_HEAD"
+printf 'LEDDY_MCP_EXPECTED_SHA=%s\n' "$LEDDY_MCP_EXPECTED_SHA" >> "$GITHUB_ENV"
+cargo +"$rust_toolchain" fmt --manifest-path "$work/leddy-mcp-server.rs/Cargo.toml" --all -- --check
+cargo +"$rust_toolchain" clippy --manifest-path "$work/leddy-mcp-server.rs/Cargo.toml" --all-targets --all-features -- -D warnings
+cargo +"$rust_toolchain" test --manifest-path "$work/leddy-mcp-server.rs/Cargo.toml" --all-targets --all-features
 rm -rf "$work/leddy-sync/target" "$work/leddy-sync/Cargo.lock"
 rm -rf "$work/leddy-mcp-server.rs/target" "$work/leddy-mcp-server.rs/Cargo.lock"
 test -z "$(git -C "$work/leddy-sync" status --porcelain)"
@@ -167,13 +189,13 @@ for directory in \
 done
 
 test "$(git -C "$work/leddy-sync" rev-parse HEAD)" = "$LEDDY_SYNC_HEAD"
-test "$(git -C "$work/leddy-mcp-server.rs" rev-parse HEAD)" = "$LEDDY_MCP_HEAD"
+test "$(git -C "$work/leddy-mcp-server.rs" rev-parse HEAD)" = "$LEDDY_MCP_EXPECTED_SHA"
 test -n "$CANONICAL_EXPECTED_SHA"
 test -n "$EVENTO_EXPECTED_SHA"
 test -n "$HHM_EXPECTED_SHA"
 printf '%s\n' \
   "PREPARED led-dynamo/leddy-sync $LEDDY_SYNC_HEAD" \
-  "PREPARED led-dynamo/leddy-mcp-server.rs $LEDDY_MCP_HEAD" \
+  "PREPARED led-dynamo/leddy-mcp-server.rs $LEDDY_MCP_EXPECTED_SHA recovered-parent=$LEDDY_MCP_HEAD" \
   "PREPARED canonical-cloud/canonical-docs $CANONICAL_EXPECTED_SHA" \
   "PREPARED evento-globolo/evgl-e2e $EVENTO_EXPECTED_SHA" \
   "PREPARED hacker-house-medellin-test/hhm-e2e $HHM_EXPECTED_SHA"
