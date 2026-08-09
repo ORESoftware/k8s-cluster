@@ -84,15 +84,38 @@ test('the bridge checkout is the immutable source revision declared by Argo', ()
   );
 });
 
+test('the current bridge is prepared without private checkout credentials', () => {
+  assert.match(workflow, /Checkout bridge source without private submodules/);
+  assert.match(workflow, /submodules:\s*false/);
+  assert.doesNotMatch(workflow, /submodules:\s*recursive/);
+  assert.match(workflow, /scripts\/ci\/prepare-credential-free-build\.sh/);
+  assert.equal(
+    recordedRef('BRIDGE_FLAGS_REF'),
+    '8a978aef0cc9b12bdd0791d93bbf3a374c517ee2',
+  );
+  assert.equal(
+    recordedRef('BRIDGE_SHARED_SCHEMA_REF'),
+    'c8bdc06d74746acc6439f9527ebd02697fdf028b',
+  );
+  assert.match(workflow, /credential_free_non_postgres_fixture/);
+  assert.doesNotMatch(workflow, /K8S_LIBS_DEPLOY_KEY/);
+  assert.doesNotMatch(workflow, /GH_PAT/);
+});
+
 test('recorded revisions are verified against the checked-out commits before evidence upload', () => {
   assert.match(workflow, /bridge_commit="\$\(git -C \.e2e\/bridge rev-parse HEAD\)"/);
   assert.match(
     workflow,
     /coordinator_commit="\$\(git -C \.e2e\/coordinator rev-parse HEAD\)"/,
   );
+  assert.match(
+    workflow,
+    /flags_commit="\$\(git -C \.e2e\/bridge\/vendor\/flags-2-env rev-parse HEAD\)"/,
+  );
   assert.match(workflow, /test "\$bridge_commit" = "\$BRIDGE_REF"/);
   assert.match(workflow, /test "\$coordinator_commit" = "\$COORDINATOR_REF"/);
-  assert.match(workflow, /schema_version:\s*6/);
+  assert.match(workflow, /test "\$flags_commit" = "\$BRIDGE_FLAGS_REF"/);
+  assert.match(workflow, /schema_version:\s*7/);
   assert.match(workflow, /deployment_contract:\s*"bridge_ref_matches_argocd_source_revision"/);
   assert.match(workflow, /alias_contract:\s*"six_manifest_commands_to_two_canonical_endpoints"/);
   assert.match(workflow, /idempotency_contract:\s*"header_equals_payload_run_id"/);
@@ -127,15 +150,16 @@ test('browser coverage declares exactly the six installed slash-command aliases'
   assert.match(browserTest, /'idempotency-key': `slack-command:\$\{ids\.run\}`/);
 });
 
-test('workflow validates deployment routing, observable events, and exact run idempotency', () => {
+test('workflow validates deployment routing, source graph, observable events, and exact run idempotency', () => {
   assert.match(
     workflow,
-    /Verify Slack alias, deployment, observable-event, and idempotency source contracts/,
+    /Verify Slack alias, deployment, source graph, observable-event, and idempotency contracts/,
   );
   for (const command of expectedAliases) {
     assert.match(workflow, new RegExp(escapeRegExp(command)));
   }
   assert.match(workflow, /deployed_refs == \{bridge_ref\}/);
+  assert.match(workflow, /vendor\/k8s-libs-and-shared-defs/);
   assert.match(workflow, /observable_event/);
   assert.match(workflow, /Idempotency-Key must equal payload\.run_id/);
 });
