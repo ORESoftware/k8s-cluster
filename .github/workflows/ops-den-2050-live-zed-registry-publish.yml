@@ -7,17 +7,20 @@ on:
     paths:
       - .github/workflows/ops-den-2050-live-zed-registry-publish.yml
       - scripts/ops/publish_den2050_zed_producers.py
+      - scripts/ops/den2050_registry_token_via_ssm.py
   push:
     branches: [main]
     paths:
       - .github/workflows/ops-den-2050-live-zed-registry-publish.yml
       - scripts/ops/publish_den2050_zed_producers.py
+      - scripts/ops/den2050_registry_token_via_ssm.py
   workflow_dispatch:
 
 permissions:
   actions: read
   contents: read
   issues: write
+  id-token: write
 
 concurrency:
   group: den-2050-live-zed-producer-publication
@@ -46,8 +49,10 @@ jobs:
         run: |
           set -euo pipefail
           publisher=scripts/ops/publish_den2050_zed_producers.py
-          python3 -m py_compile "$publisher"
+          token_helper=scripts/ops/den2050_registry_token_via_ssm.py
+          python3 -m py_compile "$publisher" "$token_helper"
           python3 "$publisher" --help >/dev/null
+          python3 "$token_helper" --help >/dev/null
           for needle in \
             'StreemPilot/sp-interfaces' \
             '89d1b04a0d66ec990e6a0d95e46fafe6d99d44ce' \
@@ -63,8 +68,12 @@ jobs:
             '75322d79623c2666a445e244f637af3bde3d2e46'; do
             grep -qF "$needle" "$publisher"
           done
-          credential_pattern='gh''p_|github_''pat_|BEGIN [A-Z ]*PRIVATE KEY'
-          if grep -nE "$credential_pattern" "$publisher" .github/workflows/ops-den-2050-live-zed-registry-publish.yml; then
+          grep -qF 'ZED_PKG_TOKEN' "$publisher"
+          grep -qF 'create-token' "$token_helper"
+          grep -qF 'revoke-token' "$token_helper"
+          grep -qF 'rsa_padding_mode:oaep' "$token_helper"
+          credential_pattern='gh''p_|github_''pat_|BEGIN [A-Z ]*PRIVATE KEY|zpkg_[A-Za-z0-9]{20,}'
+          if grep -nE "$credential_pattern" "$publisher" "$token_helper" .github/workflows/ops-den-2050-live-zed-registry-publish.yml; then
             echo 'credential-shaped source material detected' >&2
             exit 1
           fi
@@ -81,12 +90,13 @@ jobs:
       github.ref == 'refs/heads/main'
     needs: validate
     runs-on: ubuntu-24.04
-    timeout-minutes: 70
+    timeout-minutes: 85
     env:
       ISSUE_NUMBER: 1220
       CONFIRMATION: publish-six-den2050-zed-producers
       ZED_REGISTRY: https://registry.zpkg.net
       ZED_CLI_SHA: 23328e91815404418a126b93a7c6eacd01a0688d
+      INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
     steps:
       - name: Check out exact trusted main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -95,7 +105,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Publish run-bound RSA-OAEP-SHA256 key and receive one ciphertext
+      - name: Publish run-bound RSA-OAEP-SHA256 key and receive one GitHub ciphertext
         id: handoff
         shell: bash
         env:
@@ -104,7 +114,6 @@ jobs:
           set -Eeuo pipefail
           umask 077
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-
           run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$(openssl rand -hex 16)"
           private_key="$RUNNER_TEMP/den-2050-registry-private.pem"
           public_key="$RUNNER_TEMP/den-2050-registry-public.pem"
@@ -112,7 +121,6 @@ jobs:
           encrypted="$RUNNER_TEMP/den-2050-registry-token.bin"
           payload="$RUNNER_TEMP/den-2050-registry-payload.json"
           token_file="$RUNNER_TEMP/den-2050-registry-github-token"
-
           openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out "$private_key" >/dev/null 2>&1
           openssl pkey -in "$private_key" -pubout -out "$public_key" >/dev/null 2>&1
           key_b64="$(base64 -w0 < "$public_key")"
@@ -121,7 +129,6 @@ jobs:
           echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
           echo "token_file=${token_file}" >> "$GITHUB_OUTPUT"
           echo "HANDSHAKE_READY run_id=${run_id} issue=${ISSUE_NUMBER}"
-
           prefix="DEN2050_REGISTRY_PAT_CIPHERTEXT protocol=1 run_id=${run_id} data="
           query_matches() {
             gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
@@ -134,7 +141,6 @@ jobs:
             echo "expected exactly one ciphertext; observed ${count}" >&2
             exit 1
           }
-
           ciphertext=''
           for _ in $(seq 1 360); do
             query_matches
@@ -151,20 +157,13 @@ jobs:
             fi
             sleep 5
           done
-          test -n "$ciphertext" || {
-            echo "encrypted credential was not received for ${run_id}" >&2
-            exit 1
-          }
-
+          test -n "$ciphertext" || { echo "encrypted credential was not received for ${run_id}" >&2; exit 1; }
           printf '%s' "$ciphertext" | base64 -d > "$encrypted"
           openssl pkeyutl -decrypt -inkey "$private_key" -in "$encrypted" \
-            -pkeyopt rsa_padding_mode:oaep \
-            -pkeyopt rsa_oaep_md:sha256 \
-            -pkeyopt rsa_mgf1_md:sha256 \
+            -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256 \
             -out "$payload"
           jq -e --arg run_id "$run_id" --arg confirmation "$CONFIRMATION" '
-            (.run_id == $run_id) and
-            (.confirm == $confirmation) and
+            (.run_id == $run_id) and (.confirm == $confirmation) and
             (.token | type == "string" and length >= 20 and (test("\\s") | not))
           ' "$payload" >/dev/null
           token="$(jq -r .token "$payload")"
@@ -184,14 +183,46 @@ jobs:
             --root "$RUNNER_TEMP/zed-cli"
           "$RUNNER_TEMP/zed-cli/bin/zed" --version
 
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: den2050-zed-registry-publish
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Mint encrypted short-lived Zed registry token inside the cluster
+        id: zed_token
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${INSTANCE_ID:-}"
+          token_name="den2050-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          token_file="$RUNNER_TEMP/den-2050-zed-registry-token"
+          python3 scripts/ops/den2050_registry_token_via_ssm.py mint \
+            --instance-id "$INSTANCE_ID" \
+            --region "$AWS_REGION" \
+            --token-name "$token_name" \
+            --token-file "$token_file"
+          token="$(cat "$token_file")"
+          echo "::add-mask::${token}"
+          {
+            echo "token_name=${token_name}"
+            echo "token_file=${token_file}"
+            echo "minted=true"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Publish and resolve the exact producer graph
         shell: bash
         env:
           TOKEN_FILE: ${{ steps.handoff.outputs.token_file }}
+          REGISTRY_TOKEN_FILE: ${{ steps.zed_token.outputs.token_file }}
         run: |
           set -euo pipefail
           python3 scripts/ops/publish_den2050_zed_producers.py \
             --token-file "$TOKEN_FILE" \
+            --registry-token-file "$REGISTRY_TOKEN_FILE" \
             --zed-bin "$RUNNER_TEMP/zed-cli/bin/zed" \
             --registry "$ZED_REGISTRY" \
             --work-dir "$RUNNER_TEMP/den-2050-live-zed" \
@@ -199,6 +230,7 @@ jobs:
             --lock-out "$RUNNER_TEMP/den-2050-registry-lock.toml"
 
       - name: Upload non-secret registry evidence
+        if: success()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: den-2050-live-zed-registry-${{ github.run_id }}
@@ -219,6 +251,18 @@ jobs:
           gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
             -f body="DEN2050_REGISTRY_COMPLETE protocol=1 run_id=${RUN_ID} verified=6 failures=0 registry=${ZED_REGISTRY}" >/dev/null
 
+      - name: Revoke short-lived Zed registry token
+        if: always() && steps.zed_token.outputs.minted == 'true'
+        shell: bash
+        env:
+          TOKEN_NAME: ${{ steps.zed_token.outputs.token_name }}
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/den2050_registry_token_via_ssm.py revoke \
+            --instance-id "$INSTANCE_ID" \
+            --region "$AWS_REGION" \
+            --token-name "$TOKEN_NAME"
+
       - name: Destroy all credential material
         if: always()
         shell: bash
@@ -229,5 +273,6 @@ jobs:
             "$RUNNER_TEMP/den-2050-registry-token.bin" \
             "$RUNNER_TEMP/den-2050-registry-payload.json" \
             "$RUNNER_TEMP/den-2050-registry-github-token" \
+            "$RUNNER_TEMP/den-2050-zed-registry-token" \
             2>/dev/null || true
           rm -f "$RUNNER_TEMP/den-2050-registry-ciphertext-matches"
