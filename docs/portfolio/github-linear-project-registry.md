@@ -22,7 +22,7 @@ The 41 active portfolios are a strict subset of the 64 managed organizations. Ev
 - The canonical Project is normally project `1`. `dancing-dragons` retains its pre-existing canonical project `4`.
 - Organization-level documentation lives in the public `<org>/.github` repository.
 - The organization Project contains a durable governance issue linking GitHub, Linear, and the organization documentation.
-- Organization names and Linear project URLs are unique, case-insensitively for GitHub organization ownership.
+- Organization names are unique case-insensitively. Linear project URLs are unique unless an exact declared shared Linear project owner set intentionally routes a production organization and its independent test organization to one planning authority; the current declared pair is `fiducia-cloud` plus `fiducia-cloud-test`.
 - Registry rows are sorted by canonical organization login and contain no query strings, fragments, embedded credentials, or credential-shaped values.
 - Every cross-system issue, event, agent run, and synchronization record should carry `portfolio_key` plus provider-native IDs. Match by native ID first and canonical key second; never infer identity solely from display text.
 - Documentation conflicts are resolved semantically against the latest default branch. Managed routing blocks are regenerated while unrelated prose is preserved; automation must never resolve conflicts by blindly choosing one side.
@@ -49,7 +49,7 @@ The sole Project-number exception is `dancing-dragons`, whose canonical Project 
 
 - missing, additional, malformed, or unsorted rows;
 - duplicate organization ownership, including case variants;
-- duplicate or malformed Linear project URLs;
+- duplicate or malformed Linear project URLs, except an exact declared shared Linear project owner set;
 - invalid GitHub organization logins;
 - drift in the Project-number exception;
 - credential-bearing or ambiguous URLs;

@@ -15,6 +15,9 @@ const fixture = read(
 const plannerTest = read(
   'remote/deployments/gha-clone-server-rs/tests/msgint_planner.rs',
 );
+const httpTest = read(
+  'remote/deployments/gha-clone-server-rs/tests/msgint_http.rs',
+);
 const documentation = read('docs/gha-msgint-exact-planner.md');
 const workflow = read('.github/workflows/gha-clone-server.yml');
 
@@ -84,6 +87,25 @@ test('planner tests cover terminal identity and structural lookalikes', () => {
   assert.match(plannerTest, /unrelated_workflow_retains_legacy_classifier_behavior/);
 });
 
+test('real-process proof exercises exact ordered authenticated dispatch and zero-submission rejection', () => {
+  assert.match(httpTest, /CARGO_BIN_EXE_gha-clone-server/);
+  assert.match(httpTest, /route\("\/builds", post\(mock_submit\)\)/);
+  assert.match(httpTest, /x-build-server-auth/);
+  assert.match(httpTest, /operator_config[\s\S]*node-hardened-verify/);
+  assert.match(httpTest, /repository_tests[\s\S]*node-hardened-test/);
+  assert.match(httpTest, /exact_retry_reuses_each_deterministic_build_request_identity/);
+  assert.match(httpTest, /0000000000000000000000000000000000000000/);
+  assert.match(httpTest, /\.github\/workflows\/other\.yml/);
+  assert.match(httpTest, /lookalike\/msgint-connectors/);
+  assert.match(httpTest, /actions\/setup-node@main/);
+  assert.match(httpTest, /persist-credentials: true/);
+  assert.match(httpTest, /node-version: \\"22\\"/);
+  assert.match(httpTest, /npm publish/);
+  assert.match(httpTest, /secrets\.PROD_TOKEN/);
+  assert.match(httpTest, /submissions\.lock\(\)\.await\.is_empty\(\)/);
+  assert.doesNotMatch(httpTest, /GHA_CLONE_GITHUB_TOKEN",\s*[^)]/);
+});
+
 test('fixture is static, secret-free, lifecycle-safe, and non-publishing', () => {
   assert.match(fixture, /workflow_dispatch:/);
   assert.match(fixture, /operator_config:[\s\S]*repository_tests:/);
@@ -94,11 +116,13 @@ test('fixture is static, secret-free, lifecycle-safe, and non-publishing', () =>
   assert.doesNotMatch(fixture, /npm publish|npm install|\|\| true/);
 });
 
-test('documentation and permanent workflow preserve plan-only and inactive-live boundaries', () => {
+test('documentation and permanent workflow preserve executable proof and inactive-live boundaries', () => {
   assert.match(documentation, /reserved namespace/);
   assert.match(documentation, /cannot fall back to the generic Node classifier/);
+  assert.match(documentation, /Real-process execution evidence/);
+  assert.match(documentation, /actual `gha-clone-server` binary/);
+  assert.match(documentation, /zero `\/builds` submissions/);
   assert.match(documentation, /zero replicas/);
-  assert.match(documentation, /separate PR must start the actual binary/);
   assert.match(documentation, /least-privilege GitHub App/);
   assert.match(documentation, /No classic PAT/);
   assert.match(workflow, /remote\/deployments\/gha-clone-server-rs\/\*\*/);

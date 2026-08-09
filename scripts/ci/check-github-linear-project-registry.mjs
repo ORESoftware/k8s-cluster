@@ -7,6 +7,12 @@ import { fileURLToPath } from 'node:url';
 
 export const EXPECTED_ORGANIZATION_COUNT = 64;
 export const PROJECT_NUMBER_EXCEPTIONS = new Map([['dancing-dragons', 4]]);
+export const SHARED_LINEAR_PROJECT_OWNERS = new Map([
+  [
+    'https://linear.app/denman/project/githubcomfiducia-cloud-8fd5e1bec9d3',
+    new Set(['fiducia-cloud', 'fiducia-cloud-test']),
+  ],
+]);
 
 const ORG_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 const LINEAR_PROJECT_PATTERN = /^https:\/\/linear\.app\/denman\/project\/[a-z0-9][a-z0-9-]*$/;
@@ -93,8 +99,9 @@ export function validateRegistry(rows, { expectedCount = EXPECTED_ORGANIZATION_C
 
     assert(LINEAR_PROJECT_PATTERN.test(linearUrl), `invalid Linear project URL on line ${sourceLine}: ${linearUrl}`);
     assertSafeAbsoluteUrl(linearUrl, 'https://linear.app', `Linear URL on line ${sourceLine}`);
-    assert(!seenLinearUrls.has(linearUrl), `duplicate Linear project URL on line ${sourceLine}: ${linearUrl}`);
-    seenLinearUrls.set(linearUrl, sourceLine);
+    const owners = seenLinearUrls.get(linearUrl) ?? [];
+    owners.push(key);
+    seenLinearUrls.set(linearUrl, owners);
 
     if (previous) {
       assert(
@@ -115,6 +122,17 @@ export function validateRegistry(rows, { expectedCount = EXPECTED_ORGANIZATION_C
     );
   }
 
+  for (const [linearUrl, owners] of seenLinearUrls) {
+    if (owners.length === 1) continue;
+    const allowedOwners = SHARED_LINEAR_PROJECT_OWNERS.get(linearUrl);
+    assert(
+      allowedOwners
+        && owners.length === allowedOwners.size
+        && owners.every((owner) => allowedOwners.has(owner)),
+      `duplicate Linear project URL without an exact declared owner set: ${linearUrl}`,
+    );
+  }
+
   return rows.map(deriveRecord);
 }
 
@@ -128,6 +146,7 @@ export function validateDocumentation(markdown) {
     'dancing-dragons',
     'project `4`',
     'public `<org>/.github` repository',
+    'declared shared Linear project',
     'resolved semantically',
     'never resolve conflicts by blindly choosing one side',
   ];
