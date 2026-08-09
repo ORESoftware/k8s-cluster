@@ -2,15 +2,19 @@
   "schema_version": 1,
   "execute": true,
   "tracking_issue": "DEN-3286",
+  "attempt": 2,
   "recipient_id": "den-3286-publish-20260809-2b9b8273dfbbc871",
-  "recipient_fingerprint": "44c9ff2b406366b1b8b798afe786c49c3a3939145080eb75c6cd9810359c3943",
-  "recipient_expires_at": 1786274415,
-  "recipient_source_commit": "66ccb0a0f640b2775cc65ff8fe9df81fc8c4b273",
+  "recipient_fingerprint": "21f0df16a7e95d1d42bfb068ec9d2d98b41304a2fec2d78b88c275b871b4ee1d",
+  "recipient_expires_at": 1786275217,
+  "recipient_source_commit": "a58fa7e1bd683ea0fb9b77c92ea21cf78758d0fa",
   "encryption": "RSA-4096-OAEP-SHA256",
   "manifest_sha256": "5d1cf8cb7af82a81660bf2fe7536759c7b15bd01bef4a4a04730095ad998d056",
   "publisher_sha256": "7578de348dab3221e70ed9b02ab22c99c624fe3c02dff8b0fd89a77ec34f71bb",
+  "runtime_patch_sha256": "c4fd9a6ac616e83a48228b6a689f4a28428c7a6242c03e261a95b6cee9c01f03",
   "expected_organization_count": 25,
   "repositories_per_organization": 4,
   "expected_repository_count": 100,
-  "ciphertext_base64": "IETJa58SSA91LkmgtsH9yYBd0EIFuVl1DSlUsgeYXjmkocah/KKmZF6czupuHufPwEuVKJrUU7b6xRukHbtgRE2VB+q2U2B0LsSwM1o7+Kgd/o+iv3IFib14o5Luz3iG2Gz8HvbgeFdjOsuIr/lZhK6yIviODS2KROH8GTYhtYIpkJO+h5yt/AB9SJoa75IDMVEiwu305YS44+RfLKZtB+/ojPPeMfnz5PRskKqW5nA3rXPjOVgIaSQNRPVsHRoPT+BsPtq0+KMWN2sJ91wXU7OjWLPTOe+r2iTLAsejVXc45y1zs0tBJhjKcWKQr9zhDmQ0cEIOT/IMRdHT1yTCggXcwbq5lCoagJhtBrZuSp6TWb+reWSS6qgWovj5xBcl+ILYyle+jO0PJJ+8vkOZaOzpcJsvSMsvB50IlaPpSgV69vp6MQ0TrXBnNDe7MpFoXG2fIntZmcNp+j5vND9FtlPCfnyvMkHRIIDXn0LcaYCaecIDsdkhsPnQ0xQcLc8mIY5pWhZhhFry3+wA09FngGN0d58n1HVGMb1xM2GYnm0r+cpxA1ppLfg/3FBp61yL+xiPKSoaTUZXks7YU+EMSnfoJZ8vKMLN8pUAL/gDIuQ2KugfGTWygrzs3pEiqau/tG0Zlc4ij855bDAsCMYuCuB4uhB5QGwpZn6gbMpGG/I="
+  "previous_run_id": 31296608762,
+  "previous_write_count": 0,
+  "ciphertext_base64": "sr3Ogt0WvopVTO5B7thXtWeNtiYBXLJ8U7KIHrKooVySnpr2A8eZ9uS0G00b0YKfY8B6peYnAetTsE4Z3sNAuTU+Su+WK7IrCU+feY9xfKGuMXaed08+Edp7gwGV4lpKHnrahLi3rSggt5V8bYzrWgGFnv9IiEwSdwMBjdQlfBMCIOWBAqXQ21YmC6M/BTnlGXIN7yrFSARbgrPweHjhUkEamM6zv8Zgx31mFfPbKXdprl9Ut4w8BLp/nQy7FLs1YZBP45fxc47uyKJb3Oc0PeowsUs6w5+7IWkhkq5YoJmI6e9Tr6kMRfuPfZyRPwFBZdskvUHKlSHtL8b9jJOP7M3e1MErtL6LPPSQpO449OIqxWErcWL/Wcq3oxGhcv7VxtruPzKXsFAz/PyolzT1dk272UYs4FqqXrEuSZoKr5EuT7uN+FMNHGI1qtK6XnpkNQTGy0FMDyMvQcR2OgbUHpuo1p7inWmOwf9b3AP6tvFG71vR58hYZ+jmQugh3wgC9RX8qliy6+SFN0SEnHHQ4ggTBnADIvONawOOoB1S4L2WJUQNgF8t8HDtrehBgkAXyKDy+Bf7ZkR34tb6eyD447dkMP3XEcU2+e4J61RRhzVjz6zSVW6KoQf9S6Kyyn/QqA7KSNe0LWu9vsOWSN3W/+vcknOCTc7wW2sha+5D1/M="
 }
