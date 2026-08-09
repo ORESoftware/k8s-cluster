@@ -22,6 +22,12 @@ that this same stage process observed absent before creating. Any wrong SHA
 fails immediately, exhaustion fails closed, and production never receives this
 exception.
 
+GitHub preserves repository-login identity case-insensitively and may return a
+normalized owner spelling that differs from the reviewed constant. Evidence is
+canonicalized only after the base publisher has validated the exact repository
+identity, private visibility, main branch, immutable repository id, and sealed
+SHA. Repository-name drift still fails closed.
+
 The supplied publication credential can create and push repositories but does
 not have GitHub's separate delete-repository permission. Deletion is neither
 needed nor desirable. If its primary GitHub REST quota is already exhausted,
@@ -57,6 +63,7 @@ ORIGINAL_API = BASE.api
 ORIGINAL_MAIN_REF = BASE.main_ref
 ORIGINAL_EXISTING_REPOSITORY = BASE.existing_repository
 ORIGINAL_PUSH_EXACT_MAIN = BASE.push_exact_main
+ORIGINAL_PUBLISH_ONE = BASE.publish_one
 
 RECOVERABLE_EMPTY_STAGE = {
     "full_name": "StreemPilot-test/streempilot-compositor.rs",
@@ -364,6 +371,28 @@ def recovery_push_exact_main(
     )
 
 
+def canonical_evidence_publish_one(
+    source_root: Path,
+    record: dict[str, object],
+    target: str,
+) -> dict[str, object]:
+    """Canonicalize only GitHub's case-insensitive owner spelling in evidence."""
+    row = ORIGINAL_PUBLISH_ONE(source_root, record, target)
+    expected_target = BASE.target_full_name(record, target)
+    observed_target = row.get("target_full_name")
+    if (
+        not isinstance(observed_target, str)
+        or observed_target.casefold() != expected_target.casefold()
+    ):
+        fail(
+            "publisher evidence target escaped the exact repository identity: "
+            f"{observed_target!r} != {expected_target}"
+        )
+    normalized = dict(row)
+    normalized["target_full_name"] = expected_target
+    return normalized
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", required=True, choices=("stage", "production"))
@@ -388,6 +417,7 @@ def main() -> int:
     BASE.main_ref = safe_main_ref
     BASE.existing_repository = recovery_existing_repository
     BASE.push_exact_main = recovery_push_exact_main
+    BASE.publish_one = canonical_evidence_publish_one
     BASE.publish(
         args.target,
         args.evidence_out.resolve(),
