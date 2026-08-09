@@ -85,8 +85,7 @@ jobs:
           source = source[:call_start] + targeted_replacement + source[call_end:]
 
           validation_start = source.index('def validate_result() -> None:\n')
-          patch_start = source.index('    patch_text = read(PATCH)\n', validation_start)
-          validation_prefix = '''def validate_result() -> None:
+          validation_tail = '''def validate_result() -> None:
               marker_paths = [
                   PROFILES,
                   PLANNER,
@@ -111,12 +110,67 @@ jobs:
               if "general/streempilot-media-router-continuity.test.mjs" not in workflow_snapshot:
                   raise SystemExit("permanent GHA coverage is missing the media-router static contract")
 
+              patch_text = read(PATCH)
+              policy_match = re.search(
+                  r"name:\\s*BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON[\\s\\S]*?"
+                  r"value:\\s*>-\\s*\\n\\s*(\\[[^\\n]+\\])",
+                  patch_text,
+              )
+              if not policy_match:
+                  raise SystemExit("unable to parse exact profile policy")
+              rules = json.loads(policy_match.group(1))
+              rule = next(
+                  (
+                      candidate
+                      for candidate in rules
+                      if candidate["repository"] == REPOSITORY_URL
+                  ),
+                  None,
+              )
+              if rule != {"repository": REPOSITORY_URL, "profiles": [PROFILE]}:
+                  raise SystemExit(
+                      "media-router exact repository policy is not least privilege"
+                  )
+
+              config_rules_match = re.search(
+                  r"GHA_CLONE_WORKFLOW_RULES_JSON:\\s*\\|\\n"
+                  r"(?P<body>(?: {4}.*\\n?)+)$",
+                  config_snapshot,
+              )
+              if not config_rules_match:
+                  raise SystemExit("unable to parse clone workflow rules")
+              config_rules = json.loads(
+                  "\\n".join(
+                      line[4:]
+                      for line in config_rules_match.group("body").splitlines()
+                  )
+              )
+              if config_rules.get(REPOSITORY) != [WORKFLOW_PATH]:
+                  raise SystemExit("media-router clone workflow policy is not exact")
+
+
+          def main() -> None:
+              update_profiles()
+              update_planner()
+              update_patch()
+              update_config()
+              update_readme()
+              update_streempilot_documentation()
+              update_policy_documentation()
+              update_policy_test()
+              create_contract_test()
+              update_permanent_workflow()
+              validate_result()
+
+
+          if __name__ == "__main__":
+              main()
           '''
-          validation_prefix = '\n'.join(
+          validation_tail = '\n'.join(
               line[10:] if line.startswith('          ') else line
-              for line in validation_prefix.splitlines()
+              for line in validation_tail.splitlines()
           ) + '\n'
-          source = source[:validation_start] + validation_prefix + source[patch_start:]
+          source = source[:validation_start] + validation_tail
 
           source = source.replace(
               'rustup component add rustfmt clippy\\n',
