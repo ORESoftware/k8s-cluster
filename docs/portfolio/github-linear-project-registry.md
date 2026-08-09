@@ -21,12 +21,12 @@ The active 41-portfolio subset is a strict subset of the 71 managed organization
 - The GitHub organization login is unique case-insensitively and is preserved with canonical casing.
 - The canonical GitHub Project title is `<canonical-org-login>-project`.
 - The canonical Project URL is `https://github.com/orgs/<organization>/projects/1`.
-- `dancing-dragons` uses Project `4`; every other organization uses Project `1`.
+- `dancing-dragons` uses project `4`; every other organization uses Project `1`.
 - Every organization must maintain a public `<org>/.github` repository with a profile, community-health defaults, root agent instructions, Copilot instructions, contribution/security/support policy, issue forms, a pull-request template, and the canonical Linear backlink.
 
 ### Explicit Linear project sharing
 
-Linear project URLs are unique by default. Linear project sharing is allowed only for these exact production/test ownership pairs:
+Linear project sharing is allowed only for these exact production/test ownership pairs:
 
 - `flags-2-env` and `flags-2-env-test` share the canonical `github.com/flags-2-env` Linear project;
 - `networking-components` and `networking-components-test` share the canonical `github.com/networking-components` Linear project;
@@ -72,13 +72,19 @@ The dedicated workflows run positive and negative fixtures, syntax checks, relat
 
 [`docs/portfolio/github-linear-projects-by-org.md`](github-linear-projects-by-org.md) is the generated organization directory. It must be regenerated from the TSV whenever registry rows change. Humans and agents should use it for navigation, but the TSV remains authoritative.
 
+## Reconciliation
+
+The current-fleet provider run is implemented by [`ops-sync-org-project-docs-71-once.yml`](../../.github/workflows/ops-sync-org-project-docs-71-once.yml). It receives an owner credential through the existing one-run RSA-OAEP handoff, then idempotently creates, reopens, or normalizes each canonical organization Project, updates only managed routing blocks, and emits exact live verification evidence for all 71 organizations.
+
+A green registry check proves the declared mapping is internally coherent; it does not by itself claim that all remote Projects, repositories, issues, pull requests, or provider metadata were reconciled. Provider completion requires the retained, validated run artifact.
+
 ## Evidence boundaries
 
 The August 5, 2026 Project/documentation reconciliation campaign was built around the historical 64-organization registry. Its retained run reports and cancellation/replacement evidence must remain labeled as that 64-organization campaign; they must not be mechanically rewritten to 71.
 
 The current 71-organization public `.github` governance rollout is tracked separately in [`ORESoftware/k8s-cluster#1222`](https://github.com/ORESoftware/k8s-cluster/issues/1222). Trusted-main workflow run [`31284729674`](https://github.com/ORESoftware/k8s-cluster/actions/runs/31284729674) verified all 71 repositories, created the six previously missing public `.github` repositories, and merged 71 ordinary pull requests without force push, history rewrite, destructive checkout, branch deletion, or required-check bypass.
 
-A cancelled or incomplete run is not completion evidence. A retained acceptance report must identify the exact commit, exact organization count, created repositories, merged pull requests, final default-branch verification, zero unverified organizations, and cleanup of ephemeral credential transport. Do not expose credentials in source, logs, comments, workflow inputs or outputs, artifacts, generated documentation, or validation errors.
+A cancelled or incomplete run is not completion evidence. A retained acceptance report must identify the exact commit, exact organization count, created Projects or normalized Project metadata, final live verification, zero unverified organizations, and cleanup of ephemeral credential transport. Do not expose credentials in source, logs, comments, workflow inputs or outputs, artifacts, generated documentation, or validation errors.
 
 ## Adding or changing an organization
 

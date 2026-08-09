@@ -6,8 +6,10 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import random
 import re
 import sys
+import time
 from typing import Any
 
 HERE = Path(__file__).resolve().parent
@@ -31,16 +33,65 @@ if len(ORGANIZATIONS) != EXPECTED_COUNT:
 if len({organization.lower() for organization in ORGANIZATIONS}) != EXPECTED_COUNT:
     raise RuntimeError("current organization fleet contains duplicates")
 
-# The relationship engine deliberately reuses the older hardened GitHub API and
-# privacy-preserving file primitives. Patch only its bounded fleet constant
-# before importing the engine so both preflight and publication cover the
-# current certified inventory.
 governance.ORGANIZATIONS = ORGANIZATIONS
 
 import publish_org_repository_relationships as publisher  # noqa: E402
 
 publisher.ORGANIZATIONS = ORGANIZATIONS
 _ORIGINAL_BUILD_PLAN = publisher.build_plan
+PRIVATE_REFERENCE_REDACTION = (
+    "Private repository details are intentionally withheld from this public "
+    "document."
+)
+_REFERENCE_BOUNDARY = r"(?:$|[\s`'\"\)\]\}>/?#]|[.,;:!?](?=$|\s))"
+MAX_PRIMARY_RATE_LIMIT_WAIT_SECONDS = 3700.0
+MAX_RETRY_AFTER_SECONDS = 300.0
+RATE_LIMIT_RESET_SAFETY_SECONDS = 2.0
+PrivatePatterns = tuple[re.Pattern[str], ...]
+
+
+def rate_limit_retry_delay(
+    headers: dict[str, str],
+    attempt: int,
+    *,
+    now: float | None = None,
+) -> float:
+    """Honor GitHub's full primary reset window while bounding every wait."""
+    normalized = {
+        str(key).lower(): str(value).strip()
+        for key, value in headers.items()
+    }
+    retry_after = normalized.get("retry-after", "")
+    if retry_after.isdigit():
+        return max(1.0, min(float(retry_after), MAX_RETRY_AFTER_SECONDS))
+
+    remaining = normalized.get("x-ratelimit-remaining", "")
+    reset = normalized.get("x-ratelimit-reset", "")
+    if remaining == "0" and reset.isdigit():
+        current_time = time.time() if now is None else now
+        delay = (
+            float(reset)
+            - current_time
+            + RATE_LIMIT_RESET_SAFETY_SECONDS
+        )
+        return max(
+            1.0,
+            min(delay, MAX_PRIMARY_RATE_LIMIT_WAIT_SECONDS),
+        )
+
+    return min(2 ** attempt, 20) + random.random()
+
+
+class PrivateReferences(set[str]):
+    """Compatibility tokens plus boundary-aware compiled matchers."""
+
+    def __init__(
+        self,
+        tokens: set[str],
+        patterns: PrivatePatterns,
+    ) -> None:
+        super().__init__(tokens)
+        self.patterns = patterns
 
 
 def is_private(repository: dict[str, Any]) -> bool:
@@ -54,7 +105,7 @@ def private_reference_tokens(
     organization: str,
     private_names: set[str],
 ) -> set[str]:
-    """Return exact generated-registry tokens that would reveal private identities."""
+    """Return diagnostic-safe exact tokens retained for compatibility tests."""
     tokens: set[str] = set()
     for name in private_names:
         if not name:
@@ -64,6 +115,8 @@ def private_reference_tokens(
         quoted_full_name = json.dumps(full_name)
         tokens.update(
             {
+                full_name,
+                f"https://github.com/{full_name}",
                 f'"name": {quoted_name}',
                 f'"full_name": {quoted_full_name}',
                 f'"from": {quoted_full_name}',
@@ -75,13 +128,97 @@ def private_reference_tokens(
     return tokens
 
 
+def private_reference_patterns(
+    organization: str,
+    private_names: set[str],
+) -> PrivatePatterns:
+    """Match exact private identities without matching longer public names."""
+    patterns: list[re.Pattern[str]] = []
+    for name in sorted(private_names):
+        if not name:
+            continue
+        full_name = f"{organization}/{name}"
+        patterns.extend(
+            (
+                re.compile(
+                    rf"(?<![A-Za-z0-9_.-]){re.escape(full_name)}"
+                    rf"{_REFERENCE_BOUNDARY}"
+                ),
+                re.compile(
+                    rf"(?:https://github\.com/|git@github\.com:)"
+                    rf"{re.escape(full_name)}(?:\.git)?{_REFERENCE_BOUNDARY}"
+                ),
+                re.compile(
+                    rf'"name"\s*:\s*{re.escape(json.dumps(name))}'
+                    r"(?=\s*[,}])"
+                ),
+                re.compile(
+                    rf'"(?:full_name|from|to)"\s*:\s*'
+                    rf"{re.escape(json.dumps(full_name))}(?=\s*[,}}])"
+                ),
+            )
+        )
+        if name.lower() != organization.lower():
+            patterns.append(re.compile(rf"`{re.escape(name)}`"))
+    return tuple(patterns)
+
+
+def private_references(
+    organization: str,
+    private_names: set[str],
+) -> PrivateReferences:
+    return PrivateReferences(
+        private_reference_tokens(organization, private_names),
+        private_reference_patterns(organization, private_names),
+    )
+
+
+def contains_private_reference(
+    content: str,
+    references: PrivateReferences,
+) -> bool:
+    return any(pattern.search(content) for pattern in references.patterns)
+
+
+def redact_existing_private_reference_lines(
+    content: str | None,
+    references: PrivateReferences,
+) -> str | None:
+    """Replace only existing public lines that expose an exact private identity."""
+    if not content or not references:
+        return content
+
+    redacted: list[str] = []
+    for line in content.splitlines(keepends=True):
+        if not contains_private_reference(line, references):
+            redacted.append(line)
+            continue
+
+        if line.endswith("\r\n"):
+            ending = "\r\n"
+        elif line.endswith("\n"):
+            ending = "\n"
+        else:
+            ending = ""
+        stripped = line.lstrip()
+        indentation = line[: len(line) - len(stripped)]
+        list_prefix = "- " if stripped.startswith(("- ", "* ", "+ ")) else ""
+        replacement = (
+            f"{indentation}{list_prefix}{PRIVATE_REFERENCE_REDACTION}{ending}"
+        )
+        if redacted and redacted[-1].strip() == replacement.strip():
+            continue
+        redacted.append(replacement)
+    return "".join(redacted)
+
+
 def build_plan_with_exact_private_references(
     api: Any,
     organization: str,
     dotgithub: dict[str, Any],
     inventory: list[dict[str, Any]],
-) -> tuple[str, dict[str, tuple[str, Any]], set[str], dict[str, Any]]:
-    """Build a plan without treating incidental substrings as private-name leaks."""
+) -> tuple[str, dict[str, tuple[str, Any]], PrivateReferences, dict[str, Any]]:
+    """Build a plan without treating longer public names as private leaks."""
     private_names = {
         str(repository.get("name", ""))
         for repository in inventory
@@ -102,19 +239,88 @@ def build_plan_with_exact_private_references(
         dotgithub,
         masked_inventory,
     )
-    tokens = private_reference_tokens(organization, private_names)
+    references = private_references(organization, private_names)
+
+    for path in publisher.README_PATHS:
+        _, existing = files[path]
+        existing_content = existing.content if existing else None
+        privacy_safe_existing = redact_existing_private_reference_lines(
+            existing_content,
+            references,
+        )
+        files[path] = (
+            publisher.merge_managed_block(
+                privacy_safe_existing,
+                publisher.relationship_readme_block(organization),
+            ),
+            existing,
+        )
+
     if any(
-        token in content
+        contains_private_reference(content, references)
         for content, _ in files.values()
-        for token in tokens
     ):
         raise RuntimeError(
             f"privacy preflight failed for {organization}/.github"
         )
-    return branch, files, tokens, result
+    return branch, files, references, result
+
+
+def run_plan_with_exact_private_references(
+    api: Any,
+    plan: tuple[
+        str,
+        str,
+        dict[str, tuple[str, Any]],
+        PrivateReferences,
+        dict[str, Any],
+    ],
+    execute: bool,
+) -> None:
+    """Write and verify files with boundary-aware private-reference checks."""
+    organization, branch, files, references, result = plan
+    changed_paths: list[str] = []
+    for path, (desired, existing) in files.items():
+        changed = not existing or existing.content != desired
+        target = result["changed_files"] if changed else result["unchanged_files"]
+        target.append(path)
+        if changed:
+            changed_paths.append(path)
+        if execute and changed:
+            publisher.write_file(
+                api,
+                organization,
+                path,
+                branch,
+                desired,
+                existing,
+            )
+            print(f"UPDATED {organization}/.github:{path}")
+
+    if not execute:
+        return
+    # Unchanged files were already fetched, compared byte-for-byte, and passed
+    # privacy preflight while the plan was built. Re-read only files written by
+    # this execution, cutting resume traffic without weakening write checks.
+    for path in changed_paths:
+        desired, _ = files[path]
+        observed = publisher.base.fetch_file(api, organization, path, branch)
+        leaked = observed and contains_private_reference(
+            observed.content,
+            references,
+        )
+        if not observed or observed.content != desired or leaked:
+            raise RuntimeError(
+                f"relationship verification failed for {organization}/.github"
+            )
+    result["verified"] = True
+    print(f"VERIFIED {organization}/.github relationships")
 
 
 publisher.build_plan = build_plan_with_exact_private_references
+publisher.run_plan = run_plan_with_exact_private_references
+governance.GitHubApi._retry_delay = staticmethod(rate_limit_retry_delay)
+publisher.base.GitHubApi._retry_delay = staticmethod(rate_limit_retry_delay)
 
 
 def configure_expected_owner_login(value: str | None = None) -> str:

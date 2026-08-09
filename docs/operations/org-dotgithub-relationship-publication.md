@@ -24,7 +24,12 @@ artifacts in each one:
 - the same managed discovery block in `profile/README.md`
 
 Existing unmanaged content outside the publisher's bounded markers is
-preserved.
+preserved, except that an existing README or profile line containing an exact
+private repository identity is replaced with a generic withholding notice.
+This remediation removes an existing public disclosure without copying the
+private identity into logs or reports. Newly generated managed content is not
+silently redacted: publication fails if that content contains a private
+identity.
 
 ## Security boundary
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the relationship between the 64-org and 41-portfolio registries.
+"""Validate the relationship between the 71-org and 41-portfolio registries.
 
 The governance registry answers "which GitHub organizations are managed and
 which Linear project owns each organization?". The portfolio registry is the
@@ -22,12 +22,23 @@ DEFAULT_GOVERNANCE_REGISTRY = Path(
     "ops/portfolio/github-linear-project-registry.tsv"
 )
 DEFAULT_PORTFOLIO_REGISTRY = Path("ops/registries/portfolio-project-links.csv")
-EXPECTED_GOVERNANCE_COUNT = 64
+EXPECTED_GOVERNANCE_COUNT = 71
 EXPECTED_PORTFOLIO_COUNT = 41
 
 ORG_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
 LINEAR_PROJECT_PATH_RE = re.compile(r"^/denman/project/[A-Za-z0-9._~-]+$")
 PROJECT_NUMBER_EXCEPTION = {"dancing-dragons": 4}
+LINEAR_PROJECT_SHARE_EXCEPTIONS: dict[str, frozenset[str]] = {
+    "https://linear.app/denman/project/githubcomflags-2-env-05db5133a267": frozenset(
+        {"flags-2-env", "flags-2-env-test"}
+    ),
+    "https://linear.app/denman/project/githubcomnetworking-components-0099b19507ec": frozenset(
+        {"networking-components", "networking-components-test"}
+    ),
+    "https://linear.app/denman/project/githubcomores-otel-85e70d77275a": frozenset(
+        {"ores-otel", "ores-otel-test"}
+    ),
+}
 CREDENTIAL_PATTERNS = (
     re.compile(r"ghp_[A-Za-z0-9]{20,}"),
     re.compile(r"github_pat_[A-Za-z0-9_]{20,}"),
@@ -88,6 +99,38 @@ def validate_linear_url(value: str, *, context: str) -> None:
         )
 
 
+def validate_linear_project_sharing(
+    owners_by_url: dict[str, set[str]],
+    *,
+    context: Path,
+) -> None:
+    for linear_url, observed_owners in owners_by_url.items():
+        expected_owners = LINEAR_PROJECT_SHARE_EXCEPTIONS.get(linear_url)
+        if len(observed_owners) == 1 and expected_owners is None:
+            continue
+        if expected_owners is None:
+            raise RegistryRelationshipError(
+                f"{context}: Linear project URL is shared without an explicit "
+                f"production/test exception: {linear_url}"
+            )
+        if frozenset(observed_owners) != expected_owners:
+            raise RegistryRelationshipError(
+                f"{context}: Linear project share exception mismatch for "
+                f"{linear_url}: expected {sorted(expected_owners)}, "
+                f"found {sorted(observed_owners)}"
+            )
+
+    for linear_url, expected_owners in LINEAR_PROJECT_SHARE_EXCEPTIONS.items():
+        observed_owners = owners_by_url.get(linear_url)
+        if observed_owners is None:
+            continue
+        if frozenset(observed_owners) != expected_owners:
+            raise RegistryRelationshipError(
+                f"{context}: required production/test Linear project share is "
+                f"incomplete for {linear_url}"
+            )
+
+
 def load_governance_registry(
     path: Path,
     *,
@@ -110,6 +153,7 @@ def load_governance_registry(
 
     by_org: dict[str, dict[str, str]] = {}
     observed_order: list[str] = []
+    owners_by_url: dict[str, set[str]] = {}
     for line_number, row in enumerate(rows, start=2):
         organization = (row.get("organization") or "").strip()
         linear_url = (row.get("linear_url") or "").strip()
@@ -131,11 +175,14 @@ def load_governance_registry(
             "linear_url": linear_url,
         }
         observed_order.append(key)
+        owners_by_url.setdefault(linear_url, set()).add(key)
 
     if observed_order != sorted(observed_order):
         raise RegistryRelationshipError(
             f"{path}: organizations must be sorted case-insensitively"
         )
+
+    validate_linear_project_sharing(owners_by_url, context=path)
     return by_org
 
 
@@ -207,10 +254,10 @@ def validate_relationship(
             )
         if portfolio_key != normalized_org:
             raise RegistryRelationshipError(
-                f"{portfolio_path}:{line_number}: portfolio_key {portfolio_key!r} "
+                f"{portfolio.path}:{line_number}: portfolio_key {portfolio_key!r} "
                 f"must equal case-folded github_org {normalized_org!r}"
             )
-        if portfolio_key in seen_keys:
+        if portfolio.key in seen_keys:
             raise RegistryRelationshipError(
                 f"{portfolio_path}:{line_number}: duplicate portfolio_key {portfolio_key!r}"
             )
@@ -224,17 +271,17 @@ def validate_relationship(
         governance_row = governance.get(normalized_org)
         if governance_row is None:
             raise RegistryRelationshipError(
-                f"{portfolio_path}:{line_number}: {github_org} is absent from the "
-                "64-organization governance registry"
+                f"{portfolio.path}:{line_number}: {github_org} is absent from the "
+                "71-organization governance registry"
             )
         if row["linear_project_url"] != governance_row["linear_url"]:
             raise RegistryRelationshipError(
-                f"{portfolio_path}:{line_number}: Linear URL differs from governance "
+                f"{portfolio.path}:{line_number}: Linear URL differs from governance "
                 f"registry for {github_org}"
             )
         validate_linear_url(
             row["linear_project_url"],
-            context=f"{portfolio_path}:{line_number} {github_org}",
+            context=f"{portfolio.path}:{line_number} {github_org}",
         )
 
         expected_number = PROJECT_NUMBER_EXCEPTION.get(portfolio_key, 1)
@@ -254,7 +301,7 @@ def validate_relationship(
         )
         if row["github_project_url"] != expected_url:
             raise RegistryRelationshipError(
-                f"{portfolio_path}:{line_number}: expected project URL {expected_url!r}"
+                f"{portfolio.path}:{line_number}: expected project URL {expected_url!r}"
             )
 
     governance_only = sorted(set(governance) - seen_orgs)
