@@ -93,7 +93,40 @@ jobs:
           export DEN_2797_REAL_NPM="$real_npm"
           export PATH="$npm_wrapper_dir:$PATH"
           export NPM_CONFIG_PACKAGE_LOCK=true
-          bash scripts/den-2797-wave7-prepare.sh
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path("scripts/den-2797-wave7-prepare.sh")
+          runtime = Path("/tmp/den-2797-wave7-prepare-runtime.sh")
+          text = source.read_text()
+          replacements = (
+              (
+                  'node "$work/evgl-e2e/scripts/validate-structure.mjs"',
+                  '( cd "$work/evgl-e2e" && node scripts/validate-structure.mjs )',
+              ),
+              (
+                  'node --test "$work/evgl-e2e"/tests/contracts/*.test.mjs',
+                  '( cd "$work/evgl-e2e" && node --test tests/contracts/*.test.mjs )',
+              ),
+              (
+                  'node "$work/hhm-e2e/scripts/validate-structure.mjs"',
+                  '( cd "$work/hhm-e2e" && node scripts/validate-structure.mjs )',
+              ),
+              (
+                  'node --test "$work/hhm-e2e"/tests/contracts/*.test.mjs',
+                  '( cd "$work/hhm-e2e" && node --test tests/contracts/*.test.mjs )',
+              ),
+          )
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one source-preflight command, found {count}: {old}")
+              text = text.replace(old, new)
+          runtime.write_text(text)
+          runtime.chmod(0o700)
+          PY
+          bash /tmp/den-2797-wave7-prepare-runtime.sh
 
       - name: Receive one-time encrypted owner credential
         run: bash scripts/den-2797-wave7-receive.sh
