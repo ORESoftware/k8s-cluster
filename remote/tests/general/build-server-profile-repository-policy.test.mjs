@@ -110,12 +110,75 @@ test('GitOps binds each reviewed repository to only its fixed profiles', () => {
       repository: 'https://github.com/3FA-app/3fa-interfaces.git',
       profiles: ['node-hardened-test', 'rust-generated-verify'],
     },
+    {
+      repository: 'https://github.com/zed-pkg/zed-cli.git',
+      profiles: ['rust-verify'],
+    },
   ]);
-  assert.doesNotMatch(patch, /msgint-connectors[^\n]*node-verify/);
-  assert.doesNotMatch(patch, /msgint-connectors[^\n]*(playwright|python-verify|rust-verify)/);
-  assert.doesNotMatch(patch, /3fa-interfaces[^\n]*"rust-verify"/);
-  assert.doesNotMatch(patch, /3fa-interfaces[^\n]*(playwright|python-verify|node-verify)/);
-  assert.doesNotMatch(patch, /messaging-intel\/\*|3FA-app\/\*/);
+
+  const byRepository = new Map(
+    rules.map(({ repository, profiles: allowed }) => [repository, allowed]),
+  );
+  for (const denied of ['node-verify', 'playwright', 'python-verify', 'rust-verify']) {
+    assert.equal(
+      byRepository
+        .get('https://github.com/messaging-intel/msgint-connectors.git')
+        .includes(denied),
+      false,
+      `Messaging Intel unexpectedly admits ${denied}`,
+    );
+  }
+  for (const denied of ['rust-verify', 'playwright', 'python-verify', 'node-verify']) {
+    assert.equal(
+      byRepository
+        .get('https://github.com/3FA-app/3fa-interfaces.git')
+        .includes(denied),
+      false,
+      `3FA interfaces unexpectedly admits ${denied}`,
+    );
+  }
+  for (const denied of ['node-verify', 'playwright', 'python-verify', 'flutter-verify']) {
+    assert.equal(
+      byRepository.get('https://github.com/zed-pkg/zed-cli.git').includes(denied),
+      false,
+      `Zed CLI unexpectedly admits ${denied}`,
+    );
+  }
+  assert.doesNotMatch(patch, /messaging-intel\/\*|3FA-app\/\*|zed-pkg\/\*/);
+});
+
+test('Zed CLI manual continuity is exact, fixed, and webhook-independent', () => {
+  const rules = profileRulesFromPatch();
+  assert.deepEqual(
+    rules.find(({ repository }) => repository.endsWith('/zed-pkg/zed-cli.git')),
+    {
+      repository: 'https://github.com/zed-pkg/zed-cli.git',
+      profiles: ['rust-verify'],
+    },
+  );
+
+  const rust = profileConstantBody('RUST_VERIFY_STEPS');
+  const fmt = rust.indexOf('cargo fmt --all -- --check');
+  const clippy = rust.indexOf(
+    'cargo clippy --locked --all-targets --all-features -- -D warnings',
+  );
+  const tests = rust.indexOf('cargo test --locked --all-targets --all-features');
+  assert.ok(fmt >= 0, 'rust-verify formatting command is missing');
+  assert.ok(clippy > fmt, 'rust-verify Clippy must follow formatting');
+  assert.ok(tests > clippy, 'rust-verify tests must follow Clippy');
+  assert.doesNotMatch(rust, /cargo publish|curl|wget|--force|\|\| true/);
+
+  for (const lookalike of [
+    'zed-pkg/zed-cli-tools',
+    'zed-pkg/zed-cli-test',
+    'zed-pkg-test/zed-cli',
+  ]) {
+    assert.ok(!patch.includes(lookalike), `lookalike repository admitted: ${lookalike}`);
+  }
+  assert.match(documentation, /manual protected build-server lane/);
+  assert.match(documentation, /does \*\*not\*\* register a GitHub webhook contract/);
+  assert.match(documentation, /requires a separate reviewed compiler contract/);
+  assert.doesNotMatch(patch, /GHA_CLONE|WEBHOOK|workflow.*zed-cli/i);
 });
 
 test('generated Rust profile is fixed, ordered, locked, and non-publishing', () => {
@@ -176,7 +239,10 @@ test('documentation states exact precedence, alias handling, and repository-spec
   assert.match(documentation, /k8s-cluster\.git -> rust-verify/);
   assert.match(documentation, /msgint-connectors\.git -> node-hardened-verify, node-hardened-test/);
   assert.match(documentation, /3fa-interfaces\.git -> node-hardened-test, rust-generated-verify/);
+  assert.match(documentation, /zed-cli\.git -> rust-verify/);
   assert.match(documentation, /generated Rust crate/);
   assert.match(documentation, /lifecycle scripts disabled/);
   assert.match(documentation, /rejecting a downgrade of the same repository identity/);
+  assert.match(documentation, /lookalike repositories/);
+  assert.match(documentation, /caller-supplied workflow text/);
 });

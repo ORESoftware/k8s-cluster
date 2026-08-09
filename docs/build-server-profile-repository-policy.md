@@ -28,6 +28,10 @@ The value is a JSON array:
   {
     "repository": "https://github.com/3FA-app/3fa-interfaces.git",
     "profiles": ["node-hardened-test", "rust-generated-verify"]
+  },
+  {
+    "repository": "https://github.com/zed-pkg/zed-cli.git",
+    "profiles": ["rust-verify"]
   }
 ]
 ```
@@ -93,7 +97,25 @@ The Node stage performs the lifecycle-script-free locked repository test. The ge
 
 The exact 3FA rule does not admit the `3FA-app` organization, sibling repositories, `node-verify`, `rust-verify`, browser, Python, or Flutter profiles. Workflow parsing, immutable revision admission, and Node-before-Rust dependency ordering remain separate clone-server responsibilities and are added only in a subsequent reviewed change.
 
-Repositories without an exact rule continue to use the reviewed prefix fallback. Adding a sensitive repository should normally include an exact rule in the same pull request as its fixed profile and workflow contract.
+The Zed CLI continuity rule binds:
+
+```text
+https://github.com/zed-pkg/zed-cli.git -> rust-verify
+```
+
+The existing `rust-verify` profile is a compiled command sequence, not caller-supplied workflow text. It runs, in order:
+
+```text
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-targets --all-features
+```
+
+This binding is a manual protected build-server lane for an immutable `zed-pkg/zed-cli` revision when GitHub-hosted capacity is unavailable or delayed. It does **not** register a GitHub webhook contract, enable `gha-clone-server` execution, interpret arbitrary workflow YAML, accept caller-provided commands, or grant the `zed-pkg` organization as a prefix. Automatic GitHub failure-trigger routing requires a separate reviewed compiler contract that names the exact workflow, immutable action pins, command order, environment allowlist, and revision admission policy.
+
+The exact Zed rule rejects sibling and lookalike repositories such as `zed-pkg/zed-cli-tools`, `zed-pkg/zed-cli-test`, and `zed-pkg-test/zed-cli`. It also rejects downgrades to `node-verify`, browser, Python, Flutter, and other Rust profiles. Repository aliases are normalized through the same HTTPS/SSH, case, optional `.git`, and trailing-slash rules as every other exact binding.
+
+Repositories without an exact rule continue to use the reviewed prefix fallback. Adding a sensitive repository should normally include an exact rule in the same pull request as its fixed profile and workflow contract. A manual-only continuity binding may reuse an already reviewed compiled profile when the change also proves exact repository admission, profile downgrade rejection, lookalike rejection, and the absence of webhook/compiler activation.
 
 ## Review and rollout rule
 
@@ -116,6 +138,6 @@ The Rust policy and profile tests prove:
 - generated Rust verification is ordered, locked, warnings-denied, explicit-path, and non-publishing;
 - no sensitive profile contains force flags, download-pipe execution, repository-wide crate discovery, or ignored failures.
 
-The GitOps contract test parses the complete JSON policy and verifies that `k8s-cluster` receives only `rust-verify`, `msgint-connectors` receives only `node-hardened-verify` and `node-hardened-test`, and `3fa-interfaces` receives only `node-hardened-test` and `rust-generated-verify`.
+The GitOps contract test parses the complete JSON policy and verifies that `k8s-cluster` receives only `rust-verify`, `msgint-connectors` receives only `node-hardened-verify` and `node-hardened-test`, `3fa-interfaces` receives only `node-hardened-test` and `rust-generated-verify`, and `zed-cli` receives only `rust-verify`. It also proves Zed lookalikes are absent, no broader `zed-pkg/*` admission exists, and the documentation keeps webhook/compiler activation out of this manual lane.
 
 Temporary formatter or branch-writing workflows are not part of the deployable policy. The reviewed pull-request diff must contain only the profile registry, GitOps configuration, documentation, and tests.

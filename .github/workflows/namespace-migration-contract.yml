@@ -1,0 +1,198 @@
+name: Namespace migration contract
+
+on:
+  pull_request:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: namespace-migration-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Ownership registry, inventory, manifest, and new-debt ratchet
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Select exact source ref
+        id: source-ref
+        shell: bash
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            test -n "$PR_HEAD_SHA"
+            printf 'ref=%s\n' "$PR_HEAD_SHA" >> "$GITHUB_OUTPUT"
+          else
+            test -n "$EVENT_SHA"
+            printf 'ref=%s\n' "$EVENT_SHA" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out exact source history without child worktrees
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.source-ref.outputs.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+
+      - name: Assert and record exact source checkout
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ steps.source-ref.outputs.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          actual_sha="$(git rev-parse HEAD)"
+          test "$actual_sha" = "$EXPECTED_SHA"
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          expected = os.environ["EXPECTED_SHA"]
+          actual = subprocess.check_output(
+              ["git", "rev-parse", "HEAD"], text=True
+          ).strip()
+          report = {
+              "valid": expected == actual,
+              "eventName": os.environ["GITHUB_EVENT_NAME"],
+              "expectedSourceSha": expected,
+              "checkedOutSha": actual,
+              "eventSha": os.environ["EVENT_SHA"],
+              "pullRequestHeadSha": os.environ.get("PR_HEAD_SHA") or None,
+              "pullRequestBaseSha": os.environ.get("PR_BASE_SHA") or None,
+          }
+          Path("artifacts/namespace-source-ref.json").write_text(
+              json.dumps(report, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          if not report["valid"]:
+              raise SystemExit("checked-out commit does not match selected source SHA")
+          PY
+
+      - name: Compile namespace validators and manifest generator
+        run: |
+          python3 -m py_compile \
+            tools/namespace_migration.py \
+            tools/test_namespace_migration.py \
+            tools/namespace_manifest.py \
+            tools/test_namespace_manifest.py
+
+      - name: Run classifier and manifest adversarial tests
+        run: |
+          python3 tools/test_namespace_migration.py
+          python3 tools/test_namespace_manifest.py
+
+      - name: Validate registry and summarize current debt
+        run: |
+          python3 tools/namespace_migration.py check \
+            --root . \
+            --format json \
+            > artifacts/namespace-contract-report.json
+
+      - name: Generate complete read-only inventory
+        run: |
+          python3 tools/namespace_migration.py inventory \
+            --root . \
+            --format json \
+            > artifacts/namespace-inventory.json
+
+      - name: Validate deterministic plaintext migration manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/namespace_manifest.py check \
+            --root . \
+            --format json \
+            > artifacts/namespace-manifest-report.json
+          sha256sum catalog/namespaces/migration-manifest.json \
+            > artifacts/namespace-manifest.sha256
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path('artifacts/namespace-manifest-report.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          manifest = json.loads(
+              Path('catalog/namespaces/migration-manifest.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          spec = manifest['spec']
+          entries = spec['entries']
+          checks = {
+              'valid report': report.get('valid') is True,
+              'manifest entries': report.get('entryCount') == 1134,
+              'inventory entries': report.get('inventoryEntryCount') == 1134,
+              'zero diagnostics': report.get('diagnostics') == [],
+              'no encoded staging': report.get('encodedStagingFiles') == [],
+              'execution disabled': spec.get('executionAuthorized') is False,
+              'cleanup disabled': all(
+                  entry.get('destructiveCleanupAllowed') is False
+                  for entry in entries
+              ),
+          }
+          failed = [name for name, valid in checks.items() if not valid]
+          if failed:
+              raise SystemExit('manifest checks failed: ' + ', '.join(failed))
+          Path('artifacts/namespace-manifest-invariants.json').write_text(
+              json.dumps({'valid': True, 'checks': checks}, indent=2, sort_keys=True)
+              + '\n',
+              encoding='utf-8',
+          )
+          PY
+
+      - name: Reject newly added legacy namespace references
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test -n "$BASE_SHA"
+          test -n "$HEAD_SHA"
+          git cat-file -e "$BASE_SHA^{commit}"
+          git cat-file -e "$HEAD_SHA^{commit}"
+          python3 tools/namespace_migration.py ratchet \
+            --root . \
+            --base-ref "$BASE_SHA" \
+            --head-ref "$HEAD_SHA" \
+            --format json \
+            > artifacts/namespace-ratchet.json
+
+      - name: Record non-PR ratchet scope
+        if: ${{ github.event_name != 'pull_request' }}
+        run: |
+          printf '%s\n' \
+            '{"valid":true,"baseRef":null,"headRef":"'"$GITHUB_SHA"'","violations":[],"diagnostics":[],"note":"new-reference ratchet runs on pull_request events"}' \
+            > artifacts/namespace-ratchet.json
+
+      - name: Upload exact-source namespace evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: namespace-migration-evidence
+          path: |
+            artifacts/namespace-source-ref.json
+            artifacts/namespace-contract-report.json
+            artifacts/namespace-inventory.json
+            artifacts/namespace-manifest-report.json
+            artifacts/namespace-manifest-invariants.json
+            artifacts/namespace-manifest.sha256
+            artifacts/namespace-ratchet.json
+          if-no-files-found: error
+          retention-days: 14
