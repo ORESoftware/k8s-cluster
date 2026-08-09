@@ -18,7 +18,7 @@
       "mode": "git-submodule",
       "path": "remote/deployments/fabrication-server-rs",
       "repository": "git@github.com:daedalus-fab/fabrication-server.rs.git",
-      "revision": "5e305b9bf40d28139bdabf9342c304f759cbfee5"
+      "revision": "6a79b186b0693e968146caaba3d41cc4281ddba1"
     },
     "migration": {
       "phase": "pilot-inert",
@@ -30,7 +30,7 @@
       "path": "k8s",
       "renderer": "kustomize",
       "repository": "git@github.com:daedalus-fab/fabrication-server.rs.git",
-      "targetRevision": "5e305b9bf40d28139bdabf9342c304f759cbfee5"
+      "targetRevision": "6a79b186b0693e968146caaba3d41cc4281ddba1"
     }
   }
 }
