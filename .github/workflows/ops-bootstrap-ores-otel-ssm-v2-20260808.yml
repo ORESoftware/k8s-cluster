@@ -50,13 +50,13 @@ jobs:
         run: |
           set -Eeuo pipefail
           test "$(git hash-object scripts/ops/bootstrap_ores_otel_repositories_20260808.sh)" = \
-            '49e194f206ce8bdacff6f643e021253b5b588f89'
+            '9a2ca7840150e558e9b03f4f677d28ba0c43580d'
           test "$(git hash-object scripts/ops/bootstrap_ores_otel_repositories_20260808_part1.sh)" = \
-            '4bbf7f841a14421b3a6fb568f0a68eeb5c9e2adb'
+            '9c599bb13de986cb2c188a73bf43dfaf952f060b'
           test "$(git hash-object scripts/ops/bootstrap_ores_otel_repositories_20260808_part2.sh)" = \
-            '48faf2fbeb2f908ca0ec9a2e33f248eec1eed27a'
+            'd33ef865aee5be3bbd2d99c4bc26eb90f7604cf5'
           test "$(git hash-object scripts/ops/bootstrap_ores_otel_repositories_20260808_part3.sh)" = \
-            'bcb5db345e0b419cc07ad9c1039e250452c530ce'
+            '24e28b0a5df6ed77f3a3daf02f010c5d4f48d2b7'
           bash -n scripts/ops/run_protected_ores_otel_publisher_20260808.sh
           for script in scripts/ops/bootstrap_ores_otel_repositories_20260808*.sh; do
             bash -n "$script"
