@@ -22,24 +22,20 @@ for record in "${TEST_MATRIX[@]}"; do
     "$repository_name" \
     "$language conformance harness comparing ORESoftware/next-loggers.ts with ores-otel/ores.otel.log."
 
+  test_root="$work/test-repositories/$repository_name"
+  repository_action=created
   if remote_has_main "$full_name"; then
-    marker="$(gh api --header "X-GitHub-Api-Version: $API_VERSION" \
-      "repos/$full_name/contents/UPSTREAMS.json" --jq .content 2>/dev/null \
-      | tr -d '\n' | base64 --decode 2>/dev/null || true)"
-    python3 - "$marker" "$BOOTSTRAP_ID" "$sdk" <<'PY'
-import json
-import sys
-record = json.loads(sys.argv[1])
-if record.get("bootstrap_id") != sys.argv[2] or record.get("sdk") != sys.argv[3]:
-    raise SystemExit("existing test repository does not match the reviewed ORES OTEL fleet")
-PY
-    printf 'VERIFIED_EXISTING_TEST_REPOSITORY %s sdk=%s\n' "$full_name" "$sdk"
-    created_or_verified=$((created_or_verified + 1))
-    continue
+    git clone --branch main --single-branch \
+      "https://github.com/$full_name.git" "$test_root"
+    repository_action=updated
+    find "$test_root" -mindepth 1 -maxdepth 1 \
+      ! -name '.git' -exec rm -rf -- {} +
+  else
+    mkdir -p "$test_root"
+    git -C "$test_root" init -b main
+    git -C "$test_root" remote add origin "https://github.com/$full_name.git"
   fi
 
-  test_root="$work/test-repositories/$repository_name"
-  mkdir -p "$test_root"
   cp -a "$canonical_work/sdk/$sdk/." "$test_root/"
   mkdir -p "$test_root/contracts" "$test_root/scripts" "$test_root/.github/workflows"
   cp "$canonical_work/contracts/log-record.schema.json" "$test_root/contracts/"
@@ -296,23 +292,36 @@ test('declares both canonical and legacy upstreams', async () => {
 EOF
   fi
 
-  git -C "$test_root" init -b main
   git -C "$test_root" config user.name 'ORESoftware repository automation'
   git -C "$test_root" config user.email 'bot@oresoftware.dev'
   git -C "$test_root" add -A
-  GIT_AUTHOR_DATE='2026-08-08T23:00:00Z' \
-  GIT_COMMITTER_DATE='2026-08-08T23:00:00Z' \
-    git -C "$test_root" commit -m "test: add $language legacy/canonical conformance harness"
-  git -C "$test_root" remote add origin "https://github.com/$full_name.git"
-  git -C "$test_root" push -u origin main
+  if git -C "$test_root" diff --cached --quiet; then
+    printf 'VERIFIED_UNCHANGED_TEST_REPOSITORY %s sdk=%s language=%s\n' \
+      "$full_name" "$sdk" "$language"
+  else
+    git -C "$test_root" commit -m "test: install $language legacy/canonical conformance harness"
+    git -C "$test_root" push -u origin HEAD:refs/heads/main
+    printf '%s_TEST_REPOSITORY %s sdk=%s language=%s\n' \
+      "${repository_action^^}" "$full_name" "$sdk" "$language"
+  fi
+
+  manifest="$(cat "$test_root/UPSTREAMS.json")"
+  python3 - "$manifest" "$BOOTSTRAP_ID" "$sdk" "$full_name" <<'PY'
+import json
+import sys
+record = json.loads(sys.argv[1])
+assert record["bootstrap_id"] == sys.argv[2]
+assert record["sdk"] == sys.argv[3]
+assert record["repository"] == sys.argv[4]
+assert record["legacy"]["repository"] == "ORESoftware/next-loggers.ts"
+assert record["canonical"]["repository"] == "ores-otel/ores.otel.log"
+PY
 
   set_topics "$full_name" opentelemetry otel logging conformance testing "${sdk//./-}"
-  printf 'CREATED_TEST_REPOSITORY %s sdk=%s language=%s\n' \
-    "$full_name" "$sdk" "$language"
   created_or_verified=$((created_or_verified + 1))
 done
 
-test "$created_or_verified" -ge 11
+test "$created_or_verified" -eq 11
 printf 'VERIFIED_TEST_FLEET repositories=%s distinct_sdks=11 distinct_languages=10\n' \
   "$created_or_verified"
 printf 'bootstrap-stage=%s status=passed\n' "$stage"
