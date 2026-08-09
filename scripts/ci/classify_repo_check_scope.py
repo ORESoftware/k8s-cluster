@@ -67,10 +67,13 @@ GOVERNANCE_PREFIXES = (
 # limited to this exact set has no dependency on remote/libs or private
 # deployment gitlinks, so the broad credential-backed jobs add no coverage.
 CREDENTIAL_FREE_CONTRACT_FILES = {
+    ".github/workflows/ephemeral-google-chat-relay-cleanup.yml",
+    ".github/workflows/google-chat-relay-contract.yml",
     ".github/workflows/den-319-private-fleet-contracts.yml",
     ".github/workflows/repo-check-scope-contract.yml",
     "scripts/ops/repository_rename_alias_guard.py",
     "scripts/ops/test_repository_rename_alias_guard.py",
+    "tools/google-chat-space-export/test_relay_workflows.py",
 }
 
 
