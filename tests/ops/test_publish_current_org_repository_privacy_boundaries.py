@@ -102,11 +102,7 @@ class RepositoryPrivacyBoundaryTests(unittest.TestCase):
         )
 
         with (
-            mock.patch.object(
-                publisher.base,
-                "fetch_file",
-                return_value=existing,
-            ),
+            mock.patch.object(publisher.base, "fetch_file") as fetch_file,
             mock.patch.object(publisher, "write_file") as write_file,
         ):
             module.run_plan_with_exact_private_references(
@@ -116,8 +112,46 @@ class RepositoryPrivacyBoundaryTests(unittest.TestCase):
             )
 
         write_file.assert_not_called()
+        fetch_file.assert_not_called()
         self.assertTrue(result["verified"])
         self.assertEqual(["README.md"], result["unchanged_files"])
+
+    def test_changed_file_is_re_read_after_write(self) -> None:
+        organization = "example-internal"
+        desired = "managed relationship content\n"
+        observed = mock.Mock(content=desired)
+        references = module.private_references(organization, set())
+        result = {
+            "changed_files": [],
+            "unchanged_files": [],
+            "verified": False,
+        }
+        plan = (
+            organization,
+            "main",
+            {"README.md": (desired, None)},
+            references,
+            result,
+        )
+
+        with (
+            mock.patch.object(
+                publisher.base,
+                "fetch_file",
+                return_value=observed,
+            ) as fetch_file,
+            mock.patch.object(publisher, "write_file") as write_file,
+        ):
+            module.run_plan_with_exact_private_references(
+                object(),
+                plan,
+                True,
+            )
+
+        write_file.assert_called_once()
+        fetch_file.assert_called_once()
+        self.assertTrue(result["verified"])
+        self.assertEqual(["README.md"], result["changed_files"])
 
     def test_terminal_private_reference_still_fails(self) -> None:
         organization = "example-internal"

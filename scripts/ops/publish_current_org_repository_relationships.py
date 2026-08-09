@@ -279,10 +279,13 @@ def run_plan_with_exact_private_references(
 ) -> None:
     """Write and verify files with boundary-aware private-reference checks."""
     organization, branch, files, references, result = plan
+    changed_paths: list[str] = []
     for path, (desired, existing) in files.items():
         changed = not existing or existing.content != desired
         target = result["changed_files"] if changed else result["unchanged_files"]
         target.append(path)
+        if changed:
+            changed_paths.append(path)
         if execute and changed:
             publisher.write_file(
                 api,
@@ -296,7 +299,11 @@ def run_plan_with_exact_private_references(
 
     if not execute:
         return
-    for path, (desired, _) in files.items():
+    # Unchanged files were already fetched, compared byte-for-byte, and passed
+    # privacy preflight while the plan was built. Re-read only files written by
+    # this execution, cutting resume traffic without weakening write checks.
+    for path in changed_paths:
+        desired, _ = files[path]
         observed = publisher.base.fetch_file(api, organization, path, branch)
         leaked = observed and contains_private_reference(
             observed.content,
