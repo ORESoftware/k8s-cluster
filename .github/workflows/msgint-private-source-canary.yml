@@ -1,0 +1,173 @@
+name: Messaging Intel private source canary
+run-name: Messaging Intel private source canary @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - scripts/preflight-msgint-github-app-access.py
+      - scripts/tests/test_preflight_msgint_github_app_access.py
+      - .github/workflows/msgint-private-source-canary.yml
+  workflow_dispatch:
+    inputs:
+      run_private_source_canary:
+        description: Prove the exact private Messaging Intel commit through the repository-scoped GitHub App
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: msgint-private-source-canary-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the review tree without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compile the redacted access preflight
+        run: python3 -m py_compile scripts/preflight-msgint-github-app-access.py
+
+      - name: Run the redaction, identity, and token-file unit suite
+        run: python3 scripts/tests/test_preflight_msgint_github_app_access.py
+
+      - name: Validate the exact-scope token minter shell
+        run: bash -n scripts/ci/mint-github-app-installation-token.sh
+
+      - name: Validate this workflow with pinned actionlint
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/msgint-private-source-canary.yml
+
+  private-source:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev' && inputs.run_private_source_canary }}
+    needs: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      MSGINT_REVISION: a9cc977d78347ec0efdbe8e6766967f80d425882
+    steps:
+      - name: Check out the exact trusted dev revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Prove the workflow is executing trusted dev
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/dev
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Mint one exact repository-scoped contents-read installation token
+        id: app-token
+        env:
+          K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+          GITHUB_API_VERSION: '2026-03-10'
+        run: |
+          set -euo pipefail
+          umask 077
+          token_file="$RUNNER_TEMP/msgint-installation-token"
+          test ! -e "$token_file"
+          bash scripts/ci/mint-github-app-installation-token.sh \
+            messaging-intel \
+            "$token_file" \
+            msgint-connectors
+          test -f "$token_file"
+          test "$(stat -c '%a' "$token_file")" = 600
+          printf 'token_file=%s\n' "$token_file" >>"$GITHUB_OUTPUT"
+
+      - name: Verify exact private repository and immutable commit API access
+        env:
+          MSGINT_GITHUB_TOKEN_FILE: ${{ steps.app-token.outputs.token_file }}
+        run: python3 scripts/preflight-msgint-github-app-access.py
+
+      - name: Fetch only the reviewed immutable source without executing it
+        env:
+          MSGINT_GITHUB_TOKEN_FILE: ${{ steps.app-token.outputs.token_file }}
+        run: |
+          set -euo pipefail
+          token_file="${MSGINT_GITHUB_TOKEN_FILE:?}"
+          test -f "$token_file"
+          repo="$RUNNER_TEMP/msgint-connectors"
+          askpass="$RUNNER_TEMP/msgint-git-askpass.sh"
+          test ! -e "$repo"
+          test ! -e "$askpass"
+
+          cat >"$askpass" <<'ASKPASS'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          case "${1:-}" in
+            *Username*) printf '%s\n' 'x-access-token' ;;
+            *Password*) cat "${MSGINT_GITHUB_TOKEN_FILE:?}" ;;
+            *) exit 1 ;;
+          esac
+          ASKPASS
+          chmod 500 "$askpass"
+
+          export GIT_ASKPASS="$askpass"
+          export GIT_ASKPASS_REQUIRE=force
+          export GIT_TERMINAL_PROMPT=0
+
+          git init --quiet "$repo"
+          git -C "$repo" remote add origin \
+            https://github.com/messaging-intel/msgint-connectors.git
+          git -C "$repo" fetch --no-tags --depth=1 origin "$MSGINT_REVISION"
+          git -C "$repo" checkout --quiet --detach FETCH_HEAD
+
+          unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
+          rm -f "$askpass"
+
+          test "$(git -C "$repo" rev-parse HEAD)" = "$MSGINT_REVISION"
+          git -C "$repo" cat-file -e "$MSGINT_REVISION^{commit}"
+          test -z "$(git -C "$repo" status --porcelain)"
+          test "$(git -C "$repo" remote get-url origin)" = \
+            https://github.com/messaging-intel/msgint-connectors.git
+          if git -C "$repo" config --local --name-only --get-regexp \
+            '(^credential\.|^http\..*\.extraheader$)' >/dev/null 2>&1; then
+            echo 'checkout persisted credential configuration' >&2
+            exit 1
+          fi
+          test -z "$(git -C "$repo" submodule status 2>/dev/null || true)"
+          printf 'private_source_canary=ok repository=%s revision=%s\n' \
+            messaging-intel/msgint-connectors "$MSGINT_REVISION"
+
+      - name: Revoke and remove the installation token
+        if: always()
+        env:
+          MSGINT_GITHUB_TOKEN_FILE: ${{ steps.app-token.outputs.token_file }}
+        run: |
+          set -euo pipefail
+          token_file="${MSGINT_GITHUB_TOKEN_FILE:-}"
+          if [ -z "$token_file" ] || [ ! -f "$token_file" ]; then
+            exit 0
+          fi
+          token="$(cat "$token_file")"
+          printf '::add-mask::%s\n' "$token"
+          status="$(
+            curl --silent --show-error \
+              --request DELETE \
+              --output /dev/null \
+              --write-out '%{http_code}' \
+              --header 'Accept: application/vnd.github+json' \
+              --header "Authorization: Bearer ${token}" \
+              --header 'X-GitHub-Api-Version: 2026-03-10' \
+              https://api.github.com/installation/token
+          )"
+          unset token
+          rm -f "$token_file"
+          if [ "$status" != 204 ]; then
+            echo "::error title=GitHub App token revocation failed::GitHub returned HTTP ${status}"
+            exit 1
+          fi
