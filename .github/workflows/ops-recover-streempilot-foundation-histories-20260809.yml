@@ -1,0 +1,227 @@
+name: Recover preserved StreemPilot foundation histories once
+run-name: Preserve eight recovered StreemPilot snapshots without overwriting current code
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: read
+
+concurrency:
+  group: ops-recover-streempilot-foundation-histories-20260809
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.number == 901 &&
+      github.actor == 'ORESoftware' &&
+      github.event.comment.body == 'ops-recover-streempilot-foundation-histories:901:rsa-v1:20260809T0600Z'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      REPOSITORY: ${{ github.repository }}
+      CARRIER_NUMBER: '901'
+      CHALLENGE_BRANCH: ops/streempilot-sp-credential-challenge-20260805
+      CHALLENGE_PATH: ops/streempilot-foundation-history-recovery-challenge.json
+      TARGET_ORG: StreemPilot
+      RECOVERY_BRANCH: recovery/streamyard-parity-foundation-20260809
+      PAYLOAD_SHA256: 9229dcd599079aaacd9a65e698a0a1fd065b4e09a81d28379d4c420bfa26b97e
+
+    steps:
+      - name: Check out trusted main without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Validate recovery tools and materialize reviewed payload
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          for command in base64 git gh jq openssl python3 sha256sum tar xz; do
+            command -v "$command"
+          done
+          python3 -m py_compile scripts/ops/recover_streempilot_foundation_snapshots.py
+
+          payload_marker="<!-- streempilot-history-recovery-payload:${PAYLOAD_SHA256} -->"
+          comments="$(gh api --paginate "repos/${REPOSITORY}/issues/${CARRIER_NUMBER}/comments?per_page=100" --slurp)"
+          payload_comment="$(jq -c --arg marker "$payload_marker" '[.[][] | select(.user.login == "ORESoftware") | select(.body | startswith($marker + "\n"))] | sort_by(.id) | last // empty' <<<"$comments")"
+          [[ -n "$payload_comment" ]]
+          payload_comment_id="$(jq -r '.id' <<<"$payload_comment")"
+          payload_body="$(jq -r '.body' <<<"$payload_comment")"
+          [[ "$(grep -c '^payload-base64=' <<<"$payload_body")" == 1 ]]
+          payload="$(sed -n 's/^payload-base64=//p' <<<"$payload_body")"
+          [[ "$payload" =~ ^[A-Za-z0-9+/=]+$ ]]
+          [[ "${#payload}" == 49288 ]]
+
+          archive="$RUNNER_TEMP/streempilot-recovery-payload.tar.xz"
+          printf '%s' "$payload" | base64 --decode > "$archive"
+          printf '%s  %s\n' "$PAYLOAD_SHA256" "$archive" | sha256sum --check --strict
+          payload_parent="$RUNNER_TEMP/streempilot-recovery-payload"
+          mkdir -p "$payload_parent"
+          tar --extract --xz --file "$archive" --directory "$payload_parent"
+          payload_root="$payload_parent/streempilot-recovery-payload-20260809"
+          [[ "$(jq -er '.schema_version' "$payload_root/manifest.json")" == 2 ]]
+          [[ "$(jq -er '.repositories | length' "$payload_root/manifest.json")" == 8 ]]
+          printf 'PAYLOAD_ROOT=%s\n' "$payload_root" >> "$GITHUB_ENV"
+          printf 'PAYLOAD_COMMENT_ID=%s\n' "$payload_comment_id" >> "$GITHUB_ENV"
+
+      - name: Broker one-time owner credential, publish recovery branches, and verify
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          stage=challenge-bootstrap
+          workflow_token="$GH_TOKEN"
+          work="$(mktemp -d "$RUNNER_TEMP/streempilot-history-recovery.XXXXXX")"
+          owner_token=''
+          actor=''
+
+          cleanup() {
+            unset owner_token actor GH_TOKEN OWNER_TOKEN GITHUB_TOKEN
+            unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
+            find "$work" -type f -exec sh -c 'for file do : > "$file"; done' sh {} + 2>/dev/null || true
+            rm -rf "$work"
+          }
+          fail() {
+            status=$?
+            trap - ERR
+            printf 'STREEMPILOT_HISTORY_RECOVERY_FAILED stage=%s\n' "$stage" >&2
+            exit "$status"
+          }
+          trap cleanup EXIT
+          trap fail ERR
+
+          private_key="$work/private.pem"
+          public_key="$work/public.pem"
+          ciphertext_file="$work/ciphertext.bin"
+          challenge="$work/challenge.json"
+          openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key"
+          chmod 600 "$private_key"
+          openssl pkey -in "$private_key" -pubout -out "$public_key"
+          nonce="$(openssl rand -hex 24)"
+          [[ "$nonce" =~ ^[0-9a-f]{48}$ ]]
+
+          stage=publish-challenge
+          jq -n \
+            --arg state awaiting-encrypted-response \
+            --arg purpose recover-preserved-streempilot-foundation-histories \
+            --arg nonce "$nonce" \
+            --rawfile publicKey "$public_key" \
+            --arg algorithm RSA-OAEP-SHA256-MGF1-SHA256 \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg sourceCommit "$GITHUB_SHA" \
+            --arg recoveryBranch "$RECOVERY_BRANCH" \
+            '{state:$state,purpose:$purpose,nonce:$nonce,publicKey:$publicKey,algorithm:$algorithm,runId:$runId,sourceCommit:$sourceCommit,recoveryBranch:$recoveryBranch,privateKeyStored:false,plaintextCredentialStored:false}' \
+            > "$challenge"
+          challenge_sha="$(GH_TOKEN="$workflow_token" gh api "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}?ref=${CHALLENGE_BRANCH}" --jq '.sha' 2>/dev/null || true)"
+          put_args=(--method PUT "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}" -f message='ops: publish StreemPilot history-recovery challenge' -f content="$(base64 -w0 < "$challenge")" -f branch="$CHALLENGE_BRANCH")
+          if [[ -n "$challenge_sha" ]]; then put_args+=(-f sha="$challenge_sha"); fi
+          GH_TOKEN="$workflow_token" gh api "${put_args[@]}" >/dev/null
+
+          stage=await-encrypted-response
+          marker="<!-- streempilot-history-recovery-credential-response:${nonce} -->"
+          response=''
+          response_comment_id=''
+          for _ in $(seq 1 300); do
+            comments="$(GH_TOKEN="$workflow_token" gh api --paginate "repos/${REPOSITORY}/issues/${CARRIER_NUMBER}/comments?per_page=100" --slurp)"
+            response_json="$(jq -c --arg marker "$marker" '[.[][] | select(.user.login == "ORESoftware") | select(.body | startswith($marker + "\n"))] | sort_by(.id) | last // empty' <<<"$comments")"
+            if [[ -n "$response_json" ]]; then
+              response="$(jq -r '.body' <<<"$response_json")"
+              response_comment_id="$(jq -r '.id' <<<"$response_json")"
+              break
+            fi
+            sleep 3
+          done
+          [[ -n "$response" ]]
+          [[ "$(grep -c '^ciphertext-base64=' <<<"$response")" == 1 ]]
+          ciphertext="$(sed -n 's/^ciphertext-base64=//p' <<<"$response")"
+          [[ "$ciphertext" =~ ^[A-Za-z0-9+/=]+$ ]]
+          [[ "${#ciphertext}" -le 8192 ]]
+          printf '%s' "$ciphertext" | base64 --decode > "$ciphertext_file"
+
+          stage=decrypt-and-validate-owner
+          owner_token="$(openssl pkeyutl -decrypt -inkey "$private_key" -in "$ciphertext_file" -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256 2>/dev/null)"
+          [[ -n "$owner_token" ]]
+          [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
+          [[ "$owner_token" != *$'\n'* && "$owner_token" != *$'\r'* && "$owner_token" != *$'\t'* && "$owner_token" != *' '* ]]
+          echo "::add-mask::$owner_token"
+          export GH_TOKEN="$owner_token"
+          export OWNER_TOKEN="$owner_token"
+          actor="$(gh api user --jq '.login')"
+          [[ "$actor" == ORESoftware ]]
+          membership="$(gh api user/memberships/orgs/${TARGET_ORG} --jq '[.state,.role] | join(":")')"
+          [[ "$membership" == active:admin ]]
+
+          askpass="$work/git-askpass.sh"
+          cat > "$askpass" <<'ASKPASS'
+          #!/usr/bin/env bash
+          case "${1:-}" in
+            *Username*) printf '%s\n' x-access-token ;;
+            *Password*) printf '%s\n' "$OWNER_TOKEN" ;;
+            *) exit 1 ;;
+          esac
+          ASKPASS
+          chmod 700 "$askpass"
+          export GIT_ASKPASS="$askpass"
+          export GIT_ASKPASS_REQUIRE=force
+          export GIT_TERMINAL_PROMPT=0
+
+          stage=publish-non-destructive-recovery
+          report="$work/recovery-report.json"
+          python3 scripts/ops/recover_streempilot_foundation_snapshots.py \
+            --payload-root "$PAYLOAD_ROOT" \
+            --report-json "$report" \
+            --branch "$RECOVERY_BRANCH"
+          [[ "$(jq -er '.state' "$report")" == completed ]]
+          [[ "$(jq -er '.repository_count' "$report")" == 8 ]]
+          [[ "$(jq -er '.pull_request_count' "$report")" == 8 ]]
+
+          stage=verify-remotes
+          while IFS=$'\t' read -r full expected_sha pr_number; do
+            actual_sha="$(gh api "repos/${full}/git/ref/heads/${RECOVERY_BRANCH}" --jq '.object.sha')"
+            [[ "$actual_sha" == "$expected_sha" ]]
+            pr_state="$(gh api "repos/${full}/pulls/${pr_number}" --jq '.state')"
+            [[ "$pr_state" == open ]]
+            files="$(gh api --paginate "repos/${full}/pulls/${pr_number}/files?per_page=100" --jq '.[].filename')"
+            [[ -n "$files" ]]
+            while IFS= read -r path; do
+              [[ "$path" == .recovery/streamyard-parity-foundation-20260809/* ]]
+            done <<<"$files"
+          done < <(jq -r '.repositories[] | [.repository,.branch_sha,.pull_request_number] | @tsv' "$report")
+
+          stage=record-sanitized-completion
+          unset owner_token OWNER_TOKEN GH_TOKEN
+          export GH_TOKEN="$workflow_token"
+          completed="$work/completed.json"
+          jq \
+            --arg state completed \
+            --arg purpose recover-preserved-streempilot-foundation-histories \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg sourceCommit "$GITHUB_SHA" \
+            --arg actor "$actor" \
+            '{state:$state,purpose:$purpose,runId:$runId,sourceCommit:$sourceCommit,authenticatedActor:$actor,recoveryBranch:.branch,repositoriesRecovered:.repository_count,pullRequestsOpen:.pull_request_count,pushedBranches:.pushed_count,classificationTotals:(reduce .repositories[].classification_counts as $counts ({"already-integrated-exactly":0,"absent-from-current-main":0,"diverged-or-superseded":0}; .["already-integrated-exactly"] += $counts["already-integrated-exactly"] | .["absent-from-current-main"] += $counts["absent-from-current-main"] | .["diverged-or-superseded"] += $counts["diverged-or-superseded"])),privateKeyStored:false,plaintextCredentialStored:false,repositories:[.repositories[] | {repository,branch_sha,pull_request_number,pull_request_url}]}' \
+            "$report" > "$completed"
+          challenge_sha="$(gh api "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}?ref=${CHALLENGE_BRANCH}" --jq '.sha')"
+          gh api --method PUT "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}" \
+            -f message='ops: complete StreemPilot history recovery' \
+            -f content="$(base64 -w0 < "$completed")" \
+            -f branch="$CHALLENGE_BRANCH" \
+            -f sha="$challenge_sha" >/dev/null
+          gh api --method PATCH "repos/${REPOSITORY}/issues/comments/${PAYLOAD_COMMENT_ID}" \
+            -f body="<!-- streempilot-history-recovery-payload:${PAYLOAD_SHA256} -->\npayload consumed by verified run ${GITHUB_RUN_ID}; plaintext credential was never stored" >/dev/null
+          if [[ -n "$response_comment_id" ]]; then
+            gh api --method PATCH "repos/${REPOSITORY}/issues/comments/${response_comment_id}" \
+              -f body="<!-- streempilot-history-recovery-credential-response:${nonce} -->\nencrypted response consumed by verified run ${GITHUB_RUN_ID}; ciphertext removed" >/dev/null
+          fi
+          printf 'STREEMPILOT_HISTORY_RECOVERY_COMPLETE actor=%s repositories=8 pull_requests=8\n' "$actor"
