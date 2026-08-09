@@ -24,13 +24,13 @@ jobs:
       TARGET_NAME: cliptown-lib-core
       TARGET_FULL_NAME: cliptown/cliptown-lib-core
       TARGET_ORG_NODE_ID: O_kgDOEnJ6zg
-      KEY_PATH: tmp/ops/cliptown-lib-core-public.pem
-      CIPHERTEXT_PATH: tmp/ops/cliptown-lib-core-token.b64
+      KEY_PATH: .github/tmp/cliptown-lib-core-public.pem
+      CIPHERTEXT_PATH: .github/tmp/cliptown-lib-core-token.b64
     steps:
       - name: Create exact repository through GraphQL and seed main
         id: create
         env:
-          CONTROL_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CONTROL_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -Eeuo pipefail
