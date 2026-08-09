@@ -83,7 +83,7 @@ spec:
   project: zed
   source:
     repoURL: https://github.com/zed-pkg/zed-infra.git
-    targetRevision: 14cf61e795e3d4763785aebc9498c96c23dab60f
+    targetRevision: a48040bbb18cf3d6455ff986918825db84a45e26
     path: k8s/overlays/k8s-cluster
   destination:
     server: https://kubernetes.default.svc
