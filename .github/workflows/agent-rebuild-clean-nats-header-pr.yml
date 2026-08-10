@@ -1,0 +1,118 @@
+name: Rebuild clean NATS header hardening branch
+
+on:
+  push:
+    branches:
+      - agent/nats-header-consistency-20260809
+    paths:
+      - '.github/workflows/agent-rebuild-clean-nats-header-pr.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out reviewed product branch
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: agent/nats-header-consistency-20260809
+          fetch-depth: 0
+          persist-credentials: true
+          submodules: false
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Replace synthetic credential-shaped fixtures with low-entropy values
+        shell: python
+        run: |
+          from pathlib import Path
+
+          paths = [
+              Path('remote/nats-bridge/src/main.rs'),
+              Path('remote/nats-bridge/scripts/e2e.sh'),
+              Path('remote/nats-bridge/scripts/header_consistency_e2e.sh'),
+          ]
+          replacements = {
+              'tok-abcdef123456': 'aaaaaaaaaaaaaaaa',
+              'wrong-token-0000': 'bbbbbbbbbbbbbbbb',
+              'tok-wrong-credential': 'bbbbbbbbbbbbbbbb',
+              'wrong-token-xxxxxx': 'bbbbbbbbbbbbbbbb',
+              'wrong-token-0123456789': 'bbbbbbbbbbbbbbbb',
+              'nats-header-test-token-0123456789': 'aaaaaaaaaaaaaaaa',
+              'e2e-conflict-a': 'same',
+              'e2e-conflict-b': 'other',
+              'e2e-matching-id-001': 'same',
+              'header-contract-001': 'same',
+              'header-contract-002': 'same',
+              'header-contract-003': 'other',
+          }
+          changed = 0
+          for path in paths:
+              text = path.read_text(encoding='utf-8')
+              before = text
+              for old, new in replacements.items():
+                  text = text.replace(old, new)
+              path.write_text(text, encoding='utf-8')
+              changed += text != before
+          if changed < 3:
+              raise SystemExit(f'expected all three fixture-bearing files to change; changed={changed}')
+
+      - name: Re-certify the exact final product tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustfmt +1.90.0 --edition 2024 remote/nats-bridge/src/main.rs
+          bash -n remote/nats-bridge/scripts/e2e.sh
+          bash -n remote/nats-bridge/scripts/header_consistency_e2e.sh
+          git diff --check
+          cargo +1.90.0 test --locked --all-targets --manifest-path remote/nats-bridge/Cargo.toml
+          cargo +1.90.0 clippy --locked --all-targets --manifest-path remote/nats-bridge/Cargo.toml -- -D warnings
+          timeout 300s bash remote/nats-bridge/scripts/header_consistency_e2e.sh
+
+      - name: Build one clean commit directly on current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          clean_branch='agent/nats-header-consistency-clean-20260809'
+          git fetch --no-tags origin main
+          base="$(git rev-parse origin/main)"
+          test "$base" = 'a810287d59fe368e8e5907e2bbd2fb0fdfa5cc23'
+
+          staging="${RUNNER_TEMP}/nats-clean-tree"
+          mkdir -p "$staging/remote/nats-bridge/src" "$staging/remote/nats-bridge/scripts" "$staging/.github/workflows"
+          cp remote/nats-bridge/src/main.rs "$staging/remote/nats-bridge/src/main.rs"
+          cp remote/nats-bridge/scripts/e2e.sh "$staging/remote/nats-bridge/scripts/e2e.sh"
+          cp remote/nats-bridge/scripts/header_consistency_e2e.sh "$staging/remote/nats-bridge/scripts/header_consistency_e2e.sh"
+          cp .github/workflows/nats-bridge-header-consistency.yml "$staging/.github/workflows/nats-bridge-header-consistency.yml"
+
+          git switch --detach "$base"
+          cp "$staging/remote/nats-bridge/src/main.rs" remote/nats-bridge/src/main.rs
+          cp "$staging/remote/nats-bridge/scripts/e2e.sh" remote/nats-bridge/scripts/e2e.sh
+          cp "$staging/remote/nats-bridge/scripts/header_consistency_e2e.sh" remote/nats-bridge/scripts/header_consistency_e2e.sh
+          cp "$staging/.github/workflows/nats-bridge-header-consistency.yml" .github/workflows/nats-bridge-header-consistency.yml
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            .github/workflows/nats-bridge-header-consistency.yml \
+            remote/nats-bridge/src/main.rs \
+            remote/nats-bridge/scripts/e2e.sh \
+            remote/nats-bridge/scripts/header_consistency_e2e.sh
+          git diff --cached --check
+          test "$(git diff --cached --name-only | wc -l | tr -d ' ')" = 4
+          tree="$(git write-tree)"
+          commit="$(printf '%s\n\n%s\n' \
+            'fix(messaging): reject conflicting NATS bridge identity headers' \
+            'Require every presented authentication and idempotency alias to agree, and certify the fail-closed contract against a pinned real NATS broker.' \
+            | git commit-tree "$tree" -p "$base")"
+          git push origin "${commit}:refs/heads/${clean_branch}"
+          echo "clean_commit=${commit}" >> "$GITHUB_STEP_SUMMARY"
+          echo "base_commit=${base}" >> "$GITHUB_STEP_SUMMARY"
