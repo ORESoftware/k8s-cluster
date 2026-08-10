@@ -1,0 +1,128 @@
+name: Provision Shared Auth web server repository
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/ops-provision-shared-auth-web-server.yml
+      - ops/requests/shared-auth-web-server.json
+      - scripts/ops/provision_shared_auth_web_server.py
+      - scripts/ops/test_provision_shared_auth_web_server.py
+      - docs/ops/SHARED_AUTH_WEB_SERVER_PROVISIONING.md
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-provision-shared-auth-web-server.yml
+      - ops/requests/shared-auth-web-server.json
+      - scripts/ops/provision_shared_auth_web_server.py
+      - scripts/ops/test_provision_shared_auth_web_server.py
+      - docs/ops/SHARED_AUTH_WEB_SERVER_PROVISIONING.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: provision-shared-auth-web-server
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      execute: ${{ steps.request.outputs.execute }}
+      script_sha256: ${{ steps.hashes.outputs.script_sha256 }}
+      request_sha256: ${{ steps.hashes.outputs.request_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Validate the exact one-repository request
+        id: request
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/provision_shared_auth_web_server.py \
+            --request ops/requests/shared-auth-web-server.json \
+            --validate-only
+          printf 'execute=%s\n' "$(python3 -c 'import json; print(str(json.load(open("ops/requests/shared-auth-web-server.json"))["execute"]).lower())')" >> "$GITHUB_OUTPUT"
+      - name: Run offline provisioner tests
+        run: python3 -m unittest discover -s scripts/ops -p 'test_provision_shared_auth_web_server.py' -v
+      - name: Record reviewed transport hashes
+        id: hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'script_sha256=%s\n' "$(sha256sum scripts/ops/provision_shared_auth_web_server.py | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          printf 'request_sha256=%s\n' "$(sha256sum ops/requests/shared-auth-web-server.json | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+  provision:
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.validate.outputs.execute == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: operations
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: us-east-1
+      ORE_K8S_OPS_AWS_ROLE_ARN: ${{ vars.ORE_K8S_OPS_AWS_ROLE_ARN }}
+      ORE_K8S_OPS_INSTANCE_ID: ${{ vars.ORE_K8S_OPS_INSTANCE_ID }}
+      SCRIPT_SHA256: ${{ needs.validate.outputs.script_sha256 }}
+      REQUEST_SHA256: ${{ needs.validate.outputs.request_sha256 }}
+    steps:
+      - name: Configure scoped AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ORE_K8S_OPS_AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Execute on the protected operations host
+        id: ssm
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ORE_K8S_OPS_INSTANCE_ID"
+          command_id="$(aws ssm send-command \
+            --instance-ids "$ORE_K8S_OPS_INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "Provision exact Shared Auth web-server repository from ${GITHUB_SHA}" \
+            --parameters commands="$(cat <<EOF
+          set -euo pipefail
+          umask 077
+          work=\$(mktemp -d)
+          trap 'rm -rf "\$work"; unset GITHUB_TOKEN' EXIT
+          git clone --filter=blob:none --no-checkout https://github.com/ORESoftware/k8s-cluster.git "\$work/k8s"
+          cd "\$work/k8s"
+          git fetch --depth=1 origin '${GITHUB_SHA}'
+          git checkout --detach '${GITHUB_SHA}'
+          test "\$(sha256sum scripts/ops/provision_shared_auth_web_server.py | awk '{print \$1}')" = '${SCRIPT_SHA256}'
+          test "\$(sha256sum ops/requests/shared-auth-web-server.json | awk '{print \$1}')" = '${REQUEST_SHA256}'
+          GITHUB_TOKEN=\$(aws ssm get-parameter --name /oresoftware/github-token --with-decryption --query Parameter.Value --output text --region '${AWS_REGION}')
+          export GITHUB_TOKEN
+          python3 scripts/ops/provision_shared_auth_web_server.py --request ops/requests/shared-auth-web-server.json
+          EOF
+          )" \
+            --query Command.CommandId --output text)"
+          printf 'command_id=%s\n' "$command_id" >> "$GITHUB_OUTPUT"
+          status=''
+          for _ in $(seq 1 120); do
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$ORE_K8S_OPS_INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$status" in
+              Success) break ;;
+              Failed|Cancelled|TimedOut|Undeliverable|Terminated)
+                aws ssm get-command-invocation --command-id "$command_id" --instance-id "$ORE_K8S_OPS_INSTANCE_ID" --output json
+                exit 1 ;;
+            esac
+            sleep 10
+          done
+          test "$status" = Success
+      - name: Record sanitized SSM result
+        if: always() && steps.ssm.outputs.command_id != ''
+        shell: bash
+        run: |
+          aws ssm get-command-invocation \
+            --command-id '${{ steps.ssm.outputs.command_id }}' \
+            --instance-id "$ORE_K8S_OPS_INSTANCE_ID" \
+            --query '{Status:Status,ResponseCode:ResponseCode,StandardOutputContent:StandardOutputContent,StandardErrorContent:StandardErrorContent}' \
+            --output json
