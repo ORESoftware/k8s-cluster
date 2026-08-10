@@ -8,11 +8,125 @@ from pathlib import Path
 from textwrap import dedent
 
 
+def reconcile_existing_tests() -> None:
+    """Replace precedence/fallback expectations with agreement-only contracts."""
+
+    path = Path("remote/nats-bridge/src/main.rs")
+    source = path.read_text(encoding="utf-8")
+
+    auth_start = source.index("    /// Header precedence:")
+    auth_end = source.index("    /// `constant_time_eq`", auth_start)
+    auth_contract = dedent(
+        r'''
+        /// Every presented credential is security-relevant. When both accepted
+        /// channels are present, every value must be a valid bearer/token and
+        /// must match the configured secret. A malformed or conflicting header
+        /// never falls back to another credential channel.
+        #[test]
+        fn all_presented_credentials_must_agree_and_be_valid() {
+            // A wrong bearer cannot be rescued by a correct secondary header.
+            assert!(!caller_authorized(
+                &headers(&[
+                    ("authorization", "Bearer wrong-token-0000"),
+                    ("x-bridge-token", "tok-abcdef123456"),
+                ]),
+                Some(TOK)
+            ));
+            // A malformed authorization scheme cannot fall back either.
+            assert!(!caller_authorized(
+                &headers(&[
+                    ("authorization", "Basic zzz"),
+                    ("x-bridge-token", "tok-abcdef123456"),
+                ]),
+                Some(TOK)
+            ));
+            // A single valid channel remains accepted.
+            assert!(caller_authorized(
+                &headers(&[("x-bridge-token", "tok-abcdef123456")]),
+                Some(TOK)
+            ));
+            // A wrong secondary header cannot be ignored behind a correct bearer.
+            assert!(!caller_authorized(
+                &headers(&[
+                    ("authorization", "Bearer tok-abcdef123456"),
+                    ("x-bridge-token", "nope"),
+                ]),
+                Some(TOK)
+            ));
+            // Matching credentials through both channels are accepted.
+            assert!(caller_authorized(
+                &headers(&[
+                    ("authorization", "Bearer tok-abcdef123456"),
+                    ("x-bridge-token", "tok-abcdef123456"),
+                ]),
+                Some(TOK)
+            ));
+        }
+
+        '''
+    )
+    auth_contract = "\n".join(
+        f"    {line}" if line else "" for line in auth_contract.strip("\n").splitlines()
+    )
+    source = source[:auth_start] + auth_contract + "\n\n" + source[auth_end:]
+
+    message_start = source.index(
+        "    #[test]\n    fn message_id_headers_are_validated_and_precedence_is_stable()"
+    )
+    message_end = source.index(
+        "    #[test]\n    fn durable_subject_matching_is_token_anchored()",
+        message_start,
+    )
+    message_contract = dedent(
+        r'''
+        #[test]
+        fn message_id_headers_are_validated_and_must_agree() {
+            let mut headers = HeaderMap::new();
+            headers.insert("idempotency-key", "task/123:attempt-1".parse().unwrap());
+            assert_eq!(
+                request_message_id(&headers).unwrap().as_deref(),
+                Some("task/123:attempt-1")
+            );
+
+            headers.insert("x-message-id", "task/123:attempt-1".parse().unwrap());
+            assert_eq!(
+                request_message_id(&headers).unwrap().as_deref(),
+                Some("task/123:attempt-1")
+            );
+
+            headers.insert("nats-msg-id", "different-id".parse().unwrap());
+            assert_eq!(
+                request_message_id(&headers).unwrap_err(),
+                "conflicting message id headers"
+            );
+
+            let mut invalid = HeaderMap::new();
+            invalid.insert("x-message-id", "contains space".parse().unwrap());
+            assert!(request_message_id(&invalid).is_err());
+            invalid.insert("x-message-id", "".parse().unwrap());
+            assert!(request_message_id(&invalid).is_err());
+            invalid.insert("x-message-id", "a".repeat(129).parse().unwrap());
+            assert!(request_message_id(&invalid).is_err());
+        }
+
+        '''
+    )
+    message_contract = "\n".join(
+        f"    {line}" if line else ""
+        for line in message_contract.strip("\n").splitlines()
+    )
+    path.write_text(
+        source[:message_start] + message_contract + "\n\n" + source[message_end:],
+        encoding="utf-8",
+    )
+
+
 def main() -> None:
     runpy.run_path(
         "scripts/ops/agent_apply_nats_header_consistency.py",
         run_name="__main__",
     )
+    reconcile_existing_tests()
 
     cargo_path = Path("remote/nats-bridge/Cargo.toml")
     cargo = cargo_path.read_text(encoding="utf-8")
@@ -85,14 +199,7 @@ def main() -> None:
           --header 'nats-msg-id: header-contract-001' \
           --header 'content-type: application/json' \
           --data '{"case":"matching"}')"
-        python3 - "$matching" <<'PY'
-        import json
-        import sys
-        payload = json.loads(sys.argv[1])
-        assert payload["ok"] is True
-        assert payload["durable"] is False
-        assert payload["messageId"] == "header-contract-001"
-        PY
+        python3 -c 'import json,sys; p=json.loads(sys.argv[1]); assert p["ok"] is True; assert p["durable"] is False; assert p["messageId"] == "header-contract-001"' "$matching"
 
         [[ "$(status \
           --request POST "${BRIDGE_URL}/publish/nats.header.test.auth" \
@@ -110,14 +217,7 @@ def main() -> None:
           --data '{"case":"conflicting-message-id"}')" == 400 ]]
 
         metrics="$(curl --fail --silent "${BRIDGE_URL}/healthz")"
-        python3 - "$metrics" <<'PY'
-        import json
-        import sys
-        payload = json.loads(sys.argv[1])
-        assert payload["published_total"] == 1
-        assert payload["core_published_total"] == 1
-        assert payload["rejected_total"] == 2
-        PY
+        python3 -c 'import json,sys; p=json.loads(sys.argv[1]); assert p["published_total"] == 1; assert p["core_published_total"] == 1; assert p["rejected_total"] == 2' "$metrics"
 
         echo "PASS matching aliases are accepted and conflicts fail closed"
         '''
