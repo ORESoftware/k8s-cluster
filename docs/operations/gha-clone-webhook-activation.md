@@ -1,187 +1,165 @@
-# Signed GitHub webhook activation for `gha-indie-worker`
+# Signed GitHub Actions failure fallback for `gha-indie-worker`
 
-This runbook activates GitHub `push` and `pull_request` deliveries as the primary trigger for the independent workflow compiler and worker. A `workflow_run` event may be accepted as a compatibility signal, but the continuity lane must not wait for GitHub-hosted Actions to fail before independent testing begins.
+Tracking: `ORESoftware/k8s-cluster#1093`, Linear `DEN-1863`, and Linear `DEN-1597`.
 
-Tracking: `ORESoftware/k8s-cluster#1093` and Linear `DEN-1863`.
+## What this activation does
 
-## Current continuity modes
-
-### Trusted-main SSM bridge
-
-The merged DES browser lane uses a small GitHub-hosted job only to authenticate with AWS, invoke a checksum-pinned script through SSM, and collect evidence. Playwright and Puppeteer execution runs through `dd-build-server` and `gha-indie-worker` at exact commit SHAs.
-
-This is suitable for tonight's continuity work because it moves the expensive test compute off GitHub-hosted runners. It is not the final independent trigger path.
-
-### Direct signed webhook
-
-The durable path is:
+This GitOps state runs one digest-pinned `dd-gha-clone-server` replica and one
+digest-pinned `dd-gha-executor-router` replica. It exposes one exact HTTPS path:
 
 ```text
-GitHub push / pull_request
-        |
-        | application/json + X-Hub-Signature-256 + X-GitHub-Delivery
-        v
-dd-remote-gateway
-        |
-        v
-dd-gha-clone-server:8125/webhooks/github
-        |
-        | exact repository + exact workflow path + full immutable SHA
-        | fail-closed workflow planner -> fixed reviewed profile
-        v
-dd-build-server -> gha-indie-worker
-        |
-        v
-GitHub status/check context: gha-indie/<profile>
+https://hello.95-217-171-250.sslip.io/gha-webhooks/github
 ```
 
-The webhook and worker must never accept caller-selected commands, images, executors, deployment targets, credentials, mutable action references, arbitrary repository prefixes, or arbitrary workflow paths.
+The GitHub hook subscribes only to `workflow_run`. The pinned clone server accepts
+only a completed run whose conclusion is in the configured failure set, whose
+repository is exactly allowlisted, whose workflow path is exactly configured,
+and whose `head_sha` is a full immutable commit ID. It then fetches the workflow
+YAML at that SHA, compiles only the supported bounded subset, and submits fixed
+reviewed profiles through the executor router.
 
-## Phase 0: read-only static preflight
-
-Run on the protected cluster host or another environment with read-only access to the intended cluster:
-
-```bash
-scripts/ops/preflight_gha_clone_webhook.sh
-```
-
-The preflight verifies without decoding or printing secrets:
-
-- `ExternalSecret/dd-gha-clone-server-secrets` reports `Ready=True`;
-- the target Secret contains non-empty `auth_secret`, `github_webhook_secret`, `github_app_installation_token`, and `build_server_auth` entries;
-- repository and workflow-path rules are non-empty, exact, and internally consistent;
-- both execution flags remain `false`;
-- the pod is non-root, does not mount a service-account token, drops Linux capabilities, and listens on port 8125;
-- the Service and NetworkPolicy preserve the gateway/build-server/HTTPS boundary.
-
-A failure at this phase blocks scaling, routing, and webhook installation.
-
-## Phase 1: internal plan-only replica
-
-After the static preflight passes, review a GitOps change that sets only:
-
-```yaml
-spec:
-  replicas: 1
-```
-
-Keep both values unchanged:
-
-```yaml
-GHA_CLONE_EXECUTION_ENABLED: "false"
-GHA_CLONE_WEBHOOK_EXECUTION_ENABLED: "false"
-```
-
-After Argo CD reconciliation and rollout health, run:
-
-```bash
-scripts/ops/preflight_gha_clone_webhook.sh --probe-live
-```
-
-The live probe opens a local port-forward and verifies `/healthz` and `/readyz`. It does not send a webhook, decode a secret, or mutate the cluster.
-
-## Phase 2: dedicated gateway route
-
-Add a dedicated external route such as:
+The active pilot is intentionally limited to:
 
 ```text
-/gha-webhooks/github -> dd-gha-clone-server.default.svc.cluster.local:8125/webhooks/github
+ORESoftware/k8s-cluster
+  .github/workflows/gha-continuity-parity.yml
+  .github/workflows/remote-k8s-browser-suite.yml
 ```
 
-Do not overload the existing `dd-build-server` webhook route. Preserve the raw request body and the following headers:
+The router may send accepted work only to the enabled AWS `dd-build-server`
+profile endpoint. The Hetzner executor identity remains disabled and has no URL
+or credential path. The clone server cannot choose a provider or submit caller-
+selected commands, images, workflow paths, repository prefixes, or credentials.
+
+## Important budget boundary
+
+GitHub does not emit a distinct repository webhook whose meaning is “the Actions
+budget is empty.” The immediate continuity signal is therefore a signed failed
+`workflow_run`, including startup/allocation failures. It can also mirror an
+ordinary failed run because the current pinned server does not independently
+query organization billing.
+
+Exact budget-aware routing requires the separately scoped
+`gha-capacity-broker-rs` to read organization Actions usage through a dedicated
+billing GitHub App and authorize the event before compilation. That broker is
+not activated by this change: its current Kubernetes examples are digest-gated
+templates, and no reviewed production image or billing-App secret is admitted.
+Do not describe this pilot as exact billing detection or full GitHub Actions
+compatibility.
+
+## Signed delivery contract
+
+The public ingress preserves the raw request body and forwards these headers:
 
 - `Content-Type: application/json`
 - `X-Hub-Signature-256`
 - `X-GitHub-Event`
 - `X-GitHub-Delivery`
 
-The route must not require an operator browser cookie, but the clone server must reject missing or invalid HMAC signatures. Apply request-size and rate limits at the gateway while leaving the application planner's tighter workflow limits in force.
+The clone server then enforces all of the following before dispatch:
 
-AWS currently serves through the gateway's own hostPort/TLS path; the ingress-nginx object is inert there. Prove the exact cloud-specific route rather than assuming an Ingress change covers every cluster.
+1. valid HMAC-SHA256 over the original body;
+2. a UUID delivery ID and bounded replay retention;
+3. exact repository allowlisting;
+4. `workflow_run.action == completed`;
+5. an allowed failure conclusion;
+6. a full 40-character lowercase commit SHA;
+7. an exact configured workflow path;
+8. successful workflow fetch at that immutable SHA;
+9. successful fail-closed compilation into fixed independent profiles;
+10. deduplication before run reservation and submission.
 
-## Phase 3: GitHub webhook installation
+GitHub's initial signed `ping` is acknowledged with HTTP 202 but never dispatched,
+because only `workflow_run` is executable.
 
-Configure the GitHub App, organization webhook, or exact repository webhook with:
+## Read-only activation verification
 
-- content type `application/json`;
-- the secret mapped to `github_webhook_secret`;
-- TLS verification enabled;
-- `push` and `pull_request` events;
-- optional `workflow_run` only as a compatibility/fallback signal.
+Run from a host with read-only access to the intended cluster:
 
-Start with one exact `*-test` repository and one or two exact workflow paths. Do not allow an entire organization prefix merely because the repositories share an owner.
-
-Before enabling execution, prove and retain redacted evidence for:
-
-1. `ping` delivery;
-2. invalid-signature rejection;
-3. missing or oversized delivery-ID rejection;
-4. duplicate-delivery idempotency;
-5. non-allowlisted repository rejection;
-6. malformed and non-full SHA rejection;
-7. unapproved workflow-path rejection;
-8. unsupported workflow semantics failing closed;
-9. plan-only success at the event's exact commit SHA.
-
-## Phase 4: staged execution
-
-Enable the two gates separately.
-
-First enable authenticated manual execution:
-
-```yaml
-GHA_CLONE_EXECUTION_ENABLED: "true"
-GHA_CLONE_WEBHOOK_EXECUTION_ENABLED: "false"
+```bash
+scripts/ops/verify_gha_workflow_run_fallback.sh
 ```
 
-Prove one exact-SHA run through the authenticated `/v1/runs` endpoint. Verify the build-server request contains only `run-profile`, the exact repository URL, the exact commit SHA, the fixed reviewed profile, and an idempotent request ID.
+To include the public-route check:
 
-Then enable webhook execution for the exact pilot:
-
-```yaml
-GHA_CLONE_EXECUTION_ENABLED: "true"
-GHA_CLONE_WEBHOOK_EXECUTION_ENABLED: "true"
+```bash
+EXTERNAL_WEBHOOK_URL='https://hello.95-217-171-250.sslip.io/gha-webhooks/github' \
+  scripts/ops/verify_gha_workflow_run_fallback.sh
 ```
 
-Prove success, test failure, replay, transient GitHub API failure, transient build-server failure, timeout, and restart recovery before expanding the allowlist.
+The verifier never prints or decodes secret values. It checks:
 
-## Phase 5: GitHub-visible status and merge policy
+- both ExternalSecrets report `Ready=True`;
+- all required Secret keys exist and contain non-empty encoded data;
+- both Deployments request and expose one available replica;
+- clone API execution, clone webhook execution, and router execution are `true`;
+- both images remain at the reviewed immutable digests;
+- `/healthz` and `/readyz` succeed through local port-forwards;
+- the optional public endpoint reaches the application and rejects an unsigned
+  delivery with HTTP 401 rather than returning an edge or upstream error.
 
-Independent execution does not automatically satisfy an existing required GitHub Actions check name. Publish a distinct least-privilege context, for example:
+A missing Secret, unavailable replica, failed readiness endpoint, 404, 502, 503,
+or TLS failure means the service is not live. Do not install or leave the GitHub
+hook active until those checks pass in the target cluster.
 
-```text
-gha-indie/playwright
-gha-indie/puppeteer
-gha-indie/rust-verify
+The Ingress is claimed only in clusters with the `nginx` IngressClass and the
+`gateway-public-tls` certificate. The AWS hostPort gateway does not claim this
+Ingress and still needs its own exact route before GitHub can reach an AWS clone
+server directly.
+
+## Register the exact pilot webhook
+
+Use a short-lived hook-administration credential or a least-privilege GitHub App
+installation token. The HMAC value must already match the cluster's
+`github_webhook_secret` property.
+
+```bash
+export GH_TOKEN='...short-lived hook-admin credential...'
+export GITHUB_WEBHOOK_SECRET='...same secret already held by External Secrets...'
+
+remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh \
+  --repo ORESoftware/k8s-cluster \
+  --url https://hello.95-217-171-250.sslip.io/gha-webhooks/github
+
+unset GH_TOKEN GITHUB_WEBHOOK_SECRET
 ```
 
-The lifecycle must include pending, success, failure, timeout, cancellation, superseded, and lost-worker recovery. Status publication failures require bounded retry and dead-letter handling keyed by repository, SHA, workflow path, plan ID, and delivery ID.
+The script upserts one active repository hook, enables TLS verification, uses
+JSON delivery, and subscribes only to `workflow_run`. It sends the payload to
+`gh api` over stdin and never echoes either credential.
 
-Only after parity evidence is complete should branch protection or the overnight merge policy trust the new context. Never impersonate an unrelated GitHub Actions check name and never bypass required checks.
+Retain redacted evidence for:
 
-## Overnight introspection contract
+1. the signed `ping` delivery returning 202;
+2. an invalid-signature delivery returning 401;
+3. a missing or malformed delivery ID returning 400;
+4. a non-allowlisted repository failing closed;
+5. a non-full SHA returning 422;
+6. an unapproved workflow path being ignored;
+7. a successful exact-SHA fetch and plan;
+8. duplicate delivery producing no second dispatch;
+9. one terminal fixed-profile build with repository, SHA, workflow path,
+   delivery ID, clone run ID, router request ID, and build ID preserved.
 
-For repositories migrated to the direct webhook lane, an overnight agent should:
+## GitHub-visible status
 
-1. create or reuse an idempotent branch and PR;
-2. record the exact pushed head SHA;
-3. verify GitHub delivered the signed event;
-4. verify the clone server accepted the exact repository/workflow/SHA tuple exactly once;
-5. observe terminal `gha-indie/<profile>` evidence for that same SHA;
-6. merge only when repository policy permits and every required independent context is successful;
-7. retain repository, branch, PR, SHA, delivery ID, plan ID, run ID, build IDs, status contexts, and evidence links in the recovery ledger;
-8. classify missing webhook, missing status, unsupported workflow, absent runner capacity, or failed publication as explicit unfinished states rather than silently treating them as success.
-
-Repositories that have not migrated remain on the trusted-main SSM bridge or their existing CI. The agent must not assume the independent lane covers a repository merely because another repository in the same organization is allowlisted.
+The current pinned clone server retains run state internally but does not yet
+publish a complete pending/success/failure Check Run lifecycle. Keep branch
+protection unchanged and do not impersonate an existing Actions check. Distinct
+`gha-indie/<profile>` publication, retry, recovery, and dead-letter behavior
+remain acceptance work in `DEN-1863`.
 
 ## Rollback
 
-Rollback is fail-closed and must not rotate or expose secrets merely to stop execution:
+Rollback is fail-closed and does not require deleting secrets:
 
-1. set `GHA_CLONE_WEBHOOK_EXECUTION_ENABLED=false`;
-2. if necessary set `GHA_CLONE_EXECUTION_ENABLED=false`;
-3. remove or disable the external webhook route;
-4. scale `dd-gha-clone-server` to zero;
-5. preserve delivery, plan, run, and status-publication evidence for diagnosis.
+1. disable or remove the repository webhook;
+2. set `GHA_CLONE_WEBHOOK_EXECUTION_ENABLED=false`;
+3. set `GHA_CLONE_EXECUTION_ENABLED=false`;
+4. set `GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED=false`;
+5. scale both Deployments to `replicas: 0`;
+6. remove the exact Ingress route if external intake must stop immediately;
+7. preserve delivery, run, router, build, log, and artifact evidence.
 
-Do not delete the webhook secret during an incident unless compromise is suspected; rotation and delivery shutdown are separate operations.
+Rotate the webhook secret only when compromise is suspected. Delivery shutdown
+and secret rotation are separate incident actions.
