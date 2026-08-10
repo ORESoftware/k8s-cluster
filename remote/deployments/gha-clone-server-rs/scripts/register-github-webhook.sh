@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'USAGE'
-usage: register-github-webhook.sh (--repo owner/repo | --org organization) --url https://host/webhooks/github
+usage: register-github-webhook.sh (--repo owner/repo | --org organization) --url https://host/gha-webhooks/github
 
 Required environment:
   GH_TOKEN                  token or GitHub App installation token with hook admin permission
@@ -44,8 +44,8 @@ test -n "${GH_TOKEN:-}" || { echo 'GH_TOKEN is required' >&2; exit 2; }
 test -n "${GITHUB_WEBHOOK_SECRET:-}" || { echo 'GITHUB_WEBHOOK_SECRET is required' >&2; exit 2; }
 test -n "$scope" && test -n "$target" && test -n "$webhook_url" || { usage; exit 2; }
 case "$webhook_url" in
-  https://*) ;;
-  *) echo 'webhook URL must use HTTPS' >&2; exit 2 ;;
+  https://*/gha-webhooks/github) ;;
+  *) echo 'webhook URL must use HTTPS and end in /gha-webhooks/github' >&2; exit 2 ;;
 esac
 
 if [[ "$scope" == repo ]]; then
@@ -88,4 +88,4 @@ payload="$(
     }'
 )"
 printf '%s' "$payload" | gh api --method "$method" "$hook_endpoint" --input - >/dev/null
-printf '%s failure webhook for %s %s\n' "$action" "$scope" "$target"
+printf '%s signed workflow_run fallback webhook for %s %s\n' "$action" "$scope" "$target"
