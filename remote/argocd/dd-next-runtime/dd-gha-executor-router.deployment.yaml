@@ -6,10 +6,10 @@ metadata:
   labels:
     app: dd-gha-executor-router
 spec:
-  # The reviewed, signed, scanned image is pinned below, but the service remains
-  # deliberately non-runnable. A separate activation change must scale replicas
-  # and must leave execution disabled until provider readiness is proven.
-  replicas: 0
+  # The router is the only clone-server egress target. It selects the reviewed
+  # AWS build-server lane and refuses unconfigured or unhealthy executors.
+  replicas: 1
+  minReadySeconds: 10
   strategy:
     type: Recreate
   selector:
@@ -43,7 +43,7 @@ spec:
             - name: RUST_LOG
               value: gha_executor_router=info
             - name: GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED
-              value: "false"
+              value: "true"
             - name: GHA_EXECUTOR_ROUTER_AUTH_PATH
               value: /var/run/secrets/gha-executor-router/inbound-auth
             - name: GHA_EXECUTOR_ROUTER_EXECUTORS_JSON
