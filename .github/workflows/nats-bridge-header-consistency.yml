@@ -1,0 +1,64 @@
+name: NATS bridge header consistency
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/nats-bridge-header-consistency.yml'
+      - 'remote/nats-bridge/Cargo.toml'
+      - 'remote/nats-bridge/Cargo.lock'
+      - 'remote/nats-bridge/src/main.rs'
+      - 'remote/nats-bridge/scripts/e2e.sh'
+      - 'remote/nats-bridge/scripts/header_consistency_e2e.sh'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/nats-bridge-header-consistency.yml'
+      - 'remote/nats-bridge/Cargo.toml'
+      - 'remote/nats-bridge/Cargo.lock'
+      - 'remote/nats-bridge/src/main.rs'
+      - 'remote/nats-bridge/scripts/e2e.sh'
+      - 'remote/nats-bridge/scripts/header_consistency_e2e.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nats-header-consistency-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bridge-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out without private submodules
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Verify source and shell formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustfmt +1.90.0 --edition 2024 --check remote/nats-bridge/src/main.rs
+          bash -n remote/nats-bridge/scripts/e2e.sh
+          bash -n remote/nats-bridge/scripts/header_consistency_e2e.sh
+          git diff --check
+
+      - name: Run all bridge targets and strict Clippy
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +1.90.0 test --locked --all-targets --manifest-path remote/nats-bridge/Cargo.toml
+          cargo +1.90.0 clippy --locked --all-targets --manifest-path remote/nats-bridge/Cargo.toml -- -D warnings
+
+      - name: Run pinned real-NATS HTTP header contract
+        run: timeout 300s bash remote/nats-bridge/scripts/header_consistency_e2e.sh
