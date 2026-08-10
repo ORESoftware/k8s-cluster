@@ -5,11 +5,13 @@ metadata:
   namespace: default
   labels:
     app: dd-gha-executor-router
+  annotations:
+    dd.dev/activation-state: signed-workflow-run-pilot
+    dd.dev/linear-issue: DEN-1597
 spec:
-  # The reviewed, signed, scanned image is pinned below, but the service remains
-  # deliberately non-runnable. A separate activation change must scale replicas
-  # and must leave execution disabled until provider readiness is proven.
-  replicas: 0
+  # Bounded pilot: the executor registry keeps AWS as the only enabled target;
+  # Hetzner remains represented but disabled and carries no endpoint or secret.
+  replicas: 1
   strategy:
     type: Recreate
   selector:
@@ -19,6 +21,8 @@ spec:
     metadata:
       labels:
         app: dd-gha-executor-router
+      annotations:
+        dd.dev/activation-state: signed-workflow-run-pilot
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
@@ -43,7 +47,7 @@ spec:
             - name: RUST_LOG
               value: gha_executor_router=info
             - name: GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED
-              value: "false"
+              value: "true"
             - name: GHA_EXECUTOR_ROUTER_AUTH_PATH
               value: /var/run/secrets/gha-executor-router/inbound-auth
             - name: GHA_EXECUTOR_ROUTER_EXECUTORS_JSON
