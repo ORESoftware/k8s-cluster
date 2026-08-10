@@ -29,16 +29,16 @@
 //!   PORT                     default 3004
 
 use axum::{
+    Json, Router,
     extract::{DefaultBodyLimit, Path, State},
     http::{HeaderMap, StatusCode},
     routing::{get, post},
-    Json, Router,
 };
 use bytes::Bytes;
 use serde_json::json;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::sync::Semaphore;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -462,13 +462,7 @@ fn validate_durable_prefixes(allowed: &[String], durable: &[String]) -> Result<(
     Ok(())
 }
 
-fn request_message_id(headers: &HeaderMap) -> Result<Option<String>, String> {
-    let value = ["x-message-id", "idempotency-key", "nats-msg-id"]
-        .into_iter()
-        .find_map(|name| headers.get(name));
-    let Some(value) = value else {
-        return Ok(None);
-    };
+fn normalize_message_id(value: &axum::http::HeaderValue) -> Result<String, String> {
     let value = value
         .to_str()
         .map_err(|_| "message id header must be valid ASCII".to_string())?
@@ -484,22 +478,54 @@ fn request_message_id(headers: &HeaderMap) -> Result<Option<String>, String> {
             "message id may contain only ASCII alphanumerics, '-', '_', '.', ':', or '/'".into(),
         );
     }
-    Ok(Some(value.to_string()))
+    Ok(value.to_string())
+}
+
+fn request_message_id(headers: &HeaderMap) -> Result<Option<String>, String> {
+    let mut canonical: Option<String> = None;
+    for name in ["x-message-id", "idempotency-key", "nats-msg-id"] {
+        for value in headers.get_all(name).iter() {
+            let candidate = normalize_message_id(value)?;
+            match canonical.as_deref() {
+                None => canonical = Some(candidate),
+                Some(existing) if existing == candidate.as_str() => {}
+                Some(_) => return Err("conflicting message id headers".into()),
+            }
+        }
+    }
+    Ok(canonical)
 }
 
 fn caller_authorized(headers: &HeaderMap, expected: Option<&str>) -> bool {
     let Some(expected) = expected else {
         return true; // BRIDGE_ALLOW_INSECURE was explicitly set at startup.
     };
-    let presented = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .or_else(|| headers.get("x-bridge-token").and_then(|v| v.to_str().ok()));
-    match presented {
-        Some(got) => constant_time_eq(got.trim(), expected),
-        None => false,
+
+    let mut saw_credential = false;
+    for value in headers.get_all("authorization").iter() {
+        let Ok(value) = value.to_str() else {
+            return false;
+        };
+        let Some(token) = value.strip_prefix("Bearer ") else {
+            return false;
+        };
+        let token = token.trim();
+        if token.is_empty() || !constant_time_eq(token, expected) {
+            return false;
+        }
+        saw_credential = true;
     }
+    for value in headers.get_all("x-bridge-token").iter() {
+        let Ok(token) = value.to_str() else {
+            return false;
+        };
+        let token = token.trim();
+        if token.is_empty() || !constant_time_eq(token, expected) {
+            return false;
+        }
+        saw_credential = true;
+    }
+    saw_credential
 }
 
 fn constant_time_eq(a: &str, b: &str) -> bool {
@@ -624,17 +650,80 @@ mod tests {
     #[test]
     fn bearer_and_header_tokens_are_accepted() {
         let mut h = HeaderMap::new();
-        h.insert("authorization", "Bearer tok-abcdef123456".parse().unwrap());
-        assert!(caller_authorized(&h, Some("tok-abcdef123456")));
+        h.insert("authorization", "Bearer aaaaaaaaaaaaaaaa".parse().unwrap());
+        assert!(caller_authorized(&h, Some("aaaaaaaaaaaaaaaa")));
 
         let mut h2 = HeaderMap::new();
-        h2.insert("x-bridge-token", "tok-abcdef123456".parse().unwrap());
-        assert!(caller_authorized(&h2, Some("tok-abcdef123456")));
+        h2.insert("x-bridge-token", "aaaaaaaaaaaaaaaa".parse().unwrap());
+        assert!(caller_authorized(&h2, Some("aaaaaaaaaaaaaaaa")));
 
         assert!(!caller_authorized(
             &HeaderMap::new(),
-            Some("tok-abcdef123456")
+            Some("aaaaaaaaaaaaaaaa")
         ));
+    }
+
+    #[test]
+    fn matching_message_id_aliases_are_accepted() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-message-id", "job-42".parse().unwrap());
+        headers.insert("idempotency-key", "job-42".parse().unwrap());
+        headers.insert("nats-msg-id", "job-42".parse().unwrap());
+        assert_eq!(
+            request_message_id(&headers).unwrap().as_deref(),
+            Some("job-42")
+        );
+    }
+
+    #[test]
+    fn conflicting_message_id_aliases_are_rejected() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-message-id", "job-42".parse().unwrap());
+        headers.insert("idempotency-key", "job-43".parse().unwrap());
+        assert_eq!(
+            request_message_id(&headers).unwrap_err(),
+            "conflicting message id headers"
+        );
+    }
+
+    #[test]
+    fn repeated_message_id_values_must_all_match() {
+        let mut matching = HeaderMap::new();
+        matching.append("x-message-id", "job-42".parse().unwrap());
+        matching.append("x-message-id", "job-42".parse().unwrap());
+        assert_eq!(
+            request_message_id(&matching).unwrap().as_deref(),
+            Some("job-42")
+        );
+
+        let mut conflicting = HeaderMap::new();
+        conflicting.append("x-message-id", "job-42".parse().unwrap());
+        conflicting.append("x-message-id", "job-43".parse().unwrap());
+        assert!(request_message_id(&conflicting).is_err());
+    }
+
+    #[test]
+    fn matching_dual_bridge_credentials_are_accepted() {
+        let mut headers = HeaderMap::new();
+        headers.insert("authorization", "Bearer aaaaaaaaaaaaaaaa".parse().unwrap());
+        headers.insert("x-bridge-token", "aaaaaaaaaaaaaaaa".parse().unwrap());
+        assert!(caller_authorized(&headers, Some("aaaaaaaaaaaaaaaa")));
+    }
+
+    #[test]
+    fn conflicting_dual_bridge_credentials_are_rejected() {
+        let mut headers = HeaderMap::new();
+        headers.insert("authorization", "Bearer aaaaaaaaaaaaaaaa".parse().unwrap());
+        headers.insert("x-bridge-token", "bbbbbbbbbbbbbbbb".parse().unwrap());
+        assert!(!caller_authorized(&headers, Some("aaaaaaaaaaaaaaaa")));
+    }
+
+    #[test]
+    fn repeated_authorization_values_must_all_match() {
+        let mut headers = HeaderMap::new();
+        headers.append("authorization", "Bearer aaaaaaaaaaaaaaaa".parse().unwrap());
+        headers.append("authorization", "Bearer bbbbbbbbbbbbbbbb".parse().unwrap());
+        assert!(!caller_authorized(&headers, Some("aaaaaaaaaaaaaaaa")));
     }
 
     // ---------------------------------------------------------------------
@@ -649,7 +738,7 @@ mod tests {
     // ---------------------------------------------------------------------
 
     /// The token the hardened deployment ships (≥16 chars, per startup check).
-    const TOK: &str = "tok-abcdef123456";
+    const TOK: &str = "aaaaaaaaaaaaaaaa";
 
     /// Build a `HeaderMap` from `(name, value)` pairs (test helper).
     fn headers(pairs: &[(&'static str, &str)]) -> HeaderMap {
@@ -951,7 +1040,7 @@ mod tests {
 
     /// With a token configured, missing / empty / malformed / wrong
     /// credentials are all denied. Note a same-length wrong token
-    /// (`wrong-token-0000`) is denied on content, and `Bearer ` with an empty
+    /// (`bbbbbbbbbbbbbbbb`) is denied on content, and `Bearer ` with an empty
     /// token is denied.
     #[test]
     fn missing_empty_and_malformed_tokens_denied() {
@@ -959,11 +1048,11 @@ mod tests {
             &[],
             &[("authorization", "")],
             &[("authorization", "Bearer ")],
-            &[("authorization", "Bearer wrong-token-0000")],
+            &[("authorization", "Bearer bbbbbbbbbbbbbbbb")],
             &[("authorization", "Bearer")],
             &[("authorization", "Basic dXNlcjpwYXNz")],
             &[("x-bridge-token", "")],
-            &[("x-bridge-token", "wrong-token-0000")],
+            &[("x-bridge-token", "bbbbbbbbbbbbbbbb")],
         ];
         for c in cases {
             assert!(
@@ -978,24 +1067,24 @@ mod tests {
     #[test]
     fn correct_token_accepted_and_whitespace_trimmed() {
         assert!(caller_authorized(
-            &headers(&[("authorization", "Bearer tok-abcdef123456")]),
+            &headers(&[("authorization", "Bearer aaaaaaaaaaaaaaaa")]),
             Some(TOK)
         ));
         assert!(caller_authorized(
-            &headers(&[("x-bridge-token", "tok-abcdef123456")]),
+            &headers(&[("x-bridge-token", "aaaaaaaaaaaaaaaa")]),
             Some(TOK)
         ));
         // trimmed
         assert!(caller_authorized(
-            &headers(&[("authorization", "Bearer tok-abcdef123456 ")]),
+            &headers(&[("authorization", "Bearer aaaaaaaaaaaaaaaa ")]),
             Some(TOK)
         ));
         assert!(caller_authorized(
-            &headers(&[("x-bridge-token", "  tok-abcdef123456  ")]),
+            &headers(&[("x-bridge-token", "  aaaaaaaaaaaaaaaa  ")]),
             Some(TOK)
         ));
         assert!(caller_authorized(
-            &headers(&[("authorization", "Bearer  tok-abcdef123456")]),
+            &headers(&[("authorization", "Bearer  aaaaaaaaaaaaaaaa")]),
             Some(TOK)
         ));
     }
@@ -1007,10 +1096,10 @@ mod tests {
     #[test]
     fn bearer_scheme_is_case_and_format_sensitive() {
         for c in [
-            "bearer tok-abcdef123456",
-            "BEARER tok-abcdef123456",
-            "Bearertok-abcdef123456",
-            "Token tok-abcdef123456",
+            "bearer aaaaaaaaaaaaaaaa",
+            "BEARER aaaaaaaaaaaaaaaa",
+            "Beareraaaaaaaaaaaaaaaa",
+            "Token aaaaaaaaaaaaaaaa",
         ] {
             assert!(
                 !caller_authorized(&headers(&[("authorization", c)]), Some(TOK)),
@@ -1019,39 +1108,46 @@ mod tests {
         }
     }
 
-    /// Header precedence: a `Bearer `-prefixed value is always consumed (even
-    /// when wrong), so a wrong bearer SHADOWS a correct `x-bridge-token` and
-    /// the request is denied (fails closed). The `x-bridge-token` fallback is
-    /// only consulted when the authorization header is absent or not
-    /// `Bearer `-prefixed.
+    /// Every presented credential is security-relevant. When both accepted
+    /// channels are present, every value must be a valid bearer/token and
+    /// must match the configured secret. A malformed or conflicting header
+    /// never falls back to another credential channel.
     #[test]
-    fn wrong_bearer_shadows_xbridge_but_nonbearer_falls_back() {
-        // wrong bearer shadows correct x-bridge-token -> denied
+    fn all_presented_credentials_must_agree_and_be_valid() {
+        // A wrong bearer cannot be rescued by a correct secondary header.
         assert!(!caller_authorized(
             &headers(&[
-                ("authorization", "Bearer wrong-token-0000"),
-                ("x-bridge-token", "tok-abcdef123456"),
+                ("authorization", "Bearer bbbbbbbbbbbbbbbb"),
+                ("x-bridge-token", "aaaaaaaaaaaaaaaa"),
             ]),
             Some(TOK)
         ));
-        // non-Bearer authorization -> fallback to correct x-bridge-token -> ok
-        assert!(caller_authorized(
+        // A malformed authorization scheme cannot fall back either.
+        assert!(!caller_authorized(
             &headers(&[
                 ("authorization", "Basic zzz"),
-                ("x-bridge-token", "tok-abcdef123456"),
+                ("x-bridge-token", "aaaaaaaaaaaaaaaa"),
             ]),
             Some(TOK)
         ));
-        // absent authorization -> fallback -> ok
+        // A single valid channel remains accepted.
         assert!(caller_authorized(
-            &headers(&[("x-bridge-token", "tok-abcdef123456")]),
+            &headers(&[("x-bridge-token", "aaaaaaaaaaaaaaaa")]),
             Some(TOK)
         ));
-        // correct bearer wins; wrong x-bridge-token is ignored -> ok
+        // A wrong secondary header cannot be ignored behind a correct bearer.
+        assert!(!caller_authorized(
+            &headers(&[
+                ("authorization", "Bearer aaaaaaaaaaaaaaaa"),
+                ("x-bridge-token", "nope"),
+            ]),
+            Some(TOK)
+        ));
+        // Matching credentials through both channels are accepted.
         assert!(caller_authorized(
             &headers(&[
-                ("authorization", "Bearer tok-abcdef123456"),
-                ("x-bridge-token", "nope"),
+                ("authorization", "Bearer aaaaaaaaaaaaaaaa"),
+                ("x-bridge-token", "aaaaaaaaaaaaaaaa"),
             ]),
             Some(TOK)
         ));
@@ -1062,14 +1158,14 @@ mod tests {
     /// unequal. Equal-length equal-content is the only accepting case.
     #[test]
     fn constant_time_eq_rejects_length_and_content_mismatch() {
-        assert!(constant_time_eq("tok-abcdef123456", "tok-abcdef123456"));
-        assert!(!constant_time_eq("tok-abcdef123456", "tok-abcdef123457")); // content
-        assert!(!constant_time_eq("tok", "tok-abcdef123456")); // shorter presented
+        assert!(constant_time_eq("aaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaa"));
+        assert!(!constant_time_eq("aaaaaaaaaaaaaaaa", "tok-abcdef123457")); // content
+        assert!(!constant_time_eq("tok", "aaaaaaaaaaaaaaaa")); // shorter presented
         assert!(!constant_time_eq(
-            "tok-abcdef123456xxxx",
-            "tok-abcdef123456"
+            "aaaaaaaaaaaaaaaaxxxx",
+            "aaaaaaaaaaaaaaaa"
         )); // longer
-        assert!(!constant_time_eq("tok-abcdef12345", "tok-abcdef123456")); // off-by-one len
+        assert!(!constant_time_eq("tok-abcdef12345", "aaaaaaaaaaaaaaaa")); // off-by-one len
         assert!(constant_time_eq("", "")); // degenerate equal
         assert!(!constant_time_eq("", "x"));
         assert!(!constant_time_eq("ABCDEF", "abcdef")); // case-sensitive
@@ -1182,7 +1278,7 @@ mod tests {
     }
 
     #[test]
-    fn message_id_headers_are_validated_and_precedence_is_stable() {
+    fn message_id_headers_are_validated_and_must_agree() {
         let mut headers = HeaderMap::new();
         headers.insert("idempotency-key", "task/123:attempt-1".parse().unwrap());
         assert_eq!(
@@ -1190,10 +1286,16 @@ mod tests {
             Some("task/123:attempt-1")
         );
 
-        headers.insert("x-message-id", "preferred-id".parse().unwrap());
+        headers.insert("x-message-id", "task/123:attempt-1".parse().unwrap());
         assert_eq!(
             request_message_id(&headers).unwrap().as_deref(),
-            Some("preferred-id")
+            Some("task/123:attempt-1")
+        );
+
+        headers.insert("nats-msg-id", "different-id".parse().unwrap());
+        assert_eq!(
+            request_message_id(&headers).unwrap_err(),
+            "conflicting message id headers"
         );
 
         let mut invalid = HeaderMap::new();
