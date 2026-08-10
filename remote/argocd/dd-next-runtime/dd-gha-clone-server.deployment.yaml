@@ -5,11 +5,14 @@ metadata:
   namespace: default
   labels:
     app: dd-gha-clone-server
+  annotations:
+    dd.dev/activation-state: signed-workflow-run-pilot
+    dd.dev/linear-issue: DEN-1863
 spec:
-  # The reviewed, signed, scanned image is pinned below, but the service remains
-  # deliberately non-runnable. A separate activation change must scale replicas
-  # and must not enable API, webhook, or build execution without proof.
-  replicas: 0
+  # Bounded pilot: only the exact ORESoftware/k8s-cluster workflows declared in
+  # dd-gha-clone-server.configmap.yaml may be compiled, and only completed
+  # failure workflow_run deliveries may reach execution.
+  replicas: 1
   strategy:
     type: Recreate
   selector:
@@ -19,6 +22,8 @@ spec:
     metadata:
       labels:
         app: dd-gha-clone-server
+      annotations:
+        dd.dev/activation-state: signed-workflow-run-pilot
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
@@ -45,9 +50,9 @@ spec:
             - name: GHA_CLONE_GITHUB_API_BASE_URL
               value: https://api.github.com
             - name: GHA_CLONE_EXECUTION_ENABLED
-              value: "false"
+              value: "true"
             - name: GHA_CLONE_WEBHOOK_EXECUTION_ENABLED
-              value: "false"
+              value: "true"
             - name: GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS
               value: failure,cancelled,timed_out,action_required,startup_failure,stale
             - name: GHA_CLONE_WEBHOOK_IGNORED_WORKFLOWS
