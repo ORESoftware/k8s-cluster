@@ -1,30 +1,30 @@
 {
   "schemaVersion": 1,
-  "promotedAt": "2026-08-08T17:52:30Z",
+  "promotedAt": "2026-08-10T02:32:29Z",
   "source": {
     "repository": "akrion-sim/akrion-monorepo",
-    "revision": "db02574e731f3b27d52f27d940e4bf67349bb280",
+    "revision": "6b2e250b5b7a87dd2edc34422465d3b3d6312b50",
     "workflow": "ci.yml"
   },
   "components": {
     "backend": {
       "repository": "akrion-sim/akrion-backend.rs",
-      "revision": "7946296b91af8f32de91f9826abcebf583015430",
+      "revision": "d9484a6bcf310c66e8788bab777af705a01daa86",
       "workflow": "ci.yml"
     },
     "web": {
       "repository": "akrion-sim/akrion-web-server.rs",
-      "revision": "b56900415ce9664225e1184cf1d2b09165b44f3d",
+      "revision": "7440fce9b41413704c935cc1a1de8e9862892806",
       "workflow": "ci.yml"
     },
     "soccer": {
       "repository": "akrion-sim/akrion-soccer-engine-rs",
-      "revision": "7df4e559e07cee18141da03b0ce262bf1d992338",
+      "revision": "48510a9be10e6b26d9eed59984061337ca53a924",
       "workflow": "ci.yml"
     },
     "des": {
       "repository": "ORESoftware/discrete-event-system.rs",
-      "revision": "894e86fb188b88b0e2c734b5cf7caa27c6b18e00",
+      "revision": "f98c3d717ff3408fd761b93f50286532077917e2",
       "workflow": null
     }
   }
