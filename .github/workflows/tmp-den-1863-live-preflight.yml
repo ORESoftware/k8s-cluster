@@ -1,0 +1,338 @@
+name: DEN-1863 read-only live cluster preflight
+run-name: DEN-1863 read-only preflight @ ${{ github.sha }}
+
+on:
+  push:
+    branches:
+      - agent/den-1863-live-preflight
+    paths:
+      - .github/workflows/tmp-den-1863-live-preflight.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: den-1863-readonly-live-preflight
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact probe revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: den-1863-readonly-live-preflight
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Inspect protected kubeconfigs over SSM without reading secret values
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: |
+          set -Eeuo pipefail
+          test -n "${INSTANCE_ID:-}"
+          trusted_sha="$(git rev-parse HEAD)"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          remote_command=$(cat <<'REMOTE_COMMAND'
+          set -Eeuo pipefail
+          umask 077
+          for command in python3 kubectl; do
+            command -v "$command" >/dev/null 2>&1 || {
+              printf 'missing protected-host command: %s\n' "$command" >&2
+              exit 70
+            }
+          done
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import base64
+          import json
+          import os
+          import pathlib
+          import subprocess
+          from typing import Any
+
+          TARGET_HOST = "hello.95-217-171-250.sslip.io"
+          FIXED = (
+              "/etc/kubernetes/admin.conf",
+              "/etc/rancher/k3s/k3s.yaml",
+              "/root/.kube/config",
+              "/home/ec2-user/.kube/config",
+              "/home/ubuntu/.kube/config",
+          )
+          ROOTS = (
+              "/etc/kubernetes",
+              "/etc/rancher",
+              "/root/.kube",
+              "/home/ec2-user/.kube",
+              "/home/ubuntu/.kube",
+          )
+
+          def run(command: list[str], timeout: int = 20) -> subprocess.CompletedProcess[str]:
+              return subprocess.run(
+                  command,
+                  check=False,
+                  capture_output=True,
+                  text=True,
+                  timeout=timeout,
+              )
+
+          def kube_json(config: pathlib.Path, context: str, args: list[str]) -> dict[str, Any] | None:
+              result = run(
+                  [
+                      "kubectl",
+                      "--kubeconfig",
+                      str(config),
+                      "--context",
+                      context,
+                      "--request-timeout=10s",
+                      *args,
+                      "-o",
+                      "json",
+                  ]
+              )
+              if result.returncode != 0:
+                  return None
+              try:
+                  value = json.loads(result.stdout)
+              except json.JSONDecodeError:
+                  return None
+              return value if isinstance(value, dict) else None
+
+          def env_literal(deployment: dict[str, Any] | None, container_name: str, name: str) -> str | None:
+              if deployment is None:
+                  return None
+              containers = (
+                  deployment.get("spec", {})
+                  .get("template", {})
+                  .get("spec", {})
+                  .get("containers", [])
+              )
+              for container in containers:
+                  if container.get("name") != container_name:
+                      continue
+                  for item in container.get("env", []):
+                      if item.get("name") == name and isinstance(item.get("value"), str):
+                          return item["value"]
+              return None
+
+          def deployment_state(deployment: dict[str, Any] | None, container_name: str) -> dict[str, Any]:
+              if deployment is None:
+                  return {"exists": False}
+              metadata = deployment.get("metadata", {})
+              spec = deployment.get("spec", {})
+              status = deployment.get("status", {})
+              containers = spec.get("template", {}).get("spec", {}).get("containers", [])
+              image = None
+              for container in containers:
+                  if container.get("name") == container_name:
+                      image = container.get("image")
+              return {
+                  "exists": True,
+                  "generation": metadata.get("generation"),
+                  "observed_generation": status.get("observedGeneration"),
+                  "replicas": spec.get("replicas", 1),
+                  "available": status.get("availableReplicas", 0),
+                  "ready": status.get("readyReplicas", 0),
+                  "image": image,
+              }
+
+          def external_secret_ready(value: dict[str, Any] | None) -> bool:
+              if value is None:
+                  return False
+              return any(
+                  item.get("type") == "Ready" and item.get("status") == "True"
+                  for item in value.get("status", {}).get("conditions", [])
+                  if isinstance(item, dict)
+              )
+
+          def secret_keys(value: dict[str, Any] | None) -> list[str]:
+              if value is None:
+                  return []
+              data = value.get("data")
+              return sorted(data.keys()) if isinstance(data, dict) else []
+
+          def ingress_hosts(value: dict[str, Any] | None) -> list[str]:
+              if value is None:
+                  return []
+              hosts: set[str] = set()
+              spec = value.get("spec", {})
+              for rule in spec.get("rules", []):
+                  host = rule.get("host") if isinstance(rule, dict) else None
+                  if isinstance(host, str):
+                      hosts.add(host)
+              for tls in spec.get("tls", []):
+                  if not isinstance(tls, dict):
+                      continue
+                  for host in tls.get("hosts", []):
+                      if isinstance(host, str):
+                          hosts.add(host)
+              return sorted(hosts)
+
+          candidates: set[pathlib.Path] = {pathlib.Path(value) for value in FIXED}
+          for root_value in ROOTS:
+              root = pathlib.Path(root_value)
+              if not root.exists():
+                  continue
+              try:
+                  for candidate in root.rglob("*"):
+                      try:
+                          if candidate.is_file() and candidate.stat().st_size <= 1_048_576:
+                              candidates.add(candidate)
+                      except OSError:
+                          continue
+              except OSError:
+                  continue
+
+          probes: list[dict[str, Any]] = []
+          readable = [path for path in sorted(candidates) if path.is_file() and os.access(path, os.R_OK)]
+          for config_index, config in enumerate(readable):
+              contexts = run(
+                  ["kubectl", "--kubeconfig", str(config), "config", "get-contexts", "-o", "name"]
+              )
+              if contexts.returncode != 0:
+                  continue
+              for context in sorted({line.strip() for line in contexts.stdout.splitlines() if line.strip()}):
+                  namespace = kube_json(config, context, ["get", "namespace", "default"])
+                  if namespace is None:
+                      continue
+                  clone = kube_json(config, context, ["-n", "default", "get", "deployment", "dd-gha-clone-server"])
+                  router = kube_json(config, context, ["-n", "default", "get", "deployment", "dd-gha-executor-router"])
+                  build = kube_json(config, context, ["-n", "default", "get", "deployment", "dd-build-server"])
+                  clone_secret = kube_json(config, context, ["-n", "default", "get", "secret", "dd-gha-clone-server-secrets"])
+                  router_secret = kube_json(config, context, ["-n", "default", "get", "secret", "dd-gha-executor-router-secrets"])
+                  clone_external = kube_json(config, context, ["-n", "default", "get", "externalsecret", "dd-gha-clone-server-secrets"])
+                  router_external = kube_json(config, context, ["-n", "default", "get", "externalsecret", "dd-gha-executor-router-secrets"])
+                  gateway_ingress = kube_json(config, context, ["-n", "default", "get", "ingress", "dd-remote-gateway"])
+                  webhook_ingress = kube_json(config, context, ["-n", "default", "get", "ingress", "dd-gha-clone-webhook"])
+                  ingress_class = kube_json(config, context, ["get", "ingressclass", "nginx"])
+                  hosts = sorted(set(ingress_hosts(gateway_ingress) + ingress_hosts(webhook_ingress)))
+                  clone_state = deployment_state(clone, "gha-clone-server")
+                  clone_state["execution_enabled"] = env_literal(clone, "gha-clone-server", "GHA_CLONE_EXECUTION_ENABLED")
+                  clone_state["webhook_execution_enabled"] = env_literal(clone, "gha-clone-server", "GHA_CLONE_WEBHOOK_EXECUTION_ENABLED")
+                  clone_state["failure_conclusions"] = env_literal(clone, "gha-clone-server", "GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS")
+                  router_state = deployment_state(router, "gha-executor-router")
+                  router_state["execution_enabled"] = env_literal(router, "gha-executor-router", "GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED")
+                  probes.append(
+                      {
+                          "kubeconfig_index": config_index,
+                          "context": context,
+                          "clone": clone_state,
+                          "router": router_state,
+                          "build": deployment_state(build, "build-server"),
+                          "clone_external_secret_ready": external_secret_ready(clone_external),
+                          "router_external_secret_ready": external_secret_ready(router_external),
+                          "clone_secret_keys": secret_keys(clone_secret),
+                          "router_secret_keys": secret_keys(router_secret),
+                          "nginx_ingress_class": ingress_class is not None,
+                          "ingress_hosts": hosts,
+                          "public_host_present": TARGET_HOST in hosts,
+                          "webhook_ingress_present": webhook_ingress is not None,
+                      }
+                  )
+
+          evidence = {
+              "schema_version": 1,
+              "probe_kind": "read_only",
+              "secret_values_read": False,
+              "target_host": TARGET_HOST,
+              "probes": probes,
+          }
+          encoded = base64.b64encode(
+              (json.dumps(evidence, sort_keys=True) + "\n").encode("utf-8")
+          ).decode("ascii")
+          print("DEN1863_PREFLIGHT_BASE64=" + encoded)
+          PY
+          REMOTE_COMMAND
+          )
+
+          parameters="$RUNNER_TEMP/ssm-parameters.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' >"$parameters"
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "DEN-1863 read-only live preflight ${trusted_sha:0:12}" \
+              --parameters "file://$parameters" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+          echo "ssm_command_id=$command_id"
+
+          status=Pending
+          for _ in $(seq 1 300); do
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query Status \
+                --output text 2>/dev/null || true
+            )"
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut|Cancelling) break ;;
+            esac
+            sleep 2
+          done
+
+          invocation="$RUNNER_TEMP/ssm-invocation.json"
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json >"$invocation"
+          jq '{Status, Stderr}' "$invocation"
+          test "$status" = Success
+
+          stdout="$(jq -r '.Stdout // empty' "$invocation")"
+          evidence_base64="$(sed -n 's/^DEN1863_PREFLIGHT_BASE64=//p' <<<"$stdout" | tail -n1)"
+          test -n "$evidence_base64"
+          printf '%s' "$evidence_base64" | base64 --decode >"$RUNNER_TEMP/den-1863-live-preflight.json"
+
+          jq -e '
+            .schema_version == 1 and
+            .probe_kind == "read_only" and
+            .secret_values_read == false and
+            (.probes | length > 0) and
+            any(.probes[];
+              .clone.exists == true and
+              .router.exists == true and
+              .clone_external_secret_ready == true and
+              .router_external_secret_ready == true and
+              (.clone_secret_keys | index("auth_secret") != null) and
+              (.clone_secret_keys | index("github_webhook_secret") != null) and
+              (.clone_secret_keys | index("github_app_installation_token") != null) and
+              (.router_secret_keys | index("inbound_auth") != null) and
+              .nginx_ingress_class == true and
+              .public_host_present == true)
+          ' "$RUNNER_TEMP/den-1863-live-preflight.json" >/dev/null
+
+          jq '{
+            schema_version,
+            probe_kind,
+            secret_values_read,
+            target_host,
+            probes: [.probes[] | select(.clone.exists == true or .router.exists == true or .public_host_present == true)]
+          }' "$RUNNER_TEMP/den-1863-live-preflight.json"
+
+      - name: Upload bounded read-only evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: den-1863-live-preflight-${{ github.run_id }}
+          path: ${{ runner.temp }}/den-1863-live-preflight.json
+          if-no-files-found: warn
+          retention-days: 30
