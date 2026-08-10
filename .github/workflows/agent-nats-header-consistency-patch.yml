@@ -1,0 +1,319 @@
+name: Apply NATS header consistency hardening
+
+on:
+  push:
+    branches:
+      - agent/nats-header-consistency-20260809
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@v5
+        with:
+          ref: agent/nats-header-consistency-20260809
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Apply exact fail-closed header reconciliation
+        shell: python
+        run: |
+          from pathlib import Path
+
+          source_path = Path('remote/nats-bridge/src/main.rs')
+          source = source_path.read_text(encoding='utf-8')
+
+          old_handlers = '''fn request_message_id(headers: &HeaderMap) -> Result<Option<String>, String> {
+              let value = ["x-message-id", "idempotency-key", "nats-msg-id"]
+                  .into_iter()
+                  .find_map(|name| headers.get(name));
+              let Some(value) = value else {
+                  return Ok(None);
+              };
+              let value = value
+                  .to_str()
+                  .map_err(|_| "message id header must be valid ASCII".to_string())?
+                  .trim();
+              if value.is_empty() || value.len() > 128 {
+                  return Err("message id must be 1-128 characters".into());
+              }
+              if !value
+                  .chars()
+                  .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | ':' | '/'))
+              {
+                  return Err(
+                      "message id may contain only ASCII alphanumerics, '-', '_', '.', ':', or '/'".into(),
+                  );
+              }
+              Ok(Some(value.to_string()))
+          }
+
+          fn caller_authorized(headers: &HeaderMap, expected: Option<&str>) -> bool {
+              let Some(expected) = expected else {
+                  return true; // BRIDGE_ALLOW_INSECURE was explicitly set at startup.
+              };
+              let presented = headers
+                  .get("authorization")
+                  .and_then(|v| v.to_str().ok())
+                  .and_then(|v| v.strip_prefix("Bearer "))
+                  .or_else(|| headers.get("x-bridge-token").and_then(|v| v.to_str().ok()));
+              match presented {
+                  Some(got) => constant_time_eq(got.trim(), expected),
+                  None => false,
+              }
+          }
+          '''
+          old_handlers = old_handlers.replace('\n          ', '\n')
+
+          new_handlers = '''fn normalize_message_id(value: &axum::http::HeaderValue) -> Result<String, String> {
+              let value = value
+                  .to_str()
+                  .map_err(|_| "message id header must be valid ASCII".to_string())?
+                  .trim();
+              if value.is_empty() || value.len() > 128 {
+                  return Err("message id must be 1-128 characters".into());
+              }
+              if !value
+                  .chars()
+                  .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | ':' | '/'))
+              {
+                  return Err(
+                      "message id may contain only ASCII alphanumerics, '-', '_', '.', ':', or '/'".into(),
+                  );
+              }
+              Ok(value.to_string())
+          }
+
+          fn request_message_id(headers: &HeaderMap) -> Result<Option<String>, String> {
+              let mut canonical: Option<String> = None;
+              for name in ["x-message-id", "idempotency-key", "nats-msg-id"] {
+                  for value in headers.get_all(name).iter() {
+                      let candidate = normalize_message_id(value)?;
+                      match canonical.as_deref() {
+                          None => canonical = Some(candidate),
+                          Some(existing) if existing == candidate.as_str() => {}
+                          Some(_) => return Err("conflicting message id headers".into()),
+                      }
+                  }
+              }
+              Ok(canonical)
+          }
+
+          fn caller_authorized(headers: &HeaderMap, expected: Option<&str>) -> bool {
+              let Some(expected) = expected else {
+                  return true; // BRIDGE_ALLOW_INSECURE was explicitly set at startup.
+              };
+
+              let mut saw_credential = false;
+              for value in headers.get_all("authorization").iter() {
+                  let Ok(value) = value.to_str() else {
+                      return false;
+                  };
+                  let Some(token) = value.strip_prefix("Bearer ") else {
+                      return false;
+                  };
+                  let token = token.trim();
+                  if token.is_empty() || !constant_time_eq(token, expected) {
+                      return false;
+                  }
+                  saw_credential = true;
+              }
+              for value in headers.get_all("x-bridge-token").iter() {
+                  let Ok(token) = value.to_str() else {
+                      return false;
+                  };
+                  let token = token.trim();
+                  if token.is_empty() || !constant_time_eq(token, expected) {
+                      return false;
+                  }
+                  saw_credential = true;
+              }
+              saw_credential
+          }
+          '''
+          new_handlers = new_handlers.replace('\n          ', '\n')
+
+          if source.count(old_handlers) != 1:
+              raise SystemExit(f'expected one request/auth handler block, found {source.count(old_handlers)}')
+          source = source.replace(old_handlers, new_handlers, 1)
+
+          old_test = '''    #[test]
+              fn bearer_and_header_tokens_are_accepted() {
+                  let mut h = HeaderMap::new();
+                  h.insert("authorization", "Bearer tok-abcdef123456".parse().unwrap());
+                  assert!(caller_authorized(&h, Some("tok-abcdef123456")));
+
+                  let mut h2 = HeaderMap::new();
+                  h2.insert("x-bridge-token", "tok-abcdef123456".parse().unwrap());
+                  assert!(caller_authorized(&h2, Some("tok-abcdef123456")));
+
+                  assert!(!caller_authorized(
+                      &HeaderMap::new(),
+                      Some("tok-abcdef123456")
+                  ));
+              }
+          '''
+          old_test = old_test.replace('\n              ', '\n    ')
+
+          new_test = '''    #[test]
+              fn bearer_and_header_tokens_are_accepted() {
+                  let mut h = HeaderMap::new();
+                  h.insert("authorization", "Bearer tok-abcdef123456".parse().unwrap());
+                  assert!(caller_authorized(&h, Some("tok-abcdef123456")));
+
+                  let mut h2 = HeaderMap::new();
+                  h2.insert("x-bridge-token", "tok-abcdef123456".parse().unwrap());
+                  assert!(caller_authorized(&h2, Some("tok-abcdef123456")));
+
+                  assert!(!caller_authorized(
+                      &HeaderMap::new(),
+                      Some("tok-abcdef123456")
+                  ));
+              }
+
+              #[test]
+              fn matching_message_id_aliases_are_accepted() {
+                  let mut headers = HeaderMap::new();
+                  headers.insert("x-message-id", "job-42".parse().unwrap());
+                  headers.insert("idempotency-key", "job-42".parse().unwrap());
+                  headers.insert("nats-msg-id", "job-42".parse().unwrap());
+                  assert_eq!(request_message_id(&headers).unwrap().as_deref(), Some("job-42"));
+              }
+
+              #[test]
+              fn conflicting_message_id_aliases_are_rejected() {
+                  let mut headers = HeaderMap::new();
+                  headers.insert("x-message-id", "job-42".parse().unwrap());
+                  headers.insert("idempotency-key", "job-43".parse().unwrap());
+                  assert_eq!(
+                      request_message_id(&headers).unwrap_err(),
+                      "conflicting message id headers"
+                  );
+              }
+
+              #[test]
+              fn repeated_message_id_values_must_all_match() {
+                  let mut matching = HeaderMap::new();
+                  matching.append("x-message-id", "job-42".parse().unwrap());
+                  matching.append("x-message-id", "job-42".parse().unwrap());
+                  assert_eq!(request_message_id(&matching).unwrap().as_deref(), Some("job-42"));
+
+                  let mut conflicting = HeaderMap::new();
+                  conflicting.append("x-message-id", "job-42".parse().unwrap());
+                  conflicting.append("x-message-id", "job-43".parse().unwrap());
+                  assert!(request_message_id(&conflicting).is_err());
+              }
+
+              #[test]
+              fn matching_dual_bridge_credentials_are_accepted() {
+                  let mut headers = HeaderMap::new();
+                  headers.insert("authorization", "Bearer tok-abcdef123456".parse().unwrap());
+                  headers.insert("x-bridge-token", "tok-abcdef123456".parse().unwrap());
+                  assert!(caller_authorized(&headers, Some("tok-abcdef123456")));
+              }
+
+              #[test]
+              fn conflicting_dual_bridge_credentials_are_rejected() {
+                  let mut headers = HeaderMap::new();
+                  headers.insert("authorization", "Bearer tok-abcdef123456".parse().unwrap());
+                  headers.insert("x-bridge-token", "tok-wrong-credential".parse().unwrap());
+                  assert!(!caller_authorized(&headers, Some("tok-abcdef123456")));
+              }
+
+              #[test]
+              fn repeated_authorization_values_must_all_match() {
+                  let mut headers = HeaderMap::new();
+                  headers.append("authorization", "Bearer tok-abcdef123456".parse().unwrap());
+                  headers.append("authorization", "Bearer tok-wrong-credential".parse().unwrap());
+                  assert!(!caller_authorized(&headers, Some("tok-abcdef123456")));
+              }
+          '''
+          new_test = new_test.replace('\n              ', '\n    ')
+
+          if source.count(old_test) != 1:
+              raise SystemExit(f'expected one bearer/header test block, found {source.count(old_test)}')
+          source_path.write_text(source.replace(old_test, new_test, 1), encoding='utf-8')
+
+          e2e_path = Path('remote/nats-bridge/scripts/e2e.sh')
+          e2e = e2e_path.read_text(encoding='utf-8')
+          wrong_token = '''assert_code "wrong token -> 401" 401 \\
+            -X POST "${BRIDGE_URL}/publish/dd.vapi.tasks.call" -H 'authorization: Bearer wrong-token-xxxxxx' \\
+            -H 'content-type: application/json' -d '{}'
+          '''.replace('\n          ', '\n')
+          added = wrong_token + '''assert_code "conflicting auth headers -> 401" 401 \\
+            -X POST "${BRIDGE_URL}/publish/dd.vapi.tasks.call" \\
+            -H "authorization: Bearer ${BRIDGE_TOKEN_VALUE}" -H 'x-bridge-token: wrong-token-xxxxxx' \\
+            -H 'content-type: application/json' -d '{}'
+          assert_code "conflicting message-id aliases -> 400" 400 \\
+            -X POST "${BRIDGE_URL}/publish/dd.vapi.tasks.call" \\
+            -H "authorization: Bearer ${BRIDGE_TOKEN_VALUE}" \\
+            -H 'x-message-id: e2e-conflict-a' -H 'idempotency-key: e2e-conflict-b' \\
+            -H 'content-type: application/json' -d '{}'
+          '''.replace('\n          ', '\n')
+          if e2e.count(wrong_token) != 1:
+              raise SystemExit('wrong-token e2e anchor drifted')
+          e2e = e2e.replace(wrong_token, added, 1)
+          e2e = e2e.replace(
+              "# 7, not 8: the oversize body is refused by axum's DefaultBodyLimit layer\n",
+              "# 9, not 10: the oversize body is refused by axum's DefaultBodyLimit layer\n",
+              1,
+          )
+          if "d['published_total']==0 and d['rejected_total']==7" not in e2e:
+              raise SystemExit('rejection counter e2e anchor drifted')
+          e2e = e2e.replace(
+              "d['published_total']==0 and d['rejected_total']==7",
+              "d['published_total']==0 and d['rejected_total']==9",
+              1,
+          )
+          old_fallback = '''assert_json "allowed subject -> 200 durable:false" \\
+            "d['ok'] is True and d['durable'] is False" \\
+            -X POST "${BRIDGE_URL}/publish/vxl.events.test" \\
+            -H "authorization: Bearer ${BRIDGE_TOKEN_VALUE}" -H 'content-type: application/json' -d '{"hello":"world"}'
+          '''.replace('\n          ', '\n')
+          new_fallback = '''assert_json "matching auth and message-id aliases -> 200 durable:false" \\
+            "d['ok'] is True and d['durable'] is False and d['messageId']=='e2e-matching-id-001'" \\
+            -X POST "${BRIDGE_URL}/publish/vxl.events.test" \\
+            -H "authorization: Bearer ${BRIDGE_TOKEN_VALUE}" \\
+            -H "x-bridge-token: ${BRIDGE_TOKEN_VALUE}" \\
+            -H 'x-message-id: e2e-matching-id-001' -H 'idempotency-key: e2e-matching-id-001' \\
+            -H 'content-type: application/json' -d '{"hello":"world"}'
+          '''.replace('\n          ', '\n')
+          if e2e.count(old_fallback) != 1:
+              raise SystemExit('core fallback e2e anchor drifted')
+          e2e_path.write_text(e2e.replace(old_fallback, new_fallback, 1), encoding='utf-8')
+
+      - name: Format and run focused unit checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustfmt +1.90.0 --edition 2024 remote/nats-bridge/src/main.rs
+          bash -n remote/nats-bridge/scripts/e2e.sh
+          git diff --check
+          cargo +1.90.0 test --locked --all-targets --manifest-path remote/nats-bridge/Cargo.toml
+          cargo +1.90.0 clippy --locked --all-targets --manifest-path remote/nats-bridge/Cargo.toml -- -D warnings
+
+      - name: Run live NATS bridge and consumer E2E
+        shell: bash
+        run: timeout 420s bash remote/nats-bridge/scripts/e2e.sh
+
+      - name: Commit tested hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add remote/nats-bridge/src/main.rs remote/nats-bridge/scripts/e2e.sh
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(messaging): reject conflicting bridge headers'
+          git push origin HEAD:agent/nats-header-consistency-20260809
