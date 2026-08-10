@@ -189,10 +189,22 @@ jobs:
           for deployment in dd-gha-clone-server dd-gha-executor-router; do
             awk -v target="$deployment" '
               BEGIN { RS="---"; found=0 }
-              $0 ~ /kind:[[:space:]]*Deployment/ &&
-              index($0, "name: " target) &&
-              $0 ~ /replicas:[[:space:]]*1/ { found++ }
-              END { exit(found == 1 ? 0 : 1) }
+              {
+                record = "\n" $0 "\n"
+                if (
+                  index(record, "\nkind: Deployment\n") &&
+                  index(record, "\n  name: " target "\n") &&
+                  index(record, "\n  replicas: 1\n")
+                ) {
+                  found++
+                }
+              }
+              END {
+                if (found != 1) {
+                  printf "expected exactly one rendered Deployment %s at replicas=1; found=%d\n", target, found > "/dev/stderr"
+                  exit 1
+                }
+              }
             ' "$rendered"
           done
       - name: Validate webhook operator tooling syntax
