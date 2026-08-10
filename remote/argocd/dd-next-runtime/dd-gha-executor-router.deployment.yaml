@@ -5,10 +5,8 @@ metadata:
   namespace: default
   labels:
     app: dd-gha-executor-router
-  annotations:
-    dd.dev/activation-state: signed-workflow-run-pilot
-    dd.dev/linear-issue: DEN-1597
 spec:
+  # Activation mode: signed-workflow-run-pilot.
   # Bounded pilot: the executor registry keeps AWS as the only enabled target;
   # Hetzner remains represented but disabled and carries no endpoint or secret.
   replicas: 1
@@ -21,8 +19,6 @@ spec:
     metadata:
       labels:
         app: dd-gha-executor-router
-      annotations:
-        dd.dev/activation-state: signed-workflow-run-pilot
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
