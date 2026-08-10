@@ -17,9 +17,13 @@ def main() -> None:
     cargo_path = Path("remote/nats-bridge/Cargo.toml")
     cargo = cargo_path.read_text(encoding="utf-8")
     dependency = 'linked-queue = { path = "../libs/rust/linked-queue" }\n'
-    if cargo.count(dependency) != 1:
-        raise RuntimeError("expected exactly one stale linked-queue dependency")
-    cargo_path.write_text(cargo.replace(dependency, "", 1), encoding="utf-8")
+    dependency_count = cargo.count(dependency)
+    if dependency_count > 1:
+        raise RuntimeError("multiple stale linked-queue dependencies found")
+    if dependency_count == 1:
+        cargo_path.write_text(cargo.replace(dependency, "", 1), encoding="utf-8")
+    elif "../libs/rust/linked-queue" in cargo:
+        raise RuntimeError("unrecognized linked-queue dependency syntax")
 
     live_test = dedent(
         r'''#!/usr/bin/env bash
