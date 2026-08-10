@@ -10,7 +10,8 @@ CRONJOB = ROOT / "remote/argocd/benefactor-contact-pipeline/cronjob.yaml"
 KUSTOMIZATION = ROOT / "remote/argocd/benefactor-contact-pipeline/kustomization.yaml"
 APPLICATION = ROOT / "remote/argocd/apps/benefactor-contact-pipeline.application.yaml"
 README = ROOT / "remote/argocd/benefactor-contact-pipeline/README.md"
-DIGEST = "sha256:06e93d31b6d252efb98a8a0aa81fd439ee7f6d0067db11d6a2a08d3cee7b51c5"
+DIGEST = "sha256:17ba7b0dd64aad31e9ab9486d73897481d861c72123f87ad3f42f7ae0a8f34eb"
+SOURCE_COMMIT = "5212868d77616d0cc3661dc27b9e5ada6ab48a26"
 
 
 class BenefactorContactCronJobTests(unittest.TestCase):
@@ -21,12 +22,18 @@ class BenefactorContactCronJobTests(unittest.TestCase):
         cls.application = APPLICATION.read_text(encoding="utf-8")
         cls.readme = README.read_text(encoding="utf-8")
 
-    def test_schedule_is_exact_6am_central_and_suspended(self) -> None:
+    def test_schedule_is_exact_6am_central_and_active_dry_run(self) -> None:
         self.assertIn('schedule: "0 6 * * *"', self.cronjob)
         self.assertIn("timeZone: America/Chicago", self.cronjob)
-        self.assertIn("suspend: true", self.cronjob)
+        self.assertIn("suspend: false", self.cronjob)
+        self.assertNotIn("suspend: true", self.cronjob)
         self.assertIn("concurrencyPolicy: Forbid", self.cronjob)
         self.assertIn("startingDeadlineSeconds: 900", self.cronjob)
+        self.assertIn("benefactor.cc/activation-mode: scheduled-dry-run", self.cronjob)
+        self.assertIn(
+            "benefactor.cc/activation-evidence: github-actions-run-31397763253-attempt-2",
+            self.cronjob,
+        )
 
     def test_image_is_immutable_and_matches_build_evidence(self) -> None:
         image = re.search(r"^\s*image:\s*(\S+)$", self.cronjob, re.MULTILINE)
@@ -39,6 +46,8 @@ class BenefactorContactCronJobTests(unittest.TestCase):
         self.assertNotIn(":main", value)
         self.assertNotIn(":latest", value)
         self.assertIn("imagePullPolicy: IfNotPresent", self.cronjob)
+        self.assertIn(SOURCE_COMMIT, self.readme)
+        self.assertIn(DIGEST, self.readme)
 
     def test_contact_bounds_and_dry_run_are_fail_closed(self) -> None:
         expected_pairs = {
@@ -105,9 +114,12 @@ class BenefactorContactCronJobTests(unittest.TestCase):
         self.assertIn("selfHeal: true", self.application)
 
     def test_runbook_preserves_separate_outreach_approval(self) -> None:
+        self.assertIn("active scheduled dry run", self.readme)
+        self.assertIn("safeToMutate: false", self.readme)
+        self.assertIn("zero contacts", self.readme)
         self.assertIn("DEN-833", self.readme)
         self.assertIn("intentionally absent from this CronJob", self.readme)
-        self.assertIn("changing `suspend` to `false`", self.readme)
+        self.assertIn("Changing this manifest never grants marketing consent", self.readme)
 
 
 if __name__ == "__main__":
