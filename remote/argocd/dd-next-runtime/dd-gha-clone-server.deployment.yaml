@@ -5,10 +5,8 @@ metadata:
   namespace: default
   labels:
     app: dd-gha-clone-server
-  annotations:
-    dd.dev/activation-state: signed-workflow-run-pilot
-    dd.dev/linear-issue: DEN-1863
 spec:
+  # Activation mode: signed-workflow-run-pilot.
   # Bounded pilot: only the exact ORESoftware/k8s-cluster workflows declared in
   # dd-gha-clone-server.configmap.yaml may be compiled, and only completed
   # failure workflow_run deliveries may reach execution.
@@ -22,8 +20,6 @@ spec:
     metadata:
       labels:
         app: dd-gha-clone-server
-      annotations:
-        dd.dev/activation-state: signed-workflow-run-pilot
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
