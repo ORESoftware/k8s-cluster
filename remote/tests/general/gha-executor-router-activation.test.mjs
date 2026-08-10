@@ -9,6 +9,8 @@ const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const files = {
   cloneDeployment:
     'remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml',
+  cloneNetworkPolicy:
+    'remote/argocd/dd-next-runtime/dd-gha-clone-server.networkpolicy.yaml',
   routerDeployment:
     'remote/argocd/dd-next-runtime/dd-gha-executor-router.deployment.yaml',
   routerConfig:
@@ -18,7 +20,7 @@ const files = {
   routerPolicy:
     'remote/argocd/dd-next-runtime/dd-gha-executor-router.networkpolicy.yaml',
   kustomization: 'remote/argocd/dd-next-runtime/kustomization.yaml',
-  runbook: 'docs/gha-executor-router-activation.md',
+  runbook: 'docs/operations/gha-clone-webhook-activation.md',
 };
 
 const zeroDigest =
@@ -47,7 +49,7 @@ function literalEnv(text, name) {
   return (match[1] ?? match[2]).trim();
 }
 
-test('digest-pinned clone and router remain inert after image promotion', () => {
+test('digest-pinned clone and router activate only the reviewed pilot', () => {
   const clone = read(files.cloneDeployment);
   const router = read(files.routerDeployment);
 
@@ -58,7 +60,7 @@ test('digest-pinned clone and router remain inert after image promotion', () => 
     requireAll(
       deployment,
       [
-        'replicas: 0',
+        'replicas: 1',
         image,
         publishedRevision,
         `command: ["/usr/local/bin/${binary}"]`,
@@ -66,6 +68,7 @@ test('digest-pinned clone and router remain inert after image promotion', () => 
         'readOnlyRootFilesystem: true',
         'allowPrivilegeEscalation: false',
         'drop: ["ALL"]',
+        'signed-workflow-run-pilot',
       ],
       `${label} deployment`,
     );
@@ -80,14 +83,14 @@ test('digest-pinned clone and router remain inert after image promotion', () => 
     );
   }
 
-  assert.equal(literalEnv(clone, 'GHA_CLONE_EXECUTION_ENABLED'), 'false');
+  assert.equal(literalEnv(clone, 'GHA_CLONE_EXECUTION_ENABLED'), 'true');
   assert.equal(
     literalEnv(clone, 'GHA_CLONE_WEBHOOK_EXECUTION_ENABLED'),
-    'false',
+    'true',
   );
   assert.equal(
     literalEnv(router, 'GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED'),
-    'false',
+    'true',
   );
 });
 
@@ -179,7 +182,27 @@ test('disabled Hetzner has no public route or dormant credential surface', () =>
   assert.ok(!hetznerEntry.includes('"authPath"'));
 });
 
-test('Argo tracks the complete inert router surface', () => {
+test('public intake is exact-path and reaches only the clone server', () => {
+  const route = read(files.cloneNetworkPolicy);
+  requireAll(
+    route,
+    [
+      'name: dd-gha-clone-server-webhook',
+      'path: /gha-webhooks/github',
+      'pathType: Exact',
+      'nginx.ingress.kubernetes.io/rewrite-target: /webhooks/github',
+      'nginx.ingress.kubernetes.io/proxy-request-buffering: "off"',
+      'name: dd-gha-clone-server',
+      'number: 8125',
+      'kubernetes.io/metadata.name: ingress-nginx',
+    ],
+    'webhook ingress',
+  );
+  assert.ok(!route.includes('name: dd-gha-executor-router-webhook'));
+  assert.ok(!route.includes('number: 8126'));
+});
+
+test('Argo tracks the complete active router surface', () => {
   const kustomization = read(files.kustomization);
   for (const filename of [
     'dd-gha-executor-router.configmap.yaml',
@@ -187,22 +210,24 @@ test('Argo tracks the complete inert router surface', () => {
     'dd-gha-executor-router.deployment.yaml',
     'dd-gha-executor-router.service.yaml',
     'dd-gha-executor-router.networkpolicy.yaml',
+    'dd-gha-clone-server.networkpolicy.yaml',
   ]) {
     assert.ok(kustomization.includes(`  - ${filename}`));
   }
 });
 
-test('runbook requires immutable images, provider proof, and rollback', () => {
+test('runbook documents budget limits, live proof, status gap, and rollback', () => {
   const runbook = read(files.runbook);
   requireAll(
     runbook,
     [
       'digest-pinned',
-      'SBOM',
-      'AWS',
-      'Hetzner',
-      'pre-submit',
-      'Fiducia',
+      'workflow_run',
+      'gha-capacity-broker-rs',
+      'not activated by this change',
+      'verify_gha_workflow_run_fallback.sh',
+      'HTTP 401',
+      'does not yet',
       'Rollback',
       'replicas: 0',
     ],
