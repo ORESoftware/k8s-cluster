@@ -93,7 +93,12 @@ jobs:
           cp remote/nats-bridge/scripts/header_consistency_e2e.sh "$staging/remote/nats-bridge/scripts/header_consistency_e2e.sh"
           cp .github/workflows/nats-bridge-header-consistency.yml "$staging/.github/workflows/nats-bridge-header-consistency.yml"
 
-          git switch --detach "$base"
+          # The reviewed tree is intentionally dirty after fixture normalization.
+          # Preserve it in RUNNER_TEMP, then reset to the exact current main before
+          # reconstructing a one-parent commit. This avoids importing any temporary
+          # applicator history and never force-updates the target branch.
+          git reset --hard "$base"
+          git clean -fd
           cp "$staging/remote/nats-bridge/src/main.rs" remote/nats-bridge/src/main.rs
           cp "$staging/remote/nats-bridge/scripts/e2e.sh" remote/nats-bridge/scripts/e2e.sh
           cp "$staging/remote/nats-bridge/scripts/header_consistency_e2e.sh" remote/nats-bridge/scripts/header_consistency_e2e.sh
