@@ -191,11 +191,7 @@ jobs:
               BEGIN { RS="---"; found=0 }
               {
                 record = "\n" $0 "\n"
-                if (
-                  index(record, "\nkind: Deployment\n") &&
-                  index(record, "\n  name: " target "\n") &&
-                  index(record, "\n  replicas: 1\n")
-                ) {
+                if (index(record, "\nkind: Deployment\n") && index(record, "\n  name: " target "\n") && index(record, "\n  replicas: 1\n")) {
                   found++
                 }
               }
