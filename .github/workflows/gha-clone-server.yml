@@ -9,16 +9,21 @@ on:
       - 'remote/argocd/dd-next-runtime/dd-gha-executor-router*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
       - 'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-remote-gateway.ingress.yaml'
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
       - 'remote/tests/general/gha-clone-webhook-config.test.ts'
       - 'remote/tests/general/gha-clone-streempilot-config.test.ts'
       - 'remote/tests/general/gha-executor-router-activation.test.mjs'
+      - 'remote/tests/general/gha-clone-budget-webhook-activation.test.mjs'
       - 'remote/tests/general/build-server-profile-repository-policy.test.mjs'
+      - 'scripts/ops/register_gha_clone_budget_webhook.sh'
+      - 'scripts/ops/canary_gha_clone_budget_webhook.py'
       - 'docs/gha-continuity-architecture.md'
       - 'docs/gha-independent-executor-routing.md'
       - 'docs/gha-executor-router-gitops.md'
       - 'docs/gha-executor-router-activation.md'
+      - 'docs/operations/gha-budget-webhook-activation.md'
       - 'docs/streempilot-ci-continuity.md'
       - 'docs/build-server-profile-repository-policy.md'
       - '.github/actionlint.yaml'
@@ -34,16 +39,21 @@ on:
       - 'remote/argocd/dd-next-runtime/dd-gha-executor-router*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
       - 'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-remote-gateway.ingress.yaml'
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
       - 'remote/tests/general/gha-clone-webhook-config.test.ts'
       - 'remote/tests/general/gha-clone-streempilot-config.test.ts'
       - 'remote/tests/general/gha-executor-router-activation.test.mjs'
+      - 'remote/tests/general/gha-clone-budget-webhook-activation.test.mjs'
       - 'remote/tests/general/build-server-profile-repository-policy.test.mjs'
+      - 'scripts/ops/register_gha_clone_budget_webhook.sh'
+      - 'scripts/ops/canary_gha_clone_budget_webhook.py'
       - 'docs/gha-continuity-architecture.md'
       - 'docs/gha-independent-executor-routing.md'
       - 'docs/gha-executor-router-gitops.md'
       - 'docs/gha-executor-router-activation.md'
+      - 'docs/operations/gha-budget-webhook-activation.md'
       - 'docs/streempilot-ci-continuity.md'
       - 'docs/build-server-profile-repository-policy.md'
       - '.github/actionlint.yaml'
@@ -164,6 +174,7 @@ jobs:
             general/gha-clone-streempilot-config.test.ts
           node --test \
             general/gha-executor-router-activation.test.mjs \
+            general/gha-clone-budget-webhook-activation.test.mjs \
             general/build-server-profile-repository-policy.test.mjs
       - name: Install pinned kubectl renderer
         uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
@@ -175,11 +186,21 @@ jobs:
           rendered="${RUNNER_TEMP}/dd-next-runtime.yaml"
           kubectl kustomize remote/argocd/dd-next-runtime >"$rendered"
           test -s "$rendered"
-          grep -F 'name: dd-gha-clone-server' "$rendered"
-          grep -F 'name: dd-gha-executor-router' "$rendered"
-          test "$(grep -c 'replicas: 0' "$rendered")" -ge 2
-      - name: Validate webhook registration shell syntax
-        run: bash -n remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh
+          for deployment in dd-gha-clone-server dd-gha-executor-router; do
+            awk -v target="$deployment" '
+              BEGIN { RS="---"; found=0 }
+              $0 ~ /kind:[[:space:]]*Deployment/ &&
+              index($0, "name: " target) &&
+              $0 ~ /replicas:[[:space:]]*1/ { found++ }
+              END { exit(found == 1 ? 0 : 1) }
+            ' "$rendered"
+          done
+      - name: Validate webhook operator tooling syntax
+        run: |
+          set -euo pipefail
+          bash -n remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh
+          bash -n scripts/ops/register_gha_clone_budget_webhook.sh
+          python3 -m py_compile scripts/ops/canary_gha_clone_budget_webhook.py
       - name: Reject committed credentials
         run: |
           if grep -RIE \
@@ -188,10 +209,15 @@ jobs:
             remote/deployments/gha-clone-server-rs \
             remote/argocd/dd-next-runtime/dd-gha-clone-server* \
             remote/argocd/dd-next-runtime/dd-gha-executor-router* \
+            remote/argocd/dd-next-runtime/dd-remote-gateway.ingress.yaml \
+            remote/tests/general/gha-clone-budget-webhook-activation.test.mjs \
+            scripts/ops/register_gha_clone_budget_webhook.sh \
+            scripts/ops/canary_gha_clone_budget_webhook.py \
             docs/gha-continuity-architecture.md \
             docs/gha-independent-executor-routing.md \
             docs/gha-executor-router-gitops.md \
             docs/gha-executor-router-activation.md \
+            docs/operations/gha-budget-webhook-activation.md \
             docs/streempilot-ci-continuity.md \
             docs/build-server-profile-repository-policy.md; then
             echo 'credential-like material found in GHA continuity files' >&2
