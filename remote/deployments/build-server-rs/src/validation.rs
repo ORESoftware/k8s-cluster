@@ -15,6 +15,12 @@ pub(crate) fn clean_optional(value: Option<&str>) -> Option<String> {
         .map(ToString::to_string)
 }
 
+/// Git object IDs admitted for immutable execution. GitHub currently emits
+/// full SHA-1 IDs, while Git repositories may use the SHA-256 object format.
+pub(crate) fn is_full_commit_oid(value: &str) -> bool {
+    matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
 pub(crate) fn ensure_allowed_prefix(
     name: &str,
     value: &str,
@@ -317,6 +323,15 @@ pub(crate) fn validate_build_request(
                     .to_string(),
             );
         }
+
+        let git_ref = clean_optional(request.git_ref.as_deref())
+            .ok_or_else(|| "gitRef is required for jobKind=run-profile".to_string())?;
+        if !is_full_commit_oid(&git_ref) {
+            return Err(
+                "gitRef must be a full 40- or 64-hex commit object ID for jobKind=run-profile"
+                    .to_string(),
+            );
+        }
     } else {
         if request.profile.is_some() {
             return Err("profile is only valid for jobKind=run-profile".to_string());
@@ -425,5 +440,19 @@ mod tests {
             assert!(names.contains(expected));
         }
         assert!(profiles::find("sh -c evil").is_none());
+    }
+
+    #[test]
+    fn immutable_commit_detection_accepts_only_full_object_ids() {
+        assert!(is_full_commit_oid(
+            "0123456789abcdef0123456789abcdef01234567"
+        ));
+        assert!(is_full_commit_oid(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        ));
+        assert!(!is_full_commit_oid("main"));
+        assert!(!is_full_commit_oid(
+            "0123456789abcdef0123456789abcdef0123456z"
+        ));
     }
 }

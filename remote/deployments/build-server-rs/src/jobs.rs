@@ -14,7 +14,7 @@ use crate::state::{AppState, SERVICE_NAME};
 use crate::types::{BuildJobRecord, BuildRequest, BuildStatus, NatsSubmitError};
 use crate::util::{now_ms, sha256_hex};
 use crate::validation::{
-    clean_optional, request_job_kind, validate_build_request, validate_image,
+    clean_optional, is_full_commit_oid, request_job_kind, validate_build_request, validate_image,
     validate_relative_path, validate_rollout_resource,
 };
 use crate::{db, events, fiducia, lambda_exec, profiles};
@@ -95,10 +95,6 @@ pub(crate) async fn resolve_repo_path(
         return Err(format!("{name} must stay inside the repository root"));
     }
     Ok(resolved)
-}
-
-fn is_full_commit_oid(value: &str) -> bool {
-    matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn restricted_git_args() -> Vec<String> {
@@ -1020,7 +1016,7 @@ mod idempotency_tests {
 
 #[cfg(test)]
 mod commit_oid_tests {
-    use super::is_full_commit_oid;
+    use crate::validation::is_full_commit_oid;
 
     #[test]
     fn immutable_commit_detection_accepts_only_full_hex_object_ids() {

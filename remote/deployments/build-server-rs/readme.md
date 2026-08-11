@@ -82,7 +82,8 @@ The server intentionally does not accept caller-supplied shell commands. A submi
 - `schemaVersion`: optional; when present it must be `build-server.v1`.
 - `jobKind`: optional; `build-image`, `build-and-deploy`, or `run-profile`.
 - `repoUrl`: `https://`, `ssh://`, or `git@` repo URL.
-- `gitRef`: optional branch or tag, passed to `git clone --branch`.
+- `gitRef`: an optional branch or tag for image jobs. A full 40- or 64-hex commit object ID is
+  fetched directly and checked out detached; `run-profile` requires that immutable form.
 - `image`: explicit image tag or digest to build. The deployment currently allowlists
   `710156900967.dkr.ecr.us-east-1.amazonaws.com/`.
 - `contextDir` and `dockerfile`: relative paths inside the cloned repo.
@@ -93,7 +94,8 @@ The server intentionally does not accept caller-supplied shell commands. A submi
 - `deploy.path`: relative path inside the cloned repo.
 - `deploy.namespace`: namespace allowlisted by `BUILD_SERVER_ALLOWED_NAMESPACES`.
 
-For `jobKind: run-profile`, supply `repoUrl`, optional `gitRef`, and `profile`. Omit `image`,
+For `jobKind: run-profile`, supply `repoUrl`, an immutable full commit OID in `gitRef`, and
+`profile`. Omit `image`,
 `push`, `deploy`, `buildArgs`, and `dockerfile`; the server rejects them for profile jobs. The
 profile name selects an operator-reviewed runner image, commands, and artifact paths compiled into
 the server:
@@ -115,7 +117,7 @@ Example:
   "schemaVersion": "build-server.v1",
   "jobKind": "run-profile",
   "repoUrl": "https://github.com/sonus-auris/sonus-auris-ui.dart.git",
-  "gitRef": "main",
+  "gitRef": "0123456789abcdef0123456789abcdef01234567",
   "profile": "flutter-android-debug"
 }
 ```

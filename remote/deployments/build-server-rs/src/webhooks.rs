@@ -25,7 +25,9 @@ use sha2::{Digest, Sha256};
 use std::sync::atomic::Ordering;
 use subtle::ConstantTimeEq;
 
-use crate::{db, events, fiducia, AppState, BuildRequest, DeployRequest};
+use crate::{
+    db, events, fiducia, validation::is_full_commit_oid, AppState, BuildRequest, DeployRequest,
+};
 
 /// One mapping from a GitHub repo/branch to a build job. Loaded from
 /// BUILD_SERVER_WEBHOOK_RULES (inline JSON array) or
@@ -104,11 +106,18 @@ fn substitute_image(template: &str, sha: &str, git_ref: &str) -> String {
 /// A webhook commit must be a complete SHA-1 or SHA-256 object ID before it is
 /// interpolated into an image tag, lock key, or immutable checkout request.
 fn valid_commit_sha(sha: &str) -> bool {
-    matches!(sha.len(), 40 | 64) && sha.bytes().all(|byte| byte.is_ascii_hexdigit())
+    is_full_commit_oid(sha)
 }
 
 fn branch_from_ref(git_ref: &str) -> Option<&str> {
     git_ref.strip_prefix("refs/heads/")
+}
+
+fn github_request_id(delivery_id: &str) -> String {
+    format!(
+        "github:{}",
+        hex::encode(Sha256::digest(delivery_id.as_bytes()))
+    )
 }
 
 fn rule_matches(rule: &WebhookRule, event: &str, repo: &str, git_ref: &str) -> bool {
@@ -345,7 +354,10 @@ pub async fn github_webhook(
             .into_response();
     };
 
-    let request = build_request_from_rule(rule, &repo, &git_ref, &sha);
+    let mut request = build_request_from_rule(rule, &repo, &git_ref, &sha);
+    // Preserve the provider delivery identity through queue admission. This is
+    // the local idempotency guard when Postgres or fiducia is temporarily down.
+    request.request_id = Some(github_request_id(&delivery_id));
     let outcome = crate::enqueue_build(&state, request, "webhook").await;
     fiducia::idempotency_finish(
         &state.http,
@@ -355,6 +367,11 @@ pub async fn github_webhook(
         outcome.is_ok(),
     )
     .await;
+    if matches!(&outcome, Err((status, _)) if status.is_server_error()) {
+        if let Some(db) = state.db.as_ref() {
+            db::release_webhook_delivery_claim(db, "github", &delivery_id).await;
+        }
+    }
     match outcome {
         Ok(record) => {
             if let Some(db) = state.db.as_ref() {
@@ -634,6 +651,15 @@ mod tests {
         assert!(!valid_commit_sha(
             "0123456789abcdef0123456789abcdef0123456z"
         ));
+    }
+
+    #[test]
+    fn github_delivery_request_id_is_deterministic_and_bounded() {
+        let first = github_request_id("delivery-one");
+        assert_eq!(first, github_request_id("delivery-one"));
+        assert_ne!(first, github_request_id("delivery-two"));
+        assert!(first.starts_with("github:"));
+        assert!(first.len() <= 128);
     }
 
     #[test]

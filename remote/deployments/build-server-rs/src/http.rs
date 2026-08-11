@@ -792,6 +792,21 @@ mod e2e {
     }
 
     #[tokio::test]
+    async fn submit_rejects_mutable_profile_ref() {
+        let body = json!({
+            "schemaVersion": "build-server.v1",
+            "jobKind": "run-profile",
+            "repoUrl": "https://github.com/ORESoftware/x.git",
+            "gitRef": "main",
+            "profile": "playwright"
+        });
+        let (status, response) =
+            send(app(test_config()), post_json("/builds", Some(AUTH), &body)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(response.contains("full 40- or 64-hex commit object ID"));
+    }
+
+    #[tokio::test]
     async fn submit_with_empty_allowlist_fails_closed() {
         let mut config = test_config();
         config.allowed_repo_prefixes = Vec::new();

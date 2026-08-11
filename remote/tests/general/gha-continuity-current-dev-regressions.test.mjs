@@ -29,6 +29,13 @@ const profilesPath = 'remote/deployments/build-server-rs/src/profiles.rs';
 const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';
 const metaWorkflowPath = '.github/workflows/gha-clone-server-meta.yml';
 const continuityWorkflowPath = '.github/workflows/gha-clone-server.yml';
+const activationRunbookPath =
+  'docs/operations/gha-clone-webhook-activation.md';
+const buildServerValidationPath =
+  'remote/deployments/build-server-rs/src/validation.rs';
+const buildServerWebhookPath =
+  'remote/deployments/build-server-rs/src/webhooks.rs';
+const buildServerDbPath = 'remote/deployments/build-server-rs/src/db.rs';
 
 test('resource exporter inventories retain both continuity services', () => {
   for (const path of observabilityInventories) {
@@ -123,4 +130,27 @@ test('fixed-profile, planner, and meta-workflow ratchets survive the inert GitOp
   assert.match(continuityWorkflow, /dd-gha-executor-router\*/);
   assert.match(continuityWorkflow, /gha-clone-server-meta\.yml/);
   assert.match(continuityWorkflow, /persist-credentials:\s*false/);
+});
+
+test('failure-only webhook and immutable profile admission remain explicit', () => {
+  const runbook = read(activationRunbookPath);
+  assert.match(runbook, /only the `workflow_run` event/);
+  assert.match(runbook, /signed non-`workflow_run` no-op behavior/);
+  assert.match(runbook, /both clone-server execution gates are `false`/);
+  assert.match(runbook, /does not publish a Check Run or commit status/);
+
+  const validation = read(buildServerValidationPath);
+  assert.match(
+    validation,
+    /gitRef must be a full 40- or 64-hex commit object ID for jobKind=run-profile/,
+  );
+
+  const webhook = read(buildServerWebhookPath);
+  assert.match(webhook, /request\.request_id = Some\(github_request_id\(&delivery_id\)\)/);
+  assert.match(webhook, /status\.is_server_error\(\)/);
+  assert.match(webhook, /release_webhook_delivery_claim/);
+
+  const database = read(buildServerDbPath);
+  assert.match(database, /Column::Action\.eq\("received"\)/);
+  assert.match(database, /Column::DeliveryId\.eq\(delivery_id\)/);
 });
