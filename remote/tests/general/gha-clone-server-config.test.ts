@@ -115,7 +115,7 @@ test('clone server and executor router are immutable and active within the bound
   assertActiveDeployment(
     'executor router',
     router,
-    /image:\s*ghcr\.io\/oresoftware\/gha-executor-router@sha256:59a31a496e5c528f89acb7643b8ced1ea14bc6c15b1d83b22a37f4ba529708e6/,
+    /image:\s*ghcr\.io\/oresoftware\/gha-executor-router@sha256:e87bee0e28911fbdc096d2fec0c1a65811b7d2173594d81c377dc437ac658e8f/,
     /command:\s*\["\/usr\/local\/bin\/gha-executor-router"\]/,
     /name:\s*GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED\s+value:\s*"true"/,
   );

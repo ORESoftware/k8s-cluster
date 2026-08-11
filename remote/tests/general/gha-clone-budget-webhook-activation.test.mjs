@@ -50,7 +50,7 @@ test('executor router is one immutable AWS-only execution replica', () => {
   assert.match(routerDeployment, /minReadySeconds: 10/);
   assert.match(
     routerDeployment,
-    /ghcr\.io\/oresoftware\/gha-executor-router@sha256:59a31a496e5c528f89acb7643b8ced1ea14bc6c15b1d83b22a37f4ba529708e6/,
+    /ghcr\.io\/oresoftware\/gha-executor-router@sha256:e87bee0e28911fbdc096d2fec0c1a65811b7d2173594d81c377dc437ac658e8f/,
   );
   assert.equal(envLiteral(routerDeployment, 'GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED'), 'true');
   assert.equal(
