@@ -11,7 +11,7 @@ const script = readFileSync(
 const cloneDigest =
   'ghcr.io/oresoftware/gha-clone-server@sha256:c141b374acc4b49a9108317e78c06b9d726bcb99903c00c01a2cf200f98432e4';
 const routerDigest =
-  'ghcr.io/oresoftware/gha-executor-router@sha256:59a31a496e5c528f89acb7643b8ced1ea14bc6c15b1d83b22a37f4ba529708e6';
+  'ghcr.io/oresoftware/gha-executor-router@sha256:e87bee0e28911fbdc096d2fec0c1a65811b7d2173594d81c377dc437ac658e8f';
 
 function requireAll(text, values) {
   for (const value of values) {
