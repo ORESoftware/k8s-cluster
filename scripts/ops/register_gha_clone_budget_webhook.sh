@@ -4,7 +4,7 @@ umask 077
 
 readonly script_name="${0##*/}"
 repository=''
-webhook_url='https://hello.95-217-171-250.sslip.io/gha-webhooks/github'
+webhook_url='https://98.90.186.114/gha-webhooks/github'
 secret_file=''
 
 usage() {

@@ -10,6 +10,8 @@ on:
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
       - 'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml'
       - 'remote/argocd/dd-next-runtime/dd-remote-gateway.ingress.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml'
+      - 'remote/ec2/renew-letsencrypt-gateway-cert.sh'
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
       - 'remote/tests/general/gha-clone-webhook-config.test.ts'
@@ -40,6 +42,8 @@ on:
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
       - 'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml'
       - 'remote/argocd/dd-next-runtime/dd-remote-gateway.ingress.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml'
+      - 'remote/ec2/renew-letsencrypt-gateway-cert.sh'
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
       - 'remote/tests/general/gha-clone-webhook-config.test.ts'
@@ -207,6 +211,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh
+          bash -n remote/ec2/renew-letsencrypt-gateway-cert.sh
           bash -n scripts/ops/register_gha_clone_budget_webhook.sh
           python3 -m py_compile scripts/ops/canary_gha_clone_budget_webhook.py
       - name: Reject committed credentials

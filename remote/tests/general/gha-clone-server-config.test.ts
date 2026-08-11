@@ -166,10 +166,12 @@ test('secret ownership is non-duplicating and credential material is never commi
   for (const property of [
     'auth_secret',
     'github_webhook_secret',
-    'github_app_installation_token',
+    'FORMAL_METHODS_GITHUB_TOKEN',
   ]) {
     assert.match(cloneSecret, new RegExp(`property: ${property}`));
   }
+  assert.match(cloneSecret, /secretKey:\s*github_token/);
+  assert.match(cloneSecret, /key:\s*dd\/remote-dev\/agent-secrets/);
   assert.doesNotMatch(cloneSecret, /build_server_auth/);
 
   const routerSecret = read(routerSecretPath);

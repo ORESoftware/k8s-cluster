@@ -135,11 +135,12 @@ test('fixed-profile, planner, and meta-workflow ratchets survive the inert GitOp
   assert.match(continuityWorkflow, /persist-credentials:\s*false/);
 });
 
-test('failure-only webhook and immutable profile admission remain explicit', () => {
+test('failure-only budget pilot and immutable profile admission remain explicit', () => {
   const runbook = read(activationRunbookPath);
   assert.match(runbook, /only the `workflow_run` event/);
   assert.match(runbook, /signed non-`workflow_run` no-op behavior/);
-  assert.match(runbook, /both clone-server execution gates are `false`/);
+  assert.match(runbook, /only reviewed exception to\n?the inert-by-default posture/);
+  assert.match(runbook, /accepts only `action_required`/);
   assert.match(runbook, /does not publish a Check Run or commit status/);
 
   const validation = read(buildServerValidationPath);

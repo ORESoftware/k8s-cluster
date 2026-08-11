@@ -28,14 +28,14 @@ GitHub workflow_run webhook
   -> dd-build-server:8100 fixed profile
 ```
 
-The public ingress exposes only the exact webhook path. Health, readiness, run state, planner APIs, and manual-run APIs remain ClusterIP-only. The clone server has no direct NetworkPolicy path to the build server.
+The AWS host-port gateway and clusters with ingress-nginx expose only the exact webhook path. Health, readiness, run state, planner APIs, and manual-run APIs remain ClusterIP-only. The clone server has no direct NetworkPolicy path to the build server.
 
 ## Secret authority
 
-Do not use a classic PAT as a runtime secret.
+Do not use a classic or broad operator PAT as a runtime secret.
 
 - `dd-gha-clone-server-secrets.github_webhook_secret`: HMAC authority shared only with exact repository hooks.
-- `dd-gha-clone-server-secrets.github_app_installation_token`: short-lived contents-read token used to fetch exact workflow YAML.
+- `dd-gha-clone-server-secrets.github_token`: fine-grained token projected from the protected `dd/remote-dev/agent-secrets` record and used only to fetch exact workflow YAML. A repository-scoped GitHub App installation token remains the preferred future replacement.
 - `dd-gha-clone-server-secrets.auth_secret`: private clone-server API authority.
 - `dd-gha-executor-router-secrets.inbound_auth`: clone-to-router authority.
 - `dd-agent-secrets.SERVER_AUTH_SECRET`: router-to-AWS-build-server authority, projected read-only into the router.

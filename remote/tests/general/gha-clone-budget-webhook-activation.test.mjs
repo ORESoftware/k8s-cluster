@@ -10,6 +10,9 @@ const cloneDeployment = read('remote/argocd/dd-next-runtime/dd-gha-clone-server.
 const routerDeployment = read('remote/argocd/dd-next-runtime/dd-gha-executor-router.deployment.yaml');
 const clonePolicy = read('remote/argocd/dd-next-runtime/dd-gha-clone-server.networkpolicy.yaml');
 const ingress = read('remote/argocd/dd-next-runtime/dd-remote-gateway.ingress.yaml');
+const gateway = read('remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml');
+const gatewayDaemonSet = read('remote/argocd/dd-next-runtime/dd-remote-gateway.deployment.yaml');
+const renewGatewayCert = read('remote/ec2/renew-letsencrypt-gateway-cert.sh');
 const cloneConfig = read('remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml');
 const buildPatch = read('remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml');
 const registerScript = read('scripts/ops/register_gha_clone_budget_webhook.sh');
@@ -68,6 +71,17 @@ test('only the exact HMAC webhook path is public', () => {
   assert.match(ingress, /nginx\.ingress\.kubernetes\.io\/ssl-redirect: "true"/);
   assert.match(ingress, /nginx\.ingress\.kubernetes\.io\/proxy-body-size: "1m"/);
   assert.match(ingress, /nginx\.ingress\.kubernetes\.io\/limit-rps: "5"/);
+  assert.match(gateway, /location = \/gha-webhooks\/github \{/);
+  assert.match(gateway, /if \(\$request_method != POST\)/);
+  assert.match(
+    gateway,
+    /dd-gha-clone-server\.default\.svc\.cluster\.local:8125/,
+  );
+  assert.match(gateway, /proxy_pass http:\/\/\$dd_up_gha_clone\/webhooks\/github/);
+  assert.match(gateway, /limit_req zone=dd_gha_webhook burst=10 nodelay/);
+  assert.match(gatewayDaemonSet, /dd\.dev\/gateway-config-revision: '2026-08-11-gha-budget-webhook'/);
+  assert.match(renewGatewayCert, /GATEWAY_WORKLOAD="daemonset\/dd-remote-gateway"/);
+  assert.match(renewGatewayCert, /kubectl rollout restart "\$\{GATEWAY_WORKLOAD\}"/);
 });
 
 test('NetworkPolicy permits only gateway or ingress controller input and router output', () => {
@@ -99,6 +113,7 @@ test('hook registration is idempotent, workflow_run-only, and keeps the secret o
   assert.match(registerScript, /--method POST/);
   assert.match(registerScript, /insecure_ssl: "0"/);
   assert.doesNotMatch(registerScript, /--arg secret|echo .*\$webhook_secret|printf .*\$webhook_secret/);
+  assert.match(registerScript, /https:\/\/98\.90\.186\.114\/gha-webhooks\/github/);
 });
 
 test('canary signs exact bytes and proves repository, SHA, workflow, and terminal state', () => {
@@ -113,6 +128,7 @@ test('canary signs exact bytes and proves repository, SHA, workflow, and termina
   assert.match(canary, /run\.get\("workflowPath"\) != args\.workflow_path/);
   assert.match(canary, /state in \{"succeeded", "failed"\}/);
   assert.doesNotMatch(canary, /print\([^\n]*(webhook_secret|clone_auth)/);
+  assert.match(canary, /https:\/\/98\.90\.186\.114\/gha-webhooks\/github/);
 });
 
 test('runbook states the compatibility limitation and one-change rollback', () => {

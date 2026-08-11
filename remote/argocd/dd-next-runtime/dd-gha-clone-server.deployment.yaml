@@ -100,7 +100,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: dd-gha-clone-server-secrets
-                  key: github_app_installation_token
+                  key: github_token
             - name: GHA_CLONE_BUILD_SERVER_AUTH
               valueFrom:
                 secretKeyRef:

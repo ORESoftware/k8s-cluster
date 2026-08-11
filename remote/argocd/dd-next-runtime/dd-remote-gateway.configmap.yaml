@@ -112,6 +112,9 @@ data:
     limit_req_zone $dd_auth_write_limit_key zone=dd_auth_write:10m rate=10r/m;
     limit_req_zone $binary_remote_addr zone=dd_music_vote_write:10m rate=20r/m;
     limit_req_zone $binary_remote_addr zone=dd_sound_recorder_mobile_write:10m rate=120r/m;
+    # GitHub retries webhook deliveries, so allow a small burst while bounding
+    # unauthenticated HMAC work at the only public GHA fallback endpoint.
+    limit_req_zone $binary_remote_addr zone=dd_gha_webhook:10m rate=5r/s;
     # Read-only MCP endpoints (/mcp, /cluster-mcp): each tools/call fans out to
     # the Kubernetes API (~20 list calls) or 12 observability backends, so a
     # compromised or buggy read-only token could amplify load. Cap external
@@ -2531,6 +2534,31 @@ data:
         proxy_set_header Auth $dd_gateway_auth_header;
         set $dd_up_46 dd-build-server.default.svc.cluster.local:8100;
         proxy_pass http://$dd_up_46;
+      }
+
+      # Independent GHA fallback webhook. AWS serves the gateway directly from
+      # host ports, so this exact route is the AWS counterpart to the optional
+      # ingress-nginx object used by clusters that actually run that controller.
+      # GitHub cannot present the operator cookie; the clone server verifies the
+      # request body against X-Hub-Signature-256 and requires a UUID delivery ID.
+      # Keep the raw body and GitHub headers unchanged.
+      location = /gha-webhooks/github {
+        if ($request_method != POST) {
+          return 405;
+        }
+        client_max_body_size 1m;
+        limit_req zone=dd_gha_webhook burst=10 nodelay;
+        limit_req_status 429;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_connect_timeout 5;
+        proxy_read_timeout 65;
+        proxy_send_timeout 65;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        set $dd_up_gha_clone dd-gha-clone-server.default.svc.cluster.local:8125;
+        proxy_pass http://$dd_up_gha_clone/webhooks/github;
       }
 
       # Inbound webhooks from GitHub (failure-only workflow_run) and container

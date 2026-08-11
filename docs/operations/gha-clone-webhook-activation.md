@@ -40,9 +40,9 @@ future GitHub status/check context: gha-indie/<profile>
 
 The webhook and worker must never accept caller-selected commands, images, executors, deployment targets, credentials, mutable action references, arbitrary repository prefixes, or arbitrary workflow paths.
 
-The desired state on `dev` is intentionally inert: both clone-server execution gates are `false`
-and the clone server and executor router have zero replicas. Do not enable them until the cloud
-routing and GitHub-visible result blockers below are resolved.
+The budget-exhaustion pilot in `gha-budget-webhook-activation.md` is the only reviewed exception to
+the inert-by-default posture. It uses one replica per service, accepts only `action_required`, and
+must pass the exact TLS, HMAC, immutable-SHA, router, build, and replay canary before expansion.
 
 ## Phase 0: read-only static preflight
 
@@ -55,7 +55,8 @@ scripts/ops/preflight_gha_clone_webhook.sh
 The preflight verifies without decoding or printing secrets:
 
 - `ExternalSecret/dd-gha-clone-server-secrets` reports `Ready=True`;
-- the target Secret contains non-empty `auth_secret`, `github_webhook_secret`, `github_app_installation_token`, and `build_server_auth` entries;
+- the clone Secret contains non-empty `auth_secret`, `github_webhook_secret`, and `github_token` entries;
+- the router Secret contains a non-empty `inbound_auth`, and the existing build-server Secret contains `SERVER_AUTH_SECRET`;
 - repository and workflow-path rules are non-empty, exact, and internally consistent;
 - both execution flags remain `false`;
 - the pod is non-root, does not mount a service-account token, drops Linux capabilities, and listens on port 8125;
@@ -104,11 +105,10 @@ Do not overload the existing `dd-build-server` webhook route. Preserve the raw r
 
 The route must not require an operator browser cookie, but the clone server must reject missing or invalid HMAC signatures. Apply request-size and rate limits at the gateway while leaving the application planner's tighter workflow limits in force.
 
-AWS currently serves through the gateway's own hostPort/TLS path; an ingress-nginx object is inert
-there. AWS and Hetzner Argo CD applications currently reconcile the same runtime path, so a shared
-replica/flag change activates both clusters while the cluster-local `dd-build-server` URL resolves to
-different workers. Split the cloud-specific desired state and prove each exact route before scaling
-or enabling either execution gate.
+AWS serves `/gha-webhooks/github` through the gateway's own hostPort/TLS path. The ingress-nginx
+object is an equivalent exact route only in clusters that actually run that controller. Before
+activation, prove the selected cluster has exactly one reachable route and that both routes preserve
+the raw HMAC body without exposing any status or manual-run endpoint.
 
 ## Phase 3: GitHub webhook installation
 
