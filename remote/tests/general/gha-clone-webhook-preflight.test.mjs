@@ -57,6 +57,8 @@ test('preflight enforces exact AWS-only router placement and no direct clone exe
     'clone server must address only the executor router',
     'no direct build-server path',
     'no public/Hetzner path',
+    'build_policy="$(get_json networkpolicy "$build_name")"',
+    'build-server NetworkPolicy must admit the continuity router on TCP 8100',
   ]);
   assert.match(
     script,
