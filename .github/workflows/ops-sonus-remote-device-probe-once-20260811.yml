@@ -1,0 +1,378 @@
+name: Probe Sonus Auris remote Android path once
+run-name: Probe Sonus remote Android path from ${{ github.sha }}
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ops-sonus-remote-device-probe-once-20260811.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ops-sonus-remote-device-probe-once-20260811
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: github.actor == 'ORESoftware'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact trusted trigger revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          clean: true
+          show-progress: false
+
+      - name: Configure trusted main-ref AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: sonus-remote-device-probe
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Probe protected host without exposing credentials or device identifiers
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: |
+          set -Eeuo pipefail
+          test -n "${INSTANCE_ID:-}"
+
+          hosted="$RUNNER_TEMP/sonus-hosted-capabilities.json"
+          HOSTED_SECRET_READABLE=false
+          HOSTED_S3_LISTABLE=false
+          HOSTED_S3_BUCKET_COUNT=0
+          if aws secretsmanager get-secret-value \
+              --secret-id dd/remote-dev/agent-secrets \
+              --query SecretString \
+              --output text >"$RUNNER_TEMP/hosted-secret-probe" 2>/dev/null; then
+            HOSTED_SECRET_READABLE=true
+          fi
+          rm -f "$RUNNER_TEMP/hosted-secret-probe"
+          if bucket_count="$(aws s3api list-buckets --query 'length(Buckets)' --output text 2>/dev/null)"; then
+            if [[ "$bucket_count" =~ ^[0-9]+$ ]]; then
+              HOSTED_S3_LISTABLE=true
+              HOSTED_S3_BUCKET_COUNT="$bucket_count"
+            fi
+          fi
+          jq -nc \
+            --argjson secrets_readable "$HOSTED_SECRET_READABLE" \
+            --argjson s3_listable "$HOSTED_S3_LISTABLE" \
+            --argjson s3_bucket_count "$HOSTED_S3_BUCKET_COUNT" \
+            '{aws_secrets_readable:$secrets_readable,s3_listable:$s3_listable,s3_bucket_count:$s3_bucket_count}' \
+            > "$hosted"
+
+          probe="$RUNNER_TEMP/sonus-remote-probe.py"
+          cat > "$probe" <<'PY'
+          import json
+          import os
+          import platform
+          import re
+          import shutil
+          import subprocess
+          import tempfile
+          from pathlib import Path
+
+          def run(command, *, env=None, timeout=20):
+              try:
+                  return subprocess.run(
+                      command,
+                      env=env,
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.DEVNULL,
+                      text=True,
+                      timeout=timeout,
+                      check=False,
+                  )
+              except (OSError, subprocess.SubprocessError):
+                  return None
+
+          def executable(*candidates):
+              for candidate in candidates:
+                  if not candidate:
+                      continue
+                  resolved = shutil.which(candidate) if "/" not in candidate else candidate
+                  if resolved and os.path.isfile(resolved) and os.access(resolved, os.X_OK):
+                      return resolved
+              return None
+
+          home = str(Path.home())
+          flutter = executable(
+              "flutter",
+              f"{home}/development/flutter/bin/flutter",
+              "/opt/flutter/bin/flutter",
+          )
+          adb = executable(
+              "adb",
+              os.environ.get("ANDROID_HOME", "") + "/platform-tools/adb",
+              os.environ.get("ANDROID_SDK_ROOT", "") + "/platform-tools/adb",
+              f"{home}/Android/Sdk/platform-tools/adb",
+              f"{home}/Library/Android/sdk/platform-tools/adb",
+          )
+          docker = executable("docker")
+          aws = executable("aws")
+          git = executable("git")
+          sops = executable("sops")
+          java = executable("java")
+
+          result = {
+              "schema_version": 1,
+              "system": platform.system(),
+              "architecture": platform.machine(),
+              "flutter_available": bool(flutter),
+              "adb_available": bool(adb),
+              "docker_available": bool(docker),
+              "docker_ready": False,
+              "aws_available": bool(aws),
+              "git_available": bool(git),
+              "sops_available": bool(sops),
+              "java_available": bool(java),
+              "android_sdk_present": any(
+                  Path(candidate).is_dir()
+                  for candidate in (
+                      os.environ.get("ANDROID_HOME", ""),
+                      os.environ.get("ANDROID_SDK_ROOT", ""),
+                      f"{home}/Android/Sdk",
+                      f"{home}/Library/Android/sdk",
+                  )
+                  if candidate
+              ),
+              "age_key_present": any(
+                  Path(candidate).is_file()
+                  for candidate in (
+                      os.environ.get("SOPS_AGE_KEY_FILE", ""),
+                      f"{home}/.config/sops/age/keys.txt",
+                  )
+                  if candidate
+              ),
+              "authorized_android_count": 0,
+              "unauthorized_android_count": 0,
+              "offline_android_count": 0,
+              "sonus_package_present": None,
+              "app_repo_access": False,
+              "infra_repo_access": False,
+              "protected_secret_readable": False,
+              "s3_listable": False,
+              "s3_bucket_count": 0,
+              "secret_bucket_candidate_count": 0,
+              "accessible_secret_bucket_count": 0,
+              "disk_free_gib": round(shutil.disk_usage("/").free / (1024 ** 3), 1),
+          }
+
+          if docker:
+              completed = run([docker, "info"], timeout=20)
+              result["docker_ready"] = bool(completed and completed.returncode == 0)
+
+          if flutter:
+              completed = run([flutter, "--version"], timeout=30)
+              if completed and completed.returncode == 0 and completed.stdout:
+                  result["flutter_version"] = completed.stdout.splitlines()[0][:160]
+
+          if adb:
+              run([adb, "start-server"], timeout=15)
+              completed = run([adb, "devices"], timeout=15)
+              if completed and completed.stdout:
+                  states = []
+                  for line in completed.stdout.splitlines()[1:]:
+                      parts = line.split()
+                      if len(parts) >= 2:
+                          states.append(parts[1])
+                  result["authorized_android_count"] = states.count("device")
+                  result["unauthorized_android_count"] = states.count("unauthorized")
+                  result["offline_android_count"] = states.count("offline")
+                  if result["authorized_android_count"] == 1:
+                      package = run([adb, "shell", "pm", "path", "com.ores.sonus_auris"], timeout=15)
+                      result["sonus_package_present"] = bool(
+                          package and package.returncode == 0 and package.stdout.startswith("package:")
+                      )
+
+          payload = None
+          if aws:
+              listed = run([aws, "s3api", "list-buckets", "--query", "length(Buckets)", "--output", "text"])
+              if listed and listed.returncode == 0 and listed.stdout.strip().isdigit():
+                  result["s3_listable"] = True
+                  result["s3_bucket_count"] = int(listed.stdout.strip())
+
+              secret = run([
+                  aws,
+                  "secretsmanager",
+                  "get-secret-value",
+                  "--secret-id",
+                  "dd/remote-dev/agent-secrets",
+                  "--query",
+                  "SecretString",
+                  "--output",
+                  "text",
+              ], timeout=30)
+              if secret and secret.returncode == 0 and secret.stdout.strip():
+                  try:
+                      parsed = json.loads(secret.stdout)
+                  except json.JSONDecodeError:
+                      parsed = None
+                  secret.stdout = ""
+                  if isinstance(parsed, dict):
+                      payload = parsed
+                      result["protected_secret_readable"] = True
+
+          if payload and git:
+              token_candidates = []
+              for key, value in payload.items():
+                  if (
+                      isinstance(key, str)
+                      and isinstance(value, str)
+                      and value
+                      and not any(character.isspace() for character in value)
+                      and re.search(r"(?:github|gh|token|pat)", key, re.IGNORECASE)
+                  ):
+                      token_candidates.append(value)
+
+              def repo_access(slug):
+                  with tempfile.TemporaryDirectory(prefix="sonus-git-probe-") as directory:
+                      askpass = Path(directory) / "askpass.sh"
+                      askpass.write_text(
+                          "#!/bin/sh\ncase \"$1\" in *Username*) printf '%s\\n' x-access-token ;; *) printf '%s\\n' \"$SONUS_PROBE_TOKEN\" ;; esac\n",
+                          encoding="utf-8",
+                      )
+                      askpass.chmod(0o700)
+                      for token in token_candidates:
+                          environment = os.environ.copy()
+                          environment.update({
+                              "GIT_ASKPASS": str(askpass),
+                              "GIT_TERMINAL_PROMPT": "0",
+                              "SONUS_PROBE_TOKEN": token,
+                          })
+                          completed = run(
+                              [git, "ls-remote", f"https://github.com/{slug}.git", "HEAD"],
+                              env=environment,
+                              timeout=30,
+                          )
+                          environment["SONUS_PROBE_TOKEN"] = ""
+                          if completed and completed.returncode == 0 and completed.stdout.strip():
+                              return True
+                  return False
+
+              result["app_repo_access"] = repo_access("sonus-auris/sonus-auris-flutter.dart")
+              result["infra_repo_access"] = repo_access("sonus-auris/sonus-auris.infra")
+
+          if payload and aws:
+              bucket_candidates = []
+              for key, value in payload.items():
+                  if not (
+                      isinstance(key, str)
+                      and isinstance(value, str)
+                      and re.search(r"(?:bucket|s3)", key, re.IGNORECASE)
+                  ):
+                      continue
+                  candidate = value.strip()
+                  if re.fullmatch(r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", candidate):
+                      bucket_candidates.append(candidate)
+              bucket_candidates = list(dict.fromkeys(bucket_candidates))
+              result["secret_bucket_candidate_count"] = len(bucket_candidates)
+              accessible = 0
+              for bucket in bucket_candidates:
+                  completed = run([aws, "s3api", "head-bucket", "--bucket", bucket], timeout=15)
+                  if completed and completed.returncode == 0:
+                      accessible += 1
+              result["accessible_secret_bucket_count"] = accessible
+
+          if isinstance(payload, dict):
+              for key in list(payload):
+                  payload[key] = None
+              payload.clear()
+
+          print(json.dumps(result, sort_keys=True, separators=(",", ":")))
+          PY
+
+          encoded_probe="$(base64 --wrap=0 "$probe")"
+          remote_root="/tmp/sonus-remote-device-probe-${GITHUB_SHA:0:12}"
+          remote_command="root='$remote_root'; probe=\"\$root/probe.py\"; rm -rf \"\$root\"; mkdir -p \"\$root\"; chmod 700 \"\$root\"; printf '%s' '$encoded_probe' | base64 --decode > \"\$probe\"; chmod 700 \"\$probe\"; status=0; python3 \"\$probe\" || status=\$?; rm -rf \"\$root\"; exit \$status"
+          parameters="$RUNNER_TEMP/sonus-ssm-parameters.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "Probe Sonus Android path from trusted ${GITHUB_SHA}" \
+              --parameters "file://$parameters" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+          echo "ssm_command_id=$command_id"
+
+          status=Pending
+          for _ in $(seq 1 180); do
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query Status \
+                --output text 2>/dev/null || true
+            )"
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut|Cancelling) break ;;
+            esac
+            sleep 3
+          done
+
+          invocation="$RUNNER_TEMP/sonus-remote-invocation.json"
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --output json > "$invocation"
+
+          evidence="$RUNNER_TEMP/sonus-remote-device-probe.json"
+          python3 - "$hosted" "$invocation" "$evidence" <<'PY'
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          hosted_path, invocation_path, evidence_path = map(Path, sys.argv[1:])
+          hosted = json.loads(hosted_path.read_text(encoding="utf-8"))
+          invocation = json.loads(invocation_path.read_text(encoding="utf-8"))
+
+          token_pattern = re.compile(
+              r"(?:ghp_|github_pat_|lin_api_|sb_secret_|sb_publishable_)[A-Za-z0-9_.-]+",
+              re.IGNORECASE,
+          )
+          stdout = token_pattern.sub("[REDACTED]", invocation.get("StandardOutputContent") or "")
+          stderr = token_pattern.sub("[REDACTED]", invocation.get("StandardErrorContent") or "")
+          try:
+              remote = json.loads(stdout)
+          except json.JSONDecodeError:
+              remote = {"unparsed_output": stdout[:2000]}
+
+          evidence = {
+              "schema_version": 1,
+              "ssm_status": invocation.get("Status"),
+              "ssm_response_code": invocation.get("ResponseCode"),
+              "hosted": hosted,
+              "remote": remote,
+              "sanitized_stderr": stderr[:1000],
+          }
+          evidence_path.write_text(
+              json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(evidence, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload sanitized probe evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        with:
+          name: sonus-remote-device-probe-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sonus-remote-device-probe.json
+          if-no-files-found: warn
+          retention-days: 3
