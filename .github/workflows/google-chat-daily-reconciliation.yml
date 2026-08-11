@@ -1,0 +1,86 @@
+name: Daily Google Chat reconciliation
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/google-chat-daily-reconciliation.yml'
+      - 'tools/google-chat-space-export/**'
+      - 'scripts/ops/verify_google_chat_reconciliation_ledger.py'
+      - 'tests/ops/test_verify_google_chat_reconciliation_ledger.py'
+      - 'docs/audits/google-chat/**'
+  workflow_dispatch:
+  schedule:
+    # GitHub schedules are UTC. Run both candidate UTC hours, then retain only
+    # the invocation whose America/Chicago wall clock is exactly 20:00. This
+    # remains correct across CST/CDT transitions.
+    - cron: '0 1 * * *'
+    - cron: '0 2 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-google-chat-reconciliation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-and-bundle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Enforce 8 PM America/Chicago schedule gate
+        if: github.event_name == 'schedule'
+        shell: bash
+        run: |
+          set -euo pipefail
+          local_hour="$(TZ=America/Chicago date +%H)"
+          local_minute="$(TZ=America/Chicago date +%M)"
+          if [ "$local_hour" != '20' ] || [ "$local_minute" != '00' ]; then
+            echo "This is the non-matching UTC invocation; exiting successfully."
+            exit 0
+          fi
+
+      - name: Check out without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+
+      - name: Validate reconciliation tools and safety contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check tools/google-chat-space-export/fetch-bridge-pages.mjs
+          node --check tools/google-chat-space-export/sanitize-export.mjs
+          node --check tools/google-chat-space-export/sensitive-content.mjs
+          node --check tools/google-chat-space-export/import-plan.mjs
+          node --test \
+            tools/google-chat-space-export/test/sensitive-content.test.mjs \
+            tools/google-chat-space-export/test/import-plan.test.mjs \
+            tools/google-chat-space-export/test/reconciliation-pipeline.test.mjs \
+            tools/google-chat-space-export/test/audit-ledger-2026-08-04.test.mjs \
+            tools/google-chat-space-export/test/audit-ledger-2026-08-08.test.mjs
+          python scripts/ops/verify_google_chat_reconciliation_ledger.py >/dev/null
+
+      - name: Build content-free audit evidence bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/google-chat-audit-evidence"
+          cp -R docs/audits/google-chat/. \
+            "${RUNNER_TEMP}/google-chat-audit-evidence/"
+          find "${RUNNER_TEMP}/google-chat-audit-evidence" -type f -print0 \
+            | sort -z | xargs -0 sha256sum \
+            > "${RUNNER_TEMP}/google-chat-audit-evidence/SHA256SUMS"
+
+      - name: Upload content-free audit evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: google-chat-audit-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/google-chat-audit-evidence
+          if-no-files-found: error
+          retention-days: 7
