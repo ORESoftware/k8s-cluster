@@ -33,7 +33,7 @@ spec:
         - name: gha-clone-server
           # Published from k8s-cluster dev@5aad32c37be7f29f9355f19d6ce6d316494ff141
           # with SPDX SBOM, max SLSA provenance, and zero Trivy HIGH/CRITICAL findings.
-          image: ghcr.io/oresoftware/gha-clone-server@sha256:44684171d909f96fe216d529bfc14f6f32a11e87c0f339d1877ac20606223c97
+          image: ghcr.io/oresoftware/gha-clone-server@sha256:c141b374acc4b49a9108317e78c06b9d726bcb99903c00c01a2cf200f98432e4
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/gha-clone-server"]
           env:
