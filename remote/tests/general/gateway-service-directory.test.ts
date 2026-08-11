@@ -831,8 +831,9 @@ test("gateway Let's Encrypt renewal script stays aligned with the ACME webroot f
     renewScript,
     /--key="\$\{CERTBOT_CONFIG_DIR\}\/live\/\$\{CERT_NAME\}\/privkey\.pem"/,
   );
-  assert.match(renewScript, /kubectl rollout restart "deployment\/\$\{K8S_GATEWAY_DEPLOYMENT\}"/);
-  assert.match(renewScript, /kubectl rollout status "deployment\/\$\{K8S_GATEWAY_DEPLOYMENT\}"/);
+  assert.match(renewScript, /GATEWAY_WORKLOAD="daemonset\/dd-remote-gateway"/);
+  assert.match(renewScript, /kubectl rollout restart "\$\{GATEWAY_WORKLOAD\}"/);
+  assert.match(renewScript, /kubectl rollout status "\$\{GATEWAY_WORKLOAD\}"/);
   assert.match(renewScript, /"\$\{CERTBOT_BIN\}" renew/);
   assert.match(renewScript, /--deploy-hook "\$0 deploy"/);
   assert.match(ec2Readme, /certbot-venv-312/);
