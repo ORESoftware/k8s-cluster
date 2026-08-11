@@ -11,12 +11,10 @@ metadata:
   annotations:
     benefactor.cc/linear-issue: DEN-2821
     benefactor.cc/outreach-capability: disabled
-    benefactor.cc/activation-mode: scheduled-dry-run
-    benefactor.cc/activation-evidence: github-actions-run-31397763253-attempt-2
 spec:
   schedule: "0 6 * * *"
   timeZone: America/Chicago
-  suspend: false
+  suspend: true
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 900
   successfulJobsHistoryLimit: 3
@@ -46,7 +44,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: contact-batch
-              image: ghcr.io/oresoftware/benefactor-contact-orchestrator@sha256:17ba7b0dd64aad31e9ab9486d73897481d861c72123f87ad3f42f7ae0a8f34eb
+              image: ghcr.io/oresoftware/benefactor-contact-orchestrator@sha256:06e93d31b6d252efb98a8a0aa81fd439ee7f6d0067db11d6a2a08d3cee7b51c5
               imagePullPolicy: IfNotPresent
               args:
                 - contact-batch.mjs
