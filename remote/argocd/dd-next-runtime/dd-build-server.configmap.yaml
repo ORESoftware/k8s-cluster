@@ -6,35 +6,13 @@ metadata:
   labels:
     app: dd-build-server
 data:
-  # GitHub webhook -> build job rules. Each rule maps a repo (+ optional
-  # branch) and event to a build-server.v1 job. `{sha}` / `{shortSha}` /
-  # `{ref}` are substituted into the image tag. Consumed via
-  # BUILD_SERVER_WEBHOOK_RULES_PATH. Empty array = accept + dedupe webhooks
-  # but build nothing (safe default).
+  # Failure-only GitHub workflow_run -> build job rules. Each reviewed rule
+  # must explicitly admit workflow_run plus a non-empty subset of supported
+  # failureConclusions. Signed push/pull, non-completed runs, successful runs,
+  # and unmatched failures no-op before delivery claims. The direct build-server
+  # path stays empty; exact workflow-path fallback is owned by gha-clone-server.
   webhook-rules.json: |
-    [
-      {
-        "repo": "ORESoftware/k8s-cluster",
-        "branch": "dev",
-        "events": ["push"],
-        "image": "710156900967.dkr.ecr.us-east-1.amazonaws.com/dd-build-server:dev-{shortSha}",
-        "contextDir": "remote/deployments/build-server-rs",
-        "dockerfile": "Dockerfile",
-        "push": true
-      },
-      {
-        "repo": "sonus-auris/sonus-auris-ui.dart",
-        "branch": "main",
-        "events": ["push"],
-        "profile": "flutter-android-debug"
-      },
-      {
-        "repo": "sonus-auris/sonus-auris-web-desktop.dart",
-        "branch": "main",
-        "events": ["push"],
-        "profile": "flutter-web-e2e"
-      }
-    ]
+    []
   # GitHub Actions secret sync rules. Each maps a repo secret name to a
   # source env var (populated by External Secrets from AWS Secrets Manager).
   # Values themselves never appear here. Consumed via

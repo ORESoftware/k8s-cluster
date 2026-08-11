@@ -36,6 +36,9 @@ const buildServerValidationPath =
 const buildServerWebhookPath =
   'remote/deployments/build-server-rs/src/webhooks.rs';
 const buildServerDbPath = 'remote/deployments/build-server-rs/src/db.rs';
+const buildServerHttpPath = 'remote/deployments/build-server-rs/src/http.rs';
+const buildServerConfigPath =
+  'remote/argocd/dd-next-runtime/dd-build-server.configmap.yaml';
 
 test('resource exporter inventories retain both continuity services', () => {
   for (const path of observabilityInventories) {
@@ -149,6 +152,27 @@ test('failure-only webhook and immutable profile admission remain explicit', () 
   assert.match(webhook, /request\.request_id = Some\(github_request_id\(&delivery_id\)\)/);
   assert.match(webhook, /status\.is_server_error\(\)/);
   assert.match(webhook, /release_webhook_delivery_claim/);
+  const unsupportedGate = webhook.indexOf('if event != "workflow_run"');
+  const completedGate = webhook.indexOf('if action != "completed"');
+  const exactRuleGate = webhook.indexOf('let matched = state');
+  const deliveryClaim = webhook.indexOf('db::record_webhook_delivery(');
+  assert.ok(unsupportedGate > 0 && unsupportedGate < deliveryClaim);
+  assert.ok(completedGate > unsupportedGate && completedGate < deliveryClaim);
+  assert.ok(exactRuleGate > completedGate && exactRuleGate < deliveryClaim);
+
+  const httpTests = read(buildServerHttpPath);
+  assert.match(
+    httpTests,
+    /github_webhook_unsupported_successful_and_noncompleted_runs_have_no_side_effects/,
+  );
+  assert.match(
+    httpTests,
+    /github_webhook_admitted_completed_failure_enqueues_exact_sha_once/,
+  );
+
+  const runtimeRules = read(buildServerConfigPath);
+  assert.match(runtimeRules, /webhook-rules\.json: \|\n    \[\]/);
+  assert.doesNotMatch(runtimeRules, /"events": \["push"\]/);
 
   const database = read(buildServerDbPath);
   assert.match(database, /Column::Action\.eq\("received"\)/);

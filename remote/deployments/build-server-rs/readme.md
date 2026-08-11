@@ -13,7 +13,7 @@ It exposes authenticated JSON endpoints for:
 - `GET /builds/<jobId>/logs` to read the capped build log from disk.
 - `GET /builds/<jobId>/artifacts` to stream the fixed-profile output archive after a successful
   profile build.
-- `POST /webhooks/github` and `POST /webhooks/registry` for GitHub push/workflow_run events and
+- `POST /webhooks/github` and `POST /webhooks/registry` for failure-only GitHub workflow runs and
   container-registry image events (see **Webhooks**).
 - `POST /secrets/sync` and `GET /secrets/sync/status` to push selected secrets to GitHub Actions
   (see **GitHub Actions secret sync**).
@@ -56,10 +56,16 @@ Built on the cluster's shared infrastructure so it composes with the rest of the
 ## Webhooks
 
 `POST /webhooks/github` verifies the GitHub `X-Hub-Signature-256` HMAC
-(`BUILD_SERVER_GITHUB_WEBHOOK_SECRET`, constant-time) and dedupes on `X-GitHub-Delivery`. Rules
-(`BUILD_SERVER_WEBHOOK_RULES` inline JSON, or `BUILD_SERVER_WEBHOOK_RULES_PATH` mounted from the
-`dd-build-server-rules` ConfigMap) map `repo`/`branch`/`event` to a `build-server.v1` job, with
-`{sha}`/`{shortSha}`/`{ref}` substituted into the image tag. `POST /webhooks/registry` authenticates
+(`BUILD_SERVER_GITHUB_WEBHOOK_SECRET`, constant-time) and dedupes actionable failures on
+`X-GitHub-Delivery`. Rules (`BUILD_SERVER_WEBHOOK_RULES` inline JSON, or
+`BUILD_SERVER_WEBHOOK_RULES_PATH` mounted from the `dd-build-server-rules` ConfigMap) must declare
+`events: ["workflow_run"]` and a non-empty supported `failureConclusions` subset. Only completed
+workflow runs matching the exact repository, branch, and admitted failure conclusion can produce a
+`build-server.v1` job. Signed push/pull events and successful, non-completed, or unmatched runs
+return `202` before delivery claims. `{sha}`/`{shortSha}`/`{ref}` may be substituted into an image
+tag. Supported failure conclusions are `failure`, `cancelled`, `timed_out`, `action_required`,
+`startup_failure`, and `stale`. Production direct rules remain empty because exact workflow-path
+replay belongs to `gha-clone-server`. `POST /webhooks/registry` authenticates
 a shared-secret header (`BUILD_SERVER_REGISTRY_WEBHOOK_SECRET`), normalizes ECR EventBridge and
 docker distribution v2 payloads, and relays them to NATS. These two paths are reachable through the
 gateway WITHOUT the operator cookie (GitHub can't present it) and carry no operator credential — the
