@@ -1,0 +1,256 @@
+name: Probe live Sonus public mobile configuration once
+run-name: Probe live Sonus public configuration from ${{ github.sha }}
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ops-sonus-live-public-config-probe-once-20260811.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ops-sonus-live-public-config-probe-once-20260811
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: github.actor == 'ORESoftware'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Configure trusted main-ref AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: sonus-live-public-config-probe
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Inspect public login assets and retain only validated public-client values
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: |
+          set -Eeuo pipefail
+          test -n "${INSTANCE_ID:-}"
+
+          probe="$RUNNER_TEMP/sonus-live-public-config-probe.py"
+          cat > "$probe" <<'PY'
+          import base64
+          import hashlib
+          import html
+          import json
+          import os
+          import re
+          import ssl
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          START_URLS = (
+              "https://user.sonusauris.app/",
+              "https://user.sonusauris.app/login",
+              "https://user.sonusauris.app/signup",
+              "https://user.sonusauris.app/dashboard",
+              "https://sonusauris.app/",
+          )
+          ALLOWED_SUFFIXES = (
+              "sonusauris.app",
+              "shared-auth.com",
+              "sharedauth.app",
+          )
+          OUTPUT = Path("/var/lib/sonus-build-relay/public-config.env")
+          MAX_BODY = 8 * 1024 * 1024
+          MAX_ASSETS = 80
+
+          context = ssl.create_default_context()
+          opener = urllib.request.build_opener()
+          headers = {
+              "User-Agent": "Sonus-Auris-public-config-audit/1.0",
+              "Accept": "text/html,application/javascript,text/css,application/json;q=0.9,*/*;q=0.5",
+          }
+
+          def allowed(url):
+              host = (urllib.parse.urlparse(url).hostname or "").lower()
+              return any(host == suffix or host.endswith("." + suffix) for suffix in ALLOWED_SUFFIXES)
+
+          def fetch(url):
+              request = urllib.request.Request(url, headers=headers)
+              try:
+                  with opener.open(request, timeout=20, context=context) as response:
+                      body = response.read(MAX_BODY + 1)
+                      if len(body) > MAX_BODY:
+                          return None
+                      return {
+                          "url": response.geturl(),
+                          "status": getattr(response, "status", 200),
+                          "content_type": response.headers.get("content-type", ""),
+                          "body": body,
+                      }
+              except TypeError:
+                  # Python's opener.open does not accept context on every distro.
+                  try:
+                      with urllib.request.urlopen(request, timeout=20, context=context) as response:
+                          body = response.read(MAX_BODY + 1)
+                          if len(body) > MAX_BODY:
+                              return None
+                          return {
+                              "url": response.geturl(),
+                              "status": getattr(response, "status", 200),
+                              "content_type": response.headers.get("content-type", ""),
+                              "body": body,
+                          }
+                  except (OSError, urllib.error.URLError, urllib.error.HTTPError):
+                      return None
+              except (OSError, urllib.error.URLError, urllib.error.HTTPError):
+                  return None
+
+          fetched = {}
+          queue = list(START_URLS)
+          initial_success = 0
+          final_hosts = set()
+
+          while queue and len(fetched) < MAX_ASSETS:
+              requested = queue.pop(0)
+              if requested in fetched or not allowed(requested):
+                  continue
+              resource = fetch(requested)
+              fetched[requested] = resource
+              if not resource:
+                  continue
+              if requested in START_URLS:
+                  initial_success += 1
+              final_host = (urllib.parse.urlparse(resource["url"]).hostname or "").lower()
+              if final_host:
+                  final_hosts.add(final_host)
+
+              content_type = resource["content_type"].lower()
+              if not any(marker in content_type for marker in ("text/html", "javascript", "text/css")):
+                  continue
+              text = resource["body"].decode("utf-8", "replace")
+              text = html.unescape(text)
+              for raw in re.findall(r'''(?:src|href)\s*=\s*["']([^"']+)["']''', text, re.IGNORECASE):
+                  absolute = urllib.parse.urljoin(resource["url"], raw)
+                  parsed = urllib.parse.urlparse(absolute)
+                  if parsed.scheme == "https" and allowed(absolute):
+                      cleaned = urllib.parse.urlunparse(parsed._replace(fragment=""))
+                      if cleaned not in fetched and cleaned not in queue:
+                          queue.append(cleaned)
+
+          corpus = b"\n".join(
+              resource["body"]
+              for resource in fetched.values()
+              if resource and resource.get("body")
+          )
+          decoded = corpus.decode("utf-8", "replace")
+          decoded = html.unescape(decoded)
+          normalized = decoded.replace("\\/", "/").replace("\\u002F", "/")
+
+          supabase_urls = sorted(set(re.findall(
+              r"https://[a-z0-9]{15,40}\.supabase\.co",
+              normalized,
+              re.IGNORECASE,
+          )))
+          publishable = sorted(set(re.findall(
+              r"sb_publishable_[A-Za-z0-9._-]{20,}",
+              normalized,
+          )))
+          jwt_candidates = sorted(set(re.findall(
+              r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}",
+              normalized,
+          )))
+
+          anon_jwts = []
+          for token in jwt_candidates:
+              try:
+                  payload_segment = token.split(".", 2)[1]
+                  payload_segment += "=" * (-len(payload_segment) % 4)
+                  payload = json.loads(base64.urlsafe_b64decode(payload_segment))
+              except Exception:
+                  continue
+              role = str(payload.get("role", "")).lower()
+              if role in {"anon", "authenticated"} and "exp" not in payload:
+                  anon_jwts.append(token)
+              elif role == "anon":
+                  anon_jwts.append(token)
+
+          keys = list(dict.fromkeys(publishable + anon_jwts))
+          supabase_url = supabase_urls[0] if len(supabase_urls) == 1 else ""
+          public_key = keys[0] if len(keys) == 1 else ""
+          backend_url = "https://api.sonusauris.app"
+
+          safe = bool(supabase_url and public_key)
+          if public_key.startswith("sb_secret_") or "service_role" in public_key.lower():
+              safe = False
+
+          if safe:
+              OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+              temporary = OUTPUT.with_suffix(".tmp")
+              temporary.write_text(
+                  "SONUS_BACKEND_BASE_URL=" + backend_url + "\n"
+                  "SONUS_SUPABASE_URL=" + supabase_url + "\n"
+                  "SONUS_SUPABASE_ANON_KEY=" + public_key + "\n",
+                  encoding="utf-8",
+              )
+              os.chmod(temporary, 0o600)
+              temporary.replace(OUTPUT)
+              os.chmod(OUTPUT, 0o600)
+          elif OUTPUT.exists():
+              OUTPUT.unlink()
+
+          def fingerprint(value):
+              return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16] if value else ""
+
+          result = {
+              "schema_version": 1,
+              "start_url_success_count": initial_success,
+              "resource_success_count": sum(1 for value in fetched.values() if value),
+              "resource_attempt_count": len(fetched),
+              "final_host_count": len(final_hosts),
+              "supabase_url_candidate_count": len(supabase_urls),
+              "public_key_candidate_count": len(keys),
+              "validated_public_config_retained": safe,
+              "supabase_url_fingerprint": fingerprint(supabase_url),
+              "public_key_fingerprint": fingerprint(public_key),
+              "output_mode": "0600" if safe else "absent",
+          }
+          print(json.dumps(result, sort_keys=True, separators=(",", ":")))
+          PY
+
+          encoded="$(base64 --wrap=0 "$probe")"
+          remote_command="root='/tmp/sonus-live-config-${GITHUB_SHA:0:12}'; rm -rf \"\$root\"; mkdir -p \"\$root\"; chmod 700 \"\$root\"; printf '%s' '$encoded' | base64 --decode > \"\$root/probe.py\"; chmod 700 \"\$root/probe.py\"; status=0; python3 \"\$root/probe.py\" || status=\$?; rm -rf \"\$root\"; exit \$status"
+          parameters="$RUNNER_TEMP/sonus-live-config-parameters.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "Probe live Sonus public configuration from ${GITHUB_SHA}" \
+              --parameters "file://$parameters" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+          echo "ssm_command_id=$command_id"
+
+          status=Pending
+          for _ in $(seq 1 180); do
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut|Cancelling) break ;;
+            esac
+            sleep 3
+          done
+
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,ResponseCode:ResponseCode,StandardOutputContent:StandardOutputContent,StandardErrorContent:StandardErrorContent}' \
+            --output json
+          test "$status" = Success
