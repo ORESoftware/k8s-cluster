@@ -4,4 +4,6 @@ Purpose: export the fixed `alex-alex-me` Google Chat space through the encrypted
 
 Requested window: the 15 days ending 2026-08-10.
 
+Relay attempt 2 was requested after the first encrypted archive was validated but its local ephemeral decryption state was lost before analysis. No source credential or passphrase is stored here.
+
 No credentials are stored in this branch or file.
