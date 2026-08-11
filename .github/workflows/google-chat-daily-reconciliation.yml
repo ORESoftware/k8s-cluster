@@ -58,9 +58,11 @@ jobs:
           node --check tools/google-chat-space-export/sanitize-export.mjs
           node --check tools/google-chat-space-export/sensitive-content.mjs
           node --check tools/google-chat-space-export/import-plan.mjs
+          node --check tools/google-chat-space-export/reconciliation-receipt.mjs
           node --test \
             tools/google-chat-space-export/test/sensitive-content.test.mjs \
             tools/google-chat-space-export/test/import-plan.test.mjs \
+            tools/google-chat-space-export/test/reconciliation-receipt.test.mjs \
             tools/google-chat-space-export/test/reconciliation-pipeline.test.mjs \
             tools/google-chat-space-export/test/audit-ledger-2026-08-04.test.mjs \
             tools/google-chat-space-export/test/audit-ledger-2026-08-08.test.mjs
