@@ -6,7 +6,21 @@ import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
+import {
+  EXPECTED_SPACE_ID,
+  EXPECTED_SPACE_NAME,
+  PLAN_SCHEMA_VERSION,
+  computePlanId,
+} from './import-plan.mjs';
+
 export const RECEIPT_SCHEMA_VERSION = 1;
+
+const ROLLING_WINDOW_MILLISECONDS = 15 * 24 * 60 * 60 * 1000;
+const PLAN_ID_PATTERN = /^google-chat-import-plan:[0-9a-f]{24}$/;
+const CANDIDATE_KEY_PATTERN = new RegExp(
+  `^google-chat:${EXPECTED_SPACE_ID}:[0-9a-f]{24}$`,
+);
+const MAX_IMPLEMENTATION_REFERENCES = 32;
 
 const TOP_LEVEL_KEYS = new Set(['schemaVersion', 'planId', 'entries']);
 const ENTRY_KEYS = new Set([
@@ -135,24 +149,89 @@ function uniqueStrings(value, label, pattern, maximum = Number.POSITIVE_INFINITY
   return [...normalized].sort();
 }
 
+function canonicalInstant(value, label) {
+  if (typeof value !== 'string') throw new Error(`${label} must be a canonical RFC-3339 instant`);
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString() !== value) {
+    throw new Error(`${label} must be a canonical RFC-3339 instant`);
+  }
+  return timestamp;
+}
+
 function validatePlan(plan) {
   assertPlainObject(plan, 'plan');
-  if (typeof plan.planId !== 'string' || !plan.planId) throw new Error('plan.planId is required');
+  if (plan.schemaVersion !== PLAN_SCHEMA_VERSION) {
+    throw new Error(`plan.schemaVersion must be ${PLAN_SCHEMA_VERSION}`);
+  }
+  if (typeof plan.planId !== 'string' || !PLAN_ID_PATTERN.test(plan.planId)) {
+    throw new Error('plan.planId is not a canonical content-free identifier');
+  }
+  assertPlainObject(plan.source, 'plan.source');
+  if (
+    plan.source.spaceName !== EXPECTED_SPACE_NAME ||
+    plan.source.spaceId !== EXPECTED_SPACE_ID
+  ) {
+    throw new Error('plan.source does not identify the fixed Google Chat space');
+  }
+  const windowStart = canonicalInstant(
+    plan.source.windowStartInclusive,
+    'plan.source.windowStartInclusive',
+  );
+  const windowEnd = canonicalInstant(
+    plan.source.windowEndExclusive,
+    'plan.source.windowEndExclusive',
+  );
+  if (windowEnd - windowStart !== ROLLING_WINDOW_MILLISECONDS) {
+    throw new Error('plan source window must be exactly 15 days');
+  }
+  assertPlainObject(plan.stats, 'plan.stats');
+  if (!Number.isSafeInteger(plan.stats.plannedMessages) || plan.stats.plannedMessages < 0) {
+    throw new Error('plan.stats.plannedMessages must be a non-negative safe integer');
+  }
   if (!Array.isArray(plan.candidates)) throw new Error('plan.candidates must be an array');
   const seen = new Set();
+  const messageCounts = new Map();
+  let plannedMessages = 0;
+  let actionableMessages = 0;
   for (const candidate of plan.candidates) {
     assertPlainObject(candidate, 'plan candidate');
-    if (typeof candidate.candidateKey !== 'string' || !candidate.candidateKey) {
-      throw new Error('every plan candidate needs a candidateKey');
+    if (
+      typeof candidate.candidateKey !== 'string' ||
+      !CANDIDATE_KEY_PATTERN.test(candidate.candidateKey)
+    ) {
+      throw new Error('every plan candidate needs a canonical content-free candidateKey');
     }
     if (seen.has(candidate.candidateKey)) {
       throw new Error(`duplicate plan candidateKey ${candidate.candidateKey}`);
     }
     seen.add(candidate.candidateKey);
-    if (!['create', 'comment-existing', 'manual-review', 'skip-non-actionable'].includes(candidate.action)) {
+    if (
+      !['create', 'comment-existing', 'manual-review', 'skip-non-actionable'].includes(
+        candidate.action,
+      )
+    ) {
       throw new Error(`unsupported plan action for ${candidate.candidateKey}`);
     }
+    if (!Number.isSafeInteger(candidate.messageCount) || candidate.messageCount < 1) {
+      throw new Error(`plan candidate ${candidate.candidateKey} needs a positive messageCount`);
+    }
+    messageCounts.set(candidate.candidateKey, candidate.messageCount);
+    plannedMessages += candidate.messageCount;
+    if (candidate.action !== 'skip-non-actionable') actionableMessages += candidate.messageCount;
   }
+  if (plannedMessages !== plan.stats.plannedMessages) {
+    throw new Error('candidate message counts do not equal plan.stats.plannedMessages');
+  }
+  const expectedPlanId = computePlanId({
+    spaceName: plan.source.spaceName,
+    windowStartInclusive: plan.source.windowStartInclusive,
+    windowEndExclusive: plan.source.windowEndExclusive,
+    candidates: plan.candidates,
+  });
+  if (plan.planId !== expectedPlanId) {
+    throw new Error('plan.planId does not match the exact window and candidates');
+  }
+  return { messageCounts, plannedMessages, actionableMessages };
 }
 
 function normalizeEvidence(evidence, planId, candidateKeys) {
@@ -189,11 +268,13 @@ function normalizeEvidence(evidence, planId, candidateKeys) {
       raw.pullRequests,
       `${label}.pullRequests`,
       /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+#[1-9][0-9]*$/,
+      MAX_IMPLEMENTATION_REFERENCES,
     );
     const defaultBranchCommits = uniqueStrings(
       raw.defaultBranchCommits,
       `${label}.defaultBranchCommits`,
       /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+@[0-9a-f]{40}$/,
+      MAX_IMPLEMENTATION_REFERENCES,
     );
     const reasonCode = raw.reasonCode;
     if (reasonCode !== undefined && (typeof reasonCode !== 'string' || !/^[a-z][a-z0-9_]{1,63}$/.test(reasonCode))) {
@@ -225,9 +306,10 @@ function normalizeEvidence(evidence, planId, candidateKeys) {
   return entries;
 }
 
-function gap(candidateKey, reasonCode, partial = {}) {
+function gap(candidateKey, reasonCode, messageCount, partial = {}) {
   return {
     candidateKey,
+    messageCount,
     disposition: 'gap',
     linearIssues: partial.linearIssues || [],
     pullRequests: partial.pullRequests || [],
@@ -236,56 +318,78 @@ function gap(candidateKey, reasonCode, partial = {}) {
   };
 }
 
-export function buildReconciliationReceipt(plan, evidence, options = {}) {
-  validatePlan(plan);
+export function buildReconciliationReceipt(plan, evidence) {
+  const validatedPlan = validatePlan(plan);
   const candidateKeys = new Set(plan.candidates.map((candidate) => candidate.candidateKey));
   const entries = normalizeEvidence(evidence, plan.planId, candidateKeys);
   const dispositions = [];
 
   for (const candidate of plan.candidates) {
     const supplied = entries.get(candidate.candidateKey);
+    const messageCount = validatedPlan.messageCounts.get(candidate.candidateKey);
     if (candidate.action === 'skip-non-actionable') {
       if (supplied && !(supplied.disposition === 'excluded' && supplied.reasonCode === 'non_actionable')) {
         throw new Error(`${candidate.candidateKey} is non-actionable and may only be excluded as non_actionable`);
       }
       dispositions.push(
-        supplied || {
-          candidateKey: candidate.candidateKey,
-          disposition: 'excluded',
-          linearIssues: [],
-          pullRequests: [],
-          defaultBranchCommits: [],
-          reasonCode: 'non_actionable',
-        },
+        supplied
+          ? { ...supplied, messageCount }
+          : {
+              candidateKey: candidate.candidateKey,
+              messageCount,
+              disposition: 'excluded',
+              linearIssues: [],
+              pullRequests: [],
+              defaultBranchCommits: [],
+              reasonCode: 'non_actionable',
+            },
       );
       continue;
     }
 
     if (!supplied) {
-      dispositions.push(gap(candidate.candidateKey, 'missing_evidence'));
+      dispositions.push(gap(candidate.candidateKey, 'missing_evidence', messageCount));
       continue;
     }
     if (supplied.disposition !== 'covered') {
-      dispositions.push(supplied);
+      dispositions.push({ ...supplied, messageCount });
       continue;
     }
     if (supplied.pullRequests.length === 0 && supplied.defaultBranchCommits.length === 0) {
-      dispositions.push(gap(candidate.candidateKey, 'missing_implementation_evidence', supplied));
+      dispositions.push(
+        gap(candidate.candidateKey, 'missing_implementation_evidence', messageCount, supplied),
+      );
       continue;
     }
-    dispositions.push(supplied);
+    dispositions.push({ ...supplied, messageCount });
   }
 
   dispositions.sort((left, right) => left.candidateKey.localeCompare(right.candidateKey));
+  const messageTotal = (disposition) =>
+    dispositions
+      .filter((entry) => entry.disposition === disposition)
+      .reduce((sum, entry) => sum + entry.messageCount, 0);
   const counts = {
-    candidates: dispositions.length,
-    actionable: plan.candidates.filter((candidate) => candidate.action !== 'skip-non-actionable').length,
-    covered: dispositions.filter((entry) => entry.disposition === 'covered').length,
-    excluded: dispositions.filter((entry) => entry.disposition === 'excluded').length,
-    quarantined: dispositions.filter((entry) => entry.disposition === 'quarantined').length,
-    gaps: dispositions.filter((entry) => entry.disposition === 'gap').length,
+    scanned: validatedPlan.plannedMessages,
+    actionable: validatedPlan.actionableMessages,
+    covered: messageTotal('covered'),
+    excluded: messageTotal('excluded'),
+    quarantined: messageTotal('quarantined'),
+    gaps: messageTotal('gap'),
+    candidates: {
+      total: dispositions.length,
+      actionable: plan.candidates.filter(
+        (candidate) => candidate.action !== 'skip-non-actionable',
+      ).length,
+      covered: dispositions.filter((entry) => entry.disposition === 'covered').length,
+      excluded: dispositions.filter((entry) => entry.disposition === 'excluded').length,
+      quarantined: dispositions.filter((entry) => entry.disposition === 'quarantined').length,
+      gaps: dispositions.filter((entry) => entry.disposition === 'gap').length,
+    },
   };
-  counts.complete = counts.gaps === 0;
+  counts.complete =
+    counts.gaps === 0 &&
+    counts.covered + counts.excluded + counts.quarantined === counts.scanned;
 
   const receiptCore = {
     schemaVersion: RECEIPT_SCHEMA_VERSION,
@@ -293,6 +397,7 @@ export function buildReconciliationReceipt(plan, evidence, options = {}) {
     source: {
       spaceName: plan.source?.spaceName || null,
       windowStartInclusive: plan.source?.windowStartInclusive || null,
+      windowEndExclusive: plan.source?.windowEndExclusive || null,
     },
     counts,
     dispositions,
@@ -300,7 +405,6 @@ export function buildReconciliationReceipt(plan, evidence, options = {}) {
   return {
     ...receiptCore,
     receiptId: `google-chat-reconciliation-receipt:${sha256(stableStringify(receiptCore)).slice(0, 24)}`,
-    generatedAt: options.generatedAt || new Date().toISOString(),
   };
 }
 

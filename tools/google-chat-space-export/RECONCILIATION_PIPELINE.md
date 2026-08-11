@@ -44,13 +44,14 @@ The sanitizer keeps source keys, timestamps, thread routing, and non-content pro
 node tools/google-chat-space-export/import-plan.mjs \
   --input ./private/google-chat-sanitized \
   --since 2026-06-05T04:00:00.000Z \
+  --until 2026-06-20T04:00:00.000Z \
   --existing-index ./private/linear-issue-index.json \
   --project-map tools/google-chat-space-export/import-project-map.example.json \
   --json ./private/google-chat-import-plan.json \
   --markdown ./private/google-chat-import-plan.md
 ```
 
-`--since` may only narrow the fixed May 10 bridge boundary. Deduplication is computed across all supplied messages, while `plannedMessages` and `windowedOutMessages` describe the selected window.
+`--since` may only narrow the fixed May 10 bridge boundary. `--until` is exclusive and must be later than the effective start. Use both for the same exact window on the initial and post-apply runs; the bounds are part of the plan ID. Deduplication is computed across all supplied messages, while `plannedMessages` and `windowedOutMessages` describe the selected window.
 
 Do not point the planner directly at the raw export. The integration test `reconciliation-pipeline.test.mjs` proves that quarantined secrets and contact values are absent from both the safety report and resulting plan while deterministic provenance survives.
 

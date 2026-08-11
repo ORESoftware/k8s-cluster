@@ -24,22 +24,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  schedule-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    outputs:
+      should-run: ${{ steps.decide.outputs.should-run }}
+    steps:
+      - name: Check out schedule gate without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+
+      - name: Select the DST-correct UTC invocation
+        id: decide
+        shell: bash
+        env:
+          GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule }}
+        run: node tools/google-chat-space-export/daily-schedule-gate.mjs
+
   validate-and-bundle:
+    needs: schedule-gate
+    if: ${{ needs.schedule-gate.outputs.should-run == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
-      - name: Enforce 8 PM America/Chicago schedule gate
-        if: github.event_name == 'schedule'
-        shell: bash
-        run: |
-          set -euo pipefail
-          local_hour="$(TZ=America/Chicago date +%H)"
-          local_minute="$(TZ=America/Chicago date +%M)"
-          if [ "$local_hour" != '20' ] || [ "$local_minute" != '00' ]; then
-            echo "This is the non-matching UTC invocation; exiting successfully."
-            exit 0
-          fi
-
       - name: Check out without persisted credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -58,10 +71,12 @@ jobs:
           node --check tools/google-chat-space-export/sanitize-export.mjs
           node --check tools/google-chat-space-export/sensitive-content.mjs
           node --check tools/google-chat-space-export/import-plan.mjs
+          node --check tools/google-chat-space-export/daily-schedule-gate.mjs
           node --check tools/google-chat-space-export/reconciliation-receipt.mjs
           node --test \
             tools/google-chat-space-export/test/sensitive-content.test.mjs \
             tools/google-chat-space-export/test/import-plan.test.mjs \
+            tools/google-chat-space-export/test/daily-schedule-gate.test.mjs \
             tools/google-chat-space-export/test/reconciliation-receipt.test.mjs \
             tools/google-chat-space-export/test/reconciliation-pipeline.test.mjs \
             tools/google-chat-space-export/test/audit-ledger-2026-08-04.test.mjs \

@@ -155,13 +155,14 @@ The fetcher sends POST only to the original Apps Script `/exec` URL and allows t
 node tools/google-chat-space-export/import-plan.mjs \
   --input ./private/google-chat-export \
   --since 2026-06-05T04:00:00.000Z \
+  --until 2026-06-20T04:00:00.000Z \
   --existing-index ./private/linear-issue-index.json \
   --project-map tools/google-chat-space-export/import-project-map.example.json \
   --json ./private/google-chat-import-plan.json \
   --markdown ./private/google-chat-import-plan.md
 ```
 
-`--since` narrows the plan to messages created at or after the given instant, for reconciling one stretch of history at a time. It can only narrow: a value earlier than the fixed `2026-05-10T04:00:00.000Z` boundary is rejected rather than silently clamped, so the command line can never widen access to earlier history. Deduplication still runs across every supplied message, so `uniqueMessages` and `duplicateMessages` continue to describe the whole input while `plannedMessages` and `windowedOutMessages` describe the window. A narrowed window is stated in the Markdown report and recorded as `source.windowStartInclusive` in the JSON plan.
+`--since` narrows the plan to messages created at or after the given instant, for reconciling one stretch of history at a time. It can only narrow: a value earlier than the fixed `2026-05-10T04:00:00.000Z` boundary is rejected rather than silently clamped, so the command line can never widen access to earlier history. `--until` is an exclusive upper boundary; use both flags for an exact rolling window. Both bounds are included in the plan identity, so a rerun cannot silently absorb newer messages. Deduplication still runs across every supplied message, so `uniqueMessages` and `duplicateMessages` continue to describe the whole input while `plannedMessages` and `windowedOutMessages` describe the window. The effective bounds are stated in the Markdown report and recorded as `source.windowStartInclusive` and `source.windowEndExclusive` in the JSON plan.
 
 The optional existing-issue index can be an array or `{ "issues": [...] }`. Each issue may contain `id`, `identifier`, `title`, `description`, `comments`, `project`, `state`, `url`, and explicit `sourceKeys`. The planner also discovers deterministic `google-chat:...` keys embedded in descriptions or comments.
 
