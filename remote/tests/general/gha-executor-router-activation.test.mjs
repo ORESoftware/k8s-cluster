@@ -27,7 +27,7 @@ const zeroDigest =
 const publishedRevision = '5aad32c37be7f29f9355f19d6ce6d316494ff141';
 const publishedImages = {
   clone:
-    'ghcr.io/oresoftware/gha-clone-server@sha256:44684171d909f96fe216d529bfc14f6f32a11e87c0f339d1877ac20606223c97',
+    'ghcr.io/oresoftware/gha-clone-server@sha256:c141b374acc4b49a9108317e78c06b9d726bcb99903c00c01a2cf200f98432e4',
   router:
     'ghcr.io/oresoftware/gha-executor-router@sha256:59a31a496e5c528f89acb7643b8ced1ea14bc6c15b1d83b22a37f4ba529708e6',
 };
