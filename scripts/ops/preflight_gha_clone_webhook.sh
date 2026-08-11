@@ -134,6 +134,7 @@ require_config_binding() {
 
 readonly clone_name='dd-gha-clone-server'
 readonly router_name='dd-gha-executor-router'
+readonly build_name='dd-build-server'
 readonly clone_secret='dd-gha-clone-server-secrets'
 readonly router_secret='dd-gha-executor-router-secrets'
 readonly build_secret='dd-agent-secrets'
@@ -248,6 +249,7 @@ pass 'clone and router Services expose only their reviewed ClusterIP ports'
 
 clone_policy="$(get_json networkpolicy "$clone_name")"
 router_policy="$(get_json networkpolicy "$router_name")"
+build_policy="$(get_json networkpolicy "$build_name")"
 jq -e '
   .spec.podSelector.matchLabels.app == "dd-gha-clone-server" and
   (.spec.policyTypes | index("Ingress") != null) and (.spec.policyTypes | index("Egress") != null) and
@@ -267,6 +269,13 @@ jq -e '
   all(.spec.egress[]?.to[]?; (.ipBlock? // null) == null) and
   all(.spec.egress[]?.ports[]?; (.protocol != "TCP") or (.port != 443))
 ' <<<"$router_policy" >/dev/null || fail 'router NetworkPolicy must allow clone ingress and AWS build-server egress with no public/Hetzner path'
+
+jq -e '
+  .spec.podSelector.matchLabels.app == "dd-build-server" and
+  any(.spec.ingress[]?;
+    any(.from[]?.podSelector.matchLabels.app; . == "dd-gha-executor-router") and
+    any(.ports[]?; .protocol == "TCP" and .port == 8100))
+' <<<"$build_policy" >/dev/null || fail 'build-server NetworkPolicy must admit the continuity router on TCP 8100'
 pass 'NetworkPolicies enforce gateway -> clone -> router -> AWS build-server only'
 
 clone_replicas="$(jq -r '.spec.replicas // 1' <<<"$clone_deployment")"
