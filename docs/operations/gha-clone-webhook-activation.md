@@ -32,17 +32,26 @@ dd-gha-clone-server:8125/webhooks/github
         | exact repository + exact workflow path + full immutable SHA
         | fail-closed workflow planner -> fixed reviewed profile
         v
-dd-build-server -> gha-indie-worker
+dd-gha-executor-router:8126
+        |
+        | AWS-only pre-submit readiness; no post-attempt failover
+        v
+dd-build-server:8100 -> gha-indie-worker
         |
         v
 future GitHub status/check context: gha-indie/<profile>
 ```
 
-The webhook and worker must never accept caller-selected commands, images, executors, deployment targets, credentials, mutable action references, arbitrary repository prefixes, or arbitrary workflow paths.
+The webhook, planner, router, and worker must never accept caller-selected commands, images, executors, deployment targets, credentials, mutable action references, arbitrary repository prefixes, or arbitrary workflow paths.
 
 The budget-exhaustion pilot in `gha-budget-webhook-activation.md` is the only reviewed exception to
 the inert-by-default posture. It uses one replica per service, accepts only `action_required`, and
 must pass the exact TLS, HMAC, immutable-SHA, router, build, and replay canary before expansion.
+
+The clone server and router intentionally split authority: the clone Secret owns its API and
+webhook HMAC plus the projected fine-grained GitHub token; the router Secret owns only
+`inbound_auth`; and the router projects the existing `dd-agent-secrets.SERVER_AUTH_SECRET`
+read-only for the AWS build server. Hetzner remains disabled with no credential path.
 
 ## Phase 0: read-only static preflight
 
@@ -52,15 +61,21 @@ Run on the protected cluster host or another environment with read-only access t
 scripts/ops/preflight_gha_clone_webhook.sh
 ```
 
+That default checks the fail-closed, zero-replica state. For the reviewed active budget pilot use:
+
+```bash
+scripts/ops/preflight_gha_clone_webhook.sh --expect-active
+```
+
 The preflight verifies without decoding or printing secrets:
 
 - `ExternalSecret/dd-gha-clone-server-secrets` reports `Ready=True`;
 - the clone Secret contains non-empty `auth_secret`, `github_webhook_secret`, and `github_token` entries;
 - the router Secret contains a non-empty `inbound_auth`, and the existing build-server Secret contains `SERVER_AUTH_SECRET`;
 - repository and workflow-path rules are non-empty, exact, and internally consistent;
-- both execution flags remain `false`;
-- the pod is non-root, does not mount a service-account token, drops Linux capabilities, and listens on port 8125;
-- the Service and NetworkPolicy preserve the gateway/build-server/HTTPS boundary.
+- clone API, clone webhook, and router execution flags match the selected inert or active mode;
+- both pods are non-root, do not mount service-account tokens, drop Linux capabilities, and use read-only root filesystems;
+- the Services and NetworkPolicies preserve gateway -> clone -> router -> AWS build-server authority with no direct clone-to-build-server path.
 
 A failure at this phase blocks scaling, routing, and webhook installation.
 
@@ -86,7 +101,9 @@ After Argo CD reconciliation and rollout health, run:
 scripts/ops/preflight_gha_clone_webhook.sh --probe-live
 ```
 
-The live probe opens a local port-forward and verifies `/healthz` and `/readyz`. It does not send a webhook, decode a secret, or mutate the cluster.
+The active pilot uses `--expect-active --probe-live` instead. The live probe opens local
+port-forwards and verifies both services' `/healthz` and `/readyz`. It does not send a webhook,
+decode a secret, or mutate the cluster.
 
 ## Phase 2: dedicated gateway route
 
@@ -158,6 +175,7 @@ Then enable webhook execution for the exact pilot:
 ```yaml
 GHA_CLONE_EXECUTION_ENABLED: "true"
 GHA_CLONE_WEBHOOK_EXECUTION_ENABLED: "true"
+GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED: "true"
 ```
 
 Induce an allowlisted canary workflow failure and prove fallback success, fallback test failure,

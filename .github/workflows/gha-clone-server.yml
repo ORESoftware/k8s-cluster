@@ -18,6 +18,7 @@ on:
       - 'remote/tests/general/gha-clone-streempilot-config.test.ts'
       - 'remote/tests/general/gha-executor-router-activation.test.mjs'
       - 'remote/tests/general/gha-clone-budget-webhook-activation.test.mjs'
+      - 'remote/tests/general/gha-clone-webhook-preflight.test.mjs'
       - 'remote/tests/general/build-server-profile-repository-policy.test.mjs'
       - 'scripts/ops/register_gha_clone_budget_webhook.sh'
       - 'scripts/ops/canary_gha_clone_budget_webhook.py'
@@ -50,6 +51,7 @@ on:
       - 'remote/tests/general/gha-clone-streempilot-config.test.ts'
       - 'remote/tests/general/gha-executor-router-activation.test.mjs'
       - 'remote/tests/general/gha-clone-budget-webhook-activation.test.mjs'
+      - 'remote/tests/general/gha-clone-webhook-preflight.test.mjs'
       - 'remote/tests/general/build-server-profile-repository-policy.test.mjs'
       - 'scripts/ops/register_gha_clone_budget_webhook.sh'
       - 'scripts/ops/canary_gha_clone_budget_webhook.py'
@@ -179,6 +181,7 @@ jobs:
           node --test \
             general/gha-executor-router-activation.test.mjs \
             general/gha-clone-budget-webhook-activation.test.mjs \
+            general/gha-clone-webhook-preflight.test.mjs \
             general/build-server-profile-repository-policy.test.mjs
       - name: Install pinned kubectl renderer
         uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
@@ -212,6 +215,7 @@ jobs:
           set -euo pipefail
           bash -n remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh
           bash -n remote/ec2/renew-letsencrypt-gateway-cert.sh
+          bash -n scripts/ops/preflight_gha_clone_webhook.sh
           bash -n scripts/ops/register_gha_clone_budget_webhook.sh
           python3 -m py_compile scripts/ops/canary_gha_clone_budget_webhook.py
       - name: Reject committed credentials
