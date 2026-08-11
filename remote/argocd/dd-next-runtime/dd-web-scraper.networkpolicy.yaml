@@ -16,10 +16,10 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # The gateway (proxied /scrape), browser-automation MCP control plane,
-    # observability scrapers, and the three exact Benefactor discovery/probe
-    # workloads may reach the service port. Benefactor access stays label- and
-    # workload-specific; no namespace-wide or app-family-wide selector is used.
+    # The gateway (proxied /scrape), the browser-automation MCP control plane
+    # (dd-browser-mcp-rs, which drives the persistent /agent/* sessions), and the
+    # observability scrapers (/metrics) may reach the service port. Nothing else
+    # in the cluster can call it.
     - from:
         - podSelector:
             matchLabels:
@@ -27,21 +27,6 @@ spec:
         - podSelector:
             matchLabels:
               app: dd-browser-mcp-rs
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: benefactor-contact-batch
-              app.kubernetes.io/component: lead-discovery
-              app.kubernetes.io/part-of: benefactor-cc
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: benefactor-provider-probe-v2
-              app.kubernetes.io/component: credentialed-dry-run
-              app.kubernetes.io/part-of: benefactor-cc
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: benefactor-search-scraper-contract-probe
-              app.kubernetes.io/component: credentialed-dry-run
-              app.kubernetes.io/part-of: benefactor-cc
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability

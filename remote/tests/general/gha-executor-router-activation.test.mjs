@@ -18,7 +18,8 @@ const files = {
   routerPolicy:
     'remote/argocd/dd-next-runtime/dd-gha-executor-router.networkpolicy.yaml',
   kustomization: 'remote/argocd/dd-next-runtime/kustomization.yaml',
-  runbook: 'docs/gha-executor-router-activation.md',
+  prerequisiteRunbook: 'docs/gha-executor-router-activation.md',
+  activeRunbook: 'docs/operations/gha-budget-webhook-activation.md',
 };
 
 const zeroDigest =
@@ -47,7 +48,7 @@ function literalEnv(text, name) {
   return (match[1] ?? match[2]).trim();
 }
 
-test('digest-pinned clone and router remain inert after image promotion', () => {
+test('digest-pinned clone and router are active as a single bounded lane', () => {
   const clone = read(files.cloneDeployment);
   const router = read(files.routerDeployment);
 
@@ -58,7 +59,8 @@ test('digest-pinned clone and router remain inert after image promotion', () => 
     requireAll(
       deployment,
       [
-        'replicas: 0',
+        'replicas: 1',
+        'minReadySeconds: 10',
         image,
         publishedRevision,
         `command: ["/usr/local/bin/${binary}"]`,
@@ -80,14 +82,18 @@ test('digest-pinned clone and router remain inert after image promotion', () => 
     );
   }
 
-  assert.equal(literalEnv(clone, 'GHA_CLONE_EXECUTION_ENABLED'), 'false');
+  assert.equal(literalEnv(clone, 'GHA_CLONE_EXECUTION_ENABLED'), 'true');
   assert.equal(
     literalEnv(clone, 'GHA_CLONE_WEBHOOK_EXECUTION_ENABLED'),
-    'false',
+    'true',
+  );
+  assert.equal(
+    literalEnv(clone, 'GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS'),
+    'action_required',
   );
   assert.equal(
     literalEnv(router, 'GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED'),
-    'false',
+    'true',
   );
 });
 
@@ -179,7 +185,7 @@ test('disabled Hetzner has no public route or dormant credential surface', () =>
   assert.ok(!hetznerEntry.includes('"authPath"'));
 });
 
-test('Argo tracks the complete inert router surface', () => {
+test('Argo tracks the complete active router surface', () => {
   const kustomization = read(files.kustomization);
   for (const filename of [
     'dd-gha-executor-router.configmap.yaml',
@@ -192,10 +198,10 @@ test('Argo tracks the complete inert router surface', () => {
   }
 });
 
-test('runbook requires immutable images, provider proof, and rollback', () => {
-  const runbook = read(files.runbook);
+test('runbooks require immutable images, live proof, provider boundaries, and rollback', () => {
+  const prerequisites = read(files.prerequisiteRunbook);
   requireAll(
-    runbook,
+    prerequisites,
     [
       'digest-pinned',
       'SBOM',
@@ -204,8 +210,22 @@ test('runbook requires immutable images, provider proof, and rollback', () => {
       'pre-submit',
       'Fiducia',
       'Rollback',
-      'replicas: 0',
     ],
-    'activation runbook',
+    'router prerequisite runbook',
+  );
+
+  const active = read(files.activeRunbook);
+  requireAll(
+    active,
+    [
+      'action_required',
+      'X-Hub-Signature-256',
+      'immutable 40-hex commit SHA',
+      'workflow path',
+      'Live proof and exact-SHA execution canary',
+      'Rollback',
+      'scale clone server and router to `0`',
+    ],
+    'active webhook runbook',
   );
 });

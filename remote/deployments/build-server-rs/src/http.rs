@@ -638,6 +638,37 @@ mod e2e {
         format!("sha256={}", hex::encode(mac.finalize().into_bytes()))
     }
 
+    fn github_request(event: &str, delivery: &str, body: String) -> Request<Body> {
+        let signature = github_sig(GH_HOOK, &body);
+        Request::builder()
+            .method("POST")
+            .uri("/webhooks/github")
+            .header("content-type", "application/json")
+            .header("x-github-event", event)
+            .header("x-github-delivery", delivery)
+            .header("x-hub-signature-256", signature)
+            .body(Body::from(body))
+            .unwrap()
+    }
+
+    fn failure_webhook_rule() -> webhooks::WebhookRule {
+        webhooks::WebhookRule {
+            repo: "ORESoftware/x".to_string(),
+            branch: Some("dev".to_string()),
+            events: vec!["workflow_run".to_string()],
+            failure_conclusions: vec!["failure".to_string(), "timed_out".to_string()],
+            image: Some(
+                "710156900967.dkr.ecr.us-east-1.amazonaws.com/x:dev-{shortSha}".to_string(),
+            ),
+            profile: None,
+            context_dir: None,
+            dockerfile: None,
+            push: false,
+            executor: None,
+            deploy: None,
+        }
+    }
+
     // ---- health / observability: unauthenticated, no secret leakage ----
 
     #[tokio::test]
@@ -792,6 +823,21 @@ mod e2e {
     }
 
     #[tokio::test]
+    async fn submit_rejects_mutable_profile_ref() {
+        let body = json!({
+            "schemaVersion": "build-server.v1",
+            "jobKind": "run-profile",
+            "repoUrl": "https://github.com/ORESoftware/x.git",
+            "gitRef": "main",
+            "profile": "playwright"
+        });
+        let (status, response) =
+            send(app(test_config()), post_json("/builds", Some(AUTH), &body)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(response.contains("full 40- or 64-hex commit object ID"));
+    }
+
+    #[tokio::test]
     async fn submit_with_empty_allowlist_fails_closed() {
         let mut config = test_config();
         config.allowed_repo_prefixes = Vec::new();
@@ -837,60 +883,111 @@ mod e2e {
     }
 
     #[tokio::test]
-    async fn github_webhook_valid_signature_non_actionable_is_ignored() {
-        let body = json!({ "ref": "refs/heads/dev", "deleted": true,
-            "repository": { "full_name": "ORESoftware/x" } })
-        .to_string();
-        let sig = github_sig(GH_HOOK, &body);
-        let request = Request::builder()
-            .method("POST")
-            .uri("/webhooks/github")
-            .header("content-type", "application/json")
-            .header("x-github-event", "push")
-            .header("x-github-delivery", "d-actionable")
-            .header("x-hub-signature-256", sig)
-            .body(Body::from(body))
-            .unwrap();
-        let (status, body) = send(app(test_config()), request).await;
-        assert_eq!(status, StatusCode::OK);
-        assert!(body.contains("ignored"));
+    async fn github_webhook_unsupported_successful_and_noncompleted_runs_have_no_side_effects() {
+        let revision = "0123456789abcdef0123456789abcdef01234567";
+        let scenarios = [
+            (
+                "push",
+                json!({
+                    "ref": "refs/heads/dev",
+                    "after": revision,
+                    "repository": { "full_name": "ORESoftware/x" }
+                }),
+            ),
+            (
+                "pull_request",
+                json!({
+                    "pull_request": { "head": { "sha": revision } },
+                    "repository": { "full_name": "ORESoftware/x" }
+                }),
+            ),
+            (
+                "workflow_run",
+                json!({
+                    "action": "requested",
+                    "workflow_run": {
+                        "head_branch": "dev", "head_sha": revision, "conclusion": "failure"
+                    },
+                    "repository": { "full_name": "ORESoftware/x" }
+                }),
+            ),
+            (
+                "workflow_run",
+                json!({
+                    "action": "completed",
+                    "workflow_run": {
+                        "head_branch": "dev", "head_sha": revision, "conclusion": "success"
+                    },
+                    "repository": { "full_name": "ORESoftware/x" }
+                }),
+            ),
+        ];
+
+        for (index, (event, payload)) in scenarios.into_iter().enumerate() {
+            let mut config = test_config();
+            config.webhook_rules = vec![failure_webhook_rule()];
+            let state = state_from(config);
+            let request = github_request(event, &format!("d-noop-{index}"), payload.to_string());
+            let (status, body) = send(build_router(state.clone()), request).await;
+            assert_eq!(status, StatusCode::ACCEPTED, "event={event} body={body}");
+            assert!(body.contains("ignored"));
+            assert!(state.jobs.read().await.is_empty());
+            assert!(state.recent_request_ids.read().await.is_empty());
+            assert_eq!(state.counters.submitted.load(Ordering::Relaxed), 0);
+        }
     }
 
     #[tokio::test]
     async fn github_webhook_malformed_sha_does_not_panic_and_is_ignored() {
-        // A non-ASCII/short `after` used to panic via a byte-slice; now it is
+        // A non-ASCII/short `head_sha` used to panic via a byte-slice; now it is
         // gated by valid_commit_sha and ignored. A real matching rule exists so
         // the only thing stopping a build is the sha check.
         let mut config = test_config();
-        config.webhook_rules = vec![webhooks::WebhookRule {
-            repo: "ORESoftware/x".to_string(),
-            branch: Some("dev".to_string()),
-            tags: false,
-            events: Some(vec!["push".to_string()]),
-            image: Some("710156900967.dkr.ecr.us-east-1.amazonaws.com/x:dev-{shortSha}".to_string()),
-            profile: None,
-            context_dir: None,
-            dockerfile: None,
-            push: false,
-            executor: None,
-            deploy: None,
-        }];
-        let body = json!({ "ref": "refs/heads/dev", "after": "zzz\u{e9}",
+        config.webhook_rules = vec![failure_webhook_rule()];
+        let body = json!({
+            "action": "completed",
+            "workflow_run": {
+                "head_branch": "dev", "head_sha": "zzz\u{e9}", "conclusion": "failure"
+            },
             "repository": { "full_name": "ORESoftware/x" } })
         .to_string();
-        let sig = github_sig(GH_HOOK, &body);
-        let request = Request::builder()
-            .method("POST")
-            .uri("/webhooks/github")
-            .header("content-type", "application/json")
-            .header("x-github-event", "push")
-            .header("x-github-delivery", "d-badsha")
-            .header("x-hub-signature-256", sig)
-            .body(Body::from(body))
-            .unwrap();
+        let request = github_request("workflow_run", "d-badsha", body);
         let (status, body) = send(app(config), request).await;
-        assert_eq!(status, StatusCode::OK, "must not 500/panic");
+        assert_eq!(status, StatusCode::ACCEPTED, "must not 500/panic");
         assert!(body.contains("ignored"));
+    }
+
+    #[tokio::test]
+    async fn github_webhook_admitted_completed_failure_enqueues_exact_sha_once() {
+        let revision = "0123456789abcdef0123456789abcdef01234567";
+        let mut config = test_config();
+        config.webhook_rules = vec![failure_webhook_rule()];
+        let mut state = state_from(config);
+        state.semaphore = Arc::new(Semaphore::new(0));
+        let body = json!({
+            "action": "completed",
+            "workflow_run": {
+                "head_branch": "dev", "head_sha": revision, "conclusion": "failure"
+            },
+            "repository": { "full_name": "ORESoftware/x" }
+        })
+        .to_string();
+        let request = github_request("workflow_run", "d-failure", body);
+
+        let (status, response) = send(build_router(state.clone()), request).await;
+        assert_eq!(status, StatusCode::ACCEPTED, "{response}");
+        let jobs = state.jobs.read().await;
+        assert_eq!(jobs.len(), 1);
+        let job = jobs.values().next().expect("one queued failure fallback");
+        assert_eq!(job.request.git_ref.as_deref(), Some(revision));
+        assert!(job
+            .request
+            .request_id
+            .as_deref()
+            .is_some_and(|value| value.starts_with("github:")));
+        drop(jobs);
+        assert_eq!(state.recent_request_ids.read().await.len(), 1);
+        assert_eq!(state.counters.submitted.load(Ordering::Relaxed), 1);
     }
 
     // ---- registry webhook: secret gate + delivery-id dedupe guard ----

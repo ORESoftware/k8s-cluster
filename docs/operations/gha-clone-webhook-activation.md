@@ -1,6 +1,9 @@
 # Signed GitHub webhook activation for `gha-indie-worker`
 
-This runbook activates GitHub `push` and `pull_request` deliveries as the primary trigger for the independent workflow compiler and worker. A `workflow_run` event may be accepted as a compatibility signal, but the continuity lane must not wait for GitHub-hosted Actions to fail before independent testing begins.
+This runbook activates a failure-only fallback for completed GitHub Actions `workflow_run`
+deliveries. Native GitHub-hosted or ARC jobs remain the primary `push` and `pull_request` path; the
+clone server replays only an allowlisted workflow whose native run ended in an explicitly configured
+failure conclusion. A future capacity broker is required for fallback before a hosted run starts.
 
 Tracking: `ORESoftware/k8s-cluster#1093` and Linear `DEN-1863`.
 
@@ -12,12 +15,12 @@ The merged DES browser lane uses a small GitHub-hosted job only to authenticate 
 
 This is suitable for tonight's continuity work because it moves the expensive test compute off GitHub-hosted runners. It is not the final independent trigger path.
 
-### Direct signed webhook
+### Signed failure webhook
 
 The durable path is:
 
 ```text
-GitHub push / pull_request
+GitHub workflow_run: completed + configured failure
         |
         | application/json + X-Hub-Signature-256 + X-GitHub-Delivery
         v
@@ -29,13 +32,26 @@ dd-gha-clone-server:8125/webhooks/github
         | exact repository + exact workflow path + full immutable SHA
         | fail-closed workflow planner -> fixed reviewed profile
         v
-dd-build-server -> gha-indie-worker
+dd-gha-executor-router:8126
+        |
+        | AWS-only pre-submit readiness; no post-attempt failover
+        v
+dd-build-server:8100 -> gha-indie-worker
         |
         v
-GitHub status/check context: gha-indie/<profile>
+future GitHub status/check context: gha-indie/<profile>
 ```
 
-The webhook and worker must never accept caller-selected commands, images, executors, deployment targets, credentials, mutable action references, arbitrary repository prefixes, or arbitrary workflow paths.
+The webhook, planner, router, and worker must never accept caller-selected commands, images, executors, deployment targets, credentials, mutable action references, arbitrary repository prefixes, or arbitrary workflow paths.
+
+The budget-exhaustion pilot in `gha-budget-webhook-activation.md` is the only reviewed exception to
+the inert-by-default posture. It uses one replica per service, accepts only `action_required`, and
+must pass the exact TLS, HMAC, immutable-SHA, router, build, and replay canary before expansion.
+
+The clone server and router intentionally split authority: the clone Secret owns its API and
+webhook HMAC plus the projected fine-grained GitHub token; the router Secret owns only
+`inbound_auth`; and the router projects the existing `dd-agent-secrets.SERVER_AUTH_SECRET`
+read-only for the AWS build server. Hetzner remains disabled with no credential path.
 
 ## Phase 0: read-only static preflight
 
@@ -45,14 +61,21 @@ Run on the protected cluster host or another environment with read-only access t
 scripts/ops/preflight_gha_clone_webhook.sh
 ```
 
+That default checks the fail-closed, zero-replica state. For the reviewed active budget pilot use:
+
+```bash
+scripts/ops/preflight_gha_clone_webhook.sh --expect-active
+```
+
 The preflight verifies without decoding or printing secrets:
 
 - `ExternalSecret/dd-gha-clone-server-secrets` reports `Ready=True`;
-- the target Secret contains non-empty `auth_secret`, `github_webhook_secret`, `github_app_installation_token`, and `build_server_auth` entries;
+- the clone Secret contains non-empty `auth_secret`, `github_webhook_secret`, and `github_token` entries;
+- the router Secret contains a non-empty `inbound_auth`, and the existing build-server Secret contains `SERVER_AUTH_SECRET`;
 - repository and workflow-path rules are non-empty, exact, and internally consistent;
-- both execution flags remain `false`;
-- the pod is non-root, does not mount a service-account token, drops Linux capabilities, and listens on port 8125;
-- the Service and NetworkPolicy preserve the gateway/build-server/HTTPS boundary.
+- clone API, clone webhook, and router execution flags match the selected inert or active mode;
+- both pods are non-root, do not mount service-account tokens, drop Linux capabilities, and use read-only root filesystems;
+- the Services and NetworkPolicies preserve gateway -> clone -> router -> AWS build-server authority with no direct clone-to-build-server path.
 
 A failure at this phase blocks scaling, routing, and webhook installation.
 
@@ -78,7 +101,9 @@ After Argo CD reconciliation and rollout health, run:
 scripts/ops/preflight_gha_clone_webhook.sh --probe-live
 ```
 
-The live probe opens a local port-forward and verifies `/healthz` and `/readyz`. It does not send a webhook, decode a secret, or mutate the cluster.
+The active pilot uses `--expect-active --probe-live` instead. The live probe opens local
+port-forwards and verifies both services' `/healthz` and `/readyz`. It does not send a webhook,
+decode a secret, or mutate the cluster.
 
 ## Phase 2: dedicated gateway route
 
@@ -97,7 +122,10 @@ Do not overload the existing `dd-build-server` webhook route. Preserve the raw r
 
 The route must not require an operator browser cookie, but the clone server must reject missing or invalid HMAC signatures. Apply request-size and rate limits at the gateway while leaving the application planner's tighter workflow limits in force.
 
-AWS currently serves through the gateway's own hostPort/TLS path; the ingress-nginx object is inert there. Prove the exact cloud-specific route rather than assuming an Ingress change covers every cluster.
+AWS serves `/gha-webhooks/github` through the gateway's own hostPort/TLS path. The ingress-nginx
+object is an equivalent exact route only in clusters that actually run that controller. Before
+activation, prove the selected cluster has exactly one reachable route and that both routes preserve
+the raw HMAC body without exposing any status or manual-run endpoint.
 
 ## Phase 3: GitHub webhook installation
 
@@ -106,22 +134,28 @@ Configure the GitHub App, organization webhook, or exact repository webhook with
 - content type `application/json`;
 - the secret mapped to `github_webhook_secret`;
 - TLS verification enabled;
-- `push` and `pull_request` events;
-- optional `workflow_run` only as a compatibility/fallback signal.
+- only the `workflow_run` event.
 
-Start with one exact `*-test` repository and one or two exact workflow paths. Do not allow an entire organization prefix merely because the repositories share an owner.
+The clone server returns a bounded `202` no-op for validly signed non-`workflow_run` events. Do not
+subscribe the production hook to `push` or `pull_request`; native Actions/ARC owns those triggers.
+
+Start with one exact `*-test` repository and one exact workflow path. The existing
+`discrete-event-systems-test/des-web-playwright-e2e` repository and
+`.github/workflows/gha-indie-worker.yml` workflow are a suitable candidate after they are added to
+the clone-server exact allowlist. Do not allow an entire organization prefix merely because the
+repositories share an owner.
 
 Before enabling execution, prove and retain redacted evidence for:
 
-1. `ping` delivery;
-2. invalid-signature rejection;
-3. missing or oversized delivery-ID rejection;
-4. duplicate-delivery idempotency;
+1. invalid-signature rejection;
+2. missing or oversized delivery-ID rejection;
+3. signed non-`workflow_run` no-op behavior;
+4. duplicate-delivery idempotency and retry after transient queue rejection;
 5. non-allowlisted repository rejection;
 6. malformed and non-full SHA rejection;
 7. unapproved workflow-path rejection;
-8. unsupported workflow semantics failing closed;
-9. plan-only success at the event's exact commit SHA.
+8. successful native runs and non-completed runs being ignored;
+9. plan-only success at the failed run's exact commit SHA.
 
 ## Phase 4: staged execution
 
@@ -134,20 +168,26 @@ GHA_CLONE_EXECUTION_ENABLED: "true"
 GHA_CLONE_WEBHOOK_EXECUTION_ENABLED: "false"
 ```
 
-Prove one exact-SHA run through the authenticated `/v1/runs` endpoint. Verify the build-server request contains only `run-profile`, the exact repository URL, the exact commit SHA, the fixed reviewed profile, and an idempotent request ID.
+Prove one exact-SHA run through the authenticated `/v1/runs` endpoint. Verify the build-server request contains only `run-profile`, the exact repository URL, the exact commit SHA, the fixed reviewed profile, and an idempotent request ID. The build server rejects branch or tag names for `run-profile` jobs.
 
 Then enable webhook execution for the exact pilot:
 
 ```yaml
 GHA_CLONE_EXECUTION_ENABLED: "true"
 GHA_CLONE_WEBHOOK_EXECUTION_ENABLED: "true"
+GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED: "true"
 ```
 
-Prove success, test failure, replay, transient GitHub API failure, transient build-server failure, timeout, and restart recovery before expanding the allowlist.
+Induce an allowlisted canary workflow failure and prove fallback success, fallback test failure,
+replay, transient GitHub API failure, transient build-server failure, timeout, and restart recovery
+before expanding the allowlist. Do not use a successful native run as the activation trigger.
 
 ## Phase 5: GitHub-visible status and merge policy
 
-Independent execution does not automatically satisfy an existing required GitHub Actions check name. Publish a distinct least-privilege context, for example:
+Independent execution does not automatically satisfy an existing required GitHub Actions check
+name. The current clone-server/build-server path does not publish a Check Run or commit status, so
+this is an activation blocker rather than an existing capability. Implement and persist a distinct
+least-privilege context, for example:
 
 ```text
 gha-indie/playwright

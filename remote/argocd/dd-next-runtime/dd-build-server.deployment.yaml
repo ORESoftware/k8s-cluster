@@ -161,7 +161,7 @@ spec:
               value: 'true'
             - name: BUILD_SERVER_NATS_INTAKE_ENABLED
               value: 'false'
-            # --- Webhooks (GitHub push/workflow_run + registry image events).
+            # --- Webhooks (failure-only GitHub workflow_run + registry image events).
             - name: BUILD_SERVER_GITHUB_WEBHOOK_SECRET
               valueFrom:
                 secretKeyRef:

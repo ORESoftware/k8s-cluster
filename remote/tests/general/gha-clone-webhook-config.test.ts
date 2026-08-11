@@ -6,7 +6,7 @@ import { join } from 'node:path';
 const root = join(import.meta.dirname, '../../..');
 const read = (path: string) => readFileSync(join(root, path), 'utf8');
 
-test('workflow_run fallback is failure-only, exact-path, loop-safe, and deduplicated', () => {
+test('workflow_run fallback is terminal-only, exact-path, loop-safe, and deduplicated', () => {
   const server = read('remote/deployments/gha-clone-server-rs/src/main.rs');
   assert.match(server, /action != "completed"/);
   assert.ok(server.includes('/workflow_run/conclusion'));
@@ -19,7 +19,7 @@ test('workflow_run fallback is failure-only, exact-path, loop-safe, and deduplic
   assert.match(server, /HTTP is allowed only for loopback tests/);
 });
 
-test('deployment declares bounded webhook policy while remaining dormant', () => {
+test('deployment enables only the bounded action_required webhook policy', () => {
   const deployment = read(
     'remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml',
   );
@@ -38,13 +38,22 @@ test('deployment declares bounded webhook policy while remaining dormant', () =>
   );
   assert.match(
     deployment,
-    /GHA_CLONE_WEBHOOK_EXECUTION_ENABLED\s+value: "false"/,
+    /GHA_CLONE_WEBHOOK_EXECUTION_ENABLED\s+value: "true"/,
   );
   assert.match(
     deployment,
-    /GHA_CLONE_EXECUTION_ENABLED\s+value: "false"/,
+    /GHA_CLONE_EXECUTION_ENABLED\s+value: "true"/,
   );
-  assert.match(deployment, /\breplicas:\s*0\b/);
+  assert.match(
+    deployment,
+    /GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS\s+value: action_required(?:\s|$)/,
+  );
+  assert.doesNotMatch(
+    deployment,
+    /GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS[\s\S]{0,120}(?:failure|cancelled|timed_out|startup_failure|stale)/,
+  );
+  assert.match(deployment, /\breplicas:\s*1\b/);
+  assert.match(deployment, /\bminReadySeconds:\s*10\b/);
   assert.match(deployment, /GHA continuity server/);
 });
 

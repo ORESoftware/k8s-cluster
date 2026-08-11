@@ -1,11 +1,11 @@
 //! Inbound webhooks.
 //!
-//! `POST /webhooks/github` — GitHub push / workflow_run events, verified with
+//! `POST /webhooks/github` — failure-only GitHub workflow_run events, verified with
 //! the `X-Hub-Signature-256` HMAC (BUILD_SERVER_GITHUB_WEBHOOK_SECRET,
 //! constant-time compare) and deduped on `X-GitHub-Delivery`. Matching rules
 //! (BUILD_SERVER_WEBHOOK_RULES / _PATH, JSON) map repo+branch to a
-//! build-server.v1 job, so GitHub Actions or plain repo pushes can trigger
-//! builds without holding credentials for this server.
+//! build-server.v1 job. Signed unsupported events and successful/non-terminal
+//! workflow runs are bounded no-ops before any delivery claim.
 //!
 //! `POST /webhooks/registry` — container registry events (ECR EventBridge
 //! `ECR Image Action` detail or docker distribution v2 event envelopes),
@@ -25,7 +25,18 @@ use sha2::{Digest, Sha256};
 use std::sync::atomic::Ordering;
 use subtle::ConstantTimeEq;
 
-use crate::{db, events, fiducia, AppState, BuildRequest, DeployRequest};
+use crate::{
+    db, events, fiducia, validation::is_full_commit_oid, AppState, BuildRequest, DeployRequest,
+};
+
+const SUPPORTED_FAILURE_CONCLUSIONS: &[&str] = &[
+    "failure",
+    "cancelled",
+    "timed_out",
+    "action_required",
+    "startup_failure",
+    "stale",
+];
 
 /// One mapping from a GitHub repo/branch to a build job. Loaded from
 /// BUILD_SERVER_WEBHOOK_RULES (inline JSON array) or
@@ -35,13 +46,12 @@ use crate::{db, events, fiducia, AppState, BuildRequest, DeployRequest};
 pub struct WebhookRule {
     /// GitHub `owner/name`, matched case-insensitively.
     pub repo: String,
-    /// Branch to react to (default: any). Tag pushes only match when `tags` is true.
+    /// Workflow head branch to react to (default: any).
     pub branch: Option<String>,
-    /// Also react to tag pushes.
-    #[serde(default)]
-    pub tags: bool,
-    /// Events to react to: "push" (default) and/or "workflow_run" (completed+success).
-    pub events: Option<Vec<String>>,
+    /// Must contain only "workflow_run". Kept explicit in the reviewed rule.
+    pub events: Vec<String>,
+    /// Completed failure conclusions admitted by this exact rule.
+    pub failure_conclusions: Vec<String>,
     /// Image template for image jobs. `{sha}` / `{shortSha}` / `{ref}` are substituted.
     pub image: Option<String>,
     /// Fixed CI profile for run-profile jobs. Exactly one of image/profile is required.
@@ -58,6 +68,33 @@ pub fn parse_rules(raw: &str) -> Result<Vec<WebhookRule>, String> {
     let rules = serde_json::from_str::<Vec<WebhookRule>>(raw)
         .map_err(|error| format!("invalid webhook rules JSON: {error}"))?;
     for rule in &rules {
+        if rule.events.len() != 1 || rule.events[0] != "workflow_run" {
+            return Err(format!(
+                "webhook rule for {:?} must set events to exactly [\"workflow_run\"]",
+                rule.repo
+            ));
+        }
+        if rule.failure_conclusions.is_empty() {
+            return Err(format!(
+                "webhook rule for {:?} must admit at least one failureConclusions value",
+                rule.repo
+            ));
+        }
+        let mut seen_conclusions = std::collections::BTreeSet::new();
+        for conclusion in &rule.failure_conclusions {
+            if !SUPPORTED_FAILURE_CONCLUSIONS.contains(&conclusion.as_str()) {
+                return Err(format!(
+                    "webhook rule for {:?} contains unsupported failure conclusion {:?}",
+                    rule.repo, conclusion
+                ));
+            }
+            if !seen_conclusions.insert(conclusion.as_str()) {
+                return Err(format!(
+                    "webhook rule for {:?} repeats failure conclusion {:?}",
+                    rule.repo, conclusion
+                ));
+            }
+        }
         if rule.image.is_some() == rule.profile.is_some() {
             return Err(format!(
                 "webhook rule for {:?} must set exactly one of image or profile",
@@ -104,37 +141,35 @@ fn substitute_image(template: &str, sha: &str, git_ref: &str) -> String {
 /// A webhook commit must be a complete SHA-1 or SHA-256 object ID before it is
 /// interpolated into an image tag, lock key, or immutable checkout request.
 fn valid_commit_sha(sha: &str) -> bool {
-    matches!(sha.len(), 40 | 64) && sha.bytes().all(|byte| byte.is_ascii_hexdigit())
+    is_full_commit_oid(sha)
 }
 
 fn branch_from_ref(git_ref: &str) -> Option<&str> {
     git_ref.strip_prefix("refs/heads/")
 }
 
-fn rule_matches(rule: &WebhookRule, event: &str, repo: &str, git_ref: &str) -> bool {
+fn github_request_id(delivery_id: &str) -> String {
+    format!(
+        "github:{}",
+        hex::encode(Sha256::digest(delivery_id.as_bytes()))
+    )
+}
+
+fn rule_matches(rule: &WebhookRule, repo: &str, git_ref: &str, conclusion: &str) -> bool {
     if !rule.repo.eq_ignore_ascii_case(repo) {
         return false;
     }
-    let events = rule
-        .events
-        .clone()
-        .unwrap_or_else(|| vec!["push".to_string()]);
-    if !events.iter().any(|candidate| candidate == event) {
+    if !rule
+        .failure_conclusions
+        .iter()
+        .any(|candidate| candidate == conclusion)
+    {
         return false;
     }
-    if let Some(branch) = branch_from_ref(git_ref) {
-        match rule.branch.as_deref() {
-            Some(want) => want == branch,
-            None => true,
-        }
-    } else if git_ref.starts_with("refs/tags/") {
-        rule.tags
-    } else {
-        // workflow_run carries a bare branch name.
-        match rule.branch.as_deref() {
-            Some(want) => want == git_ref,
-            None => true,
-        }
+    // workflow_run carries a bare head branch name.
+    match rule.branch.as_deref() {
+        Some(want) => want == git_ref,
+        None => true,
     }
 }
 
@@ -234,51 +269,98 @@ pub async fn github_webhook(
         }
     };
 
+    state
+        .counters
+        .webhooks_received
+        .fetch_add(1, Ordering::Relaxed);
+
+    // This endpoint is a failure fallback, not a parallel push/pull runner.
+    // Return before repository matching, delivery persistence, or fiducia for
+    // every signed unsupported event.
+    if event != "workflow_run" {
+        return (
+            StatusCode::ACCEPTED,
+            Json(json!({
+                "ok": true,
+                "action": "ignored",
+                "event": event,
+                "reason": "only workflow_run events may trigger the failure fallback"
+            })),
+        )
+            .into_response();
+    }
+
     let repo = payload
         .pointer("/repository/full_name")
         .and_then(serde_json::Value::as_str)
         .unwrap_or_default()
         .to_string();
+    let run = payload.get("workflow_run").cloned().unwrap_or_default();
+    let action = payload
+        .get("action")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let conclusion = run
+        .get("conclusion")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let git_ref = run
+        .get("head_branch")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let sha = run
+        .get("head_sha")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_string();
 
-    let (git_ref, sha, actionable) = match event.as_str() {
-        "push" => {
-            let git_ref = payload
-                .get("ref")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_default()
-                .to_string();
-            let sha = payload
-                .get("after")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_default()
-                .to_string();
-            let deleted = payload.get("deleted").and_then(serde_json::Value::as_bool) == Some(true);
-            (git_ref, sha, !deleted)
-        }
-        "workflow_run" => {
-            let run = payload.get("workflow_run").cloned().unwrap_or_default();
-            let git_ref = run
-                .get("head_branch")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_default()
-                .to_string();
-            let sha = run
-                .get("head_sha")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_default()
-                .to_string();
-            let completed_ok = payload.get("action").and_then(serde_json::Value::as_str)
-                == Some("completed")
-                && run.get("conclusion").and_then(serde_json::Value::as_str) == Some("success");
-            (git_ref, sha, completed_ok)
-        }
-        _ => (String::new(), String::new(), false),
+    if action != "completed" {
+        return (
+            StatusCode::ACCEPTED,
+            Json(json!({
+                "ok": true,
+                "action": "ignored",
+                "event": event,
+                "reason": "workflow_run is not completed"
+            })),
+        )
+            .into_response();
+    }
+
+    // Reject malformed identity and successful/unconfigured conclusions before
+    // they can consume a database row or distributed idempotency lease.
+    if repo.is_empty() || !valid_commit_sha(&sha) {
+        return (
+            StatusCode::ACCEPTED,
+            Json(json!({
+                "ok": true,
+                "action": "ignored",
+                "event": event,
+                "reason": "workflow_run is missing an exact repository or immutable commit"
+            })),
+        )
+            .into_response();
+    }
+
+    let matched = state
+        .config
+        .webhook_rules
+        .iter()
+        .find(|rule| rule_matches(rule, &repo, &git_ref, &conclusion));
+    let Some(rule) = matched else {
+        return (
+            StatusCode::ACCEPTED,
+            Json(json!({
+                "ok": true,
+                "action": "ignored",
+                "event": event,
+                "reason": "no exact rule admits this repository, branch, and failure conclusion"
+            })),
+        )
+            .into_response();
     };
-
-    state
-        .counters
-        .webhooks_received
-        .fetch_add(1, Ordering::Relaxed);
 
     // Local dedupe (Postgres unique) + multi-replica dedupe (fiducia lease).
     if let Some(db) = state.db.as_ref() {
@@ -316,36 +398,10 @@ pub async fn github_webhook(
         }
     }
 
-    // `valid_commit_sha` subsumes the empty check and rejects a malformed or
-    // non-ASCII sha before it reaches `substitute_image`/lock keys. An invalid
-    // sha is ignored (not built), and the idempotency lease is finished so no
-    // zombie holder is left behind.
-    if !actionable || repo.is_empty() || !valid_commit_sha(&sha) {
-        fiducia::idempotency_finish(&state.http, &state.config, &idem_key, &state.holder, true)
-            .await;
-        return (
-            StatusCode::OK,
-            Json(json!({ "ok": true, "action": "ignored", "event": event })),
-        )
-            .into_response();
-    }
-
-    let matched = state
-        .config
-        .webhook_rules
-        .iter()
-        .find(|rule| rule_matches(rule, &event, &repo, &git_ref));
-    let Some(rule) = matched else {
-        fiducia::idempotency_finish(&state.http, &state.config, &idem_key, &state.holder, true)
-            .await;
-        return (
-            StatusCode::OK,
-            Json(json!({ "ok": true, "action": "ignored", "reason": "no matching rule" })),
-        )
-            .into_response();
-    };
-
-    let request = build_request_from_rule(rule, &repo, &git_ref, &sha);
+    let mut request = build_request_from_rule(rule, &repo, &git_ref, &sha);
+    // Preserve the provider delivery identity through queue admission. This is
+    // the local idempotency guard when Postgres or fiducia is temporarily down.
+    request.request_id = Some(github_request_id(&delivery_id));
     let outcome = crate::enqueue_build(&state, request, "webhook").await;
     fiducia::idempotency_finish(
         &state.http,
@@ -355,6 +411,11 @@ pub async fn github_webhook(
         outcome.is_ok(),
     )
     .await;
+    if matches!(&outcome, Err((status, _)) if status.is_server_error()) {
+        if let Some(db) = state.db.as_ref() {
+            db::release_webhook_delivery_claim(db, "github", &delivery_id).await;
+        }
+    }
     match outcome {
         Ok(record) => {
             if let Some(db) = state.db.as_ref() {
@@ -561,33 +622,30 @@ mod tests {
     }
 
     #[test]
-    fn webhook_rules_match_repo_branch_and_event() {
+    fn webhook_rules_match_repo_branch_and_admitted_failure() {
         let rule: WebhookRule = serde_json::from_value(json!({
             "repo": "ORESoftware/example",
             "branch": "dev",
+            "events": ["workflow_run"],
+            "failureConclusions": ["failure", "timed_out"],
             "image": "710156900967.dkr.ecr.us-east-1.amazonaws.com/example:{shortSha}",
             "push": true
         }))
         .unwrap();
         assert!(rule_matches(
             &rule,
-            "push",
             "oresoftware/example",
-            "refs/heads/dev"
+            "dev",
+            "failure"
         ));
         assert!(!rule_matches(
             &rule,
-            "push",
             "oresoftware/example",
-            "refs/heads/main"
+            "main",
+            "failure"
         ));
-        assert!(!rule_matches(&rule, "push", "other/repo", "refs/heads/dev"));
-        assert!(!rule_matches(
-            &rule,
-            "workflow_run",
-            "oresoftware/example",
-            "dev"
-        ));
+        assert!(!rule_matches(&rule, "other/repo", "dev", "failure"));
+        assert!(!rule_matches(&rule, "oresoftware/example", "dev", "success"));
 
         let revision = "0123456789abcdef0123456789abcdef01234567";
         let request = build_request_from_rule(
@@ -604,7 +662,7 @@ mod tests {
         assert!(request.image.ends_with(":0123456789ab"));
 
         let profile_rules = parse_rules(
-            r#"[{"repo":"sonus-auris/sonus-auris-ui.dart","branch":"main","profile":"flutter-android-debug"}]"#,
+            r#"[{"repo":"sonus-auris/sonus-auris-ui.dart","branch":"main","events":["workflow_run"],"failureConclusions":["failure"],"profile":"flutter-android-debug"}]"#,
         )
         .expect("profile rule parses");
         let profile_request = build_request_from_rule(
@@ -623,6 +681,17 @@ mod tests {
     }
 
     #[test]
+    fn webhook_rules_reject_push_success_and_implicit_conclusions() {
+        for rules in [
+            r#"[{"repo":"ORESoftware/example","events":["push"],"failureConclusions":["failure"],"profile":"playwright"}]"#,
+            r#"[{"repo":"ORESoftware/example","events":["workflow_run"],"failureConclusions":["success"],"profile":"playwright"}]"#,
+            r#"[{"repo":"ORESoftware/example","events":["workflow_run"],"failureConclusions":[],"profile":"playwright"}]"#,
+        ] {
+            assert!(parse_rules(rules).is_err(), "unsafe rule must fail closed: {rules}");
+        }
+    }
+
+    #[test]
     fn commit_validation_requires_a_full_sha1_or_sha256_object_id() {
         assert!(valid_commit_sha(
             "0123456789abcdef0123456789abcdef01234567"
@@ -634,6 +703,15 @@ mod tests {
         assert!(!valid_commit_sha(
             "0123456789abcdef0123456789abcdef0123456z"
         ));
+    }
+
+    #[test]
+    fn github_delivery_request_id_is_deterministic_and_bounded() {
+        let first = github_request_id("delivery-one");
+        assert_eq!(first, github_request_id("delivery-one"));
+        assert_ne!(first, github_request_id("delivery-two"));
+        assert!(first.starts_with("github:"));
+        assert!(first.len() <= 128);
     }
 
     #[test]
