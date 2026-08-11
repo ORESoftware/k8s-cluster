@@ -17,6 +17,8 @@ const files = {
     'remote/argocd/dd-next-runtime/dd-gha-executor-router.externalsecret.yaml',
   routerPolicy:
     'remote/argocd/dd-next-runtime/dd-gha-executor-router.networkpolicy.yaml',
+  buildPolicy:
+    'remote/argocd/dd-next-runtime/dd-build-server.networkpolicy.yaml',
   kustomization: 'remote/argocd/dd-next-runtime/kustomization.yaml',
   prerequisiteRunbook: 'docs/gha-executor-router-activation.md',
   activeRunbook: 'docs/operations/gha-budget-webhook-activation.md',
@@ -175,6 +177,15 @@ test('router reuses the existing AWS authority without duplicating it', () => {
   assert.doesNotMatch(
     externalSecret,
     /secretKey:\s*(?:aws_build_server_auth|hetzner)|property:\s*(?:aws_build_server_auth|hetzner)/i,
+  );
+});
+
+test('build server admits the authenticated continuity router on its API port', () => {
+  const policy = read(files.buildPolicy);
+  requireAll(
+    policy,
+    ['name: dd-build-server', 'app: dd-gha-executor-router', 'port: 8100'],
+    'build-server continuity ingress',
   );
 });
 
