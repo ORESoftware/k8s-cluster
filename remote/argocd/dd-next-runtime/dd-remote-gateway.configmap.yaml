@@ -2533,7 +2533,7 @@ data:
         proxy_pass http://$dd_up_46;
       }
 
-      # Inbound webhooks from GitHub (push / workflow_run) and container
+      # Inbound webhooks from GitHub (failure-only workflow_run) and container
       # registries. Unlike the operator API above, these are NOT gated by the
       # operator cookie — GitHub cannot present it. Instead the build server
       # verifies each request itself: the GitHub X-Hub-Signature-256 HMAC
