@@ -24,12 +24,15 @@ const files = {
 
 const zeroDigest =
   'sha256:0000000000000000000000000000000000000000000000000000000000000000';
-const publishedRevision = '5aad32c37be7f29f9355f19d6ce6d316494ff141';
 const publishedImages = {
   clone:
     'ghcr.io/oresoftware/gha-clone-server@sha256:c141b374acc4b49a9108317e78c06b9d726bcb99903c00c01a2cf200f98432e4',
   router:
-    'ghcr.io/oresoftware/gha-executor-router@sha256:59a31a496e5c528f89acb7643b8ced1ea14bc6c15b1d83b22a37f4ba529708e6',
+    'ghcr.io/oresoftware/gha-executor-router@sha256:e87bee0e28911fbdc096d2fec0c1a65811b7d2173594d81c377dc437ac658e8f',
+};
+const publishedRevisions = {
+  clone: '94ac74aa5dfde6263a31aa569481af5fbd920e99',
+  router: '5f7432f065e655f424334ae709209ca5267710d2',
 };
 
 function requireAll(text, values, label) {
@@ -62,7 +65,7 @@ test('digest-pinned clone and router are active as a single bounded lane', () =>
         'replicas: 1',
         'minReadySeconds: 10',
         image,
-        publishedRevision,
+        publishedRevisions[label],
         `command: ["/usr/local/bin/${binary}"]`,
         'automountServiceAccountToken: false',
         'readOnlyRootFilesystem: true',
