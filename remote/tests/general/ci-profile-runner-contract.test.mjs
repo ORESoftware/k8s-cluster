@@ -203,7 +203,7 @@ test('network and kustomize wiring is narrow and complete', () => {
 test('runner service uses a digest-pinned minimal image without runtime compilation', () => {
   assert.match(
     deployment,
-    /image: ghcr\.io\/oresoftware\/ci-profile-runner@sha256:[0-9a-f]{64}/,
+    /image: public\.ecr\.aws\/e3n4o0k1\/ci-profile-runner@sha256:[0-9a-f]{64}/,
   );
   assert.doesNotMatch(deployment, /cargo run|source_root=|\/opt\/dd-next-1/);
   assert.match(dockerfile, /FROM docker\.io\/library\/rust:1\.90-alpine AS builder/);
