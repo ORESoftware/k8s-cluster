@@ -91,6 +91,7 @@ test('runner images and commands are compiled fixed profiles, not request fields
   assert.match(source, /docker\.io\/library\/rust:1\.90-bookworm/);
   assert.match(source, /npm ci && npx playwright test/);
   assert.match(source, /npm ci && npm run test:puppeteer/);
+  assert.match(source, /export PATH=\/usr\/local\/cargo\/bin:/);
   assert.match(source, /cargo clippy --locked --all-targets --all-features -- -D warnings/);
   assert.match(source, /cargo test --locked --all-targets --all-features/);
   assert.doesNotMatch(requestStruct, /\bimage:/);

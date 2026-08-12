@@ -39,6 +39,7 @@ data:
     readonly PLAYWRIGHT_SCRIPT='npm ci && npx playwright test'
     readonly PUPPETEER_SCRIPT='npm ci && npm run test:puppeteer'
     readonly RUST_SCRIPT='set -euo pipefail
+    export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     crate_dir=.
     if [ ! -f "$crate_dir/Cargo.toml" ]; then
       if [ -f remote/deployments/gha-clone-server-rs/Cargo.toml ]; then
