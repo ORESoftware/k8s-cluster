@@ -31,7 +31,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: ci-profile-runner
-          image: public.ecr.aws/e3n4o0k1/ci-profile-runner@sha256:81eefd2f3af4f347498380a4a464d82323863d908a1a8a9126fdf7d882ea8818
+          image: public.ecr.aws/e3n4o0k1/ci-profile-runner@sha256:3acb415d395a61b4f5103409a309cb5749aff54dab1ceca78e78d07962917c11
           imagePullPolicy: IfNotPresent
           securityContext:
             privileged: true

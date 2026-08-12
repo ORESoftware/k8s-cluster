@@ -34,6 +34,7 @@ const RUST_IMAGE: &str = "docker.io/library/rust:1.90-bookworm";
 const PLAYWRIGHT_SCRIPT: &str = "npm ci && npx playwright test";
 const PUPPETEER_SCRIPT: &str = "npm ci && npm run test:puppeteer";
 const RUST_VERIFY_SCRIPT: &str = r#"set -euo pipefail
+export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 crate_dir=.
 if [ ! -f "$crate_dir/Cargo.toml" ]; then
   if [ -f remote/deployments/gha-clone-server-rs/Cargo.toml ]; then
