@@ -60,11 +60,13 @@ jobs:
           python3 - <<'PY' >"${RUNNER_TEMP}/scheduled-task-digest-bootstrap-ssm.json"
           import json
           import os
+          import textwrap
 
           run_id = os.environ["GITHUB_RUN_ID"]
           run_attempt = os.environ["GITHUB_RUN_ATTEMPT"]
           job_name = f"dd-scheduled-task-digest-canary-{run_id}-{run_attempt}"
-          script = f'''set -euo pipefail
+          script = textwrap.dedent('''\
+          set -euo pipefail
           export KUBECONFIG=/etc/kubernetes/admin.conf
 
           cat <<'APP' | kubectl -n argocd apply -f -
@@ -99,8 +101,8 @@ jobs:
 
           kubectl -n argocd annotate application dd-scheduled-task-digest argocd.argoproj.io/refresh=hard --overwrite >/dev/null
           for attempt in $(seq 1 120); do
-            sync_status="$(kubectl -n argocd get application dd-scheduled-task-digest -o jsonpath='{{.status.sync.status}}' 2>/dev/null || true)"
-            health_status="$(kubectl -n argocd get application dd-scheduled-task-digest -o jsonpath='{{.status.health.status}}' 2>/dev/null || true)"
+            sync_status="$(kubectl -n argocd get application dd-scheduled-task-digest -o jsonpath='{.status.sync.status}' 2>/dev/null || true)"
+            health_status="$(kubectl -n argocd get application dd-scheduled-task-digest -o jsonpath='{.status.health.status}' 2>/dev/null || true)"
             if [ "$sync_status" = "Synced" ] && [ "$health_status" = "Healthy" ] && kubectl -n default get cronjob dd-scheduled-task-digest >/dev/null 2>&1; then
               break
             fi
@@ -112,26 +114,140 @@ jobs:
             sleep 5
           done
 
-          kubectl -n default get cronjob dd-scheduled-task-digest -o json | jq -e '
+          echo "stage=application-ready sync=${sync_status} health=${health_status}"
+          cron_json=/tmp/dd-scheduled-task-digest-cronjob.json
+          kubectl -n default get cronjob dd-scheduled-task-digest -o json >"$cron_json" || {
+            echo "stage=cronjob-read result=missing" >&2
+            exit 31
+          }
+          jq -e '
             .spec.schedule == "0 7 * * *" and
             .spec.timeZone == "America/Chicago" and
             .spec.suspend == false and
             .spec.concurrencyPolicy == "Forbid" and
             .metadata.annotations["dd.dev/recipient"] == "alexander.d.mills@gmail.com"
-          ' >/dev/null
-          kubectl -n default get secret dd-agent-secrets -o json | jq -e '.data.SERVER_AUTH_SECRET | length > 0' >/dev/null
+          ' "$cron_json" >/dev/null || {
+            echo "stage=cronjob-contract result=mismatch" >&2
+            jq '{name:.metadata.name,schedule:.spec.schedule,timeZone:.spec.timeZone,suspend:.spec.suspend,concurrencyPolicy:.spec.concurrencyPolicy,recipient:.metadata.annotations["dd.dev/recipient"]}' "$cron_json" >&2 || true
+            exit 32
+          }
+          echo "stage=cronjob-contract result=ok"
 
-          kubectl -n default create job --from=cronjob/dd-scheduled-task-digest {job_name} --dry-run=client -o json \
+          if ! kubectl get crd externalsecrets.external-secrets.io >/dev/null 2>&1; then
+            echo "stage=external-secrets result=crd-missing" >&2
+            exit 33
+          fi
+          if ! kubectl get clustersecretstore dd-cluster-secrets >/dev/null 2>&1; then
+            echo "stage=external-secrets result=cluster-store-missing" >&2
+            exit 34
+          fi
+          cat <<'SECRETS' | kubectl apply -f - >/dev/null
+          apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: dd-agent-secrets
+            namespace: default
+          spec:
+            refreshInterval: 15m
+            secretStoreRef:
+              kind: ClusterSecretStore
+              name: dd-cluster-secrets
+            target:
+              name: dd-agent-secrets
+              creationPolicy: Owner
+            dataFrom:
+              - extract:
+                  key: dd/remote-dev/agent-secrets
+          ---
+          apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: dd-email-sms-contact-secrets
+            namespace: default
+          spec:
+            refreshInterval: 15m
+            secretStoreRef:
+              kind: ClusterSecretStore
+              name: dd-cluster-secrets
+            target:
+              name: dd-email-sms-contact-secrets
+              creationPolicy: Owner
+            dataFrom:
+              - extract:
+                  key: dd/remote-dev/email-sms-contact-secrets
+          SECRETS
+
+          secrets_ready=false
+          for attempt in $(seq 1 120); do
+            agent_auth="$(kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.SERVER_AUTH_SECRET}' 2>/dev/null || true)"
+            sendgrid="$(kubectl -n default get secret dd-email-sms-contact-secrets -o jsonpath='{.data.SENDGRID_API_KEY}' 2>/dev/null || true)"
+            if [ -n "$agent_auth" ] && [ -n "$sendgrid" ]; then
+              secrets_ready=true
+              break
+            fi
+            sleep 5
+          done
+          if [ "$secrets_ready" != true ]; then
+            echo "stage=external-secrets result=keys-not-ready" >&2
+            kubectl -n default get externalsecret dd-agent-secrets dd-email-sms-contact-secrets -o wide >&2 || true
+            exit 35
+          fi
+          echo "stage=external-secrets result=ok"
+
+          if ! kubectl -n argocd get application dd-next-runtime >/dev/null 2>&1; then
+            cat <<'RUNTIME' | kubectl -n argocd apply -f - >/dev/null
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: dd-next-runtime
+            namespace: argocd
+          spec:
+            project: default
+            source:
+              repoURL: https://github.com/ORESoftware/k8s-cluster.git
+              targetRevision: dev
+              path: remote/argocd/dd-next-runtime
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: default
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+                - CreateNamespace=true
+          RUNTIME
+          fi
+          kubectl -n argocd annotate application dd-next-runtime argocd.argoproj.io/refresh=hard --overwrite >/dev/null || true
+          kubectl -n default get service dd-email-sms-contact-rs >/dev/null || {
+            echo "stage=mail-service result=service-missing" >&2
+            kubectl -n argocd get application dd-next-runtime -o wide >&2 || true
+            exit 36
+          }
+          kubectl -n default rollout status deployment/dd-email-sms-contact-rs --timeout=900s >/dev/null || {
+            echo "stage=mail-service result=deployment-not-ready" >&2
+            kubectl -n default get deployment dd-email-sms-contact-rs -o wide >&2 || true
+            kubectl -n default get pods -l app=dd-email-sms-contact-rs -o wide >&2 || true
+            exit 37
+          }
+          endpoints="$(kubectl -n default get endpoints dd-email-sms-contact-rs -o jsonpath='{range .subsets[*].addresses[*]}{.ip}{" "}{end}' 2>/dev/null || true)"
+          if [ -z "$endpoints" ]; then
+            echo "stage=mail-service result=no-ready-endpoint" >&2
+            exit 38
+          fi
+          echo "stage=mail-service result=ready endpoints=$(wc -w <<<"$endpoints")"
+
+          kubectl -n default create job --from=cronjob/dd-scheduled-task-digest __JOB_NAME__ --dry-run=client -o json \
             | jq '
-                .metadata.labels = ((.metadata.labels // {{}}) + {{"dd.dev/manual-canary":"true"}}) |
-                .spec.template.metadata.labels = ((.spec.template.metadata.labels // {{}}) + {{"dd.dev/manual-canary":"true"}}) |
+                .metadata.labels = ((.metadata.labels // {}) + {"dd.dev/manual-canary":"true"}) |
+                .spec.template.metadata.labels = ((.spec.template.metadata.labels // {}) + {"dd.dev/manual-canary":"true"}) |
                 .spec.template.spec.containers[0].env = (
                   (.spec.template.spec.containers[0].env // [])
                   | map(select(.name != "DRY_RUN" and .name != "FORCE_SEND" and .name != "RUN_MODE"))
                   + [
-                      {{"name":"DRY_RUN","value":"0"}},
-                      {{"name":"FORCE_SEND","value":"1"}},
-                      {{"name":"RUN_MODE","value":"manual-canary"}}
+                      {"name":"DRY_RUN","value":"0"},
+                      {"name":"FORCE_SEND","value":"1"},
+                      {"name":"RUN_MODE","value":"manual-canary"}
                     ]
                 )
               ' \
@@ -139,18 +255,18 @@ jobs:
 
           terminal=""
           for attempt in $(seq 1 180); do
-            complete="$(kubectl -n default get job {job_name} -o jsonpath='{{.status.conditions[?(@.type=="Complete")].status}}' 2>/dev/null || true)"
-            failed="$(kubectl -n default get job {job_name} -o jsonpath='{{.status.conditions[?(@.type=="Failed")].status}}' 2>/dev/null || true)"
+            complete="$(kubectl -n default get job __JOB_NAME__ -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null || true)"
+            failed="$(kubectl -n default get job __JOB_NAME__ -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}' 2>/dev/null || true)"
             if [ "$complete" = "True" ]; then terminal=complete; break; fi
             if [ "$failed" = "True" ]; then terminal=failed; break; fi
             sleep 5
           done
 
-          logs="$(kubectl -n default logs job/{job_name} --all-containers=true 2>&1 || true)"
+          logs="$(kubectl -n default logs job/__JOB_NAME__ --all-containers=true 2>&1 || true)"
           printf '%s\n' "$logs"
           if [ "$terminal" != "complete" ]; then
-            kubectl -n default get job {job_name} -o wide >&2 || true
-            kubectl -n default get pods -l job-name={job_name} -o wide >&2 || true
+            kubectl -n default get job __JOB_NAME__ -o wide >&2 || true
+            kubectl -n default get pods -l job-name=__JOB_NAME__ -o wide >&2 || true
             exit 1
           fi
           final_line="$(printf '%s\n' "$logs" | tail -n 1)"
@@ -160,8 +276,8 @@ jobs:
             .logicalDate != null
           ' <<<"$final_line" >/dev/null
           kubectl -n default get cronjob dd-scheduled-task-digest -o json \
-            | jq '{{name:.metadata.name,schedule:.spec.schedule,timeZone:.spec.timeZone,suspend:.spec.suspend,lastScheduleTime:.status.lastScheduleTime}}'
-          '''
+            | jq '{name:.metadata.name,schedule:.spec.schedule,timeZone:.spec.timeZone,suspend:.spec.suspend,lastScheduleTime:.status.lastScheduleTime}'
+          ''').replace('__JOB_NAME__', job_name)
           print(json.dumps({"commands": [script]}))
           PY
 
