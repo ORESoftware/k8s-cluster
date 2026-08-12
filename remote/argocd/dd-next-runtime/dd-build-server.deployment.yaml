@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-07-18-flutter-profiles-v4'
+        dd.dev/telemetry-revision: '2026-08-11-gha-rust-profile-path-v1'
       labels:
         app: dd-build-server
         dd.dev/fiducia-client: 'true'
