@@ -7,7 +7,7 @@ COPY remote/deployments/ci-profile-runner-rs/src ./remote/deployments/ci-profile
 COPY remote/libs/telemetry-rs ./remote/libs/telemetry-rs
 RUN cargo build --locked --release --manifest-path remote/deployments/ci-profile-runner-rs/Cargo.toml
 
-FROM docker.io/library/debian:bookworm-slim
+FROM docker.io/library/debian:trixie-slim
 ARG OCI_CREATED
 ARG OCI_REVISION
 ARG OCI_SOURCE

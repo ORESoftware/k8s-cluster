@@ -12,3 +12,4 @@ remote/deployments/**
 remote/libs/**
 !remote/libs/telemetry-rs/
 !remote/libs/telemetry-rs/**
+**/._*
