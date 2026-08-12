@@ -5,6 +5,14 @@ import test from 'node:test';
 
 const source = fs.readFileSync('remote/deployments/ci-profile-runner-rs/src/main.rs', 'utf8');
 const cargo = fs.readFileSync('remote/deployments/ci-profile-runner-rs/Cargo.toml', 'utf8');
+const dockerfile = fs.readFileSync(
+  'remote/deployments/ci-profile-runner-rs/Dockerfile',
+  'utf8',
+);
+const buildProfiles = fs.readFileSync(
+  'remote/deployments/build-server-rs/src/profiles.rs',
+  'utf8',
+);
 const deployment = fs.readFileSync(
   'remote/argocd/dd-next-runtime/dd-ci-profile-runner.deployment.yaml',
   'utf8',
@@ -55,7 +63,7 @@ function extractAdapter() {
   return `${body.join('\n')}\n`;
 }
 
-test('ci profile runner accepts only exact DES browser identities', () => {
+test('ci profile runner accepts only exact reviewed repository identities', () => {
   assert.match(source, /const SCHEMA: &str = "ci-profile-runner\.v1"/);
   assert.match(source, /value\.len\(\) == 40/);
   assert.match(source, /--no-recurse-submodules/);
@@ -71,15 +79,20 @@ test('ci profile runner accepts only exact DES browser identities', () => {
     deployment,
     /discrete-event-systems-test\/des-web-puppeteer-e2e\":\"puppeteer/,
   );
+  assert.match(deployment, /ORESoftware\/k8s-cluster\":\"rust-verify/);
   assert.doesNotMatch(deployment, /discrete-event-systems-test\/\*/);
+  assert.doesNotMatch(deployment, /ORESoftware\/\*/);
 });
 
 test('runner images and commands are compiled fixed profiles, not request fields', () => {
   const requestStruct = source.match(/struct RunRequest \{([^}]*)\}/s)?.[1] ?? '';
   assert.notEqual(requestStruct, '');
   assert.match(source, /mcr\.microsoft\.com\/playwright:v1\.60\.0-noble/);
+  assert.match(source, /docker\.io\/library\/rust:1\.90-bookworm/);
   assert.match(source, /npm ci && npx playwright test/);
   assert.match(source, /npm ci && npm run test:puppeteer/);
+  assert.match(source, /cargo clippy --locked --all-targets --all-features -- -D warnings/);
+  assert.match(source, /cargo test --locked --all-targets --all-features/);
   assert.doesNotMatch(requestStruct, /\bimage:/);
   assert.doesNotMatch(requestStruct, /\bcommand:/);
   assert.doesNotMatch(requestStruct, /\bshell:/);
@@ -96,7 +109,7 @@ test('privilege is isolated to the dedicated host-containerd runner', () => {
   assert.match(deployment, /automountServiceAccountToken: false/);
   assert.match(deployment, /mountPath: \/var\/lib\/containerd/);
   assert.match(deployment, /mountPropagation: Bidirectional/);
-  assert.match(deployment, /mountPath: \/opt\/dd-next-1\n\s+readOnly: true/);
+  assert.doesNotMatch(deployment, /mountPath: \/opt\/dd-next-1/);
   assert.doesNotMatch(deployment, /hostNetwork: true/);
 
   assert.match(buildDeployment, /allowPrivilegeEscalation: false/);
@@ -125,12 +138,16 @@ test('host containerd runtime state is shared with the shim, not socket-only', (
   );
 });
 
-test('build-server delegates only the exact fixed DES nerdctl shape', () => {
+test('build-server delegates only exact fixed reviewed nerdctl shapes', () => {
   const adapter = extractAdapter();
   const syntax = spawnSync('bash', ['-n'], { input: adapter, encoding: 'utf8' });
   assert.equal(syntax.status, 0, syntax.stderr);
   assert.match(adapter, /PLAYWRIGHT_URL=https:\/\/github\.com\/discrete-event-systems-test\/des-web-playwright-e2e\.git/);
   assert.match(adapter, /PUPPETEER_URL=https:\/\/github\.com\/discrete-event-systems-test\/des-web-puppeteer-e2e\.git/);
+  assert.match(adapter, /RUST_URL=https:\/\/github\.com\/ORESoftware\/k8s-cluster\.git/);
+  assert.match(adapter, /RUST_IMAGE=docker\.io\/library\/rust:1\.90-bookworm/);
+  assert.match(adapter, /cargo clippy --locked --all-targets --all-features -- -D warnings/);
+  assert.match(adapter, /cargo test --locked --all-targets --all-features/);
   assert.match(adapter, /\^\[0-9a-f\]\{40\}\$/);
   assert.match(adapter, /\/var\/lib\/dd-build-server\/jobs\/\*\/repo/);
   assert.match(adapter, /--security-opt=no-new-privileges/);
@@ -183,10 +200,30 @@ test('network and kustomize wiring is narrow and complete', () => {
   assert.match(kustomization, /dd-ci-profile-runner\.networkpolicy\.yaml/);
 });
 
-test('runner builds from pod-local source scratch rather than mutating host checkout', () => {
-  assert.match(deployment, /source_root=\/tmp\/dd-ci-profile-runner-source/);
-  assert.match(deployment, /cp -a \/opt\/dd-next-1\/remote\/deployments\/ci-profile-runner-rs/);
-  assert.match(deployment, /cp -a \/opt\/dd-next-1\/remote\/libs/);
-  assert.match(deployment, /CARGO_TARGET_DIR=\/tmp\/dd-ci-profile-runner-target/);
+test('runner service uses a digest-pinned minimal image without runtime compilation', () => {
+  assert.match(
+    deployment,
+    /image: ghcr\.io\/oresoftware\/ci-profile-runner@sha256:[0-9a-f]{64}/,
+  );
+  assert.doesNotMatch(deployment, /cargo run|source_root=|\/opt\/dd-next-1/);
+  assert.match(dockerfile, /FROM docker\.io\/library\/rust:1\.90-alpine AS builder/);
+  assert.match(dockerfile, /FROM docker\.io\/library\/alpine:3\.22/);
+  assert.match(dockerfile, /cargo build --locked --release/);
+  assert.match(dockerfile, /ENTRYPOINT \[\"\/usr\/local\/bin\/dd-ci-profile-runner\"\]/);
   assert.match(cargo, /name = "dd-ci-profile-runner"/);
+});
+
+test('rust-verify script is identical at all three fixed-profile boundaries', () => {
+  const profileScript = buildProfiles.match(
+    /const RUST_VERIFY_STEPS:.*?script: r#"(.*?)"#,/s,
+  )?.[1];
+  const runnerScript = source.match(
+    /const RUST_VERIFY_SCRIPT: &str = r#"(.*?)"#;/s,
+  )?.[1];
+  const adapterScript = extractAdapter().match(
+    /readonly RUST_SCRIPT='(.*?)'\nreadonly AUTH_FILE/s,
+  )?.[1];
+  assert.ok(profileScript);
+  assert.equal(runnerScript, profileScript);
+  assert.equal(adapterScript, profileScript);
 });

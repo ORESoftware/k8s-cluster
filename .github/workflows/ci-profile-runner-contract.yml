@@ -2,7 +2,7 @@ name: CI profile runner contract
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - .github/workflows/ci-profile-runner-contract.yml
       - remote/deployments/ci-profile-runner-rs/**
@@ -13,7 +13,7 @@ on:
       - remote/argocd/dd-next-runtime/kustomization.yaml
       - remote/tests/general/ci-profile-runner-contract.test.mjs
   push:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - .github/workflows/ci-profile-runner-contract.yml
       - remote/deployments/ci-profile-runner-rs/**

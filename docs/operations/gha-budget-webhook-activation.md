@@ -26,9 +26,12 @@ GitHub workflow_run webhook
   -> exact repo + SHA + workflow YAML planner
   -> dd-gha-executor-router:8126
   -> dd-build-server:8100 fixed profile
+  -> dd-ci-profile-runner:8147 isolated host-containerd execution
 ```
 
 The AWS host-port gateway and clusters with ingress-nginx expose only the exact webhook path. Health, readiness, run state, planner APIs, and manual-run APIs remain ClusterIP-only. The clone server has no direct NetworkPolicy path to the build server.
+
+The build server remains unprivileged. For the exact `ORESoftware/k8s-cluster` + `rust-verify` binding, its fixed-command adapter verifies the cloned remote, immutable detached SHA, runner image, security flags, and workspace mount before delegating to `dd-ci-profile-runner`. That dedicated service is the only privileged host-containerd boundary. It accepts no caller-selected image, command, shell, mount, network, or resource limits; runs from a vulnerability-scanned digest-pinned image; and has no Kubernetes service-account token or node-local source checkout.
 
 ## Secret authority
 
