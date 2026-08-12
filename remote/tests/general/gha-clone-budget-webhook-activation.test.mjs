@@ -30,7 +30,7 @@ test('clone server is one immutable bounded execution replica', () => {
   assert.match(cloneDeployment, /minReadySeconds: 10/);
   assert.match(
     cloneDeployment,
-    /ghcr\.io\/oresoftware\/gha-clone-server@sha256:c141b374acc4b49a9108317e78c06b9d726bcb99903c00c01a2cf200f98432e4/,
+    /ghcr\.io\/oresoftware\/gha-clone-server@sha256:719a50b3d8cf105cd8c78bb66ce9d10dca072e4de28f6f7ba4fa79db446a2be8/,
   );
   assert.equal(envLiteral(cloneDeployment, 'GHA_CLONE_EXECUTION_ENABLED'), 'true');
   assert.equal(envLiteral(cloneDeployment, 'GHA_CLONE_WEBHOOK_EXECUTION_ENABLED'), 'true');

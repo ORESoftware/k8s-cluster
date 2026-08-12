@@ -28,12 +28,12 @@ const zeroDigest =
   'sha256:0000000000000000000000000000000000000000000000000000000000000000';
 const publishedImages = {
   clone:
-    'ghcr.io/oresoftware/gha-clone-server@sha256:c141b374acc4b49a9108317e78c06b9d726bcb99903c00c01a2cf200f98432e4',
+    'ghcr.io/oresoftware/gha-clone-server@sha256:719a50b3d8cf105cd8c78bb66ce9d10dca072e4de28f6f7ba4fa79db446a2be8',
   router:
     'ghcr.io/oresoftware/gha-executor-router@sha256:e87bee0e28911fbdc096d2fec0c1a65811b7d2173594d81c377dc437ac658e8f',
 };
 const publishedRevisions = {
-  clone: '94ac74aa5dfde6263a31aa569481af5fbd920e99',
+  clone: '812704baf1e03b87615719b3cf140e2dd6bb63d6',
   router: '5f7432f065e655f424334ae709209ca5267710d2',
 };
 

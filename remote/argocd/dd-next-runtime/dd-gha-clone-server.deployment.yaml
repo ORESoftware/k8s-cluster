@@ -31,8 +31,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gha-clone-server
-          # Published from reviewed activation source 94ac74aa5dfde6263a31aa569481af5fbd920e99.
-          image: ghcr.io/oresoftware/gha-clone-server@sha256:c141b374acc4b49a9108317e78c06b9d726bcb99903c00c01a2cf200f98432e4
+          # Built from 812704baf1e03b87615719b3cf140e2dd6bb63d6 on the native amd64 node,
+          # scanned by ECR with zero findings, then copied byte-for-byte to GHCR.
+          image: ghcr.io/oresoftware/gha-clone-server@sha256:719a50b3d8cf105cd8c78bb66ce9d10dca072e4de28f6f7ba4fa79db446a2be8
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/gha-clone-server"]
           env:
