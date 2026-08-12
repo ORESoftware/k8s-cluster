@@ -16,8 +16,8 @@ concurrency:
 
 jobs:
   apply-test-and-publish:
-    if: github.event.head_commit.message == 'chore: stage contact runtime hardening workflow'
-    runs-on: ubuntu-24.04
+    if: github.event.head_commit.message == 'chore: route contact hardening through self-hosted runner'
+    runs-on: [self-hosted, linux, sonus-ci]
     timeout-minutes: 35
     steps:
       - name: Check out isolated hardening branch
