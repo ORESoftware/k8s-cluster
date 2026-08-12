@@ -334,7 +334,8 @@ jq -e --argjson expected "$expected_execution" '
   .enabledExecutors == 1 and .authConfigured == true
 ' "$work_dir/router-health.json" >/dev/null || fail "router health response is not fully configured for $mode_name mode"
 if [[ "$expect_active" == true ]]; then
-  jq -e '.ok == true and .executionEnabled == true and .executionReady == true and (.readyExecutors | index("aws-primary") != null)' \
+  jq -e '.ok == true and .executionEnabled == true and .executionReady == true and
+    (.readyExecutors | any(.[]?; .id == "aws-primary" and .provider == "aws"))' \
     "$work_dir/router-ready.json" >/dev/null || fail 'router ready response has no ready AWS executor'
 else
   jq -e '.ok == true and .executionEnabled == false and .executionReady == true and .readyExecutors == []' \

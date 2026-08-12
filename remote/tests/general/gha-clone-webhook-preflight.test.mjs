@@ -89,7 +89,8 @@ test('live probe verifies both services in selected inert or active ready mode',
     'router-health.json',
     'router-ready.json',
     '.readyExecutors == []',
-    'index("aws-primary") != null',
+    'any(.[]?; .id == "aws-primary" and .provider == "aws")',
     'live clone and router health/readiness passed in $mode_name mode',
   ]);
+  assert.doesNotMatch(script, /readyExecutors \| index\("aws-primary"\)/);
 });
