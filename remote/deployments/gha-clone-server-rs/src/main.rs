@@ -211,9 +211,9 @@ struct BuildJobResponse {
 fn valid_build_job_id(value: &str) -> bool {
     !matches!(value, "" | "." | "..")
         && value.len() <= 128
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':'))
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':' | b'~')
+        })
 }
 
 fn validate_build_job_response_id(
@@ -1731,6 +1731,13 @@ mod tests {
         assert!(validate_build_job_response_id(&valid, Some(&valid.id)).is_ok());
         assert!(validate_build_job_response_id(&valid, Some("different")).is_err());
 
+        let routed = BuildJobResponse {
+            id: "aws-primary~build-0123".into(),
+            status: "queued".into(),
+            error: None,
+        };
+        assert!(validate_build_submission_response(&routed).is_ok());
+
         for id in ["", ".", "..", "../build?token=x", "build/child"] {
             let invalid = BuildJobResponse {
                 id: id.into(),
@@ -1776,6 +1783,15 @@ mod tests {
         assert_eq!(
             endpoint.as_str(),
             "https://build.example.com/builds/build:abc.def_123"
+        );
+        let routed = build_server_endpoint(
+            "https://router.example.com",
+            &["builds", "aws-primary~build-0123"],
+        )
+        .unwrap();
+        assert_eq!(
+            routed.as_str(),
+            "https://router.example.com/builds/aws-primary~build-0123"
         );
     }
 
