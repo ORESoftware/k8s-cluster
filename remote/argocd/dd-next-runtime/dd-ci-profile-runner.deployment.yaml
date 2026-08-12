@@ -31,26 +31,10 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: ci-profile-runner
-          image: docker.io/library/rust:1.90-bookworm
+          image: ghcr.io/oresoftware/ci-profile-runner@sha256:CI_PROFILE_RUNNER_IMAGE_DIGEST
           imagePullPolicy: IfNotPresent
           securityContext:
             privileged: true
-          command:
-            - /bin/bash
-            - -lc
-          args:
-            - |
-              set -euo pipefail
-              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-              export CARGO_HOME=/tmp/cargo
-              export CARGO_TARGET_DIR=/tmp/dd-ci-profile-runner-target
-              source_root=/tmp/dd-ci-profile-runner-source
-              rm -rf "$source_root"
-              mkdir -p "$source_root/remote/deployments" "$source_root/remote"
-              cp -a /opt/dd-next-1/remote/deployments/ci-profile-runner-rs "$source_root/remote/deployments/"
-              cp -a /opt/dd-next-1/remote/libs "$source_root/remote/libs"
-              cd "$source_root/remote/deployments/ci-profile-runner-rs"
-              exec /usr/local/cargo/bin/cargo run --release
           env:
             - name: HOST
               value: 0.0.0.0
@@ -63,7 +47,7 @@ spec:
                   key: SERVER_AUTH_SECRET
             - name: CI_PROFILE_RUNNER_RULES_JSON
               value: >-
-                {"discrete-event-systems-test/des-web-playwright-e2e":"playwright","discrete-event-systems-test/des-web-puppeteer-e2e":"puppeteer"}
+                {"ORESoftware/k8s-cluster":"rust-verify","discrete-event-systems-test/des-web-playwright-e2e":"playwright","discrete-event-systems-test/des-web-puppeteer-e2e":"puppeteer"}
             - name: CI_PROFILE_RUNNER_WORK_ROOT
               value: /var/lib/dd-ci-profile-runner/jobs
             - name: CI_PROFILE_RUNNER_NERDCTL_BIN
@@ -117,9 +101,6 @@ spec:
               cpu: '2'
               memory: 2Gi
           volumeMounts:
-            - name: repo
-              mountPath: /opt/dd-next-1
-              readOnly: true
             - name: work
               mountPath: /var/lib/dd-ci-profile-runner
             - name: tmp
@@ -140,10 +121,6 @@ spec:
               mountPath: /usr/local/bin/nerdctl
               readOnly: true
       volumes:
-        - name: repo
-          hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory
         - name: work
           hostPath:
             path: /var/lib/dd-ci-profile-runner

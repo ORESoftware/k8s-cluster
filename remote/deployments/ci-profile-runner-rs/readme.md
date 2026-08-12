@@ -22,14 +22,14 @@ Hard boundaries:
 
 - `revision` must be an exact 40-hex commit SHA;
 - `repository` must match an exact repository/profile binding in `CI_PROFILE_RUNNER_RULES_JSON`;
-- only compiled `playwright` and `puppeteer` profiles exist;
+- only compiled `playwright`, `puppeteer`, and `rust-verify` profiles exist;
 - the caller cannot select a clone URL, runner image, shell, command, network, mount, resource limit, container name, or containerd namespace;
 - Git clones disable `ext`, `file`, and `local` protocols, fetch no tags/submodules, and verify detached `HEAD` equals the requested SHA;
 - runner containers use fixed CPU/memory/PID/shared-memory limits, `no-new-privileges`, and `cap-drop=ALL`;
 - output is tail-bounded and work directories/containers are cleaned after every request;
 - the HTTP service itself has no Kubernetes API token.
 
-The privileged pod is intentional and isolated: it mounts the host containerd socket/root and nerdctl state exactly so `nerdctl` can perform snapshot mounts in the host mount namespace. `dd-build-server` remains unprivileged and delegates only the browser profiles to this service.
+The privileged pod is intentional and isolated: it mounts the host containerd socket/root and nerdctl state exactly so `nerdctl` can perform snapshot mounts in the host mount namespace. `dd-build-server` remains unprivileged and delegates only exact reviewed browser or GHA continuity `rust-verify` invocations to this service. The service itself runs from a digest-pinned image and no longer compiles from a node-local source checkout.
 
 ## DES bindings
 
@@ -37,5 +37,6 @@ The runtime manifest currently binds exactly:
 
 - `discrete-event-systems-test/des-web-playwright-e2e` → `playwright`
 - `discrete-event-systems-test/des-web-puppeteer-e2e` → `puppeteer`
+- `ORESoftware/k8s-cluster` → `rust-verify`
 
 Adding another repository is an explicit GitOps policy change.

@@ -20,10 +20,10 @@ data:
   # BUILD_SERVER_GH_SYNC_ENABLED=true. Empty array = sync nothing.
   gh-sync-rules.json: |
     []
-  # The build-server remains unprivileged. Only the exact DES browser profile
-  # invocation is delegated to dd-ci-profile-runner, which owns the isolated
-  # host-containerd mount boundary. Every other nerdctl command is exec'd
-  # unchanged through the host binary.
+  # The build-server remains unprivileged. Exact reviewed DES browser and GHA
+  # continuity rust-verify invocations are delegated to dd-ci-profile-runner,
+  # which owns the isolated host-containerd mount boundary. Every other nerdctl
+  # command is exec'd unchanged through the host binary.
   nerdctl-profile-adapter.sh: |
     #!/usr/bin/env bash
     set -Eeuo pipefail
@@ -32,10 +32,32 @@ data:
     readonly RUNNER_HOST=dd-ci-profile-runner.default.svc.cluster.local
     readonly RUNNER_PORT=8147
     readonly RUNNER_IMAGE=mcr.microsoft.com/playwright:v1.60.0-noble
+    readonly RUST_IMAGE=docker.io/library/rust:1.90-bookworm
     readonly PLAYWRIGHT_URL=https://github.com/discrete-event-systems-test/des-web-playwright-e2e.git
     readonly PUPPETEER_URL=https://github.com/discrete-event-systems-test/des-web-puppeteer-e2e.git
+    readonly RUST_URL=https://github.com/ORESoftware/k8s-cluster.git
     readonly PLAYWRIGHT_SCRIPT='npm ci && npx playwright test'
     readonly PUPPETEER_SCRIPT='npm ci && npm run test:puppeteer'
+    readonly RUST_SCRIPT='set -euo pipefail
+    crate_dir=.
+    if [ ! -f "$crate_dir/Cargo.toml" ]; then
+      if [ -f remote/deployments/gha-clone-server-rs/Cargo.toml ]; then
+        crate_dir=remote/deployments/gha-clone-server-rs
+      elif [ -f generated/rust/Cargo.toml ] \
+        && [ -f generated/rust/Cargo.lock ] \
+        && [ -f schema/domain.schema.json ] \
+        && [ -f nats/subjects.json ]; then
+        crate_dir=generated/rust
+      else
+        echo "rust-verify requires Cargo.toml at repository root, the reviewed gha-clone-server monorepo path, or the reviewed generated-interface crate shape" >&2
+        exit 2
+      fi
+    fi
+    cd "$crate_dir"
+    rustup component add rustfmt clippy
+    cargo fmt --all -- --check
+    cargo clippy --locked --all-targets --all-features -- -D warnings
+    cargo test --locked --all-targets --all-features'
     readonly AUTH_FILE=/var/run/secrets/dd-ci-profile-runner-auth/SERVER_AUTH_SECRET
 
     fallback() {
@@ -46,9 +68,11 @@ data:
     args=("$@")
     script="${args[${#args[@]}-1]}"
     profile=''
+    expected_image=''
     case "$script" in
-      "$PLAYWRIGHT_SCRIPT") profile=playwright ;;
-      "$PUPPETEER_SCRIPT") profile=puppeteer ;;
+      "$PLAYWRIGHT_SCRIPT") profile=playwright; expected_image="$RUNNER_IMAGE" ;;
+      "$PUPPETEER_SCRIPT") profile=puppeteer; expected_image="$RUNNER_IMAGE" ;;
+      "$RUST_SCRIPT") profile=rust-verify; expected_image="$RUST_IMAGE" ;;
       *) fallback "$@" ;;
     esac
 
@@ -62,7 +86,7 @@ data:
     for ((i=0; i<${#args[@]}; i++)); do
       case "${args[$i]}" in
         run) saw_run=1 ;;
-        "$RUNNER_IMAGE") saw_image=1 ;;
+        "$expected_image") saw_image=1 ;;
         --env=CI=true) saw_ci=1 ;;
         --security-opt=no-new-privileges) saw_no_new_privs=1 ;;
         --cap-drop=ALL) saw_cap_drop=1 ;;
@@ -107,6 +131,9 @@ data:
         ;;
       "puppeteer:$PUPPETEER_URL")
         repository=discrete-event-systems-test/des-web-puppeteer-e2e
+        ;;
+      "rust-verify:$RUST_URL")
+        repository=ORESoftware/k8s-cluster
         ;;
       *) fallback "$@" ;;
     esac
