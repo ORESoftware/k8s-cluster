@@ -2,6 +2,7 @@
 FROM docker.io/library/rust:1.90-alpine AS builder
 
 WORKDIR /src
+RUN apk add --no-cache musl-dev
 COPY remote/deployments/ci-profile-runner-rs/Cargo.toml remote/deployments/ci-profile-runner-rs/Cargo.lock ./remote/deployments/ci-profile-runner-rs/
 COPY remote/deployments/ci-profile-runner-rs/src ./remote/deployments/ci-profile-runner-rs/src
 COPY remote/libs/telemetry-rs ./remote/libs/telemetry-rs
