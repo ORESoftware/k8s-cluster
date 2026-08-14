@@ -1,0 +1,421 @@
+name: Probe alternate AWS scheduled digest roles once
+run-name: Probe alternate digest roles from ${{ github.sha }}
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ops-probe-scheduled-digest-alternate-roles-once-20260813.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ops-probe-scheduled-digest-alternate-roles-once-20260813
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: github.actor == 'ORESoftware'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      ROLE_PRIMARY: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+      ROLE_LEGACY_OIDC: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+      ROLE_ECR: ${{ secrets.AWS_ECR_ROLE_ARN }}
+      ROLE_REMOTE_DEV: ${{ secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME }}
+      DIGEST_RECIPIENT: alexander.d.mills@gmail.com
+    steps:
+      - name: Prepare bounded delivery probe
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$DIGEST_RECIPIENT" = 'alexander.d.mills@gmail.com'
+          probe="$RUNNER_TEMP/alternate-role-delivery-probe.py"
+          cat > "$probe" <<'PY'
+          import json
+          import os
+          import subprocess
+          import tempfile
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          RECIPIENT = "alexander.d.mills@gmail.com"
+          SUBJECT = "[MANUAL CANARY] Scheduled-task digest alternate AWS role"
+          SOURCES = (
+              "scheduled-digest@oresoftware.com",
+              "noreply@oresoftware.com",
+              "alex@oresoftware.com",
+              RECIPIENT,
+          )
+          FALLBACK_REGIONS = ("us-east-1", "us-east-2", "us-west-2", "us-west-1")
+          SIMULATED_ACTIONS = (
+              "ses:GetAccount",
+              "ses:ListEmailIdentities",
+              "ses:SendEmail",
+              "sns:ListSubscriptions",
+              "sns:Publish",
+              "iam:GetRole",
+              "iam:PutRolePolicy",
+          )
+
+          label = os.environ["ROLE_LABEL"]
+          marker = Path(os.environ["DELIVERY_MARKER"])
+          result_path = Path(os.environ["ROLE_RESULT"])
+          result = {
+              "schema_version": 1,
+              "role_label": label,
+              "skipped_after_prior_success": marker.exists(),
+              "caller_identity_readable": False,
+              "role_name_resolved": False,
+              "iam_get_role_allowed": False,
+              "iam_simulation_available": False,
+              "iam_simulated_decisions": {},
+              "ses_account_readable_regions": 0,
+              "ses_identity_listing_regions": 0,
+              "ses_verified_identity_count": 0,
+              "ses_error_category": "not_attempted",
+              "sns_listing_regions": 0,
+              "sns_matching_confirmed_subscriptions": 0,
+              "sns_error_category": "not_attempted",
+              "delivery_succeeded": False,
+              "delivery_provider": "none",
+          }
+
+          def run(command, timeout=35):
+              try:
+                  return subprocess.run(
+                      command,
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.PIPE,
+                      text=True,
+                      timeout=timeout,
+                      check=False,
+                  )
+              except (OSError, subprocess.SubprocessError):
+                  return None
+
+          def run_json(arguments, timeout=35):
+              completed = run(["aws", *arguments, "--output", "json"], timeout=timeout)
+              if not completed or completed.returncode != 0:
+                  return None, completed
+              try:
+                  return json.loads(completed.stdout), completed
+              except json.JSONDecodeError:
+                  return None, completed
+
+          def classify(completed):
+              if completed is None:
+                  return "command_or_timeout"
+              text = (completed.stderr or "").lower()
+              if "accessdenied" in text or "not authorized" in text:
+                  return "access_denied"
+              if "email address is not verified" in text or "message rejected" in text:
+                  return "identity_or_sandbox_rejected"
+              if "throttl" in text or "quota" in text or "maximum sending rate" in text:
+                  return "quota_or_rate_limited"
+              if "could not connect" in text or "endpoint" in text or "timed out" in text:
+                  return "network_or_endpoint"
+              return "request_failed"
+
+          if marker.exists():
+              result_path.write_text(json.dumps(result, sort_keys=True), encoding="utf-8")
+              print(json.dumps(result, sort_keys=True, separators=(",", ":")))
+              raise SystemExit(0)
+
+          regions = []
+          for candidate in (os.environ.get("AWS_REGION"), *FALLBACK_REGIONS):
+              if candidate and candidate not in regions:
+                  regions.append(candidate)
+
+          caller, _ = run_json(["sts", "get-caller-identity"])
+          role_name = None
+          role_arn = None
+          if isinstance(caller, dict):
+              result["caller_identity_readable"] = True
+              arn = caller.get("Arn")
+              account = caller.get("Account")
+              marker_text = ":assumed-role/"
+              if isinstance(arn, str) and isinstance(account, str) and marker_text in arn:
+                  role_name = arn.split(marker_text, 1)[1].split("/", 1)[0]
+                  if role_name:
+                      role_arn = "arn:aws:iam::" + account + ":role/" + role_name
+                      result["role_name_resolved"] = True
+
+          if role_name:
+              role, _ = run_json(["iam", "get-role", "--role-name", role_name])
+              result["iam_get_role_allowed"] = isinstance(role, dict) and isinstance(role.get("Role"), dict)
+
+          if role_arn:
+              simulation, _ = run_json([
+                  "iam", "simulate-principal-policy",
+                  "--policy-source-arn", role_arn,
+                  "--action-names", *SIMULATED_ACTIONS,
+              ])
+              evaluations = simulation.get("EvaluationResults") if isinstance(simulation, dict) else None
+              if isinstance(evaluations, list):
+                  result["iam_simulation_available"] = True
+                  for entry in evaluations:
+                      if not isinstance(entry, dict):
+                          continue
+                      action = entry.get("EvalActionName")
+                      decision = entry.get("EvalDecision")
+                      if action in SIMULATED_ACTIONS and decision in {"allowed", "implicitDeny", "explicitDeny"}:
+                          result["iam_simulated_decisions"][action] = decision
+
+          timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+          body = "\n".join([
+              "Scheduled-task digest alternate-role delivery canary",
+              "",
+              "This tests an existing trusted AWS OIDC role without introducing a long-lived mail credential.",
+              "The permanent digest target is 07:00 America/Chicago for the preceding 24 hours.",
+              "",
+              "Generated at: " + timestamp,
+              "Recipient: " + RECIPIENT,
+          ])
+
+          with tempfile.TemporaryDirectory(prefix="alternate-role-digest-") as directory:
+              root = Path(directory)
+              destination = root / "destination.json"
+              content = root / "content.json"
+              destination.write_text(
+                  json.dumps({"ToAddresses": [RECIPIENT]}, separators=(",", ":")),
+                  encoding="utf-8",
+              )
+              content.write_text(
+                  json.dumps({
+                      "Simple": {
+                          "Subject": {"Data": SUBJECT, "Charset": "UTF-8"},
+                          "Body": {"Text": {"Data": body, "Charset": "UTF-8"}},
+                      }
+                  }, separators=(",", ":")),
+                  encoding="utf-8",
+              )
+              destination.chmod(0o600)
+              content.chmod(0o600)
+
+              for region in regions:
+                  account, _ = run_json(["sesv2", "get-account", "--region", region])
+                  if isinstance(account, dict):
+                      result["ses_account_readable_regions"] += 1
+
+                  verified = []
+                  page, _ = run_json([
+                      "sesv2", "list-email-identities", "--page-size", "100", "--region", region
+                  ])
+                  if isinstance(page, dict):
+                      result["ses_identity_listing_regions"] += 1
+                      for item in page.get("EmailIdentities", []):
+                          if not isinstance(item, dict) or item.get("VerifiedForSendingStatus") is not True:
+                              continue
+                          identity = item.get("IdentityName")
+                          identity_type = str(item.get("IdentityType") or "").upper()
+                          if isinstance(identity, str) and identity:
+                              verified.append((identity, identity_type))
+                  result["ses_verified_identity_count"] += len(verified)
+
+                  sources = []
+                  for candidate in SOURCES:
+                      candidate_domain = candidate.rsplit("@", 1)[-1].lower()
+                      for identity, identity_type in verified:
+                          if identity_type == "EMAIL_ADDRESS" and identity.lower() == candidate.lower():
+                              sources.append(candidate)
+                              break
+                          if identity_type == "DOMAIN" and identity.lower() == candidate_domain:
+                              sources.append(candidate)
+                              break
+                  for identity, identity_type in verified:
+                      if identity_type == "EMAIL_ADDRESS":
+                          sources.append(identity)
+                      elif identity_type == "DOMAIN":
+                          sources.append("scheduled-digest@" + identity)
+                  if not sources:
+                      sources.extend(SOURCES)
+
+                  seen = set()
+                  for source in sources:
+                      if source.lower() in seen:
+                          continue
+                      seen.add(source.lower())
+                      completed = run([
+                          "aws", "sesv2", "send-email",
+                          "--region", region,
+                          "--from-email-address", source,
+                          "--destination", "file://" + str(destination),
+                          "--content", "file://" + str(content),
+                          "--output", "json",
+                      ])
+                      if completed and completed.returncode == 0:
+                          result["delivery_succeeded"] = True
+                          result["delivery_provider"] = "ses"
+                          result["ses_error_category"] = "none"
+                          break
+                      result["ses_error_category"] = classify(completed)
+                      if result["ses_error_category"] in {
+                          "access_denied", "quota_or_rate_limited", "network_or_endpoint"
+                      }:
+                          break
+                  if result["delivery_succeeded"]:
+                      break
+
+              if not result["delivery_succeeded"]:
+                  for region in regions:
+                      page, completed = run_json(["sns", "list-subscriptions", "--region", region])
+                      matches = []
+                      if isinstance(page, dict):
+                          result["sns_listing_regions"] += 1
+                          for subscription in page.get("Subscriptions", []):
+                              if not isinstance(subscription, dict):
+                                  continue
+                              if subscription.get("Endpoint") != RECIPIENT:
+                                  continue
+                              if subscription.get("Protocol") not in {"email", "email-json"}:
+                                  continue
+                              if subscription.get("SubscriptionArn") == "PendingConfirmation":
+                                  continue
+                              topic = subscription.get("TopicArn")
+                              if isinstance(topic, str):
+                                  matches.append(topic)
+                      else:
+                          result["sns_error_category"] = classify(completed)
+                      result["sns_matching_confirmed_subscriptions"] += len(matches)
+                      for topic in matches:
+                          completed = run([
+                              "aws", "sns", "publish",
+                              "--region", region,
+                              "--topic-arn", topic,
+                              "--subject", SUBJECT,
+                              "--message", body,
+                              "--output", "json",
+                          ])
+                          if completed and completed.returncode == 0:
+                              result["delivery_succeeded"] = True
+                              result["delivery_provider"] = "sns"
+                              result["sns_error_category"] = "none"
+                              break
+                          result["sns_error_category"] = classify(completed)
+                      if result["delivery_succeeded"]:
+                          break
+
+          if result["delivery_succeeded"]:
+              marker.write_text(label + "\n", encoding="utf-8")
+          result_path.write_text(json.dumps(result, sort_keys=True), encoding="utf-8")
+          print(json.dumps(result, sort_keys=True, separators=(",", ":")))
+          PY
+          chmod 0700 "$probe"
+
+      - name: Assume primary AWS role
+        id: primary
+        if: env.ROLE_PRIMARY != ''
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ env.ROLE_PRIMARY }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: digest-primary-role
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+          unset-current-credentials: true
+
+      - name: Probe primary AWS role
+        if: env.ROLE_PRIMARY != '' && steps.primary.outcome == 'success'
+        shell: bash
+        env:
+          ROLE_LABEL: primary
+          DELIVERY_MARKER: ${{ runner.temp }}/scheduled-digest-delivered
+          ROLE_RESULT: ${{ runner.temp }}/scheduled-digest-primary.json
+        run: python3 "$RUNNER_TEMP/alternate-role-delivery-probe.py"
+
+      - name: Assume legacy OIDC AWS role
+        id: legacy-oidc
+        if: env.ROLE_LEGACY_OIDC != ''
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ env.ROLE_LEGACY_OIDC }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: digest-legacy-oidc-role
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+          unset-current-credentials: true
+
+      - name: Probe legacy OIDC AWS role
+        if: env.ROLE_LEGACY_OIDC != '' && steps.legacy-oidc.outcome == 'success'
+        shell: bash
+        env:
+          ROLE_LABEL: legacy-oidc
+          DELIVERY_MARKER: ${{ runner.temp }}/scheduled-digest-delivered
+          ROLE_RESULT: ${{ runner.temp }}/scheduled-digest-legacy-oidc.json
+        run: python3 "$RUNNER_TEMP/alternate-role-delivery-probe.py"
+
+      - name: Assume ECR AWS role
+        id: ecr
+        if: env.ROLE_ECR != ''
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ env.ROLE_ECR }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: digest-ecr-role
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+          unset-current-credentials: true
+
+      - name: Probe ECR AWS role
+        if: env.ROLE_ECR != '' && steps.ecr.outcome == 'success'
+        shell: bash
+        env:
+          ROLE_LABEL: ecr
+          DELIVERY_MARKER: ${{ runner.temp }}/scheduled-digest-delivered
+          ROLE_RESULT: ${{ runner.temp }}/scheduled-digest-ecr.json
+        run: python3 "$RUNNER_TEMP/alternate-role-delivery-probe.py"
+
+      - name: Assume remote-dev AWS role
+        id: remote-dev
+        if: env.ROLE_REMOTE_DEV != ''
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ env.ROLE_REMOTE_DEV }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: digest-remote-dev-role
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+          unset-current-credentials: true
+
+      - name: Probe remote-dev AWS role
+        if: env.ROLE_REMOTE_DEV != '' && steps.remote-dev.outcome == 'success'
+        shell: bash
+        env:
+          ROLE_LABEL: remote-dev
+          DELIVERY_MARKER: ${{ runner.temp }}/scheduled-digest-delivered
+          ROLE_RESULT: ${{ runner.temp }}/scheduled-digest-remote-dev.json
+        run: python3 "$RUNNER_TEMP/alternate-role-delivery-probe.py"
+
+      - name: Enforce one accepted delivery and print sanitized role summary
+        if: always()
+        shell: bash
+        env:
+          PRIMARY_OUTCOME: ${{ steps.primary.outcome }}
+          LEGACY_OIDC_OUTCOME: ${{ steps.legacy-oidc.outcome }}
+          ECR_OUTCOME: ${{ steps.ecr.outcome }}
+          REMOTE_DEV_OUTCOME: ${{ steps.remote-dev.outcome }}
+        run: |
+          set -Eeuo pipefail
+          results='[]'
+          for path in "$RUNNER_TEMP"/scheduled-digest-*.json; do
+            [ -f "$path" ] || continue
+            results="$(jq -nc --argjson current "$results" --slurpfile item "$path" '$current + $item')"
+          done
+          jq -n \
+            --arg primary "$PRIMARY_OUTCOME" \
+            --arg legacy_oidc "$LEGACY_OIDC_OUTCOME" \
+            --arg ecr "$ECR_OUTCOME" \
+            --arg remote_dev "$REMOTE_DEV_OUTCOME" \
+            --argjson results "$results" \
+            '{schema_version:1, assume_outcomes:{primary:$primary,legacy_oidc:$legacy_oidc,ecr:$ecr,remote_dev:$remote_dev}, results:$results}' \
+            | tee "$RUNNER_TEMP/scheduled-digest-alternate-role-summary.json"
+          jq -e 'any(.results[]; .delivery_succeeded == true)' \
+            "$RUNNER_TEMP/scheduled-digest-alternate-role-summary.json" >/dev/null
