@@ -101,3 +101,118 @@ jobs:
           path: ${{ runner.temp }}/google-chat-audit-evidence
           if-no-files-found: error
           retention-days: 7
+
+  live-reconciliation-receipt:
+      needs:
+        - schedule-gate
+        - validate-and-bundle
+      if: ${{ needs.schedule-gate.outputs.should-run == 'true' && github.event_name != 'pull_request' }}
+      runs-on: ubuntu-24.04
+      timeout-minutes: 15
+      steps:
+        - name: Check out without persisted credentials
+          uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+          with:
+            persist-credentials: false
+
+        - name: Install Node.js
+          uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+          with:
+            node-version: '22'
+
+        - name: Prepare the exact private rolling window
+          shell: bash
+          run: |
+            set -euo pipefail
+            umask 077
+            reconciliation_root="${RUNNER_TEMP}/google-chat-live-reconciliation"
+            mkdir -p \
+              "${reconciliation_root}/raw" \
+              "${reconciliation_root}/sanitized" \
+              "${reconciliation_root}/private" \
+              "${reconciliation_root}/evidence"
+            chmod 700 "${reconciliation_root}" \
+              "${reconciliation_root}/raw" \
+              "${reconciliation_root}/sanitized" \
+              "${reconciliation_root}/private" \
+              "${reconciliation_root}/evidence"
+
+            window_until="$(node -e 'process.stdout.write(new Date().toISOString())')"
+            window_since="$(node -e \
+              'const end = Date.parse(process.argv[1]); process.stdout.write(new Date(end - 15 * 24 * 60 * 60 * 1000).toISOString())' \
+              "${window_until}")"
+            {
+              printf 'GOOGLE_CHAT_RECONCILIATION_ROOT=%s\n' "${reconciliation_root}"
+              printf 'GOOGLE_CHAT_WINDOW_SINCE=%s\n' "${window_since}"
+              printf 'GOOGLE_CHAT_WINDOW_UNTIL=%s\n' "${window_until}"
+            } >> "${GITHUB_ENV}"
+
+        - name: Fetch private bridge pages
+          shell: bash
+          env:
+            CHAT_BRIDGE_TOKEN: ${{ secrets.CHAT_BRIDGE_TOKEN }}
+          run: |
+            set -euo pipefail
+            umask 077
+            if [[ -z "${CHAT_BRIDGE_TOKEN:-}" ]]; then
+              echo '::error::CHAT_BRIDGE_TOKEN is not configured for this repository.'
+              exit 1
+            fi
+            node tools/google-chat-space-export/fetch-bridge-pages.mjs \
+              --out "${GOOGLE_CHAT_RECONCILIATION_ROOT}/raw"
+
+        - name: Sanitize, plan, and emit a content-free receipt
+          shell: bash
+          run: |
+            set -euo pipefail
+            umask 077
+            node tools/google-chat-space-export/sanitize-export.mjs \
+              --input "${GOOGLE_CHAT_RECONCILIATION_ROOT}/raw" \
+              --out "${GOOGLE_CHAT_RECONCILIATION_ROOT}/sanitized" \
+              --since "${GOOGLE_CHAT_WINDOW_SINCE}" \
+              --report "${GOOGLE_CHAT_RECONCILIATION_ROOT}/evidence/safety-report.json"
+
+            node tools/google-chat-space-export/import-plan.mjs \
+              --input "${GOOGLE_CHAT_RECONCILIATION_ROOT}/sanitized" \
+              --since "${GOOGLE_CHAT_WINDOW_SINCE}" \
+              --until "${GOOGLE_CHAT_WINDOW_UNTIL}" \
+              --project-map tools/google-chat-space-export/import-project-map.example.json \
+              --json "${GOOGLE_CHAT_RECONCILIATION_ROOT}/private/import-plan.json"
+
+            plan_id="$(node -e \
+              'const fs = require("node:fs"); process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1], "utf8")).planId)' \
+              "${GOOGLE_CHAT_RECONCILIATION_ROOT}/private/import-plan.json")"
+            printf '{"schemaVersion":1,"planId":"%s","entries":[]}\n' "${plan_id}" \
+              > "${GOOGLE_CHAT_RECONCILIATION_ROOT}/private/coverage-evidence.json"
+
+            node tools/google-chat-space-export/reconciliation-receipt.mjs \
+              --plan "${GOOGLE_CHAT_RECONCILIATION_ROOT}/private/import-plan.json" \
+              --evidence "${GOOGLE_CHAT_RECONCILIATION_ROOT}/private/coverage-evidence.json" \
+              --json "${GOOGLE_CHAT_RECONCILIATION_ROOT}/evidence/reconciliation-receipt.json"
+            cp "${GOOGLE_CHAT_RECONCILIATION_ROOT}/raw/fetch-summary.json" \
+              "${GOOGLE_CHAT_RECONCILIATION_ROOT}/evidence/fetch-summary.json"
+
+        - name: Upload content-free live reconciliation evidence
+          if: ${{ always() }}
+          uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+          with:
+            name: google-chat-live-reconciliation-${{ github.run_id }}
+            path: |
+              ${{ runner.temp }}/google-chat-live-reconciliation/evidence/fetch-summary.json
+              ${{ runner.temp }}/google-chat-live-reconciliation/evidence/safety-report.json
+              ${{ runner.temp }}/google-chat-live-reconciliation/evidence/reconciliation-receipt.json
+            if-no-files-found: warn
+            retention-days: 7
+
+        - name: Fail closed when actionable coverage is incomplete
+          shell: bash
+          run: |
+            set -euo pipefail
+            node -e '
+              const fs = require("node:fs");
+              const receipt = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+              if (!receipt.counts?.complete) {
+                console.error(`Reconciliation is incomplete: ${receipt.counts?.gaps ?? "unknown"} message gaps.`);
+                process.exit(2);
+              }
+            ' "${GOOGLE_CHAT_RECONCILIATION_ROOT}/evidence/reconciliation-receipt.json"

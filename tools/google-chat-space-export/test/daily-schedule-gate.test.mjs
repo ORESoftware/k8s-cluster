@@ -98,3 +98,30 @@ test('workflow gates the reconciliation job instead of only exiting one step', (
   assert.match(workflow, /run: node tools\/google-chat-space-export\/daily-schedule-gate\.mjs/);
   assert.doesNotMatch(workflow, /local_minute|date \+%M/);
 });
+
+test('scheduled and manual runs fetch privately, publish only content-free evidence, and fail closed', () => {
+  const workflow = readFileSync(
+    new URL('../../../.github/workflows/google-chat-daily-reconciliation.yml', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(workflow, /live-reconciliation-receipt:\n/);
+  assert.match(workflow, /github\.event_name != 'pull_request'/);
+  assert.match(workflow, /CHAT_BRIDGE_TOKEN: \$\{\{ secrets\.CHAT_BRIDGE_TOKEN \}\}/);
+  assert.match(workflow, /fetch-bridge-pages\.mjs \\\n\s+--out/);
+  assert.match(workflow, /sanitize-export\.mjs \\\n/);
+  assert.match(workflow, /import-plan\.mjs \\\n/);
+  assert.match(workflow, /--since "\$\{GOOGLE_CHAT_WINDOW_SINCE\}"/);
+  assert.match(workflow, /--until "\$\{GOOGLE_CHAT_WINDOW_UNTIL\}"/);
+  assert.match(workflow, /reconciliation-receipt\.mjs \\\n/);
+  assert.match(workflow, /if \(!receipt\.counts\?\.complete\)/);
+
+  const uploadBlock = workflow.match(
+    /name: Upload content-free live reconciliation evidence[\s\S]*?retention-days: 7/,
+  )?.[0];
+  assert.ok(uploadBlock, 'live evidence upload step must exist');
+  assert.match(uploadBlock, /fetch-summary\.json/);
+  assert.match(uploadBlock, /safety-report\.json/);
+  assert.match(uploadBlock, /reconciliation-receipt\.json/);
+  assert.doesNotMatch(uploadBlock, /\/raw(?:\s|$)|\/sanitized(?:\s|$)|import-plan|coverage-evidence/);
+});

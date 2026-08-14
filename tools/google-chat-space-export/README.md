@@ -147,6 +147,12 @@ The token comes from the environment so it never lands in argv or a query string
 
 The fetcher sends POST only to the original Apps Script `/exec` URL and allows the 302/303 redirect to become GET. Re-posting to the `googleusercontent.com` target answers HTTP 405 with an HTML body.
 
+### Daily live reconciliation
+
+[`google-chat-daily-reconciliation.yml`](../../.github/workflows/google-chat-daily-reconciliation.yml) runs at 20:00 America/Chicago using paired UTC schedules and a DST-aware gate. Pull requests validate the tooling only. Scheduled and manual runs also require a protected repository Actions secret named `CHAT_BRIDGE_TOKEN`, fetch the fixed space, sanitize it, and build an exact rolling 15-day plan.
+
+Raw pages, sanitized pages, the private plan, and coverage input remain under `RUNNER_TEMP` and are never uploaded. The artifact allowlist contains only `fetch-summary.json`, `safety-report.json`, and `reconciliation-receipt.json`, all of which are content-free. Missing credentials, bridge failures, validation failures, and uncovered actionable candidates keep the workflow red; an empty coverage input is never treated as successful reconciliation.
+
 ## Dry-run import planner
 
 [`import-plan.mjs`](./import-plan.mjs) is a read-only gate between the raw Chat export and Linear. It accepts both HTTP bridge pages (`{ok,data.messages}`) and Gmail export attachments (`{messages,...}`), validates the fixed space/date boundary, deduplicates repeated pages, groups messages conservatively by thread, and emits deterministic JSON and Markdown reports.

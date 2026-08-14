@@ -12,6 +12,12 @@ The Google Chat export is private input. The only supported path into the determ
 
 Raw message bodies, attachment metadata from quarantined messages, credential values, phone numbers, and private operational addresses must never be committed, copied into Linear, or included in pull-request descriptions.
 
+## Scheduled execution
+
+The daily workflow runs at 20:00 America/Chicago with a DST-aware dual-UTC gate. Pull requests execute only contract validation. Scheduled and manual executions read `CHAT_BRIDGE_TOKEN` from the protected repository Actions secret, create an exact 15-day UTC window, and keep raw pages, sanitized pages, the import plan, and coverage input only in a mode-restricted `RUNNER_TEMP` directory.
+
+Only three content-free files may leave that private directory: the fetch summary, safety report, and reconciliation receipt. The receipt starts from empty evidence and therefore fails the job whenever an actionable candidate lacks verified Linear and implementation references. This is an intentional gap signal for a separately controlled apply/review pass, not a false-green claim that GitHub Actions performed agentic reconciliation.
+
 ## Fetch
 
 ```bash
