@@ -59,6 +59,7 @@ jobs:
               .dependencies.enabledAdvancedServices[];
               .serviceId == "chat" and .version == "v1"
             ) and
+            (.oauthScopes | index("https://www.googleapis.com/auth/script.external_request") != null) and
             (.webapp.executeAs == "USER_DEPLOYING") and
             (.webapp.access == "ANYONE_ANONYMOUS")
           ' "${APPS_SCRIPT_DIR}/appsscript.json" >/dev/null
@@ -77,6 +78,11 @@ jobs:
           grep -Fq "spaces/AAQAoHKdzvI" "${APPS_SCRIPT_DIR}/App.gs"
           grep -Fq "2026-05-10T04:00:00.000Z" "${APPS_SCRIPT_DIR}/App.gs"
           grep -Fq "alexander.d.mills@gmail.com" "${APPS_SCRIPT_DIR}/EmailExport.gs"
+          grep -Fq "alexander.d.mills@gmail.com" "${APPS_SCRIPT_DIR}/ScheduledTaskDigest.gs"
+          grep -Fq "America/Chicago" "${APPS_SCRIPT_DIR}/ScheduledTaskDigest.gs"
+          grep -Fq "triggerHour: 7" "${APPS_SCRIPT_DIR}/ScheduledTaskDigest.gs"
+          grep -Fq "lookbackHours: 24" "${APPS_SCRIPT_DIR}/ScheduledTaskDigest.gs"
+          grep -Fq "SCHEDULED_TASK_DIGEST_BOOTSTRAP_RESULT" "${APPS_SCRIPT_DIR}/ScheduledTaskDigest.gs"
           ! grep -Fq "orderBy: 'ASC'" "${APPS_SCRIPT_DIR}/App.gs"
 
           node <<'NODE'
@@ -88,13 +94,19 @@ jobs:
             .split(/\r?\n/)
             .map((line) => line.trim())
             .filter((line) => line && !line.startsWith('#'));
-          const expected = ['**/*', '!App.gs', '!EmailExport.gs', '!appsscript.json'];
+          const expected = [
+            '**/*',
+            '!App.gs',
+            '!EmailExport.gs',
+            '!ScheduledTaskDigest.gs',
+            '!appsscript.json',
+          ];
           if (JSON.stringify(lines) !== JSON.stringify(expected)) {
             throw new Error(`Unexpected .claspignore allowlist: ${JSON.stringify(lines)}`);
           }
           NODE
 
-          if grep -RInE '(refresh_token|client_secret|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|ghp_[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{20,})' \
+          if grep -RInE '(refresh_token|client_secret|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|ghp_[A-Za-z0-9]{20,}|lin_api_[A-Za-z0-9]{20,}|SG\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|AIza[A-Za-z0-9_-]{20,})' \
             "${APPS_SCRIPT_DIR}" --exclude='README.md'; then
             echo 'Potential credential material found in Apps Script source.' >&2
             exit 1
@@ -102,6 +114,9 @@ jobs:
 
       - name: Run Apps Script bridge regression tests
         run: node --test "${APPS_SCRIPT_DIR}/test/app.test.mjs"
+
+      - name: Run scheduled-task digest regression tests
+        run: node --test "${APPS_SCRIPT_DIR}/test/scheduled-task-digest.test.mjs"
 
       - name: Run import planner regression tests
         run: node --test "${APPS_SCRIPT_DIR}/test/import-plan.test.mjs"
@@ -164,6 +179,7 @@ jobs:
           clasp show-authorized-user --json >/dev/null
           test -f App.gs
           test -f EmailExport.gs
+          test -f ScheduledTaskDigest.gs
           test -f appsscript.json
           test -f .claspignore
           clasp show-file-status
@@ -183,7 +199,7 @@ jobs:
             --description "$description"
           clasp list-deployments
 
-      - name: Verify exact deployed bridge version
+      - name: Verify exact deployed bridge version and digest bootstrap
         shell: bash
         run: |
           set -euo pipefail
@@ -197,6 +213,9 @@ jobs:
           )"
           response="$(mktemp)"
           for attempt in $(seq 1 12); do
+            # Loading any Apps Script entry point initializes every production
+            # source file. ScheduledTaskDigest.gs fails closed here unless its
+            # 07:00 America/Chicago trigger and GitHub API probe are healthy.
             if curl --fail --location --silent --show-error \
               --max-time 30 \
               "${APPS_SCRIPT_EXEC_URL}?action=health&sha=${GITHUB_SHA}" \
