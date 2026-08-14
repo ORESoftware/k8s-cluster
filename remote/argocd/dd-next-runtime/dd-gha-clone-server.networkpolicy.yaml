@@ -9,6 +9,7 @@ spec:
       app: dd-gha-clone-server
   policyTypes: [Ingress, Egress]
   ingress:
+    # In-cluster operator access through the existing hardened gateway.
     - from:
         - podSelector:
             matchLabels:
@@ -16,10 +17,16 @@ spec:
       ports:
         - protocol: TCP
           port: 8125
+    # Public GitHub deliveries terminate at ingress-nginx and are then accepted
+    # only after the clone server validates X-Hub-Signature-256 and delivery ID.
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+              app.kubernetes.io/component: controller
       ports:
         - protocol: TCP
           port: 8125
@@ -53,44 +60,3 @@ spec:
       ports:
         - protocol: TCP
           port: 443
----
-# Exact public route for signed GitHub deliveries. The path is rewritten only
-# after ingress-nginx receives the raw request body; buffering remains disabled
-# so the clone server verifies X-Hub-Signature-256 against the original bytes.
-# This Ingress is claimed only by clusters with the nginx IngressClass. The AWS
-# hostPort gateway still requires its own exact-path route before it can receive
-# public GitHub traffic.
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: dd-gha-clone-server-webhook
-  namespace: default
-  labels:
-    app: dd-gha-clone-server
-  annotations:
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/rewrite-target: /webhooks/github
-    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
-    nginx.ingress.kubernetes.io/proxy-buffering: "off"
-    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
-    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
-spec:
-  ingressClassName: nginx
-  tls:
-    - hosts:
-        - hello.95-217-171-250.sslip.io
-      secretName: gateway-public-tls
-  rules:
-    - host: hello.95-217-171-250.sslip.io
-      http:
-        paths:
-          - path: /gha-webhooks/github
-            pathType: Exact
-            backend:
-              service:
-                name: dd-gha-clone-server
-                port:
-                  number: 8125

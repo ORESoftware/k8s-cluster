@@ -20,6 +20,11 @@ spec:
         - podSelector:
             matchLabels:
               app: dd-runtime-config
+        # The continuity router is the only webhook execution path allowed to
+        # submit fixed-profile jobs directly to this service.
+        - podSelector:
+            matchLabels:
+              app: dd-gha-executor-router
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability

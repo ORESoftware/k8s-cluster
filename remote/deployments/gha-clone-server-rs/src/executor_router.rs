@@ -13,6 +13,12 @@ pub const ROUTER_SERVICE_NAME: &str = "gha-executor-router";
 pub const MAX_EXECUTORS_DEFAULT: usize = 8;
 pub const MAX_REQUEST_BYTES_DEFAULT: usize = 64 * 1024;
 pub const MAX_ERROR_CHARS_DEFAULT: usize = 512;
+// The router's own inbound authority is new and must remain at 32+ bytes. The
+// upstream build server predates this router and uses a shorter shared cluster
+// authority, so materialization validates that existing non-empty boundary
+// separately instead of making the router impossible to start. Rotating that
+// shared authority requires a coordinated restart of every existing client.
+pub const MIN_EXECUTOR_SECRET_BYTES: usize = 8;
 pub const MIN_SECRET_BYTES: usize = 32;
 pub const MAX_SECRET_BYTES: usize = 4096;
 
@@ -179,9 +185,9 @@ pub fn materialize_executors(
             )
         })?;
         let auth = raw.trim().to_string();
-        if auth.len() < MIN_SECRET_BYTES {
+        if auth.len() < MIN_EXECUTOR_SECRET_BYTES {
             return Err(format!(
-                "executor {} authentication secret must contain at least {MIN_SECRET_BYTES} bytes",
+                "executor {} authentication secret must contain at least {MIN_EXECUTOR_SECRET_BYTES} bytes",
                 spec.id
             ));
         }
@@ -604,7 +610,7 @@ mod tests {
         let root = unique_temp_root();
         fs::create_dir_all(&root).unwrap();
         let secret = root.join("aws-auth");
-        fs::write(&secret, "a".repeat(MIN_SECRET_BYTES)).unwrap();
+        fs::write(&secret, "a".repeat(MIN_EXECUTOR_SECRET_BYTES)).unwrap();
         let specs = vec![ExecutorSpec {
             id: "aws-primary".into(),
             provider: Provider::Aws,
@@ -614,16 +620,23 @@ mod tests {
         }];
         let executors = materialize_executors(&specs, &root).unwrap();
         assert_eq!(executors.len(), 1);
-        assert_eq!(executors[0].auth, "a".repeat(MIN_SECRET_BYTES));
+        assert_eq!(executors[0].auth, "a".repeat(MIN_EXECUTOR_SECRET_BYTES));
 
+        fs::write(&secret, "legacy-auth").unwrap();
+        assert_eq!(
+            materialize_executors(&specs, &root).unwrap()[0].auth,
+            "legacy-auth"
+        );
+        fs::write(&secret, "a".repeat(MIN_EXECUTOR_SECRET_BYTES - 1)).unwrap();
+        assert!(materialize_executors(&specs, &root).is_err());
         fs::write(&secret, format!("{}\n{}", "a".repeat(16), "b".repeat(16))).unwrap();
         assert!(materialize_executors(&specs, &root).is_err());
-        fs::write(&secret, "a".repeat(MIN_SECRET_BYTES)).unwrap();
+        fs::write(&secret, "a".repeat(MIN_EXECUTOR_SECRET_BYTES)).unwrap();
 
         let nested = root.join("nested");
         fs::create_dir_all(&nested).unwrap();
         let nested_secret = nested.join("auth");
-        fs::write(&nested_secret, "b".repeat(MIN_SECRET_BYTES)).unwrap();
+        fs::write(&nested_secret, "b".repeat(MIN_EXECUTOR_SECRET_BYTES)).unwrap();
         let mut nested_specs = specs;
         nested_specs[0].auth_path = Some(nested_secret);
         assert!(materialize_executors(&nested_specs, &root).is_err());

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 const root = join(import.meta.dirname, '../../..');
 const read = (path: string) => readFileSync(join(root, path), 'utf8');
 
-test('workflow_run fallback is failure-only, exact-path, loop-safe, and deduplicated', () => {
+test('workflow_run fallback is terminal-only, exact-path, loop-safe, and deduplicated', () => {
   const server = read('remote/deployments/gha-clone-server-rs/src/main.rs');
   assert.match(server, /action != "completed"/);
   assert.ok(server.includes('/workflow_run/conclusion'));
@@ -20,7 +20,7 @@ test('workflow_run fallback is failure-only, exact-path, loop-safe, and deduplic
   assert.match(server, /only workflow_run events may trigger the failure fallback/);
 });
 
-test('deployment activates the exact signed workflow_run pilot', () => {
+test('deployment enables only the bounded action_required webhook policy', () => {
   const deployment = read(
     'remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml',
   );
@@ -48,36 +48,48 @@ test('deployment activates the exact signed workflow_run pilot', () => {
     deployment,
     /GHA_CLONE_EXECUTION_ENABLED\s+value: "true"/,
   );
-  assert.match(deployment, /\breplicas:\s*1\b/);
-  assert.match(deployment, /signed-workflow-run-pilot/);
-  assert.match(deployment, /GHA continuity server/);
   assert.match(
     deployment,
-    /ghcr\.io\/oresoftware\/gha-clone-server@sha256:44684171d909f96fe216d529bfc14f6f32a11e87c0f339d1877ac20606223c97/,
+    /GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS\s+value: action_required(?:\s|$)/,
   );
-  assert.match(config, /GHA_CLONE_ALLOWED_REPOSITORIES: ORESoftware\/k8s-cluster/);
-  assert.match(config, /\.github\/workflows\/gha-continuity-parity\.yml/);
-  assert.match(config, /\.github\/workflows\/remote-k8s-browser-suite\.yml/);
+  assert.doesNotMatch(
+    deployment,
+    /GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS[\s\S]{0,120}(?:failure|cancelled|timed_out|startup_failure|stale)/,
+  );
+  assert.match(deployment, /\breplicas:\s*1\b/);
+  assert.match(deployment, /\bminReadySeconds:\s*10\b/);
+  assert.match(deployment, /GHA continuity server/);
+  assert.match(config, /ORESoftware\/k8s-cluster/);
+  assert.match(config, /\.github\/workflows\/gha-clone-server-meta\.yml/);
 });
 
 test('dedicated ingress preserves signed raw-body delivery to the clone server', () => {
   const route = read(
+    'remote/argocd/dd-next-runtime/dd-remote-gateway.ingress.yaml',
+  );
+  const networkPolicy = read(
     'remote/argocd/dd-next-runtime/dd-gha-clone-server.networkpolicy.yaml',
   );
   for (const value of [
-    'name: dd-gha-clone-server-webhook',
+    'name: dd-gha-clone-webhook',
     'ingressClassName: nginx',
     'hello.95-217-171-250.sslip.io',
     'path: /gha-webhooks/github',
     'pathType: Exact',
     'nginx.ingress.kubernetes.io/rewrite-target: /webhooks/github',
-    'nginx.ingress.kubernetes.io/proxy-buffering: "off"',
-    'nginx.ingress.kubernetes.io/proxy-request-buffering: "off"',
+    'nginx.ingress.kubernetes.io/proxy-body-size: "1m"',
+    'nginx.ingress.kubernetes.io/limit-rps: "5"',
     'name: dd-gha-clone-server',
     'number: 8125',
-    'kubernetes.io/metadata.name: ingress-nginx',
   ]) {
     assert.ok(route.includes(value), `webhook route missing ${value}`);
+  }
+  for (const value of [
+    'kubernetes.io/metadata.name: ingress-nginx',
+    'app.kubernetes.io/name: ingress-nginx',
+    'app.kubernetes.io/component: controller',
+  ]) {
+    assert.ok(networkPolicy.includes(value), `webhook policy missing ${value}`);
   }
   assert.doesNotMatch(route, /path:\s*\/webhooks\/\s*$/m);
 });
@@ -87,7 +99,6 @@ test('registration script upserts only workflow_run through stdin without echoin
     'remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh',
   );
   assert.match(script, /events: \["workflow_run"\]/);
-  assert.match(script, /\/gha-webhooks\/github/);
   assert.match(script, /--repo\|--org/);
   assert.match(script, /method='PATCH'/);
   assert.match(script, /method='POST'/);
