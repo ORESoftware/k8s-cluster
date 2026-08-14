@@ -1,0 +1,37 @@
+name: Temporary application catalog regeneration
+
+on:
+  push:
+    branches:
+      - agent/google-chat-reconcile-2026-08-10
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact branch state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31.11.0
+
+      - name: Generate canonical application catalog
+        run: >-
+          nix develop --accept-flake-config -c
+          python tools/application_catalog.py generate
+          artifacts/generated-applications.json
+
+      - name: Upload exact generated catalog
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: generated-application-catalog-${{ github.run_id }}
+          path: artifacts/generated-applications.json
+          if-no-files-found: error
+          retention-days: 1
