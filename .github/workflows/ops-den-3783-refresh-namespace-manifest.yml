@@ -27,6 +27,13 @@ jobs:
       - name: Regenerate exact-head inventory and manifest
         run: |
           set -euo pipefail
+          helper='.github/workflows/ops-den-3783-refresh-namespace-manifest.yml'
+
+          # The helper must not become part of the canonical inventory it is
+          # repairing. Stage its deletion before running the repository's own
+          # deterministic scanner, then commit that deletion with the refresh.
+          git rm -- "$helper"
+
           mkdir -p artifacts
           python3 tools/namespace_migration.py inventory \
             --root . \
@@ -34,51 +41,82 @@ jobs:
             > artifacts/namespace-inventory.json
           python3 tools/namespace_manifest.py generate --root .
 
-          entry_count="$(
-            python3 - <<'PY'
+          python3 - <<'PY'
           import json
+          import re
           from pathlib import Path
-          manifest = json.loads(
-              Path('catalog/namespaces/migration-manifest.json').read_text(
-                  encoding='utf-8'
+
+          manifest_path = Path('catalog/namespaces/migration-manifest.json')
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          entries = manifest['spec']['entries']
+          entry_count = len(entries)
+          blocked_count = sum(
+              1 for entry in entries if entry['owner'] == 'unclassified'
+          )
+
+          if manifest['metadata']['entryCount'] != entry_count:
+              raise SystemExit('manifest metadata entry count is inconsistent')
+
+          def replace_once(path: str, pattern: str, replacement: str) -> None:
+              target = Path(path)
+              text = target.read_text(encoding='utf-8')
+              updated, count = re.subn(pattern, replacement, text, count=1)
+              if count != 1:
+                  raise SystemExit(
+                      f'expected exactly one match in {path}: {pattern!r}; got {count}'
+                  )
+              target.write_text(updated, encoding='utf-8')
+
+          workflow = '.github/workflows/namespace-migration-contract.yml'
+          replace_once(
+              workflow,
+              r"report\.get\('entryCount'\) == \d+",
+              f"report.get('entryCount') == {entry_count}",
+          )
+          replace_once(
+              workflow,
+              r"report\.get\('inventoryEntryCount'\) == \d+",
+              f"report.get('inventoryEntryCount') == {entry_count}",
+          )
+
+          tests = 'tools/test_namespace_manifest.py'
+          replace_once(
+              tests,
+              r"self\.assertEqual\(\d+, len\(entries\)\)",
+              f"self.assertEqual({entry_count}, len(entries))",
+          )
+          replace_once(
+              tests,
+              r"self\.assertEqual\(\d+, len\(blocked\)\)",
+              f"self.assertEqual({blocked_count}, len(blocked))",
+          )
+          replace_once(
+              tests,
+              r"self\.assertEqual\(\d+, report\[\"entryCount\"\]\)",
+              f'self.assertEqual({entry_count}, report["entryCount"])',
+          )
+
+          print(
+              json.dumps(
+                  {
+                      'entryCount': entry_count,
+                      'unclassifiedCount': blocked_count,
+                  },
+                  sort_keys=True,
               )
           )
-          print(manifest['metadata']['entryCount'])
-          PY
-          )"
-
-          ENTRY_COUNT="$entry_count" python3 - <<'PY'
-          import os
-          from pathlib import Path
-
-          count = os.environ['ENTRY_COUNT']
-          workflow = Path('.github/workflows/namespace-migration-contract.yml')
-          text = workflow.read_text(encoding='utf-8')
-          old_entry = "report.get('entryCount') == 1134"
-          old_inventory = "report.get('inventoryEntryCount') == 1134"
-          if old_entry not in text or old_inventory not in text:
-              raise SystemExit('expected namespace count invariants were not found')
-          text = text.replace(
-              old_entry,
-              f"report.get('entryCount') == {count}",
-              1,
-          ).replace(
-              old_inventory,
-              f"report.get('inventoryEntryCount') == {count}",
-              1,
-          )
-          workflow.write_text(text, encoding='utf-8')
           PY
 
           python3 tools/namespace_manifest.py check --root . --format text
           python3 tools/test_namespace_manifest.py
 
-      - name: Commit deterministic refresh when required
+      - name: Commit deterministic refresh
         run: |
           set -euo pipefail
           git add \
             catalog/namespaces/migration-manifest.json \
-            .github/workflows/namespace-migration-contract.yml
+            .github/workflows/namespace-migration-contract.yml \
+            tools/test_namespace_manifest.py
           if git diff --cached --quiet; then
             echo 'namespace manifest is already current'
             exit 0
