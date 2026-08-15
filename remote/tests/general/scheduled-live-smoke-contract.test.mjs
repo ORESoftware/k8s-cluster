@@ -25,26 +25,62 @@ const browserMcpWorkflow = readFileSync(
   resolve(root, '.github/workflows/browser-mcp-external-smoke.yml'),
   'utf8',
 );
+const browserMcpPublicWorkflow = readFileSync(
+  resolve(root, '.github/workflows/browser-mcp-public-e2e.yml'),
+  'utf8',
+);
 
-test('Browser MCP schedule keeps the operator secret inside AWS', () => {
+test('Browser MCP schedule delegates to the protected verifier', () => {
   for (const marker of [
     'schedule:',
-    'id-token: write',
-    'aws-actions/configure-aws-credentials@',
+    'actions: write',
+    'TARGET_WORKFLOW: browser-mcp-public-e2e.yml',
+    'actions/workflows/${TARGET_WORKFLOW}/dispatches',
+    'event=workflow_dispatch&branch=main',
+    '.id > $previous_run_id',
+    '.head_sha == $main_sha',
+    'gh run watch "$RUN_ID"',
+    '-f ref=main',
+  ]) {
+    assert.ok(
+      browserMcpWorkflow.includes(marker),
+      `missing Browser MCP caller marker: ${marker}`,
+    );
+  }
+
+  assert.match(browserMcpWorkflow, /if: github\.event_name != 'pull_request'/);
+  for (const duplicatedImplementation of [
     'aws ssm send-command',
     'aws secretsmanager get-secret-value',
-    'dd/remote-dev/browser-mcp-secrets',
+    'BROWSER_MCP_OAUTH_OPERATOR_SECRET',
+    'BROWSER_MCP_SECRET_ID',
+  ]) {
+    assert.ok(
+      !browserMcpWorkflow.includes(duplicatedImplementation),
+      `protected implementation leaked into schedule caller: ${duplicatedImplementation}`,
+    );
+  }
+
+  for (const marker of [
+    'id-token: write',
+    'aws ssm send-command',
+    'aws secretsmanager get-secret-value',
     'BROWSER_MCP_OAUTH_OPERATOR_SECRET',
     'https://98.90.186.114/browser-mcp',
     'https://hello.95-217-171-250.sslip.io/browser-mcp',
   ]) {
-    assert.ok(browserMcpWorkflow.includes(marker), `missing Browser MCP marker: ${marker}`);
+    assert.ok(
+      browserMcpPublicWorkflow.includes(marker),
+      `missing protected Browser MCP verifier marker: ${marker}`,
+    );
   }
 
-  assert.match(browserMcpWorkflow, /if: github\.event_name != 'pull_request'/);
-  assert.doesNotMatch(browserMcpWorkflow, /secrets\.BROWSER_MCP_OAUTH_OPERATOR_SECRET/);
-  assert.doesNotMatch(browserMcpWorkflow, /echo[^\n]*operator_secret/i);
-  assert.doesNotMatch(browserMcpWorkflow, /set -x/);
+  assert.doesNotMatch(
+    browserMcpPublicWorkflow,
+    /secrets\.BROWSER_MCP_OAUTH_OPERATOR_SECRET/,
+  );
+  assert.doesNotMatch(browserMcpPublicWorkflow, /echo[^\n]*operator_secret/i);
+  assert.doesNotMatch(browserMcpPublicWorkflow, /set -x/);
 });
 
 test('AthletO schedule executes only AthletO browser tests', () => {
@@ -53,7 +89,10 @@ test('AthletO schedule executes only AthletO browser tests', () => {
     'ui/athleto-marketing.playwright.test.mjs',
     'ui/athleto-marketing.puppeteer.test.mjs',
   ]) {
-    assert.ok(athletoWorkflow.includes(file), `missing AthletO test file: ${file}`);
+    assert.ok(
+      athletoWorkflow.includes(file),
+      `missing AthletO test file: ${file}`,
+    );
   }
 
   for (const unrelated of [
@@ -63,16 +102,24 @@ test('AthletO schedule executes only AthletO browser tests', () => {
     'slack-agent-command.playwright.test.mjs',
     'slack-agent-command-security.playwright.test.mjs',
   ]) {
-    assert.ok(!athletoWorkflow.includes(unrelated), `unrelated UI scope leaked into AthletO: ${unrelated}`);
+    assert.ok(
+      !athletoWorkflow.includes(unrelated),
+      `unrelated UI scope leaked into AthletO: ${unrelated}`,
+    );
   }
 });
 
 test('AthletO live endpoints fail fast before browser installation', () => {
   const preflight = athletoWorkflow.indexOf('Preflight live AthletO surfaces');
-  const playwrightInstall = athletoWorkflow.indexOf('Install Playwright chromium');
+  const playwrightInstall = athletoWorkflow.indexOf(
+    'Install Playwright chromium',
+  );
 
   assert.ok(preflight >= 0, 'missing AthletO endpoint preflight');
-  assert.ok(playwrightInstall > preflight, 'endpoint preflight must run before browser installation');
+  assert.ok(
+    playwrightInstall > preflight,
+    'endpoint preflight must run before browser installation',
+  );
 
   for (const marker of [
     '--connect-timeout 10',
@@ -82,6 +129,9 @@ test('AthletO live endpoints fail fast before browser installation', () => {
     'ATHLETO_MARKETING_URL',
     'ATHLETO_APP_URL',
   ]) {
-    assert.ok(athletoWorkflow.includes(marker), `missing bounded preflight marker: ${marker}`);
+    assert.ok(
+      athletoWorkflow.includes(marker),
+      `missing bounded preflight marker: ${marker}`,
+    );
   }
 });
