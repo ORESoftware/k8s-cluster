@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/browser-mcp-external-smoke.yml'
+      - '.github/workflows/athleto-ui-tests.yml'
       - 'scripts/verify-browser-mcp.sh'
       - 'remote/tests/general/scheduled-live-smoke-contract.test.mjs'
   workflow_dispatch:
