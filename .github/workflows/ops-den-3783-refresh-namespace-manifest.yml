@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: den-3783-namespace-publish-${{ github.ref }}
@@ -18,10 +17,11 @@ jobs:
     name: publish deterministic namespace ledger
     if: github.repository == 'ORESoftware/k8s-cluster'
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 20
     env:
-      INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
       TARGET_BRANCH: agent/den-3783-scheduled-live-smoke-repair
+      K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+      K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
     steps:
       - name: Check out exact branch head without persisted credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -31,85 +31,19 @@ jobs:
           persist-credentials: false
           show-progress: false
 
-      - name: Validate protected publisher contract
+      - name: Regenerate and validate exact-head namespace contracts
         shell: bash
         run: |
           set -Eeuo pipefail
-          test -n "${INSTANCE_ID:-}"
-          [[ "${GITHUB_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$GITHUB_REF_NAME" = "$TARGET_BRANCH"
-          grep -qF 'dd/remote-dev/agent-secrets' .github/workflows/ops-den-3783-refresh-namespace-manifest.yml
-          grep -qF 'GIT_ASKPASS' .github/workflows/ops-den-3783-refresh-namespace-manifest.yml
-          grep -qF 'git rm -- "$helper"' .github/workflows/ops-den-3783-refresh-namespace-manifest.yml
-          ! grep -qF 'git push --force' .github/workflows/ops-den-3783-refresh-namespace-manifest.yml
-          git diff --check
-
-      - name: Configure short-lived AWS credentials for SSM publication
-        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
-          role-session-name: den-3783-namespace-publisher
-          retry-max-attempts: 2
-          mask-aws-account-id: true
-
-      - name: Regenerate, validate, and push through protected administration host
-        shell: bash
-        env:
-          TRUSTED_SHA: ${{ github.sha }}
-        run: |
-          set -Eeuo pipefail
-          test -n "${INSTANCE_ID:-}"
-          [[ "$TRUSTED_SHA" =~ ^[0-9a-f]{40}$ ]]
-          test "$GITHUB_REF_NAME" = "$TARGET_BRANCH"
-
-          remote_script="$RUNNER_TEMP/den-3783-publish-namespace-refresh.sh"
-          cat > "$remote_script" <<'REMOTE'
-          #!/usr/bin/env bash
-          set -Eeuo pipefail
-          umask 077
-
-          trusted_sha="${1:?trusted SHA required}"
-          region="${2:?AWS region required}"
-          target_branch="${3:?target branch required}"
-          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
-          test "$target_branch" = 'agent/den-3783-scheduled-live-smoke-repair'
-
-          work="$(mktemp -d /tmp/den-3783-namespace-publish.XXXXXX)"
-          cleanup() {
-            unset GH_PAT GIT_PASSWORD GIT_USERNAME GIT_ASKPASS
-            python3 - "$work" <<'PY'
-          import shutil
-          import sys
-          from pathlib import Path
-          path = Path(sys.argv[1])
-          if path.exists():
-              shutil.rmtree(path)
-          PY
-          }
-          trap cleanup EXIT
-
-          for command in aws git jq python3; do
-            command -v "$command" >/dev/null || {
-              printf 'missing-command=%s\n' "$command" >&2
-              exit 70
-            }
-          done
-
-          repo="$work/k8s-cluster"
-          git init "$repo" >/dev/null
-          git -C "$repo" remote add origin https://github.com/ORESoftware/k8s-cluster.git
-          git -C "$repo" fetch --quiet --depth=1 origin "$trusted_sha"
-          git -C "$repo" switch --quiet --detach FETCH_HEAD
-          test "$(git -C "$repo" rev-parse HEAD)" = "$trusted_sha"
 
           remote_head="$(
-            git -C "$repo" ls-remote origin "refs/heads/$target_branch" |
+            git ls-remote origin "refs/heads/$TARGET_BRANCH" |
               awk 'NR == 1 {print $1}'
           )"
-          test "$remote_head" = "$trusted_sha"
+          test "$remote_head" = "$GITHUB_SHA"
 
-          cd "$repo"
           helper='.github/workflows/ops-den-3783-refresh-namespace-manifest.yml'
           git rm -- "$helper"
 
@@ -185,7 +119,107 @@ jobs:
           python3 tools/namespace_manifest.py check --root . --format text
           python3 tools/test_namespace_manifest.py
           python3 scripts/ci/test_classify_repo_check_scope.py
+          node --test remote/tests/general/scheduled-live-smoke-contract.test.mjs
           git diff --check
+
+      - name: Mint exact-repository GitHub App publisher token
+        id: app-token
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          [[ "${K8S_SUBMODULE_APP_ID:-}" =~ ^[0-9]+$ ]]
+          test -n "${K8S_SUBMODULE_APP_PRIVATE_KEY:-}"
+          grep -Eq '^-----BEGIN (RSA )?PRIVATE KEY-----' <<<"$K8S_SUBMODULE_APP_PRIVATE_KEY"
+
+          base64url() {
+            openssl base64 -A | tr '+/' '-_' | tr -d '='
+          }
+
+          now="$(date +%s)"
+          header='{"alg":"RS256","typ":"JWT"}'
+          payload="$(printf '{"iat":%s,"exp":%s,"iss":%s}' "$((now - 60))" "$((now + 540))" "$K8S_SUBMODULE_APP_ID")"
+          unsigned="$(printf '%s' "$header" | base64url).$(printf '%s' "$payload" | base64url)"
+          signature="$(
+            printf '%s' "$unsigned" |
+              openssl dgst -sha256 -sign /dev/fd/3 -binary \
+                3<<<"$K8S_SUBMODULE_APP_PRIVATE_KEY" |
+              base64url
+          )"
+          app_jwt="${unsigned}.${signature}"
+          echo "::add-mask::$app_jwt"
+          unset signature unsigned payload header K8S_SUBMODULE_APP_PRIVATE_KEY
+
+          installation_response="$RUNNER_TEMP/den-3783-installation.json"
+          installation_status="$(
+            curl --silent --show-error \
+              --output "$installation_response" \
+              --write-out '%{http_code}' \
+              --header 'Accept: application/vnd.github+json' \
+              --header "Authorization: Bearer ${app_jwt}" \
+              --header 'X-GitHub-Api-Version: 2026-03-10' \
+              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/installation"
+          )"
+          if [[ "$installation_status" != 200 ]]; then
+            echo "GitHub App installation lookup returned HTTP $installation_status" >&2
+            exit 1
+          fi
+          installation_id="$(jq -er '.id | select(type == "number" and . > 0)' "$installation_response")"
+
+          request="$RUNNER_TEMP/den-3783-token-request.json"
+          jq -nc --arg repository "${GITHUB_REPOSITORY#*/}" '{
+            repositories: [$repository],
+            permissions: {
+              contents: "write",
+              workflows: "write",
+              metadata: "read"
+            }
+          }' > "$request"
+
+          response="$RUNNER_TEMP/den-3783-token-response.json"
+          token_status="$(
+            curl --silent --show-error \
+              --request POST \
+              --output "$response" \
+              --write-out '%{http_code}' \
+              --header 'Accept: application/vnd.github+json' \
+              --header "Authorization: Bearer ${app_jwt}" \
+              --header 'X-GitHub-Api-Version: 2026-03-10' \
+              --header 'Content-Type: application/json' \
+              --data-binary "@$request" \
+              "${GITHUB_API_URL}/app/installations/${installation_id}/access_tokens"
+          )"
+          unset app_jwt installation_id
+          if [[ "$token_status" != 201 ]]; then
+            message="$(jq -r '.message // "token request failed"' "$response" | tr -cd '[:print:]' | cut -c1-300)"
+            echo "Exact-repository GitHub App token request returned HTTP $token_status: $message" >&2
+            exit 1
+          fi
+
+          jq -e --arg repository "$GITHUB_REPOSITORY" '
+            .permissions.contents == "write" and
+            .permissions.workflows == "write" and
+            .permissions.metadata == "read" and
+            (.repositories | type == "array") and
+            (.repositories | length == 1) and
+            .repositories[0].full_name == $repository
+          ' "$response" >/dev/null
+          installation_token="$(jq -er '.token | select(type == "string" and length >= 20)' "$response")"
+          echo "::add-mask::$installation_token"
+          token_file="$RUNNER_TEMP/den-3783-installation-token"
+          printf '%s' "$installation_token" > "$token_file"
+          chmod 600 "$token_file"
+          unset installation_token
+          printf 'token_file=%s\n' "$token_file" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push deterministic refresh
+        shell: bash
+        env:
+          TOKEN_FILE: ${{ steps.app-token.outputs.token_file }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          test -s "$TOKEN_FILE"
 
           git add -A
           if git diff --cached --quiet; then
@@ -197,21 +231,12 @@ jobs:
           git commit -m 'chore(DEN-3783): refresh namespace migration manifest' >/dev/null
           published_sha="$(git rev-parse HEAD)"
 
-          publisher_secret="$work/publisher-secret.json"
-          aws secretsmanager get-secret-value \
-            --region "$region" \
-            --secret-id dd/remote-dev/agent-secrets \
-            --query SecretString \
-            --output text > "$publisher_secret"
-          GH_PAT="$(jq -er '.GH_PAT | select(type == "string" and length >= 20)' "$publisher_secret")"
-          rm -f "$publisher_secret"
-
-          askpass="$work/git-askpass.sh"
+          askpass="$RUNNER_TEMP/den-3783-git-askpass.sh"
           cat > "$askpass" <<'SH'
           #!/usr/bin/env sh
           case "$1" in
             *Username*) printf '%s\n' "$GIT_USERNAME" ;;
-            *Password*) printf '%s\n' "$GIT_PASSWORD" ;;
+            *Password*) cat "$TOKEN_FILE" ;;
             *) exit 1 ;;
           esac
           SH
@@ -219,58 +244,15 @@ jobs:
           export GIT_ASKPASS="$askpass"
           export GIT_TERMINAL_PROMPT=0
           export GIT_USERNAME=x-access-token
-          export GIT_PASSWORD="$GH_PAT"
+          export TOKEN_FILE
 
-          git push --quiet origin "HEAD:refs/heads/$target_branch"
-          unset GH_PAT GIT_PASSWORD GIT_USERNAME GIT_ASKPASS
-          printf 'DEN_3783_PUBLISHED_SHA=%s\n' "$published_sha"
-          REMOTE
-          chmod 700 "$remote_script"
-
-          encoded="$(base64 --wrap=0 "$remote_script")"
-          remote_command="remote_script=/tmp/den-3783-publish-namespace-refresh.sh; printf '%s' '$encoded' | base64 --decode > \"\$remote_script\"; chmod 700 \"\$remote_script\"; status=0; bash \"\$remote_script\" '$TRUSTED_SHA' '$AWS_REGION' '$TARGET_BRANCH' || status=\$?; rm -f \"\$remote_script\"; exit \$status"
-          parameters="$RUNNER_TEMP/den-3783-ssm-parameters.json"
-          jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
-
-          command_id="$(
-            aws ssm send-command \
-              --instance-ids "$INSTANCE_ID" \
-              --document-name AWS-RunShellScript \
-              --comment "DEN-3783 namespace refresh ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
-              --parameters "file://$parameters" \
-              --query 'Command.CommandId' \
-              --output text
+          remote_head="$(
+            git ls-remote origin "refs/heads/$TARGET_BRANCH" |
+              awk 'NR == 1 {print $1}'
           )"
-          test -n "$command_id"
-          printf 'ssm_command_id=%s\n' "$command_id"
+          test "$remote_head" = "$GITHUB_SHA"
+          git push --quiet origin "HEAD:refs/heads/$TARGET_BRANCH"
 
-          status=Pending
-          for _ in $(seq 1 300); do
-            status="$(
-              aws ssm get-command-invocation \
-                --command-id "$command_id" \
-                --instance-id "$INSTANCE_ID" \
-                --query Status \
-                --output text 2>/dev/null || true
-            )"
-            case "$status" in
-              Success|Failed|Cancelled|TimedOut|Cancelling) break ;;
-            esac
-            sleep 3
-          done
-
-          invocation="$RUNNER_TEMP/den-3783-namespace-publish-invocation.json"
-          aws ssm get-command-invocation \
-            --command-id "$command_id" \
-            --instance-id "$INSTANCE_ID" \
-            --query '{Status:Status,ResponseCode:ResponseCode,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
-            --output json > "$invocation"
-          stdout="$(jq -r '.Stdout // ""' "$invocation")"
-          printf '%s\n' "$stdout"
-          if [[ "$status" != Success ]]; then
-            jq -r '.Stderr // ""' "$invocation" >&2
-            exit 1
-          fi
-          published_sha="$(printf '%s\n' "$stdout" | sed -n 's/^DEN_3783_PUBLISHED_SHA=//p' | tail -n 1)"
-          [[ "$published_sha" =~ ^[0-9a-f]{40}$ ]]
+          rm -f "$TOKEN_FILE" "$askpass"
+          unset GIT_ASKPASS GIT_USERNAME TOKEN_FILE
           printf 'published_sha=%s\n' "$published_sha"
