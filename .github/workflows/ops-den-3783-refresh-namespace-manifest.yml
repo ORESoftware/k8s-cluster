@@ -6,7 +6,7 @@ on:
       - agent/den-3783-scheduled-live-smoke-repair
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: den-3783-namespace-refresh-${{ github.ref }}
@@ -23,6 +23,7 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Regenerate exact-head inventory and manifest
         run: |
@@ -30,9 +31,9 @@ jobs:
           helper='.github/workflows/ops-den-3783-refresh-namespace-manifest.yml'
 
           # The helper must not become part of the canonical inventory it is
-          # repairing. Stage its deletion before running the repository's own
-          # deterministic scanner, then commit that deletion with the refresh.
-          git rm -- "$helper"
+          # repairing. Remove it before running the repository's deterministic
+          # scanner; the published payload therefore represents the final PR.
+          rm -- "$helper"
 
           mkdir -p artifacts
           python3 tools/namespace_migration.py inventory \
@@ -110,18 +111,18 @@ jobs:
           python3 tools/namespace_manifest.py check --root . --format text
           python3 tools/test_namespace_manifest.py
 
-      - name: Commit deterministic refresh
+      - name: Package generated payload
         run: |
           set -euo pipefail
-          git add \
+          tar -czf "$RUNNER_TEMP/den-3783-namespace-refresh.tar.gz" \
             catalog/namespaces/migration-manifest.json \
             .github/workflows/namespace-migration-contract.yml \
             tools/test_namespace_manifest.py
-          if git diff --cached --quiet; then
-            echo 'namespace manifest is already current'
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'chore(DEN-3783): refresh namespace migration manifest'
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      - name: Upload generated payload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: den-3783-namespace-refresh
+          path: ${{ runner.temp }}/den-3783-namespace-refresh.tar.gz
+          if-no-files-found: error
+          retention-days: 2
