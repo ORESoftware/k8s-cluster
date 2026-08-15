@@ -184,9 +184,12 @@ class RepoCheckScopeTests(unittest.TestCase):
             [
                 ".github/workflows/athleto-ui-tests.yml",
                 ".github/workflows/browser-mcp-external-smoke.yml",
+                ".github/workflows/namespace-migration-contract.yml",
+                "catalog/namespaces/migration-manifest.json",
                 "remote/tests/general/scheduled-live-smoke-contract.test.mjs",
                 "scripts/ci/classify_repo_check_scope.py",
                 "scripts/ci/test_classify_repo_check_scope.py",
+                "tools/test_namespace_manifest.py",
             ],
         )
         self.assertFalse(result["governance_only"])
