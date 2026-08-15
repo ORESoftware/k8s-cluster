@@ -1,6 +1,11 @@
 name: browser mcp external smoke
 
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/browser-mcp-external-smoke.yml'
+      - 'scripts/verify-browser-mcp.sh'
+      - 'remote/tests/general/scheduled-live-smoke-contract.test.mjs'
   workflow_dispatch:
   schedule:
     - cron: '17 * * * *'
@@ -9,39 +14,152 @@ permissions:
   contents: read
 
 concurrency:
-  group: browser-mcp-external-smoke
+  group: browser-mcp-external-smoke-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  verify:
-    name: verify ${{ matrix.name }}
+  contract:
+    name: scheduled smoke contract
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: aws
-            endpoint: https://98.90.186.114/browser-mcp
-          - name: hetzner
-            endpoint: https://hello.95-217-171-250.sslip.io/browser-mcp
+    timeout-minutes: 5
     steps:
       - name: Check out repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      - name: Verify required secret is configured
+      - name: Verify scheduled live-smoke invariants
+        working-directory: remote/tests
+        run: node --test general/scheduled-live-smoke-contract.test.mjs
+
+  verify:
+    name: verify AWS and Hetzner through protected SSM
+    if: github.event_name != 'pull_request'
+    needs: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Check protected verification prerequisites
         env:
-          BROWSER_MCP_OAUTH_OPERATOR_SECRET: ${{ secrets.BROWSER_MCP_OAUTH_OPERATOR_SECRET }}
+          ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
         run: |
           set -euo pipefail
-          if [[ -z "${BROWSER_MCP_OAUTH_OPERATOR_SECRET}" ]]; then
-            echo 'BROWSER_MCP_OAUTH_OPERATOR_SECRET is not configured' >&2
+          missing=()
+          [[ -n "$ROLE_TO_ASSUME" ]] || missing+=(AWS_OIDC_ROLE)
+          [[ -n "$INSTANCE_ID" ]] || missing+=(AWS_SSM_INSTANCE_ID)
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Missing protected verification capability: %s\n' "${missing[@]}" >&2
             exit 1
           fi
 
-      - name: Run external OAuth, MCP, and browser verifier
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Run full verifier inside the protected SSM host
         env:
-          BROWSER_MCP_OAUTH_OPERATOR_SECRET: ${{ secrets.BROWSER_MCP_OAUTH_OPERATOR_SECRET }}
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+          SOURCE_REVISION: main
+          BROWSER_MCP_SECRET_ID: dd/remote-dev/browser-mcp-secrets
         run: |
           set -euo pipefail
-          scripts/verify-browser-mcp.sh '${{ matrix.endpoint }}'
+
+          python3 - <<'PY' >"$RUNNER_TEMP/browser-mcp-external-smoke-commands.json"
+          import json
+          import os
+          import shlex
+
+          revision = os.environ.get("SOURCE_REVISION", "main") or "main"
+          secret_id = os.environ["BROWSER_MCP_SECRET_ID"]
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          cd "$repo"
+
+          git fetch origin "$SOURCE_REVISION"
+          git show "origin/$SOURCE_REVISION:scripts/verify-browser-mcp.sh" > /tmp/verify-browser-mcp.sh
+          chmod 700 /tmp/verify-browser-mcp.sh
+
+          secret_json="$(
+            aws secretsmanager get-secret-value \
+              --secret-id "$BROWSER_MCP_SECRET_ID" \
+              --query SecretString \
+              --output text
+          )"
+          operator_secret="$(jq -er '.BROWSER_MCP_OAUTH_OPERATOR_SECRET' <<<"$secret_json")"
+          unset secret_json
+          test "${#operator_secret}" -ge 20
+
+          for endpoint in \
+            'https://98.90.186.114/browser-mcp' \
+            'https://hello.95-217-171-250.sslip.io/browser-mcp'; do
+            BROWSER_MCP_OAUTH_OPERATOR_SECRET="$operator_secret" \
+              bash /tmp/verify-browser-mcp.sh "$endpoint"
+          done
+
+          unset operator_secret
+          rm -f /tmp/verify-browser-mcp.sh
+          echo 'browser_mcp_external_smoke_complete'
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  (
+                      "sudo -u ec2-user -H env "
+                      f"SOURCE_REVISION={shlex.quote(revision)} "
+                      f"BROWSER_MCP_SECRET_ID={shlex.quote(secret_id)} "
+                      f"bash -lc {shlex.quote(script)}"
+                  ),
+              ],
+          }))
+          PY
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "browser-mcp-external-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+              --parameters "file://$RUNNER_TEMP/browser-mcp-external-smoke-commands.json" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+
+          status=Pending
+          response_code=-1
+          for _ in $(seq 1 150); do
+            invocation="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query '{status:Status,response_code:ResponseCode}' \
+                --output json 2>/dev/null || true
+            )"
+            if [[ -n "$invocation" ]]; then
+              status="$(jq -r '.status // "Pending"' <<<"$invocation")"
+              response_code="$(jq -r '.response_code // -1' <<<"$invocation")"
+            fi
+            case "$status" in
+              Success|Cancelled|Cancelling|Failed|TimedOut)
+                break
+                ;;
+            esac
+            sleep 5
+          done
+
+          jq -n \
+            --arg status "$status" \
+            --argjson response_code "$response_code" \
+            '{ssm_status: $status, response_code: $response_code}'
+          test "$status" = Success
+          test "$response_code" = 0

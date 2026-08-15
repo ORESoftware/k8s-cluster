@@ -25,6 +25,7 @@ on:
     paths:
       - 'remote/tests/ui/**'
       - 'remote/tests/package.json'
+      - 'remote/tests/general/scheduled-live-smoke-contract.test.mjs'
       - '.github/workflows/athleto-ui-tests.yml'
 
 permissions:
@@ -37,7 +38,7 @@ concurrency:
 jobs:
   ui:
     name: playwright + puppeteer (live)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       ATHLETO_MARKETING_URL: ${{ github.event.inputs.marketing_url || 'https://athleto.store' }}
@@ -45,6 +46,31 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Validate scheduled live-smoke contract
+        working-directory: remote/tests
+        run: node --test general/scheduled-live-smoke-contract.test.mjs
+
+      - name: Preflight live AthletO surfaces
+        run: |
+          set -euo pipefail
+          for target in "$ATHLETO_MARKETING_URL" "$ATHLETO_APP_URL"; do
+            echo "checking ${target}"
+            curl \
+              --fail \
+              --silent \
+              --show-error \
+              --location \
+              --connect-timeout 10 \
+              --max-time 30 \
+              --retry 2 \
+              --retry-delay 2 \
+              --retry-all-errors \
+              --output /dev/null \
+              "${target%/}/"
+          done
 
       - name: Install pnpm
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
@@ -71,5 +97,9 @@ jobs:
         working-directory: remote/tests
 
       - name: Run AthletO UI suite (both engines)
-        run: pnpm run test:ui:athleto
+        run: >-
+          node --test
+          ui/athleto-app.playwright.test.mjs
+          ui/athleto-marketing.playwright.test.mjs
+          ui/athleto-marketing.puppeteer.test.mjs
         working-directory: remote/tests
