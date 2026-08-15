@@ -178,6 +178,25 @@ class RepoCheckScopeTests(unittest.TestCase):
             result["reason"],
         )
 
+    def test_scheduled_live_smoke_contract_is_credential_free(self):
+        result = MODULE.classify(
+            "pull_request",
+            [
+                ".github/workflows/athleto-ui-tests.yml",
+                ".github/workflows/browser-mcp-external-smoke.yml",
+                "remote/tests/general/scheduled-live-smoke-contract.test.mjs",
+                "scripts/ci/classify_repo_check_scope.py",
+                "scripts/ci/test_classify_repo_check_scope.py",
+            ],
+        )
+        self.assertFalse(result["governance_only"])
+        self.assertTrue(result["credential_free_contract_only"])
+        self.assertFalse(result["private_contracts_required"])
+        self.assertEqual(
+            "credential_free_contract_only_no_private_gitlinks",
+            result["reason"],
+        )
+
     def test_credential_free_contract_mixed_with_unknown_requires_private_contracts(self):
         result = MODULE.classify(
             "pull_request",
