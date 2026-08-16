@@ -67,10 +67,16 @@ GOVERNANCE_PREFIXES = (
 # limited to this exact set has no dependency on remote/libs or private
 # deployment gitlinks, so the broad credential-backed jobs add no coverage.
 CREDENTIAL_FREE_CONTRACT_FILES = {
+    ".github/workflows/athleto-ui-tests.yml",
+    ".github/workflows/browser-mcp-external-smoke.yml",
     ".github/workflows/den-319-private-fleet-contracts.yml",
+    ".github/workflows/namespace-migration-contract.yml",
     ".github/workflows/repo-check-scope-contract.yml",
+    "catalog/namespaces/migration-manifest.json",
+    "remote/tests/general/scheduled-live-smoke-contract.test.mjs",
     "scripts/ops/repository_rename_alias_guard.py",
     "scripts/ops/test_repository_rename_alias_guard.py",
+    "tools/test_namespace_manifest.py",
 }
 
 

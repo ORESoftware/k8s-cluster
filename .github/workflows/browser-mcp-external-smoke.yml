@@ -1,6 +1,13 @@
 name: browser mcp external smoke
 
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/browser-mcp-external-smoke.yml'
+      - '.github/workflows/browser-mcp-public-e2e.yml'
+      - '.github/workflows/athleto-ui-tests.yml'
+      - 'scripts/verify-browser-mcp.sh'
+      - 'remote/tests/general/scheduled-live-smoke-contract.test.mjs'
   workflow_dispatch:
   schedule:
     - cron: '17 * * * *'
@@ -9,39 +16,105 @@ permissions:
   contents: read
 
 concurrency:
-  group: browser-mcp-external-smoke
+  group: browser-mcp-external-smoke-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  verify:
-    name: verify ${{ matrix.name }}
+  contract:
+    name: scheduled smoke contract
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: aws
-            endpoint: https://98.90.186.114/browser-mcp
-          - name: hetzner
-            endpoint: https://hello.95-217-171-250.sslip.io/browser-mcp
+    timeout-minutes: 5
     steps:
       - name: Check out repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Verify required secret is configured
-        env:
-          BROWSER_MCP_OAUTH_OPERATOR_SECRET: ${{ secrets.BROWSER_MCP_OAUTH_OPERATOR_SECRET }}
+      - name: Verify scheduled live-smoke invariants
+        working-directory: remote/tests
+        run: node --test general/scheduled-live-smoke-contract.test.mjs
+
+  verify:
+    name: dispatch and await the protected public OAuth verifier
+    if: github.event_name != 'pull_request'
+    needs: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    permissions:
+      actions: write
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_WORKFLOW: browser-mcp-public-e2e.yml
+    steps:
+      - name: Dispatch the exact-main public verifier
+        id: dispatch
+        shell: bash
         run: |
           set -euo pipefail
-          if [[ -z "${BROWSER_MCP_OAUTH_OPERATOR_SECRET}" ]]; then
-            echo 'BROWSER_MCP_OAUTH_OPERATOR_SECRET is not configured' >&2
-            exit 1
-          fi
+          main_sha="$(
+            gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
+              --jq '.object.sha'
+          )"
+          previous_run_id="$(
+            gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${TARGET_WORKFLOW}/runs?event=workflow_dispatch&branch=main&per_page=20" |
+              jq -r '[.workflow_runs[].id] | max // 0'
+          )"
 
-      - name: Run external OAuth, MCP, and browser verifier
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/${TARGET_WORKFLOW}/dispatches" \
+            -f ref=main
+
+          printf 'main_sha=%s\nprevious_run_id=%s\n' \
+            "$main_sha" \
+            "$previous_run_id" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Resolve the dispatched run
+        id: run
         env:
-          BROWSER_MCP_OAUTH_OPERATOR_SECRET: ${{ secrets.BROWSER_MCP_OAUTH_OPERATOR_SECRET }}
+          MAIN_SHA: ${{ steps.dispatch.outputs.main_sha }}
+          PREVIOUS_RUN_ID: ${{ steps.dispatch.outputs.previous_run_id }}
+        shell: bash
         run: |
           set -euo pipefail
-          scripts/verify-browser-mcp.sh '${{ matrix.endpoint }}'
+          run_id=''
+          for _ in $(seq 1 90); do
+            run_id="$(
+              gh api \
+                "repos/${GITHUB_REPOSITORY}/actions/workflows/${TARGET_WORKFLOW}/runs?event=workflow_dispatch&branch=main&per_page=20" |
+                jq -r \
+                  --arg main_sha "$MAIN_SHA" \
+                  --argjson previous_run_id "$PREVIOUS_RUN_ID" \
+                  '[
+                    .workflow_runs[] |
+                    select(
+                      .id > $previous_run_id and
+                      .head_sha == $main_sha
+                    )
+                  ] |
+                  sort_by(.id) |
+                  first |
+                  .id // empty'
+            )"
+            [[ -n "$run_id" ]] && break
+            sleep 2
+          done
+
+          test -n "$run_id"
+          printf 'run_id=%s\n' "$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Await the protected verifier result
+        env:
+          RUN_ID: ${{ steps.run.outputs.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run watch "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --exit-status \
+            --interval 10
+          gh run view "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json url,headSha,event,status,conclusion
