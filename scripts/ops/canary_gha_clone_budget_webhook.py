@@ -5,7 +5,7 @@ This is a synthetic application canary, not evidence that GitHub itself emitted
 the delivery or that an organization budget is exhausted. It verifies public
 TLS/HMAC admission, invalid-signature rejection, exact repository/SHA/workflow
 binding, duplicate-delivery suppression, and terminal fixed-profile execution.
-Secrets are read from bounded private files and never printed.
+Secrets are read from bounded owner-only files and never printed.
 """
 
 from __future__ import annotations
@@ -15,8 +15,10 @@ import hashlib
 import hmac
 import ipaddress
 import json
+import os
 import re
 import ssl
+import stat
 import sys
 import time
 import urllib.error
@@ -49,10 +51,27 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def read_secret(path: Path, name: str) -> bytes:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
-        value = path.read_bytes()
+        descriptor = os.open(path, flags)
     except OSError as exc:
-        raise SystemExit(f"cannot read {name} file {path}: {exc}") from exc
+        raise SystemExit(f"cannot securely open {name} file: {exc}") from exc
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise SystemExit(f"{name} must remain a regular file after open")
+        mode = stat.S_IMODE(metadata.st_mode)
+        if not mode & stat.S_IRUSR:
+            raise SystemExit(f"{name} must be owner-readable")
+        if mode & 0o077:
+            raise SystemExit(f"{name} must not be group/world accessible")
+        with os.fdopen(descriptor, "rb", closefd=False) as handle:
+            value = handle.read(MAX_SECRET_BYTES + 3)
+    finally:
+        os.close(descriptor)
+
+    if len(value) > MAX_SECRET_BYTES + 2:
+        raise SystemExit(f"{name} file exceeds the bounded input size")
     if value.endswith(b"\r\n"):
         value = value[:-2]
     elif value.endswith(b"\n"):
