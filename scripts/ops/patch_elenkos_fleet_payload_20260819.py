@@ -5,131 +5,124 @@ import base64
 import gzip
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
-GENERATOR_ORIGINAL_SHA256 = "de511f13abd079437860a826c4e0dea50bfea90d15c76014432acb4b926e4016"
-GENERATOR_PATCHED_SHA256 = "84957238e1131e5fff9171a4ffb27478c1430f4acec4e8e17af402fae1b8016c"
-AUGMENT_ORIGINAL_SHA256 = "58ea2870c136160847e65e864388e4f85be92954fbdede356d90178eceb36c90"
-AUGMENT_PATCHED_SHA256 = "95d8482f50b6e4ddc02ef2e4dfc0e264ff92365c72661bbfb06c5d10ae8cd563"
-AUGMENT_PATCH_GZIP_B64 = "H4sIAAAAAAAC/91aa3PbNhb9K4h2xiIbmXK2/ZBl1plJa+2up6nTiZOdzopcDkxCEmuKYADKj6j673svwAf4kGw5zmOrTmOJAC7uC+ceEJhOB17qpRGbkZCmPI1DmsQfWfAxu5xbS5rGMyZzl8hcjMhlnEbqq00OX+Jf10sJfJY0DxfkmAjmSEZFuLCEN/C8dEo8L/e/87ypDEWc5dLz/OpZ6g1GpJzA9tLBqFLkI4uCjIaXdM4CmazmVkqXrG9ibIR5sdkRbMmvmFzNZvGN5Q0cIb2BrbvFM5LyHNWbrZJEaYsaTunhx6PDv/nF30PQClRCmXYhHz+CxpKRf9NkxSZCcGHNvEGcXoGXotpj5D8sIoXKSoJL1vjnidhUWgiWr0SqWtHQb8Ln/mg62GqoN5izlAmag21oXzmQLKgEh5JyBp/k9CJhlaGZYBAD0K0cMHW1uo7Mqcgt24fg5DDUKgbk0CcI+RL6RzBsXTsfXZ0zMaMhg3C68Du7zRc8/Z4Uc49VIEBFGJ/mgoa5dLJbMFMl1Nc1rchRFuYxT2EMxGdQpsK1iPOcpUESp0y6JIlBFAz0odvU151mXBBsJnFazOvILIlzNcQyU1TNmDH0HTY6DecWC6DsoxWV13G+AC9MwTKCXq+aWRqVjT40GrM0jSkHNCcpm9HYabEeQIyaorP8dFbi4i2+HleJCq3/xX/9p+p78RiSF+1rK8VFPI9TWITH5HfJUyfhNJKW9gQ6DEw5xrHP7Okzv3SO3ZQBq4yleeFACGrCUiUBVl313UnKsX5zsIrSMQFgWGs5GzQKM1npE62WmbQ6oFaqbdubMi/ww5KOIyOWMZQbxkyCN1vmV623Gg4MJw+twnW2N7DAo4Ox/9QeV9/wYdPzzlN7WDi55Z+ZMU9LAR2D+YgUVtcdnbngq8z6qz3qPvze7krZC6hhSrtHk7swG5e74TKQAkv5I0V3A2jDTxOze6Js9U85G647Jj7DyKLIzXjdW9OwfbhFHozsCPyhmSrlx1C2hSwOzVCEZUS0gjBVLqBQ/s7j1GqNq9DrM0FzWXdUqudWRoUE7JkzXKtl3YIQrze2TZ7gtANUxBtsdhVmb4Cx1cM1bpPlCjCd3WQcevI0uSX5ghlVO1eQz/llu0hX7kA/FIXkm9O15BvHpKFT8bjQSXftZB8gmVU8KIZhPuIYrFJ2CY9Yg0LORQRAletKZE5lAlMxn2G0wgTJYATNuajgoZbnQFMe48oDWePGolPOLkaiV1U7SPw0fLg/lzMQotYX8KH+0YaJ/gW+I6tM7pWtLsgMuGG4YEsayA+JFcU0gSLgkhMK6UElO9EPFA08GEIVz+MQqzBZr5tGamZYjO+04qcl0nV/5TKfCybJ8UuIcZisIrAhF0+2YB2AhjOOLsZa3XFWjB4fHR09CxiUy0suYdEjNf2Q9ALW6B5K/cTDS8EpstyHaBWWwx+u1mZT/8bvBqP8ZgO2X2g+NRB7uvxOB+Oa0BujqNCiKh4BAqDV2gUp5ISSBYWIJlIVtZFn1ihd3QwapkbYCtg07AKmnbx69+rHV+eTAP68npw3F22YMJoaKTdTNN7InhVASmlqEl8oc113Gc+FJhXuet1y6cjIm83mRVlr8QPWAsxrPVxyMD0oNgUH06bn1k3LN4Zj/YZASFLd9YJHt38f0pcWTAqSh1TvL1Uj/C53mEVDJw0TlkOiiksmkOlyAUmL8f/p7eTVu4lWmJz+g5y9eUcmv52evzsHCUr2ZgOUaWC/6IpTOxHcSnxInBkQZ+tAT2A7UAXBTTCsqIzqMW5VnhbfHeTkfTIFVklwF8icKvmO4/d0Y4rNYGc9s+JCIG/QmRv8u0S856JrxAEKmDq4Z/KbiVz/+ssU89ZvBOSC54ugWO8y0CU/gGofSCgZQcSXNE4DNT3s8zqRwNQtwQKSd7oVHEY7lrLfizMqKh9wI9UFtrbxpSrVKtJJ2ysXP1RKJiBnMNq4psFGaR3sl0mKmfToYeJIH67sDscVWMdFgFu3GyYDKlgAAY+vICY8YOCs4ALqOtJou3dZZBUYm27bGpa2AaVjSjG1dyqnTH57Nzk7P31z1nKM1hy9sofM9+enZ/8ki1ReE4stL1gEfGZeOiHkEvh/wDPYAnTForVhXQ12mlul2jbdKkFd5UKZ0TQl1pJHLAniaET2VHTnHG1Z1nryy4+TkxOYOTg5/UV7+nxjK0+fvX/9ujXBPRY4bKKiAJSI5+mSpXkg+DXUQbCJw3c2YwKYJQtoHPBVnq3yr7DMsRxABOvaYPUsedwNLFaw9wOlr2J2bZgke/fI+HFg1VAZxnGQ8GsmQlDM2gYe8P9FHAHPViZ6A/AIhk5KnELvRuCRxJKqf+mMuGJCQmnVjyCyszhSDr3IQC3/Tgh6gvbWGVEpoeyFcn8JG4D1unoMFQy2upzUxndLwX1QqGYlNYGwvXKLuQ/tUXt0fFVoCr2bh+yiIS/UxtxUsfFzBy8xO35nzYaKnnQY12Y03E26GtP5d6jzYFbTkDN8ILHR1UjTmmGfvE9nNsOGubvZTa9JfQznfhynO3WD5zQDsdkdpxIcO9HbkwK1BDwmPvaIvgcV6h/Uy4e68XkMSqRzUBOiYa8ymx4lN48Uvr0oU48eD6NNHUc+DnUa7iN2L/bUv4ofwqC2mv64LMpUeDb8TExq+DgI8hCO9aVwZPjYVKufVA23olCbWG2DoC7lGu7sWlKxHb3aFG1H1zZ1G/Ub5N8HRO9F6mpO10fpHgNH/cbLo8YZiz5ZgUpfPPXq98DV+TOkCV8mQN+KU0zr7RtYOmN8k4W3AxxsxXQQjEZADW9yC7zHcQkeAwPMZ4fPcYl5aX02UIruOR1Yb/B8IJ6R5kkAF3NkJOqtuzq90m/e+44Lyl74a1OdTOrX7Oe3MmfLyY06gDXvR2DE8zi/JRFnUr3Q129ABQPAjQFGbqsuapNRHLy0DDGPXtAQffhSn75sditTDN/v1AVo+v97pLaeQ35a7GqPtXt+ayE0j10kX4lQHd3HQDQBJqUIxxhSvDxkbOmrfvoLxDRLaMhaBxFDKm/TEPf/C75kes8WL7OEnALUvGUygz0UI2twXbhCyLEiKhcXnAqMyBwG2IArXjocPUhs8dp7u3DoUIo3DjIe1wV6F0pvVkvXFYVqsPH8V75MRg19Yb/ppUZfqNGwMlwXEqPZ8hZamHih7y5tn6zu9jgKNCaz/8SZYC4HZ5VeC5oFQAxZAgTjj+APZCV5nrnjccJhMS2AC7nPj54fAcphAbXUizH9QqMTHfyv5EA0i8mxeWMpcl2WXrnuFcXD8MnrydnPb86DV7+eBu/fIk18NF3sRrp/bhO/tGWtixQ7AHav6wl4+0RmLFTn7IGq7i6gfdo8JK/E1/cs1SC8s6ivLgGQHGrGaMxmbPxK0Ln/iaXfvo/xdU3Wb1KMmlpccuheuEDRxpUA0H5Hvd/Y3eLdO9WnW9Rbr/vvfrQU/jPc/ug6aMs9McMTOy6B4AU2tPPJ8Zb7IA9SqRMzQ68tynyppVjiD3RbJUiKozjMLSWrOkbHlmmTFuOr4+7V5/6uo9qSlnHm3T1tZKHkoVRcUTZsvcMlBap8UUOqkfeGDdhWx7NYvavWkzRhb6zabwPcSqnLdrXHqpGx5u1nPDXRwxBcft1CbmbDXfuLSmG82jjaZ2TTGa3hjSuOhXO32ewbNjRuMeoTlbbrsFGOG11armsO7/dfEy1HJEDAVM4wYbJzc3neB4zlreWxvrXcHFO7yYAkffn4jpumTTltnzQdUIbeNKlv5r64bHOo357lc65m3/8fIe0SztoyAAA="
-GENERATOR_PATCH_GZIP_B64 = "H4sIAAAAAAAC/81V227bMAz9FdUPqw0Y6QXDLh76sHV9KLABQ4vuYXEgqBbtEZUlV5KbpkH+vZITN3ZTrxd0w/SSyCQPDw9JezwOyOrUBohmkidJpUHUHJJkfiw5XAM/cY9VGZNTy09ksfiUys2gUwDOzgU4B2cP4uAxlxflDSZxnzEIkBfKUIHnNFPaB6+h/flsDBayBGkPHRpyZiEmh0oakKY2P5TAbBaT7LdSBqiGK4QpaPeg9aCZBo6WsinT3MR9cA1GiSugxqfuGhebGvxrpo+Q6wrpDzMGtN0KB+DCPld/zmp0TZMwpVdvwyj+Gw6Ody3sA4ZqqUbfEPWvIzQUysrOwijqt6Nb7yb20xV4Ug2v6zSoyKAqDyhzT517Kg5PB4VLNyD9AQw1VEpbP27+10/km6ydXzeF76NRLaeaVa4ktwNYoHsDDPajyfBAS16ecxOsJTFQdq5VSeysQlkQLD0++c4qf204/8mcysbK6sJvMW03PhcAlu7v7r/b/bD3sY1qvXwNBq3SM5qj8PRvgNOKZRescMsr6qLTj8aDHJAvZ8ffvh6dnI5NBdnoAiWfhP5vTBwTQ5Qm80VMSsUhulO6jR1KvAJ4BvQ6Q8sPc7JiPirAhmmgdJEGEdk6IA2cuzKJN8yikh6q7yxZCV1vf0/WbdIM3Xv0JxM1HGmtdJinwbxxzGshqPdeJOQX8BaWIHeFop0RrjG3DnoJxiETzO22E6N0dHIwdsWAQwXu2yMzBJMGsSt1FQLXLo9tQuaZUpqjdLOWuAm8rFGDF5TkrqC1Le7ZUC5L6iZY3LXm1WS7PzrhnY7RfyjkmpEnsJZuZCqBNtze2Y7JXjTenSx25huVDbrvTaJFGvRa00n0zB4tI32nJpNb39A19S0JAAA="
-
-MATERIALIZED_REPLACEMENTS: dict[str, tuple[tuple[str, str, int], ...]] = {
-    "scripts/ops/publish_elenkos_fleet_20260819.py": (
-        (
-            'document.get("private") is not False or document.get("visibility") != "public"',
-            'document.get("private") is not True or document.get("visibility") != "private"',
-            1,
-        ),
-        ("repository must be public", "repository must be private", 1),
-        ('"private": False', '"private": True', 1),
-        ('"visibility": "public"', '"visibility": "private"', 2),
-        ('visibility="public"', 'visibility="private"', 1),
-    ),
-    "scripts/ops/test_elenkos_fleet_20260819.py": (
-        (
-            "test_repository_creation_is_public_but_never_auto_initialized",
-            "test_repository_creation_is_private_but_never_auto_initialized",
-            1,
-        ),
-        (
-            'self.assertIs(payload["private"], False)',
-            'self.assertIs(payload["private"], True)',
-            1,
-        ),
-    ),
-    "scripts/ops/run_protected_elenkos_fleet_20260819.sh": (
-        (
-            '.publication.visibility == "public"',
-            '.publication.visibility == "private"',
-            1,
-        ),
-        ('.visibility == "public"', '.visibility == "private"', 1),
-    ),
-    "scripts/ops/validate_elenkos_fleet_payload_20260819.sh": (
-        ('\'"private": False\'', '\'"private": True\'', 1),
-    ),
-    "docs/den-3786-elenkos-fleet.md": (
-        ("public GitHub organizations", "private GitHub organizations", 1),
-        ("Repository creation is public", "Repository creation is private", 1),
-        ("public/no-auto-init creation", "private/no-auto-init creation", 1),
-    ),
+PAYLOAD = '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'
+HASHES = {
+    "augment": ("58ea2870c136160847e65e864388e4f85be92954fbdede356d90178eceb36c90", "30eb8f6a95b6c66dc6eacacc3b4eebe3f688373b5945f145f0bbc46a06cba71e"),
+    "generator_original": "de511f13abd079437860a826c4e0dea50bfea90d15c76014432acb4b926e4016",
+    "generator_base": "fa1c194e62dccf0867aa8dd251acf868f887756e7706ce50c4e422ad8e774a2e",
+    "generator_final": "39ccecd3cb25af39d752758fffdb85551c12e709f74c2ed94217638f4c5c9d29",
 }
 
 
-def digest(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+def digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def replacements(payload: str) -> tuple[tuple[str, str], ...]:
-    decoded = json.loads(gzip.decompress(base64.b64decode(payload)).decode("utf-8"))
-    return tuple((str(old), str(new)) for old, new in decoded)
+def decode_payload() -> dict[str, object]:
+    return json.loads(gzip.decompress(base64.b64decode(PAYLOAD)).decode("utf-8"))
 
 
-def patch_file(path: Path, original: str, patched: str, payload: str, label: str) -> str:
-    raw = path.read_bytes()
-    current = digest(raw)
-    if current == patched:
-        return "already-applied"
-    if current != original:
-        raise RuntimeError(f"refusing unexpected {label}: expected {original} or {patched}, got {current}")
-    text = raw.decode("utf-8")
-    for index, (old, new) in enumerate(replacements(payload)):
+def apply(text: str, changes: list[list[str]], label: str) -> str:
+    for index, (old, new) in enumerate(changes):
         count = text.count(old)
         if count != 1:
-            raise RuntimeError(f"{label} patch target {index} expected once, found {count}")
+            raise RuntimeError(f"{label} replacement {index} expected once, found {count}")
         text = text.replace(old, new, 1)
-    output = text.encode("utf-8")
-    actual = digest(output)
-    if actual != patched:
-        raise RuntimeError(f"patched {label} digest mismatch: expected {patched}, got {actual}")
-    path.write_bytes(output)
+    return text
+
+
+def patch_file(path: Path, source: str, target: str, changes: list[list[str]], label: str) -> str:
+    current = digest(path)
+    if current == target:
+        return "already-applied"
+    if current != source:
+        raise RuntimeError(f"refusing unexpected {label}: {current}")
+    path.write_text(apply(path.read_text(encoding="utf-8"), changes, label), encoding="utf-8")
+    actual = digest(path)
+    if actual != target:
+        raise RuntimeError(f"{label} digest mismatch: expected {target}, got {actual}")
     return "applied"
 
 
-def patch_materialized_contracts(root: Path) -> None:
-    for relative, changes in MATERIALIZED_REPLACEMENTS.items():
+def patch_materialized(root: Path, changes: dict[str, list[list[object]]]) -> None:
+    for relative, replacements in changes.items():
         path = root / relative
         text = path.read_text(encoding="utf-8")
         changed = False
-        for old, new, expected_count in changes:
+        for old, new, expected in replacements:
             old_count = text.count(old)
             new_count = text.count(new)
-            if old_count == expected_count:
+            if old_count == expected:
                 text = text.replace(old, new)
                 changed = True
-            elif old_count == 0 and new_count >= expected_count:
+            elif old_count == 0 and new_count >= expected:
                 continue
             else:
                 raise RuntimeError(
-                    f"unexpected visibility patch count in {relative}: "
-                    f"old={old_count} new={new_count} expected={expected_count}"
+                    f"unexpected contract count in {relative}: old={old_count} new={new_count} expected={expected}"
                 )
         if changed:
             path.write_text(text, encoding="utf-8")
+
+
+def patch_docs(root: Path) -> None:
+    path = root / "docs/den-3786-elenkos-fleet.md"
+    text = path.read_text(encoding="utf-8")
+    for old, new in (
+        ("public GitHub organizations", "private GitHub organizations"),
+        ("Repository creation is public", "Repository creation is private"),
+        ("public/no-auto-init creation", "private/no-auto-init creation"),
+    ):
+        text = text.replace(old, new)
+    forbidden = re.compile(
+        r"public GitHub organizations|Repository creation is public|public/no-auto-init creation",
+        re.IGNORECASE,
+    )
+    if forbidden.search(text):
+        raise RuntimeError("Elenkos documentation still advertises public repository creation")
+    path.write_text(text, encoding="utf-8")
 
 
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: patch_elenkos_fleet_payload_20260819.py ROOT")
     root = Path(sys.argv[1]).resolve()
+    data = decode_payload()
+
     augment = root / "scripts/ops/augment_elenkos_fleet_20260819.py"
-    generator = root / "scripts/ops/elenkos_fleet_spec_20260819.py"
     augment_status = patch_file(
-        augment, AUGMENT_ORIGINAL_SHA256, AUGMENT_PATCHED_SHA256,
-        AUGMENT_PATCH_GZIP_B64, "augmentation source",
+        augment, HASHES["augment"][0], HASHES["augment"][1], data["augment"], "augmentation source"
     )
-    generator_status = patch_file(
-        generator, GENERATOR_ORIGINAL_SHA256, GENERATOR_PATCHED_SHA256,
-        GENERATOR_PATCH_GZIP_B64, "fleet generator",
-    )
-    patch_materialized_contracts(root)
+
+    generator = root / "scripts/ops/elenkos_fleet_spec_20260819.py"
+    current = digest(generator)
+    if current == HASHES["generator_final"]:
+        generator_status = "already-applied"
+    else:
+        text = generator.read_text(encoding="utf-8")
+        if current == HASHES["generator_original"]:
+            text = apply(text, data["generator_base"], "base generator")
+            if hashlib.sha256(text.encode()).hexdigest() != HASHES["generator_base"]:
+                raise RuntimeError("base generator digest mismatch")
+        elif current != HASHES["generator_base"]:
+            raise RuntimeError(f"refusing unexpected fleet generator: {current}")
+        text = apply(text, data["generator_harden"], "hardened generator")
+        generator.write_text(text, encoding="utf-8")
+        if digest(generator) != HASHES["generator_final"]:
+            raise RuntimeError("final generator digest mismatch")
+        generator_status = "applied"
+
+    patch_materialized(root, data["materialized"])
+    patch_docs(root)
     print(
         "ELENKOS_PAYLOAD_PATCHED "
-        f"generator_sha256={digest(generator.read_bytes())} generator_status={generator_status} "
-        f"augment_sha256={digest(augment.read_bytes())} augment_status={augment_status} "
-        "visibility=private"
+        f"generator_sha256={digest(generator)} generator_status={generator_status} "
+        f"augment_sha256={digest(augment)} augment_status={augment_status} "
+        "visibility=private zed_aliases=slug-safe"
     )
     return 0
 
