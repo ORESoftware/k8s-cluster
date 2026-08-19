@@ -14,6 +14,7 @@ from validate_github_linear_registry_relationship import (  # noqa: E402
     EXPECTED_GOVERNANCE_COUNT,
     EXPECTED_PORTFOLIO_COUNT,
     RegistryRelationshipError,
+    load_governance_registry,
     validate_relationship,
 )
 
@@ -53,9 +54,9 @@ class GitHubLinearRegistryRelationshipTests(unittest.TestCase):
     def test_committed_registries_are_consistent(self) -> None:
         report = self.validate(self.governance, self.portfolio)
         self.assertTrue(report["relationship_valid"])
-        self.assertEqual(report["governance_organizations"], 64)
+        self.assertEqual(report["governance_organizations"], 71)
         self.assertEqual(report["active_portfolios"], 41)
-        self.assertEqual(report["governance_only_organizations"], 23)
+        self.assertEqual(report["governance_only_organizations"], 30)
 
     def test_linear_url_drift_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -108,6 +109,44 @@ class GitHubLinearRegistryRelationshipTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(RegistryRelationshipError, "expected project title"):
                 self.validate(governance, portfolio)
+
+    def test_only_explicit_complete_linear_project_shares_are_allowed(self) -> None:
+        allowed = (
+            "organization\tlinear_url\n"
+            "flags-2-env\thttps://linear.app/denman/project/githubcomflags-2-env-05db5133a267\n"
+            "flags-2-env-test\thttps://linear.app/denman/project/githubcomflags-2-env-05db5133a267\n"
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            valid = directory / "valid.tsv"
+            valid.write_text(allowed, encoding="utf-8")
+            loaded = load_governance_registry(valid, expected_count=2)
+            self.assertEqual(set(loaded), {"flags-2-env", "flags-2-env-test"})
+
+            unapproved = directory / "unapproved.tsv"
+            unapproved.write_text(
+                "organization\tlinear_url\n"
+                "alpha\thttps://linear.app/denman/project/shared-example\n"
+                "beta\thttps://linear.app/denman/project/shared-example\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                RegistryRelationshipError,
+                "shared without an explicit",
+            ):
+                load_governance_registry(unapproved, expected_count=2)
+
+            incomplete = directory / "incomplete.tsv"
+            incomplete.write_text(
+                "organization\tlinear_url\n"
+                "flags-2-env\thttps://linear.app/denman/project/githubcomflags-2-env-05db5133a267\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                RegistryRelationshipError,
+                "share exception mismatch",
+            ):
+                load_governance_registry(incomplete, expected_count=1)
 
     def test_credential_shaped_material_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -51,12 +51,12 @@ jobs:
           node --check scripts/ci/check-github-linear-project-registry.test.mjs
           node --test scripts/ci/check-github-linear-project-registry.test.mjs
 
-      - name: Validate the canonical 64-organization registry
+      - name: Validate the canonical 71-organization registry
         run: |
           set -euo pipefail
           node scripts/ci/check-github-linear-project-registry.mjs >/tmp/github-linear-project-registry.json
           python3 -m json.tool /tmp/github-linear-project-registry.json >/dev/null
-          test "$(python3 -c 'import json; print(json.load(open("/tmp/github-linear-project-registry.json"))["organizationCount"])')" = '64'
+          test "$(python3 -c 'import json; print(json.load(open("/tmp/github-linear-project-registry.json"))["organizationCount"])')" = '71'
 
       - name: Publish the derived organization map to the run summary
         run: node scripts/ci/check-github-linear-project-registry.mjs --markdown >> "$GITHUB_STEP_SUMMARY"
