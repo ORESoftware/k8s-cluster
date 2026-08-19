@@ -31,15 +31,33 @@ test('roadmap preserves the independent service boundaries and effect contract',
   assert.match(roadmap, /PR #999/);
 });
 
-test('roadmap records the merged Go SDK, artifact, and remaining M3 work', () => {
+test('roadmap records landed SDK artifacts and separated remaining M3 lanes', () => {
   assert.match(roadmap, /DEN-2289/);
   assert.match(roadmap, /dependency-free Go 1\.23\+/);
   assert.match(roadmap, /TypeScript, Python, and Go protocol fixture/);
-  assert.match(roadmap, /durable-worker-go-sdk-a693040ad69a1f54f14dd65fb8b74ab11fee132b/);
-  assert.match(roadmap, /sha256:b24060664d79c845c4b7370f4cabb5b0ac79b9a09fc5b00b45b596ad9948d78c/);
-  for (const language of ['Rust;', 'Dart;', 'Gleam;', 'Erlang and Elixir interoperability']) {
-    assert.match(roadmap, new RegExp(language));
-  }
+  assert.match(
+    roadmap,
+    /durable-worker-go-sdk-a693040ad69a1f54f14dd65fb8b74ab11fee132b/,
+  );
+  assert.match(
+    roadmap,
+    /sha256:b24060664d79c845c4b7370f4cabb5b0ac79b9a09fc5b00b45b596ad9948d78c/,
+  );
+  assert.match(roadmap, /PR #1037 \/ DEN-2392/);
+  assert.match(
+    roadmap,
+    /durable-worker-rust-sdk-435d42437f1b122b8a5a46ad8340070b67773ce3/,
+  );
+  assert.match(
+    roadmap,
+    /sha256:fc52f3d5318a13c3881b6adb8bbea41397e1dcc5ae2a5a221e7eb57e0aa948bb/,
+  );
+  assert.match(roadmap, /Dart worker SDK — issue #1163 \/ DEN-2464/);
+  assert.match(roadmap, /Gleam SDK: GitHub issue #1164 \/ Linear DEN-2480/);
+  assert.match(
+    roadmap,
+    /Erlang and Elixir interoperability: GitHub issue #1165 \/ Linear DEN-2482/,
+  );
 });
 
 test('roadmap defines five gated milestones', () => {
@@ -76,7 +94,10 @@ test('project operating model maps GitHub, Linear, artifacts, and exact-head del
 
 test('project docs track the private-backend CI blocker without recommending a PAT', () => {
   assert.match(roadmap, /DEN-2332/);
-  assert.match(roadmap, /https:\/\/github\.com\/ORESoftware\/k8s-cluster\/issues\/886/);
+  assert.match(
+    roadmap,
+    /https:\/\/github\.com\/ORESoftware\/k8s-cluster\/issues\/886/,
+  );
   assert.match(operatingModel, /DEN-2332/);
   assert.match(operatingModel, /issue #886/);
   assert.match(operatingModel, /repository-scoped GitHub App/);
@@ -91,8 +112,14 @@ test('documentation and its CI contain no write credential or PAT shape', () => 
 
 test('documentation CI is pinned, read-only, and checks repository cleanliness', () => {
   assert.match(workflow, /permissions:\n  contents: read/);
-  assert.match(workflow, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/);
+  assert.match(
+    workflow,
+    /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/,
+  );
   assert.match(workflow, /persist-credentials: false/);
-  assert.match(workflow, /node --test remote\/tests\/general\/durable-worker-project-docs\.test\.mjs/);
+  assert.match(
+    workflow,
+    /node --test remote\/tests\/general\/durable-worker-project-docs\.test\.mjs/,
+  );
   assert.match(workflow, /git diff --exit-code/);
 });
