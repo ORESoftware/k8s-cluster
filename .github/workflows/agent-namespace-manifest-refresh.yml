@@ -22,7 +22,7 @@ jobs:
       github.repository == 'ORESoftware/k8s-cluster' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.head_ref == 'agent/namespace-manifest-refresh-20260819'
-    name: Generate, validate, commit, and remove bootstrap
+    name: Generate, validate, and commit namespace data
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -77,7 +77,7 @@ jobs:
               raise SystemExit(f'entry count mismatch: {report}')
           PY
 
-      - name: Install generated baseline and exact invariant
+      - name: Install generated namespace data
         shell: bash
         run: |
           set -euo pipefail
@@ -85,25 +85,6 @@ jobs:
             target/artifacts/namespace-inventory.json
           cp source/catalog/namespaces/migration-manifest.json \
             target/catalog/namespaces/migration-manifest.json
-          python3 - <<'PY'
-          import json
-          import re
-          from pathlib import Path
-
-          manifest_path = Path('target/catalog/namespaces/migration-manifest.json')
-          count = json.loads(manifest_path.read_text(encoding='utf-8'))['metadata']['entryCount']
-          workflow_path = Path('target/.github/workflows/namespace-migration-contract.yml')
-          text = workflow_path.read_text(encoding='utf-8')
-          updated, replacements = re.subn(
-              r"report\.get\('(entryCount|inventoryEntryCount)'\) == \d+",
-              lambda match: f"report.get('{match.group(1)}') == {count}",
-              text,
-          )
-          if replacements != 2:
-              raise SystemExit(f'expected two invariant replacements, got {replacements}')
-          workflow_path.write_text(updated, encoding='utf-8')
-          PY
-          rm target/.github/workflows/agent-namespace-manifest-refresh.yml
 
       - name: Validate installed branch content
         shell: bash
@@ -126,7 +107,7 @@ jobs:
               raise SystemExit(f'installed manifest failed validation: {report}')
           PY
 
-      - name: Commit deterministic refresh
+      - name: Commit deterministic namespace data
         shell: bash
         working-directory: target
         run: |
@@ -135,13 +116,11 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
             artifacts/namespace-inventory.json \
-            catalog/namespaces/migration-manifest.json \
-            .github/workflows/namespace-migration-contract.yml \
-            .github/workflows/agent-namespace-manifest-refresh.yml
+            catalog/namespaces/migration-manifest.json
           git diff --cached --check
           if git diff --cached --quiet; then
-            echo 'No deterministic namespace changes to commit.'
+            echo 'No deterministic namespace data changes to commit.'
             exit 0
           fi
-          git commit -m 'chore(namespaces): refresh deterministic migration baseline'
+          git commit -m 'chore(namespaces): refresh deterministic migration data'
           git push origin HEAD:agent/namespace-manifest-refresh-20260819
