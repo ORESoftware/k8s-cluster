@@ -2,7 +2,9 @@ name: Record Elenkos publication receipt
 
 on:
   workflow_run:
-    workflows: ["Bootstrap Elenkos repository fleet"]
+    workflows:
+      - "Bootstrap Elenkos repository fleet"
+      - "Bootstrap Elenkos repository fleets"
     types: [completed]
 
 permissions:
@@ -22,18 +24,24 @@ jobs:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           EVENT_NAME: ${{ github.event.workflow_run.event }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
         run: |
           set -euo pipefail
           [[ "$RUN_ID" =~ ^[0-9]+$ ]]
           [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
           case "$CONCLUSION" in success|failure|cancelled|timed_out|action_required|neutral|skipped|stale) ;; *) exit 2;; esac
+          case "$WORKFLOW_NAME" in
+            "Bootstrap Elenkos repository fleet"|"Bootstrap Elenkos repository fleets") ;;
+            *) exit 2 ;;
+          esac
           body="$RUN_URL
 
+- workflow: $WORKFLOW_NAME
 - workflow_run_id: $RUN_ID
 - head_sha: $HEAD_SHA
 - trigger: $EVENT_NAME
 - conclusion: $CONCLUSION
-- scope: elenkos-systems + elenkos-systems-test (21 repositories)
+- scope: elenkos-systems (11 repositories) + elenkos-systems-test (12 repositories)
 - tracking: DEN-3786
 
 This receipt contains no publisher credentials or repository-private payloads."
