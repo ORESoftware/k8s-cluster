@@ -26,8 +26,10 @@ actual="$(sha256sum "$archive" | awk '{print $1}')"
 [[ "$expected" =~ ^[0-9a-f]{64}$ ]]
 [[ "$actual" == "$expected" ]]
 tar -xzf "$archive" -C "$root" --no-same-owner --no-same-permissions
+python3 "$root/scripts/ops/patch_elenkos_fleet_payload_20260819.py" "$root"
 
 required=(
+  scripts/ops/patch_elenkos_fleet_payload_20260819.py
   scripts/ops/elenkos_fleet_spec_20260819.py
   scripts/ops/publish_elenkos_fleet_20260819.py
   scripts/ops/run_protected_elenkos_fleet_20260819.sh
