@@ -24,7 +24,7 @@ Usage:
     [--url HTTPS_URL]
 
 Creates or updates exactly one repository webhook for workflow_run events.
-The webhook secret is read from a private regular file and is never accepted
+The webhook secret is read from an owner-only regular file and is never accepted
 from an environment variable, printed, or placed in a process argument.
 Authentication is provided through GH_TOKEN or an existing `gh auth login`.
 
@@ -98,19 +98,39 @@ temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/${script_name}.XXXXXX")"
 normalized_secret_file="$temp_dir/webhook-secret"
 payload_file="$temp_dir/hook.json"
 
-# Normalize one optional terminal line ending, then require one bounded visible
-# ASCII line. This validates the actual HMAC value sent to GitHub rather than
-# counting a newline that jq later strips.
+# Open without following a final symlink, verify the descriptor is still an
+# owner-only regular file, bound the read before allocation, normalize one
+# optional terminal line ending, and validate the exact HMAC value GitHub gets.
 python3 - "$secret_file" "$normalized_secret_file" <<'PY'
 from __future__ import annotations
 
 import os
+import stat
 import sys
-from pathlib import Path
 
-source = Path(sys.argv[1])
-destination = Path(sys.argv[2])
-value = source.read_bytes()
+source = sys.argv[1]
+destination = sys.argv[2]
+flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+try:
+    descriptor = os.open(source, flags)
+except OSError as exc:
+    raise SystemExit(f"cannot securely open webhook secret: {exc}") from exc
+try:
+    metadata = os.fstat(descriptor)
+    if not stat.S_ISREG(metadata.st_mode):
+        raise SystemExit("webhook secret must remain a regular file after open")
+    mode = stat.S_IMODE(metadata.st_mode)
+    if not mode & stat.S_IRUSR:
+        raise SystemExit("webhook secret must be owner-readable")
+    if mode & 0o077:
+        raise SystemExit("webhook secret must not be group/world accessible")
+    with os.fdopen(descriptor, "rb", closefd=False) as handle:
+        value = handle.read(4099)
+finally:
+    os.close(descriptor)
+
+if len(value) > 4098:
+    raise SystemExit("webhook secret file exceeds the bounded input size")
 if value.endswith(b"\r\n"):
     value = value[:-2]
 elif value.endswith(b"\n"):
@@ -119,8 +139,17 @@ if not 32 <= len(value) <= 4096:
     raise SystemExit("webhook secret must contain 32 to 4096 bytes after terminal-newline normalization")
 if any(byte < 0x21 or byte > 0x7E for byte in value):
     raise SystemExit("webhook secret must be a single visible-ASCII line")
-destination.write_bytes(value)
-os.chmod(destination, 0o600)
+
+output_flags = (
+    os.O_WRONLY
+    | os.O_CREAT
+    | os.O_EXCL
+    | getattr(os, "O_CLOEXEC", 0)
+    | getattr(os, "O_NOFOLLOW", 0)
+)
+output = os.open(destination, output_flags, 0o600)
+with os.fdopen(output, "wb") as handle:
+    handle.write(value)
 PY
 
 # Resolve by exact URL so reruns update rather than duplicate deliveries. More
