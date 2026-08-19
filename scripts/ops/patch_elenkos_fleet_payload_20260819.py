@@ -70,9 +70,73 @@ REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ),
 )
 
+MATERIALIZED_REPLACEMENTS: dict[str, tuple[tuple[str, str, int], ...]] = {
+    "scripts/ops/publish_elenkos_fleet_20260819.py": (
+        (
+            'document.get("private") is not False or document.get("visibility") != "public"',
+            'document.get("private") is not True or document.get("visibility") != "private"',
+            1,
+        ),
+        ("repository must be public", "repository must be private", 1),
+        ('"private": False', '"private": True', 1),
+        ('"visibility": "public"', '"visibility": "private"', 2),
+        ('visibility="public"', 'visibility="private"', 1),
+    ),
+    "scripts/ops/test_elenkos_fleet_20260819.py": (
+        (
+            "test_repository_creation_is_public_but_never_auto_initialized",
+            "test_repository_creation_is_private_but_never_auto_initialized",
+            1,
+        ),
+        (
+            'self.assertIs(payload["private"], False)',
+            'self.assertIs(payload["private"], True)',
+            1,
+        ),
+    ),
+    "scripts/ops/run_protected_elenkos_fleet_20260819.sh": (
+        (
+            '.publication.visibility == "public"',
+            '.publication.visibility == "private"',
+            1,
+        ),
+        ('.visibility == "public"', '.visibility == "private"', 1),
+    ),
+    "scripts/ops/validate_elenkos_fleet_payload_20260819.sh": (
+        ('\'"private": False\'', '\'"private": True\'', 1),
+    ),
+    "docs/den-3786-elenkos-fleet.md": (
+        ("public GitHub organizations", "private GitHub organizations", 1),
+        ("Repository creation is public", "Repository creation is private", 1),
+        ("public/no-auto-init creation", "private/no-auto-init creation", 1),
+    ),
+}
+
 
 def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def patch_materialized_contracts(root: Path) -> None:
+    for relative, replacements in MATERIALIZED_REPLACEMENTS.items():
+        path = root / relative
+        text = path.read_text(encoding="utf-8")
+        changed = False
+        for old, new, expected_count in replacements:
+            old_count = text.count(old)
+            new_count = text.count(new)
+            if old_count == expected_count:
+                text = text.replace(old, new)
+                changed = True
+            elif old_count == 0 and new_count >= expected_count:
+                continue
+            else:
+                raise RuntimeError(
+                    f"unexpected visibility patch count in {relative}: "
+                    f"old={old_count} new={new_count} expected={expected_count}"
+                )
+        if changed:
+            path.write_text(text, encoding="utf-8")
 
 
 def main() -> int:
@@ -92,29 +156,32 @@ def main() -> int:
     raw = target.read_bytes()
     current = digest(raw)
     if current == PATCHED_SHA256:
-        print(
-            f"ELENKOS_PAYLOAD_PATCHED sha256={current} augment_sha256={augment_digest} status=already-applied"
-        )
-        return 0
-    if current != ORIGINAL_SHA256:
+        status = "already-applied"
+    elif current == ORIGINAL_SHA256:
+        text = raw.decode("utf-8")
+        for old, new in REPLACEMENTS:
+            count = text.count(old)
+            if count != 1:
+                raise RuntimeError(f"expected one generator patch target, found {count}")
+            text = text.replace(old, new)
+
+        patched = text.encode("utf-8")
+        actual = digest(patched)
+        if actual != PATCHED_SHA256:
+            raise RuntimeError(f"patched generator digest mismatch: {actual}")
+        target.write_bytes(patched)
+        current = actual
+        status = "applied"
+    else:
         raise RuntimeError(
-            f"refusing to patch unexpected generator: expected {ORIGINAL_SHA256}, got {current}"
+            f"refusing to patch unexpected generator: expected {ORIGINAL_SHA256} or "
+            f"{PATCHED_SHA256}, got {current}"
         )
 
-    text = raw.decode("utf-8")
-    for old, new in REPLACEMENTS:
-        count = text.count(old)
-        if count != 1:
-            raise RuntimeError(f"expected one generator patch target, found {count}")
-        text = text.replace(old, new)
-
-    patched = text.encode("utf-8")
-    actual = digest(patched)
-    if actual != PATCHED_SHA256:
-        raise RuntimeError(f"patched generator digest mismatch: {actual}")
-    target.write_bytes(patched)
+    patch_materialized_contracts(root)
     print(
-        f"ELENKOS_PAYLOAD_PATCHED sha256={actual} augment_sha256={augment_digest} status=applied"
+        f"ELENKOS_PAYLOAD_PATCHED sha256={current} augment_sha256={augment_digest} "
+        f"visibility=private status={status}"
     )
     return 0
 
