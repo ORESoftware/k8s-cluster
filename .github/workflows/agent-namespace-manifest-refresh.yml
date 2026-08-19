@@ -1,9 +1,13 @@
 name: Agent namespace manifest refresh
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/namespace-manifest-refresh-20260819
+      - dev
+    types:
+      - opened
+      - reopened
+      - synchronize
 
 permissions:
   contents: write
@@ -14,7 +18,10 @@ concurrency:
 
 jobs:
   finalize:
-    if: ${{ github.repository == 'ORESoftware/k8s-cluster' && github.ref == 'refs/heads/agent/namespace-manifest-refresh-20260819' }}
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'agent/namespace-manifest-refresh-20260819'
     name: Generate, validate, commit, and remove bootstrap
     runs-on: ubuntu-latest
     timeout-minutes: 20
