@@ -3,8 +3,7 @@ name: Record Elenkos publication receipt
 on:
   workflow_run:
     workflows:
-      - Bootstrap Elenkos repository fleet
-      - Validate or publish Elenkos fleets at 417d08a07d8c
+      - Bootstrap Elenkos repository fleets
     types: [completed]
 
 permissions:
