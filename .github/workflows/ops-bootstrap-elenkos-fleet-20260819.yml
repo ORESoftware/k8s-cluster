@@ -53,6 +53,26 @@ jobs:
       - name: Validate generator, repository trees, Zed manifests, and safety boundary
         shell: bash
         run: bash scripts/ops/validate_elenkos_fleet_payload_20260819.sh
+      - name: Materialize inspectable fleet evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s scripts/ops/publish_elenkos_fleet_20260819.py
+          evidence="$RUNNER_TEMP/elenkos-fleet-evidence"
+          rm -rf "$evidence"
+          python3 scripts/ops/publish_elenkos_fleet_20260819.py \
+            --output "$evidence" \
+            --skip-repository-verifiers
+          tar -C "$RUNNER_TEMP" -czf "$RUNNER_TEMP/elenkos-fleet-evidence.tar.gz" elenkos-fleet-evidence
+      - name: Upload non-secret generated fleet evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: elenkos-fleet-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/elenkos-fleet-evidence.tar.gz
+          if-no-files-found: error
+          retention-days: 3
 
   rust-contracts:
     runs-on: ubuntu-24.04
