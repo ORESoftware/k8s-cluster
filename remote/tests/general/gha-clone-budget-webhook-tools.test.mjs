@@ -44,6 +44,9 @@ test('registration uses a normalized secret file and rejects ambiguous duplicate
     `#!/usr/bin/env bash
 set -Eeuo pipefail
 printf '%s\\n' "$*" >>"$GH_MOCK_ARGS"
+[[ -z "\${GH_DEBUG:-}" ]]
+[[ -z "\${DEBUG:-}" ]]
+[[ "$*" == *"--hostname github.com"* ]]
 if [[ "$*" == *"?per_page=100"* ]]; then
   if [[ "\${GH_MOCK_DUPLICATE:-0}" == 1 ]]; then
     printf '[{"id":11,"config":{"url":"%s"}},{"id":12,"config":{"url":"%s"}}]\\n' "$GH_MOCK_URL" "$GH_MOCK_URL"
@@ -68,6 +71,8 @@ printf '{"id":77,"active":true,"events":["workflow_run"],"config":{"url":"%s","c
   fs.writeFileSync(secretFile, `${secret}\n`, { mode: 0o600 });
   const env = {
     ...process.env,
+    GH_DEBUG: 'api',
+    DEBUG: '1',
     PATH: `${bin}:${process.env.PATH}`,
     GH_MOCK_ARGS: argsLog,
     GH_MOCK_PAYLOAD: payload,
@@ -82,7 +87,9 @@ printf '{"id":77,"active":true,"events":["workflow_run"],"config":{"url":"%s","c
   );
   assert.equal(created.status, 0, created.stderr);
   assert.match(created.stdout, /created webhook id=77/);
-  assert.doesNotMatch(fs.readFileSync(argsLog, 'utf8'), new RegExp(secret));
+  const recordedArgs = fs.readFileSync(argsLog, 'utf8');
+  assert.doesNotMatch(recordedArgs, new RegExp(secret));
+  assert.match(recordedArgs, /--hostname github\.com/);
   assert.equal(JSON.parse(fs.readFileSync(payload, 'utf8')).config.secret, secret);
 
   const duplicate = run(
@@ -134,4 +141,37 @@ test('registration validates normalized bytes and owner-only file metadata', () 
   );
   assert.notEqual(symlink.status, 0);
   assert.match(symlink.stderr, /non-symlink regular file/);
+});
+
+test('canary opens owner-only regular secret files without following symlinks', () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'gha-canary-secret-'));
+  const valid = path.join(temp, 'valid');
+  const publicSecret = path.join(temp, 'public');
+  const link = path.join(temp, 'link');
+  fs.writeFileSync(valid, `${'v'.repeat(32)}\n`, { mode: 0o600 });
+  fs.writeFileSync(publicSecret, 'p'.repeat(32), { mode: 0o644 });
+  fs.chmodSync(publicSecret, 0o644);
+  fs.symlinkSync(valid, link);
+
+  const probe = String.raw`
+import importlib.util
+import sys
+from pathlib import Path
+spec = importlib.util.spec_from_file_location("gha_canary", sys.argv[1])
+assert spec is not None and spec.loader is not None
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+value = module.read_secret(Path(sys.argv[2]), "test secret")
+assert value == b"v" * 32
+`;
+  const validResult = run('python3', ['-c', probe, canaryScript, valid]);
+  assert.equal(validResult.status, 0, validResult.stderr);
+
+  const publicResult = run('python3', ['-c', probe, canaryScript, publicSecret]);
+  assert.notEqual(publicResult.status, 0);
+  assert.match(publicResult.stderr, /must not be group\/world accessible/);
+
+  const symlinkResult = run('python3', ['-c', probe, canaryScript, link]);
+  assert.notEqual(symlinkResult.status, 0);
+  assert.match(symlinkResult.stderr, /cannot securely open test secret file/);
 });
