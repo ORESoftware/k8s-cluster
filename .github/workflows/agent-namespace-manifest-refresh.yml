@@ -1,6 +1,7 @@
 name: Agent namespace manifest refresh
 
 on:
+  pull_request:
   push:
     branches:
       - agent/namespace-manifest-refresh-20260819
