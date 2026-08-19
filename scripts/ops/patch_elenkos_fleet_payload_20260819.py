@@ -14,8 +14,28 @@ HASHES = {
     "augment": ("58ea2870c136160847e65e864388e4f85be92954fbdede356d90178eceb36c90", "385cf3f31555e97650eb934e50b71347f2bc4b862974730887d87acb28dc0e55"),
     "generator_original": "de511f13abd079437860a826c4e0dea50bfea90d15c76014432acb4b926e4016",
     "generator_base": "fa1c194e62dccf0867aa8dd251acf868f887756e7706ce50c4e422ad8e774a2e",
-    "generator_final": "4f1b7008f6258c2edc78fbee86400d3294a425931c6bad3b9d8dc732c4ee092c",
+    "generator_hardened": "4f1b7008f6258c2edc78fbee86400d3294a425931c6bad3b9d8dc732c4ee092c",
+    "generator_final": "20bc13462545892f45f7f0a410385c04fed846afe8bc6aac351edaa7ff4f40d8",
 }
+
+GENERATOR_TARGET_ISOLATION = (
+    (
+        '    dependency_block = f"\\n[dependencies]\\n{dependencies}\\n" if dependencies else ""\n    return clean(\n',
+        '    dependency_block = f"\\n[dependencies]\\n{dependencies}\\n" if dependencies else ""\n'
+        '    target_block = targets or clean(\n'
+        '        """\n'
+        '        [targets.repository]\n'
+        '        dir = "."\n'
+        '        adapter = "none"\n'
+        '        """\n'
+        '    )\n'
+        '    return clean(\n',
+    ),
+    (
+        '        [targets.repository]\n        dir = "."\n        adapter = "none"\n        {targets}\n        [scripts]\n',
+        '        {target_block}\n        [scripts]\n',
+    ),
+)
 
 
 def digest(path: Path) -> str:
@@ -106,11 +126,17 @@ def main() -> int:
         text = generator.read_text(encoding="utf-8")
         if current == HASHES["generator_original"]:
             text = apply(text, data["generator_base"], "base generator")
-            if hashlib.sha256(text.encode()).hexdigest() != HASHES["generator_base"]:
+            current = hashlib.sha256(text.encode()).hexdigest()
+            if current != HASHES["generator_base"]:
                 raise RuntimeError("base generator digest mismatch")
-        elif current != HASHES["generator_base"]:
+        if current == HASHES["generator_base"]:
+            text = apply(text, data["generator_harden"], "hardened generator")
+            current = hashlib.sha256(text.encode()).hexdigest()
+            if current != HASHES["generator_hardened"]:
+                raise RuntimeError("hardened generator digest mismatch")
+        elif current != HASHES["generator_hardened"]:
             raise RuntimeError(f"refusing unexpected fleet generator: {current}")
-        text = apply(text, data["generator_harden"], "hardened generator")
+        text = apply(text, GENERATOR_TARGET_ISOLATION, "isolated Zed targets")
         generator.write_text(text, encoding="utf-8")
         if digest(generator) != HASHES["generator_final"]:
             raise RuntimeError("final generator digest mismatch")
