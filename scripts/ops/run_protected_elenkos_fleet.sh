@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 umask 077
 
+# Receipt retry: this file change intentionally retriggers the bounded publisher.
 trusted_sha="${1:?trusted k8s-cluster SHA required}"
 [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
 repo_root="$(git rev-parse --show-toplevel)"
