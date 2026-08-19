@@ -94,7 +94,7 @@ printf '{"id":77,"active":true,"events":["workflow_run"],"config":{"url":"%s","c
   assert.match(duplicate.stderr, /multiple hooks already use the exact callback URL/);
 });
 
-test('registration validates the normalized secret rather than counting its newline', () => {
+test('registration validates normalized bytes and owner-only file metadata', () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'gha-hook-secret-'));
   const bin = path.join(temp, 'bin');
   fs.mkdirSync(bin);
@@ -111,6 +111,17 @@ test('registration validates the normalized secret rather than counting its newl
   );
   assert.notEqual(short.status, 0);
   assert.match(short.stderr, /32 to 4096 bytes/);
+
+  const publicSecret = path.join(temp, 'public');
+  fs.writeFileSync(publicSecret, 'x'.repeat(32), { mode: 0o644 });
+  fs.chmodSync(publicSecret, 0o644);
+  const publicResult = run(
+    registerScript,
+    ['--repository', 'example/repository', '--url', url, '--secret-file', publicSecret],
+    { env },
+  );
+  assert.notEqual(publicResult.status, 0);
+  assert.match(publicResult.stderr, /must not be group\/world accessible/);
 
   const realSecret = path.join(temp, 'real');
   fs.writeFileSync(realSecret, 'x'.repeat(32), { mode: 0o600 });
