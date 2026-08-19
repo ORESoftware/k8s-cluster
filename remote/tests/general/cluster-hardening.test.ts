@@ -217,8 +217,13 @@ test("AI agent bridge is authenticated, observable, isolated, and disruption-pro
     deployment,
     /name:\s*OTEL_EXPORTER_OTLP_ENDPOINT[\s\S]*dd-otel-collector\.observability\.svc\.cluster\.local:4318/,
   );
-  assert.match(deployment, /ephemeral-storage:\s*1Gi/);
-  assert.match(deployment, /ephemeral-storage:\s*8Gi/);
+  // The bridge runs a prebuilt distroless image pinned by digest, not an
+  // in-cluster `cargo build` from source (that build-from-source path — and its
+  // multi-GB /tmp target dir — was retired after it caused the 2026-07-31 stale
+  // -source outage). It therefore declares small, bounded ephemeral storage:
+  // a 128Mi request and a 1Gi limit, rather than the 1Gi/8Gi build budget.
+  assert.match(deployment, /requests:[\s\S]*?ephemeral-storage:\s*128Mi/);
+  assert.match(deployment, /limits:[\s\S]*?ephemeral-storage:\s*1Gi/);
   assert.match(networkPolicy, /kind:\s*NetworkPolicy/);
   assert.match(networkPolicy, /app:\s*dd-dev-server-api/);
   assert.match(networkPolicy, /app:\s*dd-agent-worker-broker/);
