@@ -26,7 +26,8 @@ Usage:
 Creates or updates exactly one repository webhook for workflow_run events.
 The webhook secret is read from an owner-only regular file and is never accepted
 from an environment variable, printed, or placed in a process argument.
-Authentication is provided through GH_TOKEN or an existing `gh auth login`.
+Authentication is provided through GH_TOKEN or an existing `gh auth login` for
+github.com. Debug HTTP tracing is forcibly disabled for secret-bearing requests.
 
 Required token/App authority: repository Administration read/write.
 USAGE
@@ -64,6 +65,10 @@ done
 command -v gh >/dev/null 2>&1 || { echo "$script_name: gh is required" >&2; exit 69; }
 command -v jq >/dev/null 2>&1 || { echo "$script_name: jq is required" >&2; exit 69; }
 command -v python3 >/dev/null 2>&1 || { echo "$script_name: python3 is required" >&2; exit 69; }
+
+github_api() {
+  env -u GH_DEBUG -u DEBUG gh api --hostname github.com "$@"
+}
 
 [[ "$repository" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || {
   echo "$script_name: --repository must be exact OWNER/REPO" >&2
@@ -156,7 +161,7 @@ PY
 # than one match is an unsafe pre-existing state: fail closed instead of silently
 # selecting one hook and leaving the others active.
 existing_ids="$(
-  gh api "/repos/${repository}/hooks?per_page=100" --paginate \
+  github_api "/repos/${repository}/hooks?per_page=100" --paginate \
     | jq -r --arg url "$webhook_url" '.[] | select(.config.url == $url) | .id'
 )"
 match_count="$(printf '%s\n' "$existing_ids" | awk 'NF { count += 1 } END { print count + 0 }')"
@@ -183,10 +188,10 @@ jq -cn \
 
 if [[ -n "$existing_id" ]]; then
   [[ "$existing_id" =~ ^[0-9]+$ ]] || { echo "$script_name: GitHub returned a non-numeric hook id" >&2; exit 1; }
-  result="$(gh api --method PATCH "/repos/${repository}/hooks/${existing_id}" --input "$payload_file")"
+  result="$(github_api --method PATCH "/repos/${repository}/hooks/${existing_id}" --input "$payload_file")"
   action='updated'
 else
-  result="$(gh api --method POST "/repos/${repository}/hooks" --input "$payload_file")"
+  result="$(github_api --method POST "/repos/${repository}/hooks" --input "$payload_file")"
   action='created'
 fi
 
