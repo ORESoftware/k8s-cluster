@@ -25,6 +25,14 @@ function envLiteral(yaml, name) {
   return match?.[1]?.trim();
 }
 
+function exactLocation(config, marker, nextMarker) {
+  const start = config.indexOf(marker);
+  assert.notEqual(start, -1, `missing location marker: ${marker}`);
+  const end = config.indexOf(nextMarker, start);
+  assert.notEqual(end, -1, `missing next marker after: ${marker}`);
+  return config.slice(start, end);
+}
+
 test('clone server is one immutable bounded execution replica', () => {
   assert.match(cloneDeployment, /name: dd-gha-clone-server[\s\S]*?replicas: 1\n/);
   assert.match(cloneDeployment, /minReadySeconds: 10/);
@@ -62,7 +70,7 @@ test('executor router is one immutable AWS-only execution replica', () => {
   assert.match(routerDeployment, /readOnlyRootFilesystem: true/);
 });
 
-test('only the exact HMAC webhook path is public', () => {
+test('only the exact HMAC webhook path is public and POST replay is disabled at the edge', () => {
   assert.match(ingress, /name: dd-gha-clone-webhook/);
   assert.match(ingress, /nginx\.ingress\.kubernetes\.io\/rewrite-target: \/webhooks\/github/);
   assert.match(ingress, /path: \/gha-webhooks\/github\n\s+pathType: Exact/);
@@ -71,15 +79,21 @@ test('only the exact HMAC webhook path is public', () => {
   assert.match(ingress, /nginx\.ingress\.kubernetes\.io\/ssl-redirect: "true"/);
   assert.match(ingress, /nginx\.ingress\.kubernetes\.io\/proxy-body-size: "1m"/);
   assert.match(ingress, /nginx\.ingress\.kubernetes\.io\/limit-rps: "5"/);
-  assert.match(gateway, /location = \/gha-webhooks\/github \{/);
-  assert.match(gateway, /if \(\$request_method != POST\)/);
-  assert.match(
+
+  const webhookLocation = exactLocation(
     gateway,
-    /dd-gha-clone-server\.default\.svc\.cluster\.local:8125/,
+    '      location = /gha-webhooks/github {',
+    '      # Inbound webhooks from GitHub',
   );
-  assert.match(gateway, /proxy_pass http:\/\/\$dd_up_gha_clone\/webhooks\/github/);
-  assert.match(gateway, /limit_req zone=dd_gha_webhook burst=10 nodelay/);
-  assert.match(gatewayDaemonSet, /dd\.dev\/gateway-config-revision: '2026-08-11-gha-budget-webhook'/);
+  assert.match(webhookLocation, /if \(\$request_method != POST\)/);
+  assert.match(webhookLocation, /dd-gha-clone-server\.default\.svc\.cluster\.local:8125/);
+  assert.match(webhookLocation, /proxy_pass http:\/\/\$dd_up_gha_clone\/webhooks\/github/);
+  assert.match(webhookLocation, /limit_req zone=dd_gha_webhook burst=10 nodelay/);
+  assert.match(webhookLocation, /proxy_request_buffering off;/);
+  assert.match(webhookLocation, /proxy_next_upstream off;/);
+  assert.doesNotMatch(webhookLocation, /X-Server-Auth|Auth \$/);
+
+  assert.match(gatewayDaemonSet, /dd\.dev\/gateway-config-revision: '2026-08-19-gha-webhook-no-retry'/);
   assert.match(renewGatewayCert, /GATEWAY_WORKLOAD="daemonset\/dd-remote-gateway"/);
   assert.match(renewGatewayCert, /kubectl rollout restart "\$\{GATEWAY_WORKLOAD\}"/);
 });
@@ -104,27 +118,33 @@ test('pilot repository, path, and fixed build profile remain exact', () => {
   );
 });
 
-test('hook registration is idempotent, workflow_run-only, and keeps the secret out of argv', () => {
+test('hook registration is unambiguous, workflow_run-only, and keeps the secret out of argv', () => {
   assert.match(registerScript, /events: \["workflow_run"\]/);
   assert.doesNotMatch(registerScript, /"push"|"pull_request"/);
-  assert.match(registerScript, /--rawfile secret "\$secret_file"/);
-  assert.match(registerScript, /select\(\.config\.url == \$url\)/);
+  assert.match(registerScript, /--rawfile secret "\$normalized_secret_file"/);
+  assert.match(registerScript, /multiple hooks already use the exact callback URL/);
+  assert.match(registerScript, /! -L "\$secret_file"/);
+  assert.match(registerScript, /single visible-ASCII line/);
   assert.match(registerScript, /--method PATCH/);
   assert.match(registerScript, /--method POST/);
   assert.match(registerScript, /insecure_ssl: "0"/);
-  assert.doesNotMatch(registerScript, /--arg secret|echo .*\$webhook_secret|printf .*\$webhook_secret/);
+  assert.doesNotMatch(registerScript, /GITHUB_WEBHOOK_SECRET|--arg secret|echo .*\$webhook_secret|printf .*\$webhook_secret/);
   assert.match(registerScript, /https:\/\/98\.90\.186\.114\/gha-webhooks\/github/);
 });
 
-test('canary signs exact bytes and proves repository, SHA, workflow, and terminal state', () => {
-  assert.match(canary, /SHA_RE = re\.compile\(r"\^\[0-9a-fA-F\]\{40\}\$"\)/);
+test('canary rejects bad HMAC, forbids redirects, and proves one replay creates no new run', () => {
+  assert.match(canary, /SHA_RE = re\.compile\(r"\^\[0-9a-f\]\{40\}\$"\)/);
+  assert.match(canary, /class NoRedirect/);
+  assert.match(canary, /invalid_status != 401/);
   assert.match(canary, /"conclusion": "action_required"/);
   assert.match(canary, /hmac\.new\(webhook_secret, body, hashlib\.sha256\)/);
   assert.match(canary, /"X-GitHub-Event": "workflow_run"/);
   assert.match(canary, /"X-GitHub-Delivery": delivery/);
   assert.match(canary, /"X-Hub-Signature-256": signature/);
-  assert.match(canary, /accepted\.get\("repository"\) != args\.repository/);
-  assert.match(canary, /accepted\.get\("revision"\) != args\.sha\.lower\(\)/);
+  assert.match(canary, /len\(run_ids\) != 1/);
+  assert.match(canary, /replay\.get\("accepted"\) is not False/);
+  assert.match(canary, /"runIds" in replay/);
+  assert.match(canary, /"duplicateDeliverySuppressed": True/);
   assert.match(canary, /run\.get\("workflowPath"\) != args\.workflow_path/);
   assert.match(canary, /state in \{"succeeded", "failed"\}/);
   assert.doesNotMatch(canary, /print\([^\n]*(webhook_secret|clone_auth)/);
