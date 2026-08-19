@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/ops-bootstrap-elenkos-fleet-20260819.yml
       - scripts/ops/materialize_elenkos_fleet_payload_20260819.sh
+      - scripts/ops/patch_elenkos_fleet_payload_20260819.py
       - scripts/ops/elenkos_fleet_payload_20260819.sha256
       - scripts/ops/elenkos_fleet_payload_20260819.b64.part*
   push:
@@ -14,6 +15,7 @@ on:
     paths:
       - .github/workflows/ops-bootstrap-elenkos-fleet-20260819.yml
       - scripts/ops/materialize_elenkos_fleet_payload_20260819.sh
+      - scripts/ops/patch_elenkos_fleet_payload_20260819.py
       - scripts/ops/elenkos_fleet_payload_20260819.sha256
       - scripts/ops/elenkos_fleet_payload_20260819.b64.part*
   workflow_dispatch:
@@ -42,6 +44,9 @@ jobs:
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
           args: .github/workflows/ops-bootstrap-elenkos-fleet-20260819.yml
+      - name: Validate payload patch source
+        shell: bash
+        run: python3 -m py_compile scripts/ops/patch_elenkos_fleet_payload_20260819.py
       - name: Materialize reviewed payload
         shell: bash
         run: bash scripts/ops/materialize_elenkos_fleet_payload_20260819.sh
