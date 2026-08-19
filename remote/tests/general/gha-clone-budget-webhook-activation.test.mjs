@@ -133,7 +133,13 @@ test('hook registration is unambiguous, workflow_run-only, and keeps the secret 
   assert.match(registerScript, /--rawfile secret "\$normalized_secret_file"/);
   assert.match(registerScript, /multiple hooks already use the exact callback URL/);
   assert.match(registerScript, /! -L "\$secret_file"/);
+  assert.match(registerScript, /getattr\(os, "O_NOFOLLOW", 0\)/);
+  assert.match(registerScript, /stat\.S_ISREG\(metadata\.st_mode\)/);
+  assert.match(registerScript, /mode & 0o077/);
+  assert.match(registerScript, /handle\.read\(4099\)/);
   assert.match(registerScript, /single visible-ASCII line/);
+  assert.match(registerScript, /github_api\(\)/);
+  assert.match(registerScript, /env -u GH_DEBUG -u DEBUG gh api --hostname github\.com/);
   assert.match(registerScript, /--method PATCH/);
   assert.match(registerScript, /--method POST/);
   assert.match(registerScript, /insecure_ssl: "0"/);
@@ -141,9 +147,13 @@ test('hook registration is unambiguous, workflow_run-only, and keeps the secret 
   assert.match(registerScript, /https:\/\/98\.90\.186\.114\/gha-webhooks\/github/);
 });
 
-test('canary rejects bad HMAC, forbids redirects, and proves one replay creates no new run', () => {
+test('canary rejects bad HMAC, securely reads secrets, and proves one replay creates no new run', () => {
   assert.match(canary, /SHA_RE = re\.compile\(r"\^\[0-9a-f\]\{40\}\$"\)/);
   assert.match(canary, /class NoRedirect/);
+  assert.match(canary, /getattr\(os, "O_NOFOLLOW", 0\)/);
+  assert.match(canary, /stat\.S_ISREG\(metadata\.st_mode\)/);
+  assert.match(canary, /mode & 0o077/);
+  assert.match(canary, /handle\.read\(MAX_SECRET_BYTES \+ 3\)/);
   assert.match(canary, /invalid_status != 401/);
   assert.match(canary, /"conclusion": "action_required"/);
   assert.match(canary, /hmac\.new\(webhook_secret, body, hashlib\.sha256\)/);
