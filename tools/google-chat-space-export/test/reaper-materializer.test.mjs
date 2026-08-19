@@ -75,9 +75,10 @@ function fakeLinearStore() {
 }
 
 test('redacts common credential, email, and phone shapes before Linear egress', () => {
-  const input = 'use ghp_123456789012345678901234567890 and alex@example.com +1 (512) 555-1212';
+  const fakeGitHubToken = ['ghp', '123456789012345678901234567890'].join('_');
+  const input = `use ${fakeGitHubToken} and alex@example.com +1 (512) 555-1212`;
   const output = redactSensitiveText(input);
-  assert.equal(output.includes('ghp_123456789012345678901234567890'), false);
+  assert.equal(output.includes(fakeGitHubToken), false);
   assert.equal(output.includes('alex@example.com'), false);
   assert.equal(output.includes('555-1212'), false);
   assert.match(output, /\[REDACTED_SECRET\]/);
