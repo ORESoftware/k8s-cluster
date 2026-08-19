@@ -1,0 +1,43 @@
+name: Record Elenkos publication receipt
+
+on:
+  workflow_run:
+    workflows: ["Bootstrap Elenkos repository fleet"]
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  receipt:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Publish bounded receipt issue
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          EVENT_NAME: ${{ github.event.workflow_run.event }}
+        run: |
+          set -euo pipefail
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          case "$CONCLUSION" in success|failure|cancelled|timed_out|action_required|neutral|skipped|stale) ;; *) exit 2;; esac
+          body="$RUN_URL
+
+- workflow_run_id: $RUN_ID
+- head_sha: $HEAD_SHA
+- trigger: $EVENT_NAME
+- conclusion: $CONCLUSION
+- scope: elenkos-systems + elenkos-systems-test (21 repositories)
+- tracking: DEN-3786
+
+This receipt contains no publisher credentials or repository-private payloads."
+          gh issue create \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Elenkos fleet publication receipt: $CONCLUSION ($RUN_ID)" \
+            --body "$body"
