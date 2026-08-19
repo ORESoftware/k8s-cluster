@@ -1,0 +1,59 @@
+name: Agent namespace manifest refresh
+
+on:
+  push:
+    branches:
+      - agent/namespace-manifest-refresh-20260819
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    name: Generate deterministic namespace manifest from dev
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out dev without child worktrees
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
+          path: source
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+
+      - name: Generate inventory and manifest
+        shell: bash
+        working-directory: source
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          python3 -m py_compile \
+            tools/namespace_migration.py \
+            tools/namespace_manifest.py
+          python3 tools/namespace_migration.py inventory \
+            --root . \
+            --format json \
+            > artifacts/namespace-inventory.json
+          python3 tools/namespace_manifest.py generate \
+            --root . \
+            --format json \
+            > artifacts/namespace-manifest-generate-report.json
+          python3 tools/namespace_manifest.py check \
+            --root . \
+            --format json \
+            > artifacts/namespace-manifest-check-report.json
+
+      - name: Upload deterministic output
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: namespace-manifest-refresh
+          path: |
+            source/catalog/namespaces/migration-manifest.json
+            source/artifacts/namespace-inventory.json
+            source/artifacts/namespace-manifest-generate-report.json
+            source/artifacts/namespace-manifest-check-report.json
+          if-no-files-found: error
+          retention-days: 3
