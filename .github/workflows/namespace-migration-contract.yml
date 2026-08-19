@@ -109,6 +109,11 @@ jobs:
             --format json \
             > artifacts/namespace-inventory.json
 
+      - name: Render canonical migration manifest for exact-source review
+        run: |
+          python3 tools/namespace_manifest.py render --root . \
+            > artifacts/generated-namespace-manifest.json
+
       - name: Validate deterministic plaintext migration manifest
         shell: bash
         run: |
@@ -190,6 +195,7 @@ jobs:
             artifacts/namespace-source-ref.json
             artifacts/namespace-contract-report.json
             artifacts/namespace-inventory.json
+            artifacts/generated-namespace-manifest.json
             artifacts/namespace-manifest-report.json
             artifacts/namespace-manifest-invariants.json
             artifacts/namespace-manifest.sha256
