@@ -79,6 +79,9 @@ test('only the exact HMAC webhook path is public and POST replay is disabled at 
   assert.match(ingress, /nginx\.ingress\.kubernetes\.io\/ssl-redirect: "true"/);
   assert.match(ingress, /nginx\.ingress\.kubernetes\.io\/proxy-body-size: "1m"/);
   assert.match(ingress, /nginx\.ingress\.kubernetes\.io\/limit-rps: "5"/);
+  assert.match(ingress, /nginx\.ingress\.kubernetes\.io\/proxy-next-upstream: "off"/);
+  assert.match(ingress, /nginx\.ingress\.kubernetes\.io\/proxy-next-upstream-tries: "1"/);
+  assert.match(ingress, /nginx\.ingress\.kubernetes\.io\/proxy-request-buffering: "off"/);
 
   const webhookLocation = exactLocation(
     gateway,
@@ -89,11 +92,17 @@ test('only the exact HMAC webhook path is public and POST replay is disabled at 
   assert.match(webhookLocation, /dd-gha-clone-server\.default\.svc\.cluster\.local:8125/);
   assert.match(webhookLocation, /proxy_pass http:\/\/\$dd_up_gha_clone\/webhooks\/github/);
   assert.match(webhookLocation, /limit_req zone=dd_gha_webhook burst=10 nodelay/);
-  assert.match(webhookLocation, /proxy_request_buffering off;/);
-  assert.match(webhookLocation, /proxy_next_upstream off;/);
+  assert.match(webhookLocation, /proxy_buffering off;/);
   assert.doesNotMatch(webhookLocation, /X-Server-Auth|Auth \$/);
 
   assert.match(gatewayDaemonSet, /dd\.dev\/gateway-config-revision: '2026-08-19-gha-webhook-no-retry'/);
+  assert.match(gatewayDaemonSet, /name: render-webhook-no-retry-config/);
+  assert.match(gatewayDaemonSet, /test "\$\(grep -Fxc '      location = \/gha-webhooks\/github \{' "\$input"\)" -eq 1/);
+  assert.match(gatewayDaemonSet, /proxy_request_buffering off;/);
+  assert.match(gatewayDaemonSet, /proxy_next_upstream off;/);
+  assert.match(gatewayDaemonSet, /partial or duplicate webhook no-retry directives; refusing to start/);
+  assert.match(gatewayDaemonSet, /runAsNonRoot: true[\s\S]{0,100}runAsUser: 101/);
+  assert.match(gatewayDaemonSet, /name: config-rendered[\s\S]{0,160}mountPath: \/etc\/nginx\/templates\/default\.conf\.template/);
   assert.match(renewGatewayCert, /GATEWAY_WORKLOAD="daemonset\/dd-remote-gateway"/);
   assert.match(renewGatewayCert, /kubectl rollout restart "\$\{GATEWAY_WORKLOAD\}"/);
 });
