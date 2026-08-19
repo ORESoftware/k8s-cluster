@@ -68,9 +68,9 @@ jobs:
           cp \
             scripts/ops/elenkos_fleet_spec_20260819.py \
             scripts/ops/publish_elenkos_fleet_20260819.py \
-            scripts/ops/run_protected_elenkos_fleet_publication_20260819.sh \
+            scripts/ops/run_protected_elenkos_fleet_20260819.sh \
             scripts/ops/dispatch_elenkos_fleet_via_ssm_20260819.sh \
-            scripts/ops/test_elenkos_fleet_payload_20260819.py \
+            scripts/ops/test_elenkos_fleet_20260819.py \
             scripts/ops/validate_elenkos_fleet_payload_20260819.sh \
             "$evidence/_materialized-payload/"
           tar -C "$RUNNER_TEMP" -czf "$RUNNER_TEMP/elenkos-fleet-evidence.tar.gz" elenkos-fleet-evidence
