@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: namespace-migration-${{ github.workflow }}-${{ github.ref }}
@@ -40,7 +40,7 @@ jobs:
         with:
           ref: ${{ steps.source-ref.outputs.ref }}
           fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
           submodules: false
 
       - name: Assert and record exact source checkout
@@ -108,33 +108,6 @@ jobs:
             --root . \
             --format json \
             > artifacts/namespace-inventory.json
-
-      - name: Render canonical migration manifest for exact-source review
-        run: |
-          python3 tools/namespace_manifest.py render --root . \
-            > artifacts/generated-namespace-manifest.json
-
-      - name: Commit canonical namespace artifacts to PR branch
-        if: ${{ github.event_name == 'pull_request' }}
-        shell: bash
-        env:
-          HEAD_BRANCH: ${{ github.head_ref }}
-        run: |
-          set -Eeuo pipefail
-          test -n "$HEAD_BRANCH"
-          cp artifacts/generated-namespace-manifest.json \
-            catalog/namespaces/migration-manifest.json
-          git add \
-            artifacts/namespace-inventory.json \
-            catalog/namespaces/migration-manifest.json
-          if git diff --cached --quiet; then
-            echo "canonical namespace artifacts are already current"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore: regenerate namespace migration artifacts"
-          git push origin "HEAD:${HEAD_BRANCH}"
 
       - name: Validate deterministic plaintext migration manifest
         shell: bash
@@ -217,7 +190,6 @@ jobs:
             artifacts/namespace-source-ref.json
             artifacts/namespace-contract-report.json
             artifacts/namespace-inventory.json
-            artifacts/generated-namespace-manifest.json
             artifacts/namespace-manifest-report.json
             artifacts/namespace-manifest-invariants.json
             artifacts/namespace-manifest.sha256
