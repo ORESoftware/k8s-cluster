@@ -64,7 +64,7 @@ class CheckedInManifestTests(unittest.TestCase):
     def test_manifest_has_one_row_per_inventory_identity(self) -> None:
         entries = self.generated["spec"]["entries"]
         occurrences = self.inventory["occurrences"]
-        self.assertEqual(1134, len(entries))
+        self.assertEqual(1276, len(entries))
         self.assertEqual(len(occurrences), len(entries))
         inventory_identities = {
             (
@@ -109,7 +109,7 @@ class CheckedInManifestTests(unittest.TestCase):
             for item in self.generated["spec"]["entries"]
             if item["owner"] == "unclassified"
         ]
-        self.assertEqual(595, len(blocked))
+        self.assertEqual(683, len(blocked))
         for entry in blocked:
             self.assertIsNone(entry["target"])
             self.assertEqual("blocked", entry["reviewState"])
@@ -260,7 +260,7 @@ class CliTests(unittest.TestCase):
         report = json.loads(output.getvalue())
         self.assertEqual(0, status)
         self.assertTrue(report["valid"])
-        self.assertEqual(1134, report["entryCount"])
+        self.assertEqual(1276, report["entryCount"])
 
     def test_render_command_is_canonical(self) -> None:
         output = io.StringIO()
