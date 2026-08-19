@@ -1,0 +1,43 @@
+name: diagnose Messaging Intel process test provenance
+
+on:
+  push:
+    branches:
+      - agent/msgint-gha-continuity-clean-20260804
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/msgint-gha-continuity-clean-20260804
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Apply the exact clean delta and inspect process-test provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin 826342499235e6938c019aca33ddf95119982b4c
+          python3 scripts/ci/apply-msgint-clean-continuity.py
+          python3 scripts/ci/fix-msgint-clean-supplement.py
+          echo '--- git status ---'
+          git status --short
+          echo '--- tracked tests ---'
+          git ls-files 'remote/deployments/gha-clone-server-rs/tests/*' | sort
+          echo '--- filesystem tests ---'
+          find remote/deployments/gha-clone-server-rs/tests -maxdepth 1 -type f -print | sort
+          target=remote/deployments/gha-clone-server-rs/tests/gha_clone_server_messaging_intel_process.test.ts
+          if [[ -e "$target" ]]; then
+            echo '--- offending test metadata ---'
+            stat "$target"
+            git ls-files --stage -- "$target" || true
+            echo '--- offending test source ---'
+            nl -ba "$target" | sed -n '1,520p'
+          else
+            echo 'offending test is absent after clean materialization'
+          fi
