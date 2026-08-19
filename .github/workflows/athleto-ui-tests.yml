@@ -3,28 +3,27 @@ name: athleto ui tests
 # Browser smoke tests for the live AthletO surfaces, driven with node:test
 # under BOTH Playwright and Puppeteer (remote/tests/ui). Targets the public
 # marketing site and storefront, so this is a live-deployment monitor rather
-# than a required PR gate: it runs on a schedule, on demand, and when the UI
-# tests themselves change.
+# than a required PR gate: pull requests run only the dependency-free contract;
+# schedules, pushes, and manual runs execute the live browsers.
 
 on:
+  pull_request:
+    paths:
+      - 'remote/tests/ui/**'
+      - 'remote/tests/package.json'
+      - 'remote/tests/pnpm-lock.yaml'
+      - 'remote/tests/general/scheduled-live-smoke-contract.test.mjs'
+      - '.github/workflows/athleto-ui-tests.yml'
   schedule:
     # Every 6 hours (UTC); catches a broken deploy without waiting for a push.
     - cron: '17 */6 * * *'
-  workflow_dispatch:
-    inputs:
-      marketing_url:
-        description: Marketing base URL (athleto.store)
-        required: false
-        default: https://athleto.store
-      app_url:
-        description: Storefront base URL (app.athleto.store)
-        required: false
-        default: https://app.athleto.store
+  workflow_dispatch: {}
   push:
     branches: [dev, main]
     paths:
       - 'remote/tests/ui/**'
       - 'remote/tests/package.json'
+      - 'remote/tests/pnpm-lock.yaml'
       - 'remote/tests/general/scheduled-live-smoke-contract.test.mjs'
       - '.github/workflows/athleto-ui-tests.yml'
 
@@ -32,17 +31,16 @@ permissions:
   contents: read
 
 concurrency:
-  group: athleto-ui-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
+  # PR contracts remain branch-scoped. All live events serialize and preserve
+  # evidence instead of cancelling one another midway through browser setup.
+  group: athleto-ui-${{ github.event_name == 'pull_request' && github.ref || 'live' }}
+  cancel-in-progress: false
 
 jobs:
-  ui:
-    name: playwright + puppeteer (live)
+  contract:
+    name: live-smoke security contract
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    env:
-      ATHLETO_MARKETING_URL: ${{ github.event.inputs.marketing_url || 'https://athleto.store' }}
-      ATHLETO_APP_URL: ${{ github.event.inputs.app_url || 'https://app.athleto.store' }}
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -53,23 +51,53 @@ jobs:
         working-directory: remote/tests
         run: node --test general/scheduled-live-smoke-contract.test.mjs
 
+  ui:
+    name: playwright + puppeteer (live)
+    if: github.event_name != 'pull_request'
+    needs: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      ATHLETO_MARKETING_URL: https://athleto.store
+      ATHLETO_APP_URL: https://app.athleto.store
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
       - name: Preflight live AthletO surfaces
+        shell: bash
         run: |
           set -euo pipefail
           for target in "$ATHLETO_MARKETING_URL" "$ATHLETO_APP_URL"; do
+            case "$target" in
+              https://athleto.store|https://app.athleto.store)
+                ;;
+              *)
+                echo "refusing non-production AthletO target: ${target}" >&2
+                exit 2
+                ;;
+            esac
+
             echo "checking ${target}"
             curl \
               --fail \
               --silent \
               --show-error \
               --location \
+              --proto '=https' \
+              --proto-redir '=https' \
+              --tlsv1.2 \
+              --max-redirs 5 \
               --connect-timeout 10 \
               --max-time 30 \
               --retry 2 \
               --retry-delay 2 \
+              --retry-max-time 75 \
               --retry-all-errors \
               --output /dev/null \
-              "${target%/}/"
+              "${target}/"
           done
 
       - name: Install pnpm
