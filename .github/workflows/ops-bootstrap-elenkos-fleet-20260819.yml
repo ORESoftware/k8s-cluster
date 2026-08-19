@@ -8,6 +8,7 @@ on:
       - .github/workflows/ops-bootstrap-elenkos-fleet-20260819.yml
       - scripts/ops/materialize_elenkos_fleet_payload_20260819.sh
       - scripts/ops/patch_elenkos_fleet_payload_20260819.py
+      - scripts/ops/augment_elenkos_fleet_20260819.py.gz.b64.part*
       - scripts/ops/elenkos_fleet_payload_20260819.sha256
       - scripts/ops/elenkos_fleet_payload_20260819.b64.part*
   push:
@@ -16,6 +17,7 @@ on:
       - .github/workflows/ops-bootstrap-elenkos-fleet-20260819.yml
       - scripts/ops/materialize_elenkos_fleet_payload_20260819.sh
       - scripts/ops/patch_elenkos_fleet_payload_20260819.py
+      - scripts/ops/augment_elenkos_fleet_20260819.py.gz.b64.part*
       - scripts/ops/elenkos_fleet_payload_20260819.sha256
       - scripts/ops/elenkos_fleet_payload_20260819.b64.part*
   workflow_dispatch:
@@ -47,10 +49,10 @@ jobs:
       - name: Validate payload patch source
         shell: bash
         run: python3 -m py_compile scripts/ops/patch_elenkos_fleet_payload_20260819.py
-      - name: Materialize reviewed payload
+      - name: Materialize reviewed payload and database overlay
         shell: bash
         run: bash scripts/ops/materialize_elenkos_fleet_payload_20260819.sh
-      - name: Validate generator, repository trees, Zed manifests, and safety boundary
+      - name: Validate generator, repository trees, database contracts, Zed manifests, and safety boundary
         shell: bash
         run: bash scripts/ops/validate_elenkos_fleet_payload_20260819.sh
       - name: Materialize inspectable fleet evidence
@@ -66,6 +68,7 @@ jobs:
             --skip-repository-verifiers
           mkdir -p "$evidence/_materialized-payload"
           cp \
+            scripts/ops/augment_elenkos_fleet_20260819.py \
             scripts/ops/elenkos_fleet_spec_20260819.py \
             scripts/ops/publish_elenkos_fleet_20260819.py \
             scripts/ops/run_protected_elenkos_fleet_20260819.sh \
