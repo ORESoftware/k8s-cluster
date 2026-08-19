@@ -6,7 +6,8 @@ import sys
 from pathlib import Path
 
 ORIGINAL_SHA256 = "de511f13abd079437860a826c4e0dea50bfea90d15c76014432acb4b926e4016"
-PATCHED_SHA256 = "3307d64be18e35aa12a408725f343d62741921a95c789408f2d6b9c5db3618d7"
+PATCHED_SHA256 = "fa1c194e62dccf0867aa8dd251acf868f887756e7706ce50c4e422ad8e774a2e"
+AUGMENT_SHA256 = "58ea2870c136160847e65e864388e4f85be92954fbdede356d90178eceb36c90"
 
 REPLACEMENTS: tuple[tuple[str, str], ...] = (
     (
@@ -59,6 +60,14 @@ REPLACEMENTS: tuple[tuple[str, str], ...] = (
             );
 """,
     ),
+    (
+        "from typing import Mapping\n",
+        "from typing import Mapping\n\nfrom augment_elenkos_fleet_20260819 import augment_repository_files\n",
+    ),
+    (
+        "    files = BUILDERS[spec.kind](spec, pins or {}, mode)\n",
+        "    files = augment_repository_files(spec, BUILDERS[spec.kind](spec, pins or {}, mode), mode)\n",
+    ),
 )
 
 
@@ -71,10 +80,21 @@ def main() -> int:
         raise SystemExit("usage: patch_elenkos_fleet_payload_20260819.py ROOT")
     root = Path(sys.argv[1]).resolve()
     target = root / "scripts/ops/elenkos_fleet_spec_20260819.py"
+    augment = root / "scripts/ops/augment_elenkos_fleet_20260819.py"
+
+    augment_raw = augment.read_bytes()
+    augment_digest = digest(augment_raw)
+    if augment_digest != AUGMENT_SHA256:
+        raise RuntimeError(
+            f"refusing unreviewed augmentation source: expected {AUGMENT_SHA256}, got {augment_digest}"
+        )
+
     raw = target.read_bytes()
     current = digest(raw)
     if current == PATCHED_SHA256:
-        print(f"ELENKOS_PAYLOAD_PATCHED sha256={current} status=already-applied")
+        print(
+            f"ELENKOS_PAYLOAD_PATCHED sha256={current} augment_sha256={augment_digest} status=already-applied"
+        )
         return 0
     if current != ORIGINAL_SHA256:
         raise RuntimeError(
@@ -85,7 +105,7 @@ def main() -> int:
     for old, new in REPLACEMENTS:
         count = text.count(old)
         if count != 1:
-            raise RuntimeError(f"expected one formatting target, found {count}")
+            raise RuntimeError(f"expected one generator patch target, found {count}")
         text = text.replace(old, new)
 
     patched = text.encode("utf-8")
@@ -93,7 +113,9 @@ def main() -> int:
     if actual != PATCHED_SHA256:
         raise RuntimeError(f"patched generator digest mismatch: {actual}")
     target.write_bytes(patched)
-    print(f"ELENKOS_PAYLOAD_PATCHED sha256={actual} status=applied")
+    print(
+        f"ELENKOS_PAYLOAD_PATCHED sha256={actual} augment_sha256={augment_digest} status=applied"
+    )
     return 0
 
 
