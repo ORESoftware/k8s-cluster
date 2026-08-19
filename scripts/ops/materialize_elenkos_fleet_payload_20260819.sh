@@ -17,6 +17,7 @@ digest_file="$parts_dir/elenkos_fleet_payload_20260819.sha256"
 augment_prefix="$parts_dir/augment_elenkos_fleet_20260819.py.gz.b64.part"
 augment_target="$parts_dir/augment_elenkos_fleet_20260819.py"
 augment_expected="58ea2870c136160847e65e864388e4f85be92954fbdede356d90178eceb36c90"
+mirror_patch="$parts_dir/patch_elenkos_mirror_fleet_20260819.py"
 archive="$(mktemp "${TMPDIR:-/tmp}/elenkos-fleet-payload.XXXXXX.tar.gz")"
 augment_tmp="$(mktemp "${TMPDIR:-/tmp}/augment-elenkos-fleet.XXXXXX.py")"
 cleanup() { rm -f "$archive" "$augment_tmp"; }
@@ -39,11 +40,14 @@ augment_actual="$(sha256sum "$augment_tmp" | awk '{print $1}')"
 mv "$augment_tmp" "$augment_target"
 python3 -m py_compile \
   "$root/scripts/ops/patch_elenkos_fleet_payload_20260819.py" \
-  "$augment_target"
+  "$augment_target" \
+  "$mirror_patch"
 python3 "$root/scripts/ops/patch_elenkos_fleet_payload_20260819.py" "$root"
+python3 "$mirror_patch" "$root"
 
 required=(
   scripts/ops/patch_elenkos_fleet_payload_20260819.py
+  scripts/ops/patch_elenkos_mirror_fleet_20260819.py
   scripts/ops/augment_elenkos_fleet_20260819.py
   scripts/ops/elenkos_fleet_spec_20260819.py
   scripts/ops/publish_elenkos_fleet_20260819.py
@@ -56,5 +60,5 @@ required=(
 for relative in "${required[@]}"; do
   [[ -s "$root/$relative" ]] || { echo "missing materialized payload file: $relative" >&2; exit 72; }
 done
-printf 'ELENKOS_PAYLOAD_MATERIALIZED files=%s payload_sha256=%s augment_sha256=%s\n' \
+printf 'ELENKOS_PAYLOAD_MATERIALIZED files=%s payload_sha256=%s augment_sha256=%s repositories=22 production=11 test=11\n' \
   "${#required[@]}" "$actual" "$augment_actual"
