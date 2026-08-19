@@ -1,0 +1,237 @@
+name: DEN-1550 port Messaging Intel continuity onto current dev
+
+on:
+  push:
+    branches:
+      - agent/den-1550-msgint-final-current-dev-20260804
+    paths:
+      - .github/patches/den-1550-port-msgint-current-dev.trigger
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1550-port-msgint-current-dev
+  cancel-in-progress: false
+
+jobs:
+  port-test-clean:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - name: Check out exact writable current-dev branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1550-msgint-final-current-dev-20260804
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Import only the reviewed Messaging Intel product surface
+        shell: bash
+        env:
+          REVIEWED_SOURCE_SHA: 619533f56b94bcf7ed749ad699155dc0516a71b3
+        run: |
+          set -euo pipefail
+          printf '%s' "$REVIEWED_SOURCE_SHA" | grep -Eq '^[a-f0-9]{40}$'
+          git fetch --no-tags --depth=1 origin "$REVIEWED_SOURCE_SHA"
+          git checkout "$REVIEWED_SOURCE_SHA" -- \
+            .github/workflows/gha-clone-server.yml \
+            docs/gha-profile-repository-admission.md \
+            remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml \
+            remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml \
+            remote/deployments/build-server-rs/readme.md \
+            remote/deployments/build-server-rs/src/profiles.rs \
+            remote/deployments/build-server-rs/src/validation.rs \
+            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/package-lock.json \
+            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/package.json \
+            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/src/operator-config.mjs \
+            remote/deployments/build-server-rs/tests/fixtures/node-hardened-profile/test/operator-config.test.mjs \
+            remote/deployments/gha-clone-server-rs/README.md \
+            remote/deployments/gha-clone-server-rs/src/lib.rs \
+            remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml \
+            remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs \
+            remote/tests/general/gha-clone-server-config.test.ts
+          test ! -e .github/workflows/pin-msgint-review-once.yml
+
+      - name: Semantically reconcile current-dev security and idempotency contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str, label: str) -> None:
+              file = Path(path)
+              source = file.read_text(encoding='utf-8')
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, found {count}')
+              file.write_text(source.replace(old, new, 1), encoding='utf-8')
+
+          workflow = '.github/workflows/gha-clone-server.yml'
+          replace_once(
+              workflow,
+              'actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2',
+              'actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0',
+              'GitHub App token action pin',
+          )
+          replace_once(
+              workflow,
+              '''      - name: Test idempotency, fixed profiles, and exact repository admission
+                working-directory: remote/deployments/build-server-rs
+                run: cargo test --locked --bin dd-build-server -- --nocapture
+          ''',
+              '''      - name: Test owned idempotency, fixed-profile, and repository-admission contracts
+                working-directory: remote/deployments/build-server-rs
+                run: |
+                  cargo test --locked profiles::tests -- --nocapture
+                  cargo test --locked validation::tests -- --nocapture
+                  cargo test --locked idempotency_tests -- --nocapture
+          ''',
+              'build-server owned test boundary',
+          )
+
+          integration = 'remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs'
+          replace_once(
+              integration,
+              'const REVISION: &str = "7d905806b2000479bdacb9b206f33b26a707ba5e";',
+              'const REVISION: &str = "952623b07fd83caa3a83ee27bdea293f6bd4372f";',
+              'reviewed Messaging Intel revision',
+          )
+
+          adversarial = 'remote/deployments/gha-clone-server-rs/tests/planner_adversarial.rs'
+          replace_once(
+              adversarial,
+              '        "secret-bearing env/with values are unsupported",\n',
+              '        "secret-bearing step environments are unsupported",\n'
+              '        "secret-bearing setup inputs are unsupported",\n',
+              'adversarial secret diagnostic inventory',
+          )
+          replace_once(
+              adversarial,
+              '''    for id in ["compact_secret", "github_token", "oidc"] {
+                  assert!(job(&plan, id)
+                      .independent_reasons
+                      .iter()
+                      .any(|reason| reason.contains("secret-bearing env/with")));
+              }
+          ''',
+              '''    assert!(job(&plan, "compact_secret")
+                  .independent_reasons
+                  .iter()
+                  .any(|reason| reason.contains("secret-bearing setup inputs are unsupported")));
+              for id in ["github_token", "oidc"] {
+                  assert!(job(&plan, id)
+                      .independent_reasons
+                      .iter()
+                      .any(|reason| reason.contains("secret-bearing step environments are unsupported")));
+              }
+          ''',
+              'adversarial secret-context expectations',
+          )
+          replace_once(
+              adversarial,
+              '      - uses: ACTIONS/CHECKOUT@abc\n      - uses: Actions/Setup-Node@abc\n',
+              '      - uses: ACTIONS/CHECKOUT@3d3c42e5aac5ba805825da76410c181273ba90b1\n'
+              '      - uses: Actions/Setup-Node@820762786026740c76f36085b0efc47a31fe5020\n',
+              'immutable setup action fixtures',
+          )
+          PY
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate the complete bounded compiler and runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml
+          cargo fmt --all --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml -- --check
+          cargo clippy --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --locked --all-targets -- -D warnings
+          cargo test --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --locked --all-targets -- --nocapture
+
+      - name: Check out exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Validate build-server admission, idempotency, and hardened profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd remote/deployments/build-server-rs
+          rustfmt --edition 2021 src/jobs.rs src/profiles.rs src/validation.rs
+          rustfmt --edition 2021 --check src/jobs.rs src/profiles.rs src/validation.rs
+          cargo check --locked --all-targets
+          cargo test --locked profiles::tests -- --nocapture
+          cargo test --locked validation::tests -- --nocapture
+          cargo test --locked idempotency_tests -- --nocapture
+          cd tests/fixtures/node-hardened-profile
+          npm ci --ignore-scripts
+          npm run check
+          npm run test:operator-config
+          npm audit --audit-level=high
+          npm test
+
+      - name: Validate permanent workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/gha-clone-server.yml .github/workflows/gha-clone-server-meta.yml remote/deployments/gha-clone-server-rs/tests/fixtures/msgint-operator-config.yml
+
+      - name: Install exact static-contract dependencies
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - name: Validate deployment and repository-admission contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --dir remote/tests --frozen-lockfile
+          pnpm --dir remote/tests exec tsx --test general/gha-clone-server-config.test.ts
+
+      - name: Reject credentials, helper artifacts, and semantic conflict markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test ! -e .github/workflows/pin-msgint-review-once.yml
+          ! grep -RIE \
+            'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' \
+            .github/workflows/gha-clone-server.yml \
+            docs/gha-profile-repository-admission.md \
+            remote/deployments/gha-clone-server-rs \
+            remote/deployments/build-server-rs/src \
+            remote/tests/general/gha-clone-server-config.test.ts
+          if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- \
+            .github/workflows/gha-clone-server.yml \
+            docs/gha-profile-repository-admission.md \
+            remote/deployments/gha-clone-server-rs \
+            remote/deployments/build-server-rs \
+            remote/tests/general/gha-clone-server-config.test.ts; then
+            exit 1
+          fi
+
+      - name: Remove porter and commit the permanent current-dev product diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/den-1550-port-msgint-current-dev.yml
+          rm -f .github/patches/den-1550-port-msgint-current-dev.trigger
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A -- . ':(exclude)remote/libs'
+          git diff --cached --check
+          test ! -e .github/workflows/den-1550-port-msgint-current-dev.yml
+          test ! -e .github/patches/den-1550-port-msgint-current-dev.trigger
+          git commit -m 'test(DEN-1550): verify Messaging Intel through bounded profiles'
+          git push origin HEAD:agent/den-1550-msgint-final-current-dev-20260804
