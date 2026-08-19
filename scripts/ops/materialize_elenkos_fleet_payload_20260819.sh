@@ -14,8 +14,12 @@ root="$(cd "$root" && pwd)"
 parts_dir="$root/scripts/ops"
 prefix="$parts_dir/elenkos_fleet_payload_20260819.b64.part"
 digest_file="$parts_dir/elenkos_fleet_payload_20260819.sha256"
+augment_prefix="$parts_dir/augment_elenkos_fleet_20260819.py.gz.b64.part"
+augment_target="$parts_dir/augment_elenkos_fleet_20260819.py"
+augment_expected="58ea2870c136160847e65e864388e4f85be92954fbdede356d90178eceb36c90"
 archive="$(mktemp "${TMPDIR:-/tmp}/elenkos-fleet-payload.XXXXXX.tar.gz")"
-cleanup() { rm -f "$archive"; }
+augment_tmp="$(mktemp "${TMPDIR:-/tmp}/augment-elenkos-fleet.XXXXXX.py")"
+cleanup() { rm -f "$archive" "$augment_tmp"; }
 trap cleanup EXIT
 
 mapfile -t parts < <(find "$parts_dir" -maxdepth 1 -type f -name 'elenkos_fleet_payload_20260819.b64.part*' | sort)
@@ -26,10 +30,21 @@ actual="$(sha256sum "$archive" | awk '{print $1}')"
 [[ "$expected" =~ ^[0-9a-f]{64}$ ]]
 [[ "$actual" == "$expected" ]]
 tar -xzf "$archive" -C "$root" --no-same-owner --no-same-permissions
+
+mapfile -t augment_parts < <(find "$parts_dir" -maxdepth 1 -type f -name 'augment_elenkos_fleet_20260819.py.gz.b64.part*' | sort)
+test "${#augment_parts[@]}" -gt 0
+cat "${augment_parts[@]}" | base64 --decode | gzip -dc > "$augment_tmp"
+augment_actual="$(sha256sum "$augment_tmp" | awk '{print $1}')"
+[[ "$augment_actual" == "$augment_expected" ]]
+mv "$augment_tmp" "$augment_target"
+python3 -m py_compile \
+  "$root/scripts/ops/patch_elenkos_fleet_payload_20260819.py" \
+  "$augment_target"
 python3 "$root/scripts/ops/patch_elenkos_fleet_payload_20260819.py" "$root"
 
 required=(
   scripts/ops/patch_elenkos_fleet_payload_20260819.py
+  scripts/ops/augment_elenkos_fleet_20260819.py
   scripts/ops/elenkos_fleet_spec_20260819.py
   scripts/ops/publish_elenkos_fleet_20260819.py
   scripts/ops/run_protected_elenkos_fleet_20260819.sh
@@ -41,4 +56,5 @@ required=(
 for relative in "${required[@]}"; do
   [[ -s "$root/$relative" ]] || { echo "missing materialized payload file: $relative" >&2; exit 72; }
 done
-printf 'ELENKOS_PAYLOAD_MATERIALIZED files=%s sha256=%s\n' "${#required[@]}" "$actual"
+printf 'ELENKOS_PAYLOAD_MATERIALIZED files=%s payload_sha256=%s augment_sha256=%s\n' \
+  "${#required[@]}" "$actual" "$augment_actual"
