@@ -8,6 +8,7 @@ on:
       - .github/workflows/ops-bootstrap-elenkos-fleet-20260819.yml
       - scripts/ops/materialize_elenkos_fleet_payload_20260819.sh
       - scripts/ops/patch_elenkos_fleet_payload_20260819.py
+      - scripts/ops/patch_elenkos_mirror_fleet_20260819.py
       - scripts/ops/augment_elenkos_fleet_20260819.py.gz.b64.part*
       - scripts/ops/elenkos_fleet_payload_20260819.sha256
       - scripts/ops/elenkos_fleet_payload_20260819.b64.part*
@@ -17,6 +18,7 @@ on:
       - .github/workflows/ops-bootstrap-elenkos-fleet-20260819.yml
       - scripts/ops/materialize_elenkos_fleet_payload_20260819.sh
       - scripts/ops/patch_elenkos_fleet_payload_20260819.py
+      - scripts/ops/patch_elenkos_mirror_fleet_20260819.py
       - scripts/ops/augment_elenkos_fleet_20260819.py.gz.b64.part*
       - scripts/ops/elenkos_fleet_payload_20260819.sha256
       - scripts/ops/elenkos_fleet_payload_20260819.b64.part*
@@ -48,7 +50,10 @@ jobs:
           args: .github/workflows/ops-bootstrap-elenkos-fleet-20260819.yml
       - name: Validate payload patch source
         shell: bash
-        run: python3 -m py_compile scripts/ops/patch_elenkos_fleet_payload_20260819.py
+        run: |
+          python3 -m py_compile \
+            scripts/ops/patch_elenkos_fleet_payload_20260819.py \
+            scripts/ops/patch_elenkos_mirror_fleet_20260819.py
       - name: Materialize reviewed payload and database overlay
         shell: bash
         run: bash scripts/ops/materialize_elenkos_fleet_payload_20260819.sh
