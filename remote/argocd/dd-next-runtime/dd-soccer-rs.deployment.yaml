@@ -22,9 +22,9 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/soccer-server-revision: 'd9484a6bcf310c66e8788bab777af705a01daa86'
-        dd.dev/soccer-engine-revision: '48510a9be10e6b26d9eed59984061337ca53a924'
-        dd.dev/des-engine-revision: 'f98c3d717ff3408fd761b93f50286532077917e2'
+        dd.dev/soccer-server-revision: '3a672e8ac38aefbc5ff7b1ccd23f8d90a6db4af7'
+        dd.dev/soccer-engine-revision: '3da8a44655c088e4531e5f51d67385c9daadd4cf'
+        dd.dev/des-engine-revision: 'a7032e5ad1b3e2014f3972d17ecc71c60e601ccf'
       labels:
         app: dd-soccer-rs
     spec:
@@ -178,11 +178,11 @@ spec:
             - name: SOCCER_ENGINE_GIT_URL
               value: https://github.com/akrion-sim/akrion-soccer-engine-rs.git
             - name: SOCCER_ENGINE_GIT_REF
-              value: 48510a9be10e6b26d9eed59984061337ca53a924
+              value: 3da8a44655c088e4531e5f51d67385c9daadd4cf
             - name: DES_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/discrete-event-system.rs.git
             - name: DES_ENGINE_GIT_REF
-              value: f98c3d717ff3408fd761b93f50286532077917e2
+              value: a7032e5ad1b3e2014f3972d17ecc71c60e601ccf
             - name: HOME
               value: /tmp
             - name: CARGO_HOME
