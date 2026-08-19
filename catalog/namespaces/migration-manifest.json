@@ -3,10 +3,10 @@
   "apiVersion": "oresoftware.dev/v1alpha1",
   "kind": "NamespaceMigrationManifest",
   "metadata": {
-    "entryCount": 1246,
+    "entryCount": 1247,
     "generatedBy": "tools/namespace_manifest.py",
     "inventory": "artifacts/namespace-inventory.json",
-    "inventorySha256": "7e595d69baa05aeed34aae5b45bd9c60c8b046fb098b7b30155a99869e4bb21d",
+    "inventorySha256": "e1643bb1ac33e60291e00516453fe07716365730ba0aaa4145ea38a18a02968f",
     "name": "den-2786-phase-0",
     "phase": "phase-0",
     "registry": "catalog/namespaces/owners.json",
@@ -38748,6 +38748,45 @@
       },
       {
         "classificationStatus": "review-required",
+        "column": 84,
+        "consumerGrants": [
+          {
+            "access": "read",
+            "consumer": "meta-agents-demo",
+            "state": "required"
+          }
+        ],
+        "consumers": [
+          "meta-agents-demo"
+        ],
+        "current": "dd/remote-dev/agent-secrets",
+        "destructiveCleanupAllowed": false,
+        "environment": "dev",
+        "id": "nsocc-181c4646ec634aaf054fd3aec27bf8bc4b34dc0e405b0b9484e934834f4706ad",
+        "line": 31,
+        "migrationMode": "copy-verify-cutover",
+        "notes": "The current bundle crosses platform and product concerns; split product-specific credentials before treating the proposed platform target as final.",
+        "owner": "ores",
+        "path": "scripts/ops/run_protected_elenkos_fleet.sh",
+        "platformTargetException": null,
+        "reviewState": "review-required",
+        "rollback": {
+          "procedure": "Point consumers back to the current path, refresh them, and verify readiness; retain the current object through the documented grace period.",
+          "state": "required"
+        },
+        "ruleId": "remote-dev.agent-secrets",
+        "scope": "active",
+        "system": "slash-namespace",
+        "target": "ores/dev/agents/provider-credentials",
+        "targetTemplate": "ores/dev/agents/provider-credentials",
+        "verification": {
+          "procedure": "Create or copy the target without logging values; compare non-secret version or checksum metadata, refresh the consumer, and prove readiness plus old-path rollback.",
+          "state": "required"
+        },
+        "workload": "agents"
+      },
+      {
+        "classificationStatus": "review-required",
         "column": 19,
         "consumerGrants": [
           {
@@ -40104,23 +40143,23 @@
     "summary": {
       "byClassificationStatus": {
         "classified": 114,
-        "review-required": 479,
+        "review-required": 480,
         "unclassified": 653
       },
       "byOwner": {
         "benefactor-cc": 3,
         "fiducia-cloud": 81,
-        "ores": 496,
+        "ores": 497,
         "shared-auth": 13,
         "unclassified": 653
       },
       "byReviewState": {
         "blocked": 653,
         "classified": 98,
-        "review-required": 495
+        "review-required": 496
       },
       "byScope": {
-        "active": 977,
+        "active": 978,
         "documentation": 184,
         "test": 85
       },
@@ -40128,13 +40167,13 @@
         "generated-package": 82,
         "host-path": 192,
         "metadata-key": 405,
-        "slash-namespace": 453,
+        "slash-namespace": 454,
         "source-package": 114
       },
-      "concreteTargets": 220,
-      "crossOwnerGrants": 191,
+      "concreteTargets": 221,
+      "crossOwnerGrants": 192,
       "destructiveCleanupAllowed": 0,
-      "total": 1246,
+      "total": 1247,
       "unresolvedTargetTemplates": 16
     }
   }

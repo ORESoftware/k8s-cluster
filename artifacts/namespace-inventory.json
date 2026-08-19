@@ -14503,6 +14503,18 @@
       "target_preview": "ores/dev/agents/provider-credentials"
     },
     {
+      "column": 84,
+      "line": 31,
+      "owner": "ores",
+      "path": "scripts/ops/run_protected_elenkos_fleet.sh",
+      "reference": "dd/remote-dev/agent-secrets",
+      "rule_id": "remote-dev.agent-secrets",
+      "scope": "active",
+      "status": "review-required",
+      "system": "slash-namespace",
+      "target_preview": "ores/dev/agents/provider-credentials"
+    },
+    {
       "column": 19,
       "line": 47,
       "owner": "ores",
@@ -14963,29 +14975,29 @@
     "byOwner": {
       "benefactor-cc": 3,
       "fiducia-cloud": 81,
-      "ores": 496,
+      "ores": 497,
       "shared-auth": 13,
       "unclassified": 653
     },
     "byScope": {
-      "active": 977,
+      "active": 978,
       "documentation": 184,
       "test": 85
     },
     "byStatus": {
       "classified": 114,
-      "review-required": 479,
+      "review-required": 480,
       "unclassified": 653
     },
     "bySystem": {
       "generated-package": 82,
       "host-path": 192,
       "metadata-key": 405,
-      "slash-namespace": 453,
+      "slash-namespace": 454,
       "source-package": 114
     },
     "distinctReferences": 239,
-    "total": 1246,
+    "total": 1247,
     "unclassifiedActive": 538
   },
   "valid": true
