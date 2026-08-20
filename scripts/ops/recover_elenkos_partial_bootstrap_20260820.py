@@ -1,27 +1,30 @@
 #!/usr/bin/env python3
-"""Recover only publisher-owned, partially initialized DEN-3786 repositories.
+"""Recover only publisher-owned partial DEN-3786 repository bootstraps.
 
-This is intentionally narrower than a generic tag repair tool. It compares the
-remote Git tree with the locally materialized, Zed-validated fleet and permits
-only these recovery states:
+Expected repository trees are rebuilt in the publisher's *live* mode from the
+actual predecessor main SHAs observed on GitHub. This is important: local-mode
+Zed manifests use path dependencies, while published manifests pin immutable
+Git SHAs and therefore have different source fingerprints.
 
-1. an empty repository, which is left for the normal publisher;
-2. a marker-only bootstrap commit, which is completed with the exact expected
-   tree and a direct child initial commit;
-3. an exact full initial tree with a missing v0.1.0 tag; or
-4. an exact full initial tree whose v0.1.0 tag still points at its direct,
-   marker-only bootstrap parent.
+The recovery remains fail closed. It permits only:
 
-Any other branch, tree, marker, commit, tag, visibility, or ancestry state fails
-closed. No credential is accepted on the command line.
+* an exact full live tree whose v0.1.0 tag is already correct;
+* an exact full live tree with a missing v0.1.0 tag;
+* an exact full live tree whose tag points at its direct marker-only bootstrap
+  parent; or
+* an exact marker-only bootstrap main, completed with the exact live tree.
+
+The walk stops at the first absent or empty repository. The normal idempotent
+publisher then creates that repository and everything after it in dependency
+order. No credential is accepted on the command line.
 """
 from __future__ import annotations
 
 import argparse
 import base64
 import hashlib
+import importlib.util
 import json
-import os
 import re
 import stat
 import time
@@ -30,15 +33,16 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from types import ModuleType
+from typing import Any, Iterable, Mapping
 
 API = "https://api.github.com"
 API_VERSION = "2022-11-28"
 TRACKING = "DEN-3786"
 TAG = "v0.1.0"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-ORGANIZATIONS = ("elenkos-systems", "elenkos-systems-test")
-REPOSITORIES = (
+EXPECTED_ORGANIZATIONS = ("elenkos-systems", "elenkos-systems-test")
+EXPECTED_REPOSITORIES = (
     "elenkos-interfaces",
     "elenkos-lib-core",
     "elenkos-sync",
@@ -70,7 +74,7 @@ class GitHub:
         self,
         method: str,
         path: str,
-        body: dict[str, Any] | None = None,
+        body: Mapping[str, Any] | None = None,
         allow: Iterable[int] = (),
     ) -> tuple[int, Any]:
         payload = None if body is None else json.dumps(body, separators=(",", ":")).encode()
@@ -82,7 +86,7 @@ class GitHub:
                 "Accept": "application/vnd.github+json",
                 "Authorization": f"Bearer {self.token}",
                 "X-GitHub-Api-Version": API_VERSION,
-                "User-Agent": "elenkos-partial-bootstrap-recovery/1",
+                "User-Agent": "elenkos-live-partial-bootstrap-recovery/1",
                 **({"Content-Type": "application/json"} if payload is not None else {}),
             },
         )
@@ -103,10 +107,20 @@ class GitHub:
     def get(self, path: str, allow: Iterable[int] = ()) -> tuple[int, Any]:
         return self.request("GET", path, allow=allow)
 
-    def post(self, path: str, body: dict[str, Any], allow: Iterable[int] = ()) -> tuple[int, Any]:
+    def post(
+        self,
+        path: str,
+        body: Mapping[str, Any],
+        allow: Iterable[int] = (),
+    ) -> tuple[int, Any]:
         return self.request("POST", path, body, allow)
 
-    def patch(self, path: str, body: dict[str, Any], allow: Iterable[int] = ()) -> tuple[int, Any]:
+    def patch(
+        self,
+        path: str,
+        body: Mapping[str, Any],
+        allow: Iterable[int] = (),
+    ) -> tuple[int, Any]:
         return self.request("PATCH", path, body, allow)
 
 
@@ -114,8 +128,8 @@ class GitHub:
 class ExpectedRepository:
     organization: str
     name: str
-    root: Path
-    files: dict[str, tuple[str, str]]
+    text_files: dict[str, str]
+    git_files: dict[str, tuple[str, str]]
     marker: dict[str, Any]
 
     @property
@@ -138,27 +152,52 @@ def git_blob_sha(content: bytes) -> str:
     return digest.hexdigest()
 
 
-def load_expected(fleet_root: Path, organization: str, name: str) -> ExpectedRepository:
-    root = fleet_root / organization / name
-    if not root.is_dir():
-        raise RuntimeError(f"missing materialized repository: {root}")
-    files: dict[str, tuple[str, str]] = {}
-    for path in sorted(root.rglob("*")):
-        if not path.is_file() or ".git" in path.parts:
-            continue
-        relative = path.relative_to(root).as_posix()
-        content = path.read_bytes()
-        mode = "100755" if relative.startswith(("scripts/", "bin/")) else "100644"
-        files[relative] = (git_blob_sha(content), mode)
-    marker_path = root / ".elenkos-bootstrap.json"
-    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+def load_spec_module(path: Path) -> ModuleType:
+    if not path.is_file():
+        raise RuntimeError(f"missing materialized fleet specification: {path}")
+    spec = importlib.util.spec_from_file_location("elenkos_live_fleet_spec", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not load fleet specification: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def validate_spec_inventory(module: ModuleType) -> list[Any]:
+    specs = list(getattr(module, "ALL_SPECS", ()))
+    expected = {
+        f"{organization}/{repository}"
+        for organization in EXPECTED_ORGANIZATIONS
+        for repository in EXPECTED_REPOSITORIES
+    }
+    observed = {str(spec.full_name) for spec in specs}
+    if observed != expected or len(specs) != 22:
+        raise RuntimeError(
+            "materialized fleet inventory drift: "
+            f"missing={sorted(expected - observed)} extra={sorted(observed - expected)} "
+            f"count={len(specs)}"
+        )
+    return specs
+
+
+def expected_repository(
+    module: ModuleType,
+    spec: Any,
+    pins: Mapping[str, str],
+) -> ExpectedRepository:
+    files = dict(module.build_repository_files(spec, pins=pins, mode="live"))
+    marker_text = files.get(".elenkos-bootstrap.json")
+    if not isinstance(marker_text, str):
+        raise RuntimeError(f"live bootstrap marker missing for {spec.full_name}")
+    marker = json.loads(marker_text)
     expected_marker = {
         "schema_version": 1,
-        "organization": organization,
-        "repository": name,
+        "organization": spec.organization,
+        "repository": spec.name,
         "visibility": "private",
         "tracking_issue": TRACKING,
         "blind_review_contract": "ai-hidden-until-human-submit",
+        "zed_dependency_graph": True,
     }
     drift = {
         key: {"expected": value, "observed": marker.get(key)}
@@ -166,19 +205,45 @@ def load_expected(fleet_root: Path, organization: str, name: str) -> ExpectedRep
         if marker.get(key) != value
     }
     if drift:
-        raise RuntimeError(f"local bootstrap marker drift for {organization}/{name}: {drift}")
-    if len(files) <= 8:
-        raise RuntimeError(f"materialized repository unexpectedly small: {organization}/{name}")
-    return ExpectedRepository(organization, name, root, files, marker)
+        raise RuntimeError(f"live bootstrap marker drift for {spec.full_name}: {drift}")
+    fingerprint = marker.get("source_fingerprint")
+    if not isinstance(fingerprint, str) or not re.fullmatch(r"[0-9a-f]{64}", fingerprint):
+        raise RuntimeError(f"live source fingerprint invalid for {spec.full_name}")
+    git_files: dict[str, tuple[str, str]] = {}
+    for relative, text in files.items():
+        if not isinstance(relative, str) or not isinstance(text, str) or not text:
+            raise RuntimeError(f"invalid live file for {spec.full_name}: {relative!r}")
+        mode = "100755" if relative.startswith(("scripts/", "bin/")) else "100644"
+        git_files[relative] = (git_blob_sha(text.encode("utf-8")), mode)
+    if len(git_files) <= 8:
+        raise RuntimeError(f"live repository unexpectedly small: {spec.full_name}")
+    return ExpectedRepository(
+        organization=str(spec.organization),
+        name=str(spec.name),
+        text_files=files,
+        git_files=git_files,
+        marker=marker,
+    )
 
 
-def require_document(status: int, document: Any, expected: int, operation: str) -> dict[str, Any]:
-    if status != expected or not isinstance(document, dict):
+def require_document(
+    status: int,
+    document: Any,
+    expected_status: int,
+    operation: str,
+) -> dict[str, Any]:
+    if status != expected_status or not isinstance(document, dict):
         raise RuntimeError(f"{operation} failed: HTTP {status} document={document!r}")
     return document
 
 
-def read_ref(api: GitHub, full_name: str, ref: str, *, empty_allowed: bool = False) -> str | None:
+def read_ref(
+    api: GitHub,
+    full_name: str,
+    ref: str,
+    *,
+    empty_allowed: bool = False,
+) -> str | None:
     encoded = urllib.parse.quote(ref, safe="/")
     status, document = api.get(f"/repos/{full_name}/git/ref/{encoded}", allow=(404, 409))
     if status == 404:
@@ -234,7 +299,11 @@ def read_tree(api: GitHub, full_name: str, tree_sha: str) -> dict[str, tuple[str
     return files
 
 
-def commit_tree(api: GitHub, expected: ExpectedRepository, sha: str) -> tuple[dict[str, Any], dict[str, tuple[str, str]]]:
+def commit_tree(
+    api: GitHub,
+    expected: ExpectedRepository,
+    sha: str,
+) -> tuple[dict[str, Any], dict[str, tuple[str, str]]]:
     commit = read_commit(api, expected.full_name, sha)
     tree = commit.get("tree")
     tree_sha = tree.get("sha") if isinstance(tree, dict) else None
@@ -243,30 +312,40 @@ def commit_tree(api: GitHub, expected: ExpectedRepository, sha: str) -> tuple[di
     return commit, read_tree(api, expected.full_name, tree_sha)
 
 
-def verify_marker_blob(expected: ExpectedRepository, files: dict[str, tuple[str, str]]) -> None:
+def verify_marker_blob(
+    expected: ExpectedRepository,
+    files: Mapping[str, tuple[str, str]],
+) -> None:
     marker = files.get(".elenkos-bootstrap.json")
-    local_marker = expected.files[".elenkos-bootstrap.json"]
-    if marker != local_marker:
+    expected_marker = expected.git_files[".elenkos-bootstrap.json"]
+    if marker != expected_marker:
         raise RuntimeError(
-            f"bootstrap marker blob drift for {expected.full_name}: {marker!r} != {local_marker!r}"
+            f"live bootstrap marker blob drift for {expected.full_name}: "
+            f"{marker!r} != {expected_marker!r}"
         )
 
 
 def create_full_commit(api: GitHub, expected: ExpectedRepository, parent_sha: str) -> str:
     entries: list[dict[str, str]] = []
-    for relative, (_, mode) in expected.files.items():
-        content = (expected.root / relative).read_bytes()
+    for relative in sorted(expected.text_files):
+        text = expected.text_files[relative]
+        expected_sha, mode = expected.git_files[relative]
         status, blob_document = api.post(
             f"/repos/{expected.full_name}/git/blobs",
-            {"content": base64.b64encode(content).decode("ascii"), "encoding": "base64"},
+            {"content": base64.b64encode(text.encode("utf-8")).decode("ascii"), "encoding": "base64"},
         )
-        blob = require_document(status, blob_document, 201, f"create blob {relative} for {expected.full_name}")
+        blob = require_document(
+            status,
+            blob_document,
+            201,
+            f"create blob {relative} for {expected.full_name}",
+        )
         sha = blob.get("sha")
-        if not isinstance(sha, str) or SHA_RE.fullmatch(sha) is None:
-            raise RuntimeError(f"blob SHA invalid for {expected.full_name}/{relative}")
-        if sha != expected.files[relative][0]:
-            raise RuntimeError(f"blob SHA drift for {expected.full_name}/{relative}")
-        entries.append({"path": relative, "mode": mode, "type": "blob", "sha": sha})
+        if sha != expected_sha:
+            raise RuntimeError(
+                f"blob SHA drift for {expected.full_name}/{relative}: {sha!r} != {expected_sha}"
+            )
+        entries.append({"path": relative, "mode": mode, "type": "blob", "sha": expected_sha})
 
     status, tree_document = api.post(
         f"/repos/{expected.full_name}/git/trees",
@@ -281,7 +360,12 @@ def create_full_commit(api: GitHub, expected: ExpectedRepository, parent_sha: st
         f"/repos/{expected.full_name}/git/commits",
         {"message": expected.initial_message, "tree": tree_sha, "parents": [parent_sha]},
     )
-    commit = require_document(status, commit_document, 201, f"create full commit for {expected.full_name}")
+    commit = require_document(
+        status,
+        commit_document,
+        201,
+        f"create full commit for {expected.full_name}",
+    )
     commit_sha = commit.get("sha")
     if not isinstance(commit_sha, str) or SHA_RE.fullmatch(commit_sha) is None:
         raise RuntimeError(f"full commit SHA invalid for {expected.full_name}")
@@ -295,14 +379,14 @@ def create_full_commit(api: GitHub, expected: ExpectedRepository, parent_sha: st
         observed = read_ref(api, expected.full_name, "heads/main", empty_allowed=True)
         if observed is None:
             raise RuntimeError(f"main disappeared while completing {expected.full_name}: {document!r}")
-        _, observed_files = commit_tree(api, expected, observed)
-        if observed_files != expected.files:
+        observed_commit, observed_files = commit_tree(api, expected, observed)
+        if observed_files != expected.git_files or observed_commit.get("message") != expected.initial_message:
             raise RuntimeError(f"main raced to unexpected tree for {expected.full_name}: {document!r}")
         return observed
     require_document(status, document, 200, f"advance main for {expected.full_name}")
     poll_ref(api, expected.full_name, "heads/main", commit_sha)
-    _, observed_files = commit_tree(api, expected, commit_sha)
-    if observed_files != expected.files:
+    observed_commit, observed_files = commit_tree(api, expected, commit_sha)
+    if observed_files != expected.git_files or observed_commit.get("message") != expected.initial_message:
         raise RuntimeError(f"completed main tree drift for {expected.full_name}")
     return commit_sha
 
@@ -311,7 +395,7 @@ def ensure_initial_tag(
     api: GitHub,
     expected: ExpectedRepository,
     main_sha: str,
-    main_commit: dict[str, Any],
+    main_commit: Mapping[str, Any],
     tag_sha: str | None,
 ) -> str:
     if tag_sha == main_sha:
@@ -322,16 +406,27 @@ def ensure_initial_tag(
             {"ref": f"refs/tags/{TAG}", "sha": main_sha},
             allow=(422,),
         )
-        if status not in {201, 422}:
+        if status == 422:
+            observed = read_ref(api, expected.full_name, f"tags/{TAG}")
+            if observed != main_sha:
+                raise RuntimeError(
+                    f"tag raced to unexpected SHA for {expected.full_name}: {document!r}"
+                )
+        elif status != 201:
             raise RuntimeError(f"create {TAG} failed for {expected.full_name}: HTTP {status}")
         poll_ref(api, expected.full_name, f"tags/{TAG}", main_sha)
         return "created"
 
     parents = main_commit.get("parents")
-    parent_shas = [item.get("sha") for item in parents if isinstance(item, dict)] if isinstance(parents, list) else []
+    parent_shas = (
+        [item.get("sha") for item in parents if isinstance(item, dict)]
+        if isinstance(parents, list)
+        else []
+    )
     if parent_shas != [tag_sha]:
         raise RuntimeError(
-            f"refusing non-parent tag repair for {expected.full_name}: tag={tag_sha} parents={parent_shas}"
+            f"refusing non-parent tag repair for {expected.full_name}: "
+            f"tag={tag_sha} parents={parent_shas}"
         )
     tag_commit, tag_files = commit_tree(api, expected, tag_sha)
     if tag_commit.get("message") != expected.bootstrap_message:
@@ -351,31 +446,23 @@ def ensure_initial_tag(
     return "moved-from-bootstrap-parent"
 
 
-def recover_repository(api: GitHub, expected: ExpectedRepository) -> str:
-    status, repository_document = api.get(f"/repos/{expected.full_name}", allow=(404,))
-    if status == 404:
-        return "absent"
-    repository = require_document(status, repository_document, 200, f"read repository {expected.full_name}")
-    if repository.get("private") is not True or repository.get("visibility") != "private":
-        raise RuntimeError(f"repository visibility drift for {expected.full_name}")
-    if repository.get("default_branch") not in {"main", None}:
-        raise RuntimeError(f"repository default branch drift for {expected.full_name}")
-
-    main_sha = read_ref(api, expected.full_name, "heads/main", empty_allowed=True)
-    if main_sha is None:
-        return "empty"
+def recover_existing_repository(
+    api: GitHub,
+    expected: ExpectedRepository,
+    main_sha: str,
+) -> tuple[str, str]:
     main_commit, main_files = commit_tree(api, expected, main_sha)
     verify_marker_blob(expected, main_files)
     tag_sha = read_ref(api, expected.full_name, f"tags/{TAG}")
 
-    if main_files == expected.files:
+    if main_files == expected.git_files:
         if main_commit.get("message") != expected.initial_message:
             raise RuntimeError(
-                f"full tree has unexpected commit message for {expected.full_name}: "
+                f"full live tree has unexpected commit message for {expected.full_name}: "
                 f"{main_commit.get('message')!r}"
             )
         tag_action = ensure_initial_tag(api, expected, main_sha, main_commit, tag_sha)
-        return f"full-tree:{tag_action}"
+        return f"full-live-tree:{tag_action}", main_sha
 
     if set(main_files) == {".elenkos-bootstrap.json"}:
         if main_commit.get("message") != expected.bootstrap_message:
@@ -389,23 +476,31 @@ def recover_repository(api: GitHub, expected: ExpectedRepository) -> str:
             )
         completed_sha = create_full_commit(api, expected, main_sha)
         completed_commit, completed_files = commit_tree(api, expected, completed_sha)
-        if completed_files != expected.files or completed_commit.get("message") != expected.initial_message:
+        if completed_files != expected.git_files or completed_commit.get("message") != expected.initial_message:
             raise RuntimeError(f"completed repository verification failed for {expected.full_name}")
-        tag_action = ensure_initial_tag(api, expected, completed_sha, completed_commit, tag_sha)
-        return f"completed-marker-only:{tag_action}"
+        tag_action = ensure_initial_tag(
+            api,
+            expected,
+            completed_sha,
+            completed_commit,
+            tag_sha,
+        )
+        return f"completed-marker-only:{tag_action}", completed_sha
 
-    missing = sorted(set(expected.files) - set(main_files))[:10]
-    extra = sorted(set(main_files) - set(expected.files))[:10]
+    missing = sorted(set(expected.git_files) - set(main_files))[:10]
+    extra = sorted(set(main_files) - set(expected.git_files))[:10]
     changed = sorted(
-        path for path in set(expected.files) & set(main_files) if expected.files[path] != main_files[path]
+        path
+        for path in set(expected.git_files) & set(main_files)
+        if expected.git_files[path] != main_files[path]
     )[:10]
     raise RuntimeError(
-        f"refusing unexpected main tree for {expected.full_name}: "
+        f"refusing unexpected live main tree for {expected.full_name}: "
         f"missing={missing} extra={extra} changed={changed}"
     )
 
 
-def load_token(path: Path) -> str:
+def read_token(path: Path) -> str:
     mode = stat.S_IMODE(path.stat().st_mode)
     if mode != 0o600:
         raise RuntimeError(f"token file must be mode 0600, observed {mode:04o}")
@@ -417,29 +512,72 @@ def load_token(path: Path) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--fleet-root", type=Path, required=True)
+    parser.add_argument(
+        "--fleet-root",
+        type=Path,
+        required=True,
+        help="Compatibility/output path; live expected trees are rebuilt from the materialized spec.",
+    )
     parser.add_argument("--token-file", type=Path, required=True)
+    parser.add_argument(
+        "--spec-module",
+        type=Path,
+        default=Path("scripts/ops/elenkos_fleet_spec_20260819.py"),
+    )
     args = parser.parse_args()
 
-    fleet_root = args.fleet_root.resolve()
-    token_file = args.token_file.resolve()
-    api = GitHub(load_token(token_file))
-    results: dict[str, str] = {}
-    for organization in ORGANIZATIONS:
-        for name in REPOSITORIES:
-            expected = load_expected(fleet_root, organization, name)
-            action = recover_repository(api, expected)
-            results[expected.full_name] = action
-            print(f"ELENKOS_PARTIAL_BOOTSTRAP_RECOVERY repository={expected.full_name} action={action}")
+    module = load_spec_module(args.spec_module.resolve())
+    specs = validate_spec_inventory(module)
+    api = GitHub(read_token(args.token_file.resolve()))
+    pins: dict[str, str] = {}
+    inspected = 0
+    mutated = 0
+    stopped_at: str | None = None
 
-    mutated = sum(
-        action not in {"absent", "empty", "full-tree:ready"} for action in results.values()
-    )
+    for spec in specs:
+        expected = expected_repository(module, spec, pins)
+        status, repository_document = api.get(f"/repos/{expected.full_name}", allow=(404,))
+        if status == 404:
+            stopped_at = expected.full_name
+            print(
+                "ELENKOS_LIVE_PARTIAL_RECOVERY_STOP "
+                f"repository={expected.full_name} state=absent"
+            )
+            break
+        repository = require_document(
+            status,
+            repository_document,
+            200,
+            f"read repository {expected.full_name}",
+        )
+        if repository.get("private") is not True or repository.get("visibility") != "private":
+            raise RuntimeError(f"repository visibility drift for {expected.full_name}")
+        if repository.get("default_branch") not in {"main", None}:
+            raise RuntimeError(f"repository default branch drift for {expected.full_name}")
+
+        main_sha = read_ref(api, expected.full_name, "heads/main", empty_allowed=True)
+        if main_sha is None:
+            stopped_at = expected.full_name
+            print(
+                "ELENKOS_LIVE_PARTIAL_RECOVERY_STOP "
+                f"repository={expected.full_name} state=empty"
+            )
+            break
+
+        action, recovered_sha = recover_existing_repository(api, expected, main_sha)
+        pins[expected.full_name] = recovered_sha
+        inspected += 1
+        if action not in {"full-live-tree:ready"}:
+            mutated += 1
+        print(
+            "ELENKOS_LIVE_PARTIAL_RECOVERY "
+            f"repository={expected.full_name} action={action} main={recovered_sha}"
+        )
+
     print(
-        "ELENKOS_PARTIAL_BOOTSTRAP_RECOVERY_COMPLETE "
-        f"repositories={len(results)} mutated={mutated} "
-        f"absent={sum(action == 'absent' for action in results.values())} "
-        f"empty={sum(action == 'empty' for action in results.values())}"
+        "ELENKOS_LIVE_PARTIAL_RECOVERY_COMPLETE "
+        f"inspected={inspected} mutated={mutated} "
+        f"pins={len(pins)} stopped_at={stopped_at or 'none'}"
     )
     return 0
 
