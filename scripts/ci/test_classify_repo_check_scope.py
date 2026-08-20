@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -12,6 +14,9 @@ assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+REPO_CHECKS_WORKFLOW = REPOSITORY_ROOT / ".github/workflows/repo-checks.yml"
 
 
 class RepoCheckScopeTests(unittest.TestCase):
@@ -184,8 +189,10 @@ class RepoCheckScopeTests(unittest.TestCase):
             [
                 ".github/workflows/athleto-ui-tests.yml",
                 ".github/workflows/browser-mcp-external-smoke.yml",
+                ".github/workflows/browser-mcp-public-e2e.yml",
                 ".github/workflows/namespace-migration-contract.yml",
                 "catalog/namespaces/migration-manifest.json",
+                "remote/tests/general/browser-mcp-public-e2e.test.ts",
                 "remote/tests/general/scheduled-live-smoke-contract.test.mjs",
                 "remote/tests/ui/lib/harness.mjs",
                 "remote/tests/ui/lib/live-targets.mjs",
@@ -256,6 +263,70 @@ class RepoCheckScopeTests(unittest.TestCase):
             with self.subTest(path=path):
                 with self.assertRaises(MODULE.ScopeError):
                     MODULE.classify("pull_request", [path])
+
+    def test_repo_checks_use_three_dot_merge_base_scope(self):
+        source = REPO_CHECKS_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(
+            'git diff --name-only -z "${BASE_SHA}...${HEAD_SHA}"',
+            source,
+        )
+        self.assertNotIn(
+            'git diff --name-only -z "${BASE_SHA}" "${HEAD_SHA}"',
+            source,
+        )
+
+    def test_three_dot_scope_excludes_commits_added_only_to_moving_base(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = Path(temporary) / "repository"
+
+            def run(*command: str) -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    list(command),
+                    cwd=repository if repository.exists() else None,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+
+            subprocess.run(
+                ["git", "init", str(repository)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            run("git", "config", "user.name", "scope fixture")
+            run("git", "config", "user.email", "scope@example.invalid")
+            (repository / "base.txt").write_text("base\n", encoding="utf-8")
+            run("git", "add", "base.txt")
+            run("git", "commit", "-m", "base")
+            run("git", "branch", "-M", "main")
+
+            run("git", "switch", "-c", "feature")
+            (repository / "feature.txt").write_text("feature\n", encoding="utf-8")
+            run("git", "add", "feature.txt")
+            run("git", "commit", "-m", "feature")
+            feature_sha = run("git", "rev-parse", "HEAD").stdout.strip()
+
+            run("git", "switch", "main")
+            (repository / "base-only.txt").write_text(
+                "moving base\n",
+                encoding="utf-8",
+            )
+            run("git", "add", "base-only.txt")
+            run("git", "commit", "-m", "advance main")
+            base_sha = run("git", "rev-parse", "HEAD").stdout.strip()
+
+            changed = run(
+                "git",
+                "diff",
+                "--name-only",
+                "-z",
+                f"{base_sha}...{feature_sha}",
+            ).stdout.split("\0")
+            self.assertEqual(
+                [path for path in changed if path],
+                ["feature.txt"],
+            )
 
 
 if __name__ == "__main__":
