@@ -42,6 +42,7 @@ const browserMcpPublicWorkflow = readFileSync(
 test('Browser MCP schedule delegates to the protected verifier', () => {
   for (const marker of [
     'schedule:',
+    'push:',
     'actions: write',
     'TARGET_WORKFLOW: browser-mcp-public-e2e.yml',
     'actions/workflows/${TARGET_WORKFLOW}/dispatches',
@@ -57,6 +58,10 @@ test('Browser MCP schedule delegates to the protected verifier', () => {
     'Validate child-run identity',
     'gh run watch "$RUN_ID"',
     '-f ref=main',
+    'remote/deployments/browser-mcp-rs/**',
+    'remote/deployments/web-scraper-service/**',
+    'remote/argocd/dd-next-runtime/dd-web-scraper.deployment.yaml',
+    'remote/tests/general/browser-mcp-public-e2e.test.ts',
   ]) {
     assert.ok(
       browserMcpWorkflow.includes(marker),
@@ -72,6 +77,20 @@ test('Browser MCP schedule delegates to the protected verifier', () => {
     'live Browser MCP callers must share one concurrency lock',
   );
   assert.doesNotMatch(browserMcpWorkflow, /first\s*\|\s*\.id/);
+
+  const protectedTriggerBlock = browserMcpPublicWorkflow.slice(
+    0,
+    browserMcpPublicWorkflow.indexOf('\npermissions:'),
+  );
+  assert.match(protectedTriggerBlock, /^  pull_request:/m);
+  assert.match(protectedTriggerBlock, /^  workflow_dispatch:/m);
+  assert.doesNotMatch(protectedTriggerBlock, /^  push:/m);
+  assert.ok(
+    browserMcpPublicWorkflow.includes(
+      "browser-mcp-public-oauth-e2e-${{ github.event_name == 'pull_request' && github.ref || 'live' }}",
+    ),
+    'protected verifier live calls must share one concurrency lock',
+  );
 
   for (const duplicatedImplementation of [
     'aws ssm send-command',
