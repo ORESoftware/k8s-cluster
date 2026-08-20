@@ -30,8 +30,30 @@ use tokio::{
 const SERVICE: &str = "dd-ci-profile-runner";
 const SCHEMA: &str = "ci-profile-runner.v1";
 const PLAYWRIGHT_IMAGE: &str = "mcr.microsoft.com/playwright:v1.60.0-noble";
+const RUST_IMAGE: &str = "docker.io/library/rust:1.90-bookworm";
 const PLAYWRIGHT_SCRIPT: &str = "npm ci && npx playwright test";
 const PUPPETEER_SCRIPT: &str = "npm ci && npm run test:puppeteer";
+const RUST_VERIFY_SCRIPT: &str = r#"set -euo pipefail
+export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+crate_dir=.
+if [ ! -f "$crate_dir/Cargo.toml" ]; then
+  if [ -f remote/deployments/gha-clone-server-rs/Cargo.toml ]; then
+    crate_dir=remote/deployments/gha-clone-server-rs
+  elif [ -f generated/rust/Cargo.toml ] \
+    && [ -f generated/rust/Cargo.lock ] \
+    && [ -f schema/domain.schema.json ] \
+    && [ -f nats/subjects.json ]; then
+    crate_dir=generated/rust
+  else
+    echo "rust-verify requires Cargo.toml at repository root, the reviewed gha-clone-server monorepo path, or the reviewed generated-interface crate shape" >&2
+    exit 2
+  fi
+fi
+cd "$crate_dir"
+rustup component add rustfmt clippy
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-targets --all-features"#;
 
 #[derive(Clone)]
 struct Config {
@@ -164,6 +186,7 @@ fn profile_definition(profile: &str) -> Option<(&'static str, &'static str)> {
     match profile {
         "playwright" => Some((PLAYWRIGHT_IMAGE, PLAYWRIGHT_SCRIPT)),
         "puppeteer" => Some((PLAYWRIGHT_IMAGE, PUPPETEER_SCRIPT)),
+        "rust-verify" => Some((RUST_IMAGE, RUST_VERIFY_SCRIPT)),
         _ => None,
     }
 }
@@ -638,7 +661,7 @@ fn descriptor(state: &AppState) -> Value {
         "service": SERVICE,
         "ok": true,
         "schemaVersion": SCHEMA,
-        "profiles": ["playwright", "puppeteer"],
+        "profiles": ["playwright", "puppeteer", "rust-verify"],
         "repositories": state.config.allowed.keys().collect::<Vec<_>>(),
         "maxConcurrent": state.config.max_concurrent,
         "maxSeconds": state.config.max_seconds,
@@ -724,6 +747,10 @@ mod tests {
         assert_eq!(
             profile_definition("puppeteer"),
             Some((PLAYWRIGHT_IMAGE, PUPPETEER_SCRIPT))
+        );
+        assert_eq!(
+            profile_definition("rust-verify"),
+            Some((RUST_IMAGE, RUST_VERIFY_SCRIPT))
         );
         assert!(profile_definition("arbitrary").is_none());
     }

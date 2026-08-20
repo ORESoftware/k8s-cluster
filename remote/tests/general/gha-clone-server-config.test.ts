@@ -52,20 +52,25 @@ const metaIntegrationTestPath =
 const workflowPath = '.github/workflows/gha-clone-server.yml';
 const metaWorkflowPath = '.github/workflows/gha-clone-server-meta.yml';
 
-function assertInertDeployment(
+function assertActiveDeployment(
   name: string,
   deployment: string,
   image: RegExp,
   command: RegExp,
   executionGate: RegExp,
 ): void {
-  assert.match(deployment, /\breplicas:\s*0\b/, `${name} must stay scaled to zero`);
+  assert.match(deployment, /\breplicas:\s*1\b/, `${name} must run exactly one replica`);
+  assert.match(
+    deployment,
+    /\bminReadySeconds:\s*10\b/,
+    `${name} must prove stable readiness before rollout completion`,
+  );
   assert.match(
     deployment,
     /\bautomountServiceAccountToken:\s*false\b/,
     `${name} must not receive cluster identity`,
   );
-  assert.match(deployment, executionGate, `${name} execution must remain disabled`);
+  assert.match(deployment, executionGate, `${name} execution must be explicitly enabled`);
   assert.match(deployment, image, `${name} must use the reviewed immutable image`);
   assert.doesNotMatch(
     deployment,
@@ -82,29 +87,37 @@ function assertInertDeployment(
   );
 }
 
-test('clone server and executor router are immutable and inert by merge', () => {
+test('clone server and executor router are immutable and active within the bounded lane', () => {
   const clone = read(deploymentPath);
   const router = read(routerDeploymentPath);
 
-  assertInertDeployment(
+  assertActiveDeployment(
     'clone server',
     clone,
-    /image:\s*ghcr\.io\/oresoftware\/gha-clone-server@sha256:44684171d909f96fe216d529bfc14f6f32a11e87c0f339d1877ac20606223c97/,
+    /image:\s*ghcr\.io\/oresoftware\/gha-clone-server@sha256:719a50b3d8cf105cd8c78bb66ce9d10dca072e4de28f6f7ba4fa79db446a2be8/,
     /command:\s*\["\/usr\/local\/bin\/gha-clone-server"\]/,
-    /name:\s*GHA_CLONE_EXECUTION_ENABLED\s+value:\s*"false"/,
+    /name:\s*GHA_CLONE_EXECUTION_ENABLED\s+value:\s*"true"/,
   );
   assert.match(
     clone,
-    /name:\s*GHA_CLONE_WEBHOOK_EXECUTION_ENABLED\s+value:\s*"false"/,
+    /name:\s*GHA_CLONE_WEBHOOK_EXECUTION_ENABLED\s+value:\s*"true"/,
+  );
+  assert.match(
+    clone,
+    /name:\s*GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS\s+value:\s*action_required(?:\s|$)/,
+  );
+  assert.doesNotMatch(
+    clone,
+    /name:\s*GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS[\s\S]{0,120}(?:failure|cancelled|timed_out|startup_failure|stale)/,
   );
   assert.match(clone, /name:\s*dd-gha-clone-server-secrets/);
 
-  assertInertDeployment(
+  assertActiveDeployment(
     'executor router',
     router,
-    /image:\s*ghcr\.io\/oresoftware\/gha-executor-router@sha256:59a31a496e5c528f89acb7643b8ced1ea14bc6c15b1d83b22a37f4ba529708e6/,
+    /image:\s*ghcr\.io\/oresoftware\/gha-executor-router@sha256:e87bee0e28911fbdc096d2fec0c1a65811b7d2173594d81c377dc437ac658e8f/,
     /command:\s*\["\/usr\/local\/bin\/gha-executor-router"\]/,
-    /name:\s*GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED\s+value:\s*"false"/,
+    /name:\s*GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED\s+value:\s*"true"/,
   );
   assert.doesNotMatch(router, /name:\s*GHA_EXECUTOR_ROUTER_SECRET_ROOT/);
   assert.match(
@@ -153,10 +166,12 @@ test('secret ownership is non-duplicating and credential material is never commi
   for (const property of [
     'auth_secret',
     'github_webhook_secret',
-    'github_app_installation_token',
+    'FORMAL_METHODS_GITHUB_TOKEN',
   ]) {
     assert.match(cloneSecret, new RegExp(`property: ${property}`));
   }
+  assert.match(cloneSecret, /secretKey:\s*github_token/);
+  assert.match(cloneSecret, /key:\s*dd\/remote-dev\/agent-secrets/);
   assert.doesNotMatch(cloneSecret, /build_server_auth/);
 
   const routerSecret = read(routerSecretPath);
@@ -327,6 +342,9 @@ test('permanent GHA workflow checks source, deployment, activation, and overlay 
   assert.match(workflow, /cargo test --locked --test executor_router_http/);
   assert.match(workflow, /gha-clone-server-config\.test\.ts/);
   assert.match(workflow, /gha-executor-router-activation\.test\.mjs/);
+  assert.match(workflow, /gha-clone-budget-webhook-activation\.test\.mjs/);
+  assert.match(workflow, /register_gha_clone_budget_webhook\.sh/);
+  assert.match(workflow, /canary_gha_clone_budget_webhook\.py/);
   assert.match(workflow, /kubectl kustomize remote\/argocd\/dd-next-runtime/);
   assert.match(workflow, /actionlint@sha256:/);
   assert.match(workflow, /persist-credentials:\s*false/);

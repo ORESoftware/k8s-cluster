@@ -6,10 +6,11 @@ metadata:
   labels:
     app: dd-gha-clone-server
 spec:
-  # The reviewed, signed, scanned image is pinned below, but the service remains
-  # deliberately non-runnable. A separate activation change must scale replicas
-  # and must not enable API, webhook, or build execution without proof.
-  replicas: 0
+  # One bounded continuity replica receives HMAC-authenticated workflow_run
+  # deliveries. The server accepts only configured repositories/workflow paths,
+  # fetches YAML at the immutable event SHA, and compiles fixed reviewed profiles.
+  replicas: 1
+  minReadySeconds: 10
   strategy:
     type: Recreate
   selector:
@@ -30,9 +31,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gha-clone-server
-          # Published from k8s-cluster dev@5aad32c37be7f29f9355f19d6ce6d316494ff141
-          # with SPDX SBOM, max SLSA provenance, and zero Trivy HIGH/CRITICAL findings.
-          image: ghcr.io/oresoftware/gha-clone-server@sha256:44684171d909f96fe216d529bfc14f6f32a11e87c0f339d1877ac20606223c97
+          # Built from 812704baf1e03b87615719b3cf140e2dd6bb63d6 on the native amd64 node,
+          # scanned by ECR with zero findings, then copied byte-for-byte to GHCR.
+          image: ghcr.io/oresoftware/gha-clone-server@sha256:719a50b3d8cf105cd8c78bb66ce9d10dca072e4de28f6f7ba4fa79db446a2be8
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/gha-clone-server"]
           env:
@@ -45,11 +46,14 @@ spec:
             - name: GHA_CLONE_GITHUB_API_BASE_URL
               value: https://api.github.com
             - name: GHA_CLONE_EXECUTION_ENABLED
-              value: "false"
+              value: "true"
             - name: GHA_CLONE_WEBHOOK_EXECUTION_ENABLED
-              value: "false"
+              value: "true"
+            # GitHub currently reports hosted-capacity/billing blocks as an
+            # action_required terminal workflow_run. Do not mirror ordinary test
+            # failures; those remain authoritative failures in their native lane.
             - name: GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS
-              value: failure,cancelled,timed_out,action_required,startup_failure,stale
+              value: action_required
             - name: GHA_CLONE_WEBHOOK_IGNORED_WORKFLOWS
               value: GHA continuity server
             - name: GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS
@@ -96,7 +100,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: dd-gha-clone-server-secrets
-                  key: github_app_installation_token
+                  key: github_token
             - name: GHA_CLONE_BUILD_SERVER_AUTH
               valueFrom:
                 secretKeyRef:

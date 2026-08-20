@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-scheduled-task-digest
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: dd-scheduled-task-digest
+    app.kubernetes.io/component: scheduler
+    app.kubernetes.io/part-of: project-automation
+  annotations:
+    denman.linear.app/issue: DEN-3562
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/argocd/scheduled-task-digest
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

@@ -26,6 +26,23 @@ class GitHubLinearProjectsByOrgDocumentTests(unittest.TestCase):
             all(row.project_number == 1 for row in rows if row != dancing)
         )
 
+    def test_declared_fiducia_pair_may_share_one_linear_project(self) -> None:
+        rows = module.load_registry(module.DEFAULT_REGISTRY)
+        production = next(row for row in rows if row.organization == 'fiducia-cloud')
+        test_org = next(row for row in rows if row.organization == 'fiducia-cloud-test')
+        self.assertEqual(production.linear_url, test_org.linear_url)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'invalid-shared-owner.tsv'
+            path.write_text(
+                'organization\tlinear_url\n'
+                f'fiducia-cloud\t{production.linear_url}\n'
+                f'other-test\t{production.linear_url}\n',
+                encoding='utf-8',
+            )
+            with self.assertRaisesRegex(module.DirectoryError, 'declared owner set'):
+                module.load_registry(path)
+
     def test_write_repairs_generated_block_without_touching_surrounding_prose(self) -> None:
         rows = module.load_registry(module.DEFAULT_REGISTRY)
         with tempfile.TemporaryDirectory() as directory:
