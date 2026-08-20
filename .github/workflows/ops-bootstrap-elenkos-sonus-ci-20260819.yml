@@ -1,0 +1,196 @@
+name: Bootstrap Elenkos repositories on sonus-ci (one shot)
+run-name: Publish and verify the exact Elenkos fleet from ${{ github.sha }}
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-bootstrap-elenkos-sonus-ci-20260819.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ops-bootstrap-elenkos-sonus-ci-20260819
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: [self-hosted, linux, sonus-ci]
+    timeout-minutes: 120
+    env:
+      ELENKOS_ADMIN_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
+      EVIDENCE_JSON: ${{ runner.temp }}/elenkos-fleet-publication.json
+      PUBLISH_LOG: ${{ runner.temp }}/elenkos-fleet-publication.log
+      FLEET_ROOT: ${{ runner.temp }}/elenkos-fleet-live
+
+    steps:
+      - name: Check out the exact trusted-main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          clean: true
+          show-progress: false
+
+      - name: Verify protected repository-admin token
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test -n "${ELENKOS_ADMIN_TOKEN:-}" || {
+            echo 'Neither GITHUB_REPOSITORY_ADMIN_TOKEN nor ORG_GITOPS_TOKEN is configured.' >&2
+            exit 1
+          }
+          [[ "$ELENKOS_ADMIN_TOKEN" != *$'\n'* ]]
+          [[ "$ELENKOS_ADMIN_TOKEN" != *$'\r'* ]]
+          [[ "$ELENKOS_ADMIN_TOKEN" != *$'\t'* ]]
+          [[ "$ELENKOS_ADMIN_TOKEN" != *' '* ]]
+          test "${#ELENKOS_ADMIN_TOKEN}" -ge 20
+          printf '::add-mask::%s\n' "$ELENKOS_ADMIN_TOKEN"
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          request = urllib.request.Request('https://api.github.com/user')
+          request.add_header('Accept', 'application/vnd.github+json')
+          request.add_header('Authorization', f"Bearer {os.environ['ELENKOS_ADMIN_TOKEN']}")
+          request.add_header('X-GitHub-Api-Version', '2022-11-28')
+          request.add_header('User-Agent', 'elenkos-sonus-ci-publisher/1')
+          with urllib.request.urlopen(request, timeout=30) as response:
+              payload = json.load(response)
+          if payload.get('login') != 'ORESoftware':
+              raise SystemExit(f"unexpected repository-admin identity: {payload.get('login')!r}")
+          print('repository-admin identity verified')
+          PY
+
+      - name: Materialize and validate the reviewed fleet with Zed
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash scripts/ops/materialize_elenkos_fleet_payload_20260819.sh
+          bash scripts/ops/validate_elenkos_fleet_payload_20260819.sh
+
+      - name: Create, seed, tag, and verify all 22 private repositories
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          prod_token="$RUNNER_TEMP/elenkos-systems.pat"
+          test_token="$RUNNER_TEMP/elenkos-systems-test.pat"
+          cleanup() {
+            unset ELENKOS_ADMIN_TOKEN
+            shred -u "$prod_token" "$test_token" 2>/dev/null || rm -f "$prod_token" "$test_token"
+          }
+          trap cleanup EXIT
+
+          printf '%s' "$ELENKOS_ADMIN_TOKEN" > "$prod_token"
+          printf '%s' "$ELENKOS_ADMIN_TOKEN" > "$test_token"
+          chmod 600 "$prod_token" "$test_token"
+          rm -rf "$FLEET_ROOT" "$EVIDENCE_JSON" "$PUBLISH_LOG"
+
+          set +e
+          python3 scripts/ops/publish_elenkos_fleet_20260819.py \
+            --execute \
+            --output "$FLEET_ROOT" \
+            --trusted-k8s-cluster-sha "$GITHUB_SHA" \
+            --token-file "elenkos-systems=$prod_token" \
+            --token-file "elenkos-systems-test=$test_token" \
+            --evidence-out "$EVIDENCE_JSON" \
+            >"$PUBLISH_LOG" 2>&1
+          status=$?
+          set -e
+          cat "$PUBLISH_LOG"
+          test "$status" -eq 0
+
+          jq -e '
+            .schema_version == 1 and
+            .tracking_issue == "DEN-3786" and
+            .executed == true and
+            .publication.visibility == "private" and
+            .publication.production_organization == "elenkos-systems" and
+            .publication.test_organization == "elenkos-systems-test" and
+            .publication.production_repository_count == 11 and
+            .publication.test_repository_count == 11 and
+            .publication.repository_count == 22 and
+            (.publication.trusted_k8s_cluster_sha == env.GITHUB_SHA) and
+            (all(.publication.repositories[];
+              .visibility == "private" and
+              .default_branch == "main" and
+              (.repository_id | type == "number" and . > 0) and
+              (.main_sha | test("^[0-9a-f]{40}$")) and
+              .tag_sha == .main_sha and
+              (.source_fingerprint | test("^[0-9a-f]{64}$")) and
+              (.file_count | type == "number" and . > 8)))
+          ' "$EVIDENCE_JSON" >/dev/null
+          printf 'VERIFIED_ELENKOS_REPOSITORIES 22/22\n'
+
+      - name: Record publication receipt
+        if: ${{ always() }}
+        shell: bash
+        env:
+          RECEIPT_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import urllib.request
+
+          evidence_path = pathlib.Path(os.environ['EVIDENCE_JSON'])
+          status = os.environ['JOB_STATUS']
+          body = [
+              'Automated receipt for the direct sonus-ci Elenkos repository publisher.',
+              '',
+              f"- Job status: `{status}`",
+              f"- Trusted k8s-cluster SHA: `{os.environ['GITHUB_SHA']}`",
+              f"- Run: https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              '- Intended scope: 22 private repositories (11 production and 11 exact-name test mirrors)',
+              '- Dependency contract: Zed manifests validated for every repository before publication',
+              '- Credential handling: protected repository secret written only to mode-0600 temporary files and shredded after use',
+          ]
+          if evidence_path.is_file():
+              evidence = json.loads(evidence_path.read_text())
+              publication = evidence.get('publication') or {}
+              repositories = publication.get('repositories') or []
+              body.extend(['', f"- Verified repositories: `{len(repositories)}/22`"])
+              for repository in repositories:
+                  body.append(
+                      f"  - {repository['full_name']} — `{repository['main_sha']}` — {repository['html_url']}"
+                  )
+          payload = json.dumps({
+              'title': f"Elenkos sonus-ci publication receipt: {status} (run {os.environ['GITHUB_RUN_ID']})",
+              'body': '\n'.join(body),
+          }).encode()
+          request = urllib.request.Request(
+              f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/issues",
+              data=payload,
+              method='POST',
+          )
+          request.add_header('Accept', 'application/vnd.github+json')
+          request.add_header('Authorization', f"Bearer {os.environ['RECEIPT_TOKEN']}")
+          request.add_header('X-GitHub-Api-Version', '2022-11-28')
+          request.add_header('Content-Type', 'application/json')
+          request.add_header('User-Agent', 'elenkos-sonus-ci-receipt/1')
+          with urllib.request.urlopen(request, timeout=30) as response:
+              result = json.load(response)
+          print(result['html_url'])
+          PY
+
+      - name: Upload non-secret publication evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: elenkos-sonus-ci-publication-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/elenkos-fleet-publication.json
+            ${{ runner.temp }}/elenkos-fleet-publication.log
+          if-no-files-found: warn
+          retention-days: 14
