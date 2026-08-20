@@ -1,8 +1,8 @@
 {
-  "schema_version": 1,
-  "operation": "publish-elenkos-protected-pat-fleet",
+  "schema_version": 2,
+  "operation": "publish-elenkos-rsa-manual-fleet",
   "tracking_issue": "DEN-3786",
-  "publisher_workflow": "ops-bootstrap-elenkos-sonus-ci-20260819.yml",
+  "publisher_workflow": "ops-publish-elenkos-rsa-manual-20260819.yml",
   "repository_count": 22,
   "production_organization": "elenkos-systems",
   "test_organization": "elenkos-systems-test",
