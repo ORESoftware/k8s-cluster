@@ -105,7 +105,7 @@ jobs:
           test -n "$ciphertext" || { echo 'encrypted PAT payload not received' >&2; exit 1; }
           [[ "$ciphertext_comment_id" =~ ^[0-9]+$ ]]
 
-          printf '%s' "$ciphertext" | base64 -d > "$encrypted"
+          printf '%s' "$ciphertext" | tr -d '[:space:]' | tr '_-' '/+' | base64 -d > "$encrypted"
           unset ciphertext body line
           openssl pkeyutl -decrypt \
             -inkey "$private_key" \
@@ -287,4 +287,4 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-# trigger: rsa-oaep-publication-v7-empty-repository-409
+# trigger: rsa-oaep-publication-v8-base64url
