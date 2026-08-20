@@ -22,9 +22,6 @@ jobs:
     timeout-minutes: 120
     env:
       ELENKOS_ADMIN_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
-      EVIDENCE_JSON: ${{ runner.temp }}/elenkos-fleet-publication.json
-      PUBLISH_LOG: ${{ runner.temp }}/elenkos-fleet-publication.log
-      FLEET_ROOT: ${{ runner.temp }}/elenkos-fleet-live
 
     steps:
       - name: Check out the exact trusted-main revision
@@ -35,6 +32,14 @@ jobs:
           persist-credentials: false
           clean: true
           show-progress: false
+
+      - name: Bind runtime evidence paths
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          printf 'EVIDENCE_JSON=%s\n' "$RUNNER_TEMP/elenkos-fleet-publication.json" >> "$GITHUB_ENV"
+          printf 'PUBLISH_LOG=%s\n' "$RUNNER_TEMP/elenkos-fleet-publication.log" >> "$GITHUB_ENV"
+          printf 'FLEET_ROOT=%s\n' "$RUNNER_TEMP/elenkos-fleet-live" >> "$GITHUB_ENV"
 
       - name: Verify protected repository-admin token
         shell: bash
@@ -195,4 +200,4 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-# trigger: protected-pat-publication-v3
+# trigger: protected-pat-publication-v4
