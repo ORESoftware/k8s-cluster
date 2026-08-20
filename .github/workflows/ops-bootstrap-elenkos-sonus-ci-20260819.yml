@@ -1,4 +1,4 @@
-name: Bootstrap Elenkos repositories on sonus-ci (one shot)
+name: Bootstrap Elenkos repositories with protected PAT (one shot)
 run-name: Publish and verify the exact Elenkos fleet from ${{ github.sha }}
 
 on:
@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   publish:
-    runs-on: [self-hosted, linux, sonus-ci]
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
       ELENKOS_ADMIN_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
@@ -61,7 +61,7 @@ jobs:
           request.add_header('Accept', 'application/vnd.github+json')
           request.add_header('Authorization', f"Bearer {os.environ['ELENKOS_ADMIN_TOKEN']}")
           request.add_header('X-GitHub-Api-Version', '2022-11-28')
-          request.add_header('User-Agent', 'elenkos-sonus-ci-publisher/1')
+          request.add_header('User-Agent', 'elenkos-protected-pat-publisher/1')
           with urllib.request.urlopen(request, timeout=30) as response:
               payload = json.load(response)
           if payload.get('login') != 'ORESoftware':
@@ -147,7 +147,7 @@ jobs:
           evidence_path = pathlib.Path(os.environ['EVIDENCE_JSON'])
           status = os.environ['JOB_STATUS']
           body = [
-              'Automated receipt for the direct sonus-ci Elenkos repository publisher.',
+              'Automated receipt for the direct protected-PAT Elenkos repository publisher.',
               '',
               f"- Job status: `{status}`",
               f"- Trusted k8s-cluster SHA: `{os.environ['GITHUB_SHA']}`",
@@ -178,7 +178,7 @@ jobs:
           request.add_header('Authorization', f"Bearer {os.environ['RECEIPT_TOKEN']}")
           request.add_header('X-GitHub-Api-Version', '2022-11-28')
           request.add_header('Content-Type', 'application/json')
-          request.add_header('User-Agent', 'elenkos-sonus-ci-receipt/1')
+          request.add_header('User-Agent', 'elenkos-protected-pat-receipt/1')
           with urllib.request.urlopen(request, timeout=30) as response:
               result = json.load(response)
           print(result['html_url'])
@@ -188,11 +188,11 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: elenkos-sonus-ci-publication-${{ github.run_id }}
+          name: elenkos-protected-pat-publication-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/elenkos-fleet-publication.json
             ${{ runner.temp }}/elenkos-fleet-publication.log
           if-no-files-found: warn
           retention-days: 14
 
-# trigger: direct-sonus-ci-publication-v2
+# trigger: protected-pat-publication-v3
