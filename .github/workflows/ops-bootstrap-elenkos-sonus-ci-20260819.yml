@@ -57,7 +57,7 @@ jobs:
           handoff_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$(openssl rand -hex 16)"
           private_key="$RUNNER_TEMP/elenkos-pat-private.pem"
           public_key="$RUNNER_TEMP/elenkos-pat-public.pem"
-          matches="$RUNNER_TEMP/elenkos-pat-matches.tsv"
+          matches="$RUNNER_TEMP/elenkos-pat-matches.txt"
           encrypted="$RUNNER_TEMP/elenkos-pat-ciphertext.bin"
           payload="$RUNNER_TEMP/elenkos-pat-payload.json"
           token_file="$RUNNER_TEMP/elenkos-repository-admin-token"
@@ -89,24 +89,34 @@ jobs:
           ciphertext=''
           for _ in $(seq 1 360); do
             gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
-              --jq ".[] | select(.body | startswith(\"${prefix}\")) | [.id,.body] | @tsv" \
+              --jq ".[] | select(.body | startswith(\"${prefix}\")) | .id" \
               > "$matches"
             count="$(awk 'NF{n++} END{print n+0}' "$matches")"
             [[ "$count" -le 1 ]] || { echo "duplicate encrypted PAT payloads=${count}" >&2; exit 1; }
             if [[ "$count" -eq 1 ]]; then
-              line="$(cat "$matches")"
-              ciphertext_comment_id="${line%%$'\t'*}"
-              body="${line#*$'\t'}"
+              ciphertext_comment_id="$(cat "$matches")"
+              [[ "$ciphertext_comment_id" =~ ^[0-9]+$ ]]
+              body="$(gh api "repos/${GITHUB_REPOSITORY}/issues/comments/${ciphertext_comment_id}" --jq .body)"
               ciphertext="${body#"$prefix"}"
               break
             fi
             sleep 2
           done
           test -n "$ciphertext" || { echo 'encrypted PAT payload not received' >&2; exit 1; }
-          [[ "$ciphertext_comment_id" =~ ^[0-9]+$ ]]
 
-          printf '%s' "$ciphertext" | tr -d '[:space:]' | tr '_-' '/+' | base64 -d > "$encrypted"
-          unset ciphertext body line
+          CIPHERTEXT="$ciphertext" ENCRYPTED="$encrypted" python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          encoded = "".join(os.environ["CIPHERTEXT"].split())
+          encoded += "=" * (-len(encoded) % 4)
+          decoded = base64.urlsafe_b64decode(encoded)
+          if len(decoded) != 512:
+              raise SystemExit(f"unexpected RSA ciphertext length: {len(decoded)}")
+          Path(os.environ["ENCRYPTED"]).write_bytes(decoded)
+          PY
+          unset ciphertext body
           openssl pkeyutl -decrypt \
             -inkey "$private_key" \
             -in "$encrypted" \
@@ -287,4 +297,4 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-# trigger: rsa-oaep-publication-v8-base64url
+# trigger: rsa-oaep-publication-v9-comment-id-python-decode
