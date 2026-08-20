@@ -8,6 +8,13 @@ on:
       - '.github/workflows/athleto-ui-tests.yml'
       - 'scripts/verify-browser-mcp.sh'
       - 'remote/tests/general/scheduled-live-smoke-contract.test.mjs'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/browser-mcp-external-smoke.yml'
+      - '.github/workflows/browser-mcp-public-e2e.yml'
+      - 'scripts/verify-browser-mcp.sh'
+      - 'remote/tests/general/scheduled-live-smoke-contract.test.mjs'
   workflow_dispatch:
   schedule:
     - cron: '17 * * * *'
@@ -17,7 +24,7 @@ permissions:
 
 concurrency:
   # Pull requests validate independently; all live callers serialize so two
-  # schedule/manual events cannot claim the same child workflow run.
+  # schedule/manual/push events cannot claim the same child workflow run.
   group: browser-mcp-external-smoke-${{ github.event_name == 'pull_request' && github.ref || 'live' }}
   cancel-in-progress: false
 
