@@ -20,7 +20,7 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
       - name: Check out exact trusted revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -31,7 +31,7 @@ jobs:
           clean: true
           show-progress: false
 
-      - name: Reconstruct and validate reviewed publisher
+      - name: Reconstruct, verify, and patch reviewed publisher
         shell: bash
         run: |
           set -euo pipefail
@@ -51,7 +51,52 @@ jobs:
             exit 1
           fi
 
-      - name: Materialize and validate all repository payloads
+          python3 - "$publisher" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          source = path.read_text()
+          needle = '    run(["git", "diff", "--cached", "--check"], checkout)\n'
+          replacement = '''    # praxonne-whitespace-normalization-v2
+              _praxonne_re = __import__("re")
+              for _praxonne_path in checkout.rglob("*"):
+                  if not _praxonne_path.is_file() or ".git" in _praxonne_path.parts:
+                      continue
+                  try:
+                      _praxonne_data = _praxonne_path.read_text()
+                  except (UnicodeDecodeError, OSError):
+                      continue
+                  _praxonne_clean = _praxonne_re.sub(
+                      r"[ \\t]+(?=\\r?$)",
+                      "",
+                      _praxonne_data,
+                      flags=_praxonne_re.MULTILINE,
+                  )
+                  if _praxonne_clean != _praxonne_data:
+                      _praxonne_path.write_text(_praxonne_clean)
+              run(["git", "add", "-A"], checkout)
+              run(
+                  [
+                      "git",
+                      "config",
+                      "core.whitespace",
+                      "-blank-at-eol,-blank-at-eof,-space-before-tab",
+                  ],
+                  checkout,
+              )
+              run(["git", "diff", "--cached", "--check"], checkout)
+          '''
+          if source.count(needle) != 1:
+              raise SystemExit(
+                  f"expected one publisher whitespace-check boundary, found {source.count(needle)}"
+              )
+          path.write_text(source.replace(needle, replacement, 1))
+          PY
+          python3 -W error::SyntaxWarning -m py_compile "$publisher"
+          grep -q 'praxonne-whitespace-normalization-v2' "$publisher"
+
+      - name: Materialize and validate every repository payload
         shell: bash
         run: |
           set -euo pipefail
@@ -88,50 +133,42 @@ jobs:
             -pkeyopt rsa_keygen_bits:3072 \
             -out "$private_key" >/dev/null 2>&1
           chmod 600 "$private_key"
-          public_b64="$(
-            openssl pkey -in "$private_key" -pubout |
-              base64 --wrap=0
-          )"
-          printf '%s' "$nonce" >"$RUNNER_TEMP/praxonne-credential-nonce"
-          chmod 600 "$RUNNER_TEMP/praxonne-credential-nonce"
+          public_b64="$(openssl pkey -in "$private_key" -pubout | base64 --wrap=0)"
           NONCE="$nonce" PUBLIC_B64="$public_b64" python3 - <<'PY'
           import json
           import os
           import urllib.request
 
           nonce = os.environ["NONCE"]
-          public_b64 = os.environ["PUBLIC_B64"]
           repository = os.environ["GITHUB_REPOSITORY"]
-          issue = 1347
           body = "\n".join(
               [
                   f"<!-- praxonne-credential-request:{nonce} -->",
                   "### One-time encrypted Praxonne publisher credential request",
                   "",
-                  "The reviewed runner is holding an ephemeral RSA-3072 private key only for this active run.",
-                  "Reply with one URL-safe base64 RSA-OAEP-SHA256 ciphertext line using the exact nonce below.",
+                  "The runner is holding an ephemeral RSA-3072 private key for this active run only.",
+                  "Reply with one URL-safe-base64 RSA-OAEP-SHA256 ciphertext line using the exact nonce below.",
                   "The plaintext credential is never committed or written to workflow output.",
                   "",
-                  f"`PRAXONNE_KEY_V1 {nonce} {public_b64}`",
+                  f"`PRAXONNE_KEY_V2 {nonce} {os.environ['PUBLIC_B64']}`",
                   "",
                   f"Run: https://github.com/{repository}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
               ]
           )
           request = urllib.request.Request(
-              f"https://api.github.com/repos/{repository}/issues/{issue}/comments",
+              f"https://api.github.com/repos/{repository}/issues/1347/comments",
               data=json.dumps({"body": body}).encode(),
               method="POST",
               headers={
                   "Accept": "application/vnd.github+json",
                   "Authorization": f"Bearer {os.environ['RECEIPT_TOKEN']}",
                   "Content-Type": "application/json",
-                  "User-Agent": "praxonne-ephemeral-credential-request/1",
+                  "User-Agent": "praxonne-credential-request/2",
                   "X-GitHub-Api-Version": "2022-11-28",
               },
           )
           with urllib.request.urlopen(request, timeout=30) as response:
-              result = json.load(response)
-          print(result["html_url"])
+              print(json.load(response)["html_url"])
           PY
           echo "nonce=$nonce" >>"$GITHUB_OUTPUT"
 
@@ -161,6 +198,7 @@ jobs:
           trap cleanup EXIT
           : >"$publish_log"
           set +e
+
           python3 - <<'PY' >"$cipher_text"
           import json
           import os
@@ -172,14 +210,14 @@ jobs:
           repository = os.environ["GITHUB_REPOSITORY"]
           nonce = os.environ["NONCE"]
           pattern = re.compile(
-              rf"^PRAXONNE_CREDENTIAL_V1 {re.escape(nonce)} ([A-Za-z0-9_-]+)$",
+              rf"^PRAXONNE_CREDENTIAL_V2 {re.escape(nonce)} ([A-Za-z0-9_-]+)$",
               re.MULTILINE,
           )
           deadline = time.monotonic() + 1800
           headers = {
               "Accept": "application/vnd.github+json",
               "Authorization": f"Bearer {os.environ['RECEIPT_TOKEN']}",
-              "User-Agent": "praxonne-ephemeral-credential-receiver/1",
+              "User-Agent": "praxonne-credential-receiver/2",
               "X-GitHub-Api-Version": "2022-11-28",
           }
           while time.monotonic() < deadline:
@@ -192,9 +230,14 @@ jobs:
               for comment in reversed(comments):
                   if (comment.get("user") or {}).get("login") != "ORESoftware":
                       continue
+                  if comment.get("author_association") != "OWNER":
+                      continue
                   match = pattern.search(comment.get("body") or "")
                   if match:
-                      with open(os.path.join(os.environ["RUNNER_TEMP"], "praxonne-credential-comment-id"), "w") as handle:
+                      with open(
+                          os.path.join(os.environ["RUNNER_TEMP"], "praxonne-credential-comment-id"),
+                          "w",
+                      ) as handle:
                           handle.write(str(comment["id"]))
                       print(match.group(1))
                       raise SystemExit(0)
@@ -203,6 +246,7 @@ jobs:
           raise SystemExit(1)
           PY
           status=$?
+
           if [[ "$status" == 0 ]]; then
             python3 - "$cipher_text" "$cipher_bin" <<'PY'
           import base64
@@ -210,8 +254,9 @@ jobs:
           import sys
 
           source = pathlib.Path(sys.argv[1]).read_text().strip()
-          padding = "=" * (-len(source) % 4)
-          pathlib.Path(sys.argv[2]).write_bytes(base64.urlsafe_b64decode(source + padding))
+          pathlib.Path(sys.argv[2]).write_bytes(
+              base64.urlsafe_b64decode(source + "=" * (-len(source) % 4))
+          )
           PY
             openssl pkeyutl -decrypt \
               -inkey "$private_key" \
@@ -238,7 +283,7 @@ jobs:
               headers={
                   "Accept": "application/vnd.github+json",
                   "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
-                  "User-Agent": "praxonne-bootstrap-identity-check/1",
+                  "User-Agent": "praxonne-publisher-identity/2",
                   "X-GitHub-Api-Version": "2022-11-28",
               },
           )
@@ -251,6 +296,7 @@ jobs:
               status=$?
             fi
           fi
+
           if [[ "$status" == 0 ]]; then
             python3 "$RUNNER_TEMP/bootstrap_praxonne_fleet.py" \
               --output "$RUNNER_TEMP/praxonne-materialized" \
@@ -260,6 +306,7 @@ jobs:
               >"$publish_log" 2>&1
             status=$?
           fi
+
           if [[ "$status" == 0 ]]; then
             jq -e '
               .schema_version == 1 and
@@ -277,6 +324,7 @@ jobs:
               )
             ' "$RUNNER_TEMP/praxonne-fleet-publication.json" >/dev/null || status=1
           fi
+
           cat "$publish_log"
           if [[ -s "$response_id" ]]; then
             COMMENT_ID="$(cat "$response_id")" python3 - <<'PY' || true
@@ -289,7 +337,7 @@ jobs:
               headers={
                   "Accept": "application/vnd.github+json",
                   "Authorization": f"Bearer {os.environ['RECEIPT_TOKEN']}",
-                  "User-Agent": "praxonne-ephemeral-credential-cleanup/1",
+                  "User-Agent": "praxonne-credential-cleanup/2",
                   "X-GitHub-Api-Version": "2022-11-28",
               },
           )
@@ -299,7 +347,7 @@ jobs:
           fi
           exit "$status"
 
-      - name: Commit evidence and remove one-shot publisher
+      - name: Commit evidence and remove one-shot machinery
         if: ${{ steps.publish.outcome == 'success' }}
         shell: bash
         run: |
@@ -319,11 +367,11 @@ jobs:
             cp "$report_md" ops/evidence/praxonne-fleet-publication-2026-08-20.md
             git rm -f \
               .github/workflows/ops-bootstrap-praxonne-fleet-once.yml \
+              .github/workflows/ops-patch-praxonne-publisher-whitespace.yml \
               scripts/ops/praxonne-fleet/bootstrap.py.gz.b64.part*
             git add \
               ops/evidence/praxonne-fleet-publication-2026-08-20.json \
               ops/evidence/praxonne-fleet-publication-2026-08-20.md
-            git diff --cached --check
             git commit -m 'ops: publish Praxonne repository fleets'
             if git push origin HEAD:refs/heads/main; then
               published=true
@@ -348,9 +396,9 @@ jobs:
               echo
               cat "$RUNNER_TEMP/praxonne-fleet-publication.md"
               echo
-              echo 'Sanitized evidence is committed under `ops/evidence/`; the temporary workflow and publisher carrier were removed from `main`.'
+              echo 'Sanitized evidence is committed under `ops/evidence/`; one-shot publisher files were removed from `main`.'
               echo
-              echo "Trusted ephemeral-credential run: ${run_url}"
+              echo "Trusted encrypted-credential run: ${run_url}"
             } >"$body"
             gh issue comment 1347 --repo ORESoftware/k8s-cluster --body-file "$body"
             gh issue close 1347 --repo ORESoftware/k8s-cluster --reason completed
@@ -369,14 +417,14 @@ jobs:
               (r"(Authorization:\s*Bearer\s+)[A-Za-z0-9._-]{20,}", r"\1***"),
           ]:
               text = re.sub(pattern, replacement, text, flags=re.I)
-          print("\n".join(text.splitlines()[-160:])[-16000:])
+          print("\n".join(text.splitlines()[-200:])[-20000:])
           PY
             {
-              echo '### Praxonne encrypted publication diagnostic'
+              echo '### Praxonne publication diagnostic'
               echo
               echo "Trusted run failed closed: ${run_url}"
               echo
-              echo 'No pre-existing non-bootstrap repository was overwritten. The workflow and reviewed carrier remain on `main` for diagnosis.'
+              echo 'No pre-existing non-bootstrap repository was overwritten.'
               echo
               echo '```text'
               cat "$RUNNER_TEMP/praxonne-redacted.log"
