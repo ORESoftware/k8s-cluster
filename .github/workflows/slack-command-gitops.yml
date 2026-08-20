@@ -34,9 +34,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      BRIDGE_SOURCE_SHA: ec667946b1f8725b6baea8e67ae6a701d602dc04
-      BRIDGE_IMAGE: ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:bbf105c29cdbcec23d87ed0b21cfd548c43982cf6573aaf34a2fb1f4dc69a305
-      SLACK_COMMAND_IMAGE: ghcr.io/oresoftware/fiducia-slack-command@sha256:b726025e01652b6e5d89814a928b23bdd5dc2fcf3e461831e82c3c785fa5c64d
+      BRIDGE_SOURCE_SHA: d4ade93a01f79b0347e36c48e6d26b236f83f011
+      BRIDGE_IMAGE: ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:ae33efed64f8cf41741c8cd1b75f2c1a2a3ad130594b5a2f4abebfc4589f22f0
+      SLACK_COMMAND_IMAGE: ghcr.io/oresoftware/fiducia-slack-command@sha256:a44f383cfdf24adb3f79010f882b7a9d585ec64971cad93e61666f4170e9c6a7
       EXPECTED_SHARED_COMMIT: c8bdc06d74746acc6439f9527ebd02697fdf028b
     steps:
       - name: Checkout k8s-cluster without private gitlinks
@@ -51,7 +51,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ORESoftware/ai-agent-bridge.rs
-          ref: ec667946b1f8725b6baea8e67ae6a701d602dc04
+          ref: d4ade93a01f79b0347e36c48e6d26b236f83f011
           path: .tmp/ai-agent-bridge
           fetch-depth: 1
           persist-credentials: false
