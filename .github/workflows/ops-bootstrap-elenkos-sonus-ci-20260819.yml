@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/ops-bootstrap-elenkos-sonus-ci-20260819.yml
+      - scripts/ops/patch_elenkos_empty_repository_409_20260820.py
   workflow_dispatch:
 
 permissions:
@@ -172,6 +173,7 @@ jobs:
           test -f "$TOKEN_FILE"
           test "$(stat -c '%a' "$TOKEN_FILE")" = 600
           rm -rf "$FLEET_ROOT" "$EVIDENCE_JSON" "$PUBLISH_LOG"
+          python3 scripts/ops/patch_elenkos_empty_repository_409_20260820.py "$GITHUB_WORKSPACE"
 
           set +e
           python3 scripts/ops/publish_elenkos_fleet_20260819.py \
@@ -285,4 +287,4 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-# trigger: rsa-oaep-publication-v6-parent-fetch
+# trigger: rsa-oaep-publication-v7-empty-repository-409
