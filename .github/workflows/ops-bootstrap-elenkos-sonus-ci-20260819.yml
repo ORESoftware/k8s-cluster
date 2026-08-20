@@ -194,3 +194,5 @@ jobs:
             ${{ runner.temp }}/elenkos-fleet-publication.log
           if-no-files-found: warn
           retention-days: 14
+
+# trigger: direct-sonus-ci-publication-v2
