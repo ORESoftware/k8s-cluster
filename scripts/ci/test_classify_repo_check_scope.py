@@ -209,6 +209,39 @@ class RepoCheckScopeTests(unittest.TestCase):
             result["reason"],
         )
 
+    def test_github_app_allowlist_contract_is_credential_free(self):
+        result = MODULE.classify(
+            "pull_request",
+            [
+                ".github/workflows/github-app-submodule-auth.yml",
+                "config/ci/k8s-submodule-github-app-allowlist.json",
+                "remote/tests/general/github-app-submodule-token.test.ts",
+                "remote/tests/general/private-submodule-ci-contract.test.ts",
+                "scripts/ci/classify_repo_check_scope.py",
+                "scripts/ci/test_classify_repo_check_scope.py",
+            ],
+        )
+        self.assertFalse(result["governance_only"])
+        self.assertTrue(result["credential_free_contract_only"])
+        self.assertFalse(result["private_contracts_required"])
+        self.assertEqual(
+            "credential_free_contract_only_no_private_gitlinks",
+            result["reason"],
+        )
+
+    def test_gitmodule_change_still_requires_private_contracts(self):
+        result = MODULE.classify(
+            "pull_request",
+            [
+                ".gitmodules",
+                ".github/workflows/github-app-submodule-auth.yml",
+                "config/ci/k8s-submodule-github-app-allowlist.json",
+            ],
+        )
+        self.assertFalse(result["governance_only"])
+        self.assertFalse(result["credential_free_contract_only"])
+        self.assertTrue(result["private_contracts_required"])
+
     def test_credential_free_contract_mixed_with_unknown_requires_private_contracts(self):
         result = MODULE.classify(
             "pull_request",
