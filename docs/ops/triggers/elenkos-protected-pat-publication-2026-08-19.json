@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "operation": "publish-elenkos-protected-pat-fleet",
+  "tracking_issue": "DEN-3786",
+  "publisher_workflow": "ops-bootstrap-elenkos-sonus-ci-20260819.yml",
+  "repository_count": 22,
+  "production_organization": "elenkos-systems",
+  "test_organization": "elenkos-systems-test",
+  "dependency_manager": "zed-pkg"
+}
