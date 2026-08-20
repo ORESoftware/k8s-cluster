@@ -1,5 +1,6 @@
 name: Patch Praxonne publisher whitespace guard
 run-name: Patch Praxonne publisher whitespace guard @ ${{ github.sha }}
+# trigger: second trusted-main update after workflow registration
 
 on:
   push:
