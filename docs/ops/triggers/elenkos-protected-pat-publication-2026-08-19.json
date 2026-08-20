@@ -1,8 +1,9 @@
 {
-  "schema_version": 2,
-  "operation": "publish-elenkos-rsa-manual-fleet",
+  "schema_version": 3,
+  "operation": "publish-elenkos-active-recovery-fleet",
   "tracking_issue": "DEN-3786",
-  "publisher_workflow": "ops-publish-elenkos-rsa-manual-20260819.yml",
+  "publisher_workflow": "ops-bootstrap-elenkos-sonus-ci-20260819.yml",
+  "publisher_blob_sha": "8882a3c6b788efb14ab6f181139dcfdedf1fca3b",
   "repository_count": 22,
   "production_organization": "elenkos-systems",
   "test_organization": "elenkos-systems-test",
