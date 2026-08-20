@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/ops-bootstrap-praxonne-fleet-once.yml
       - scripts/ops/praxonne-fleet/**
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,60 +16,21 @@ permissions:
 
 concurrency:
   group: bootstrap-praxonne-fleets-20260819
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
-  publish:
+  validate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 15
     steps:
-      - name: Check out trusted main
+      - name: Check out exact reviewed revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
-          fetch-depth: 0
-          persist-credentials: true
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
 
-      - name: Bind execution to trusted main
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$GITHUB_REF" = refs/heads/main
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-
-      - name: Mark publication run started
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh issue comment 1347 --repo ORESoftware/k8s-cluster --body \
-            "Trusted-main Praxonne publication started for commit \`${GITHUB_SHA}\`."
-
-      - name: Configure trusted main-branch AWS OIDC credentials
-        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
-          role-session-name: bootstrap-praxonne-fleets
-          retry-max-attempts: 2
-          mask-aws-account-id: true
-
-      - name: Load and mask protected GitHub organization token
-        shell: bash
-        run: |
-          set -euo pipefail
-          secret_json="$(aws secretsmanager get-secret-value \
-            --secret-id dd/remote-dev/agent-secrets \
-            --query SecretString \
-            --output text)"
-          token="$(jq -er '.GH_PAT | select(type == "string" and length > 0)' <<<"$secret_json")"
-          [[ "$token" != *[[:space:]]* ]]
-          echo "::add-mask::$token"
-          printf 'GH_TOKEN=%s\n' "$token" >>"$GITHUB_ENV"
-          unset token secret_json
-
-      - name: Reconstruct and verify reviewed publisher
+      - name: Reconstruct and validate reviewed publisher
         shell: bash
         run: |
           set -euo pipefail
@@ -88,98 +50,243 @@ jobs:
             exit 1
           fi
 
-      - name: Generate, validate, create, push, and verify repositories
-        id: publish
-        shell: bash
-        run: |
-          set -uo pipefail
-          set +e
-          python3 "$RUNNER_TEMP/bootstrap_praxonne_fleet.py" \
-            --output "$RUNNER_TEMP/praxonne-materialized" \
-            --publish \
-            --report-json "$RUNNER_TEMP/praxonne-fleet-publication.json" \
-            --report-md "$RUNNER_TEMP/praxonne-fleet-publication.md" \
-            >"$RUNNER_TEMP/praxonne-fleet-publication.log" 2>&1
-          status=$?
-          set -e
-          cat "$RUNNER_TEMP/praxonne-fleet-publication.log"
-          printf 'status=%s\n' "$status" >>"$GITHUB_OUTPUT"
-
-          if [[ "$status" == 0 ]]; then
-            jq -e '
-              .schema_version == 1 and
-              .bootstrap_id == "praxonne-fleet-2026-08-19-v1" and
-              .mode == "publish" and
-              .verified_repository_count == 28 and
-              (.results | length) == 28 and
-              ([.results[].repository] | unique | length) == 28 and
-              all(.results[];
-                (.repository | startswith("praxonne/")) or
-                (.repository | startswith("praxonne-test/"))
-              ) and
-              all(.results[];
-                (.commit | test("^[0-9a-f]{40}$")) and
-                (.action == "created-and-pushed" or .action == "verified-existing")
-              )
-            ' "$RUNNER_TEMP/praxonne-fleet-publication.json" >/dev/null || status=1
-            printf 'status=%s\n' "$status" >>"$GITHUB_OUTPUT"
-          fi
-
-          if [[ ! -s "$RUNNER_TEMP/praxonne-fleet-publication.json" ]]; then
-            jq -nc \
-              --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-              --arg error "$(tr '\n\r\t' '   ' <"$RUNNER_TEMP/praxonne-fleet-publication.log" | cut -c1-4000)" \
-              '{
-                schema_version:1,
-                bootstrap_id:"praxonne-fleet-2026-08-19-v1",
-                generated_at:$generated_at,
-                mode:"publish-failed",
-                verified_repository_count:0,
-                results:[{repository:"workflow/publisher",action:"workflow-failed",error:$error}]
-              }' >"$RUNNER_TEMP/praxonne-fleet-publication.json"
-          fi
-          if [[ ! -s "$RUNNER_TEMP/praxonne-fleet-publication.md" ]]; then
-            {
-              echo '# Praxonne repository publication'
-              echo
-              echo 'The one-shot publisher exited before producing its normal report.'
-              echo
-              echo '```text'
-              sed -n '1,120p' "$RUNNER_TEMP/praxonne-fleet-publication.log"
-              echo '```'
-            } >"$RUNNER_TEMP/praxonne-fleet-publication.md"
-          fi
-
-      - name: Clear protected publisher token from subsequent steps
-        if: ${{ always() }}
+      - name: Materialize and validate all repository payloads
         shell: bash
         run: |
           set -euo pipefail
-          printf 'GH_TOKEN=\n' >>"$GITHUB_ENV"
+          python3 "$RUNNER_TEMP/bootstrap_praxonne_fleet.py" \
+            --output "$RUNNER_TEMP/praxonne-materialized" \
+            --report-json "$RUNNER_TEMP/praxonne-materialized.json" \
+            --report-md "$RUNNER_TEMP/praxonne-materialized.md"
+          jq -e '
+            .schema_version == 1 and
+            .bootstrap_id == "praxonne-fleet-2026-08-19-v1" and
+            .mode == "materialize" and
+            .repository_count == 28 and
+            (.results | length) == 28 and
+            ([.results[].repository] | unique | length) == 28 and
+            ([.results[].repository | select(startswith("praxonne/"))] | length) == 14 and
+            ([.results[].repository | select(startswith("praxonne-test/"))] | length) == 14
+          ' "$RUNNER_TEMP/praxonne-materialized.json" >/dev/null
+          test "$(find "$RUNNER_TEMP/praxonne-materialized" -type f | wc -l | tr -d ' ')" = 376
+          ! grep -R -nE 'gh[pousr]_[A-Za-z0-9_]{20,}|lin_api_[A-Za-z0-9_]{20,}|BEGIN [A-Z ]*PRIVATE KEY' \
+            "$RUNNER_TEMP/praxonne-materialized"
 
-      - name: Record failure on tracking issue
-        if: ${{ steps.publish.outputs.status != '0' }}
+  publish:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    steps:
+      - name: Check out exact trusted revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Mark protected publication started
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          {
-            echo 'The one-shot Praxonne repository publisher failed closed.'
-            echo
-            echo 'No pre-existing non-bootstrap repository was overwritten. The reviewed workflow and carrier remain on `main` for diagnosis.'
-            echo
-            echo '<details><summary>Sanitized log excerpt</summary>'
-            echo
-            echo '```text'
-            sed -n '1,120p' "$RUNNER_TEMP/praxonne-fleet-publication.log"
-            echo '```'
-            echo '</details>'
-          } >"$RUNNER_TEMP/praxonne-failure-comment.md"
-          gh issue comment 1347 --repo ORESoftware/k8s-cluster --body-file "$RUNNER_TEMP/praxonne-failure-comment.md"
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          gh issue comment 1347 --repo ORESoftware/k8s-cluster --body \
+            "Protected-host Praxonne publication started for commit \`${GITHUB_SHA}\`: ${run_url}"
+
+      - name: Configure trusted AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: praxonne-fleet-publisher
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Publish and verify from protected SSM host
+        id: publish
+        continue-on-error: true
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${INSTANCE_ID:-}"
+          trusted_sha="$(git rev-parse HEAD)"
+          test "$trusted_sha" = "$GITHUB_SHA"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          remote="$RUNNER_TEMP/publish-praxonne-fleet.sh"
+          cat >"$remote" <<'REMOTE_EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          umask 077
+          trusted_sha="${1:?trusted SHA required}"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          work="$(mktemp -d /tmp/praxonne-fleet-publisher.XXXXXX)"
+          region="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
+          stage=initialization
+          cleanup() {
+            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN raw_secret raw_pat encoded_pat
+            rm -rf "$work"
+          }
+          fail() {
+            rc=$?
+            trap - ERR
+            printf 'praxonne-publisher stage=%s status=failed rc=%s\n' "$stage" "$rc" >&2
+            exit "$rc"
+          }
+          trap cleanup EXIT
+          trap fail ERR
+
+          stage=source
+          git init "$work/k8s-cluster" >/dev/null
+          git -C "$work/k8s-cluster" remote add origin https://github.com/ORESoftware/k8s-cluster.git
+          git -C "$work/k8s-cluster" fetch --quiet --depth=1 origin "$trusted_sha"
+          git -C "$work/k8s-cluster" checkout --quiet --detach FETCH_HEAD
+          test "$(git -C "$work/k8s-cluster" rev-parse HEAD)" = "$trusted_sha"
+          cd "$work/k8s-cluster"
+          printf 'praxonne-publisher stage=%s status=passed sha=%s\n' "$stage" "$trusted_sha"
+
+          stage=publisher-integrity
+          carrier="$work/bootstrap_praxonne_fleet.py.gz.b64"
+          publisher="$work/bootstrap_praxonne_fleet.py"
+          cat scripts/ops/praxonne-fleet/bootstrap.py.gz.b64.part* >"$carrier"
+          printf '%s  %s\n' \
+            '00cb6babf072b77bd60d1415b585ec6b4dd38fb4be8e13a4622fd67a72dd09b4' \
+            "$carrier" | sha256sum --check --strict >/dev/null
+          base64 --decode <"$carrier" | gzip --decompress --stdout >"$publisher"
+          printf '%s  %s\n' \
+            '04997f12cee892733a55e2aee2ef53522b4cae86a5d6cdfc2b34a6b4a429391c' \
+            "$publisher" | sha256sum --check --strict >/dev/null
+          python3 -W error::SyntaxWarning -m py_compile "$publisher"
+          printf 'praxonne-publisher stage=%s status=passed\n' "$stage"
+
+          stage=protected-credential
+          GH_TOKEN=''
+          credential_source=''
+          if command -v aws >/dev/null 2>&1; then
+            raw_secret="$(aws secretsmanager get-secret-value --region "$region" --secret-id dd/remote-dev/agent-secrets --query SecretString --output text 2>/dev/null || true)"
+            if test -n "$raw_secret"; then
+              raw_pat="$(printf '%s' "$raw_secret" | python3 -c 'import json,sys
+          try: d=json.load(sys.stdin)
+          except Exception: raise SystemExit(0)
+          v=d.get("GH_PAT")
+          if isinstance(v,str) and v and not any(c.isspace() for c in v): sys.stdout.write(v)' 2>/dev/null || true)"
+              if test -n "$raw_pat"; then GH_TOKEN="$raw_pat"; credential_source=aws-secrets-manager; fi
+            fi
+          fi
+          unset raw_secret raw_pat
+
+          if test -z "$GH_TOKEN" && command -v kubectl >/dev/null 2>&1; then
+            for kubeconfig in /etc/kubernetes/admin.conf /root/.kube/config /home/ec2-user/.kube/config; do
+              test -r "$kubeconfig" || continue
+              encoded_pat="$(KUBECONFIG="$kubeconfig" kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}' 2>/dev/null || true)"
+              test -n "$encoded_pat" || continue
+              raw_pat="$(printf '%s' "$encoded_pat" | base64 --decode 2>/dev/null || true)"
+              if test -n "$raw_pat" && [[ "$raw_pat" != *$'\n'* && "$raw_pat" != *$'\r'* && "$raw_pat" != *$'\t'* && "$raw_pat" != *' '* ]]; then
+                GH_TOKEN="$raw_pat"
+                credential_source="kubernetes-secret:${kubeconfig}"
+                break
+              fi
+            done
+          fi
+          unset raw_pat encoded_pat
+          if test -z "$GH_TOKEN"; then
+            printf 'praxonne-publisher stage=%s status=failed reason=no-readable-protected-credential\n' "$stage" >&2
+            exit 65
+          fi
+          export GH_TOKEN
+          printf 'praxonne-publisher stage=%s status=passed source=%s\n' "$stage" "$credential_source"
+
+          stage=publish
+          python3 "$publisher" \
+            --output "$work/materialized" \
+            --publish \
+            --report-json "$work/publication.json" \
+            --report-md "$work/publication.md"
+          printf 'praxonne-publisher stage=%s status=passed\n' "$stage"
+
+          stage=verify
+          jq -e '
+            .schema_version == 1 and
+            .bootstrap_id == "praxonne-fleet-2026-08-19-v1" and
+            .mode == "publish" and
+            .repository_count == 28 and
+            .verified_repository_count == 28 and
+            (.results | length) == 28 and
+            ([.results[].repository] | unique | length) == 28 and
+            ([.results[].repository | select(startswith("praxonne/"))] | length) == 14 and
+            ([.results[].repository | select(startswith("praxonne-test/"))] | length) == 14 and
+            all(.results[];
+              (.commit | test("^[0-9a-f]{40}$")) and
+              (.action == "created-and-pushed" or .action == "verified-existing")
+            )
+          ' "$work/publication.json" >/dev/null
+          printf 'praxonne-publisher stage=%s status=passed repositories=28\n' "$stage"
+
+          stage=receipt
+          printf 'PRAXONNE_REPORT_JSON_B64_BEGIN\n'
+          base64 --wrap=0 "$work/publication.json"
+          printf '\nPRAXONNE_REPORT_JSON_B64_END\n'
+          printf 'PRAXONNE_REPORT_MD_B64_BEGIN\n'
+          base64 --wrap=0 "$work/publication.md"
+          printf '\nPRAXONNE_REPORT_MD_B64_END\n'
+          printf 'praxonne-publisher stage=%s status=passed\n' "$stage"
+          stage=complete
+          printf 'praxonne-publisher stage=%s status=success\n' "$stage"
+          REMOTE_EOF
+          chmod 700 "$remote"
+
+          encoded="$(base64 --wrap=0 "$remote")"
+          command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-praxonne-fleet.sh; chmod 700 /tmp/publish-praxonne-fleet.sh; bash /tmp/publish-praxonne-fleet.sh '$trusted_sha' > /tmp/publish-praxonne-fleet.log 2> /tmp/publish-praxonne-fleet.err; status=\$?; cat /tmp/publish-praxonne-fleet.log 2>/dev/null || true; cat /tmp/publish-praxonne-fleet.err >&2 2>/dev/null || true; rm -f /tmp/publish-praxonne-fleet.sh /tmp/publish-praxonne-fleet.log /tmp/publish-praxonne-fleet.err; exit \$status"
+          parameters="$RUNNER_TEMP/ssm-praxonne.json"
+          jq -nc --arg command "$command" '{commands:[$command]}' >"$parameters"
+          command_id="$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "Publish Praxonne fleet from $trusted_sha" \
+            --parameters "file://$parameters" \
+            --query 'Command.CommandId' \
+            --output text)"
+          echo "ssm_command_id=$command_id"
+
+          status=Pending
+          for _ in $(seq 1 1200); do
+            status="$(aws ssm get-command-invocation \
+              --command-id "$command_id" \
+              --instance-id "$INSTANCE_ID" \
+              --query Status \
+              --output text 2>/dev/null || true)"
+            case "$status" in Success|Failed|Cancelled|TimedOut|Cancelling) break;; esac
+            sleep 3
+          done
+
+          invocation="$RUNNER_TEMP/praxonne-ssm-invocation.json"
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json >"$invocation"
+          jq -r .Stdout "$invocation" >"$RUNNER_TEMP/praxonne-ssm.stdout"
+          jq -r .Stderr "$invocation" >"$RUNNER_TEMP/praxonne-ssm.stderr"
+          cat "$RUNNER_TEMP/praxonne-ssm.stdout"
+          cat "$RUNNER_TEMP/praxonne-ssm.stderr" >&2
+          test "$status" = Success
+
+          awk '/^PRAXONNE_REPORT_JSON_B64_BEGIN$/{capture=1;next}/^PRAXONNE_REPORT_JSON_B64_END$/{capture=0}capture' \
+            "$RUNNER_TEMP/praxonne-ssm.stdout" | tr -d '\n' | base64 --decode \
+            >"$RUNNER_TEMP/praxonne-fleet-publication.json"
+          awk '/^PRAXONNE_REPORT_MD_B64_BEGIN$/{capture=1;next}/^PRAXONNE_REPORT_MD_B64_END$/{capture=0}capture' \
+            "$RUNNER_TEMP/praxonne-ssm.stdout" | tr -d '\n' | base64 --decode \
+            >"$RUNNER_TEMP/praxonne-fleet-publication.md"
+          test -s "$RUNNER_TEMP/praxonne-fleet-publication.json"
+          test -s "$RUNNER_TEMP/praxonne-fleet-publication.md"
+          jq -e '.verified_repository_count == 28 and (.results | length) == 28' \
+            "$RUNNER_TEMP/praxonne-fleet-publication.json" >/dev/null
 
       - name: Commit evidence and remove one-shot publisher
-        if: ${{ steps.publish.outputs.status == '0' }}
+        if: ${{ steps.publish.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -201,27 +308,60 @@ jobs:
           git commit -m 'ops: publish Praxonne repository fleets'
           git push origin HEAD:refs/heads/main
 
-      - name: Close tracking issue with verified results
-        if: ${{ steps.publish.outputs.status == '0' }}
+      - name: Report publication result
+        if: ${{ always() }}
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          {
-            echo 'Publication completed and remote verification passed for all 28 Praxonne repositories.'
-            echo
-            cat "$RUNNER_TEMP/praxonne-fleet-publication.md"
-            echo
-            echo 'Sanitized evidence is committed under `ops/evidence/`; the temporary workflow and publisher carrier were removed from `main`.'
-          } >"$RUNNER_TEMP/praxonne-success-comment.md"
-          gh issue comment 1347 --repo ORESoftware/k8s-cluster --body-file "$RUNNER_TEMP/praxonne-success-comment.md"
-          gh issue close 1347 --repo ORESoftware/k8s-cluster --reason completed
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          body="$RUNNER_TEMP/praxonne-result.md"
+          if [[ "${{ steps.publish.outcome }}" == success ]]; then
+            {
+              echo 'Publication completed and remote verification passed for all 28 Praxonne repositories.'
+              echo
+              cat "$RUNNER_TEMP/praxonne-fleet-publication.md"
+              echo
+              echo 'Sanitized evidence is committed under `ops/evidence/`; the temporary workflow and publisher carrier were removed from `main`.'
+              echo
+              echo "Trusted protected-host run: ${run_url}"
+            } >"$body"
+            gh issue comment 1347 --repo ORESoftware/k8s-cluster --body-file "$body"
+            gh issue close 1347 --repo ORESoftware/k8s-cluster --reason completed
+          else
+            STDERR_FILE="$RUNNER_TEMP/praxonne-ssm.stderr" python3 - <<'PY' >"$RUNNER_TEMP/praxonne-redacted.log"
+          import os, re
+          from pathlib import Path
+          path = Path(os.environ['STDERR_FILE'])
+          text = path.read_text(errors='replace') if path.exists() else 'protected publication did not produce a remote stderr log'
+          for pattern, replacement in [
+              (r'https://x-access-token:[^@\s]+@github\.com/', 'https://x-access-token:***@github.com/'),
+              (r'github_pat_[A-Za-z0-9_]{20,}', 'github_pat_***'),
+              (r'gh[pousr]_[A-Za-z0-9_]{20,}', 'gh*_***'),
+              (r'(Authorization:\s*Bearer\s+)[A-Za-z0-9._-]{20,}', r'\1***'),
+          ]:
+              text = re.sub(pattern, replacement, text, flags=re.I)
+          print('\n'.join(text.splitlines()[-160:])[-16000:])
+          PY
+            {
+              echo '### Praxonne protected publication diagnostic'
+              echo
+              echo "Trusted run failed closed: ${run_url}"
+              echo
+              echo 'No pre-existing non-bootstrap repository was overwritten. The workflow and reviewed carrier remain on `main` for diagnosis.'
+              echo
+              echo '```text'
+              cat "$RUNNER_TEMP/praxonne-redacted.log"
+              echo '```'
+            } >"$body"
+            gh issue comment 1347 --repo ORESoftware/k8s-cluster --body-file "$body"
+          fi
 
       - name: Require complete publication
         env:
-          PUBLISH_STATUS: ${{ steps.publish.outputs.status }}
+          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
         shell: bash
         run: |
           set -euo pipefail
-          test "$PUBLISH_STATUS" = 0
+          test "$PUBLISH_OUTCOME" = success
