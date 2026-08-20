@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/ops-bootstrap-elenkos-sonus-ci-20260819.yml
       - scripts/ops/patch_elenkos_empty_repository_409_20260820.py
+      - scripts/ops/recover_elenkos_partial_bootstrap_20260820.py
   workflow_dispatch:
 
 permissions:
@@ -174,7 +175,7 @@ jobs:
           bash scripts/ops/materialize_elenkos_fleet_payload_20260819.sh
           bash scripts/ops/validate_elenkos_fleet_payload_20260819.sh
 
-      - name: Create, seed, tag, and verify all 22 private repositories
+      - name: Recover verified partial bootstraps, then publish all 22 repositories
         shell: bash
         env:
           TOKEN_FILE: ${{ steps.handoff.outputs.token_file }}
@@ -184,6 +185,14 @@ jobs:
           test "$(stat -c '%a' "$TOKEN_FILE")" = 600
           rm -rf "$FLEET_ROOT" "$EVIDENCE_JSON" "$PUBLISH_LOG"
           python3 scripts/ops/patch_elenkos_empty_repository_409_20260820.py "$GITHUB_WORKSPACE"
+
+          python3 scripts/ops/publish_elenkos_fleet_20260819.py \
+            --output "$FLEET_ROOT" \
+            --skip-repository-verifiers
+          python3 scripts/ops/recover_elenkos_partial_bootstrap_20260820.py \
+            --fleet-root "$FLEET_ROOT" \
+            --token-file "$TOKEN_FILE"
+          rm -rf "$FLEET_ROOT"
 
           set +e
           python3 scripts/ops/publish_elenkos_fleet_20260819.py \
@@ -297,4 +306,4 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-# trigger: rsa-oaep-publication-v9-comment-id-python-decode
+# trigger: rsa-oaep-publication-v10-verified-partial-recovery
