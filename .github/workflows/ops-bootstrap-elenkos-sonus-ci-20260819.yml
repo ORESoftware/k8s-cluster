@@ -21,7 +21,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      ELENKOS_ADMIN_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
+      ISSUE_NUMBER: '1345'
+      CONFIRMATION: publish-elenkos-22-private-v1
 
     steps:
       - name: Check out the exact trusted-main revision
@@ -41,23 +42,103 @@ jobs:
           printf 'PUBLISH_LOG=%s\n' "$RUNNER_TEMP/elenkos-fleet-publication.log" >> "$GITHUB_ENV"
           printf 'FLEET_ROOT=%s\n' "$RUNNER_TEMP/elenkos-fleet-live" >> "$GITHUB_ENV"
 
-      - name: Verify protected repository-admin token
+      - name: Receive repository-admin PAT through RSA-OAEP-SHA256 handoff
+        id: handoff
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
+          umask 077
           test "$GITHUB_REF" = refs/heads/main
           [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
-          test -n "${ELENKOS_ADMIN_TOKEN:-}" || {
-            echo 'Neither GITHUB_REPOSITORY_ADMIN_TOKEN nor ORG_GITOPS_TOKEN is configured.' >&2
-            exit 1
+
+          handoff_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$(openssl rand -hex 16)"
+          private_key="$RUNNER_TEMP/elenkos-pat-private.pem"
+          public_key="$RUNNER_TEMP/elenkos-pat-public.pem"
+          matches="$RUNNER_TEMP/elenkos-pat-matches.tsv"
+          encrypted="$RUNNER_TEMP/elenkos-pat-ciphertext.bin"
+          payload="$RUNNER_TEMP/elenkos-pat-payload.json"
+          token_file="$RUNNER_TEMP/elenkos-repository-admin-token"
+          public_comment_id=''
+          ciphertext_comment_id=''
+
+          cleanup() {
+            rm -f "$private_key" "$public_key" "$matches" "$encrypted" "$payload"
+            if [[ -n "${public_comment_id:-}" ]]; then
+              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/issues/comments/${public_comment_id}" >/dev/null 2>&1 || true
+            fi
+            if [[ -n "${ciphertext_comment_id:-}" ]]; then
+              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/issues/comments/${ciphertext_comment_id}" >/dev/null 2>&1 || true
+            fi
           }
-          [[ "$ELENKOS_ADMIN_TOKEN" != *$'\n'* ]]
-          [[ "$ELENKOS_ADMIN_TOKEN" != *$'\r'* ]]
-          [[ "$ELENKOS_ADMIN_TOKEN" != *$'\t'* ]]
-          [[ "$ELENKOS_ADMIN_TOKEN" != *' '* ]]
-          test "${#ELENKOS_ADMIN_TOKEN}" -ge 20
-          printf '::add-mask::%s\n' "$ELENKOS_ADMIN_TOKEN"
-          python3 - <<'PY'
+          trap cleanup EXIT
+
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out "$private_key" >/dev/null 2>&1
+          openssl pkey -in "$private_key" -pubout -out "$public_key" >/dev/null 2>&1
+          key_b64="$(base64 -w0 < "$public_key")"
+          public_comment_id="$(gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+            -f body="ELENKOS_PAT_PUBLIC_KEY protocol=1 run_id=${handoff_id} key_b64=${key_b64} confirm=${CONFIRMATION}" \
+            --jq .id)"
+          [[ "$public_comment_id" =~ ^[0-9]+$ ]]
+          unset key_b64
+
+          prefix="ELENKOS_PAT_CIPHERTEXT protocol=1 run_id=${handoff_id} data="
+          ciphertext=''
+          for _ in $(seq 1 360); do
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+              --jq ".[] | select(.body | startswith(\"${prefix}\")) | [.id,.body] | @tsv" \
+              > "$matches"
+            count="$(awk 'NF{n++} END{print n+0}' "$matches")"
+            [[ "$count" -le 1 ]] || { echo "duplicate encrypted PAT payloads=${count}" >&2; exit 1; }
+            if [[ "$count" -eq 1 ]]; then
+              line="$(cat "$matches")"
+              ciphertext_comment_id="${line%%$'\t'*}"
+              body="${line#*$'\t'}"
+              ciphertext="${body#"$prefix"}"
+              break
+            fi
+            sleep 2
+          done
+          test -n "$ciphertext" || { echo 'encrypted PAT payload not received' >&2; exit 1; }
+          [[ "$ciphertext_comment_id" =~ ^[0-9]+$ ]]
+
+          printf '%s' "$ciphertext" | base64 -d > "$encrypted"
+          unset ciphertext body line
+          openssl pkeyutl -decrypt \
+            -inkey "$private_key" \
+            -in "$encrypted" \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256 \
+            -out "$payload"
+
+          jq -e --arg run "$handoff_id" --arg confirm "$CONFIRMATION" '
+            .run_id == $run and
+            .confirm == $confirm and
+            (.token | type == "string" and length >= 20 and (test("\\s") | not))
+          ' "$payload" >/dev/null
+          token="$(jq -r .token "$payload")"
+          printf '::add-mask::%s\n' "$token"
+          printf '%s' "$token" > "$token_file"
+          chmod 600 "$token_file"
+          unset token
+
+          echo "token_file=$token_file" >> "$GITHUB_OUTPUT"
+          echo "handoff_id=$handoff_id" >> "$GITHUB_OUTPUT"
+
+      - name: Verify repository-admin identity
+        shell: bash
+        env:
+          TOKEN_FILE: ${{ steps.handoff.outputs.token_file }}
+        run: |
+          set -Eeuo pipefail
+          test -f "$TOKEN_FILE"
+          test "$(stat -c '%a' "$TOKEN_FILE")" = 600
+          token="$(cat "$TOKEN_FILE")"
+          printf '::add-mask::%s\n' "$token"
+          ELENKOS_ADMIN_TOKEN="$token" python3 - <<'PY'
           import json
           import os
           import urllib.request
@@ -66,13 +147,14 @@ jobs:
           request.add_header('Accept', 'application/vnd.github+json')
           request.add_header('Authorization', f"Bearer {os.environ['ELENKOS_ADMIN_TOKEN']}")
           request.add_header('X-GitHub-Api-Version', '2022-11-28')
-          request.add_header('User-Agent', 'elenkos-protected-pat-publisher/1')
+          request.add_header('User-Agent', 'elenkos-rsa-handoff-publisher/1')
           with urllib.request.urlopen(request, timeout=30) as response:
               payload = json.load(response)
           if payload.get('login') != 'ORESoftware':
               raise SystemExit(f"unexpected repository-admin identity: {payload.get('login')!r}")
           print('repository-admin identity verified')
           PY
+          unset token
 
       - name: Materialize and validate the reviewed fleet with Zed
         shell: bash
@@ -83,20 +165,12 @@ jobs:
 
       - name: Create, seed, tag, and verify all 22 private repositories
         shell: bash
+        env:
+          TOKEN_FILE: ${{ steps.handoff.outputs.token_file }}
         run: |
           set -Eeuo pipefail
-          umask 077
-          prod_token="$RUNNER_TEMP/elenkos-systems.pat"
-          test_token="$RUNNER_TEMP/elenkos-systems-test.pat"
-          cleanup() {
-            unset ELENKOS_ADMIN_TOKEN
-            shred -u "$prod_token" "$test_token" 2>/dev/null || rm -f "$prod_token" "$test_token"
-          }
-          trap cleanup EXIT
-
-          printf '%s' "$ELENKOS_ADMIN_TOKEN" > "$prod_token"
-          printf '%s' "$ELENKOS_ADMIN_TOKEN" > "$test_token"
-          chmod 600 "$prod_token" "$test_token"
+          test -f "$TOKEN_FILE"
+          test "$(stat -c '%a' "$TOKEN_FILE")" = 600
           rm -rf "$FLEET_ROOT" "$EVIDENCE_JSON" "$PUBLISH_LOG"
 
           set +e
@@ -104,8 +178,8 @@ jobs:
             --execute \
             --output "$FLEET_ROOT" \
             --trusted-k8s-cluster-sha "$GITHUB_SHA" \
-            --token-file "elenkos-systems=$prod_token" \
-            --token-file "elenkos-systems-test=$test_token" \
+            --token-file "elenkos-systems=$TOKEN_FILE" \
+            --token-file "elenkos-systems-test=$TOKEN_FILE" \
             --evidence-out "$EVIDENCE_JSON" \
             >"$PUBLISH_LOG" 2>&1
           status=$?
@@ -135,6 +209,17 @@ jobs:
           ' "$EVIDENCE_JSON" >/dev/null
           printf 'VERIFIED_ELENKOS_REPOSITORIES 22/22\n'
 
+      - name: Destroy the ephemeral PAT
+        if: ${{ always() }}
+        shell: bash
+        env:
+          TOKEN_FILE: ${{ steps.handoff.outputs.token_file }}
+        run: |
+          set -Eeuo pipefail
+          if [[ -n "${TOKEN_FILE:-}" && -f "$TOKEN_FILE" ]]; then
+            shred -u "$TOKEN_FILE" 2>/dev/null || rm -f "$TOKEN_FILE"
+          fi
+
       - name: Record publication receipt
         if: ${{ always() }}
         shell: bash
@@ -152,14 +237,14 @@ jobs:
           evidence_path = pathlib.Path(os.environ['EVIDENCE_JSON'])
           status = os.environ['JOB_STATUS']
           body = [
-              'Automated receipt for the direct protected-PAT Elenkos repository publisher.',
+              'Automated receipt for the RSA-handoff Elenkos repository publisher.',
               '',
               f"- Job status: `{status}`",
               f"- Trusted k8s-cluster SHA: `{os.environ['GITHUB_SHA']}`",
               f"- Run: https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
               '- Intended scope: 22 private repositories (11 production and 11 exact-name test mirrors)',
               '- Dependency contract: Zed manifests validated for every repository before publication',
-              '- Credential handling: protected repository secret written only to mode-0600 temporary files and shredded after use',
+              '- Credential handling: ephemeral RSA-OAEP-SHA256 handoff; PAT stored only in a mode-0600 runner file and shredded after use',
           ]
           if evidence_path.is_file():
               evidence = json.loads(evidence_path.read_text())
@@ -171,7 +256,7 @@ jobs:
                       f"  - {repository['full_name']} — `{repository['main_sha']}` — {repository['html_url']}"
                   )
           payload = json.dumps({
-              'title': f"Elenkos sonus-ci publication receipt: {status} (run {os.environ['GITHUB_RUN_ID']})",
+              'title': f"Elenkos RSA publication receipt: {status} (run {os.environ['GITHUB_RUN_ID']})",
               'body': '\n'.join(body),
           }).encode()
           request = urllib.request.Request(
@@ -183,7 +268,7 @@ jobs:
           request.add_header('Authorization', f"Bearer {os.environ['RECEIPT_TOKEN']}")
           request.add_header('X-GitHub-Api-Version', '2022-11-28')
           request.add_header('Content-Type', 'application/json')
-          request.add_header('User-Agent', 'elenkos-protected-pat-receipt/1')
+          request.add_header('User-Agent', 'elenkos-rsa-handoff-receipt/1')
           with urllib.request.urlopen(request, timeout=30) as response:
               result = json.load(response)
           print(result['html_url'])
@@ -193,11 +278,11 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: elenkos-protected-pat-publication-${{ github.run_id }}
+          name: elenkos-rsa-publication-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/elenkos-fleet-publication.json
             ${{ runner.temp }}/elenkos-fleet-publication.log
           if-no-files-found: warn
           retention-days: 14
 
-# trigger: protected-pat-publication-v4
+# trigger: rsa-oaep-publication-v5
