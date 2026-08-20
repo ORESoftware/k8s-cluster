@@ -1,5 +1,5 @@
-name: Dispatch manual-only Elenkos RSA publisher from exact PR
-run-name: Dispatch manual-only Elenkos RSA publisher from PR #${{ github.event.pull_request.number }}
+name: Dispatch active Elenkos recovery publisher from exact PR
+run-name: Dispatch active Elenkos recovery publisher from PR #${{ github.event.pull_request.number }}
 
 on:
   pull_request:
@@ -13,7 +13,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: ops-dispatch-elenkos-rsa-v2-${{ github.run_id }}
+  group: ops-dispatch-elenkos-active-recovery-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -26,12 +26,13 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 125
     env:
-      PUBLISH_WORKFLOW: ops-publish-elenkos-rsa-manual-20260819.yml
+      PUBLISH_WORKFLOW: ops-bootstrap-elenkos-sonus-ci-20260819.yml
+      EXPECTED_PUBLISHER_BLOB_SHA: 8882a3c6b788efb14ab6f181139dcfdedf1fca3b
       TRACKING_ISSUE: '1345'
       MARKER_PATH: docs/ops/triggers/elenkos-protected-pat-publication-2026-08-19.json
 
     steps:
-      - name: Validate exact marker and trusted manual-only RSA publisher
+      - name: Validate exact marker and pinned active recovery publisher
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -52,11 +53,13 @@ jobs:
           from pathlib import Path
 
           payload = json.loads(Path(os.environ['RUNNER_TEMP'], 'elenkos-trigger.json').read_text())
+          expected_sha = os.environ['EXPECTED_PUBLISHER_BLOB_SHA']
           assert payload == {
-              'schema_version': 2,
-              'operation': 'publish-elenkos-rsa-manual-fleet',
+              'schema_version': 3,
+              'operation': 'publish-elenkos-active-recovery-fleet',
               'tracking_issue': 'DEN-3786',
-              'publisher_workflow': 'ops-publish-elenkos-rsa-manual-20260819.yml',
+              'publisher_workflow': 'ops-bootstrap-elenkos-sonus-ci-20260819.yml',
+              'publisher_blob_sha': expected_sha,
               'repository_count': 22,
               'production_organization': 'elenkos-systems',
               'test_organization': 'elenkos-systems-test',
@@ -66,33 +69,12 @@ jobs:
 
           workflow="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/${PUBLISH_WORKFLOW}?ref=main")"
           test "$(jq -er .name <<<"$workflow")" = "$PUBLISH_WORKFLOW"
-          jq -er .content <<<"$workflow" | tr -d '\n' | base64 --decode > "$RUNNER_TEMP/elenkos-publisher.yml"
-          gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/ops/materialize_elenkos_fleet_payload_20260819.sh?ref=main" \
-            --jq .content | tr -d '\n' | base64 --decode > "$RUNNER_TEMP/elenkos-materializer.sh"
-          python3 - <<'PY'
-          import os
-          import re
-          from pathlib import Path
+          test "$(jq -er .sha <<<"$workflow")" = "$EXPECTED_PUBLISHER_BLOB_SHA"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/ops/recover_elenkos_partial_bootstrap_20260820.py?ref=main" --jq .name)" = recover_elenkos_partial_bootstrap_20260820.py
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/ops/patch_elenkos_bootstrap_tag_reconcile_20260820.py?ref=main" --jq .name)" = patch_elenkos_bootstrap_tag_reconcile_20260820.py
+          echo "trusted active Elenkos recovery publisher pinned at ${EXPECTED_PUBLISHER_BLOB_SHA}"
 
-          temp = Path(os.environ['RUNNER_TEMP'])
-          text = temp.joinpath('elenkos-publisher.yml').read_text(encoding='utf-8')
-          materializer = temp.joinpath('elenkos-materializer.sh').read_text(encoding='utf-8')
-          checks = {
-              'workflow name': 'name: Publish Elenkos fleet through ephemeral RSA PAT handoff' in text,
-              'manual dispatch': re.search(r'(?m)^  workflow_dispatch:\s*$', text) is not None,
-              'no push trigger': re.search(r'(?m)^  push:\s*$', text) is None,
-              'RSA handoff': 'ELENKOS_PAT_PUBLIC_KEY protocol=2' in text,
-              'Zed validation': 'bash scripts/ops/validate_elenkos_fleet_payload_20260819.sh' in text,
-              'live execution': '--execute' in text,
-              'bootstrap tag reconciliation': 'patch_elenkos_bootstrap_tag_reconcile_20260820.py' in materializer,
-          }
-          failed = [name for name, passed in checks.items() if not passed]
-          if failed:
-              raise SystemExit('publisher validation failed: ' + ', '.join(failed))
-          print('trusted-main publisher validation passed: ' + ', '.join(checks))
-          PY
-
-      - name: Dispatch trusted-main manual publisher and capture exact run
+      - name: Dispatch trusted-main recovery publisher and capture exact run
         id: dispatch
         shell: bash
         env:
@@ -118,9 +100,9 @@ jobs:
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
           echo "run_url=$run_url" >> "$GITHUB_OUTPUT"
           gh pr comment "$TRIGGER_PR" --repo "$GITHUB_REPOSITORY" --body \
-            "Validated exact manual-only Elenkos RSA trigger. Dispatcher: ${dispatcher_url}. Publisher: ${run_url}." >/dev/null || true
+            "Validated the pinned active Elenkos recovery publisher. Dispatcher: ${dispatcher_url}. Publisher: ${run_url}." >/dev/null || true
           gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" --body \
-            "Exact PR #${TRIGGER_PR} dispatched manual-only Elenkos RSA publisher: ${run_url}" >/dev/null || true
+            "Exact PR #${TRIGGER_PR} dispatched the active Elenkos recovery publisher: ${run_url}" >/dev/null || true
 
       - name: Follow exact publisher run
         shell: bash
@@ -144,9 +126,9 @@ jobs:
         run: |
           set -Eeuo pipefail
           if [[ "$DISPATCH_OUTCOME" = success && -n "$RUN_ID" && "$JOB_RESULT" = success ]]; then
-            body="Manual-only Elenkos RSA publisher completed successfully: ${RUN_URL}"
+            body="Active Elenkos recovery publisher completed successfully: ${RUN_URL}"
           else
-            body="Manual-only Elenkos RSA publisher did not complete successfully. Dispatch=${DISPATCH_OUTCOME}; job=${JOB_RESULT}; run=${RUN_URL:-unavailable}"
+            body="Active Elenkos recovery publisher did not complete successfully. Dispatch=${DISPATCH_OUTCOME}; job=${JOB_RESULT}; run=${RUN_URL:-unavailable}"
           fi
           gh pr comment "$TRIGGER_PR" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
           gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
