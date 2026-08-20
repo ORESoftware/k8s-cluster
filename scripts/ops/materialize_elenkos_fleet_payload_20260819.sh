@@ -20,6 +20,7 @@ augment_expected="58ea2870c136160847e65e864388e4f85be92954fbdede356d90178eceb36c
 mirror_patch="$parts_dir/patch_elenkos_mirror_fleet_20260819.py"
 empty_repository_patch="$parts_dir/patch_elenkos_empty_repository_main_ref_20260820.py"
 tag_visibility_patch="$parts_dir/patch_elenkos_tag_visibility_race_20260820.py"
+bootstrap_tag_patch="$parts_dir/patch_elenkos_bootstrap_tag_reconcile_20260820.py"
 archive="$(mktemp "${TMPDIR:-/tmp}/elenkos-fleet-payload.XXXXXX.tar.gz")"
 augment_tmp="$(mktemp "${TMPDIR:-/tmp}/augment-elenkos-fleet.XXXXXX.py")"
 cleanup() { rm -f "$archive" "$augment_tmp"; }
@@ -45,12 +46,15 @@ python3 -m py_compile \
   "$augment_target" \
   "$mirror_patch" \
   "$empty_repository_patch" \
-  "$tag_visibility_patch"
+  "$tag_visibility_patch" \
+  "$bootstrap_tag_patch"
 python3 "$root/scripts/ops/patch_elenkos_fleet_payload_20260819.py" "$root"
 python3 "$mirror_patch" "$root"
 python3 "$empty_repository_patch" \
   --publisher "$root/scripts/ops/publish_elenkos_fleet_20260819.py"
 python3 "$tag_visibility_patch" \
+  --publisher "$root/scripts/ops/publish_elenkos_fleet_20260819.py"
+python3 "$bootstrap_tag_patch" \
   --publisher "$root/scripts/ops/publish_elenkos_fleet_20260819.py"
 
 required=(
@@ -58,6 +62,7 @@ required=(
   scripts/ops/patch_elenkos_mirror_fleet_20260819.py
   scripts/ops/patch_elenkos_empty_repository_main_ref_20260820.py
   scripts/ops/patch_elenkos_tag_visibility_race_20260820.py
+  scripts/ops/patch_elenkos_bootstrap_tag_reconcile_20260820.py
   scripts/ops/augment_elenkos_fleet_20260819.py
   scripts/ops/elenkos_fleet_spec_20260819.py
   scripts/ops/publish_elenkos_fleet_20260819.py
