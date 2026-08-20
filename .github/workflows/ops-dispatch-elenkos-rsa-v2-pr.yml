@@ -1,0 +1,137 @@
+name: Dispatch manual-only Elenkos RSA publisher from exact PR
+run-name: Dispatch manual-only Elenkos RSA publisher from PR #${{ github.event.pull_request.number }}
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: ops-dispatch-elenkos-rsa-v2-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: >-
+      github.actor == 'ORESoftware' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'ops/trigger-elenkos-protected-pat-20260819-v1' &&
+      github.event.pull_request.title == 'ops(DEN-3786): trigger Elenkos protected-PAT publication'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 125
+    env:
+      PUBLISH_WORKFLOW: ops-publish-elenkos-rsa-manual-20260819.yml
+      TRACKING_ISSUE: '1345'
+      MARKER_PATH: docs/ops/triggers/elenkos-protected-pat-publication-2026-08-19.json
+
+    steps:
+      - name: Validate exact marker and trusted manual-only RSA publisher
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIGGER_PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -Eeuo pipefail
+          files="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRIGGER_PR}/files?per_page=100")"
+          test "$(jq 'length' <<<"$files")" = 1
+          test "$(jq -r '.[0].filename' <<<"$files")" = "$MARKER_PATH"
+          test "$(jq -r '.[0].status' <<<"$files")" = added
+
+          encoded="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${MARKER_PATH}?ref=${HEAD_SHA}" --jq .content)"
+          printf '%s' "$encoded" | base64 --decode > "$RUNNER_TEMP/elenkos-trigger.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(Path(os.environ['RUNNER_TEMP'], 'elenkos-trigger.json').read_text())
+          assert payload == {
+              'schema_version': 2,
+              'operation': 'publish-elenkos-rsa-manual-fleet',
+              'tracking_issue': 'DEN-3786',
+              'publisher_workflow': 'ops-publish-elenkos-rsa-manual-20260819.yml',
+              'repository_count': 22,
+              'production_organization': 'elenkos-systems',
+              'test_organization': 'elenkos-systems-test',
+              'dependency_manager': 'zed-pkg',
+          }
+          PY
+
+          workflow="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/${PUBLISH_WORKFLOW}?ref=main")"
+          test "$(jq -er .name <<<"$workflow")" = "$PUBLISH_WORKFLOW"
+          workflow_text="$(jq -er .content <<<"$workflow" | tr -d '\n' | base64 --decode)"
+          grep -F 'name: Publish Elenkos fleet through ephemeral RSA PAT handoff' <<<"$workflow_text" >/dev/null
+          grep -F 'workflow_dispatch:' <<<"$workflow_text" >/dev/null
+          ! grep -F 'push:' <<<"$workflow_text" >/dev/null
+          grep -F 'ELENKOS_PAT_PUBLIC_KEY protocol=2' <<<"$workflow_text" >/dev/null
+          grep -F 'bash scripts/ops/validate_elenkos_fleet_payload_20260819.sh' <<<"$workflow_text" >/dev/null
+          grep -F -- '--execute' <<<"$workflow_text" >/dev/null
+
+      - name: Dispatch trusted-main manual publisher and capture exact run
+        id: dispatch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIGGER_PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -Eeuo pipefail
+          dispatcher_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          before="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$PUBLISH_WORKFLOW" --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+          gh workflow run "$PUBLISH_WORKFLOW" --repo "$GITHUB_REPOSITORY" --ref main
+
+          run_id=''
+          for _ in $(seq 1 60); do
+            candidate="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$PUBLISH_WORKFLOW" --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+            if [[ -n "$candidate" && "$candidate" != "$before" ]]; then
+              run_id="$candidate"
+              break
+            fi
+            sleep 2
+          done
+          test -n "$run_id"
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "run_url=$run_url" >> "$GITHUB_OUTPUT"
+          gh pr comment "$TRIGGER_PR" --repo "$GITHUB_REPOSITORY" --body \
+            "Validated exact manual-only Elenkos RSA trigger. Dispatcher: ${dispatcher_url}. Publisher: ${run_url}." >/dev/null || true
+          gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" --body \
+            "Exact PR #${TRIGGER_PR} dispatched manual-only Elenkos RSA publisher: ${run_url}" >/dev/null || true
+
+      - name: Follow exact publisher run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+        run: |
+          set -Eeuo pipefail
+          gh run watch "$RUN_ID" --repo "$GITHUB_REPOSITORY" --exit-status
+
+      - name: Report exact result
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIGGER_PR: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ steps.dispatch.outputs.run_url }}
+          DISPATCH_OUTCOME: ${{ steps.dispatch.outcome }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+          JOB_RESULT: ${{ job.status }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "$DISPATCH_OUTCOME" = success && -n "$RUN_ID" && "$JOB_RESULT" = success ]]; then
+            body="Manual-only Elenkos RSA publisher completed successfully: ${RUN_URL}"
+          else
+            body="Manual-only Elenkos RSA publisher did not complete successfully. Dispatch=${DISPATCH_OUTCOME}; job=${JOB_RESULT}; run=${RUN_URL:-unavailable}"
+          fi
+          gh pr comment "$TRIGGER_PR" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
+          gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
+          test "$DISPATCH_OUTCOME" = success
+          test -n "$RUN_ID"
+          test "$JOB_RESULT" = success
