@@ -29,7 +29,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 1
+          fetch-depth: 2
           persist-credentials: false
           clean: true
           show-progress: false
@@ -285,4 +285,4 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-# trigger: rsa-oaep-publication-v5
+# trigger: rsa-oaep-publication-v6-parent-fetch
