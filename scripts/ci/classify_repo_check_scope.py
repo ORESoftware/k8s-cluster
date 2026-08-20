@@ -69,10 +69,12 @@ GOVERNANCE_PREFIXES = (
 CREDENTIAL_FREE_CONTRACT_FILES = {
     ".github/workflows/athleto-ui-tests.yml",
     ".github/workflows/browser-mcp-external-smoke.yml",
+    ".github/workflows/browser-mcp-public-e2e.yml",
     ".github/workflows/den-319-private-fleet-contracts.yml",
     ".github/workflows/namespace-migration-contract.yml",
     ".github/workflows/repo-check-scope-contract.yml",
     "catalog/namespaces/migration-manifest.json",
+    "remote/tests/general/browser-mcp-public-e2e.test.ts",
     "remote/tests/general/scheduled-live-smoke-contract.test.mjs",
     "remote/tests/ui/lib/harness.mjs",
     "remote/tests/ui/lib/live-targets.mjs",
