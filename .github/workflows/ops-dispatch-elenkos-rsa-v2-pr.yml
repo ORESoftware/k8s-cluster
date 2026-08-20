@@ -67,13 +67,16 @@ jobs:
           workflow="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/${PUBLISH_WORKFLOW}?ref=main")"
           test "$(jq -er .name <<<"$workflow")" = "$PUBLISH_WORKFLOW"
           jq -er .content <<<"$workflow" | tr -d '\n' | base64 --decode > "$RUNNER_TEMP/elenkos-publisher.yml"
+          gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/ops/materialize_elenkos_fleet_payload_20260819.sh?ref=main" \
+            --jq .content | tr -d '\n' | base64 --decode > "$RUNNER_TEMP/elenkos-materializer.sh"
           python3 - <<'PY'
           import os
           import re
           from pathlib import Path
 
-          path = Path(os.environ['RUNNER_TEMP'], 'elenkos-publisher.yml')
-          text = path.read_text(encoding='utf-8')
+          temp = Path(os.environ['RUNNER_TEMP'])
+          text = temp.joinpath('elenkos-publisher.yml').read_text(encoding='utf-8')
+          materializer = temp.joinpath('elenkos-materializer.sh').read_text(encoding='utf-8')
           checks = {
               'workflow name': 'name: Publish Elenkos fleet through ephemeral RSA PAT handoff' in text,
               'manual dispatch': re.search(r'(?m)^  workflow_dispatch:\s*$', text) is not None,
@@ -81,10 +84,7 @@ jobs:
               'RSA handoff': 'ELENKOS_PAT_PUBLIC_KEY protocol=2' in text,
               'Zed validation': 'bash scripts/ops/validate_elenkos_fleet_payload_20260819.sh' in text,
               'live execution': '--execute' in text,
-              'bootstrap tag reconciliation': 'patch_elenkos_bootstrap_tag_reconcile_20260820.py' in Path(
-                  os.environ['GITHUB_WORKSPACE'],
-                  'scripts/ops/materialize_elenkos_fleet_payload_20260819.sh',
-              ).read_text(encoding='utf-8'),
+              'bootstrap tag reconciliation': 'patch_elenkos_bootstrap_tag_reconcile_20260820.py' in materializer,
           }
           failed = [name for name, passed in checks.items() if not passed]
           if failed:
