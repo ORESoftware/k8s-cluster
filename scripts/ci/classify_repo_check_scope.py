@@ -74,6 +74,8 @@ CREDENTIAL_FREE_CONTRACT_FILES = {
     ".github/workflows/repo-check-scope-contract.yml",
     "catalog/namespaces/migration-manifest.json",
     "remote/tests/general/scheduled-live-smoke-contract.test.mjs",
+    "remote/tests/ui/lib/harness.mjs",
+    "remote/tests/ui/lib/live-targets.mjs",
     "scripts/ops/repository_rename_alias_guard.py",
     "scripts/ops/test_repository_rename_alias_guard.py",
     "tools/test_namespace_manifest.py",
