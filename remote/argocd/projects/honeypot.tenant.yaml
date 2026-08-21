@@ -1,0 +1,66 @@
+# Layer-1 tenancy for the low-interaction ORESoftware honeypot.
+#
+# Platform-owned only: Namespace, quota/limits, service identity, and the
+# namespace-wide ingress/egress deny. The application repository owns only
+# namespaced workload resources and narrowly-scoped ingress allow policies.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: honeypot
+  labels:
+    app.kubernetes.io/part-of: honeypot
+    kubernetes.io/metadata.name: honeypot
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: honeypot-quota
+  namespace: honeypot
+spec:
+  hard:
+    requests.cpu: "500m"
+    requests.memory: 384Mi
+    limits.cpu: "1"
+    limits.memory: 768Mi
+    pods: "4"
+    services: "2"
+    configmaps: "4"
+    secrets: "4"
+    persistentvolumeclaims: "0"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: honeypot-limits
+  namespace: honeypot
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 250m
+        memory: 192Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: honeypot
+  namespace: honeypot
+automountServiceAccountToken: false
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: honeypot-default-deny
+  namespace: honeypot
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
