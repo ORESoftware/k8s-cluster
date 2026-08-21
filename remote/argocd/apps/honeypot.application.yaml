@@ -1,0 +1,42 @@
+# REVIEW-ONLY / INERT: this file is intentionally not referenced by any cluster
+# root or kustomization. Do not register or apply it until every gate below is
+# satisfied and the exact immutable revisions have been reviewed.
+#
+# Activation gates:
+#   1. Create ORESoftware/honeypot.rs and publish the reviewed source bundle.
+#   2. Generate, review, and commit Cargo.lock; require green locked CI.
+#   3. Tag the exact reviewed source as v0.1.0 and publish/sign a matching image;
+#      replace the tag in deploy/k8s with an immutable digest before production.
+#   4. Provision dd/remote-dev/honeypot-secrets through External Secrets with
+#      independent HONEYTOKEN_HMAC_KEY, PRIVACY_HMAC_KEY, and EDGE_HMAC_KEY values.
+#   5. Verify the actual cloudflared and monitoring namespace/pod labels used by
+#      the app-owned ingress allow policies.
+#   6. Route only explicit decoy paths through a Cloudflare Worker + Tunnel;
+#      expose no public Kubernetes origin and never route volumetric DDoS traffic
+#      to the service.
+#   7. Replace https://decoy.invalid with an approved proxied hostname and verify
+#      signed edge evidence, replay rejection, redacted logging, TTL decisions,
+#      resource ceilings, and a bounded canary.
+#   8. Register this Application in exactly one intended cluster root only after
+#      all prior gates pass; keep the deployment disabled everywhere else.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: honeypot
+  namespace: argocd
+spec:
+  project: honeypot
+  source:
+    repoURL: git@github.com:ORESoftware/honeypot.rs.git
+    targetRevision: v0.1.0
+    path: deploy/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: honeypot
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - PruneLast=true
