@@ -1,0 +1,31 @@
+# Strict AppProject for the low-interaction honeypot. The app repository may
+# deploy only namespaced workload resources into `honeypot`; all platform and
+# identity resources remain owned by k8s-cluster.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: honeypot
+  namespace: argocd
+spec:
+  description: "Low-interaction deception tenant; no cluster-scoped resources or app-owned identity."
+  sourceRepos:
+    - "git@github.com:ORESoftware/honeypot.rs.git"
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: honeypot
+  clusterResourceWhitelist: []
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: ResourceQuota
+    - group: ""
+      kind: LimitRange
+    - group: ""
+      kind: ServiceAccount
+    - group: rbac.authorization.k8s.io
+      kind: Role
+    - group: rbac.authorization.k8s.io
+      kind: RoleBinding
+    - group: ""
+      kind: Secret
+  orphanedResources:
+    warn: true
