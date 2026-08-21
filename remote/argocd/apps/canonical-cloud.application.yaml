@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: canonical-cloud
   namespace: argocd
+  annotations:
+    canonical.cloud/activation: manual-after-private-api-and-secret-certification
 spec:
   project: default
   source:
@@ -12,11 +14,18 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: canonical-cloud
+  # Automated sync is intentionally disabled while the dedicated quote API,
+  # Canonical Shared Auth realm, database roles/schema/context, and runtime
+  # secrets are unproven. An operator must review the exact rendered diff and
+  # perform the first sync only after every gate in PRIVATE_API_STAGING.md.
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
       - PruneLast=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 2m
