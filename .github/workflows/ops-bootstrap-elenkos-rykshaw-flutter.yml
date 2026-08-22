@@ -1,0 +1,248 @@
+name: Publish Elenkos Rykshaw Flutter with protected PAT
+run-name: Publish validated Rykshaw Flutter source from ${{ github.sha }}
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ops-bootstrap-elenkos-rykshaw-flutter
+  cancel-in-progress: false
+
+env:
+  ISSUE_NUMBER: '1345'
+  CONFIRMATION: publish-elenkos-rykshaw-flutter-v1
+  FLUTTER_VERSION: 3.47.0
+  SOURCE_ARCHIVE_B64: scripts/ops/payloads/elenkos-rykshaw-flutter-source.tar.gz.b64
+  SOURCE_ARCHIVE: ${{ runner.temp }}/elenkos-rykshaw-flutter-source.tar.gz
+  SOURCE_SHA256_FILE: scripts/ops/payloads/elenkos-rykshaw-flutter-source.tar.gz.sha256
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - name: Check out exact trusted-main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          clean: true
+          show-progress: false
+
+      - name: Bind ephemeral paths
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          printf 'SOURCE_ROOT=%s\n' "$RUNNER_TEMP/rykshaw-source" >> "$GITHUB_ENV"
+          printf 'EVIDENCE_JSON=%s\n' "$RUNNER_TEMP/rykshaw-publication.json" >> "$GITHUB_ENV"
+
+      - name: Receive repository-admin PAT through RSA-OAEP-SHA256 handoff
+        id: handoff
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          test "$GITHUB_REF" = refs/heads/main
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+          handoff_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$(openssl rand -hex 16)"
+          private_key="$RUNNER_TEMP/rykshaw-pat-private.pem"
+          public_key="$RUNNER_TEMP/rykshaw-pat-public.pem"
+          matches="$RUNNER_TEMP/rykshaw-pat-matches.txt"
+          encrypted="$RUNNER_TEMP/rykshaw-pat-ciphertext.bin"
+          payload="$RUNNER_TEMP/rykshaw-pat-payload.json"
+          token_file="$RUNNER_TEMP/rykshaw-repository-admin-token"
+          public_comment_id=''
+          ciphertext_comment_id=''
+
+          cleanup() {
+            rm -f "$private_key" "$public_key" "$matches" "$encrypted" "$payload"
+            if [[ -n "${public_comment_id:-}" ]]; then
+              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/issues/comments/${public_comment_id}" >/dev/null 2>&1 || true
+            fi
+            if [[ -n "${ciphertext_comment_id:-}" ]]; then
+              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/issues/comments/${ciphertext_comment_id}" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup EXIT
+
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out "$private_key" >/dev/null 2>&1
+          openssl pkey -in "$private_key" -pubout -out "$public_key" >/dev/null 2>&1
+          key_b64="$(base64 -w0 < "$public_key")"
+          public_comment_id="$(gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+            -f body="ELENKOS_PAT_PUBLIC_KEY protocol=1 run_id=${handoff_id} key_b64=${key_b64} confirm=${CONFIRMATION}" \
+            --jq .id)"
+          [[ "$public_comment_id" =~ ^[0-9]+$ ]]
+          unset key_b64
+
+          prefix="ELENKOS_PAT_CIPHERTEXT protocol=1 run_id=${handoff_id} data="
+          ciphertext=''
+          for _ in $(seq 1 450); do
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+              --jq ".[] | select(.body | startswith(\"${prefix}\")) | .id" \
+              > "$matches"
+            count="$(awk 'NF{n++} END{print n+0}' "$matches")"
+            [[ "$count" -le 1 ]] || { echo "duplicate encrypted PAT payloads=${count}" >&2; exit 1; }
+            if [[ "$count" -eq 1 ]]; then
+              ciphertext_comment_id="$(cat "$matches")"
+              [[ "$ciphertext_comment_id" =~ ^[0-9]+$ ]]
+              body="$(gh api "repos/${GITHUB_REPOSITORY}/issues/comments/${ciphertext_comment_id}" --jq .body)"
+              ciphertext="${body#"$prefix"}"
+              break
+            fi
+            sleep 2
+          done
+          test -n "$ciphertext" || { echo 'encrypted PAT payload not received' >&2; exit 1; }
+
+          CIPHERTEXT="$ciphertext" ENCRYPTED="$encrypted" python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+          encoded = "".join(os.environ["CIPHERTEXT"].split())
+          encoded += "=" * (-len(encoded) % 4)
+          decoded = base64.urlsafe_b64decode(encoded)
+          if len(decoded) != 512:
+              raise SystemExit(f"unexpected RSA ciphertext length: {len(decoded)}")
+          Path(os.environ["ENCRYPTED"]).write_bytes(decoded)
+          PY
+          unset ciphertext body
+          openssl pkeyutl -decrypt \
+            -inkey "$private_key" \
+            -in "$encrypted" \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256 \
+            -out "$payload"
+
+          jq -e --arg run "$handoff_id" --arg confirm "$CONFIRMATION" '
+            .run_id == $run and
+            .confirm == $confirm and
+            (.token | type == "string" and length >= 20 and (test("\\s") | not))
+          ' "$payload" >/dev/null
+          token="$(jq -r .token "$payload")"
+          printf '::add-mask::%s\n' "$token"
+          printf '%s' "$token" > "$token_file"
+          chmod 600 "$token_file"
+          unset token
+
+          echo "token_file=$token_file" >> "$GITHUB_OUTPUT"
+          echo "handoff_id=$handoff_id" >> "$GITHUB_OUTPUT"
+
+      - name: Verify source archive and materialize
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          expected="$(awk 'NF {print $1; exit}' "$SOURCE_SHA256_FILE")"
+          [[ "$expected" =~ ^[0-9a-f]{64}$ ]]
+          base64 --decode "$SOURCE_ARCHIVE_B64" > "$SOURCE_ARCHIVE"
+          chmod 600 "$SOURCE_ARCHIVE"
+          actual="$(sha256sum "$SOURCE_ARCHIVE" | awk '{print $1}')"
+          test "$actual" = "$expected"
+          rm -rf "$SOURCE_ROOT"
+          mkdir -p "$SOURCE_ROOT"
+          tar -xzf "$SOURCE_ARCHIVE" --strip-components=1 -C "$SOURCE_ROOT"
+          test -f "$SOURCE_ROOT/pubspec.yaml"
+          printf 'SOURCE_ARCHIVE_SHA256=%s\n' "$actual" >> "$GITHUB_ENV"
+
+      - name: Set up Flutter 3.47
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Validate exact Flutter source and build Android sandbox APK
+        shell: bash
+        working-directory: ${{ env.SOURCE_ROOT }}
+        run: |
+          set -Eeuo pipefail
+          bash tool/check_no_secrets.sh
+          python3 tool/static_validate.py
+          bash tool/bootstrap_platforms.sh
+          flutter pub get
+          dart format --output=none --set-exit-if-changed lib test
+          flutter analyze
+          flutter test --reporter expanded
+          flutter build apk --debug \
+            --dart-define=ELENKOS_ENVIRONMENT=beta \
+            --dart-define=ELENKOS_SANDBOX_REWARDS_ONLY=true \
+            --dart-define=ELENKOS_ENABLE_REAL_REWARDS=false
+          test -s build/app/outputs/flutter-apk/app-debug.apk
+          bash tool/check_no_secrets.sh
+
+      - name: Publish validated source to private repository and open PR
+        shell: bash
+        env:
+          TOKEN_FILE: ${{ steps.handoff.outputs.token_file }}
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile scripts/ops/publish_elenkos_rykshaw_flutter.py
+          python3 scripts/ops/publish_elenkos_rykshaw_flutter.py \
+            --token-file "$TOKEN_FILE" \
+            --source "$SOURCE_ROOT" \
+            --archive "$SOURCE_ARCHIVE" \
+            --archive-sha256 "$SOURCE_ARCHIVE_SHA256" \
+            --trusted-k8s-cluster-sha "$GITHUB_SHA" \
+            --apk "$SOURCE_ROOT/build/app/outputs/flutter-apk/app-debug.apk" \
+            --evidence-out "$EVIDENCE_JSON"
+          jq -e '
+            .schema_version == 1 and
+            .repository == "elenkos-systems/elenkos-rykshaw-flutter" and
+            .visibility == "private" and
+            .validated == true and
+            (.commit_sha | test("^[0-9a-f]{40}$")) and
+            (.source_archive_sha256 == env.SOURCE_ARCHIVE_SHA256) and
+            (.trusted_k8s_cluster_sha == env.GITHUB_SHA) and
+            (.pull_request.url | startswith("https://github.com/elenkos-systems/elenkos-rykshaw-flutter/pull/"))
+          ' "$EVIDENCE_JSON" >/dev/null
+
+      - name: Upload validated APK and publication evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: elenkos-rykshaw-publication-${{ github.run_id }}
+          path: |
+            ${{ env.EVIDENCE_JSON }}
+            ${{ env.SOURCE_ROOT }}/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Record receipt on the protected handoff issue
+        if: ${{ always() }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -Eeuo pipefail
+          if [[ -s "$EVIDENCE_JSON" ]]; then
+            repo="$(jq -r .repository "$EVIDENCE_JSON")"
+            sha="$(jq -r .commit_sha "$EVIDENCE_JSON")"
+            pr="$(jq -r .pull_request.url "$EVIDENCE_JSON")"
+            source_sha="$(jq -r .source_archive_sha256 "$EVIDENCE_JSON")"
+            body="RYKSHAW_PUBLICATION status=${JOB_STATUS} repo=${repo} commit=${sha} pr=${pr} source_sha256=${source_sha} run=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          else
+            body="RYKSHAW_PUBLICATION status=${JOB_STATUS} evidence=missing run=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          fi
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+            -f body="$body" >/dev/null
+
+      - name: Destroy ephemeral PAT
+        if: ${{ always() }}
+        shell: bash
+        env:
+          TOKEN_FILE: ${{ steps.handoff.outputs.token_file }}
+        run: |
+          set -Eeuo pipefail
+          if [[ -n "${TOKEN_FILE:-}" && -f "$TOKEN_FILE" ]]; then
+            shred -u "$TOKEN_FILE" 2>/dev/null || rm -f "$TOKEN_FILE"
+          fi
