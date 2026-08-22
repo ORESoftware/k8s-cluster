@@ -20,25 +20,99 @@ jobs:
   dispatch:
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.head_branch == 'agent/den-3843-publication-trigger' &&
-      github.event.workflow_run.head_repository.full_name == 'ORESoftware/k8s-cluster'
+      github.event.workflow_run.head_branch == 'agent/den-3843-publication-trigger'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Dispatch the trusted default-branch creator
+      - name: Post workflow-run start receipt
         env:
           GH_TOKEN: ${{ github.token }}
           TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+          TRIGGER_EVENT: ${{ github.event.workflow_run.event }}
+          TRIGGER_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          TRIGGER_ACTOR: ${{ github.event.workflow_run.actor.login }}
+          TRIGGER_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          TRIGGER_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(cat <<EOF
+          Started trusted workflow-run handling for DEN-3843:
+
+          - trigger run: \`${TRIGGER_RUN_ID}\`
+          - event: \`${TRIGGER_EVENT}\`
+          - branch: \`${TRIGGER_BRANCH}\`
+          - actor: \`${TRIGGER_ACTOR}\`
+          - repository: \`${TRIGGER_REPOSITORY}\`
+          - head: \`${TRIGGER_HEAD_SHA}\`
+          EOF
+          )"
+          gh api --method POST repos/ORESoftware/k8s-cluster/issues/1381/comments -f body="$body" >/dev/null
+
+      - name: Validate the completed trigger identity
+        id: validate
+        continue-on-error: true
+        env:
+          TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+          TRIGGER_EVENT: ${{ github.event.workflow_run.event }}
+          TRIGGER_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          TRIGGER_ACTOR: ${{ github.event.workflow_run.actor.login }}
+          TRIGGER_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
           TRIGGER_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         shell: bash
         run: |
           set -euo pipefail
           [[ "$TRIGGER_RUN_ID" =~ ^[0-9]+$ ]]
+          test "$TRIGGER_EVENT" = pull_request
+          test "$TRIGGER_BRANCH" = agent/den-3843-publication-trigger
+          test "$TRIGGER_ACTOR" = ORESoftware
+          test "$TRIGGER_REPOSITORY" = ORESoftware/k8s-cluster
           [[ "$TRIGGER_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
-          gh workflow run ops-create-sustainable-bike.yml \
-            --repo ORESoftware/k8s-cluster \
-            --ref main
-          gh api --method POST repos/ORESoftware/k8s-cluster/issues/1381/comments \
-            -f body="Validated workflow-run trigger \`${TRIGGER_RUN_ID}\` at \`${TRIGGER_HEAD_SHA}\`; dispatched the trusted default-branch sustainable-bike creator." \
-            >/dev/null
+
+      - name: Dispatch the trusted default-branch creator
+        id: dispatch
+        if: steps.validate.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --method POST \
+            repos/ORESoftware/k8s-cluster/actions/workflows/ops-create-sustainable-bike.yml/dispatches \
+            -f ref=main
+
+      - name: Post durable dispatch outcome
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+          TRIGGER_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
+          DISPATCH_OUTCOME: ${{ steps.dispatch.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(cat <<EOF
+          DEN-3843 workflow-run dispatch receipt:
+
+          - trigger run: \`${TRIGGER_RUN_ID}\`
+          - trigger head: \`${TRIGGER_HEAD_SHA}\`
+          - identity validation: **${VALIDATE_OUTCOME}**
+          - creator workflow dispatch: **${DISPATCH_OUTCOME}**
+
+          No repository credential is included in this receipt.
+          EOF
+          )"
+          gh api --method POST repos/ORESoftware/k8s-cluster/issues/1381/comments -f body="$body" >/dev/null
+
+      - name: Assert successful dispatch
+        if: always()
+        env:
+          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
+          DISPATCH_OUTCOME: ${{ steps.dispatch.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$VALIDATE_OUTCOME" = success
+          test "$DISPATCH_OUTCOME" = success
