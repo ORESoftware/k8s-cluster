@@ -1,0 +1,44 @@
+name: Dispatch sustainable-bike creator after validated trigger
+run-name: Dispatch sustainable-bike creator after run ${{ github.event.workflow_run.id }}
+
+on:
+  workflow_run:
+    workflows:
+      - DEN-3843 sustainable-bike publication trigger
+    types: [completed]
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+concurrency:
+  group: den-3843-workflow-run-dispatch
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_branch == 'agent/den-3843-publication-trigger' &&
+      github.event.workflow_run.head_repository.full_name == 'ORESoftware/k8s-cluster'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch the trusted default-branch creator
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+          TRIGGER_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$TRIGGER_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$TRIGGER_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          gh workflow run ops-create-sustainable-bike.yml \
+            --repo ORESoftware/k8s-cluster \
+            --ref main
+          gh api --method POST repos/ORESoftware/k8s-cluster/issues/1381/comments \
+            -f body="Validated workflow-run trigger \`${TRIGGER_RUN_ID}\` at \`${TRIGGER_HEAD_SHA}\`; dispatched the trusted default-branch sustainable-bike creator." \
+            >/dev/null
