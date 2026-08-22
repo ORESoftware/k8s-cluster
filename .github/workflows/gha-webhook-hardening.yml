@@ -1,0 +1,85 @@
+name: GHA webhook hardening
+
+on:
+  pull_request:
+    paths:
+      - 'remote/argocd/dd-next-runtime/dd-remote-gateway.deployment.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-remote-gateway.ingress.yaml'
+      - 'remote/tests/general/gha-clone-budget-webhook-activation.test.mjs'
+      - 'remote/tests/general/gha-clone-budget-webhook-tools.test.mjs'
+      - 'scripts/ops/canary_gha_clone_budget_webhook.py'
+      - 'scripts/ops/register_gha_clone_budget_webhook.sh'
+      - 'docs/operations/gha-budget-webhook-activation.md'
+      - '.github/workflows/gha-webhook-hardening.yml'
+  push:
+    branches: [main, dev]
+    paths:
+      - 'remote/argocd/dd-next-runtime/dd-remote-gateway.deployment.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-remote-gateway.ingress.yaml'
+      - 'remote/tests/general/gha-clone-budget-webhook-activation.test.mjs'
+      - 'remote/tests/general/gha-clone-budget-webhook-tools.test.mjs'
+      - 'scripts/ops/canary_gha_clone_budget_webhook.py'
+      - 'scripts/ops/register_gha_clone_budget_webhook.sh'
+      - 'docs/operations/gha-budget-webhook-activation.md'
+      - '.github/workflows/gha-webhook-hardening.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gha-webhook-hardening-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/gha-webhook-hardening.yml
+      - name: Run static and executable webhook contracts
+        run: |
+          set -euo pipefail
+          node --test \
+            remote/tests/general/gha-clone-budget-webhook-activation.test.mjs \
+            remote/tests/general/gha-clone-budget-webhook-tools.test.mjs
+      - name: Validate operator tooling syntax
+        run: |
+          set -euo pipefail
+          bash -n scripts/ops/register_gha_clone_budget_webhook.sh
+          PYTHONPYCACHEPREFIX="${RUNNER_TEMP}/pycache" \
+            python3 -m py_compile scripts/ops/canary_gha_clone_budget_webhook.py
+      - name: Install pinned kubectl renderer
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
+        with:
+          version: v1.32.2
+      - name: Render the active GitOps overlay
+        run: |
+          set -euo pipefail
+          rendered="${RUNNER_TEMP}/dd-next-runtime.yaml"
+          kubectl kustomize remote/argocd/dd-next-runtime >"$rendered"
+          test -s "$rendered"
+          grep -Fq 'name: render-webhook-no-retry-config' "$rendered"
+          grep -Fq 'proxy_next_upstream off;' "$rendered"
+          grep -Fq 'proxy_request_buffering off;' "$rendered"
+      - name: Reject committed credentials
+        run: |
+          set -euo pipefail
+          if grep -RIE \
+            'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|lin_api_[A-Za-z0-9]{20,}|BEGIN (RSA |EC )?PRIVATE KEY' \
+            remote/argocd/dd-next-runtime/dd-remote-gateway.deployment.yaml \
+            remote/argocd/dd-next-runtime/dd-remote-gateway.ingress.yaml \
+            remote/tests/general/gha-clone-budget-webhook-activation.test.mjs \
+            remote/tests/general/gha-clone-budget-webhook-tools.test.mjs \
+            scripts/ops/canary_gha_clone_budget_webhook.py \
+            scripts/ops/register_gha_clone_budget_webhook.sh \
+            docs/operations/gha-budget-webhook-activation.md; then
+            echo 'credential-like material found in webhook hardening files' >&2
+            exit 1
+          fi

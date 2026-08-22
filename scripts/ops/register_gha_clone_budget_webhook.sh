@@ -6,21 +6,31 @@ readonly script_name="${0##*/}"
 repository=''
 webhook_url='https://98.90.186.114/gha-webhooks/github'
 secret_file=''
+temp_dir=''
+
+cleanup() {
+  if [[ -n "$temp_dir" && -d "$temp_dir" ]]; then
+    rm -rf -- "$temp_dir"
+  fi
+}
+trap cleanup EXIT HUP INT TERM
 
 usage() {
-  cat <<'EOF'
+  cat <<'USAGE'
 Usage:
   register_gha_clone_budget_webhook.sh \
     --repository OWNER/REPO \
     --secret-file PATH \
     [--url HTTPS_URL]
 
-Creates or updates one repository webhook for workflow_run events only. The
-webhook secret is read from a file and is never printed. Authentication is
-provided to the GitHub CLI through GH_TOKEN or an existing `gh auth login`.
+Creates or updates exactly one repository webhook for workflow_run events.
+The webhook secret is read from an owner-only regular file and is never accepted
+from an environment variable, printed, or placed in a process argument.
+Authentication is provided through GH_TOKEN or an existing `gh auth login` for
+github.com. Debug HTTP tracing is forcibly disabled for secret-bearing requests.
 
 Required token/App authority: repository Administration read/write.
-EOF
+USAGE
 }
 
 while (($#)); do
@@ -54,38 +64,116 @@ done
 
 command -v gh >/dev/null 2>&1 || { echo "$script_name: gh is required" >&2; exit 69; }
 command -v jq >/dev/null 2>&1 || { echo "$script_name: jq is required" >&2; exit 69; }
+command -v python3 >/dev/null 2>&1 || { echo "$script_name: python3 is required" >&2; exit 69; }
+
+github_api() {
+  env -u GH_DEBUG -u DEBUG gh api --hostname github.com "$@"
+}
 
 [[ "$repository" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || {
   echo "$script_name: --repository must be exact OWNER/REPO" >&2
   exit 64
 }
-[[ "$webhook_url" =~ ^https://[^[:space:]]+/gha-webhooks/github$ ]] || {
-  echo "$script_name: --url must be HTTPS and end in /gha-webhooks/github" >&2
-  exit 64
-}
-[[ -n "$secret_file" && -f "$secret_file" && -r "$secret_file" ]] || {
-  echo "$script_name: --secret-file must name a readable file" >&2
+[[ -n "$secret_file" && -f "$secret_file" && -r "$secret_file" && ! -L "$secret_file" ]] || {
+  echo "$script_name: --secret-file must name a readable, non-symlink regular file" >&2
   exit 66
 }
 
-secret_bytes="$(wc -c <"$secret_file" | tr -d '[:space:]')"
-[[ "$secret_bytes" =~ ^[0-9]+$ && "$secret_bytes" -ge 32 ]] || {
-  echo "$script_name: webhook secret must contain at least 32 bytes" >&2
-  exit 65
-}
+python3 - "$webhook_url" <<'PY'
+from __future__ import annotations
 
-# Resolve by exact URL so reruns update instead of duplicating deliveries.
-existing_id="$(
-  gh api "/repos/${repository}/hooks?per_page=100" --paginate \
-    | jq -r --arg url "$webhook_url" '.[] | select(.config.url == $url) | .id' \
-    | head -n 1
+import sys
+from urllib.parse import urlsplit
+
+raw = sys.argv[1]
+parsed = urlsplit(raw)
+if (
+    parsed.scheme != "https"
+    or not parsed.hostname
+    or parsed.username is not None
+    or parsed.password is not None
+    or parsed.query
+    or parsed.fragment
+    or parsed.path != "/gha-webhooks/github"
+):
+    raise SystemExit("webhook URL must be an exact credential-free HTTPS /gha-webhooks/github URL")
+PY
+
+temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/${script_name}.XXXXXX")"
+normalized_secret_file="$temp_dir/webhook-secret"
+payload_file="$temp_dir/hook.json"
+
+# Open without following a final symlink, verify the descriptor is still an
+# owner-only regular file, bound the read before allocation, normalize one
+# optional terminal line ending, and validate the exact HMAC value GitHub gets.
+python3 - "$secret_file" "$normalized_secret_file" <<'PY'
+from __future__ import annotations
+
+import os
+import stat
+import sys
+
+source = sys.argv[1]
+destination = sys.argv[2]
+flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+try:
+    descriptor = os.open(source, flags)
+except OSError as exc:
+    raise SystemExit(f"cannot securely open webhook secret: {exc}") from exc
+try:
+    metadata = os.fstat(descriptor)
+    if not stat.S_ISREG(metadata.st_mode):
+        raise SystemExit("webhook secret must remain a regular file after open")
+    mode = stat.S_IMODE(metadata.st_mode)
+    if not mode & stat.S_IRUSR:
+        raise SystemExit("webhook secret must be owner-readable")
+    if mode & 0o077:
+        raise SystemExit("webhook secret must not be group/world accessible")
+    with os.fdopen(descriptor, "rb", closefd=False) as handle:
+        value = handle.read(4099)
+finally:
+    os.close(descriptor)
+
+if len(value) > 4098:
+    raise SystemExit("webhook secret file exceeds the bounded input size")
+if value.endswith(b"\r\n"):
+    value = value[:-2]
+elif value.endswith(b"\n"):
+    value = value[:-1]
+if not 32 <= len(value) <= 4096:
+    raise SystemExit("webhook secret must contain 32 to 4096 bytes after terminal-newline normalization")
+if any(byte < 0x21 or byte > 0x7E for byte in value):
+    raise SystemExit("webhook secret must be a single visible-ASCII line")
+
+output_flags = (
+    os.O_WRONLY
+    | os.O_CREAT
+    | os.O_EXCL
+    | getattr(os, "O_CLOEXEC", 0)
+    | getattr(os, "O_NOFOLLOW", 0)
+)
+output = os.open(destination, output_flags, 0o600)
+with os.fdopen(output, "wb") as handle:
+    handle.write(value)
+PY
+
+# Resolve by exact URL so reruns update rather than duplicate deliveries. More
+# than one match is an unsafe pre-existing state: fail closed instead of silently
+# selecting one hook and leaving the others active.
+existing_ids="$(
+  github_api "/repos/${repository}/hooks?per_page=100" --paginate \
+    | jq -r --arg url "$webhook_url" '.[] | select(.config.url == $url) | .id'
 )"
+match_count="$(printf '%s\n' "$existing_ids" | awk 'NF { count += 1 } END { print count + 0 }')"
+if ((match_count > 1)); then
+  echo "$script_name: multiple hooks already use the exact callback URL; refusing an ambiguous update" >&2
+  exit 65
+fi
+existing_id="$(printf '%s\n' "$existing_ids" | awk 'NF { print; exit }')"
 
-# --rawfile keeps the HMAC secret out of argv/process listings. Strip only a
-# trailing file newline; internal bytes remain unchanged.
-payload="$(jq -cn \
+jq -cn \
   --arg url "$webhook_url" \
-  --rawfile secret "$secret_file" \
+  --rawfile secret "$normalized_secret_file" \
   '{
     name: "web",
     active: true,
@@ -93,20 +181,22 @@ payload="$(jq -cn \
     config: {
       url: $url,
       content_type: "json",
-      secret: ($secret | sub("[\r\n]+$"; "")),
+      secret: $secret,
       insecure_ssl: "0"
     }
-  }')"
+  }' >"$payload_file"
 
 if [[ -n "$existing_id" ]]; then
-  result="$(printf '%s' "$payload" | gh api --method PATCH "/repos/${repository}/hooks/${existing_id}" --input -)"
+  [[ "$existing_id" =~ ^[0-9]+$ ]] || { echo "$script_name: GitHub returned a non-numeric hook id" >&2; exit 1; }
+  result="$(github_api --method PATCH "/repos/${repository}/hooks/${existing_id}" --input "$payload_file")"
   action='updated'
 else
-  result="$(printf '%s' "$payload" | gh api --method POST "/repos/${repository}/hooks" --input -)"
+  result="$(github_api --method POST "/repos/${repository}/hooks" --input "$payload_file")"
   action='created'
 fi
 
 jq -e --arg url "$webhook_url" '
+  (.id | type == "number") and
   .active == true and
   .config.url == $url and
   .config.content_type == "json" and
