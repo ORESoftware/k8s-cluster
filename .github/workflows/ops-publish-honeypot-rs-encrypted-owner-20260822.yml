@@ -1,0 +1,310 @@
+name: Publish honeypot.rs through one-time encrypted owner credential
+run-name: Publish ORESoftware/honeypot.rs from reviewed deterministic source
+
+on:
+  pull_request:
+    paths:
+      - scripts/ops/payloads/honeypot-rs-20260822/**
+      - docs/den-3873-honeypot-rs-bootstrap.md
+      - .github/workflows/ops-publish-honeypot-rs-encrypted-owner-20260822.yml
+  push:
+    branches: [main]
+    paths:
+      - scripts/ops/payloads/honeypot-rs-20260822/**
+      - docs/den-3873-honeypot-rs-bootstrap.md
+      - .github/workflows/ops-publish-honeypot-rs-encrypted-owner-20260822.yml
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: den-3873-honeypot-rs-${{ github.event.issue.number || github.ref }}
+  cancel-in-progress: false
+
+env:
+  PAYLOAD_ROOT: scripts/ops/payloads/honeypot-rs-20260822
+  SOURCE_BRANCH: agent/DEN-3873-honeypot-foundation
+  TARGET_REPOSITORY: ORESoftware/honeypot.rs
+  RUST_TOOLCHAIN: 1.98.0
+
+jobs:
+  validate:
+    if: github.event_name != 'issue_comment'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Validate publisher workflow with pinned actionlint
+        run: |
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/repo:ro" \
+            --workdir /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            .github/workflows/ops-publish-honeypot-rs-encrypted-owner-20260822.yml
+      - name: Materialize deterministic source
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_root="$RUNNER_TEMP/honeypot.rs"
+          test -d "$PAYLOAD_ROOT"
+          test -z "$(find "$PAYLOAD_ROOT" -type l -print -quit)"
+          mkdir "$source_root"
+          cp -a "$PAYLOAD_ROOT/." "$source_root/"
+          printf 'SOURCE_ROOT=%s\n' "$source_root" >> "$GITHUB_ENV"
+      - name: Install pinned Rust toolchain
+        run: |
+          set -euo pipefail
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt --component clippy
+          rustup default "$RUST_TOOLCHAIN"
+      - name: Validate, lock, lint, test, and build source
+        working-directory: ${{ env.SOURCE_ROOT }}
+        run: |
+          set -euo pipefail
+          python3 scripts/validate_repo.py
+          cargo generate-lockfile
+          cargo fmt --all --check
+          cargo clippy --locked --all-targets --all-features -- -D warnings
+          cargo test --locked --all-targets --all-features
+          cargo build --release --locked
+          docker build --tag honeypot-rs:den-3873 .
+
+  publish:
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request == null &&
+      github.event.issue.state == 'open' &&
+      github.event.issue.user.login == 'ORESoftware' &&
+      github.event.issue.title == 'DEN-3873: publish ORESoftware/honeypot.rs through encrypted bootstrap' &&
+      github.event.comment.user.login == 'ORESoftware' &&
+      github.event.comment.body == 'ops-publish-honeypot-rs:DEN-3873:rsa-oaep-sha256:20260822'
+    permissions:
+      contents: write
+      issues: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Materialize and preflight source before requesting a credential
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          source_root="$RUNNER_TEMP/honeypot.rs"
+          test -d "$PAYLOAD_ROOT"
+          test -z "$(find "$PAYLOAD_ROOT" -type l -print -quit)"
+          mkdir "$source_root"
+          cp -a "$PAYLOAD_ROOT/." "$source_root/"
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt --component clippy
+          rustup default "$RUST_TOOLCHAIN"
+          cd "$source_root"
+          python3 scripts/validate_repo.py
+          cargo generate-lockfile
+          cargo fmt --all --check
+          cargo clippy --locked --all-targets --all-features -- -D warnings
+          cargo test --locked --all-targets --all-features
+          cargo build --release --locked
+
+          git init -b main
+          git config user.name 'ORESoftware Repository Bootstrap'
+          git config user.email 'oresoftware@users.noreply.github.com'
+          git add -- README.md LICENSE .gitignore
+          git commit -m 'chore(DEN-3873): initialize honeypot repository'
+          git switch -c "$SOURCE_BRANCH"
+          git add -- .dockerignore .github AGENTS.md Cargo.toml Cargo.lock Dockerfile SECURITY.md deploy docs rust-toolchain.toml scripts src
+          git commit -m 'feat(DEN-3873): add isolated Rust deception service'
+          git fsck --full
+          test -z "$(git status --porcelain)"
+          printf 'SOURCE_ROOT=%s\n' "$source_root" >> "$GITHUB_ENV"
+          printf 'EXPECTED_MAIN=%s\n' "$(git rev-parse main)" >> "$GITHUB_ENV"
+          printf 'EXPECTED_SOURCE=%s\n' "$(git rev-parse "$SOURCE_BRANCH")" >> "$GITHUB_ENV"
+
+      - name: Broker one-time encrypted credential, publish, and verify
+        shell: bash
+        env:
+          WORKFLOW_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          stage=initialize
+          work="$(mktemp -d "$RUNNER_TEMP/honeypot-publisher.XXXXXX")"
+          challenge_branch=ops/den-3873-honeypot-credential-challenge
+          challenge_path=ops/den-3873-honeypot-credential-challenge.json
+          owner_token=''
+          response_comment_id=''
+
+          cleanup() {
+            unset owner_token OWNER_TOKEN GH_TOKEN GITHUB_TOKEN
+            unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
+            find "$work" -type f -exec sh -c 'for file do : > "$file"; done' sh {} + 2>/dev/null || true
+            rm -rf "$work"
+          }
+          report_failure() {
+            status=$?
+            trap - ERR
+            printf 'HONEYPOT_PUBLICATION_FAILED stage=%s\n' "$stage" >&2
+            exit "$status"
+          }
+          trap cleanup EXIT
+          trap report_failure ERR
+
+          stage=create-challenge
+          private_key="$work/private.pem"
+          public_key="$work/public.pem"
+          ciphertext_file="$work/ciphertext.bin"
+          challenge_json="$work/challenge.json"
+          openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key"
+          chmod 600 "$private_key"
+          openssl pkey -in "$private_key" -pubout -out "$public_key"
+          nonce="$(openssl rand -hex 24)"
+          [[ "$nonce" =~ ^[0-9a-f]{48}$ ]]
+
+          export GH_TOKEN="$WORKFLOW_TOKEN"
+          if ! gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${challenge_branch}" >/dev/null 2>&1; then
+            base_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/heads/${challenge_branch}" -f sha="$base_sha" >/dev/null
+          fi
+          jq -n \
+            --arg state awaiting_encrypted_response \
+            --arg nonce "$nonce" \
+            --rawfile publicKey "$public_key" \
+            --arg algorithm RSA-OAEP-SHA256-MGF1-SHA256 \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg target "$TARGET_REPOSITORY" \
+            '{state:$state,nonce:$nonce,publicKey:$publicKey,algorithm:$algorithm,runId:$runId,target:$target,privateKeyStored:false}' \
+            > "$challenge_json"
+          content="$(base64 -w0 < "$challenge_json")"
+          existing_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${challenge_path}?ref=${challenge_branch}" --jq '.sha' 2>/dev/null || true)"
+          args=(--method PUT "repos/${GITHUB_REPOSITORY}/contents/${challenge_path}" -f message='ops(DEN-3873): publish one-time credential challenge' -f content="$content" -f branch="$challenge_branch")
+          if [[ -n "$existing_sha" ]]; then args+=(-f sha="$existing_sha"); fi
+          gh api "${args[@]}" >/dev/null
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+            -f body="DEN-3873 encrypted credential challenge is ready: https://github.com/${GITHUB_REPOSITORY}/blob/${challenge_branch}/${challenge_path}?run=${GITHUB_RUN_ID}&nonce=${nonce}" >/dev/null
+
+          stage=await-encrypted-response
+          marker="<!-- den-3873-honeypot-credential-response:${nonce} -->"
+          response_body=''
+          for _ in $(seq 1 300); do
+            comments="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments?per_page=100" --slurp)"
+            response="$(jq -c --arg marker "$marker" '[.[][] | select(.user.login == "ORESoftware") | select(.body | startswith($marker + "\n"))] | sort_by(.id) | last // empty' <<<"$comments")"
+            if [[ -n "$response" ]]; then
+              response_body="$(jq -r '.body' <<<"$response")"
+              response_comment_id="$(jq -r '.id' <<<"$response")"
+              break
+            fi
+            sleep 3
+          done
+          test -n "$response_body"
+          test "$(grep -c '^ciphertext-base64=' <<<"$response_body")" -eq 1
+          ciphertext="$(sed -n 's/^ciphertext-base64=//p' <<<"$response_body")"
+          [[ "$ciphertext" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#ciphertext}" -le 8192
+          printf '%s' "$ciphertext" | base64 --decode > "$ciphertext_file"
+
+          stage=decrypt-and-validate
+          owner_token="$(openssl pkeyutl -decrypt -inkey "$private_key" -in "$ciphertext_file" -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256 2>/dev/null)"
+          test -n "$owner_token"
+          [[ "$owner_token" != *$'\n'* && "$owner_token" != *$'\r'* && "$owner_token" != *$'\t'* && "$owner_token" != *' '* ]]
+          [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
+          echo "::add-mask::$owner_token"
+          export GH_TOKEN="$owner_token"
+          export OWNER_TOKEN="$owner_token"
+          test "$(gh api user --jq '.login')" = ORESoftware
+
+          askpass="$work/git-askpass.sh"
+          cat > "$askpass" <<'ASKPASS'
+          #!/usr/bin/env bash
+          case "${1:-}" in
+            *Username*) printf '%s\n' x-access-token ;;
+            *Password*) printf '%s\n' "$OWNER_TOKEN" ;;
+            *) exit 1 ;;
+          esac
+          ASKPASS
+          chmod 700 "$askpass"
+          export GIT_ASKPASS="$askpass"
+          export GIT_ASKPASS_REQUIRE=force
+          export GIT_TERMINAL_PROMPT=0
+
+          stage=create-or-verify-repository
+          if ! gh repo view "$TARGET_REPOSITORY" --json nameWithOwner >/dev/null 2>&1; then
+            gh repo create "$TARGET_REPOSITORY" --public \
+              --description 'Low-interaction privacy-minimized Rust deception service for Kubernetes'
+          fi
+          gh api --method PATCH "repos/${TARGET_REPOSITORY}" \
+            -f description='Low-interaction privacy-minimized Rust deception service for Kubernetes' \
+            -F has_wiki=false -F delete_branch_on_merge=true \
+            -F allow_merge_commit=true -F allow_squash_merge=true -F allow_rebase_merge=true >/dev/null
+
+          stage=publish-histories
+          remote="https://github.com/${TARGET_REPOSITORY}.git"
+          git -C "$SOURCE_ROOT" remote add origin "$remote"
+          remote_main="$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/main" --jq '.object.sha' 2>/dev/null || true)"
+          if [[ -n "$remote_main" && "$remote_main" != "$EXPECTED_MAIN" ]]; then
+            echo "divergent remote main: $remote_main != $EXPECTED_MAIN" >&2
+            exit 1
+          fi
+          remote_source="$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/${SOURCE_BRANCH}" --jq '.object.sha' 2>/dev/null || true)"
+          if [[ -n "$remote_source" && "$remote_source" != "$EXPECTED_SOURCE" ]]; then
+            echo "divergent remote source branch: $remote_source != $EXPECTED_SOURCE" >&2
+            exit 1
+          fi
+          git -C "$SOURCE_ROOT" push --set-upstream origin refs/heads/main:refs/heads/main
+          git -C "$SOURCE_ROOT" push --set-upstream origin "refs/heads/${SOURCE_BRANCH}:refs/heads/${SOURCE_BRANCH}"
+          gh api --method PATCH "repos/${TARGET_REPOSITORY}" -f default_branch=main >/dev/null
+
+          stage=open-draft-pull-request
+          pr_number="$(gh pr list --repo "$TARGET_REPOSITORY" --base main --head "$SOURCE_BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [[ -z "$pr_number" ]]; then
+            pr_body="$work/pr.md"
+            cat > "$pr_body" <<'PRBODY'
+          ## Summary
+
+          - add a Rust/Axum low-interaction deception service with Leptos SSR
+          - generate non-vendor synthetic honeytokens that authenticate nowhere
+          - emit HMAC-pseudonymized signed events without raw credentials or request bodies
+          - recommend temporary, reversible edge friction only
+          - add hardened namespace-scoped Kubernetes resources and Cloudflare DDoS guidance
+
+          ## Validation
+
+          The trusted-main bootstrap generated `Cargo.lock`, ran repository policy checks, Rustfmt, Clippy with warnings denied, all-target tests, and a release build before requesting a repository-admin credential.
+
+          Refs DEN-3873.
+          PRBODY
+            gh pr create --repo "$TARGET_REPOSITORY" --base main --head "$SOURCE_BRANCH" --draft \
+              --title 'feat(DEN-3873): add isolated Rust deception service' --body-file "$pr_body" >/dev/null
+            pr_number="$(gh pr list --repo "$TARGET_REPOSITORY" --base main --head "$SOURCE_BRANCH" --state open --json number --jq '.[0].number')"
+          fi
+
+          stage=verify-publication
+          test "$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')" = "$EXPECTED_MAIN"
+          test "$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/${SOURCE_BRANCH}" --jq '.object.sha')" = "$EXPECTED_SOURCE"
+          pr="$(gh api "repos/${TARGET_REPOSITORY}/pulls/${pr_number}")"
+          jq -e --arg source "$SOURCE_BRANCH" '.state == "open" and .draft == true and .base.ref == "main" and .head.ref == $source' <<<"$pr" >/dev/null
+
+          stage=record-sanitized-success
+          actor="$(gh api user --jq '.login')"
+          unset owner_token OWNER_TOKEN
+          export GH_TOKEN="$WORKFLOW_TOKEN"
+          if [[ -n "$response_comment_id" ]]; then
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/issues/comments/${response_comment_id}" >/dev/null || true
+          fi
+          completed="$work/completed.json"
+          jq -n --arg state completed --arg runId "$GITHUB_RUN_ID" --arg target "$TARGET_REPOSITORY" \
+            --arg main "$EXPECTED_MAIN" --arg source "$EXPECTED_SOURCE" --arg actor "$actor" --argjson pr "$pr_number" \
+            '{state:$state,runId:$runId,target:$target,mainCommit:$main,sourceCommit:$source,pullRequest:$pr,authenticatedActor:$actor,privateKeyStored:false,plaintextCredentialStored:false}' > "$completed"
+          completed_content="$(base64 -w0 < "$completed")"
+          completed_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${challenge_path}?ref=${challenge_branch}" --jq '.sha')"
+          gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/${challenge_path}" \
+            -f message='ops(DEN-3873): record sanitized publication result' \
+            -f content="$completed_content" -f branch="$challenge_branch" -f sha="$completed_sha" >/dev/null
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+            -f body="DEN-3873 publication verified. Repository: https://github.com/${TARGET_REPOSITORY} — draft PR: https://github.com/${TARGET_REPOSITORY}/pull/${pr_number} — run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >/dev/null
