@@ -1,0 +1,285 @@
+name: DEN-1757 finalize StreemPilot media-router continuity on current dev
+
+# Connector-side retrigger after the exact-token assertion repair. GitHub
+# suppresses workflow cascades from commits created with GITHUB_TOKEN.
+on:
+  push:
+    branches:
+      - agent/den-1757-streempilot-media-router-current-dev-20260809
+    paths:
+      - scripts/finalize-den-1757-streempilot-media-router-current-dev.py
+      - .github/workflows/finalize-den-1757-streempilot-media-router-current-dev.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1757-current-dev-finalizer
+  cancel-in-progress: false
+
+jobs:
+  transform-test-and-self-delete:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/agent/den-1757-streempilot-media-router-current-dev-20260809'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out the exact current-dev port branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1757-streempilot-media-router-current-dev-20260809
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Install pinned Rust formatter and verifier
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Install pinned Node contract runtime
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+
+      - name: Repair the branch-local transformer from hosted evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/finalize-den-1757-streempilot-media-router-current-dev.py')
+          source = path.read_text(encoding='utf-8')
+
+          function_start = source.index('def update_policy_test() -> None:\n')
+          call_start = source.index('    text = replace_once(\n', function_start)
+          call_end_marker = '        "expect media-router exact rule",\n    )\n'
+          call_end = source.index(call_end_marker, call_start) + len(call_end_marker)
+          targeted_replacement = '''    expected_start = text.index("  assert.deepEqual(rules, [")
+              expected_end = text.index("  ]);", expected_start)
+              zed_rule = (
+                  "    {\\n"
+                  "      repository: 'https://github.com/zed-pkg/zed-cli.git',\\n"
+                  "      profiles: ['rust-verify'],\\n"
+                  "    },\\n"
+              )
+              media_and_zed_rules = (
+                  "    {\\n"
+                  f"      repository: '{REPOSITORY_URL}',\\n"
+                  f"      profiles: ['{PROFILE}'],\\n"
+                  "    },\\n"
+                  "    {\\n"
+                  "      repository: 'https://github.com/zed-pkg/zed-cli.git',\\n"
+                  "      profiles: ['rust-verify'],\\n"
+                  "    },\\n"
+              )
+              if text.count(zed_rule, expected_start, expected_end) != 1:
+                  raise SystemExit("expected media-router insertion point is not unique inside the GitOps rule array")
+              zed_index = text.index(zed_rule, expected_start, expected_end)
+              text = text[:zed_index] + media_and_zed_rules + text[zed_index + len(zed_rule):]
+          '''.rstrip() + '\n'
+          source = source[:call_start] + targeted_replacement + source[call_end:]
+
+          validation_start = source.index('def validate_result() -> None:\n')
+          validation_tail = '''def validate_result() -> None:
+              marker_paths = [
+                  PROFILES,
+                  PLANNER,
+                  PATCH,
+                  README,
+                  STREEMPILOT_DOC,
+                  POLICY_DOC,
+                  POLICY_TEST,
+                  CONTRACT_TEST,
+              ]
+              for marker_path in marker_paths:
+                  if PROFILE not in read(marker_path):
+                      raise SystemExit(
+                          f"{marker_path}: missing profile marker after transformation"
+                      )
+
+              config_snapshot = read(CONFIG)
+              if REPOSITORY not in config_snapshot or WORKFLOW_PATH not in config_snapshot:
+                  raise SystemExit("clone admission is missing the exact repository/workflow pair")
+
+              workflow_snapshot = read(PERMANENT_WORKFLOW)
+              if "general/streempilot-media-router-continuity.test.mjs" not in workflow_snapshot:
+                  raise SystemExit("permanent GHA coverage is missing the media-router static contract")
+
+              patch_text = read(PATCH)
+              policy_match = re.search(
+                  r"name:\\s*BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON[\\s\\S]*?"
+                  r"value:\\s*>-\\s*\\n\\s*(\\[[^\\n]+\\])",
+                  patch_text,
+              )
+              if not policy_match:
+                  raise SystemExit("unable to parse exact profile policy")
+              rules = json.loads(policy_match.group(1))
+              rule = next(
+                  (
+                      candidate
+                      for candidate in rules
+                      if candidate["repository"] == REPOSITORY_URL
+                  ),
+                  None,
+              )
+              if rule != {"repository": REPOSITORY_URL, "profiles": [PROFILE]}:
+                  raise SystemExit(
+                      "media-router exact repository policy is not least privilege"
+                  )
+
+              config_rules_match = re.search(
+                  r"GHA_CLONE_WORKFLOW_RULES_JSON:\\s*\\|\\n"
+                  r"(?P<body>(?: {4}.*\\n?)+)$",
+                  config_snapshot,
+              )
+              if not config_rules_match:
+                  raise SystemExit("unable to parse clone workflow rules")
+              config_rules = json.loads(
+                  "\\n".join(
+                      line[4:]
+                      for line in config_rules_match.group("body").splitlines()
+                  )
+              )
+              if config_rules.get(REPOSITORY) != [WORKFLOW_PATH]:
+                  raise SystemExit("media-router clone workflow policy is not exact")
+
+
+          def main() -> None:
+              update_profiles()
+              update_planner()
+              update_patch()
+              update_config()
+              update_readme()
+              update_streempilot_documentation()
+              update_policy_documentation()
+              update_policy_test()
+              create_contract_test()
+              update_permanent_workflow()
+              validate_result()
+
+
+          if __name__ == "__main__":
+              main()
+          '''.rstrip() + '\n'
+          source = source[:validation_start] + validation_tail
+
+          duplicate_path_updates = '''    text = replace_once(text, anchor, replacement, "add pull-request test path")
+              text = replace_once(text, anchor, replacement, "add push test path")
+          '''.rstrip() + '\n'
+          bounded_path_update = '''    anchor_count = text.count(anchor)
+              if anchor_count != 2:
+                  raise SystemExit(
+                      f"permanent workflow path anchor count drifted: {anchor_count}"
+                  )
+              text = text.replace(anchor, replacement, 2)
+          '''.rstrip() + '\n'
+          if source.count(duplicate_path_updates) != 1:
+              raise SystemExit("permanent workflow duplicate path-update block is not unique")
+          source = source.replace(duplicate_path_updates, bounded_path_update, 1)
+
+          source = source.replace(
+              'rustup component add rustfmt clippy\\n',
+              'rustfmt --version\\ncargo clippy --version\\n',
+              1,
+          )
+          source = source.replace(
+              '            "cargo publish",\n            "kubectl",',
+              '            "cargo publish",\n            "rustup component add",\n            "kubectl",',
+              1,
+          )
+          source = source.replace(
+              '/cargo publish|kubectl|curl |wget |apt-get|pip install|git clone|docker |nerdctl|\\|\\| true/',
+              '/cargo publish|rustup component add|kubectl|curl |wget |apt-get|pip install|git clone|docker |nerdctl|\\|\\| true/',
+              1,
+          )
+
+          path.write_text(source, encoding='utf-8')
+          PY
+
+      - name: Compile and apply the semantic current-dev transformation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/finalize-den-1757-streempilot-media-router-current-dev.py
+          python3 scripts/finalize-den-1757-streempilot-media-router-current-dev.py
+          rm -f \
+            scripts/finalize-den-1757-streempilot-media-router-current-dev.py \
+            .github/workflows/finalize-den-1757-streempilot-media-router-current-dev.yml
+
+      - name: Apply canonical Rust formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml
+          rustfmt --edition 2021 remote/deployments/build-server-rs/src/profiles.rs
+          cargo fmt --all --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml -- --check
+          rustfmt --edition 2021 --check remote/deployments/build-server-rs/src/profiles.rs
+
+      - name: Verify the evolved planner and every clone-server target
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo clippy --locked \
+            --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml \
+            --all-targets -- -D warnings
+          cargo test --locked \
+            --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml \
+            --all-targets -- --nocapture
+
+      - name: Verify exact repository policy and media-router static contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test \
+            remote/tests/general/build-server-profile-repository-policy.test.mjs \
+            remote/tests/general/streempilot-media-router-continuity.test.mjs
+
+      - name: Prove the product-only review surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import subprocess
+
+          expected = {
+              '.github/workflows/gha-clone-server.yml',
+              '.github/workflows/finalize-den-1757-streempilot-media-router-current-dev.yml',
+              'docs/build-server-profile-repository-policy.md',
+              'docs/streempilot-ci-continuity.md',
+              'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml',
+              'remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml',
+              'remote/deployments/build-server-rs/src/profiles.rs',
+              'remote/deployments/gha-clone-server-rs/README.md',
+              'remote/deployments/gha-clone-server-rs/src/lib.rs',
+              'remote/tests/general/build-server-profile-repository-policy.test.mjs',
+              'remote/tests/general/streempilot-media-router-continuity.test.mjs',
+              'scripts/finalize-den-1757-streempilot-media-router-current-dev.py',
+          }
+          actual = set(
+              subprocess.check_output(
+                  ['git', 'diff', '--name-only', 'HEAD'], text=True
+              ).splitlines()
+          )
+          if actual != expected:
+              raise SystemExit(
+                  'unexpected finalizer diff\n'
+                  f'missing={sorted(expected - actual)}\n'
+                  f'extra={sorted(actual - expected)}'
+              )
+          PY
+          git diff --check
+          test ! -e scripts/finalize-den-1757-streempilot-media-router-current-dev.py
+          test ! -e .github/workflows/finalize-den-1757-streempilot-media-router-current-dev.yml
+
+      - name: Commit the tested product change and remove the finalizer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat(DEN-3298): add exact StreemPilot media-router continuity profile'
+          git push origin HEAD:agent/den-1757-streempilot-media-router-current-dev-20260809
