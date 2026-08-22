@@ -1,0 +1,48 @@
+name: Dispatch Rykshaw protected-PAT publisher from exact comment
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+jobs:
+  dispatch:
+    if: >-
+      github.event.issue.number == 1345 &&
+      github.event.comment.body == 'ops-run-elenkos-rykshaw-flutter:9a021e78b01d4c1c907798c5649af0a7'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Validate trusted-main publisher and dispatch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          path='.github/workflows/ops-bootstrap-elenkos-rykshaw-flutter.yml'
+          workflow="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${path}?ref=main")"
+          test "$(jq -er .name <<<"$workflow")" = ops-bootstrap-elenkos-rykshaw-flutter.yml
+          encoded="$(jq -er .content <<<"$workflow" | tr -d '\n')"
+          decoded="$(printf '%s' "$encoded" | base64 --decode)"
+          grep -F 'name: Publish Elenkos Rykshaw Flutter with protected PAT' <<<"$decoded" >/dev/null
+          grep -F 'CONFIRMATION: publish-elenkos-rykshaw-flutter-v1' <<<"$decoded" >/dev/null
+          grep -F 'flutter analyze' <<<"$decoded" >/dev/null
+          grep -F 'publish_elenkos_rykshaw_flutter.py' <<<"$decoded" >/dev/null
+          grep -F 'source_archive_sha256 == env.SOURCE_ARCHIVE_SHA256' <<<"$decoded" >/dev/null
+          unset encoded decoded workflow
+
+          gh workflow run ops-bootstrap-elenkos-rykshaw-flutter.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+
+          gh api --method DELETE \
+            "repos/${GITHUB_REPOSITORY}/issues/comments/${{ github.event.comment.id }}" \
+            >/dev/null || true
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/1345/comments" \
+            -f body="Dispatched trusted-main Rykshaw protected-PAT publisher. Trigger run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            >/dev/null
