@@ -114,6 +114,14 @@ test('GitOps binds each reviewed repository to only its fixed profiles', () => {
       repository: 'https://github.com/zed-pkg/zed-cli.git',
       profiles: ['rust-verify'],
     },
+    {
+      repository: 'https://github.com/gha-indie-worker-test/gha-clone-server.rs.git',
+      profiles: ['rust-verify'],
+    },
+    {
+      repository: 'https://github.com/gha-indie-worker-test/gha-indie-worker.rs.git',
+      profiles: ['rust-verify'],
+    },
   ]);
 
   const byRepository = new Map(
@@ -144,7 +152,20 @@ test('GitOps binds each reviewed repository to only its fixed profiles', () => {
       `Zed CLI unexpectedly admits ${denied}`,
     );
   }
-  assert.doesNotMatch(patch, /messaging-intel\/\*|3FA-app\/\*|zed-pkg\/\*/);
+  for (const repository of [
+    'https://github.com/gha-indie-worker-test/gha-clone-server.rs.git',
+    'https://github.com/gha-indie-worker-test/gha-indie-worker.rs.git',
+  ]) {
+    assert.deepEqual(byRepository.get(repository), ['rust-verify']);
+  }
+  assert.doesNotMatch(
+    patch,
+    /messaging-intel\/\*|3FA-app\/\*|zed-pkg\/\*|gha-indie-worker-test\/\*/,
+  );
+  assert.doesNotMatch(
+    patch,
+    /BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES[\s\S]{0,500}gha-indie-worker-test/,
+  );
 });
 
 test('Zed CLI manual continuity is exact, fixed, and webhook-independent', () => {
@@ -240,6 +261,8 @@ test('documentation states exact precedence, alias handling, and repository-spec
   assert.match(documentation, /msgint-connectors\.git -> node-hardened-verify, node-hardened-test/);
   assert.match(documentation, /3fa-interfaces\.git -> node-hardened-test, rust-generated-verify/);
   assert.match(documentation, /zed-cli\.git -> rust-verify/);
+  assert.match(documentation, /gha-clone-server\.rs\.git -> rust-verify/);
+  assert.match(documentation, /gha-indie-worker\.rs\.git -> rust-verify/);
   assert.match(documentation, /generated Rust crate/);
   assert.match(documentation, /lifecycle scripts disabled/);
   assert.match(documentation, /rejecting a downgrade of the same repository identity/);

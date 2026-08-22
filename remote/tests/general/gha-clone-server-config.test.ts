@@ -241,11 +241,20 @@ test('configuration and fixed profiles preserve the bounded execution surface', 
     config,
     /"ORESoftware\/k8s-cluster": \["\.github\/workflows\/gha-clone-server-meta\.yml"\]/,
   );
+  assert.match(
+    config,
+    /"gha-indie-worker-test\/gha-clone-server\.rs": \["\.github\/workflows\/gha-clone-server-meta\.yml"\]/,
+  );
+  assert.match(
+    config,
+    /"gha-indie-worker-test\/gha-indie-worker\.rs": \["\.github\/workflows\/gha-indie-worker-custom\.yml"\]/,
+  );
   assert.doesNotMatch(
     config,
     /"ORESoftware\/k8s-cluster": \["\.github\/workflows\/gha-clone-server\.yml"\]/,
   );
   assert.doesNotMatch(config, /https?:\/\/[^/\s]+\/\*|owner\/\*/);
+  assert.doesNotMatch(config, /gha-indie-worker-test\/\*/);
 
   const profiles = read(profilesPath);
   for (const profile of ['rust-verify', 'node-verify', 'python-verify']) {
