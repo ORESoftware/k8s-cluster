@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: honeypot
+  namespace: argocd
+spec:
+  description: >-
+    Defensive-deception tenant for honeypot.rs; namespace-scoped with no cluster resources.
+  sourceRepos:
+    - https://github.com/ORESoftware/honeypot.rs.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: honeypot
+  clusterResourceWhitelist: []
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: ResourceQuota
+    - group: ""
+      kind: LimitRange
