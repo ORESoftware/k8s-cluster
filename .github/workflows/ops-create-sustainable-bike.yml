@@ -1,0 +1,107 @@
+name: Create ORESoftware sustainable-bike repository
+run-name: Create ORESoftware/sustainable-bike from trusted main @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-create-sustainable-bike.yml
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-create-sustainable-bike.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: den-3843-create-sustainable-bike
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Validate immutable publication contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test '${{ github.repository }}' = 'ORESoftware/k8s-cluster'
+          test '${{ github.event_name }}' = 'pull_request' || test '${{ github.ref }}' = 'refs/heads/main'
+          printf 'target=%s visibility=%s tracking=%s\n' \
+            'ORESoftware/sustainable-bike' 'public' 'DEN-3843'
+
+  create:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Configure short-lived AWS credentials from trusted main
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: den-3843-create-sustainable-bike
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Load and mask the protected ORESoftware repository-admin credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret_json="$(
+            aws secretsmanager get-secret-value \
+              --secret-id dd/remote-dev/agent-secrets \
+              --query SecretString \
+              --output text
+          )"
+          token="$(jq -er '.GH_PAT | select(type == "string" and length > 0)' <<<"$secret_json")"
+          [[ "$token" != *$'\n'* && "$token" != *$'\r'* && "$token" != *$'\t'* && "$token" != *' '* ]]
+          echo "::add-mask::$token"
+          printf 'GH_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+          unset token secret_json
+
+      - name: Create or reconcile the public repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api user --jq .login)" = 'ORESoftware'
+
+          repo_json="$(gh api repos/ORESoftware/sustainable-bike 2>/dev/null || true)"
+          if [[ -z "$repo_json" ]]; then
+            repo_json="$(
+              gh api --method POST user/repos \
+                -f name='sustainable-bike' \
+                -f description='Parametric captive-wheel, dry aramid-belt, automatic internal-hub sustainable e-bike research model' \
+                -F private=false \
+                -F has_issues=true \
+                -F has_projects=false \
+                -F has_wiki=false \
+                -F auto_init=true
+            )"
+            echo 'CREATED ORESoftware/sustainable-bike'
+          else
+            echo 'FOUND ORESoftware/sustainable-bike'
+          fi
+
+          test "$(jq -r .owner.login <<<"$repo_json")" = 'ORESoftware'
+          test "$(jq -r .visibility <<<"$repo_json")" = 'public'
+
+          gh api --method PATCH repos/ORESoftware/sustainable-bike \
+            -f description='Parametric captive-wheel, dry aramid-belt, automatic internal-hub sustainable e-bike research model' \
+            -F private=false \
+            -F has_issues=true \
+            -F has_projects=false \
+            -F has_wiki=false \
+            -F allow_merge_commit=true \
+            -F allow_squash_merge=true \
+            -F allow_rebase_merge=false \
+            -F delete_branch_on_merge=false >/dev/null
+
+          main_sha="$(gh api repos/ORESoftware/sustainable-bike/git/ref/heads/main --jq .object.sha)"
+          [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]]
+          printf 'REPOSITORY=ORESoftware/sustainable-bike\nMAIN=%s\nTRACKING=DEN-3843\n' "$main_sha"
