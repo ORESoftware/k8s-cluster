@@ -142,7 +142,7 @@ jobs:
           set -Eeuo pipefail
           expected="$(awk 'NF {print $1; exit}' "$SOURCE_SHA256_FILE")"
           [[ "$expected" =~ ^[0-9a-f]{64}$ ]]
-          base64 --decode "$SOURCE_ARCHIVE_B64" > "$SOURCE_ARCHIVE"
+          cat "${SOURCE_ARCHIVE_B64}".part-* | base64 --decode > "$SOURCE_ARCHIVE"
           chmod 600 "$SOURCE_ARCHIVE"
           actual="$(sha256sum "$SOURCE_ARCHIVE" | awk '{print $1}')"
           test "$actual" = "$expected"
