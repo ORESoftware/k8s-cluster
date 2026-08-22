@@ -17,11 +17,15 @@ test('workflow_run fallback is terminal-only, exact-path, loop-safe, and dedupli
   assert.match(server, /duplicate GitHub delivery/);
   assert.match(server, /GHA_CLONE_GITHUB_API_BASE_URL/);
   assert.match(server, /HTTP is allowed only for loopback tests/);
+  assert.match(server, /only workflow_run events may trigger the failure fallback/);
 });
 
 test('deployment enables only the bounded action_required webhook policy', () => {
   const deployment = read(
     'remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml',
+  );
+  const config = read(
+    'remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml',
   );
   for (const name of [
     'GHA_CLONE_GITHUB_API_BASE_URL',
@@ -55,6 +59,39 @@ test('deployment enables only the bounded action_required webhook policy', () =>
   assert.match(deployment, /\breplicas:\s*1\b/);
   assert.match(deployment, /\bminReadySeconds:\s*10\b/);
   assert.match(deployment, /GHA continuity server/);
+  assert.match(config, /ORESoftware\/k8s-cluster/);
+  assert.match(config, /\.github\/workflows\/gha-clone-server-meta\.yml/);
+});
+
+test('dedicated ingress preserves signed raw-body delivery to the clone server', () => {
+  const route = read(
+    'remote/argocd/dd-next-runtime/dd-remote-gateway.ingress.yaml',
+  );
+  const networkPolicy = read(
+    'remote/argocd/dd-next-runtime/dd-gha-clone-server.networkpolicy.yaml',
+  );
+  for (const value of [
+    'name: dd-gha-clone-webhook',
+    'ingressClassName: nginx',
+    'hello.95-217-171-250.sslip.io',
+    'path: /gha-webhooks/github',
+    'pathType: Exact',
+    'nginx.ingress.kubernetes.io/rewrite-target: /webhooks/github',
+    'nginx.ingress.kubernetes.io/proxy-body-size: "1m"',
+    'nginx.ingress.kubernetes.io/limit-rps: "5"',
+    'name: dd-gha-clone-server',
+    'number: 8125',
+  ]) {
+    assert.ok(route.includes(value), `webhook route missing ${value}`);
+  }
+  for (const value of [
+    'kubernetes.io/metadata.name: ingress-nginx',
+    'app.kubernetes.io/name: ingress-nginx',
+    'app.kubernetes.io/component: controller',
+  ]) {
+    assert.ok(networkPolicy.includes(value), `webhook policy missing ${value}`);
+  }
+  assert.doesNotMatch(route, /path:\s*\/webhooks\/\s*$/m);
 });
 
 test('registration script upserts only workflow_run through stdin without echoing secrets', () => {
@@ -75,4 +112,23 @@ test('registration script upserts only workflow_run through stdin without echoin
   assert.ok(!script.includes('echo "$GITHUB_WEBHOOK_SECRET"'));
   assert.ok(!script.includes('echo "${GITHUB_WEBHOOK_SECRET}"'));
   assert.doesNotMatch(script, /events:.*push|events:.*pull_request/);
+});
+
+test('live verifier is read-only and never decodes secret values', () => {
+  const script = read('scripts/ops/verify_gha_workflow_run_fallback.sh');
+  for (const value of [
+    'rollout status',
+    'dd-gha-clone-server-secrets',
+    'dd-gha-executor-router-secrets',
+    'GHA_CLONE_WEBHOOK_EXECUTION_ENABLED',
+    'GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED',
+    '/healthz',
+    '/readyz',
+    'external route expected application HMAC rejection 401',
+  ]) {
+    assert.ok(script.includes(value), `verifier missing ${value}`);
+  }
+  assert.doesNotMatch(script, /base64\s+(?:--decode|-d)/);
+  assert.doesNotMatch(script, /kubectl\s+(?:apply|create|delete|patch|replace|scale|set)/);
+  assert.doesNotMatch(script, /set -x/);
 });
