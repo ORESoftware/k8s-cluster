@@ -59,8 +59,9 @@ always lives at `~/codes/ores/k8s-cluster/<submodule path>`.
 | `remote/deployments/scintilla-run-monorepo` | [scintilla-run/scintilla-run-monorepo](https://github.com/scintilla-run/scintilla-run-monorepo) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/zed-monorepo` | [zed-pkg/zed-monorepo](https://github.com/zed-pkg/zed-monorepo) | `main` | `~/codes/zed-pkg/zed-monorepo` |
 | `remote/deployments/daedalus-monorepo` | [daedalus-fab/daedalus-monorepo](https://github.com/daedalus-fab/daedalus-monorepo) | `main` | — _(submodule checkout only)_ |
+| `remote/deployments/anticaptrad-monorepo` | [anticaptrad/act-monorepo](https://github.com/anticaptrad/act-monorepo) | `main` | — _(submodule checkout only)_ |
 
-Product monorepos (sonus-auris, daedalus) are nested-submodule aggregators: their
+Product monorepos (sonus-auris, daedalus, Anticaptrad) are nested-submodule aggregators: their
 `apps/*` entries pin the per-app repos. Per-app repos already covered by a
 monorepo are **not** pinned again at the top level (the old
 `remote/deployments/sonus-auris-interfaces`, `daedalus-api-server-rs`, and

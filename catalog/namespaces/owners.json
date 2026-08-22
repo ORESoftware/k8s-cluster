@@ -29,6 +29,16 @@
         "description": "Akrion simulation, soccer, training, web, and game-engine resources."
       },
       {
+        "namespaceId": "anticaptrad",
+        "githubOwner": "anticaptrad",
+        "kind": "product",
+        "aliases": [
+          "act",
+          "anticaptv"
+        ],
+        "description": "AntiCapTrad research, AI media generation, publishing, and application resources."
+      },
+      {
         "namespaceId": "apostille-me",
         "githubOwner": "apostille-me",
         "kind": "product",

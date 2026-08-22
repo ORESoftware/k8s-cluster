@@ -185,3 +185,7 @@
 	path = remote/deployments/push-notification-server.rs
 	url = git@github.com:ORESoftware/push-notification-server.rs.git
 	branch = main
+[submodule "remote/deployments/anticaptrad-monorepo"]
+	path = remote/deployments/anticaptrad-monorepo
+	url = https://github.com/anticaptrad/act-monorepo.git
+	branch = main
