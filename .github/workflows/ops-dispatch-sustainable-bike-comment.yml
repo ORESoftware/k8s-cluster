@@ -1,0 +1,56 @@
+name: Dispatch sustainable-bike creator from owner comment
+run-name: Dispatch sustainable-bike creator from ${{ github.event_name }} @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-dispatch-sustainable-bike-comment.yml
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+concurrency:
+  group: den-3843-owner-comment-dispatch
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate bounded dispatch contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test '${{ github.repository }}' = 'ORESoftware/k8s-cluster'
+          printf 'command=%s issue=%s actor=%s target=%s\n' \
+            '/publish-sustainable-bike' '1381' 'ORESoftware' \
+            '.github/workflows/ops-create-sustainable-bike.yml'
+
+  dispatch:
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.issue.number == 1381 &&
+      github.event.comment.body == '/publish-sustainable-bike' &&
+      github.event.comment.user.login == 'ORESoftware'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch the default-branch creator
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run ops-create-sustainable-bike.yml \
+            --repo ORESoftware/k8s-cluster \
+            --ref main
+          gh api --method POST repos/ORESoftware/k8s-cluster/issues/1381/comments \
+            -f body="Accepted owner-only \`/publish-sustainable-bike\` dispatch at \`${GITHUB_SHA}\`; queued the trusted default-branch creator." \
+            >/dev/null
