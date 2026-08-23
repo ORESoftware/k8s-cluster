@@ -1,7 +1,9 @@
 # Frontend reactive adoption policy
 
-Status: accepted for bounded pilots  
-Decision date: 2026-08-23  
+Status: accepted for bounded pilots
+
+Decision date: 2026-08-23
+
 Tracking: [ORESoftware/k8s-cluster#1401](https://github.com/ORESoftware/k8s-cluster/issues/1401), [DEN-3926](https://linear.app/denman/issue/DEN-3926/adopt-rxjs-rxdart-and-rxts-across-frontend-apps-using-post-2025-best)
 
 ## Decision
