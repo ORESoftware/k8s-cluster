@@ -122,3 +122,5 @@ remote/deployments/spark-pipeline-server/?/
 
 # Generated soccer-live policy snapshots (large runtime artifacts, regenerated at runtime)
 remote/deployments/soccer-rs/out/
+tmp/worktrees
+temp/worktrees
