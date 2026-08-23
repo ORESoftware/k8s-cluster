@@ -42,9 +42,9 @@ jobs:
           set -euo pipefail
           workflow=.github/workflows/ops-create-elenkos-rykshaw-flutter-ssm-once.yml
           grep -qF "'elenkos-systems/elenkos-rykshaw-flutter' 'private' 'DEN-3837'" "$workflow"
-          grep -qF "orgs/elenkos-systems/repos" "$workflow"
-          grep -qF "-F private=true" "$workflow"
-          grep -qF "kubectl -n default get secret dd-agent-secrets" "$workflow"
+          grep -qF 'orgs/elenkos-systems/repos' "$workflow"
+          grep -qF -- '-F private=true' "$workflow"
+          grep -qF 'kubectl -n default get secret dd-agent-secrets' "$workflow"
           credential_pattern='gh''p_|github_''pat_|-----BEGIN (RSA )?PRIVATE KEY-----'
           unsafe_pattern='git push --''force|-F private=false|visibility=public'
           if grep -nE "$credential_pattern" "$workflow"; then
@@ -141,11 +141,11 @@ jobs:
 
           test "$(jq -r .owner.login <"$repository_json")" = 'elenkos-systems'
           test "$(jq -r .visibility <"$repository_json")" = 'private'
-
           default_branch="$(jq -r .default_branch <"$repository_json")"
           test -n "$default_branch"
           default_sha="$(gh api "repos/elenkos-systems/elenkos-rykshaw-flutter/git/ref/heads/$default_branch" --jq .object.sha)"
           [[ "$default_sha" =~ ^[0-9a-f]{40}$ ]]
+
           if ! gh api repos/elenkos-systems/elenkos-rykshaw-flutter/git/ref/heads/main >/dev/null 2>&1; then
             gh api --method POST repos/elenkos-systems/elenkos-rykshaw-flutter/git/refs \
               -f ref='refs/heads/main' \
@@ -201,9 +201,7 @@ jobs:
                 --output text 2>/dev/null || true
             )"
             case "$status" in
-              Success|Failed|Cancelled|TimedOut|Cancelling)
-                break
-                ;;
+              Success|Failed|Cancelled|TimedOut|Cancelling) break ;;
             esac
             sleep 3
           done
