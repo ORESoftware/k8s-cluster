@@ -1,0 +1,11 @@
+{
+  "schema": "oresoftware.source-payload/v1",
+  "tracking": "DEN-3837",
+  "target_repository": "elenkos-systems/elenkos-rykshaw-flutter",
+  "archive": "elenkos-rykshaw-flutter-20260824.tar.gz",
+  "archive_sha256": "d7ac01f8921bc263bf11ee2dd89d788595029fa4e292a6443c9609ae5ef3c13f",
+  "source_commit_before_ci_normalization": "d90ea93ff6fd9cd7b95c8bb238c5da84fb7129aa",
+  "tracked_files": 68,
+  "generated_at": "2026-08-24T00:00:00Z",
+  "ops_script_sha256": "eb78f13e9324bf32b38e06cff99e06e5f6f8edd38e0dc7c5aec6338a32502495"
+}
