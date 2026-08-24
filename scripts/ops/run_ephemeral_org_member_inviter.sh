@@ -120,6 +120,7 @@ marker="<!-- org-member-ephemeral-ciphertext-v1 run=$RUN_ID fingerprint=$fingerp
 : > "$envelope_file"
 for attempt in $(seq 1 150); do
   tmp_comments="$comments_file.tmp"
+  tmp_envelope="$envelope_file.tmp"
   set +e
   GH_TOKEN="$ACTIONS_TOKEN" gh api \
     "repos/$REPOSITORY/issues/$PR_NUMBER/comments?per_page=100" \
@@ -129,12 +130,17 @@ for attempt in $(seq 1 150); do
 
   if [[ "$api_status" -eq 0 ]] && jq -e 'type == "array"' "$tmp_comments" >/dev/null 2>&1; then
     mv "$tmp_comments" "$comments_file"
-    jq -r --arg marker "$marker" \
-      '[.[] | select(((.body // "") | contains($marker))) | .body] | last // ""' \
-      "$comments_file" > "$envelope_file"
-    if [[ -s "$envelope_file" ]]; then
+    set +e
+    jq -er --arg marker "$marker" \
+      '[.[] | select(((.body // "") | contains($marker))) | .body] | last | select(type == "string" and length > 0)' \
+      "$comments_file" > "$tmp_envelope"
+    match_status=$?
+    set -e
+    if [[ "$match_status" -eq 0 ]] && [[ -s "$tmp_envelope" ]]; then
+      mv "$tmp_envelope" "$envelope_file"
       break
     fi
+    rm -f "$tmp_envelope"
   else
     rm -f "$tmp_comments"
     printf 'ORG_MEMBER_EPHEMERAL_STAGE stage=ciphertext-poll attempt=%d api_status=%d action=retry\n' \
