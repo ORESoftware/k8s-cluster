@@ -45,7 +45,9 @@ inert, exact-commit pilot and cannot start a Pod as committed.
 11. The generated SeaORM crate compiled but was not stable under a downstream
     `cargo fmt --check`, so consumer CI stopped before type-checking. The shared
     generator now emits rustfmt-stable module structure, tests that shape, and
-    format-checks SeaORM while compiling all three generated Rust adapters.
+    format-checks SeaORM while compiling all three generated Rust adapters. The
+    fleet consumer formats its own crate plus that exact adapter instead of
+    sweeping unrelated local path dependencies into this contract gate.
 
 ## Consistency and formal-method boundary
 

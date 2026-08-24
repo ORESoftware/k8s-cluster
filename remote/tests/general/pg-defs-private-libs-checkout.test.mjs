@@ -53,4 +53,10 @@ test("other shared-definition consumers use the same immutable checkout boundary
     seaOrm,
     /EXPECTED_SHARED_COMMIT: \$\{\{ steps\.shared\.outputs\.sha \}\}/,
   );
+  assert.doesNotMatch(seaOrm, /cargo fmt --all/);
+  assert.match(seaOrm, /cargo fmt -- --check/);
+  assert.match(
+    seaOrm,
+    /--manifest-path \.\.\/\.\.\/libs\/pg-defs\/generated\/rust\/sea-orm\/Cargo\.toml/,
+  );
 });
