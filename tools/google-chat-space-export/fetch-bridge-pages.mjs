@@ -23,7 +23,9 @@ import process from 'node:process';
 const EXEC_URL =
   'https://script.google.com/macros/s/AKfycbzIMOO0eQ12WjgRvLmYAdn3zryB57Ush6uWfQWc-iHNvVu6X0ULbPfPv7WMaYdMp2Tq/exec';
 const EXPECTED_SPACE = 'spaces/AAQAoHKdzvI';
-const DEFAULT_PAGE_SIZE = 100;
+const DEFAULT_PAGE_SIZE = 250;
+const EMPTY_FIRST_PAGE_RETRIES = 4;
+const EMPTY_FIRST_PAGE_RETRY_DELAY_MS = 2_000;
 
 function usage() {
   return `Usage:
@@ -89,6 +91,22 @@ async function postJson(body) {
   return parsed;
 }
 
+async function fetchFirstMessagePage(body) {
+  let page;
+  for (let attempt = 1; attempt <= EMPTY_FIRST_PAGE_RETRIES; attempt += 1) {
+    page = await postJson(body);
+    const messages = page.data?.messages ?? [];
+    if (messages.length > 0 || page.data?.nextPageToken) return page;
+    if (attempt < EMPTY_FIRST_PAGE_RETRIES) {
+      process.stderr.write(
+        `Bridge returned an empty first page; retrying (${attempt}/${EMPTY_FIRST_PAGE_RETRIES}).\n`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, EMPTY_FIRST_PAGE_RETRY_DELAY_MS));
+    }
+  }
+  return page;
+}
+
 export async function main(argv = process.argv.slice(2)) {
   const options = parseArgs(argv);
   if (options.help) {
@@ -117,12 +135,13 @@ export async function main(argv = process.argv.slice(2)) {
 
   do {
     part += 1;
-    const page = await postJson({
+    const request = {
       action: 'messages',
       token,
       pageSize: options.pageSize,
       ...(pageToken ? { pageToken } : {}),
-    });
+    };
+    const page = part === 1 ? await fetchFirstMessagePage(request) : await postJson(request);
 
     const messages = page.data?.messages ?? [];
     messageCount += messages.length;
@@ -132,6 +151,10 @@ export async function main(argv = process.argv.slice(2)) {
 
     pageToken = page.data?.nextPageToken ?? '';
   } while (pageToken);
+
+  if (messageCount === 0) {
+    throw new Error('Bridge returned zero messages after retries; refusing a vacuous audit receipt.');
+  }
 
   const summary = { space: EXPECTED_SPACE, pages: part, messages: messageCount };
   await writeFile(
