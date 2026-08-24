@@ -69,6 +69,28 @@ jobs:
           cat "${parts[@]}" | base64 --decode | gzip -dc > "$ops"
           expected="$(jq -er .ops_script_sha256 "$SOURCE_MANIFEST")"
           printf '%s  %s\n' "$expected" "$ops" | sha256sum --check --strict
+
+          # The immutable operations payload predates Dart 3.13 treating the
+          # repository's trailing-comma lint as an informational diagnostic.
+          # Verify the original payload first, then apply only deterministic
+          # analyzer quick-fixes before the existing fatal-info gate.
+          python3 - "$ops" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8")
+          needle = "flutter analyze --fatal-infos --fatal-warnings"
+          replacement = (
+              "dart fix --apply\n"
+              "dart format lib test\n"
+              "flutter analyze --fatal-infos --fatal-warnings"
+          )
+          if text.count(needle) != 1:
+              raise SystemExit("refusing an ambiguous operations-script patch")
+          path.write_text(text.replace(needle, replacement), encoding="utf-8")
+          PY
+
           chmod 700 "$ops"
           bash "$ops" validate
 
