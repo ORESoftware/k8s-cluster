@@ -1,0 +1,255 @@
+name: Ops bootstrap Chapter Publishing repository fleet
+run-name: Bootstrap Chapter Publishing production and test repositories
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ops-bootstrap-chapter-publishing-fleet
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    if: >-
+      github.event.issue.number == 1424 &&
+      github.actor == 'ORESoftware' &&
+      github.event.comment.body == 'ops-bootstrap-chapter-publishing-fleet:1424:v1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      CARRIER_REPOSITORY: ${{ github.repository }}
+      CARRIER_ISSUE: '1424'
+      PRIVATE_TRACKING_REPOSITORY: chapter-publishing/chptr-monorepo
+      PRIVATE_TRACKING_ISSUE: '1'
+
+    steps:
+      - name: Check out the trusted publisher
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Validate trusted publisher payload
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          command -v gh
+          command -v git
+          command -v jq
+          command -v openssl
+          command -v python3
+          payload_dir="scripts/ops/chapter_publishing_factory/payload"
+          assembled_payload="$RUNNER_TEMP/chptr_fleet_bootstrap.py.gz.b64"
+          publisher="$RUNNER_TEMP/chptr_fleet_bootstrap.py"
+          payload_parts=("$payload_dir"/chptr_fleet_bootstrap.py.gz.b64.part-*)
+          test "${#payload_parts[@]}" -eq 7
+          cat "${payload_parts[@]}" > "$assembled_payload"
+          printf '%s  %s\n' 'f6d6149aec7a0451c636b67b58b44e49e3d5d29d4a5ab8b7672d41ad0fe55350' "$assembled_payload" | sha256sum --check --strict
+          base64 --decode < "$assembled_payload" | gzip --decompress --stdout > "$publisher"
+          printf '%s  %s\n' 'c258a38e389f6c2113f2c8ee6308011a034de4a7346cd6b1729f468e4ba58ec0' "$publisher" | sha256sum --check --strict
+          chmod 700 "$publisher"
+          python3 -m py_compile "$publisher"
+          python3 "$publisher" --self-test "$RUNNER_TEMP/chptr-fleet-self-test"
+
+      - name: Request one-time encrypted owner credential and publish bounded fleet
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+
+          stage=bootstrap
+          workflow_token="$GH_TOKEN"
+          work="$(mktemp -d "$RUNNER_TEMP/chptr-fleet-broker.XXXXXX")"
+          owner_token=''
+          challenge_id=''
+          response_id=''
+          publisher_status=1
+
+          cleanup() {
+            unset owner_token GH_TOKEN GITHUB_TOKEN GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
+            find "$work" -type f -exec sh -c 'for file do : > "$file"; done' sh {} + 2>/dev/null || true
+            rm -rf "$work"
+          }
+
+          public_failure() {
+            local message="$1"
+            GH_TOKEN="$workflow_token" gh api --method POST \
+              "repos/${CARRIER_REPOSITORY}/issues/${CARRIER_ISSUE}/comments" \
+              -f body="Chapter Publishing fleet bootstrap failed at bounded stage \`${stage}\`: ${message}. No plaintext owner credential was committed, uploaded as an artifact, placed in a Git remote, or retained after the job." >/dev/null || true
+          }
+
+          private_failure() {
+            local message="$1"
+            GH_TOKEN="$workflow_token" gh api --method POST \
+              "repos/${PRIVATE_TRACKING_REPOSITORY}/issues/${PRIVATE_TRACKING_ISSUE}/comments" \
+              -f body="Fleet bootstrap failed at \`${stage}\`: ${message}. Review the carrier workflow run for operational logs; no plaintext owner credential was retained." >/dev/null || true
+          }
+
+          on_error() {
+            local status=$?
+            trap - ERR
+            public_failure "publisher returned status ${status}"
+            private_failure "publisher returned status ${status}"
+            exit "$status"
+          }
+
+          trap cleanup EXIT
+          trap on_error ERR
+
+          stage=create-one-time-challenge
+          private_key="$work/private.pem"
+          public_key="$work/public.pem"
+          ciphertext_file="$work/ciphertext.bin"
+          openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key"
+          chmod 600 "$private_key"
+          openssl pkey -in "$private_key" -pubout -out "$public_key"
+          nonce="$(openssl rand -hex 24)"
+          [[ "$nonce" =~ ^[0-9a-f]{48}$ ]]
+
+          challenge_body="$work/challenge.md"
+          {
+            printf '<!-- chptr-fleet-credential-challenge:%s -->\n' "$nonce"
+            printf 'One-time RSA-OAEP-SHA256/MGF1-SHA256 challenge for the bounded Chapter Publishing fleet publisher. The private key exists only in this runner and is destroyed on exit.\n\n'
+            printf '```pem\n'
+            cat "$public_key"
+            printf '```\n'
+          } > "$challenge_body"
+
+          challenge_json="$(
+            jq -n --rawfile body "$challenge_body" '{body:$body}' \
+              | gh api --method POST "repos/${CARRIER_REPOSITORY}/issues/${CARRIER_ISSUE}/comments" --input -
+          )"
+          challenge_id="$(jq -er '.id | select(type == "number" and . > 0)' <<<"$challenge_json")"
+          response_marker="<!-- chptr-fleet-credential-response:${nonce} -->"
+
+          stage=await-encrypted-owner-response
+          response_body=''
+          for _ in $(seq 1 720); do
+            comments="$(gh api --paginate "repos/${CARRIER_REPOSITORY}/issues/${CARRIER_ISSUE}/comments?per_page=100" --slurp)"
+            response_json="$(
+              jq -c \
+                --arg marker "$response_marker" \
+                --argjson challenge_id "$challenge_id" '
+                [
+                  .[][]
+                  | select(.id > $challenge_id)
+                  | select(.user.login == "ORESoftware")
+                  | select(.body | startswith($marker + "\n"))
+                ]
+                | sort_by(.id)
+                | last // empty
+              ' <<<"$comments"
+            )"
+            if test -n "$response_json"; then
+              response_id="$(jq -er '.id' <<<"$response_json")"
+              response_body="$(jq -r '.body' <<<"$response_json")"
+              break
+            fi
+            sleep 5
+          done
+          test -n "$response_body"
+          test "$(grep -c '^ciphertext-base64=' <<<"$response_body")" -eq 1
+          ciphertext="$(sed -n 's/^ciphertext-base64=//p' <<<"$response_body")"
+          [[ "$ciphertext" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#ciphertext}" -le 8192
+          printf '%s' "$ciphertext" | base64 --decode > "$ciphertext_file"
+          test -s "$ciphertext_file"
+
+          stage=decrypt-owner-credential
+          owner_token="$(
+            openssl pkeyutl -decrypt \
+              -inkey "$private_key" \
+              -in "$ciphertext_file" \
+              -pkeyopt rsa_padding_mode:oaep \
+              -pkeyopt rsa_oaep_md:sha256 \
+              -pkeyopt rsa_mgf1_md:sha256 \
+              2>/dev/null
+          )"
+          test -n "$owner_token"
+          [[ "$owner_token" != *$'\n'* && "$owner_token" != *$'\r'* && "$owner_token" != *$'\t'* && "$owner_token" != *' '* ]]
+          [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
+          echo "::add-mask::$owner_token"
+          export GH_TOKEN="$owner_token"
+
+          # Delete the encrypted response once it has been consumed. The transient
+          # private key and ciphertext are also scrubbed by the EXIT trap.
+          if test -n "$response_id"; then
+            gh api --method DELETE "repos/${CARRIER_REPOSITORY}/issues/comments/${response_id}" >/dev/null || true
+          fi
+
+          stage=validate-owner-boundary
+          test "$(gh api user --jq '.login')" = ORESoftware
+          test "$(gh api repos/chapter-publishing/chptr-monorepo --jq '.permissions.admin')" = true
+          test "$(gh api repos/chapter-publishing-test/chptr-interfaces --jq '.permissions.admin')" = true
+
+          stage=publish-and-verify-bounded-fleet
+          summary="$work/summary.json"
+          set +e
+          python3 "$RUNNER_TEMP/chptr_fleet_bootstrap.py" \
+            --continue-on-error \
+            --summary "$summary" \
+            --work-root "$work/repositories"
+          publisher_status=$?
+          set -e
+          test -s "$summary"
+
+          created="$(jq -r '.created' "$summary")"
+          changed="$(jq -r '.changed' "$summary")"
+          successful="$(jq -r '.successful' "$summary")"
+          failed="$(jq -r '.failed' "$summary")"
+          pull_requests="$(jq -r '.pullRequests' "$summary")"
+          production_targets="$(jq -r '.productionTargets' "$summary")"
+          test_targets="$(jq -r '.testTargets' "$summary")"
+          reference_orgs="$(jq -r '.referenceAudit.organizations_read' "$summary")"
+          reference_repos="$(jq -r '.referenceAudit.repository_count' "$summary")"
+
+          private_report="$work/private-report.md"
+          {
+            printf '## Chapter Publishing fleet bootstrap result\n\n'
+            printf -- '- Production targets: **%s**\n' "$production_targets"
+            printf -- '- Test targets: **%s**\n' "$test_targets"
+            printf -- '- Repositories created: **%s**\n' "$created"
+            printf -- '- Repositories changed: **%s**\n' "$changed"
+            printf -- '- Successful targets: **%s**\n' "$successful"
+            printf -- '- Failed targets: **%s**\n' "$failed"
+            printf -- '- Pull requests opened/reused: **%s**\n' "$pull_requests"
+            printf -- '- Reference organizations read: **%s/20** (%s repositories classified)\n\n' "$reference_orgs" "$reference_repos"
+            printf '| Repository | Created | Changed | Branch | Commit / PR | Error |\n'
+            printf '|---|---:|---:|---|---|---|\n'
+            jq -r '.results[] | [
+              .repository,
+              (.created|tostring),
+              (.changed|tostring),
+              (.branch // ""),
+              (if .pull_request then .pull_request elif .commit_sha then ("`" + (.commit_sha[0:12]) + "`") else "" end),
+              ((.error // "") | gsub("\\|"; "\\\\|") | .[0:240])
+            ] | "| " + join(" | ") + " |"' "$summary"
+          } > "$private_report"
+
+          stage=record-sanitized-results
+          private_body="$(cat "$private_report")"
+          gh api --method POST \
+            "repos/${PRIVATE_TRACKING_REPOSITORY}/issues/${PRIVATE_TRACKING_ISSUE}/comments" \
+            -f body="$private_body" >/dev/null
+
+          GH_TOKEN="$workflow_token" gh api --method POST \
+            "repos/${CARRIER_REPOSITORY}/issues/${CARRIER_ISSUE}/comments" \
+            -f body="Chapter Publishing fleet publisher completed. Production targets: ${production_targets}; test targets: ${test_targets}; created: ${created}; changed: ${changed}; successful: ${successful}; failed: ${failed}; pull requests: ${pull_requests}; reference audit: ${reference_orgs}/20 organizations and ${reference_repos} repositories. The per-repository report is recorded in the private Chapter Publishing tracking issue." >/dev/null
+
+          stage=complete
+          if test "$publisher_status" -ne 0 || test "$failed" -ne 0; then
+            public_failure "${failed} repository target(s) failed validation or publication"
+            exit 1
+          fi
+
+          printf 'chptr-fleet stage=%s status=success created=%s changed=%s successful=%s failed=%s prs=%s\n' \
+            "$stage" "$created" "$changed" "$successful" "$failed" "$pull_requests"
