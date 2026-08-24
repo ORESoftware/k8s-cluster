@@ -190,3 +190,120 @@ jobs:
         run: |
           set -euo pipefail
           test "$INVITE_OUTCOME" = success
+
+  probe-main-execution:
+    if: github.event_name == 'pull_request' && github.head_ref == 'ops/probe-main-org-invite-run-20260823'
+    permissions:
+      actions: write
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_USERNAME: the1mills
+    steps:
+      - name: Locate or dispatch and observe the trusted-main invitation run
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="$GITHUB_REPOSITORY"
+          workflow="ops-invite-org-member.yml"
+          target_sha="$(gh api "repos/$repo/commits/main" --jq .sha)"
+          [[ "$target_sha" =~ ^[0-9a-f]{40}$ ]]
+          printf 'probe-target-sha=%s\n' "$target_sha"
+
+          find_run_id() {
+            gh api "repos/$repo/actions/workflows/$workflow/runs?branch=main&per_page=100" \
+              --jq ".workflow_runs | map(select(.head_sha == \"$target_sha\" and .event != \"pull_request\")) | first | .id // empty"
+          }
+
+          run_id=""
+          for attempt in $(seq 1 6); do
+            run_id="$(find_run_id)"
+            if [[ -n "$run_id" ]]; then
+              break
+            fi
+            printf 'probe-existing-run-attempt=%s result=absent\n' "$attempt"
+            sleep 5
+          done
+
+          if [[ -z "$run_id" ]]; then
+            printf 'probe-action=dispatch workflow=%s target=%s\n' "$workflow" "$TARGET_USERNAME"
+            gh api \
+              --method POST \
+              "repos/$repo/actions/workflows/$workflow/dispatches" \
+              -f ref=main \
+              -f "inputs[username]=$TARGET_USERNAME"
+            target_sha="$(gh api "repos/$repo/commits/main" --jq .sha)"
+            for attempt in $(seq 1 24); do
+              run_id="$(find_run_id)"
+              if [[ -n "$run_id" ]]; then
+                break
+              fi
+              printf 'probe-dispatched-run-attempt=%s result=absent\n' "$attempt"
+              sleep 5
+            done
+          else
+            printf 'probe-action=observe-existing\n'
+          fi
+
+          [[ "$run_id" =~ ^[0-9]+$ ]] || {
+            echo 'probe-result=failed reason=workflow-run-not-found' >&2
+            exit 66
+          }
+          printf 'probe-run-id=%s\n' "$run_id"
+
+          completed=false
+          conclusion=""
+          for attempt in $(seq 1 120); do
+            run_json="$(gh api "repos/$repo/actions/runs/$run_id")"
+            status="$(jq -r '.status' <<<"$run_json")"
+            conclusion="$(jq -r '.conclusion // ""' <<<"$run_json")"
+            event="$(jq -r '.event' <<<"$run_json")"
+            head_sha="$(jq -r '.head_sha' <<<"$run_json")"
+            printf 'probe-run-poll=%s id=%s event=%s head=%s status=%s conclusion=%s\n' \
+              "$attempt" "$run_id" "$event" "$head_sha" "$status" "${conclusion:-pending}"
+            if [[ "$status" == completed ]]; then
+              completed=true
+              break
+            fi
+            sleep 5
+          done
+
+          [[ "$completed" == true ]] || {
+            echo 'probe-result=failed reason=workflow-run-timeout' >&2
+            exit 124
+          }
+
+          gh api "repos/$repo/actions/runs/$run_id/jobs?per_page=100" \
+            --jq '.jobs[] | "probe-job id=\(.id) name=\(.name) status=\(.status) conclusion=\(.conclusion // \"\")"'
+
+          artifacts_json="$(gh api "repos/$repo/actions/runs/$run_id/artifacts?per_page=100")"
+          jq -r '.artifacts[] | "probe-artifact id=\(.id) name=\(.name) expired=\(.expired)"' <<<"$artifacts_json"
+          artifact_name="org-member-invitation-${TARGET_USERNAME}"
+          artifact_id="$(jq -r --arg name "$artifact_name" '.artifacts[] | select(.name == $name and (.expired | not)) | .id' <<<"$artifacts_json" | head -n 1)"
+
+          if [[ -n "$artifact_id" ]]; then
+            artifact_dir="$RUNNER_TEMP/org-member-invitation-artifact"
+            mkdir -p "$artifact_dir"
+            gh run download "$run_id" \
+              --repo "$repo" \
+              --name "$artifact_name" \
+              --dir "$artifact_dir"
+            report="$(find "$artifact_dir" -type f -name '*.md' -print -quit)"
+            [[ -n "$report" && -s "$report" ]] || {
+              echo 'probe-result=failed reason=artifact-report-missing' >&2
+              exit 65
+            }
+            echo 'probe-sanitized-report-begin'
+            cat "$report"
+            echo 'probe-sanitized-report-end'
+          else
+            echo 'probe-artifact-result=absent'
+          fi
+
+          printf 'probe-result=%s run-id=%s conclusion=%s\n' \
+            "$([[ "$conclusion" == success ]] && echo passed || echo failed)" \
+            "$run_id" \
+            "$conclusion"
+          [[ "$conclusion" == success ]]
