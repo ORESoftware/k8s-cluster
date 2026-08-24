@@ -24,8 +24,8 @@ const EXEC_URL =
   'https://script.google.com/macros/s/AKfycbzIMOO0eQ12WjgRvLmYAdn3zryB57Ush6uWfQWc-iHNvVu6X0ULbPfPv7WMaYdMp2Tq/exec';
 const EXPECTED_SPACE = 'spaces/AAQAoHKdzvI';
 const DEFAULT_PAGE_SIZE = 250;
-const EMPTY_FIRST_PAGE_RETRIES = 4;
-const EMPTY_FIRST_PAGE_RETRY_DELAY_MS = 2_000;
+const EMPTY_PAGE_RETRIES = 4;
+const EMPTY_PAGE_RETRY_DELAY_MS = 2_000;
 const BRIDGE_REQUEST_RETRIES = 5;
 const BRIDGE_REQUEST_RETRY_DELAY_MS = 2_000;
 
@@ -118,18 +118,22 @@ async function postJson(body) {
   throw lastError;
 }
 
-async function fetchFirstMessagePage(body) {
+async function fetchMessagePage(body) {
   let page;
-  for (let attempt = 1; attempt <= EMPTY_FIRST_PAGE_RETRIES; attempt += 1) {
+  for (let attempt = 1; attempt <= EMPTY_PAGE_RETRIES; attempt += 1) {
     page = await postJson(body);
     const messages = page.data?.messages ?? [];
     if (messages.length > 0 || page.data?.nextPageToken) return page;
-    if (attempt < EMPTY_FIRST_PAGE_RETRIES) {
+    if (attempt < EMPTY_PAGE_RETRIES) {
+      const position = body.pageToken ? 'continuation' : 'first';
       process.stderr.write(
-        `Bridge returned an empty first page; retrying (${attempt}/${EMPTY_FIRST_PAGE_RETRIES}).\n`,
+        `Bridge returned an empty ${position} page; retrying (${attempt}/${EMPTY_PAGE_RETRIES}).\n`,
       );
-      await new Promise((resolve) => setTimeout(resolve, EMPTY_FIRST_PAGE_RETRY_DELAY_MS));
+      await new Promise((resolve) => setTimeout(resolve, EMPTY_PAGE_RETRY_DELAY_MS));
     }
+  }
+  if (body.pageToken) {
+    throw new Error('Bridge returned an empty continuation page after retries.');
   }
   return page;
 }
@@ -168,7 +172,7 @@ export async function main(argv = process.argv.slice(2)) {
       pageSize: options.pageSize,
       ...(pageToken ? { pageToken } : {}),
     };
-    const page = part === 1 ? await fetchFirstMessagePage(request) : await postJson(request);
+    const page = await fetchMessagePage(request);
 
     const messages = page.data?.messages ?? [];
     messageCount += messages.length;
