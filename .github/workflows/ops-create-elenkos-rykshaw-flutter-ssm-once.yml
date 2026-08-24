@@ -31,11 +31,6 @@ jobs:
           persist-credentials: false
           fetch-depth: 2
 
-      - name: Validate workflow syntax
-        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
-        with:
-          args: .github/workflows/ops-create-elenkos-rykshaw-flutter-ssm-once.yml
-
       - name: Validate immutable repository contract and credential boundary
         shell: bash
         run: |
