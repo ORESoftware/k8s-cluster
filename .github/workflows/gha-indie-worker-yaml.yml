@@ -58,7 +58,7 @@ jobs:
 
       - name: Verify checked-in source formatting
         working-directory: remote/deployments/build-server-rs
-        run: rustfmt --edition 2021 --config skip_children=true --check src/main.rs src/gha_workflow.rs
+        run: rustfmt --edition 2021 --config skip_children=true --check src/main.rs src/gha_workflow.rs src/workflow_yaml.rs
 
       - name: Compile locked dependencies with warnings denied
         working-directory: remote/deployments/build-server-rs
@@ -109,6 +109,7 @@ jobs:
             --exclude='gha-indie-worker-yaml.yml' \
             'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|BEGIN (RSA |EC )?PRIVATE KEY' \
             remote/deployments/build-server-rs/src/gha_workflow.rs \
+            remote/deployments/build-server-rs/src/workflow_yaml.rs \
             remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml \
             docs/gha-indie-worker-yaml-engine.md; then
             echo 'credential-like material found in GHA indie worker files' >&2

