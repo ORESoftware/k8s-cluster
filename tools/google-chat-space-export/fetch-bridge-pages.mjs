@@ -23,7 +23,11 @@ import process from 'node:process';
 const EXEC_URL =
   'https://script.google.com/macros/s/AKfycbzIMOO0eQ12WjgRvLmYAdn3zryB57Ush6uWfQWc-iHNvVu6X0ULbPfPv7WMaYdMp2Tq/exec';
 const EXPECTED_SPACE = 'spaces/AAQAoHKdzvI';
-const DEFAULT_PAGE_SIZE = 100;
+const DEFAULT_PAGE_SIZE = 250;
+const EMPTY_PAGE_RETRIES = 4;
+const EMPTY_PAGE_RETRY_DELAY_MS = 2_000;
+const BRIDGE_REQUEST_RETRIES = 5;
+const BRIDGE_REQUEST_RETRY_DELAY_MS = 2_000;
 
 function usage() {
   return `Usage:
@@ -66,17 +70,22 @@ function parseArgs(argv) {
 
 /**
  * Apps Script runs the POST and then 302s to a googleusercontent.com echo URL
- * that only serves GET; re-POSTing there answers 405 with an HTML body. Letting
- * fetch follow the redirect downgrades the method to GET, which is exactly what
- * the echo URL wants, while the token stays in the original POST body.
+ * that only serves GET; re-POSTing there answers 405 with an HTML body. Follow
+ * the Location explicitly as GET so retry behavior remains deterministic while
+ * the token stays in the original POST body.
  */
-async function postJson(body) {
-  const response = await fetch(EXEC_URL, {
+async function postJsonOnce(body) {
+  let response = await fetch(EXEC_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
-    redirect: 'follow',
+    redirect: 'manual',
   });
+  if ([301, 302, 303, 307, 308].includes(response.status)) {
+    const location = response.headers.get('location');
+    if (!location) throw new Error(`Bridge redirect ${response.status} omitted Location.`);
+    response = await fetch(location, { redirect: 'follow' });
+  }
   const text = await response.text();
   let parsed;
   try {
@@ -87,6 +96,46 @@ async function postJson(body) {
   // ContentService always answers 200, so the envelope carries the real status.
   if (!parsed.ok) throw new Error(`Bridge error: ${JSON.stringify(parsed.error ?? parsed)}`);
   return parsed;
+}
+
+async function postJson(body) {
+  let lastError;
+  for (let attempt = 1; attempt <= BRIDGE_REQUEST_RETRIES; attempt += 1) {
+    try {
+      return await postJsonOnce(body);
+    } catch (error) {
+      lastError = error;
+      if (attempt < BRIDGE_REQUEST_RETRIES) {
+        process.stderr.write(
+          `Bridge ${body.action || 'request'} failed; retrying (${attempt}/${BRIDGE_REQUEST_RETRIES}).\n`,
+        );
+        await new Promise((resolve) =>
+          setTimeout(resolve, attempt * BRIDGE_REQUEST_RETRY_DELAY_MS),
+        );
+      }
+    }
+  }
+  throw lastError;
+}
+
+async function fetchMessagePage(body) {
+  let page;
+  for (let attempt = 1; attempt <= EMPTY_PAGE_RETRIES; attempt += 1) {
+    page = await postJson(body);
+    const messages = page.data?.messages ?? [];
+    if (messages.length > 0 || page.data?.nextPageToken) return page;
+    if (attempt < EMPTY_PAGE_RETRIES) {
+      const position = body.pageToken ? 'continuation' : 'first';
+      process.stderr.write(
+        `Bridge returned an empty ${position} page; retrying (${attempt}/${EMPTY_PAGE_RETRIES}).\n`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, EMPTY_PAGE_RETRY_DELAY_MS));
+    }
+  }
+  if (body.pageToken) {
+    throw new Error('Bridge returned an empty continuation page after retries.');
+  }
+  return page;
 }
 
 export async function main(argv = process.argv.slice(2)) {
@@ -117,12 +166,13 @@ export async function main(argv = process.argv.slice(2)) {
 
   do {
     part += 1;
-    const page = await postJson({
+    const request = {
       action: 'messages',
       token,
       pageSize: options.pageSize,
       ...(pageToken ? { pageToken } : {}),
-    });
+    };
+    const page = await fetchMessagePage(request);
 
     const messages = page.data?.messages ?? [];
     messageCount += messages.length;
@@ -132,6 +182,10 @@ export async function main(argv = process.argv.slice(2)) {
 
     pageToken = page.data?.nextPageToken ?? '';
   } while (pageToken);
+
+  if (messageCount === 0) {
+    throw new Error('Bridge returned zero messages after retries; refusing a vacuous audit receipt.');
+  }
 
   const summary = { space: EXPECTED_SPACE, pages: part, messages: messageCount };
   await writeFile(
