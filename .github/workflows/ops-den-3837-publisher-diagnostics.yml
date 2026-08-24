@@ -1,5 +1,5 @@
 name: Diagnose DEN-3837 publisher run
-run-name: Diagnose publisher for 65e7813adb45a2e66e954a5e66b3ecc8ec9bb3ff
+run-name: Diagnose publisher for 52f88e1a631945e79fa93c15e6a637a6a1e08d1f
 
 on:
   pull_request:
@@ -16,10 +16,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: List workflow runs and jobs for the publisher merge
+      - name: List workflow runs and jobs for the direct publisher merge
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_SHA: 65e7813adb45a2e66e954a5e66b3ecc8ec9bb3ff
+          TARGET_SHA: 52f88e1a631945e79fa93c15e6a637a6a1e08d1f
         shell: bash
         run: |
           set -euo pipefail
