@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -Eeuo pipefail
+set -euo pipefail
 umask 077
 
 TARGET_USERNAME="${1:?target username required}"
@@ -25,7 +25,6 @@ json_report="$dir/report.json"
 markdown_report="$dir/report.md"
 comment_body="$dir/comment.md"
 stage="initialization"
-completed=false
 
 cleanup() {
   unset ACTIONS_TOKEN GH_TOKEN GITHUB_TOKEN org_token public_key_b64 envelope_body envelope_line ciphertext fingerprint
@@ -45,28 +44,30 @@ post_comment() {
 
 report_failure() {
   local status=$?
-  trap - EXIT ERR
+  trap - ERR
   set +e
-  {
-    echo '<!-- org-member-ephemeral-result-v1 -->'
-    echo '### Ephemeral organization membership reconciliation failed'
-    echo
-    echo "- Target: \`$TARGET_USERNAME\`"
-    echo "- Run ID: \`$RUN_ID\`"
-    echo "- Last bounded stage: \`$stage\`"
-    echo "- Exit code: \`$status\`"
-    echo
-    echo 'No PAT, decrypted credential, private key, or raw GitHub response is included.'
-  } > "$comment_body"
-  post_comment "$comment_body" || true
+  if [[ -d "$dir" ]]; then
+    {
+      echo '<!-- org-member-ephemeral-result-v1 -->'
+      echo '### Ephemeral organization membership reconciliation failed'
+      echo
+      echo "- Target: \`$TARGET_USERNAME\`"
+      echo "- Run ID: \`$RUN_ID\`"
+      echo "- Last bounded stage: \`$stage\`"
+      echo "- Exit code: \`$status\`"
+      echo
+      echo 'No PAT, decrypted credential, private key, or raw GitHub response is included.'
+    } > "$comment_body"
+    post_comment "$comment_body" || true
+  fi
   cleanup
   exit "$status"
 }
-trap report_failure ERR EXIT
+trap report_failure ERR
 
 for command in openssl base64 sha256sum jq gh python3; do
   command -v "$command" >/dev/null 2>&1
- done
+done
 
 test -f "$WORKSPACE/scripts/ops/invite_org_member_all.py"
 python3 -m py_compile "$WORKSPACE/scripts/ops/invite_org_member_all.py"
@@ -127,7 +128,7 @@ for attempt in $(seq 1 150); do
     printf 'ORG_MEMBER_EPHEMERAL_STAGE stage=ciphertext-wait elapsed_seconds=%d\n' "$((attempt * 4))"
   fi
   sleep 4
- done
+done
 [[ -n "$envelope_body" ]]
 
 envelope_line="$(
@@ -206,6 +207,5 @@ stage="result-publication"
 post_comment "$comment_body"
 cat "$markdown_report"
 
-completed=true
-trap - ERR EXIT
+trap - ERR
 cleanup
