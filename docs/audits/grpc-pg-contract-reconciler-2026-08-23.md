@@ -9,7 +9,7 @@ inert, exact-commit pilot and cannot start a Pod as committed.
 
 | Boundary | Reviewed change | Immutable pin |
 | --- | --- | --- |
-| Shared SQL, JSON Schema, and generated ORM bindings | `ORESoftware/k8s-libs-and-shared-defs#49` | `d056d64adc55d818f123eee97e3ccad18d310636` |
+| Shared SQL, JSON Schema, and generated ORM bindings | `ORESoftware/k8s-libs-and-shared-defs#49` | `91b5db8f239907abc79eedb89999d2c78c816421` |
 | gRPC reconciliation server | `ORESoftware/grpc-pg-general-connect-server#5` | `37ac95d7be22729bac4a46be99b56a8517abea44` |
 | Fleet composition | this change | both pins above |
 
@@ -35,6 +35,9 @@ inert, exact-commit pilot and cannot start a Pod as committed.
    in six typed adapters. The generator now sanitizes enum identifiers without
    changing their exact database/wire labels, with a regression test covering
    Rust, Gleam, Haskell, OCaml, F#, and C++.
+9. A numeric PostgreSQL CHECK-enum (`shared_auth.sessions.auth_level`) retained
+   its required SQLx `i16` type but used a string-only validation API. Numeric
+   enums now compare typed constants, and the generated Rust crate compiles.
 
 ## Consistency and formal-method boundary
 
