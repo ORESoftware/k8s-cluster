@@ -48,6 +48,11 @@ inert, exact-commit pilot and cannot start a Pod as committed.
     format-checks SeaORM while compiling all three generated Rust adapters. The
     fleet consumer formats its own crate plus that exact adapter instead of
     sweeping unrelated local path dependencies into this contract gate.
+12. The reviewed GitHub App repository allowlist did not include the new gRPC
+    gitlink and still named a superseded Sonus Auris repository. The allowlist
+    now exactly matches every declared deployment gitlink, and the auth contract
+    validates the narrow shared-library checkout action rather than its retired
+    environment-mode implementation.
 
 ## Consistency and formal-method boundary
 
