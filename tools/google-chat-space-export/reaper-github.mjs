@@ -90,6 +90,25 @@ export function createGitHubClient({ token, allowedOwners, fetchImpl } = {}) {
     return [...refs].sort();
   }
 
+  async function verifyLinkedPullRequests(linkedPullRequests) {
+    const refs = new Set();
+    for (const reference of uniqueSorted(linkedPullRequests || []).slice(0, MAX_EVIDENCE_REFERENCES)) {
+      if (!PR_REFERENCE_PATTERN.test(reference)) continue;
+      const separator = reference.lastIndexOf('#');
+      const repository = reference.slice(0, separator);
+      const number = reference.slice(separator + 1);
+      try {
+        const pr = await github(`/repos/${repository}/pulls/${number}`);
+        if (pr.state !== 'open' && !pr.merged_at) continue;
+        refs.add(reference);
+      } catch (error) {
+        if (error?.status === 403 || error?.status === 404) continue;
+        throw error;
+      }
+    }
+    return [...refs].sort();
+  }
+
   async function commitIsOnDefaultBranch(repository, sha) {
     const repo = await github(`/repos/${repository}`);
     const comparison = await github(`/repos/${repository}/compare/${sha}...${encodeURIComponent(repo.default_branch)}`);
@@ -121,8 +140,12 @@ export function createGitHubClient({ token, allowedOwners, fetchImpl } = {}) {
     return [...refs].sort();
   }
 
-  async function findEvidence({ issueIdentifiers, candidate }) {
+  async function findEvidence({ issueIdentifiers, candidate, linkedPullRequests = [] }) {
     try {
+      const verifiedLinkedPullRequests = await verifyLinkedPullRequests(linkedPullRequests);
+      if (verifiedLinkedPullRequests.length) {
+        return { pullRequests: verifiedLinkedPullRequests, defaultBranchCommits: [] };
+      }
       const pullRequests = await searchPullRequests(issueIdentifiers, candidate);
       const defaultBranchCommits = pullRequests.length
         ? []

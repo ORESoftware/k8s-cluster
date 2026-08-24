@@ -65,5 +65,9 @@ export function normalizeIssue(issue) {
     url: issue.url || null,
     state: issue.state ? { name: issue.state.name, type: issue.state.type } : null,
     project: issue.project ? { name: issue.project.name } : null,
+    attachments: (issue.attachments?.nodes || issue.attachments || []).map((attachment) => ({
+      title: String(attachment.title || ''),
+      url: String(attachment.url || ''),
+    })),
   };
 }

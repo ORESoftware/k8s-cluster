@@ -52,6 +52,7 @@ export function createLinearClient({ apiKey, teamId, parentIssue, fetchImpl } = 
               id identifier title description url
               state { name type }
               project { name }
+              attachments { nodes { title url } }
             }
             pageInfo { hasNextPage endCursor }
           }
@@ -71,6 +72,7 @@ export function createLinearClient({ apiKey, teamId, parentIssue, fetchImpl } = 
           id identifier title description url
           state { name type }
           project { name }
+          attachments { nodes { title url } }
         }
       }`,
       { id: identifier },
@@ -96,6 +98,7 @@ export function createLinearClient({ apiKey, teamId, parentIssue, fetchImpl } = 
             id identifier title description url
             state { name type }
             project { name }
+            attachments { nodes { title url } }
           }
         }
       }`,
@@ -113,6 +116,7 @@ export function createLinearClient({ apiKey, teamId, parentIssue, fetchImpl } = 
             id identifier title description url
             state { name type }
             project { name }
+            attachments { nodes { title url } }
           }
         }
       }`,
@@ -144,6 +148,7 @@ export function createLinearClient({ apiKey, teamId, parentIssue, fetchImpl } = 
             id identifier title description url
             state { name type }
             project { name }
+            attachments { nodes { title url } }
           }
         }
       }`,

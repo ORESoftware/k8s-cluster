@@ -30,6 +30,19 @@ function reviewCandidate(candidate) {
   return candidate.action === 'manual-review' || titleNeedsReview(safeIssueTitle(candidate.title));
 }
 
+function linkedPullRequestReferences(issue) {
+  const refs = [];
+  for (const attachment of issue.attachments || []) {
+    const match = String(attachment.url || '').match(
+      /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/([1-9][0-9]*)(?:[/?#].*)?$/i,
+    );
+    if (!match) continue;
+    const reference = `${match[1]}/${match[2]}#${match[3]}`;
+    if (PR_REFERENCE_PATTERN.test(reference)) refs.push(reference);
+  }
+  return uniqueSorted(refs).slice(0, MAX_EVIDENCE_REFERENCES);
+}
+
 async function ensureLinearIssue(candidate, context, review) {
   const existingIdentifiers = candidateExistingIdentifiers(candidate);
   let issue = null;
@@ -136,7 +149,11 @@ export async function materializePlan(plan, dependencies, options = {}) {
     }
 
     const issueIdentifiers = [issue.identifier];
-    const evidence = await dependencies.github.findEvidence({ issueIdentifiers, candidate });
+    const evidence = await dependencies.github.findEvidence({
+      issueIdentifiers,
+      candidate,
+      linkedPullRequests: linkedPullRequestReferences(issue),
+    });
     entries.push({
       candidateKey: candidate.candidateKey,
       disposition: 'covered',

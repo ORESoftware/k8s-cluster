@@ -122,6 +122,35 @@ test('materialization is idempotent and reuses the same Linear issue on rerun', 
   assert.equal(first.summary.counts.coveredWithImplementation, 1);
 });
 
+test('materialization forwards attached Linear PRs for independent verification', async () => {
+  const item = candidate({ exactExistingIssues: [{ identifier: 'DEN-1949' }] });
+  const linearIssue = {
+    id: 'issue-1949',
+    identifier: 'DEN-1949',
+    title: item.title,
+    description: `<!-- google-chat-reaper:${item.candidateKey} -->`,
+    attachments: [{
+      title: 'Reconciliation implementation',
+      url: 'https://github.com/ORESoftware/k8s-cluster/pull/1340',
+    }],
+  };
+  const linear = {
+    async getIssue() { return linearIssue; },
+    async findByCandidate() { throw new Error('must not search Linear'); },
+    async createIssue() { throw new Error('must not create Linear'); },
+    async appendSection() { throw new Error('must not update Linear'); },
+  };
+  const github = {
+    async findEvidence(request) {
+      assert.deepEqual(request.linkedPullRequests, ['ORESoftware/k8s-cluster#1340']);
+      return { pullRequests: request.linkedPullRequests, defaultBranchCommits: [] };
+    },
+  };
+  const result = await materializePlan(plan([item]), { linear, github });
+  assert.deepEqual(result.evidence.entries[0].pullRequests, ['ORESoftware/k8s-cluster#1340']);
+  assert.equal(result.summary.counts.coveredWithImplementation, 1);
+});
+
 test('manual-review candidates are durably owned but quarantined from automated completion', async () => {
   const store = fakeLinearStore();
   const github = {
@@ -246,6 +275,32 @@ test('GitHub 403 search limits remain explicit gaps and stop repeated searches',
     await client.findEvidence(request),
     { pullRequests: [], defaultBranchCommits: [] },
   );
+  assert.equal(calls, 1);
+});
+
+test('GitHub verifies linked Linear PRs without consuming the search API', async () => {
+  let calls = 0;
+  const client = createGitHubClient({
+    token: 'test-token',
+    allowedOwners: ['ORESoftware'],
+    fetchImpl: async (url) => {
+      calls += 1;
+      assert.equal(new URL(url).pathname, '/repos/ORESoftware/k8s-cluster/pulls/1340');
+      return new Response(JSON.stringify({ state: 'open', merged_at: null }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    },
+  });
+  const evidence = await client.findEvidence({
+    issueIdentifiers: ['DEN-4047'],
+    candidate: { githubReferences: { repositories: [], organizations: [] } },
+    linkedPullRequests: ['ORESoftware/k8s-cluster#1340'],
+  });
+  assert.deepEqual(evidence, {
+    pullRequests: ['ORESoftware/k8s-cluster#1340'],
+    defaultBranchCommits: [],
+  });
   assert.equal(calls, 1);
 });
 
