@@ -41,7 +41,7 @@ jobs:
           grep -qF -- '-F private=true' "$workflow"
           grep -qF 'kubectl -n default get secret dd-agent-secrets' "$workflow"
           credential_pattern='gh''p_|github_''pat_|-----BEGIN (RSA )?PRIVATE KEY-----'
-          unsafe_pattern='git push --''force|-F private=false|visibility=public'
+          unsafe_pattern='git push --''force|-F private=''false|visibility=''public'
           if grep -nE "$credential_pattern" "$workflow"; then
             echo 'credential-shaped source material detected' >&2
             exit 1
