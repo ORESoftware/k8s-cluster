@@ -221,6 +221,7 @@ test('unit tests cover valid DAGs, authenticated HTTP, and adversarial structure
     'build_request_is_profile_only_and_immutable',
     'workflow_path_and_yaml_limits_fail_closed',
     'strict_fixed_profile_planner_rejects_ambiguous_yaml',
+    'repository_ci_workflow_remains_parseable',
     'trigger_policy_fails_closed_on_unevaluated_or_elevated_events',
     'rejects_run_intent_that_the_selected_profile_would_not_execute',
     'accepts_only_the_reviewed_run_surface_for_fixed_profiles',

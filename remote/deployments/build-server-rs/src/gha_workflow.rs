@@ -2004,6 +2004,22 @@ jobs:
     }
 
     #[test]
+    fn repository_ci_workflow_remains_parseable() {
+        let plan = build_plan(
+            &request(include_str!(
+                "../../../../.github/workflows/gha-indie-worker-yaml.yml"
+            )),
+            &PlannerLimits::default(),
+        )
+        .expect("the repository's GitHub-valid CI workflow must pass strict YAML admission");
+        assert!(!plan.executable);
+        assert_eq!(
+            plan.triggers.events,
+            vec!["pull_request", "push", "workflow_dispatch"]
+        );
+    }
+
+    #[test]
     fn missing_trigger_is_explicitly_reported_for_api_only_plans() {
         let plan = build_plan(
             &request(
