@@ -137,8 +137,8 @@ jobs:
           entries = spec['entries']
           checks = {
               'valid report': report.get('valid') is True,
-              'manifest entries': report.get('entryCount') == 1134,
-              'inventory entries': report.get('inventoryEntryCount') == 1134,
+              'manifest entries': report.get('entryCount') == 1276,
+              'inventory entries': report.get('inventoryEntryCount') == 1276,
               'zero diagnostics': report.get('diagnostics') == [],
               'no encoded staging': report.get('encodedStagingFiles') == [],
               'execution disabled': spec.get('executionAuthorized') is False,

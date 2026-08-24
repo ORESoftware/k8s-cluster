@@ -9,7 +9,7 @@ inert, exact-commit pilot and cannot start a Pod as committed.
 
 | Boundary | Reviewed change | Immutable pin |
 | --- | --- | --- |
-| Shared SQL, JSON Schema, and generated ORM bindings | `ORESoftware/k8s-libs-and-shared-defs#49` | `a31ebf9e72aba9901fe63236413527a02a8dbc38` |
+| Shared SQL, JSON Schema, and generated ORM bindings | `ORESoftware/k8s-libs-and-shared-defs#49` | `d056d64adc55d818f123eee97e3ccad18d310636` |
 | gRPC reconciliation server | `ORESoftware/grpc-pg-general-connect-server#5` | `37ac95d7be22729bac4a46be99b56a8517abea44` |
 | Fleet composition | this change | both pins above |
 
@@ -31,6 +31,10 @@ inert, exact-commit pilot and cannot start a Pod as committed.
    and run `govulncheck`.
 7. The deployment selected a ServiceAccount that did not exist. The audited
    package now declares it with token automount disabled.
+8. A punctuated PostgreSQL enum label (`tar.gz`) produced illegal constructors
+   in six typed adapters. The generator now sanitizes enum identifiers without
+   changing their exact database/wire labels, with a regression test covering
+   Rust, Gleam, Haskell, OCaml, F#, and C++.
 
 ## Consistency and formal-method boundary
 

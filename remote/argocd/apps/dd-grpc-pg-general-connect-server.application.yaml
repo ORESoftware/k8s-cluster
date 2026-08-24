@@ -7,8 +7,8 @@ metadata:
   name: dd-grpc-pg-general-connect-server
   namespace: argocd
   annotations:
-    dd.dev/bootstrap-state: inert
-    dd.dev/bootstrap-reason: >-
+    contracts.oresoftware.com/activation-state: inert
+    contracts.oresoftware.com/activation-reason: >-
       Manual sync and workload activation remain blocked until the upstream PRs
       merge, a signed image and immutable ledger bundle are pinned, secrets and
       read-only database roles exist, and bearer transport encryption is proved.
