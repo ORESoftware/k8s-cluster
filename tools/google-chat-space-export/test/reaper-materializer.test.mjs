@@ -95,6 +95,17 @@ test('builds a content-free provenance section with digests, not raw source iden
   assert.equal(section.includes('message bodies'), true);
 });
 
+test('normalizes valid Google Chat microsecond instants for content-free provenance', () => {
+  const section = buildContentFreeLinearSection(
+    candidate({
+      firstCreateTime: '2026-08-19T00:00:00.123456Z',
+      lastCreateTime: '2026-08-19T00:00:01.987654Z',
+    }),
+  );
+  assert.match(section, /First message time: 2026-08-19T00:00:00\.123Z/);
+  assert.match(section, /Last message time: 2026-08-19T00:00:01\.987Z/);
+});
+
 test('materialization is idempotent and reuses the same Linear issue on rerun', async () => {
   const store = fakeLinearStore();
   const github = {

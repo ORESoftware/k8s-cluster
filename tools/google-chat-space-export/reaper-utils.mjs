@@ -58,11 +58,14 @@ export function integerFromEnv(value, fallback, label, minimum = 1, maximum = 10
 
 export function canonicalInstant(value, label) {
   if (typeof value !== 'string') throw new Error(`${label} must be a canonical RFC-3339 instant`);
-  const parsed = Date.parse(value);
-  if (!Number.isFinite(parsed) || new Date(parsed).toISOString() !== value) {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value)) {
     throw new Error(`${label} must be a canonical RFC-3339 instant`);
   }
-  return value;
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${label} must be a canonical RFC-3339 instant`);
+  }
+  return new Date(parsed).toISOString();
 }
 
 export function redactSensitiveText(value) {
