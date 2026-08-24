@@ -44,7 +44,17 @@ jobs:
           retry-max-attempts: 2
           mask-aws-account-id: true
 
+      - name: Import the exact sustainable-bike bundle through the protected SSM host
+        if: inputs.request_id == 'den-3843-sustainable-bike-bundle-v1'
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: |
+          set -euo pipefail
+          bash scripts/ops/import_sustainable_bike_bundle_via_ssm.sh
+
       - name: Publish and verify from the protected SSM host
+        if: inputs.request_id != 'den-3843-sustainable-bike-bundle-v1'
         shell: bash
         env:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
