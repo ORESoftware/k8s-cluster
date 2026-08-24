@@ -38,7 +38,7 @@ Request shape:
 ```
 
 The revision may be a branch or tag for planning, but execution requires an
-exact 40-hex commit SHA. The worker constructs only this downstream request:
+exact lowercase 40-hex commit SHA. The worker constructs only this downstream request:
 
 ```json
 {
@@ -68,7 +68,12 @@ The first release supports:
 - deterministic topological execution;
 - Linux runner labels;
 - immutable, known setup actions;
-- run-step evidence that maps to one installed fixed profile;
+- strict YAML admission before profile classification, including duplicate-key,
+  anchor, alias, merge-key, tag, directive, tab, and multi-document rejection;
+- unfiltered `push`, `pull_request`, and `workflow_dispatch` declarations, reported
+  in the plan but matched by the authenticated upstream dispatcher;
+- run-step evidence that maps to one installed fixed profile and contains only
+  commands represented by that profile's reviewed command surface;
 - dependency failure propagation through skipped downstream jobs;
 - bounded in-memory run status, request deduplication, and retention.
 
@@ -94,13 +99,18 @@ The indie worker rejects:
 - mutable action refs;
 - arbitrary marketplace actions;
 - expressions in `runs-on`, setup inputs, or commands;
+- trigger filters, manual inputs, schedules, elevated-trust events, and other
+  events the fixed-profile endpoint cannot evaluate;
+- shell composition, redirection, repository scripts, publishing/deployment
+  commands, or other run intent not represented by the selected fixed profile;
 - secrets and token contexts;
 - workflow, job, or step environments;
 - matrices, reusable workflows, conditions, services, and job containers;
 - custom shells, working directories, timeouts, and `continue-on-error`;
 - macOS and Windows native jobs;
 - cyclic or unknown dependencies;
-- YAML tags, excessive nesting, excessive node count, oversized documents,
+- duplicate YAML keys, aliases, anchors, merge keys, tags, tabs, directives,
+  multiple documents, excessive nesting, excessive node count, oversized documents,
   oversized job/step sets, path traversal, and NUL bytes.
 
 Unsupported YAML is returned as a plan with per-job reasons when structurally
@@ -127,7 +137,7 @@ when every planned job succeeds.
 ## Standalone publication
 
 The public `gha-indie-worker/gha-indie-worker.rs` repository is generated from
-this directory by the reviewed publication workflow. The GitHub App connected to
-this session can read that organization but currently cannot create a branch
-there, so canonical changes must merge here first and then be republished by an
-installation with Contents write access on the target organization.
+this directory by the reviewed publication workflow. Canonical deployment changes
+must merge here first and are then republished by an installation with Contents
+write access on the target organization. Standalone-only compatibility extensions
+remain explicitly blob-pinned until they are absorbed here and republished.
