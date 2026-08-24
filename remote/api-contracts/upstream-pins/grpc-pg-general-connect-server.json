@@ -16,7 +16,7 @@
       "role": "shared-definitions",
       "path": "remote/libs",
       "repository": "ORESoftware/k8s-libs-and-shared-defs",
-      "commit": "91b5db8f239907abc79eedb89999d2c78c816421"
+      "commit": "57727a9eec1688c8d1b25de883c3a134f7485fd2"
     }
   ]
 }

@@ -9,7 +9,7 @@ inert, exact-commit pilot and cannot start a Pod as committed.
 
 | Boundary | Reviewed change | Immutable pin |
 | --- | --- | --- |
-| Shared SQL, JSON Schema, and generated ORM bindings | `ORESoftware/k8s-libs-and-shared-defs#49` | `91b5db8f239907abc79eedb89999d2c78c816421` |
+| Shared SQL, JSON Schema, and generated ORM bindings | `ORESoftware/k8s-libs-and-shared-defs#49` | `57727a9eec1688c8d1b25de883c3a134f7485fd2` |
 | gRPC reconciliation server | `ORESoftware/grpc-pg-general-connect-server#5` | `37ac95d7be22729bac4a46be99b56a8517abea44` |
 | Fleet composition | this change | both pins above |
 
@@ -42,6 +42,10 @@ inert, exact-commit pilot and cannot start a Pod as committed.
     lost private-repository authentication after checkout. They now resolve the
     exact `remote/libs` gitlink through the narrow deploy-key action, while the
     existing wal-gateway provenance records advance to the same immutable pin.
+11. The generated SeaORM crate compiled but was not stable under a downstream
+    `cargo fmt --check`, so consumer CI stopped before type-checking. The shared
+    generator now emits rustfmt-stable module structure, tests that shape, and
+    format-checks SeaORM while compiling all three generated Rust adapters.
 
 ## Consistency and formal-method boundary
 

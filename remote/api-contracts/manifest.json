@@ -130,7 +130,7 @@
         {
           "repository": "ORESoftware/k8s-libs-and-shared-defs",
           "source": "runtime-config-client-rs/generated/openapi.json",
-          "commit": "91b5db8f239907abc79eedb89999d2c78c816421",
+          "commit": "57727a9eec1688c8d1b25de883c3a134f7485fd2",
           "sha256": "5d330aa1a33ba118a5770af6409dcbad8dc408bb0cccaae4e6d257c337028d46",
           "vendored": "remote/api-contracts/fragments/runtime-config-client-rs.openapi.json"
         }
@@ -179,7 +179,7 @@
         {
           "repository": "ORESoftware/k8s-libs-and-shared-defs",
           "source": "runtime-config-client-rs/generated/openapi.json",
-          "commit": "91b5db8f239907abc79eedb89999d2c78c816421",
+          "commit": "57727a9eec1688c8d1b25de883c3a134f7485fd2",
           "sha256": "5d330aa1a33ba118a5770af6409dcbad8dc408bb0cccaae4e6d257c337028d46",
           "vendored": "remote/api-contracts/fragments/runtime-config-client-rs.openapi.json"
         }

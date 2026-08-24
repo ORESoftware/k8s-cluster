@@ -88,7 +88,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected='91b5db8f239907abc79eedb89999d2c78c816421'
+          expected='57727a9eec1688c8d1b25de883c3a134f7485fd2'
           actual="$(git ls-files --stage remote/libs | awk '{print $2}')"
           mode="$(git ls-files --stage remote/libs | awk '{print $1}')"
           test "$mode" = '160000'
@@ -103,7 +103,7 @@ jobs:
 
           manifest = json.loads(Path('remote/api-contracts/manifest.json').read_text())
           shared = manifest['services']['wal-gateway-rs']['sharedContracts'][0]
-          assert shared['commit'] == '91b5db8f239907abc79eedb89999d2c78c816421'
+          assert shared['commit'] == '57727a9eec1688c8d1b25de883c3a134f7485fd2'
           assert shared['sha256'] == '5d330aa1a33ba118a5770af6409dcbad8dc408bb0cccaae4e6d257c337028d46'
           assert shared['vendored'] == 'remote/api-contracts/fragments/runtime-config-client-rs.openapi.json'
           PY
@@ -239,6 +239,6 @@ jobs:
           git diff --check
           git diff --cached --quiet
           test "$(git ls-files --stage remote/libs | awk '{print $1}')" = '160000'
-          test "$(git ls-files --stage remote/libs | awk '{print $2}')" = '91b5db8f239907abc79eedb89999d2c78c816421'
+          test "$(git ls-files --stage remote/libs | awk '{print $2}')" = '57727a9eec1688c8d1b25de883c3a134f7485fd2'
           git diff --quiet -- . ':(exclude)remote/libs'
           test -z "$(git status --short --untracked-files=no -- . ':(exclude)remote/libs')"
