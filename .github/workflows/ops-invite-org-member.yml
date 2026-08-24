@@ -69,6 +69,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      issues: write
     runs-on: ubuntu-24.04
     timeout-minutes: 55
     env:
@@ -111,6 +112,7 @@ jobs:
 
       - name: Invite the user to every owned organization where membership is missing
         id: invite
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -143,3 +145,48 @@ jobs:
           path: ${{ runner.temp }}/org-member-invitation.md
           if-no-files-found: error
           retention-days: 14
+
+      - name: Report the sanitized result on the implementation pull request
+        if: ${{ always() }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INVITE_OUTCOME: ${{ steps.invite.outcome }}
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/org-member-invitation.md"
+          body="$RUNNER_TEMP/org-member-invitation-comment.md"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          if [[ "$INVITE_OUTCOME" == success ]] &&
+             [[ -s "$report" ]] &&
+             grep -Fq '<!-- org-member-invitation-report-complete -->' "$report"; then
+            cp "$report" "$body"
+            {
+              echo
+              echo "Trusted-main workflow run: ${run_url}"
+            } >> "$body"
+          else
+            {
+              echo '# Organization membership invitation run did not complete'
+              echo
+              echo "Target user: \`${TARGET_USERNAME}\`"
+              echo
+              echo "Step outcome: \`${INVITE_OUTCOME:-not-started}\`"
+              echo
+              echo "Trusted-main workflow run: ${run_url}"
+              echo
+              echo 'No credential values or raw error logs are included in this comment.'
+            } > "$body"
+          fi
+
+          gh issue comment 1411 --repo "$GITHUB_REPOSITORY" --body-file "$body"
+
+      - name: Enforce invitation success after reporting
+        if: ${{ always() }}
+        shell: bash
+        env:
+          INVITE_OUTCOME: ${{ steps.invite.outcome }}
+        run: |
+          set -euo pipefail
+          test "$INVITE_OUTCOME" = success
