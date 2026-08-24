@@ -593,6 +593,9 @@ fn parse_inline_value(raw: &str, line: usize) -> Result<Value, YamlError> {
     if raw.is_empty() {
         return Ok(Value::Null);
     }
+    if !matches!(raw.chars().next(), Some('[' | '{' | '"' | '\'')) {
+        return parse_plain_scalar(raw, line);
+    }
     let mut parser = FlowParser {
         input: raw,
         position: 0,
@@ -1024,11 +1027,13 @@ value: ${{ fromJSON(inputs.matrix) }}
 url: https://github.com/actions/checkout
 hash: abc#def
 commented: value # ignored
+components: rustfmt, clippy
 "#;
         let parsed = parse_yaml(yaml).unwrap_or_else(|error| panic!("parse failed: {error}"));
         assert_eq!(parsed["value"], json!("${{ fromJSON(inputs.matrix) }}"));
         assert_eq!(parsed["url"], json!("https://github.com/actions/checkout"));
         assert_eq!(parsed["hash"], json!("abc#def"));
         assert_eq!(parsed["commented"], json!("value"));
+        assert_eq!(parsed["components"], json!("rustfmt, clippy"));
     }
 }

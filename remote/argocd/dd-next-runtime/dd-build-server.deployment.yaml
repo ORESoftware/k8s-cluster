@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-08-24-gha-workflow-admission-9a228f2b'
+        dd.dev/telemetry-revision: '2026-08-24-gha-workflow-admission-297fc973'
       labels:
         app: dd-build-server
         dd.dev/fiducia-client: 'true'
@@ -126,7 +126,7 @@ spec:
             - name: BUILD_SERVER_GIT_URL
               value: https://github.com/ORESoftware/k8s-cluster.git
             - name: BUILD_SERVER_GIT_REVISION
-              value: 9a228f2b2dfaa0479bf72152b7cc8216687ea232
+              value: 297fc97371d6a23a250348de86a748d984d484fd
             - name: BUILD_SERVER_DEPLOY_ENABLED
               value: 'true'
             - name: BUILD_SERVER_PUSH_ENABLED
