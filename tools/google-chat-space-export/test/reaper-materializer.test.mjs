@@ -8,6 +8,7 @@ import {
   redactSensitiveText,
   safeIssueTitle,
 } from '../reaper-materializer.mjs';
+import { createGitHubClient } from '../reaper-github.mjs';
 
 function candidate(overrides = {}) {
   return {
@@ -188,6 +189,31 @@ test('request helper retries 429 responses and respects a bounded attempt count'
   );
   assert.deepEqual(output, { ok: true });
   assert.equal(calls, 2);
+});
+
+test('GitHub 422 search scopes remain explicit evidence gaps instead of aborting', async () => {
+  const client = createGitHubClient({
+    token: 'test-token',
+    allowedOwners: ['ORESoftware'],
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({
+          message: 'Validation Failed',
+          errors: [{ resource: 'Search', field: 'q', code: 'invalid' }],
+        }),
+        { status: 422, headers: { 'content-type': 'application/json' } },
+      ),
+  });
+  const evidence = await client.findEvidence({
+    issueIdentifiers: ['DEN-4047'],
+    candidate: {
+      githubReferences: {
+        repositories: ['ORESoftware/inaccessible-repository'],
+        organizations: ['ORESoftware'],
+      },
+    },
+  });
+  assert.deepEqual(evidence, { pullRequests: [], defaultBranchCommits: [] });
 });
 
 test('title sanitizer bounds and redacts issue titles', () => {

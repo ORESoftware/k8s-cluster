@@ -47,6 +47,15 @@ export function createGitHubClient({ token, allowedOwners, fetchImpl } = {}) {
     }, { fetchImpl });
   }
 
+  async function githubSearch(pathname, extra = {}) {
+    try {
+      return await github(pathname, extra);
+    } catch (error) {
+      if (error?.status === 422) return { items: [] };
+      throw error;
+    }
+  }
+
   async function searchPullRequests(issueIdentifiers, candidate) {
     const owners = ownersForCandidate(candidate, allowedOwners);
     const repositories = uniqueSorted(candidate.githubReferences?.repositories || [])
@@ -58,7 +67,9 @@ export function createGitHubClient({ token, allowedOwners, fetchImpl } = {}) {
     for (const identifier of issueIdentifiers) {
       for (const scope of scopes.length ? scopes : ['']) {
         const query = [`"${identifier}"`, 'is:pr', 'in:title,body', scope].filter(Boolean).join(' ');
-        const result = await github(`/search/issues?q=${encodeURIComponent(query)}&per_page=20&sort=updated&order=desc`);
+        const result = await githubSearch(
+          `/search/issues?q=${encodeURIComponent(query)}&per_page=20&sort=updated&order=desc`,
+        );
         for (const item of result.items || []) {
           const repository = parseRepoFromApiUrl(item.repository_url);
           if (!repository || !owners.has(repository.split('/')[0])) continue;
@@ -88,7 +99,7 @@ export function createGitHubClient({ token, allowedOwners, fetchImpl } = {}) {
     for (const identifier of issueIdentifiers) {
       for (const repository of repositories) {
         const query = `"${identifier}" repo:${repository}`;
-        const result = await github(
+        const result = await githubSearch(
           `/search/commits?q=${encodeURIComponent(query)}&per_page=10&sort=committer-date&order=desc`,
           { headers: { accept: 'application/vnd.github+json' } },
         );

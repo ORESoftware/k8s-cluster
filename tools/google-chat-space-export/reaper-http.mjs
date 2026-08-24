@@ -34,7 +34,11 @@ export async function fetchJsonWithRetry(url, options = {}, runtime = {}) {
       const exhaustedRateLimit = response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0';
       const retryable = response.status === 429 || response.status >= 500 || exhaustedRateLimit;
       if (!retryable || attempt === attempts - 1) {
-        throw new Error(`HTTP ${response.status} from ${new URL(url).host}: ${body.slice(0, 300)}`);
+        const error = new Error(
+          `HTTP ${response.status} from ${new URL(url).host}: ${body.slice(0, 300)}`,
+        );
+        error.status = response.status;
+        throw error;
       }
       await sleepImpl(retryAfterMilliseconds(response, attempt));
     } catch (error) {
