@@ -33,12 +33,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+          persist-credentials: false
+          submodules: false
 
       - name: Initialize required contract submodule
-        env:
-          SUBMODULE_AUTH_MODE: ssh
-        run: bash scripts/ci/init-submodules-with-report.sh remote/libs
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
@@ -187,12 +188,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+          persist-credentials: false
+          submodules: false
 
       - name: Initialize pinned shared libraries
-        env:
-          SUBMODULE_AUTH_MODE: ssh
-        run: bash scripts/ci/init-submodules-with-report.sh remote/libs
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
       - name: Initialize pinned backend repositories with owner-scoped installation tokens
         id: backend-submodules

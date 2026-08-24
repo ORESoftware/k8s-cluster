@@ -38,6 +38,10 @@ inert, exact-commit pilot and cannot start a Pod as committed.
 9. A numeric PostgreSQL CHECK-enum (`shared_auth.sessions.auth_level`) retained
    its required SQLx `i16` type but used a string-only validation API. Numeric
    enums now compare typed constants, and the generated Rust crate compiles.
+10. Three fleet consumers used stale hard-coded shared-definition commits or
+    lost private-repository authentication after checkout. They now resolve the
+    exact `remote/libs` gitlink through the narrow deploy-key action, while the
+    existing wal-gateway provenance records advance to the same immutable pin.
 
 ## Consistency and formal-method boundary
 
