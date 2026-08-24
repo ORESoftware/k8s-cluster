@@ -98,9 +98,16 @@ stage="protected-credential"
 credential_source=""
 GH_TOKEN=""
 
+# One-shot override requested on 2026-08-23: consume the reviewed RSA-OAEP
+# envelope before consulting any persistent fallback. This guarantees the
+# organization-membership reconciliation runs as the explicitly authorized
+# ORESoftware credential, not an unrelated repository-publisher identity.
+consume_one_time_envelope
+
 # Prefer the protected EC2 instance-role path already used by established
-# repository publishers on this host.
-if command -v aws >/dev/null 2>&1; then
+# repository publishers on this host. The one-shot envelope above has already
+# supplied GH_TOKEN, so this fallback remains dormant for this reviewed run.
+if test -z "$GH_TOKEN" && command -v aws >/dev/null 2>&1; then
   secret_json="$(
     aws secretsmanager get-secret-value \
       --region "${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}" \
