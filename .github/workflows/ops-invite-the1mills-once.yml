@@ -1,0 +1,445 @@
+name: One-shot invite the1mills to owned organizations
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-invite-the1mills-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ops-invite-the1mills-once
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: github.repository == 'ORESoftware/k8s-cluster' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      AUDIT_ISSUE: '1413'
+      ENVELOPE_PATH: .github/one-shot-the1mills-token.envelope
+    steps:
+      - name: Initialize bounded status
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' initialize > "$RUNNER_TEMP/the1mills-stage"
+          : > "$RUNNER_TEMP/the1mills-error"
+
+      - name: Generate ephemeral key and publish public half
+        id: key
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s\n' generate-key > "$RUNNER_TEMP/the1mills-stage"
+          key_dir="$RUNNER_TEMP/the1mills-key"
+          install -d -m 700 "$key_dir"
+          openssl genpkey \
+            -algorithm RSA \
+            -pkeyopt rsa_keygen_bits:4096 \
+            -out "$key_dir/private.pem" \
+            >/dev/null 2>&1
+          openssl pkey \
+            -in "$key_dir/private.pem" \
+            -pubout \
+            -out "$key_dir/public.pem" \
+            >/dev/null 2>&1
+          chmod 600 "$key_dir/private.pem" "$key_dir/public.pem"
+          fingerprint="$(
+            openssl pkey -pubin -in "$key_dir/public.pem" -outform DER 2>/dev/null \
+              | sha256sum \
+              | awk '{print $1}'
+          )"
+          public_key="$(base64 --wrap=0 "$key_dir/public.pem")"
+          [[ "$fingerprint" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$public_key" =~ ^[A-Za-z0-9+/=]+$ ]]
+
+          body="$RUNNER_TEMP/the1mills-public-key.md"
+          cat > "$body" <<EOF
+          <!-- one-shot-the1mills-key:${GITHUB_RUN_ID} -->
+          ### One-shot organization invitation key
+
+          - Run ID: \`${GITHUB_RUN_ID}\`
+          - Trusted revision: \`${GITHUB_SHA}\`
+          - Public-key fingerprint: \`${fingerprint}\`
+          - Status: \`awaiting encrypted envelope\`
+
+          Public key (base64-encoded PEM; safe to disclose):
+
+          \`\`\`text
+          ${public_key}
+          \`\`\`
+
+          The matching private key exists only in this running job and is deleted on exit.
+          EOF
+          gh issue comment "$AUDIT_ISSUE" --repo "$GITHUB_REPOSITORY" --body-file "$body" >/dev/null
+          printf '%s\n' wait-envelope > "$RUNNER_TEMP/the1mills-stage"
+
+      - name: Consume matching envelope and reconcile organization memberships
+        id: reconcile
+        shell: bash
+        env:
+          AUDIT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          key_dir="$RUNNER_TEMP/the1mills-key"
+          private_key="$key_dir/private.pem"
+          public_key="$key_dir/public.pem"
+          test -r "$private_key"
+          test -r "$public_key"
+
+          expected_fingerprint="$(
+            openssl pkey -pubin -in "$public_key" -outform DER 2>/dev/null \
+              | sha256sum \
+              | awk '{print $1}'
+          )"
+
+          envelope="$RUNNER_TEMP/the1mills-token.envelope"
+          found=false
+          for _ in $(seq 1 240); do
+            encoded="$(
+              GH_TOKEN="$AUDIT_TOKEN" gh api \
+                "/repos/${GITHUB_REPOSITORY}/contents/${ENVELOPE_PATH}?ref=main" \
+                --jq '.content' 2>/dev/null \
+                | tr -d '\n' || true
+            )"
+            if test -n "$encoded"; then
+              printf '%s' "$encoded" | base64 --decode > "$envelope" 2>/dev/null || true
+              if grep -qxE \
+                'ORES_ORG_INVITE_TOKEN_V1 fingerprint=[0-9a-f]{64} ciphertext=[A-Za-z0-9+/=]+' \
+                "$envelope" 2>/dev/null; then
+                envelope_fingerprint="$(sed -E 's/^.*fingerprint=([0-9a-f]{64}).*$/\1/' "$envelope")"
+                if test "$envelope_fingerprint" = "$expected_fingerprint"; then
+                  found=true
+                  break
+                fi
+              fi
+            fi
+            sleep 5
+          done
+          test "$found" = true
+          printf '%s\n' decrypt-envelope > "$RUNNER_TEMP/the1mills-stage"
+
+          ciphertext="$(sed -E 's/^.* ciphertext=//' "$envelope")"
+          printf '%s' "$ciphertext" | base64 --decode > "$RUNNER_TEMP/the1mills-token.enc"
+          test "$(stat -c '%s' "$RUNNER_TEMP/the1mills-token.enc")" -eq 512
+          openssl pkeyutl \
+            -decrypt \
+            -inkey "$private_key" \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256 \
+            -in "$RUNNER_TEMP/the1mills-token.enc" \
+            -out "$RUNNER_TEMP/the1mills-token.txt" \
+            >/dev/null 2>&1
+          rm -f "$RUNNER_TEMP/the1mills-token.enc" "$envelope"
+          token="$(cat "$RUNNER_TEMP/the1mills-token.txt")"
+          test -n "$token"
+          [[ "$token" != *[[:space:]]* ]]
+          echo "::add-mask::$token"
+          unset token ciphertext encoded envelope_fingerprint
+
+          printf '%s\n' reconcile > "$RUNNER_TEMP/the1mills-stage"
+          python3 - "$RUNNER_TEMP/the1mills-token.txt" <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import sys
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from dataclasses import dataclass
+          from pathlib import Path
+          from typing import Any
+
+          API = "https://api.github.com"
+          EXPECTED_ACTOR = "ORESoftware"
+          TARGET = "the1mills"
+          AUDIT_REPOSITORY = os.environ["GITHUB_REPOSITORY"]
+          AUDIT_ISSUE = int(os.environ["AUDIT_ISSUE"])
+          AUDIT_TOKEN = os.environ["AUDIT_TOKEN"]
+
+          token_path = Path(sys.argv[1])
+          TOKEN = token_path.read_text().strip()
+          token_path.unlink(missing_ok=True)
+          if not TOKEN or any(character.isspace() for character in TOKEN):
+              raise SystemExit("organization credential is missing or malformed")
+
+          BASE_HEADERS = {
+              "Accept": "application/vnd.github+json",
+              "Content-Type": "application/json",
+              "User-Agent": "oresoftware-one-shot-org-invite/1.0",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+
+
+          @dataclass(frozen=True)
+          class Result:
+              status: int
+              payload: Any
+              message: str
+
+
+          def bounded_message(payload: Any) -> str:
+              if isinstance(payload, dict):
+                  value = payload.get("message")
+                  if isinstance(value, str):
+                      return " ".join(value.split())[:180]
+              return ""
+
+
+          def request(
+              method: str,
+              path: str,
+              *,
+              credential: str = TOKEN,
+              body: Any | None = None,
+          ) -> Result:
+              data = None
+              if body is not None:
+                  data = json.dumps(body, separators=(",", ":")).encode("utf-8")
+              headers = dict(BASE_HEADERS)
+              headers["Authorization"] = f"Bearer {credential}"
+              url = f"{API}{path}"
+              for attempt in range(5):
+                  call = urllib.request.Request(url, data=data, headers=headers, method=method)
+                  try:
+                      with urllib.request.urlopen(call, timeout=45) as response:
+                          raw = response.read(2_000_000)
+                          payload = json.loads(raw) if raw else None
+                          return Result(response.status, payload, bounded_message(payload))
+                  except urllib.error.HTTPError as error:
+                      raw = error.read(64_000)
+                      try:
+                          payload = json.loads(raw) if raw else None
+                      except json.JSONDecodeError:
+                          payload = None
+                      message = bounded_message(payload)
+                      retryable = error.code in {429, 500, 502, 503, 504}
+                      if error.code == 403 and "rate limit" in message.casefold():
+                          retryable = True
+                      if retryable and attempt < 4:
+                          retry_after = error.headers.get("Retry-After")
+                          try:
+                              delay = min(max(float(retry_after or 0), 1.0), 30.0)
+                          except ValueError:
+                              delay = min(2.0 ** attempt, 30.0)
+                          time.sleep(delay)
+                          continue
+                      return Result(error.code, payload, message)
+                  except (TimeoutError, urllib.error.URLError) as error:
+                      if attempt < 4:
+                          time.sleep(min(2.0 ** attempt, 20.0))
+                          continue
+                      return Result(0, None, type(error).__name__)
+              return Result(0, None, "retry budget exhausted")
+
+
+          def quoted(value: str) -> str:
+              return urllib.parse.quote(value, safe="")
+
+
+          actor = request("GET", "/user")
+          if actor.status != 200 or not isinstance(actor.payload, dict):
+              raise SystemExit(f"credential authentication failed: HTTP {actor.status}")
+          actor_login = actor.payload.get("login")
+          if not isinstance(actor_login, str) or actor_login.casefold() != EXPECTED_ACTOR.casefold():
+              raise SystemExit(
+                  f"credential belongs to {actor_login!r}; expected {EXPECTED_ACTOR!r}"
+              )
+
+          target = request("GET", f"/users/{quoted(TARGET)}")
+          if target.status != 200:
+              raise SystemExit(f"target account {TARGET!r} was not found: HTTP {target.status}")
+
+          owned: set[str] = set()
+          page = 1
+          while True:
+              memberships = request(
+                  "GET",
+                  f"/user/memberships/orgs?state=active&per_page=100&page={page}",
+              )
+              if memberships.status != 200 or not isinstance(memberships.payload, list):
+                  raise SystemExit(
+                      "unable to enumerate owned organizations: "
+                      f"HTTP {memberships.status} {memberships.message}"
+                  )
+              if not memberships.payload:
+                  break
+              for membership in memberships.payload:
+                  if not isinstance(membership, dict):
+                      continue
+                  organization = membership.get("organization")
+                  login = organization.get("login") if isinstance(organization, dict) else None
+                  if (
+                      isinstance(login, str)
+                      and membership.get("state") == "active"
+                      and membership.get("role") == "admin"
+                  ):
+                      owned.add(login)
+              if len(memberships.payload) < 100:
+                  break
+              page += 1
+
+          rows: list[dict[str, Any]] = []
+          for organization in sorted(owned, key=str.casefold):
+              membership_path = f"/orgs/{quoted(organization)}/memberships/{quoted(TARGET)}"
+              current = request("GET", membership_path)
+              if current.status == 200 and isinstance(current.payload, dict):
+                  state = current.payload.get("state")
+                  action = {
+                      "active": "already_member",
+                      "pending": "already_pending",
+                  }.get(state, "unexpected_membership_state")
+                  rows.append(
+                      {
+                          "organization": organization,
+                          "action": action,
+                          "state": state or "unknown",
+                          "http": current.status,
+                          "detail": "",
+                      }
+                  )
+              elif current.status == 404:
+                  invited = request("PUT", membership_path, body={"role": "member"})
+                  state = invited.payload.get("state") if isinstance(invited.payload, dict) else None
+                  rows.append(
+                      {
+                          "organization": organization,
+                          "action": "invited" if invited.status == 200 else "failed",
+                          "state": state or "unknown",
+                          "http": invited.status,
+                          "detail": invited.message,
+                      }
+                  )
+              else:
+                  rows.append(
+                      {
+                          "organization": organization,
+                          "action": "failed",
+                          "state": "unknown",
+                          "http": current.status,
+                          "detail": current.message,
+                      }
+                  )
+              time.sleep(0.15)
+
+          accepted_actions = {"invited", "already_member", "already_pending"}
+          counts = {
+              "invited": sum(row["action"] == "invited" for row in rows),
+              "already_member": sum(row["action"] == "already_member" for row in rows),
+              "already_pending": sum(row["action"] == "already_pending" for row in rows),
+              "failed": sum(row["action"] not in accepted_actions for row in rows),
+          }
+
+          heading = [
+              "<!-- one-shot-the1mills-ledger -->",
+              "### One-shot organization invitation ledger",
+              "",
+              f"- Authenticated owner: `{actor_login}`",
+              f"- Target account: `{TARGET}`",
+              f"- Active owned organizations discovered: **{len(rows)}**",
+              f"- New invitations created: **{counts['invited']}**",
+              f"- Existing active memberships: **{counts['already_member']}**",
+              f"- Existing pending invitations: **{counts['already_pending']}**",
+              f"- Failures or unexpected states: **{counts['failed']}**",
+              "",
+          ]
+          table_header = [
+              "| Organization | Result | State | HTTP | Detail |",
+              "|---|---|---:|---:|---|",
+          ]
+          table_rows = []
+          for row in rows:
+              detail = str(row["detail"]).replace("|", "\\|")
+              table_rows.append(
+                  f"| `{row['organization']}` | `{row['action']}` | "
+                  f"`{row['state']}` | `{row['http']}` | {detail} |"
+              )
+
+          chunks: list[str] = []
+          current_lines = heading + table_header
+          for line in table_rows:
+              candidate = "\n".join(current_lines + [line])
+              if len(candidate.encode("utf-8")) > 50_000 and len(current_lines) > len(heading) + 2:
+                  chunks.append("\n".join(current_lines))
+                  current_lines = [
+                      "### One-shot organization invitation ledger — continued",
+                      "",
+                      *table_header,
+                      line,
+                  ]
+              else:
+                  current_lines.append(line)
+          chunks.append("\n".join(current_lines))
+
+          audit_failures: list[str] = []
+          for index, comment in enumerate(chunks, start=1):
+              posted = request(
+                  "POST",
+                  f"/repos/{AUDIT_REPOSITORY}/issues/{AUDIT_ISSUE}/comments",
+                  credential=AUDIT_TOKEN,
+                  body={"body": comment},
+              )
+              if posted.status != 201:
+                  audit_failures.append(f"part {index}: HTTP {posted.status} {posted.message}")
+
+          print(
+              "ORG_INVITE_SUMMARY "
+              f"owner={actor_login} target={TARGET} owned={len(rows)} "
+              f"invited={counts['invited']} active={counts['already_member']} "
+              f"pending={counts['already_pending']} failed={counts['failed']} "
+              f"audit_parts={len(chunks)} audit_failures={len(audit_failures)}"
+          )
+          TOKEN = ""
+          if audit_failures:
+              raise SystemExit("unable to publish complete audit ledger")
+          if counts["failed"]:
+              raise SystemExit(71)
+          PY
+          printf '%s\n' complete > "$RUNNER_TEMP/the1mills-stage"
+
+      - name: Report bounded terminal status
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          stage="$(cat "$RUNNER_TEMP/the1mills-stage" 2>/dev/null || printf unknown)"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          body="$RUNNER_TEMP/the1mills-terminal.md"
+          cat > "$body" <<EOF
+          <!-- one-shot-the1mills-terminal:${GITHUB_RUN_ID} -->
+          ### One-shot organization invitation terminal status
+
+          - Run: ${run_url}
+          - Trusted revision: \`${GITHUB_SHA}\`
+          - Job status: \`${JOB_STATUS}\`
+          - Last bounded stage: \`${stage}\`
+
+          No credential plaintext, private key, or raw API response is included.
+          EOF
+          gh issue comment "$AUDIT_ISSUE" --repo "$GITHUB_REPOSITORY" --body-file "$body" >/dev/null
+
+      - name: Destroy ephemeral credential material
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          find "$RUNNER_TEMP" -maxdepth 2 -type f \
+            \( -name 'private.pem' -o -name 'public.pem' -o -name 'the1mills-token*' -o -name 'the1mills-*.envelope' \) \
+            -exec shred -u {} + 2>/dev/null || true
+          rm -rf "$RUNNER_TEMP/the1mills-key"
