@@ -1,0 +1,27 @@
+# Catalog entry only. Apply the grpc-pg-contracts AppProject first. Automated
+# sync is deliberately absent: the exact audited source pin still renders a
+# zero-replica Deployment with a non-runnable image digest and no ledger bundle.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-grpc-pg-general-connect-server
+  namespace: argocd
+  annotations:
+    dd.dev/bootstrap-state: inert
+    dd.dev/bootstrap-reason: >-
+      Manual sync and workload activation remain blocked until the upstream PRs
+      merge, a signed image and immutable ledger bundle are pinned, secrets and
+      read-only database roles exist, and bearer transport encryption is proved.
+spec:
+  project: grpc-pg-contracts
+  source:
+    repoURL: git@github.com:ORESoftware/grpc-pg-general-connect-server.git
+    targetRevision: 37ac95d7be22729bac4a46be99b56a8517abea44
+    path: deploy/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ores-dev
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true
+      - PruneLast=true

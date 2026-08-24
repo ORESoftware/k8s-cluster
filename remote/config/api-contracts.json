@@ -82,6 +82,7 @@
     "billing-server-rs": "quaestor-ledger/billing-server.rs",
     "dart-server": "sagitta-stack/dart-server",
     "fiducia-customer.rs": "fiducia-cloud/fiducia-customer.rs",
+    "grpc-pg-general-connect-server": "ORESoftware/grpc-pg-general-connect-server",
     "gleam-lambda-runner": "scintilla-run/gleam-lambda-runner",
     "usacc-rest-api-backend-rs": "usa-acc/rest-api-backend.rs"
   }
