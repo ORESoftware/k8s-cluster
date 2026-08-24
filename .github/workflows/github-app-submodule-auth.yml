@@ -3,8 +3,10 @@ name: GitHub App submodule authentication
 on:
   pull_request:
     paths:
+      - '.gitmodules'
       - '.github/workflows/github-app-submodule-auth.yml'
       - '.github/workflows/repo-checks.yml'
+      - 'config/ci/k8s-submodule-github-app-allowlist.json'
       - 'scripts/ci/init-submodules-with-github-app.sh'
       - 'scripts/ci/init-submodules-with-report.sh'
       - 'scripts/ci/mint-github-app-installation-token.sh'

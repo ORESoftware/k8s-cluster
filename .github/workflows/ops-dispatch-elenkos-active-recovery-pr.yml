@@ -1,0 +1,135 @@
+name: Dispatch pinned Elenkos active recovery publisher
+run-name: Dispatch pinned Elenkos recovery from PR #${{ github.event.pull_request.number }}
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: dispatch-elenkos-active-recovery-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: >-
+      github.actor == 'ORESoftware' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'ops/trigger-elenkos-active-recovery-20260820-v1' &&
+      github.event.pull_request.title == 'ops(DEN-3786): trigger active Elenkos recovery publication'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 125
+    env:
+      PUBLISH_WORKFLOW: ops-bootstrap-elenkos-sonus-ci-20260819.yml
+      EXPECTED_PUBLISHER_BLOB_SHA: 8882a3c6b788efb14ab6f181139dcfdedf1fca3b
+      TRACKING_ISSUE: '1345'
+      MARKER_PATH: docs/ops/triggers/elenkos-active-recovery-publication-2026-08-20.json
+
+    steps:
+      - name: Validate exact one-file trigger and pinned publisher
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIGGER_PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -Eeuo pipefail
+          files="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRIGGER_PR}/files?per_page=100")"
+          test "$(jq 'length' <<<"$files")" = 1
+          test "$(jq -r '.[0].filename' <<<"$files")" = "$MARKER_PATH"
+          test "$(jq -r '.[0].status' <<<"$files")" = added
+
+          encoded="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${MARKER_PATH}?ref=${HEAD_SHA}" --jq .content)"
+          printf '%s' "$encoded" | base64 --decode > "$RUNNER_TEMP/elenkos-trigger.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(Path(os.environ['RUNNER_TEMP'], 'elenkos-trigger.json').read_text())
+          assert payload == {
+              'schema_version': 1,
+              'operation': 'publish-elenkos-active-recovery-fleet',
+              'tracking_issue': 'DEN-3786',
+              'publisher_workflow': 'ops-bootstrap-elenkos-sonus-ci-20260819.yml',
+              'publisher_blob_sha': os.environ['EXPECTED_PUBLISHER_BLOB_SHA'],
+              'repository_count': 22,
+              'production_organization': 'elenkos-systems',
+              'test_organization': 'elenkos-systems-test',
+              'dependency_manager': 'zed-pkg',
+          }
+          PY
+
+          workflow="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/${PUBLISH_WORKFLOW}?ref=main")"
+          test "$(jq -er .name <<<"$workflow")" = "$PUBLISH_WORKFLOW"
+          test "$(jq -er .sha <<<"$workflow")" = "$EXPECTED_PUBLISHER_BLOB_SHA"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/ops/recover_elenkos_partial_bootstrap_20260820.py?ref=main" --jq .name)" = recover_elenkos_partial_bootstrap_20260820.py
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/ops/patch_elenkos_bootstrap_tag_reconcile_20260820.py?ref=main" --jq .name)" = patch_elenkos_bootstrap_tag_reconcile_20260820.py
+          echo "validated pinned active recovery publisher ${EXPECTED_PUBLISHER_BLOB_SHA}"
+
+      - name: Dispatch active publisher and capture exact run
+        id: dispatch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIGGER_PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -Eeuo pipefail
+          before="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$PUBLISH_WORKFLOW" --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+          gh workflow run "$PUBLISH_WORKFLOW" --repo "$GITHUB_REPOSITORY" --ref main
+
+          run_id=''
+          for _ in $(seq 1 60); do
+            candidate="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$PUBLISH_WORKFLOW" --event workflow_dispatch --branch main --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+            if [[ -n "$candidate" && "$candidate" != "$before" ]]; then
+              run_id="$candidate"
+              break
+            fi
+            sleep 2
+          done
+          test -n "$run_id"
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "run_url=$run_url" >> "$GITHUB_OUTPUT"
+          gh pr comment "$TRIGGER_PR" --repo "$GITHUB_REPOSITORY" --body \
+            "Pinned publisher validated and dispatched: ${run_url}" >/dev/null
+          gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" --body \
+            "Fresh exact trigger PR #${TRIGGER_PR} dispatched the active Elenkos recovery publisher: ${run_url}" >/dev/null
+
+      - name: Follow exact publisher run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+        run: |
+          set -Eeuo pipefail
+          gh run watch "$RUN_ID" --repo "$GITHUB_REPOSITORY" --exit-status
+
+      - name: Report exact result
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIGGER_PR: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ steps.dispatch.outputs.run_url }}
+          DISPATCH_OUTCOME: ${{ steps.dispatch.outcome }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+          JOB_RESULT: ${{ job.status }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "$DISPATCH_OUTCOME" = success && -n "$RUN_ID" && "$JOB_RESULT" = success ]]; then
+            body="Active Elenkos recovery publisher completed successfully: ${RUN_URL}"
+          else
+            body="Active Elenkos recovery publisher did not complete successfully. Dispatch=${DISPATCH_OUTCOME}; job=${JOB_RESULT}; run=${RUN_URL:-unavailable}"
+          fi
+          gh pr comment "$TRIGGER_PR" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
+          gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
+          test "$DISPATCH_OUTCOME" = success
+          test -n "$RUN_ID"
+          test "$JOB_RESULT" = success

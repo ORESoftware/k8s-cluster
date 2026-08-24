@@ -162,3 +162,146 @@ jobs:
           test "$DISPATCH_OUTCOME" = success
           test -n "$RUN_ID"
           test "$JOB_RESULT" = success
+
+  dispatch_elenkos_protected_pat:
+    if: >-
+      github.actor == 'ORESoftware' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'ops/trigger-elenkos-protected-pat-20260819-v1' &&
+      github.event.pull_request.title == 'ops(DEN-3786): trigger Elenkos protected-PAT publication'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 125
+    env:
+      PUBLISH_WORKFLOW: ops-bootstrap-elenkos-sonus-ci-20260819.yml
+      TRACKING_ISSUE: '1345'
+      MARKER_PATH: docs/ops/triggers/elenkos-protected-pat-publication-2026-08-19.json
+
+    steps:
+      - name: Validate the exact one-file Elenkos trigger contract
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIGGER_PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          files="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRIGGER_PR}/files?per_page=100")"
+          test "$(jq 'length' <<<"$files")" = 1
+          test "$(jq -r '.[0].filename' <<<"$files")" = "$MARKER_PATH"
+          test "$(jq -r '.[0].status' <<<"$files")" = added
+
+          encoded="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${MARKER_PATH}?ref=${HEAD_SHA}" --jq .content)"
+          printf '%s' "$encoded" | base64 --decode > "$RUNNER_TEMP/elenkos-trigger.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(Path(os.environ['RUNNER_TEMP'], 'elenkos-trigger.json').read_text())
+          assert payload == {
+              'schema_version': 1,
+              'operation': 'publish-elenkos-protected-pat-fleet',
+              'tracking_issue': 'DEN-3786',
+              'publisher_workflow': 'ops-bootstrap-elenkos-sonus-ci-20260819.yml',
+              'repository_count': 22,
+              'production_organization': 'elenkos-systems',
+              'test_organization': 'elenkos-systems-test',
+              'dependency_manager': 'zed-pkg',
+          }
+          PY
+
+          workflow="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/${PUBLISH_WORKFLOW}?ref=main")"
+          test "$(jq -er .name <<<"$workflow")" = "$PUBLISH_WORKFLOW"
+          workflow_text="$(jq -er .content <<<"$workflow" | tr -d '\n' | base64 --decode)"
+          grep -F 'name: Bootstrap Elenkos repositories with protected PAT (one shot)' <<<"$workflow_text" >/dev/null
+          grep -F 'ELENKOS_ADMIN_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}' <<<"$workflow_text" >/dev/null
+          grep -F 'bash scripts/ops/validate_elenkos_fleet_payload_20260819.sh' <<<"$workflow_text" >/dev/null
+          grep -F -- '--execute' <<<"$workflow_text" >/dev/null
+
+      - name: Dispatch the trusted-main Elenkos publisher and capture its run ID
+        id: elenkos_dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIGGER_PR: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          dispatcher_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          before="$(
+            gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow "$PUBLISH_WORKFLOW" \
+              --event workflow_dispatch \
+              --branch main \
+              --limit 1 \
+              --json databaseId \
+              --jq '.[0].databaseId // empty'
+          )"
+
+          gh workflow run "$PUBLISH_WORKFLOW" \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+
+          run_id=''
+          for _ in $(seq 1 60); do
+            candidate="$(
+              gh run list \
+                --repo "$GITHUB_REPOSITORY" \
+                --workflow "$PUBLISH_WORKFLOW" \
+                --event workflow_dispatch \
+                --branch main \
+                --limit 1 \
+                --json databaseId \
+                --jq '.[0].databaseId // empty'
+            )"
+            if [[ -n "$candidate" && "$candidate" != "$before" ]]; then
+              run_id="$candidate"
+              break
+            fi
+            sleep 2
+          done
+          test -n "$run_id"
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "run_url=$run_url" >> "$GITHUB_OUTPUT"
+
+          gh pr comment "$TRIGGER_PR" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "Validated the exact 22-repository Elenkos trigger. Dispatcher: ${dispatcher_url}. Publisher: ${run_url}." \
+            >/dev/null || true
+          gh issue comment "$TRACKING_ISSUE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "Trusted trigger PR #${TRIGGER_PR} dispatched the Elenkos protected-PAT publisher: ${run_url}" \
+            >/dev/null || true
+
+      - name: Follow the exact Elenkos publisher run to completion
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.elenkos_dispatch.outputs.run_id }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          gh run watch "$RUN_ID" --repo "$GITHUB_REPOSITORY" --exit-status
+
+      - name: Report the exact Elenkos publisher result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIGGER_PR: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ steps.elenkos_dispatch.outputs.run_url }}
+          DISPATCH_OUTCOME: ${{ steps.elenkos_dispatch.outcome }}
+          RUN_ID: ${{ steps.elenkos_dispatch.outputs.run_id }}
+          JOB_RESULT: ${{ job.status }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ "$DISPATCH_OUTCOME" = success && -n "$RUN_ID" && "$JOB_RESULT" = success ]]; then
+            body="Elenkos protected-PAT publisher completed successfully: ${RUN_URL}"
+          else
+            body="Elenkos protected-PAT publisher did not complete successfully. Dispatch=${DISPATCH_OUTCOME}; job=${JOB_RESULT}; run=${RUN_URL:-unavailable}"
+          fi
+          gh pr comment "$TRIGGER_PR" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
+          gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
+          test "$DISPATCH_OUTCOME" = success
+          test -n "$RUN_ID"
+          test "$JOB_RESULT" = success

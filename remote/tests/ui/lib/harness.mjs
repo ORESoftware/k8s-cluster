@@ -2,31 +2,34 @@
 //
 // The same feature assertions run under BOTH engines (Playwright's bundled
 // chromium and Puppeteer) so a regression that only one engine surfaces still
-// fails CI. Targets are live public URLs and are env-overridable:
-//   ATHLETO_MARKETING_URL  default https://athleto.store        (GitHub Pages via Cloudflare)
-//   ATHLETO_APP_URL        default https://app.athleto.store    (storefront pod behind the ingress)
-// Set either to a preview/staging origin to point the whole suite elsewhere.
+// fails CI. Production targets are fixed by the workflow. Local preview hosts
+// must be public HTTPS origins explicitly listed in ATHLETO_UI_ALLOWED_ORIGINS.
 
 import { chromium } from "playwright";
 import puppeteer from "puppeteer";
 
-const stripTrailingSlash = (value) => value.replace(/\/+$/, "");
+import { normalizeLiveTarget } from "./live-targets.mjs";
 
-export const MARKETING_URL = stripTrailingSlash(
+export const MARKETING_URL = normalizeLiveTarget(
+  "ATHLETO_MARKETING_URL",
   process.env.ATHLETO_MARKETING_URL ?? "https://athleto.store",
 );
-export const APP_URL = stripTrailingSlash(
+export const APP_URL = normalizeLiveTarget(
+  "ATHLETO_APP_URL",
   process.env.ATHLETO_APP_URL ?? "https://app.athleto.store",
 );
 
 // Live sites sit behind Cloudflare / an in-pod-built pod; give navigation room.
 export const NAV_TIMEOUT = Number(process.env.ATHLETO_UI_NAV_TIMEOUT_MS ?? 60_000);
 
+if (!Number.isFinite(NAV_TIMEOUT) || NAV_TIMEOUT < 1_000 || NAV_TIMEOUT > 120_000) {
+  throw new TypeError('ATHLETO_UI_NAV_TIMEOUT_MS must be between 1000 and 120000');
+}
+
 const LAUNCH_ARGS = [
   "--no-sandbox",
   "--disable-setuid-sandbox",
   "--disable-dev-shm-usage",
-  "--ignore-certificate-errors",
 ];
 
 /** Launch Playwright's bundled chromium. */
@@ -36,7 +39,7 @@ export async function launchPlaywright() {
     engine: "playwright",
     browser,
     async newPage() {
-      const context = await browser.newContext({ ignoreHTTPSErrors: true });
+      const context = await browser.newContext();
       const page = await context.newPage();
       page.setDefaultTimeout(NAV_TIMEOUT);
       return { page, context };
