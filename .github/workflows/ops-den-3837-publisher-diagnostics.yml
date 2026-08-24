@@ -1,0 +1,46 @@
+name: Diagnose DEN-3837 publisher run
+run-name: Diagnose publisher for 65e7813adb45a2e66e954a5e66b3ecc8ec9bb3ff
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-den-3837-publisher-diagnostics.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: List workflow runs and jobs for the publisher merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: 65e7813adb45a2e66e954a5e66b3ecc8ec9bb3ff
+        shell: bash
+        run: |
+          set -euo pipefail
+          runs="$RUNNER_TEMP/runs.json"
+          gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${TARGET_SHA}&per_page=100" \
+            | jq -s '{workflow_runs: [.[].workflow_runs[]]}' > "$runs"
+
+          echo '### Workflow runs'
+          jq -r '.workflow_runs[] | [.id, .name, .event, .status, (.conclusion // "pending"), .workflow_id, .html_url] | @tsv' "$runs"
+
+          mapfile -t run_ids < <(jq -r '.workflow_runs[].id' "$runs")
+          if [[ "${#run_ids[@]}" -eq 0 ]]; then
+            echo "No runs found for ${TARGET_SHA}" >&2
+            exit 1
+          fi
+
+          for run_id in "${run_ids[@]}"; do
+            echo
+            echo "### Jobs for run ${run_id}"
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100" \
+              --jq '.jobs[] | [.id, .name, .status, (.conclusion // "pending"), .html_url] | @tsv'
+          done
