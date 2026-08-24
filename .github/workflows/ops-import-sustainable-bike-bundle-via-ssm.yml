@@ -15,6 +15,7 @@ on:
 permissions:
   contents: read
   id-token: write
+  issues: write
 
 concurrency:
   group: den-3843-import-sustainable-bike-bundle-via-ssm
@@ -31,20 +32,23 @@ jobs:
           set -euo pipefail
           test '${{ github.repository }}' = 'ORESoftware/k8s-cluster'
           test '${{ github.event_name }}' = 'pull_request' || test '${{ github.ref }}' = 'refs/heads/main'
-          printf 'target=%s bundle_sha256=%s bundle_size=%s tracking=%s policy=%s\n' \
+          printf 'target=%s bundle_sha256=%s bundle_size=%s tracking=%s policy=%s payload=%s\n' \
             'ORESoftware/sustainable-bike' \
             'ba05db2234aa7fb51d3784d3b725cca757b5d2a4b3399b4b60f8fc62982ab756' \
             '240001' \
             'DEN-3843' \
-            'merge-only-no-force-no-rebase'
+            'merge-only-no-force-no-rebase' \
+            'Slack F0BS1HMNBNH'
 
   import:
     if: github.event_name != 'pull_request'
     needs: validate
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Configure trusted-main AWS OIDC credentials
+        id: aws
+        continue-on-error: true
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
@@ -55,6 +59,8 @@ jobs:
 
       - name: Import, merge, and verify on the protected administration host
         id: import
+        if: steps.aws.outcome == 'success'
+        continue-on-error: true
         shell: bash
         env:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
@@ -69,7 +75,9 @@ jobs:
           umask 077
 
           readonly TARGET_REPOSITORY='ORESoftware/sustainable-bike'
-          readonly SLACK_DOWNLOAD_URL='https://files.slack.com/files-pri/T01B3C83PMK-F0BS5AHMRBL/download/sustainable-bike-v0.2.0-complete.bundle'
+          readonly SLACK_FILE_ID='F0BS1HMNBNH'
+          readonly SLACK_CHANNEL_ID='C0BKP2N3LG7'
+          readonly SLACK_DOWNLOAD_URL='https://files.slack.com/files-pri/T01B3C83PMK-F0BS1HMNBNH/download/sustainable-bike-v0.2.0-complete.bundle'
           readonly EXPECTED_BUNDLE_SHA256='ba05db2234aa7fb51d3784d3b725cca757b5d2a4b3399b4b60f8fc62982ab756'
           readonly EXPECTED_BUNDLE_SIZE='240001'
           readonly BUNDLE_V01_ROOT='83da6ea14b7946b6947e3ba126b094c6f122f42d'
@@ -94,8 +102,14 @@ jobs:
             rm -rf "$work"
             exit "$status"
           }
+          report_failure() {
+            status=$?
+            trap - ERR
+            printf 'IMPORT_FAILED stage=%s status=%s\n' "$stage" "$status" >&2
+            exit "$status"
+          }
           trap cleanup EXIT
-          trap 'status=$?; printf "IMPORT_FAILED stage=%s status=%s\n" "$stage" "$status" >&2; exit "$status"' ERR
+          trap report_failure ERR
 
           command -v kubectl >/dev/null
           command -v gh >/dev/null
@@ -131,14 +145,43 @@ jobs:
 
           stage=download-and-verify-bundle
           bundle="$work/sustainable-bike-v0.2.0.bundle"
-          curl --fail --location --silent --show-error \
+          join_response="$(
+            curl --silent --show-error \
+              --request POST \
+              --header "Authorization: Bearer ${SLACK_TOKEN}" \
+              --header 'Content-Type: application/x-www-form-urlencoded' \
+              --data-urlencode "channel=${SLACK_CHANNEL_ID}" \
+              https://slack.com/api/conversations.join \
+              || true
+          )"
+          if [[ -n "$join_response" ]]; then
+            jq -e '.ok == true or .error == "already_in_channel" or .error == "method_not_supported_for_channel_type" or .error == "missing_scope"' \
+              <<<"$join_response" >/dev/null || true
+          fi
+
+          if ! curl --fail --location --silent --show-error \
             --retry 4 --retry-all-errors --retry-delay 2 \
             --header "Authorization: Bearer ${SLACK_TOKEN}" \
             "$SLACK_DOWNLOAD_URL" \
-            --output "$bundle"
+            --output "$bundle"; then
+            file_info="$(
+              curl --fail --silent --show-error \
+                --header "Authorization: Bearer ${SLACK_TOKEN}" \
+                --get \
+                --data-urlencode "file=${SLACK_FILE_ID}" \
+                https://slack.com/api/files.info
+            )"
+            jq -e '.ok == true and .file.id == "F0BS1HMNBNH"' <<<"$file_info" >/dev/null
+            resolved_url="$(jq -er '.file.url_private_download | select(startswith("https://files.slack.com/"))' <<<"$file_info")"
+            curl --fail --location --silent --show-error \
+              --retry 4 --retry-all-errors --retry-delay 2 \
+              --header "Authorization: Bearer ${SLACK_TOKEN}" \
+              "$resolved_url" \
+              --output "$bundle"
+          fi
           test "$(wc -c < "$bundle" | tr -d ' ')" = "$EXPECTED_BUNDLE_SIZE"
           test "$(sha256sum "$bundle" | awk '{print $1}')" = "$EXPECTED_BUNDLE_SHA256"
-          unset SLACK_TOKEN
+          unset SLACK_TOKEN join_response file_info resolved_url
           printf 'stage=%s status=passed sha256=%s size=%s\n' \
             "$stage" "$EXPECTED_BUNDLE_SHA256" "$EXPECTED_BUNDLE_SIZE"
 
@@ -212,9 +255,7 @@ jobs:
 
           attached=false
           for attempt in 1 2 3; do
-            git -C "$target" fetch -q origin \
-              main \
-              history/bundle-v0.2.0-main
+            git -C "$target" fetch -q origin main history/bundle-v0.2.0-main
             git -C "$target" checkout -q -B main origin/main
             current_tree="$(git -C "$target" rev-parse 'HEAD^{tree}')"
             if git -C "$target" merge-base --is-ancestor "$BUNDLE_V02_MAIN" HEAD; then
@@ -268,7 +309,7 @@ jobs:
           done
           printf 'stage=%s status=passed exact_commits=5 exact_refs=7\n' "$stage"
 
-          stage=record-receipt
+          stage=record-target-receipt
           receipt="$(cat <<EOF
           Complete local Git bundle imported without rebase or force-push.
 
@@ -331,24 +372,49 @@ jobs:
           jq . "$invocation"
           test "$status" = Success
           grep -q 'IMPORT_SUCCESS repository=ORESoftware/sustainable-bike' "$invocation"
-          final_main="$(jq -r '.Stdout | capture("main=(?<sha>[0-9a-f]{40})").sha' "$invocation")"
+          final_main="$(
+            jq -r '.Stdout | capture("IMPORT_SUCCESS repository=ORESoftware/sustainable-bike main=(?<sha>[0-9a-f]{40})").sha' \
+              "$invocation"
+          )"
           [[ "$final_main" =~ ^[0-9a-f]{40}$ ]]
           printf 'main_sha=%s\n' "$final_main" >> "$GITHUB_OUTPUT"
 
-      - name: Summarize exact publication
+      - name: Post durable terminal receipt
+        if: always()
         env:
+          GH_TOKEN: ${{ github.token }}
+          AWS_OUTCOME: ${{ steps.aws.outcome }}
+          IMPORT_OUTCOME: ${{ steps.import.outcome }}
           FINAL_MAIN: ${{ steps.import.outputs.main_sha }}
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$FINAL_MAIN"
-          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          ## Sustainable-bike complete history import
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          body="$(cat <<EOF
+          DEN-3843 complete-bundle importer terminal receipt at \`${GITHUB_SHA}\`:
 
-          - repository: `ORESoftware/sustainable-bike`
-          - final main: `${FINAL_MAIN}`
-          - bundle SHA-256: `ba05db2234aa7fb51d3784d3b725cca757b5d2a4b3399b4b60f8fc62982ab756`
-          - exact historical commits imported: 5
-          - rebase: no
-          - force-push: no
+          - AWS OIDC: **${AWS_OUTCOME}**
+          - protected SSM import: **${IMPORT_OUTCOME}**
+          - target: \`ORESoftware/sustainable-bike\`
+          - target main: \`${FINAL_MAIN:-not-verified}\`
+          - run: ${run_url}
+          - bundle SHA-256: \`ba05db2234aa7fb51d3784d3b725cca757b5d2a4b3399b4b60f8fc62982ab756\`
+
+          No credential value is included in this receipt.
           EOF
+          )"
+          gh api --method POST repos/ORESoftware/k8s-cluster/issues/1417/comments \
+            -f body="$body" >/dev/null
+
+      - name: Assert terminal success
+        if: always()
+        env:
+          AWS_OUTCOME: ${{ steps.aws.outcome }}
+          IMPORT_OUTCOME: ${{ steps.import.outcome }}
+          FINAL_MAIN: ${{ steps.import.outputs.main_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$AWS_OUTCOME" = success
+          test "$IMPORT_OUTCOME" = success
+          [[ "$FINAL_MAIN" =~ ^[0-9a-f]{40}$ ]]
