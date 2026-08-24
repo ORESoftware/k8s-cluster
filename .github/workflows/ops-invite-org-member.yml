@@ -7,6 +7,7 @@ on:
       - '.github/workflows/ops-invite-org-member.yml'
       - 'scripts/ops/invite_org_member_all.py'
       - 'scripts/ops/run_protected_org_member_inviter.sh'
+      - 'scripts/ops/run_ephemeral_org_member_inviter.sh'
       - 'tests/ops/test_invite_org_member_all.py'
       - 'tests/ops/test_run_protected_org_member_inviter.py'
   push:
@@ -190,3 +191,50 @@ jobs:
         run: |
           set -euo pipefail
           test "$INVITE_OUTCOME" = success
+
+  ephemeral-resend:
+    if: github.event_name == 'pull_request' && github.head_ref == 'ops/probe-main-org-invite-run-20260823'
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      ACTIONS_TOKEN: ${{ github.token }}
+      TARGET_USERNAME: the1mills
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Check out the exact ephemeral-broker head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate the ephemeral credential broker before key generation
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+          bash -n scripts/ops/run_ephemeral_org_member_inviter.sh
+          python3 -m py_compile scripts/ops/invite_org_member_all.py
+          ! grep -E 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}' \
+            scripts/ops/run_ephemeral_org_member_inviter.sh \
+            .github/workflows/ops-invite-org-member.yml
+          grep -qF 'rsa_padding_mode:oaep' scripts/ops/run_ephemeral_org_member_inviter.sh
+          grep -qF 'rsa_oaep_md:sha256' scripts/ops/run_ephemeral_org_member_inviter.sh
+          grep -qF 'rsa_mgf1_md:sha256' scripts/ops/run_ephemeral_org_member_inviter.sh
+
+      - name: Exchange an ephemeral encrypted credential and resend expired invitations
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/ops/run_ephemeral_org_member_inviter.sh \
+            "$TARGET_USERNAME" \
+            "$PR_NUMBER" \
+            "$GITHUB_RUN_ID" \
+            "$GITHUB_REPOSITORY" \
+            "$GITHUB_WORKSPACE"
