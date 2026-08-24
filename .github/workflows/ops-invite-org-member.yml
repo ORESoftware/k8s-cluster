@@ -30,7 +30,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ops-org-member-inviter-${{ inputs.username || 'the1mills' }}
+  group: ops-org-member-inviter-${{ github.event_name }}-${{ github.ref }}-${{ inputs.username || 'the1mills' }}
   cancel-in-progress: false
 
 jobs:
