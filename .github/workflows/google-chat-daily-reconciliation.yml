@@ -9,6 +9,15 @@ on:
       - 'tests/ops/test_verify_google_chat_reconciliation_ledger.py'
       - 'docs/audits/google-chat/**'
   workflow_dispatch:
+    inputs:
+      window_since:
+        description: Optional inclusive ISO-8601 lower bound for an exact audit window
+        required: false
+        type: string
+      window_until:
+        description: Optional exclusive ISO-8601 upper bound for an exact audit window
+        required: false
+        type: string
   schedule:
     # GitHub schedules are UTC. Run both candidate UTC hours, then retain only
     # the invocation whose America/Chicago wall clock is exactly 20:00. This
@@ -133,6 +142,9 @@ jobs:
 
       - name: Prepare the exact private rolling window
         shell: bash
+        env:
+          MANUAL_WINDOW_SINCE: ${{ inputs.window_since }}
+          MANUAL_WINDOW_UNTIL: ${{ inputs.window_until }}
         run: |
           set -euo pipefail
           umask 077
@@ -148,10 +160,18 @@ jobs:
             "${reconciliation_root}/private" \
             "${reconciliation_root}/evidence"
 
-          window_until="$(node -e 'process.stdout.write(new Date().toISOString())')"
-          window_since="$(node -e \
+          window_until="${MANUAL_WINDOW_UNTIL:-$(node -e 'process.stdout.write(new Date().toISOString())')}"
+          window_since="${MANUAL_WINDOW_SINCE:-$(node -e \
             'const end = Date.parse(process.argv[1]); process.stdout.write(new Date(end - 15 * 24 * 60 * 60 * 1000).toISOString())' \
-            "${window_until}")"
+            "${window_until}")}"
+
+          node -e '
+            const since = Date.parse(process.argv[1]);
+            const until = Date.parse(process.argv[2]);
+            if (!Number.isFinite(since) || !Number.isFinite(until) || since >= until) {
+              throw new Error("window_since and window_until must be valid ISO-8601 bounds with since < until");
+            }
+          ' "${window_since}" "${window_until}"
           {
             printf 'GOOGLE_CHAT_RECONCILIATION_ROOT=%s\n' "${reconciliation_root}"
             printf 'GOOGLE_CHAT_WINDOW_SINCE=%s\n' "${window_since}"
