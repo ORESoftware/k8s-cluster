@@ -216,6 +216,39 @@ test('GitHub 422 search scopes remain explicit evidence gaps instead of aborting
   assert.deepEqual(evidence, { pullRequests: [], defaultBranchCommits: [] });
 });
 
+test('GitHub 403 search limits remain explicit gaps and stop repeated searches', async () => {
+  let calls = 0;
+  const client = createGitHubClient({
+    token: 'test-token',
+    allowedOwners: ['ORESoftware'],
+    fetchImpl: async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ message: 'API rate limit exceeded' }), {
+        status: 403,
+        headers: { 'content-type': 'application/json' },
+      });
+    },
+  });
+  const request = {
+    issueIdentifiers: ['DEN-4047'],
+    candidate: {
+      githubReferences: {
+        repositories: ['ORESoftware/k8s-cluster'],
+        organizations: ['ORESoftware'],
+      },
+    },
+  };
+  assert.deepEqual(
+    await client.findEvidence(request),
+    { pullRequests: [], defaultBranchCommits: [] },
+  );
+  assert.deepEqual(
+    await client.findEvidence(request),
+    { pullRequests: [], defaultBranchCommits: [] },
+  );
+  assert.equal(calls, 1);
+});
+
 test('title sanitizer bounds and redacts issue titles', () => {
   const title = safeIssueTitle(`Use lin_api_${'A'.repeat(80)} for ${'x'.repeat(200)}`);
   assert.equal(title.length <= 120, true);

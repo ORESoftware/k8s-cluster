@@ -47,10 +47,16 @@ export function createGitHubClient({ token, allowedOwners, fetchImpl } = {}) {
     }, { fetchImpl });
   }
 
+  let searchUnavailable = false;
   async function githubSearch(pathname, extra = {}) {
+    if (searchUnavailable) return { items: [] };
     try {
       return await github(pathname, extra);
     } catch (error) {
+      if (error?.status === 403) {
+        searchUnavailable = true;
+        return { items: [] };
+      }
       if (error?.status === 422) return { items: [] };
       throw error;
     }
@@ -116,11 +122,19 @@ export function createGitHubClient({ token, allowedOwners, fetchImpl } = {}) {
   }
 
   async function findEvidence({ issueIdentifiers, candidate }) {
-    const pullRequests = await searchPullRequests(issueIdentifiers, candidate);
-    const defaultBranchCommits = pullRequests.length
-      ? []
-      : await searchCommits(issueIdentifiers, candidate);
-    return { pullRequests, defaultBranchCommits };
+    try {
+      const pullRequests = await searchPullRequests(issueIdentifiers, candidate);
+      const defaultBranchCommits = pullRequests.length
+        ? []
+        : await searchCommits(issueIdentifiers, candidate);
+      return { pullRequests, defaultBranchCommits };
+    } catch (error) {
+      if (error?.status === 403) {
+        searchUnavailable = true;
+        return { pullRequests: [], defaultBranchCommits: [] };
+      }
+      throw error;
+    }
   }
 
   return { findEvidence };
