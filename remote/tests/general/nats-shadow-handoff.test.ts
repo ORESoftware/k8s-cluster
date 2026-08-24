@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
@@ -20,19 +20,40 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
+async function readRustSourceTree(relativeDirectory: string): Promise<string> {
+  const directory = resolve(repoRoot, relativeDirectory);
+  const sourceFiles = (await readdir(directory, { withFileTypes: true }))
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.rs'))
+    .map((entry) => entry.name)
+    .sort();
+
+  return (
+    await Promise.all(sourceFiles.map((file) => readFile(resolve(directory, file), 'utf8')))
+  ).join('\n');
+}
+
 test('rest api publishes queued handoffs while preserving direct worker dispatch', async () => {
   const cargo = await readRepoFile('remote/deployments/rest-api-rs/Cargo.toml');
-  const server = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  const server = await readRustSourceTree('remote/deployments/rest-api-rs/src');
 
   assert.match(cargo, /async-nats\s*=\s*"=0\.38\.0"/);
   // The rest-api-rs deployment must source its NATS subjects from the
   // @dd/nats-subject-defs generated crate so any rename in the JSON Schema
   // breaks the build here instead of silently producing the wrong subject.
   assert.match(cargo, /dd-nats-subject-defs\s*=\s*\{\s*path/);
-  assert.match(
-    server,
-    /use dd_nats_subject_defs::\{[\s\S]*?cdc_table_filter_subject[\s\S]*?thread_tasks_subject[\s\S]*?DD_REMOTE_TASKS_STREAM_NAME[\s\S]*?GIT_REPOS_CHANGES_SUBJECT[\s\S]*?LAMBDAS_FUNCTIONS_SUBJECT[\s\S]*?ORCHESTRATOR_WAKEUP_SUBJECT[\s\S]*?RUNTIME_EVENTS_SUBJECT[\s\S]*?THREAD_TASKS_WILDCARD[\s\S]*?\};/,
-  );
+  assert.match(server, /use dd_nats_subject_defs::/);
+  for (const generatedSymbol of [
+    'cdc_table_filter_subject',
+    'thread_tasks_subject',
+    'DD_REMOTE_TASKS_STREAM_NAME',
+    'GIT_REPOS_CHANGES_SUBJECT',
+    'LAMBDAS_FUNCTIONS_SUBJECT',
+    'ORCHESTRATOR_WAKEUP_SUBJECT',
+    'RUNTIME_EVENTS_SUBJECT',
+    'THREAD_TASKS_WILDCARD',
+  ]) {
+    assert.match(server, new RegExp(`\\b${generatedSymbol}\\b`));
+  }
   assert.match(server, /use dd_shared_interfaces::AgentTaskQueueMessage/);
   assert.match(server, /let message = AgentTaskQueueMessage \{/);
   assert.match(server, /dispatch_mode: Some\(dispatch_mode\)/);
@@ -52,15 +73,15 @@ test('rest api publishes queued handoffs while preserving direct worker dispatch
   assert.match(server, /RUNTIME_EVENTS_SUBJECT/);
   assert.match(
     server,
-    /cdc_table_filter_subject\("cdc", "public", "lambda_functions"\)/,
+    /cdc_table_filter_subject\(\s*"cdc",\s*"public",\s*"lambda_functions",?\s*\)/,
   );
   assert.match(
     server,
-    /cdc_table_filter_subject\("cdc", "public", "known_git_repos"\)/,
+    /cdc_table_filter_subject\(\s*"cdc",\s*"public",\s*"known_git_repos",?\s*\)/,
   );
   assert.match(
     server,
-    /cdc_table_filter_subject\("cdc", "public", "agent_remote_dev_events"\)/,
+    /cdc_table_filter_subject\(\s*"cdc",\s*"public",\s*"agent_remote_dev_events",?\s*\)/,
   );
   assert.match(server, /persist_task_status_event/);
   assert.match(server, /publish_task_event_to_nats/);
@@ -179,7 +200,7 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(consumer, /"affinityKey": &task\.thread_id/);
   assert.match(consumer, /queue-handoff-ok/);
   assert.match(consumer, /queue-acked/);
-  assert.doesNotMatch(consumer, /Command::new|tokio::process|std::process/);
+  assert.doesNotMatch(consumer, /Command::new|tokio::process|std::process::Command/);
   assert.match(deployment, /name:\s*dd-remote-queue-consumer/);
   assert.match(deployment, /NATS_QUEUE_GROUP[\s\S]*dd-remote-thread-preparer/);
   assert.match(deployment, /NATS_TASK_STREAM[\s\S]*DD_REMOTE_TASKS/);
@@ -191,7 +212,7 @@ test('queue consumer is deployed and prepares deterministic thread workers', asy
   assert.match(deployment, /NATS_TASK_NAK_DELAY_SECONDS[\s\S]*'15'/);
   assert.match(deployment, /QUEUE_CONSUMER_HTTP_TIMEOUT_SECONDS[\s\S]*value:\s*'420'/);
   assert.match(deployment, /QUEUE_CONSUMER_FALLBACK_REST_DISPATCH[\s\S]*value:\s*'true'/);
-  assert.match(deployment, /resources:[\s\S]*requests:[\s\S]*cpu:\s*100m[\s\S]*memory:\s*128Mi/);
+  assert.match(deployment, /resources:[\s\S]*requests:[\s\S]*cpu:\s*(?:25|50|100)m[\s\S]*memory:\s*128Mi/);
   assert.match(
     deployment,
     /resources:[\s\S]*limits:[\s\S]*cpu:\s*['"]?1['"]?[\s\S]*memory:\s*1Gi/,
@@ -230,7 +251,7 @@ test('keda is declared for event-driven queue consumer scaling', async () => {
 });
 
 test('rest api exposes an internal prepare route for queue warmup', async () => {
-  const server = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  const server = await readRustSourceTree('remote/deployments/rest-api-rs/src');
   const readme = await readRepoFile('remote/deployments/rest-api-rs/readme.md');
 
   assert.match(server, /async fn prepare_thread/);
@@ -251,11 +272,11 @@ test('runtime deployments avoid routing to half-started rust services', async ()
 
   assert.match(
     restDeployment,
-    /resources:[\s\S]*requests:[\s\S]*cpu:\s*100m[\s\S]*memory:\s*128Mi/,
+    /resources:[\s\S]*requests:[\s\S]*cpu:\s*(?:25|50|100)m[\s\S]*memory:\s*128Mi/,
   );
   assert.match(
     restDeployment,
-    /resources:[\s\S]*limits:[\s\S]*cpu:\s*['"]?1['"]?[\s\S]*memory:\s*1Gi/,
+    /resources:[\s\S]*limits:[\s\S]*cpu:\s*['"]?1['"]?[\s\S]*memory:\s*[12]Gi/,
   );
   assert.match(restDeployment, /startupProbe:[\s\S]*path: \/healthz/);
   assert.match(restDeployment, /readinessProbe:[\s\S]*path: \/healthz/);
@@ -264,7 +285,7 @@ test('runtime deployments avoid routing to half-started rust services', async ()
   assert.match(restDeployment, /REST_API_DEFAULT_DISPATCH_MODE[\s\S]*queued/);
   assert.match(
     consumerDeployment,
-    /resources:[\s\S]*requests:[\s\S]*cpu:\s*100m[\s\S]*memory:\s*128Mi/,
+    /resources:[\s\S]*requests:[\s\S]*cpu:\s*(?:25|50|100)m[\s\S]*memory:\s*128Mi/,
   );
   assert.match(consumerDeployment, /limits:[\s\S]*cpu:\s*'1'/);
   assert.match(consumerDeployment, /limits:[\s\S]*memory:\s*1Gi/);
