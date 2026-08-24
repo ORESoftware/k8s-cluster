@@ -53,7 +53,7 @@ report_failure() {
   if [[ -d "$dir" ]]; then
     {
       echo '<!-- org-member-ephemeral-result-v2 -->'
-      echo '### Ephemeral organization membership reconciliation failed'
+      echo '### Ephemeral failed-invitation retry failed'
       echo
       echo "- Target: \`$TARGET_USERNAME\`"
       echo "- Run ID: \`$RUN_ID\`"
@@ -74,7 +74,10 @@ for command in openssl base64 sha256sum jq gh python3; do
 done
 
 test -f "$WORKSPACE/scripts/ops/invite_org_member_all.py"
-python3 -m py_compile "$WORKSPACE/scripts/ops/invite_org_member_all.py"
+test -f "$WORKSPACE/scripts/ops/retry_failed_org_invitations.py"
+python3 -m py_compile \
+  "$WORKSPACE/scripts/ops/invite_org_member_all.py" \
+  "$WORKSPACE/scripts/ops/retry_failed_org_invitations.py"
 
 stage="key-generation"
 openssl genpkey \
@@ -98,7 +101,7 @@ public_key_b64="$(base64 --wrap=0 "$public_key")"
 stage="public-key-publication"
 {
   echo "<!-- org-member-ephemeral-key-v2 run=$RUN_ID fingerprint=$fingerprint -->"
-  echo '### Ephemeral organization membership key'
+  echo '### Ephemeral failed-invitation retry key'
   echo
   echo "- Target: \`$TARGET_USERNAME\`"
   echo "- Run ID: \`$RUN_ID\`"
@@ -207,9 +210,9 @@ test -n "$org_token"
 [[ "$org_token" != *' '* ]]
 printf '::add-mask::%s\n' "$org_token"
 
-stage="organization-reconciliation"
+stage="failed-invitation-retry"
 set +e
-GH_TOKEN="$org_token" python3 "$WORKSPACE/scripts/ops/invite_org_member_all.py" \
+GH_TOKEN="$org_token" python3 "$WORKSPACE/scripts/ops/retry_failed_org_invitations.py" \
   --execute \
   --username "$TARGET_USERNAME" \
   --expected-authenticated-login ORESoftware \
