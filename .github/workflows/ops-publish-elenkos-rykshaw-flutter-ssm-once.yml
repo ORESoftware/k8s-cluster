@@ -70,25 +70,70 @@ jobs:
           expected="$(jq -er .ops_script_sha256 "$SOURCE_MANIFEST")"
           printf '%s  %s\n' "$expected" "$ops" | sha256sum --check --strict
 
-          # The immutable operations payload predates Dart 3.13 treating the
-          # repository's trailing-comma lint as an informational diagnostic.
-          # Verify the original payload first, then apply only deterministic
-          # analyzer quick-fixes before the existing fatal-info gate.
+          # Verify the immutable operations payload first, then apply narrowly
+          # asserted deterministic repairs required by the pinned 2026 toolchain:
+          # analyzer-backed formatting fixes and the Gradle Kotlin signing import.
           python3 - "$ops" <<'PY'
           from pathlib import Path
           import sys
 
           path = Path(sys.argv[1])
           text = path.read_text(encoding="utf-8")
-          needle = "flutter analyze --fatal-infos --fatal-warnings"
-          replacement = (
+
+          analyze_needle = "flutter analyze --fatal-infos --fatal-warnings"
+          analyze_replacement = (
               "dart fix --apply\n"
               "dart format lib test\n"
               "flutter analyze --fatal-infos --fatal-warnings"
           )
-          if text.count(needle) != 1:
-              raise SystemExit("refusing an ambiguous operations-script patch")
-          path.write_text(text.replace(needle, replacement), encoding="utf-8")
+          if text.count(analyze_needle) != 1:
+              raise SystemExit("refusing an ambiguous analyzer-gate patch")
+          text = text.replace(analyze_needle, analyze_replacement)
+
+          build_needle = "flutter build apk --debug"
+          build_replacement = """python3 - <<'PY_ANDROID_SIGNING'
+          from pathlib import Path
+
+          nl = chr(10)
+          bs = chr(92)
+          tool = Path("tool/configure_android_signing.py")
+          tool_text = tool.read_text(encoding="utf-8")
+          if tool_text.count("java.util.Properties()") != 2:
+              raise SystemExit("unexpected Kotlin signing-tool constructors")
+          tool_text = tool_text.replace("java.util.Properties()", "Properties()")
+          tool_needle = '    text = kts.read_text(encoding="utf-8")' + nl
+          tool_insertion = (
+              tool_needle
+              + '    if "import java.util.Properties" not in text:' + nl
+              + '        text = "import java.util.Properties' + bs + 'n' + bs + 'n" + text' + nl
+          )
+          if tool_text.count(tool_needle) != 1:
+              raise SystemExit("unexpected Kotlin signing-tool read point")
+          tool.write_text(
+              tool_text.replace(tool_needle, tool_insertion, 1),
+              encoding="utf-8",
+          )
+
+          gradle = Path("android/app/build.gradle.kts")
+          gradle_text = gradle.read_text(encoding="utf-8")
+          if "import java.util.Properties" not in gradle_text:
+              gradle_text = "import java.util.Properties" + nl + nl + gradle_text
+          old_constructor = "val rykshawKeystoreProperties = java.util.Properties()"
+          new_constructor = "val rykshawKeystoreProperties = Properties()"
+          if gradle_text.count(old_constructor) != 1:
+              raise SystemExit("unexpected generated Kotlin signing constructor")
+          gradle.write_text(
+              gradle_text.replace(old_constructor, new_constructor),
+              encoding="utf-8",
+          )
+          PY_ANDROID_SIGNING
+          flutter build apk --debug"""
+          if text.count(build_needle) != 1:
+              raise SystemExit("refusing an ambiguous Android-build patch")
+          path.write_text(
+              text.replace(build_needle, build_replacement),
+              encoding="utf-8",
+          )
           PY
 
           chmod 700 "$ops"
