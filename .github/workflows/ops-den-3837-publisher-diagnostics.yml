@@ -1,5 +1,5 @@
-name: Diagnose DEN-3837 publisher run
-run-name: Diagnose publisher for 52f88e1a631945e79fa93c15e6a637a6a1e08d1f
+name: Diagnose DEN-3837 publisher runs
+run-name: Diagnose DEN-3837 trusted-main workflows
 
 on:
   pull_request:
@@ -16,31 +16,41 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: List workflow runs and jobs for the direct publisher merge
+      - name: List workflow runs and jobs for DEN-3837 trusted-main merges
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_SHA: 52f88e1a631945e79fa93c15e6a637a6a1e08d1f
+          DIRECT_PUBLISHER_SHA: 52f88e1a631945e79fa93c15e6a637a6a1e08d1f
+          CERTIFICATE_SHA: d83a50bb57e46f28a26e7415fc59f1849070913d
+          STAGING_SHA: d084187ede3cba88bf2c077947714eb9f7da9ebb
         shell: bash
         run: |
           set -euo pipefail
-          runs="$RUNNER_TEMP/runs.json"
-          gh api --paginate \
-            "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${TARGET_SHA}&per_page=100" \
-            | jq -s '{workflow_runs: [.[].workflow_runs[]]}' > "$runs"
-
-          echo '### Workflow runs'
-          jq -r '.workflow_runs[] | [.id, .name, .event, .status, (.conclusion // "pending"), .workflow_id, .html_url] | @tsv' "$runs"
-
-          mapfile -t run_ids < <(jq -r '.workflow_runs[].id' "$runs")
-          if [[ "${#run_ids[@]}" -eq 0 ]]; then
-            echo "No runs found for ${TARGET_SHA}" >&2
-            exit 1
-          fi
-
-          for run_id in "${run_ids[@]}"; do
+          found=0
+          for target_sha in "$DIRECT_PUBLISHER_SHA" "$CERTIFICATE_SHA" "$STAGING_SHA"; do
             echo
-            echo "### Jobs for run ${run_id}"
+            echo "## Merge ${target_sha}"
+            runs="$RUNNER_TEMP/runs-${target_sha}.json"
             gh api --paginate \
-              "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100" \
-              --jq '.jobs[] | [.id, .name, .status, (.conclusion // "pending"), .html_url] | @tsv'
+              "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${target_sha}&per_page=100" \
+              | jq -s '{workflow_runs: [.[].workflow_runs[]]}' > "$runs"
+
+            count="$(jq '.workflow_runs | length' "$runs")"
+            echo "run_count=${count}"
+            jq -r '.workflow_runs[] | [.id, .name, .event, .status, (.conclusion // "pending"), .workflow_id, .html_url] | @tsv' "$runs"
+
+            mapfile -t run_ids < <(jq -r '.workflow_runs[].id' "$runs")
+            if [[ "${#run_ids[@]}" -eq 0 ]]; then
+              echo "No runs found for ${target_sha}"
+              continue
+            fi
+            found=$((found + ${#run_ids[@]}))
+
+            for run_id in "${run_ids[@]}"; do
+              echo
+              echo "### Jobs for run ${run_id}"
+              gh api --paginate \
+                "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100" \
+                --jq '.jobs[] | [.id, .name, .status, (.conclusion // "pending"), .html_url] | @tsv'
+            done
           done
+          test "$found" -gt 0
