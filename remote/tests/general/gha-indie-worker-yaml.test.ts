@@ -40,6 +40,24 @@ test('the production server mounts authenticated workflow routes', async () => {
   assert.match(source, /require_auth\(&headers, &state\.build\)/);
 });
 
+test('the production pod starts from one fail-closed exact source commit', async () => {
+  const deployment = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml',
+  );
+
+  assert.match(
+    deployment,
+    /name:\s*BUILD_SERVER_GIT_REVISION\s+value:\s*[0-9a-f]{40}/,
+  );
+  assert.match(deployment, /fetch --depth 1 origin "\$revision"/);
+  assert.match(deployment, /rev-parse FETCH_HEAD\)" = "\$revision"/);
+  assert.match(deployment, /switch --detach "\$revision"/);
+  assert.match(deployment, /rev-parse HEAD\)" = "\$revision"/);
+  assert.match(deployment, /exact source or remote\/libs checkout failed/);
+  assert.doesNotMatch(deployment, /git clone --depth 1 --branch/);
+  assert.doesNotMatch(deployment, /using mounted source/);
+});
+
 test('workflow YAML is bounded before it can reach fixed-profile execution', async () => {
   const source = await readRepoFile(
     'remote/deployments/build-server-rs/src/gha_workflow.rs',

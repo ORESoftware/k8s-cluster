@@ -134,6 +134,13 @@ record to reach a terminal state. A failed job causes dependent jobs to be
 marked skipped; independent later roots still run. The workflow succeeds only
 when every planned job succeeds.
 
+The production pod does not follow a mutable source branch. Its manifest pins one
+lowercase 40-character `BUILD_SERVER_GIT_REVISION`, fetches and checks out that
+commit detached, verifies both `FETCH_HEAD` and `HEAD`, and initializes the exact
+`remote/libs` gitlink with file and external Git transports disabled. Missing
+credentials, an invalid revision, a checkout mismatch, or submodule failure stops
+startup instead of falling back to the mutable host-mounted checkout.
+
 ## Standalone publication
 
 The public `gha-indie-worker/gha-indie-worker.rs` repository is generated from

@@ -15,7 +15,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-08-11-gha-rust-profile-path-v1'
+        dd.dev/telemetry-revision: '2026-08-24-gha-workflow-admission-9a228f2b'
       labels:
         app: dd-build-server
         dd.dev/fiducia-client: 'true'
@@ -45,25 +45,42 @@ spec:
               export HOME=/tmp
               mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
               source_root=/opt/dd-next-1
-              if [ -n "${BUILD_SERVER_GIT_URL:-}" ] && [ -n "${GH_PAT:-}" ]; then
+              if [ -n "${BUILD_SERVER_GIT_URL:-}" ]; then
+                revision="${BUILD_SERVER_GIT_REVISION:?BUILD_SERVER_GIT_REVISION is required when BUILD_SERVER_GIT_URL is set}"
+                if [ "${#revision}" -ne 40 ] || [[ ! "$revision" =~ ^[0-9a-f]{40}$ ]]; then
+                  echo '[dd-build-server] BUILD_SERVER_GIT_REVISION must be an exact lowercase 40-hex commit SHA' >&2
+                  exit 1
+                fi
+                if [ -z "${GH_PAT:-}" ]; then
+                  echo '[dd-build-server] GH_PAT is required for exact source and private remote/libs checkout' >&2
+                  exit 1
+                fi
                 clone_root="$(mktemp -d /tmp/dd-build-server-source.XXXXXX)"
                 github_extraheader=''
-                if [ -n "${GH_PAT:-}" ]; then
-                  github_basic="$(printf 'x-access-token:%s' "$GH_PAT" | base64 | tr -d '\n')"
-                  github_extraheader="AUTHORIZATION: basic ${github_basic}"
-                fi
-                if git clone --depth 1 --branch "${BUILD_SERVER_GIT_REF:-dev}" "${BUILD_SERVER_GIT_URL}" "$clone_root" \
+                github_basic="$(printf 'x-access-token:%s' "$GH_PAT" | base64 | tr -d '\n')"
+                github_extraheader="AUTHORIZATION: basic ${github_basic}"
+                if git init "$clone_root" \
+                  && git -C "$clone_root" remote add origin "${BUILD_SERVER_GIT_URL}" \
                   && git -C "$clone_root" \
+                    -c protocol.ext.allow=never \
+                    -c protocol.file.allow=never \
+                    -c "http.https://github.com/.extraheader=${github_extraheader}" \
+                    fetch --depth 1 origin "$revision" \
+                  && test "$(git -C "$clone_root" rev-parse FETCH_HEAD)" = "$revision" \
+                  && git -C "$clone_root" -c advice.detachedHead=false switch --detach "$revision" \
+                  && test "$(git -C "$clone_root" rev-parse HEAD)" = "$revision" \
+                  && git -C "$clone_root" \
+                    -c protocol.ext.allow=never \
+                    -c protocol.file.allow=never \
                     -c 'url.https://github.com/.insteadOf=git@github.com:' \
                     -c "http.https://github.com/.extraheader=${github_extraheader}" \
                     submodule update --init --depth 1 -- remote/libs; then
                   source_root="$clone_root"
-                  echo "[dd-build-server] source: cloned ${BUILD_SERVER_GIT_URL}@${BUILD_SERVER_GIT_REF:-dev} with remote/libs ($(git -C "$clone_root" rev-parse --short HEAD))"
+                  echo "[dd-build-server] source: verified ${BUILD_SERVER_GIT_URL}@${revision} with remote/libs"
                 else
-                  echo "[dd-build-server] source clone or remote/libs init failed; using mounted source at ${source_root}" >&2
+                  echo '[dd-build-server] exact source or remote/libs checkout failed' >&2
+                  exit 1
                 fi
-              elif [ -n "${BUILD_SERVER_GIT_URL:-}" ]; then
-                echo "[dd-build-server] GH_PAT is not configured; using mounted source at ${source_root}" >&2
               fi
               cd "$source_root/remote/deployments/build-server-rs"
               exec /usr/local/cargo/bin/cargo run --release
@@ -108,8 +125,8 @@ spec:
               value: '2048'
             - name: BUILD_SERVER_GIT_URL
               value: https://github.com/ORESoftware/k8s-cluster.git
-            - name: BUILD_SERVER_GIT_REF
-              value: dev
+            - name: BUILD_SERVER_GIT_REVISION
+              value: 9a228f2b2dfaa0479bf72152b7cc8216687ea232
             - name: BUILD_SERVER_DEPLOY_ENABLED
               value: 'true'
             - name: BUILD_SERVER_PUSH_ENABLED
