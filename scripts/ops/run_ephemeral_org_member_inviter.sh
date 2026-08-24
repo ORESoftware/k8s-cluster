@@ -121,21 +121,23 @@ marker="<!-- org-member-ephemeral-ciphertext-v1 run=$RUN_ID fingerprint=$fingerp
 for attempt in $(seq 1 150); do
   tmp_comments="$comments_file.tmp"
   tmp_envelope="$envelope_file.tmp"
-  set +e
-  GH_TOKEN="$ACTIONS_TOKEN" gh api \
+  if GH_TOKEN="$ACTIONS_TOKEN" gh api \
     "repos/$REPOSITORY/issues/$PR_NUMBER/comments?per_page=100" \
-    > "$tmp_comments"
-  api_status=$?
-  set -e
+    > "$tmp_comments"; then
+    api_status=0
+  else
+    api_status=$?
+  fi
 
   if [[ "$api_status" -eq 0 ]] && jq -e 'type == "array"' "$tmp_comments" >/dev/null 2>&1; then
     mv "$tmp_comments" "$comments_file"
-    set +e
-    jq -er --arg marker "$marker" \
+    if jq -er --arg marker "$marker" \
       '[.[] | select(((.body // "") | contains($marker))) | .body] | last | select(type == "string" and length > 0)' \
-      "$comments_file" > "$tmp_envelope"
-    match_status=$?
-    set -e
+      "$comments_file" > "$tmp_envelope"; then
+      match_status=0
+    else
+      match_status=$?
+    fi
     if [[ "$match_status" -eq 0 ]] && [[ -s "$tmp_envelope" ]]; then
       mv "$tmp_envelope" "$envelope_file"
       break
