@@ -20,7 +20,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/akrion-web-server-revision: 'edea54d94945f47c9a74a6eb07a787ed1ecee628'
+        dd.dev/akrion-web-server-revision: '7440fce9b41413704c935cc1a1de8e9862892806'
         prometheus.io/scrape: 'true'
         prometheus.io/path: '/metrics'
         prometheus.io/port: '8127'
