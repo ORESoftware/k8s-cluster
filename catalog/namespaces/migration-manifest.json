@@ -3,10 +3,10 @@
   "apiVersion": "oresoftware.dev/v1alpha1",
   "kind": "NamespaceMigrationManifest",
   "metadata": {
-    "entryCount": 1247,
+    "entryCount": 1250,
     "generatedBy": "tools/namespace_manifest.py",
     "inventory": "artifacts/namespace-inventory.json",
-    "inventorySha256": "e1643bb1ac33e60291e00516453fe07716365730ba0aaa4145ea38a18a02968f",
+    "inventorySha256": "1a3aeeb5346727a0ffd0894aa7083091c0cfe92a765a4ae884531146b492abb2",
     "name": "den-2786-phase-0",
     "phase": "phase-0",
     "registry": "catalog/namespaces/owners.json",
@@ -387,6 +387,45 @@
         "notes": "The current bundle crosses platform and product concerns; split product-specific credentials before treating the proposed platform target as final.",
         "owner": "ores",
         "path": ".github/workflows/ops-bootstrap-k8s-submodule-app-secrets.yml",
+        "platformTargetException": null,
+        "reviewState": "review-required",
+        "rollback": {
+          "procedure": "Point consumers back to the current path, refresh them, and verify readiness; retain the current object through the documented grace period.",
+          "state": "required"
+        },
+        "ruleId": "remote-dev.agent-secrets",
+        "scope": "active",
+        "system": "slash-namespace",
+        "target": "ores/dev/agents/provider-credentials",
+        "targetTemplate": "ores/dev/agents/provider-credentials",
+        "verification": {
+          "procedure": "Create or copy the target without logging values; compare non-secret version or checksum metadata, refresh the consumer, and prove readiness plus old-path rollback.",
+          "state": "required"
+        },
+        "workload": "agents"
+      },
+      {
+        "classificationStatus": "review-required",
+        "column": 25,
+        "consumerGrants": [
+          {
+            "access": "read",
+            "consumer": "meta-agents-demo",
+            "state": "required"
+          }
+        ],
+        "consumers": [
+          "meta-agents-demo"
+        ],
+        "current": "dd/remote-dev/agent-secrets",
+        "destructiveCleanupAllowed": false,
+        "environment": "dev",
+        "id": "nsocc-945b31056962bd722c8e09584fe8d897253537a115af1176c3c9f5398733020d",
+        "line": 69,
+        "migrationMode": "copy-verify-cutover",
+        "notes": "The current bundle crosses platform and product concerns; split product-specific credentials before treating the proposed platform target as final.",
+        "owner": "ores",
+        "path": ".github/workflows/ops-create-sustainable-bike.yml",
         "platformTargetException": null,
         "reviewState": "review-required",
         "rollback": {
@@ -39021,6 +39060,45 @@
       },
       {
         "classificationStatus": "review-required",
+        "column": 17,
+        "consumerGrants": [
+          {
+            "access": "read",
+            "consumer": "meta-agents-demo",
+            "state": "required"
+          }
+        ],
+        "consumers": [
+          "meta-agents-demo"
+        ],
+        "current": "dd/remote-dev/agent-secrets",
+        "destructiveCleanupAllowed": false,
+        "environment": "dev",
+        "id": "nsocc-c6f0b59bc79994a621bf00003f3ce5ddedc72ae529ef4be657dc67fcdfe6a867",
+        "line": 81,
+        "migrationMode": "copy-verify-cutover",
+        "notes": "The current bundle crosses platform and product concerns; split product-specific credentials before treating the proposed platform target as final.",
+        "owner": "ores",
+        "path": "scripts/ops/run_protected_org_member_inviter.sh",
+        "platformTargetException": null,
+        "reviewState": "review-required",
+        "rollback": {
+          "procedure": "Point consumers back to the current path, refresh them, and verify readiness; retain the current object through the documented grace period.",
+          "state": "required"
+        },
+        "ruleId": "remote-dev.agent-secrets",
+        "scope": "active",
+        "system": "slash-namespace",
+        "target": "ores/dev/agents/provider-credentials",
+        "targetTemplate": "ores/dev/agents/provider-credentials",
+        "verification": {
+          "procedure": "Create or copy the target without logging values; compare non-secret version or checksum metadata, refresh the consumer, and prove readiness plus old-path rollback.",
+          "state": "required"
+        },
+        "workload": "agents"
+      },
+      {
+        "classificationStatus": "review-required",
         "column": 19,
         "consumerGrants": [
           {
@@ -40094,6 +40172,45 @@
       },
       {
         "classificationStatus": "review-required",
+        "column": 14,
+        "consumerGrants": [
+          {
+            "access": "read",
+            "consumer": "meta-agents-demo",
+            "state": "required"
+          }
+        ],
+        "consumers": [
+          "meta-agents-demo"
+        ],
+        "current": "dd/remote-dev/agent-secrets",
+        "destructiveCleanupAllowed": false,
+        "environment": "dev",
+        "id": "nsocc-2263b311d738cfa18b99f02a65668588623272ee4fd7591d96d33e5b4388804b",
+        "line": 20,
+        "migrationMode": "copy-verify-cutover",
+        "notes": "The current bundle crosses platform and product concerns; split product-specific credentials before treating the proposed platform target as final.",
+        "owner": "ores",
+        "path": "tests/ops/test_run_protected_org_member_inviter.py",
+        "platformTargetException": null,
+        "reviewState": "review-required",
+        "rollback": {
+          "procedure": "Point consumers back to the current path, refresh them, and verify readiness; retain the current object through the documented grace period.",
+          "state": "required"
+        },
+        "ruleId": "remote-dev.agent-secrets",
+        "scope": "test",
+        "system": "slash-namespace",
+        "target": "ores/dev/agents/provider-credentials",
+        "targetTemplate": "ores/dev/agents/provider-credentials",
+        "verification": {
+          "procedure": "Create or copy the target without logging values; compare non-secret version or checksum metadata, refresh the consumer, and prove readiness plus old-path rollback.",
+          "state": "required"
+        },
+        "workload": "agents"
+      },
+      {
+        "classificationStatus": "review-required",
         "column": 49,
         "consumerGrants": [
           {
@@ -40143,37 +40260,37 @@
     "summary": {
       "byClassificationStatus": {
         "classified": 114,
-        "review-required": 480,
+        "review-required": 483,
         "unclassified": 653
       },
       "byOwner": {
         "benefactor-cc": 3,
         "fiducia-cloud": 81,
-        "ores": 497,
+        "ores": 500,
         "shared-auth": 13,
         "unclassified": 653
       },
       "byReviewState": {
         "blocked": 653,
         "classified": 98,
-        "review-required": 496
+        "review-required": 499
       },
       "byScope": {
-        "active": 978,
+        "active": 980,
         "documentation": 184,
-        "test": 85
+        "test": 86
       },
       "bySystem": {
         "generated-package": 82,
         "host-path": 192,
         "metadata-key": 405,
-        "slash-namespace": 454,
+        "slash-namespace": 457,
         "source-package": 114
       },
-      "concreteTargets": 221,
-      "crossOwnerGrants": 192,
+      "concreteTargets": 224,
+      "crossOwnerGrants": 195,
       "destructiveCleanupAllowed": 0,
-      "total": 1247,
+      "total": 1250,
       "unresolvedTargetTemplates": 16
     }
   }
