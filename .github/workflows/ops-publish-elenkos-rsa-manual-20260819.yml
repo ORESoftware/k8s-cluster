@@ -1,0 +1,18 @@
+name: Publish Elenkos fleet through ephemeral RSA PAT handoff (disabled)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  disabled:
+    if: ${{ false }}
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo 'Superseded by ops-bootstrap-elenkos-sonus-ci-20260819.yml'
+
+# DEN-3786: disabled after concurrent bootstrap runs demonstrated that a second
+# publisher can race initial main/tag creation. The active workflow has a single
+# concurrency group and a fail-closed partial-bootstrap recovery pass.

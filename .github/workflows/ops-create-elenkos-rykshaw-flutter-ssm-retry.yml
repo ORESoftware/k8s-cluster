@@ -1,0 +1,122 @@
+name: Retry creation of Elenkos Rykshaw Flutter repository
+run-name: Create elenkos-systems/elenkos-rykshaw-flutter for DEN-3837
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-create-elenkos-rykshaw-flutter-ssm-retry.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: den-3837-create-rykshaw-repository-retry
+  cancel-in-progress: false
+
+jobs:
+  create:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Configure AWS credentials from trusted main
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: den-3837-create-rykshaw-repository
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Create or reconcile the private repository through SSM
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: |
+          set -Eeuo pipefail
+          test -n "${INSTANCE_ID:-}"
+          remote="$RUNNER_TEMP/create-rykshaw-repository.sh"
+          cat > "$remote" <<'REMOTE'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          umask 077
+          cleanup() { unset GH_TOKEN GITHUB_TOKEN encoded; }
+          trap cleanup EXIT
+
+          command -v kubectl >/dev/null
+          command -v gh >/dev/null
+          command -v jq >/dev/null
+          test -r /etc/kubernetes/admin.conf
+
+          encoded="$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}')"
+          test -n "$encoded"
+          GH_TOKEN="$(printf '%s' "$encoded" | base64 --decode)"
+          unset encoded
+          test -n "$GH_TOKEN"
+          [[ "$GH_TOKEN" != *$'\n'* && "$GH_TOKEN" != *$'\r'* ]]
+          export GH_TOKEN
+
+          test "$(gh api user --jq .login)" = ORESoftware
+          target='elenkos-systems/elenkos-rykshaw-flutter'
+          if ! gh api "repos/$target" >/tmp/rykshaw-repo.json 2>/dev/null; then
+            gh api --method POST orgs/elenkos-systems/repos \
+              -f name='elenkos-rykshaw-flutter' \
+              -f description='Invite-only Flutter community QA portal with compliance-gated sandbox appreciation flows' \
+              -F private=true \
+              -F has_issues=true \
+              -F has_projects=false \
+              -F has_wiki=false \
+              -F has_discussions=true \
+              -F auto_init=true \
+              >/tmp/rykshaw-repo.json
+          fi
+          test "$(jq -r .owner.login </tmp/rykshaw-repo.json)" = elenkos-systems
+          test "$(jq -r .visibility </tmp/rykshaw-repo.json)" = private
+
+          default_branch="$(jq -r .default_branch </tmp/rykshaw-repo.json)"
+          default_sha="$(gh api "repos/$target/git/ref/heads/$default_branch" --jq .object.sha)"
+          if ! gh api "repos/$target/git/ref/heads/main" >/dev/null 2>&1; then
+            gh api --method POST "repos/$target/git/refs" -f ref='refs/heads/main' -f sha="$default_sha" >/dev/null
+          fi
+          gh api --method PATCH "repos/$target" \
+            -f default_branch=main \
+            -f description='Invite-only Flutter community QA portal with compliance-gated sandbox appreciation flows' \
+            -F private=true \
+            -F has_issues=true \
+            -F has_discussions=true \
+            -F allow_merge_commit=true \
+            -F allow_squash_merge=true \
+            -F allow_rebase_merge=false \
+            -F delete_branch_on_merge=true \
+            >/dev/null
+          gh api --method PUT "repos/$target/topics" \
+            -f 'names[]=flutter' -f 'names[]=qa' -f 'names[]=elenkos' -f 'names[]=beta' >/dev/null
+          sha="$(gh api "repos/$target/git/ref/heads/main" --jq .object.sha)"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          printf 'SUCCESS repository=%s main=%s\n' "$target" "$sha"
+          rm -f /tmp/rykshaw-repo.json
+          REMOTE
+          chmod 700 "$remote"
+
+          encoded_script="$(base64 --wrap=0 "$remote")"
+          command="printf '%s' '$encoded_script' | base64 --decode >/tmp/create-rykshaw-repository.sh; chmod 700 /tmp/create-rykshaw-repository.sh; bash /tmp/create-rykshaw-repository.sh >/tmp/create-rykshaw-repository.log 2>&1; rc=\$?; tail -c 12000 /tmp/create-rykshaw-repository.log 2>/dev/null || true; rm -f /tmp/create-rykshaw-repository.sh /tmp/create-rykshaw-repository.log; exit \$rc"
+          params="$RUNNER_TEMP/ssm-params.json"
+          jq -nc --arg command "$command" '{commands:[$command]}' > "$params"
+          command_id="$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --comment 'DEN-3837 create Rykshaw repository' --parameters "file://$params" --query 'Command.CommandId' --output text)"
+          [[ "$command_id" =~ ^[0-9a-f-]+$ ]]
+
+          status=Pending
+          for _ in $(seq 1 300); do
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$status" in Success|Failed|Cancelled|TimedOut|Cancelling) break ;; esac
+            sleep 3
+          done
+          invocation="$RUNNER_TEMP/ssm-invocation.json"
+          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' --output json > "$invocation"
+          jq '{Status,Stderr}' "$invocation"
+          jq -r '.Stdout // empty' "$invocation"
+          test "$(jq -r .Status "$invocation")" = Success
+          jq -e -r '.Stdout | select(test("SUCCESS repository=elenkos-systems/elenkos-rykshaw-flutter main=[0-9a-f]{40}"))' "$invocation" >/dev/null

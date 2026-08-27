@@ -129,11 +129,25 @@ for path in "${selected_paths[@]}"; do
   repository="${repository#https://github.com/}"
   repository="${repository%.git}"
 
+  # `remote/libs` is the public schema/entity authority. It must not consume or
+  # depend on the private-deployment SSH key merely because the rest of the
+  # superproject still has private submodules. Keep the committed gitlink and
+  # .gitmodules entry unchanged, but rewrite this one clone to anonymous HTTPS.
+  # Other repositories retain the selected SSH or token authentication mode.
+  declare -a path_git_config=("${git_config[@]}")
+  if [[ "$path" == "remote/libs" && "$repository" == "ORESoftware/k8s-libs-and-shared-defs" ]]; then
+    path_git_config=(
+      -c 'url.https://github.com/.insteadOf=git@github.com:'
+      -c 'url.https://github.com/.insteadOf=ssh://git@github.com/'
+    )
+    export GIT_TERMINAL_PROMPT=0
+  fi
+
   echo "::group::submodule ${repository} (${path})"
   log_file="$(mktemp "${RUNNER_TEMP:-/tmp}/k8s-submodule-log.XXXXXX")"
 
-  git "${git_config[@]}" submodule sync -- "$path" >/dev/null 2>&1 || true
-  if git "${git_config[@]}" submodule update --init --recursive --depth 1 -- "$path" >"$log_file" 2>&1; then
+  git "${path_git_config[@]}" submodule sync -- "$path" >/dev/null 2>&1 || true
+  if git "${path_git_config[@]}" submodule update --init --recursive --depth 1 -- "$path" >"$log_file" 2>&1; then
     pinned="$(git ls-files --stage -- "$path" | awk '$1 == 160000 { print $2; exit }')"
     checkout="$(git -C "$path" rev-parse HEAD 2>/dev/null || true)"
     if [[ -z "$pinned" || "$checkout" != "$pinned" ]]; then

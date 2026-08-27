@@ -50,6 +50,20 @@ function literalCount(source: string, literal: string): number {
   return source.split(literal).length - 1;
 }
 
+function assertSecretKeyRef(
+  document: string,
+  envName: string,
+  secretName: string,
+  key: string,
+): void {
+  const start = document.indexOf(`name: ${envName}`);
+  assert.ok(start >= 0, `missing environment variable ${envName}`);
+  const block = document.slice(start, start + 500);
+  assert.match(block, new RegExp(`name:\\s*${secretName}`));
+  assert.match(block, new RegExp(`key:\\s*${key}`));
+  assert.match(block, /optional:\s*false/);
+}
+
 test('runtime and registry credentials remain separated and cloud-backed', async () => {
   const [runtimeSecret, registrySecret] = await Promise.all([
     readRepoFile('remote/argocd/fiducia/fiducia-revocation-secrets.externalsecret.yaml'),
@@ -118,16 +132,16 @@ test('revocation authority is an immutable least-privilege runtime', async () =>
   assert.ok(source.includes(`image: ${AUTH_REF}`));
   assert.ok(deployment.includes(`image: ${AUTH_REF}`));
   assert.equal(literalCount(source, `image: ${AUTH_REF}`), 1);
-  assert.match(source, new RegExp(`fiducia\\.cloud/release-sha: ["']${AUTH_RELEASE}["']`));
-  assert.match(source, new RegExp(`fiducia\\.cloud/release-digest: ["']${AUTH_DIGEST}["']`));
+  assert.match(source, new RegExp(`fiducia\\.cloud/release-sha: ["']?${AUTH_RELEASE}["']?`));
+  assert.match(source, new RegExp(`fiducia\\.cloud/release-digest: ["']?${AUTH_DIGEST}["']?`));
   assert.match(
     source,
     /fiducia\.cloud\/release-ledger:\s*["']fiducia-cloud\/fiducia-auth\.rs#38["']/,
   );
-  assert.match(deployment, new RegExp(`fiducia\\.cloud/release-sha: ["']${AUTH_RELEASE}["']`));
+  assert.match(deployment, new RegExp(`fiducia\\.cloud/release-sha: ["']?${AUTH_RELEASE}["']?`));
   assert.match(
     deployment,
-    new RegExp(`fiducia\\.cloud/release-digest: ["']${AUTH_DIGEST}["']`),
+    new RegExp(`fiducia\\.cloud/release-digest: ["']?${AUTH_DIGEST}["']?`),
   );
 
   assert.match(deployment, /automountServiceAccountToken:\s*false/);
@@ -149,17 +163,23 @@ test('revocation authority is an immutable least-privilege runtime', async () =>
     deployment,
     /name:\s*FIDUCIA_REVOCATION_PORT[\s\S]{0,80}value:\s*["']?8098["']?/,
   );
-  assert.match(
+  assertSecretKeyRef(
     deployment,
-    /name:\s*FIDUCIA_REVOCATION_ADMIN_SECRET[\s\S]{0,220}name:\s*fiducia-revocation-secrets[\s\S]{0,120}key:\s*admin-secret[\s\S]{0,120}optional:\s*false/,
+    'FIDUCIA_REVOCATION_ADMIN_SECRET',
+    'fiducia-revocation-secrets',
+    'admin-secret',
   );
-  assert.match(
+  assertSecretKeyRef(
     deployment,
-    /name:\s*FIDUCIA_REVOCATION_READER_SECRET[\s\S]{0,220}name:\s*fiducia-revocation-secrets[\s\S]{0,120}key:\s*reader-secret[\s\S]{0,120}optional:\s*false/,
+    'FIDUCIA_REVOCATION_READER_SECRET',
+    'fiducia-revocation-secrets',
+    'reader-secret',
   );
-  assert.match(
+  assertSecretKeyRef(
     deployment,
-    /name:\s*FIDUCIA_INTERNAL_SECRET[\s\S]{0,220}name:\s*fiducia-cluster-secrets[\s\S]{0,120}key:\s*internal-secret[\s\S]{0,120}optional:\s*false/,
+    'FIDUCIA_INTERNAL_SECRET',
+    'fiducia-cluster-secrets',
+    'internal-secret',
   );
   assert.match(
     deployment,
@@ -204,9 +224,11 @@ test('load balancer receives the reader capability only', () => {
     loadBalancer,
     /name:\s*FIDUCIA_REVOCATION_CHECK_URL[\s\S]{0,180}\/v1\/revocations\/check/,
   );
-  assert.match(
+  assertSecretKeyRef(
     loadBalancer,
-    /name:\s*FIDUCIA_REVOCATION_READER_SECRET[\s\S]{0,220}name:\s*fiducia-revocation-secrets[\s\S]{0,120}key:\s*reader-secret[\s\S]{0,120}optional:\s*false/,
+    'FIDUCIA_REVOCATION_READER_SECRET',
+    'fiducia-revocation-secrets',
+    'reader-secret',
   );
   assert.match(
     loadBalancer,
@@ -242,6 +264,10 @@ test('network policy has no public bootstrap egress', async () => {
     'NetworkPolicy',
     'fiducia-load-balance-to-revocation-reader',
   );
+  const authorityEgress = authorityPolicy.slice(
+    authorityPolicy.indexOf('egress:'),
+    authorityPolicy.indexOf('ingress:'),
+  );
 
   assert.match(
     authorityPolicy,
@@ -251,18 +277,14 @@ test('network policy has no public bootstrap egress', async () => {
     authorityPolicy,
     /ingress:[\s\S]{0,240}app:\s*fiducia-load-balance[\s\S]{0,100}port:\s*8098/,
   );
-  assert.match(
-    authorityPolicy,
-    /egress:[\s\S]{0,240}app:\s*fiducia-load-balance[\s\S]{0,100}port:\s*8088/,
-  );
-  assert.match(
-    authorityPolicy,
-    /kubernetes\.io\/metadata\.name:\s*kube-system[\s\S]{0,180}k8s-app:\s*kube-dns[\s\S]{0,180}port:\s*53/,
-  );
-  assert.match(
-    readerPolicy,
-    /app:\s*fiducia-load-balance[\s\S]{0,260}app\.kubernetes\.io\/name:\s*fiducia-revocation-admin[\s\S]{0,100}port:\s*8098/,
-  );
+  assert.match(authorityEgress, /app:\s*fiducia-load-balance/);
+  assert.match(authorityEgress, /port:\s*8088/);
+  assert.match(authorityEgress, /kubernetes\.io\/metadata\.name:\s*kube-system/);
+  assert.match(authorityEgress, /k8s-app:\s*kube-dns/);
+  assert.match(authorityEgress, /port:\s*53/);
+  assert.match(readerPolicy, /app:\s*fiducia-load-balance/);
+  assert.match(readerPolicy, /app\.kubernetes\.io\/name:\s*fiducia-revocation-admin/);
+  assert.match(readerPolicy, /port:\s*8098/);
   assert.equal(source.match(/^kind:\s*NetworkPolicy\s*$/gm)?.length, 2);
   assert.doesNotMatch(source, /ipBlock:|0\.0\.0\.0\/0/);
   assert.doesNotMatch(source, /^\s+port:\s*(?:80|443)\s*$/m);

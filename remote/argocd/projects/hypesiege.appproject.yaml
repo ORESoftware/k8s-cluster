@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: hypesiege
+  namespace: argocd
+spec:
+  description: Hypesiege Rust API and web workloads in the hypesiege namespace.
+  sourceRepos:
+    - git@github.com:hypesiege/hypesiege-api-server.rs.git
+    - git@github.com:hypesiege/hypesiege-web-server.rs.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: hypesiege
+  clusterResourceWhitelist: []
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: ResourceQuota
+    - group: ""
+      kind: LimitRange

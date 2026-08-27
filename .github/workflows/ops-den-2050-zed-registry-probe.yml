@@ -1,0 +1,74 @@
+name: DEN-2050 live Zed registry probe
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/ops-den-2050-zed-registry-probe.yml]
+  push:
+    branches: [main]
+    paths: [.github/workflows/ops-den-2050-zed-registry-probe.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: den-2050-zed-registry-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Probe health and canonical package graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://registry.zpkg.net'
+          evidence="$RUNNER_TEMP/den-2050-registry-probe.json"
+          health_body="$RUNNER_TEMP/health.json"
+          health_status="$(curl --silent --show-error --location --output "$health_body" --write-out '%{http_code}' "$base/healthz")"
+          test "$health_status" = 200
+
+          packages=(
+            'streempilot/sp-interfaces'
+            'streempilot/streempilot-clients'
+            'streempilot/sp-libs'
+            'hypesiege/hypesiege-interfaces'
+            'hypesiege/hypesiege-clients'
+            'hypesiege/hypesiege-libs'
+          )
+          printf '{"schema_version":1,"registry":"%s","health_status":%s,"packages":[]}\n' "$base" "$health_status" > "$evidence"
+          for package in "${packages[@]}"; do
+            org="${package%%/*}"
+            name="${package#*/}"
+            body="$RUNNER_TEMP/${org}-${name}.json"
+            status="$(curl --silent --show-error --location --output "$body" --write-out '%{http_code}' "$base/v1/packages/$org/$name")"
+            exists=false
+            version_status=0
+            if [ "$status" = 200 ]; then
+              exists=true
+              version_body="$RUNNER_TEMP/${org}-${name}-0.1.0.json"
+              version_status="$(curl --silent --show-error --location --output "$version_body" --write-out '%{http_code}' "$base/v1/packages/$org/$name/versions/0.1.0")"
+            fi
+            next="$RUNNER_TEMP/probe-next.json"
+            jq --arg package "$package" --argjson status "$status" --argjson exists "$exists" --argjson version_status "$version_status" \
+              '.packages += [{package:$package,status:$status,exists:$exists,version:"0.1.0",version_status:$version_status}]' \
+              "$evidence" > "$next"
+            mv "$next" "$evidence"
+            printf '%-40s package=%s version=%s\n' "$package" "$status" "$version_status"
+          done
+          jq . "$evidence"
+          cp "$evidence" "$RUNNER_TEMP/den-2050-registry-probe-final.json"
+      - name: Upload non-secret probe evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: den-2050-registry-probe-${{ github.sha }}
+          path: ${{ runner.temp }}/den-2050-registry-probe-final.json
+          if-no-files-found: error
+          retention-days: 14

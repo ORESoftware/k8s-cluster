@@ -1,0 +1,107 @@
+name: Bootstrap ORES OTEL repositories on sonus-ci (one shot)
+run-name: Bootstrap ORES OTEL repositories on sonus-ci from ${{ github.sha }}
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ops-bootstrap-ores-otel-sonus-ci-20260808.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-bootstrap-ores-otel-sonus-ci-20260808
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on: [self-hosted, linux, sonus-ci]
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
+      GITHUB_REPOSITORY_ADMIN_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+          clean: true
+          show-progress: false
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+
+      - name: Install GitHub CLI without privilege when absent
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if command -v gh >/dev/null 2>&1; then
+            gh --version
+            exit 0
+          fi
+          command -v python3 >/dev/null
+          command -v tar >/dev/null
+          cli_tag="$(python3 - <<'PY'
+          import json
+          import urllib.request
+          request = urllib.request.Request(
+              'https://api.github.com/repos/cli/cli/releases/latest',
+              headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'ores-otel-bootstrap'},
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              print(json.load(response)['tag_name'])
+          PY
+          )"
+          cli_version="${cli_tag#v}"
+          case "$(uname -m)" in
+            x86_64) cli_arch=amd64 ;;
+            aarch64|arm64) cli_arch=arm64 ;;
+            *) printf 'unsupported architecture: %s\n' "$(uname -m)" >&2; exit 1 ;;
+          esac
+          cli_root="$RUNNER_TEMP/gh-cli"
+          cli_archive="$RUNNER_TEMP/gh-cli.tar.gz"
+          rm -rf "$cli_root"
+          mkdir -p "$cli_root"
+          python3 - "$cli_tag" "$cli_version" "$cli_arch" "$cli_archive" <<'PY'
+          import sys
+          import urllib.request
+          tag, version, arch, destination = sys.argv[1:]
+          url = f'https://github.com/cli/cli/releases/download/{tag}/gh_{version}_linux_{arch}.tar.gz'
+          urllib.request.urlretrieve(url, destination)
+          PY
+          tar -xzf "$cli_archive" -C "$cli_root" --strip-components=1
+          printf '%s\n' "$cli_root/bin" >> "$GITHUB_PATH"
+          "$cli_root/bin/gh" --version
+
+      - name: Verify protected publisher identity and reviewed scripts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "${GH_TOKEN:-}" || {
+            echo 'Neither GITHUB_REPOSITORY_ADMIN_TOKEN nor ORG_GITOPS_TOKEN is configured.' >&2
+            exit 1
+          }
+          printf '::add-mask::%s\n' "$GH_TOKEN"
+          test "$(gh api user --jq .login)" = ORESoftware
+          test "$(sha256sum scripts/ops/bootstrap_ores_otel_repositories_20260808.sh | awk '{print $1}')" = \
+            '6ca6795212c5701e42ace66c390cc2ceb7c0152cb3a5f12d01061a9175d76074'
+          test "$(sha256sum scripts/ops/bootstrap_ores_otel_repositories_20260808_part1.sh | awk '{print $1}')" = \
+            '2adf73e0f6cc50f96a3e8180200a55b9c7e020f79301f3f03a06e2af7231436d'
+          test "$(sha256sum scripts/ops/bootstrap_ores_otel_repositories_20260808_part2.sh | awk '{print $1}')" = \
+            '29ab3644f9bb7214dd9359337e6be61709574912bb5065bfc99db3e724b2181e'
+          test "$(sha256sum scripts/ops/bootstrap_ores_otel_repositories_20260808_part3.sh | awk '{print $1}')" = \
+            '3c81cbd6e8696ae54eee9bdce2ef601033f7409bab33417cc17774ce65118446'
+          for script in scripts/ops/bootstrap_ores_otel_repositories_20260808*.sh; do
+            bash -n "$script"
+          done
+
+      - name: Create, mirror, populate, and independently verify the ORES OTEL fleet
+        shell: bash
+        run: bash scripts/ops/bootstrap_ores_otel_repositories_20260808.sh

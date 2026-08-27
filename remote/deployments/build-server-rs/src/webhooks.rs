@@ -101,12 +101,10 @@ fn substitute_image(template: &str, sha: &str, git_ref: &str) -> String {
         .replace("{ref}", git_ref)
 }
 
-/// A commit sha must be 7–64 lowercase hex chars before it is interpolated into
-/// an image tag or lock key. Rejects non-ASCII (the old byte-slice panic) and
-/// any shell/tag metacharacter in one check.
+/// A webhook commit must be a complete SHA-1 or SHA-256 object ID before it is
+/// interpolated into an image tag, lock key, or immutable checkout request.
 fn valid_commit_sha(sha: &str) -> bool {
-    let len = sha.len();
-    (7..=64).contains(&len) && sha.chars().all(|ch| ch.is_ascii_hexdigit())
+    matches!(sha.len(), 40 | 64) && sha.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn branch_from_ref(git_ref: &str) -> Option<&str> {
@@ -157,7 +155,9 @@ fn build_request_from_rule(
             "build-image".to_string()
         }),
         repo_url: format!("https://github.com/{repo}.git"),
-        git_ref: Some(branch.clone()),
+        // Rule matching and `{ref}` substitution use the branch, but execution
+        // must checkout the immutable object that GitHub signed into the event.
+        git_ref: Some(sha.to_string()),
         image: rule
             .image
             .as_deref()
@@ -589,17 +589,18 @@ mod tests {
             "dev"
         ));
 
+        let revision = "0123456789abcdef0123456789abcdef01234567";
         let request = build_request_from_rule(
             &rule,
             "ORESoftware/example",
             "refs/heads/dev",
-            "0123456789abcdef0123",
+            revision,
         );
         assert_eq!(
             request.repo_url,
             "https://github.com/ORESoftware/example.git"
         );
-        assert_eq!(request.git_ref.as_deref(), Some("dev"));
+        assert_eq!(request.git_ref.as_deref(), Some(revision));
         assert!(request.image.ends_with(":0123456789ab"));
 
         let profile_rules = parse_rules(
@@ -610,14 +611,29 @@ mod tests {
             &profile_rules[0],
             "sonus-auris/sonus-auris-ui.dart",
             "refs/heads/main",
-            "0123456789abcdef0123",
+            revision,
         );
         assert_eq!(profile_request.job_kind.as_deref(), Some("run-profile"));
+        assert_eq!(profile_request.git_ref.as_deref(), Some(revision));
         assert_eq!(
             profile_request.profile.as_deref(),
             Some("flutter-android-debug")
         );
         assert!(profile_request.image.is_empty());
+    }
+
+    #[test]
+    fn commit_validation_requires_a_full_sha1_or_sha256_object_id() {
+        assert!(valid_commit_sha(
+            "0123456789abcdef0123456789abcdef01234567"
+        ));
+        assert!(valid_commit_sha(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        ));
+        assert!(!valid_commit_sha("0123456"));
+        assert!(!valid_commit_sha(
+            "0123456789abcdef0123456789abcdef0123456z"
+        ));
     }
 
     #[test]

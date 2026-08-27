@@ -1,0 +1,210 @@
+{
+  "bootstrap_id": "praxonne-fleet-2026-08-19-v1",
+  "generated_at": "2026-08-20T05:09:35Z",
+  "mode": "publish",
+  "organizations": [
+    "praxonne",
+    "praxonne-test"
+  ],
+  "repository_count": 28,
+  "results": [
+    {
+      "action": "created-and-pushed",
+      "commit": "a7985dffe447e9143348fa79a70d0ab17b400bf6",
+      "content_sha256": "adb5ad013cdc1276517a14e7d756714f9e780300246175741c7b693e03842a7d",
+      "created": false,
+      "repository": "praxonne/praxonne-sync"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "0cb89c7697a34db4082b07ae768ef4ddb2cc666f",
+      "content_sha256": "3ad19a0b8b6a078256b164f400b912e1f1e8dd7991a6a8e09f678b802906afbe",
+      "created": true,
+      "repository": "praxonne/praxonne-lib-core"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "47f3f1fb8bf24931749d601c369e7e0163a022f6",
+      "content_sha256": "58024fabeba55952d67580391b1bc5e92aa39cbdc6d204fda2e7d4d5a57b75a7",
+      "created": true,
+      "repository": "praxonne/praxonne-monorepo"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "a118267cc5e6feadb8e8adaf4a2ce1ab53d98bbd",
+      "content_sha256": "580d55cb4615113e4a73b90260c544712221df94e273fc9efd85ecbfdb40411d",
+      "created": true,
+      "repository": "praxonne/praxonne-web-server.rs"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "ba56cf291af8203c2545bf0578aff34cf6c82033",
+      "content_sha256": "bb2eb9b46a20f09812fd9b516dc947f89f3fd2bf523762199cbd100a2ea0304d",
+      "created": true,
+      "repository": "praxonne/praxonne-api-server.rs"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "eec11d3c91987f62995c76678ed3bc44b261727c",
+      "content_sha256": "8dd2f83e63ce667c043953ee82f5a923855abc37a1d1054441a6a0f41a31b9b4",
+      "created": true,
+      "repository": "praxonne/praxonne-flutter"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "c473576b36f9c221c4e7bfd36ad129e469e3c324",
+      "content_sha256": "809341810c8099d61518a109789f20e321ae1c449c49e3933a8ddade8d8838f6",
+      "created": true,
+      "repository": "praxonne/praxonne-desktop-app.rs"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "588d5e4a7bf486e433f62db1c0b03118ee76b7fd",
+      "content_sha256": "a33173ccab434b5383332f8ca146d4fa796ec364f7f870e29f82170b9046b4c8",
+      "created": true,
+      "repository": "praxonne/praxonne-infra"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "bc306cebbd364be4f9c7aa9ab5b4840fcc638ed9",
+      "content_sha256": "83a2769785575a6109c22c10955eb7d5ddc391c3265fb21f7661dd9939dcb330",
+      "created": true,
+      "repository": "praxonne/praxonne-clients"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "7a2916ea8c2011deb04bb3e6e9dab2b7feb4a9f6",
+      "content_sha256": "8be36a6b9f3cdf2b98150246db0b55ab4c0301b01f9ce5bd331df7e0c67b4470",
+      "created": true,
+      "repository": "praxonne/praxonne-interfaces"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "f29cc61cdde0ff893f692873e75d3c9e05c83f06",
+      "content_sha256": "c72fd05e62f9e9c5c465a9f8fb63b35b6b3bb37b11330abd4220ae9b01028917",
+      "created": true,
+      "repository": "praxonne/praxonne-cli"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "5498814859524b854a28853c9ee2955f9aa37bde",
+      "content_sha256": "f8475c609542ef2f5625e87d0aa95fb4a6ece4fc5644acc42c6d5735eb5ef21a",
+      "created": true,
+      "repository": "praxonne/prax-bi-proxy-server.rs"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "0ca9cd8fb26b7b4b238dbdf5099c387188af926c",
+      "content_sha256": "c41d7e03a48bcab6bae8da3cd3d3bd8a6f0f46db51c77c22f3c10f1a559a7128",
+      "created": true,
+      "repository": "praxonne/prax-forward-proxy-server.rs"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "066dd984ef897d434d509d1ee196e96d92ef0961",
+      "content_sha256": "6badd41fc593623ead69077c3e44a0878239651648c80418e1ea71e4d78df64a",
+      "created": true,
+      "repository": "praxonne/prax-reverse-proxy-server.rs"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "6539f872328bb55dca6102a4772a03348e14b87a",
+      "content_sha256": "219c5176cfa96de5b79109a8a10af53f28c8fe83980abb1dc466ae3c315d2ede",
+      "created": true,
+      "repository": "praxonne-test/praxonne-sync"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "4366d9b62599368d77f3112498006f0db9f17d3b",
+      "content_sha256": "799ecdf8b92a40aaa23d8d3e52f24af853f9f041ab0249ae44ab9f20d22311d5",
+      "created": true,
+      "repository": "praxonne-test/praxonne-lib-core"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "209496a7c76cdbb90c868bcf2c4e09cf5be951e3",
+      "content_sha256": "3039d6813019208fba07939f031b28afb21c197d386e0cb05844c1a897bb4a7c",
+      "created": true,
+      "repository": "praxonne-test/praxonne-monorepo"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "a24a886708c023bc7d5f6ab4614a0bea072d400f",
+      "content_sha256": "acbcc17034ad7979a4ba40e053663dc5397d3d8b50892f466114d7a505a5645f",
+      "created": true,
+      "repository": "praxonne-test/praxonne-web-server.rs"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "04e036f3441882f4393ded08b52d34f6e829f735",
+      "content_sha256": "a8d7223235726e20fcdf1d78e1b42c72252515c8205b312fa5e1244f0595182a",
+      "created": true,
+      "repository": "praxonne-test/praxonne-api-server.rs"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "585b81ac727feadab64063bbed455dafcc89f31d",
+      "content_sha256": "1807bbcab05c4277dabdc66b3a452cd131938c454eee4868f3ffa2b89ac77640",
+      "created": true,
+      "repository": "praxonne-test/praxonne-flutter"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "ca05c87136d5c51136620f0be0102c4b7ed4266d",
+      "content_sha256": "8bcf35b1678db6ca143f7562345c128cdddee048679cfd10ce31609070b774c2",
+      "created": true,
+      "repository": "praxonne-test/praxonne-desktop-app.rs"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "e9d07f12c76ed5421f93ca2c367844b396665134",
+      "content_sha256": "261302a0187a7f73a5eaf812f35b8f4afe1c829bf22417b4152974c88b794527",
+      "created": true,
+      "repository": "praxonne-test/praxonne-infra"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "60afded812b1b3a88d2676a2ecc0e43e64caa18c",
+      "content_sha256": "467ee999b81cdb8a0b1bd504171385c5f9eb2a20eaffcee8a538e312cfd00ede",
+      "created": true,
+      "repository": "praxonne-test/praxonne-clients"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "31d12e2bfd02132658c96a7e40e130901d884422",
+      "content_sha256": "1f59b4c4fa237a858a8caa1966e7461dc44addd772e56ef507396514f3c9c10a",
+      "created": true,
+      "repository": "praxonne-test/praxonne-interfaces"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "6a3277ad874f476a0672c366b19628ce837b1716",
+      "content_sha256": "bed01e4b98548a43e05229cb8dbd4efafa6f19d9c6ddc6ed2419eb8c1f85a2e9",
+      "created": true,
+      "repository": "praxonne-test/praxonne-cli"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "379b29ba10a8be36784ea5beeacdc5db9a194733",
+      "content_sha256": "a862a445eff3c20b61c8a7f914963dcb963ea6cb5ffde31e21a847f59236d43c",
+      "created": true,
+      "repository": "praxonne-test/prax-bi-proxy-server.rs"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "6d6eec7a609c44f6e9fb8bb5cf7821c3f51d6769",
+      "content_sha256": "425383202cb9ba5005b4df238812f1fd14d8fcce555394d452f7d4c91a12bb42",
+      "created": true,
+      "repository": "praxonne-test/prax-forward-proxy-server.rs"
+    },
+    {
+      "action": "created-and-pushed",
+      "commit": "2cb33b32b003b34a20f9f26d9aaf1516c2acc4d3",
+      "content_sha256": "196111b598e0a3f6e862340e85a0206986f16b5c108eb411a10f434f6053eee2",
+      "created": true,
+      "repository": "praxonne-test/prax-reverse-proxy-server.rs"
+    }
+  ],
+  "schema_version": 1,
+  "verified_repository_count": 28
+}

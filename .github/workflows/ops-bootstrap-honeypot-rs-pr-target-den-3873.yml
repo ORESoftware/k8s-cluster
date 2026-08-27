@@ -1,0 +1,324 @@
+name: Bootstrap ORESoftware honeypot.rs through trusted PR carrier
+run-name: Bootstrap ORESoftware/honeypot.rs for DEN-3873 through trusted main
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/ops-bootstrap-honeypot-rs-pr-target-den-3873.yml
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+    paths:
+      - .github/honeypot-rs-bootstrap-trigger
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: den-3873-honeypot-pr-target-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate workflow syntax with pinned actionlint
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/repo:ro" \
+            --workdir /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            .github/workflows/ops-bootstrap-honeypot-rs-pr-target-den-3873.yml
+      - name: Assert bounded trusted-carrier scope
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          text = Path('.github/workflows/ops-bootstrap-honeypot-rs-pr-target-den-3873.yml').read_text(encoding='utf-8')
+          assert 'pull_request_target:' in text
+          assert "github.event.pull_request.user.login == 'ORESoftware'" in text
+          assert "github.event.pull_request.head.ref == 'agent/den-3873-honeypot-rs-bootstrap-carrier'" in text
+          assert "github.event.pull_request.title == 'DO NOT MERGE: bootstrap ORESoftware/honeypot.rs with encrypted credential'" in text
+          assert 'repos/ORESoftware/honeypot.rs' in text
+          assert '-f name=honeypot.rs' in text
+          assert 'user/repos' in text
+          assert 'workflow_' + 'dispatch' not in text
+          assert '${{' + ' secrets.' not in text
+          assert 'contents:' + ' write' not in text
+          assert '--' + 'force' not in text
+          PY
+
+  bootstrap:
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.user.login == 'ORESoftware' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-3873-honeypot-rs-bootstrap-carrier' &&
+      github.event.pull_request.title == 'DO NOT MERGE: bootstrap ORESoftware/honeypot.rs with encrypted credential'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CARRIER_NUMBER: ${{ github.event.pull_request.number }}
+      MARKER_PATH: .github/honeypot-rs-bootstrap-trigger
+      TARGET_REPOSITORY: ORESoftware/honeypot.rs
+      TARGET_DESCRIPTION: Low-interaction privacy-minimized Rust deception service for Kubernetes
+    steps:
+      - name: Validate the inert carrier against trusted main
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+
+          pull="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${CARRIER_NUMBER}")"
+          jq -e '
+            .draft == true and
+            .user.login == "ORESoftware" and
+            .base.ref == "main" and
+            .head.repo.full_name == "ORESoftware/k8s-cluster" and
+            .head.ref == "agent/den-3873-honeypot-rs-bootstrap-carrier" and
+            .title == "DO NOT MERGE: bootstrap ORESoftware/honeypot.rs with encrypted credential" and
+            .commits == 1 and
+            .changed_files == 1 and
+            .additions == 4 and
+            .deletions == 0
+          ' <<<"$pull" >/dev/null
+
+          head_sha="$(jq -er '.head.sha | select(test("^[0-9a-f]{40}$"))' <<<"$pull")"
+          files="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${CARRIER_NUMBER}/files?per_page=100")"
+          jq -e --arg path "$MARKER_PATH" '
+            length == 1 and
+            .[0].filename == $path and
+            .[0].status == "added" and
+            .[0].changes == 4
+          ' <<<"$files" >/dev/null
+
+          encoded="$(
+            gh api "repos/${GITHUB_REPOSITORY}/contents/${MARKER_PATH}?ref=${head_sha}" --jq .content
+          )"
+          marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
+          expected="$(printf '%s\n' \
+            'target=ORESoftware/honeypot.rs' \
+            'linear=DEN-3873' \
+            'protocol=rsa-oaep-sha256-v1' \
+            'action=create-public-repository')"
+          test "$marker" = "$expected"
+
+      - name: Issue one-time challenge, create exact repository, and verify
+        shell: bash
+        env:
+          WORKFLOW_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+
+          stage=initialize
+          work="$(mktemp -d "$RUNNER_TEMP/den-3873-honeypot-pr-broker.XXXXXX")"
+          private_key="$work/private.pem"
+          public_key="$work/public.pem"
+          ciphertext_file="$work/ciphertext.bin"
+          workflow_token="$WORKFLOW_TOKEN"
+          owner_token=''
+          challenge_id=''
+          response_id=''
+
+          cleanup() {
+            status=$?
+            set +e
+            unset owner_token OWNER_TOKEN GH_TOKEN GITHUB_TOKEN WORKFLOW_TOKEN
+            if [[ -n "$response_id" ]]; then
+              GH_TOKEN="$workflow_token" gh api --method DELETE \
+                "repos/${GITHUB_REPOSITORY}/issues/comments/${response_id}" >/dev/null 2>&1 || true
+            fi
+            if [[ -n "$challenge_id" ]]; then
+              GH_TOKEN="$workflow_token" gh api --method DELETE \
+                "repos/${GITHUB_REPOSITORY}/issues/comments/${challenge_id}" >/dev/null 2>&1 || true
+            fi
+            find "$work" -type f -exec sh -c 'for file do : > "$file"; done' sh {} + 2>/dev/null || true
+            rm -rf "$work"
+            exit "$status"
+          }
+
+          report_failure() {
+            status=$?
+            trap - ERR
+            set +e
+            GH_TOKEN="$workflow_token" gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/issues/${CARRIER_NUMBER}/comments" \
+              -f body="DEN-3873 repository bootstrap failed at bounded stage \`${stage}\`. No success is claimed and no credential was persisted. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+              >/dev/null 2>&1 || true
+            exit "$status"
+          }
+
+          trap cleanup EXIT
+          trap report_failure ERR
+
+          command -v gh >/dev/null
+          command -v jq >/dev/null
+          command -v openssl >/dev/null
+
+          stage=generate-ephemeral-challenge
+          openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key"
+          chmod 600 "$private_key"
+          openssl pkey -in "$private_key" -pubout -out "$public_key"
+          nonce="$(openssl rand -hex 24)"
+          [[ "$nonce" =~ ^[0-9a-f]{48}$ ]]
+          public_key_base64="$(base64 -w0 < "$public_key")"
+          response_marker="<!-- den-3873-honeypot-pr-response:${nonce} -->"
+          challenge_body="<!-- den-3873-honeypot-pr-challenge:${nonce} -->
+          One-time RSA-OAEP-SHA256 challenge for ${TARGET_REPOSITORY}. The private key exists only in this runner and is destroyed on exit.
+          algorithm=RSA-OAEP-SHA256-MGF1-SHA256
+          nonce=${nonce}
+          run-id=${GITHUB_RUN_ID}
+          public-key-base64=${public_key_base64}
+          response-marker=${response_marker}"
+          challenge_id="$(
+            GH_TOKEN="$workflow_token" gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/issues/${CARRIER_NUMBER}/comments" \
+              -f body="$challenge_body" \
+              --jq .id
+          )"
+          [[ "$challenge_id" =~ ^[0-9]+$ ]]
+
+          stage=await-encrypted-owner-response
+          response_json=''
+          for _ in $(seq 1 180); do
+            comments="$(
+              GH_TOKEN="$workflow_token" gh api --paginate \
+                "repos/${GITHUB_REPOSITORY}/issues/${CARRIER_NUMBER}/comments?per_page=100" \
+                --slurp
+            )"
+            response_json="$(
+              jq -c \
+                --arg marker "$response_marker" \
+                --argjson challenge_id "$challenge_id" '
+                [
+                  .[][]
+                  | select(.id > $challenge_id)
+                  | select(.user.login == "ORESoftware")
+                  | select(.body | startswith($marker + "\n"))
+                ]
+                | sort_by(.id)
+                | last // empty
+              ' <<<"$comments"
+            )"
+            if [[ -n "$response_json" ]]; then
+              break
+            fi
+            sleep 5
+          done
+          test -n "$response_json"
+          response_id="$(jq -er '.id | select(type == "number" and . > 0)' <<<"$response_json")"
+          response_body="$(jq -er .body <<<"$response_json")"
+          test "$(grep -c '^ciphertext-base64=' <<<"$response_body")" -eq 1
+          ciphertext="$(sed -n 's/^ciphertext-base64=//p' <<<"$response_body")"
+          [[ "$ciphertext" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#ciphertext}" -le 8192
+          printf '%s' "$ciphertext" | base64 --decode > "$ciphertext_file"
+          test -s "$ciphertext_file"
+
+          stage=decrypt-owner-token
+          owner_token="$(
+            openssl pkeyutl -decrypt \
+              -inkey "$private_key" \
+              -in "$ciphertext_file" \
+              -pkeyopt rsa_padding_mode:oaep \
+              -pkeyopt rsa_oaep_md:sha256 \
+              -pkeyopt rsa_mgf1_md:sha256 \
+              2>/dev/null
+          )"
+          test -n "$owner_token"
+          test "${#owner_token}" -ge 20
+          test "${#owner_token}" -le 318
+          [[ "$owner_token" != *$'\n'* && "$owner_token" != *$'\r'* && "$owner_token" != *$'\t'* && "$owner_token" != *' '* ]]
+          [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
+          echo "::add-mask::$owner_token"
+          export GH_TOKEN="$owner_token"
+          export OWNER_TOKEN="$owner_token"
+
+          stage=validate-owner-identity
+          test "$(gh api user --jq .login)" = ORESoftware
+
+          stage=create-or-verify-repository
+          existing=false
+          if gh api "repos/${TARGET_REPOSITORY}" >/dev/null 2>&1; then
+            existing=true
+          else
+            if ! gh api --method POST user/repos \
+              -f name=honeypot.rs \
+              -f description="$TARGET_DESCRIPTION" \
+              -F private=false \
+              -F auto_init=true \
+              -F has_issues=true \
+              -F has_projects=false \
+              -F has_wiki=false \
+              -F has_discussions=false \
+              >/dev/null; then
+              gh api "repos/${TARGET_REPOSITORY}" >/dev/null
+              existing=true
+            fi
+          fi
+
+          stage=normalize-main-and-settings
+          metadata="$(gh api "repos/${TARGET_REPOSITORY}")"
+          test "$(jq -er .full_name <<<"$metadata")" = "$TARGET_REPOSITORY"
+          test "$(jq -er .owner.login <<<"$metadata")" = ORESoftware
+          test "$(jq -er .visibility <<<"$metadata")" = public
+          current_default="$(jq -er .default_branch <<<"$metadata")"
+          default_sha="$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/${current_default}" --jq .object.sha)"
+          [[ "$default_sha" =~ ^[0-9a-f]{40}$ ]]
+          if ! gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/main" >/dev/null 2>&1; then
+            gh api --method POST "repos/${TARGET_REPOSITORY}/git/refs" \
+              -f ref=refs/heads/main \
+              -f sha="$default_sha" \
+              >/dev/null
+          fi
+          gh api --method PATCH "repos/${TARGET_REPOSITORY}" \
+            -f description="$TARGET_DESCRIPTION" \
+            -f default_branch=main \
+            -F has_issues=true \
+            -F has_projects=false \
+            -F has_wiki=false \
+            -F has_discussions=false \
+            -F allow_merge_commit=true \
+            -F allow_squash_merge=true \
+            -F allow_rebase_merge=false \
+            -F delete_branch_on_merge=true \
+            >/dev/null
+
+          stage=verify-live-repository
+          main_sha="$(gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/main" --jq .object.sha)"
+          [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]]
+          metadata="$(gh api "repos/${TARGET_REPOSITORY}")"
+          jq -e '
+            .full_name == "ORESoftware/honeypot.rs" and
+            .owner.login == "ORESoftware" and
+            .visibility == "public" and
+            .private == false and
+            .archived == false and
+            .disabled == false and
+            .default_branch == "main"
+          ' <<<"$metadata" >/dev/null
+
+          stage=record-sanitized-success
+          unset OWNER_TOKEN owner_token GH_TOKEN
+          result=created
+          if [[ "$existing" == true ]]; then
+            result=verified-existing
+          fi
+          GH_TOKEN="$workflow_token" gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${CARRIER_NUMBER}/comments" \
+            -f body="DEN-3873 repository bootstrap ${result}: https://github.com/${TARGET_REPOSITORY} at \`main@${main_sha}\`. Source publication remains a separate feature-branch draft PR. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            >/dev/null

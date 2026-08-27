@@ -1,10 +1,8 @@
 name: browser e2e
 
-# Hermetic browser end-to-end tests: real in-repo front-end assets (the
-# dd-browser-drafts service worker and the dd-func-approx UI) are served from a
-# throwaway localhost server and driven through node:test. The suite runs under
-# BOTH Puppeteer and Playwright — one matrix job per engine, so a regression in
-# either engine's runner shows up as its own red check.
+# Public browser coverage is credential-free and runs on every matching PR.
+# The service-worker scenarios need the private remote/libs gitlink and run in
+# a separate job only when the narrow deploy key is available.
 
 on:
   pull_request:
@@ -30,19 +28,39 @@ on:
       - 'remote/libs'
       - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/browser-e2e.yml'
+  workflow_dispatch: {}
 
 permissions:
   contents: read
 
 concurrency:
-  group: browser-e2e-${{ github.ref }}
+  group: browser-e2e-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  browser:
-    name: ${{ matrix.engine }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  contract:
+    name: workflow and private-checkout contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/browser-e2e.yml
+
+      - name: Verify public/private browser checkout policy
+        run: node --test remote/tests/general/browser-e2e-private-libs-checkout.test.mjs
+
+  public-browser:
+    name: public hermetic (${{ matrix.engine }})
+    needs: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -52,19 +70,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Verify private-library checkout policy
-        run: node --test remote/tests/general/browser-e2e-private-libs-checkout.test.mjs
-
-      # The browser-drafts service worker lives in the private remote/libs
-      # repository. Use the same narrow deploy-key action as the generated-
-      # bindings workflows: it resolves the mode-160000 superproject gitlink,
-      # fetches exactly that immutable commit, and verifies the checkout. The
-      # browser suite does not need remote/libs' unrelated nested submodules.
-      - name: Check out pinned remote/libs
-        uses: ./.github/actions/checkout-remote-libs
-        with:
-          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
@@ -82,19 +87,116 @@ jobs:
         working-directory: remote/tests
         run: pnpm install --frozen-lockfile
 
-      # Playwright's Chromium ships the system libraries (fonts, libnss, etc.)
-      # that Puppeteer's Chromium also needs, so `--with-deps` provisions both
-      # engines. Puppeteer's own browser is fetched too, so the puppeteer job
-      # exercises Puppeteer's binary (with a Playwright-Chromium fallback baked
-      # into the harness if that download ever fails).
-      - name: Install browsers
-        working-directory: remote/tests
-        run: |
-          pnpm exec playwright install --with-deps chromium
-          pnpm exec puppeteer browsers install chrome
-
-      - name: Run browser E2E (${{ matrix.engine }})
+      - name: Install ${{ matrix.engine }} browser
         working-directory: remote/tests
         env:
+          ENGINE: ${{ matrix.engine }}
+        run: |
+          set -euo pipefail
+          if [[ "$ENGINE" == playwright ]]; then
+            pnpm exec playwright install --with-deps chromium
+          else
+            pnpm exec playwright install-deps chromium
+            pnpm exec puppeteer browsers install chrome
+          fi
+
+      - name: Run public hermetic browser E2E (${{ matrix.engine }})
+        working-directory: remote/tests
+        env:
+          BROWSER_ARTIFACT_DIR: ${{ runner.temp }}/browser-artifacts/${{ matrix.engine }}
           BROWSER_ENGINES: ${{ matrix.engine }}
-        run: node --test browser/service-worker.test.mjs browser/func-approx-ui.test.mjs
+        run: node --test browser/harness-hardening.test.mjs browser/func-approx-ui.test.mjs
+
+      - name: Upload public browser failure evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: browser-e2e-public-${{ matrix.engine }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/browser-artifacts/${{ matrix.engine }}
+          if-no-files-found: ignore
+          retention-days: 7
+
+  private-service-worker:
+    name: private service worker (${{ matrix.engine }})
+    needs: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [puppeteer, playwright]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Detect private-library credential availability
+        id: private_libs
+        shell: bash
+        env:
+          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$K8S_LIBS_DEPLOY_KEY" ]]; then
+            echo 'available=true' >>"$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >>"$GITHUB_OUTPUT"
+            echo 'Private service-worker coverage skipped: K8S_LIBS_DEPLOY_KEY is unavailable for this event.' >>"$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Check out pinned remote/libs
+        if: steps.private_libs.outputs.available == 'true'
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Install pnpm
+        if: steps.private_libs.outputs.available == 'true'
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        if: steps.private_libs.outputs.available == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install test dependencies
+        if: steps.private_libs.outputs.available == 'true'
+        working-directory: remote/tests
+        run: pnpm install --frozen-lockfile
+
+      - name: Install ${{ matrix.engine }} browser
+        if: steps.private_libs.outputs.available == 'true'
+        working-directory: remote/tests
+        env:
+          ENGINE: ${{ matrix.engine }}
+        run: |
+          set -euo pipefail
+          if [[ "$ENGINE" == playwright ]]; then
+            pnpm exec playwright install --with-deps chromium
+          else
+            pnpm exec playwright install-deps chromium
+            pnpm exec puppeteer browsers install chrome
+          fi
+
+      - name: Run private service-worker E2E (${{ matrix.engine }})
+        if: steps.private_libs.outputs.available == 'true'
+        working-directory: remote/tests
+        env:
+          BROWSER_ARTIFACT_DIR: ${{ runner.temp }}/browser-artifacts/${{ matrix.engine }}
+          BROWSER_ENGINES: ${{ matrix.engine }}
+        run: node --test browser/service-worker.test.mjs
+
+      - name: Upload private browser failure evidence
+        if: always() && steps.private_libs.outputs.available == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: browser-e2e-private-${{ matrix.engine }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/browser-artifacts/${{ matrix.engine }}
+          if-no-files-found: ignore
+          retention-days: 7

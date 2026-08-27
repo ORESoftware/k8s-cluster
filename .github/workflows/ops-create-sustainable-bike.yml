@@ -1,0 +1,241 @@
+name: Create ORESoftware sustainable-bike repository
+run-name: Create ORESoftware/sustainable-bike from trusted main @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-create-sustainable-bike.yml
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-create-sustainable-bike.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+concurrency:
+  group: den-3843-create-sustainable-bike
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Validate immutable publication contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test '${{ github.repository }}' = 'ORESoftware/k8s-cluster'
+          test '${{ github.event_name }}' = 'pull_request' || test '${{ github.ref }}' = 'refs/heads/main'
+          printf 'target=%s visibility=%s tracking=%s\n' \
+            'ORESoftware/sustainable-bike' 'public' 'DEN-3843'
+
+  create:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Configure short-lived AWS credentials from trusted main
+        id: aws
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: den-3843-create-sustainable-bike
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Select and mask a currently valid protected ORESoftware credential
+        id: credential
+        if: steps.aws.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret_file="$RUNNER_TEMP/den-3843-owner-secret.json"
+          token_file="$RUNNER_TEMP/den-3843-owner-token"
+          field_file="$RUNNER_TEMP/den-3843-owner-field"
+          umask 077
+
+          aws secretsmanager get-secret-value \
+            --region "${AWS_REGION:?configured AWS region is required}" \
+            --secret-id dd/remote-dev/agent-secrets \
+            --query SecretString \
+            --output text > "$secret_file"
+
+          python3 - "$secret_file" "$token_file" "$field_file" <<'PY'
+          import json
+          import re
+          import sys
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+
+          secret_path = Path(sys.argv[1])
+          token_path = Path(sys.argv[2])
+          field_path = Path(sys.argv[3])
+          payload = json.loads(secret_path.read_text(encoding="utf-8"))
+          if not isinstance(payload, dict):
+              raise SystemExit("protected secret is not a JSON object")
+
+          name_pattern = re.compile(r"(?:github|gh|token|pat)", re.IGNORECASE)
+          candidates: list[tuple[str, str]] = []
+
+          def walk(value, path=()):
+              if isinstance(value, dict):
+                  for key, child in value.items():
+                      walk(child, path + (str(key),))
+              elif isinstance(value, string_type):
+                  name = ".".join(path)
+                  if name_pattern.search(name) and value and not any(ch.isspace() for ch in value):
+                      candidates.append((name, value))
+
+          string_type = str
+          walk(payload)
+          if not candidates:
+              raise SystemExit("no protected GitHub credential candidates were found")
+
+          def request_user(token: str):
+              request = urllib.request.Request(
+                  "https://api.github.com/user",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "den-3843-owner-credential-selector",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=20) as response:
+                      return response.status, json.load(response)
+              except urllib.error.HTTPError as error:
+                  error.read(4096)
+                  return error.code, None
+              except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+                  return None, None
+
+          preferred = {
+              "GH_PAT": 0,
+              "GITHUB_PAT": 1,
+              "GITHUB_TOKEN": 2,
+              "GH_TOKEN": 3,
+          }
+          valid: list[tuple[int, str, str]] = []
+          for name, token in candidates:
+              status, user = request_user(token)
+              if status == 200 and isinstance(user, dict) and user.get("login") == "ORESoftware":
+                  leaf = name.rsplit(".", 1)[-1]
+                  valid.append((preferred.get(leaf.upper(), 100), name, token))
+
+          if not valid:
+              raise SystemExit("no protected candidate authenticates as ORESoftware")
+          valid.sort(key=lambda item: (item[0], item[1]))
+          _, selected_name, selected_token = valid[0]
+          token_path.write_text(selected_token, encoding="utf-8")
+          field_path.write_text(selected_name, encoding="utf-8")
+          payload.clear()
+          PY
+
+          token="$(cat "$token_file")"
+          selected_field="$(cat "$field_file")"
+          test -n "$token"
+          echo "::add-mask::$token"
+          {
+            printf 'GH_TOKEN=%s\n' "$token"
+            printf 'GITHUB_REPOSITORY_ADMIN_TOKEN=%s\n' "$token"
+          } >> "$GITHUB_ENV"
+          printf 'credential_field=%s\n' "$selected_field" >> "$GITHUB_OUTPUT"
+          rm -f "$secret_file" "$token_file" "$field_file"
+          unset token selected_field
+
+      - name: Create or reconcile the public repository
+        id: repository
+        if: steps.aws.outcome == 'success' && steps.credential.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api user --jq .login)" = 'ORESoftware'
+
+          repo_json="$(gh api repos/ORESoftware/sustainable-bike 2>/dev/null || true)"
+          if [[ -z "$repo_json" ]]; then
+            repo_json="$(
+              gh api --method POST user/repos \
+                -f name='sustainable-bike' \
+                -f description='Parametric captive-wheel, dry aramid-belt, automatic internal-hub sustainable e-bike research model' \
+                -F private=false \
+                -F has_issues=true \
+                -F has_projects=false \
+                -F has_wiki=false \
+                -F auto_init=true
+            )"
+            echo 'CREATED ORESoftware/sustainable-bike'
+          else
+            echo 'FOUND ORESoftware/sustainable-bike'
+          fi
+
+          test "$(jq -r .owner.login <<<"$repo_json")" = 'ORESoftware'
+          test "$(jq -r .visibility <<<"$repo_json")" = 'public'
+
+          gh api --method PATCH repos/ORESoftware/sustainable-bike \
+            -f description='Parametric captive-wheel, dry aramid-belt, automatic internal-hub sustainable e-bike research model' \
+            -F private=false \
+            -F has_issues=true \
+            -F has_projects=false \
+            -F has_wiki=false \
+            -F allow_merge_commit=true \
+            -F allow_squash_merge=true \
+            -F allow_rebase_merge=false \
+            -F delete_branch_on_merge=false >/dev/null
+
+          main_sha="$(gh api repos/ORESoftware/sustainable-bike/git/ref/heads/main --jq .object.sha)"
+          [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]]
+          printf 'main_sha=%s\n' "$main_sha" >> "$GITHUB_OUTPUT"
+          printf 'REPOSITORY=ORESoftware/sustainable-bike\nMAIN=%s\nTRACKING=DEN-3843\n' "$main_sha"
+
+      - name: Post durable execution receipt
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AWS_OUTCOME: ${{ steps.aws.outcome }}
+          CREDENTIAL_OUTCOME: ${{ steps.credential.outcome }}
+          REPOSITORY_OUTCOME: ${{ steps.repository.outcome }}
+          CREDENTIAL_FIELD: ${{ steps.credential.outputs.credential_field }}
+          TARGET_MAIN: ${{ steps.repository.outputs.main_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(cat <<EOF
+          Trusted-main DEN-3843 creator receipt for \`${GITHUB_SHA}\`:
+
+          - AWS OIDC: **${AWS_OUTCOME}**
+          - protected credential selection: **${CREDENTIAL_OUTCOME}**
+          - repository create/reconcile: **${REPOSITORY_OUTCOME}**
+          - selected protected field: \`${CREDENTIAL_FIELD:-none}\`
+          - target: \`ORESoftware/sustainable-bike\`
+          - target main: \`${TARGET_MAIN:-not-created}\`
+
+          No credential value is included in this receipt.
+          EOF
+          )"
+          gh api --method POST repos/ORESoftware/k8s-cluster/issues/1381/comments -f body="$body" >/dev/null
+
+      - name: Assert successful publication
+        if: always()
+        env:
+          AWS_OUTCOME: ${{ steps.aws.outcome }}
+          CREDENTIAL_OUTCOME: ${{ steps.credential.outcome }}
+          REPOSITORY_OUTCOME: ${{ steps.repository.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$AWS_OUTCOME" = success
+          test "$CREDENTIAL_OUTCOME" = success
+          test "$REPOSITORY_OUTCOME" = success
