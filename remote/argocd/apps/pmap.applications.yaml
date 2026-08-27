@@ -1,0 +1,33 @@
+# Premarital Asset Protection — web (app.pmap.pro) + API (api.pmap.pro).
+#
+# PREREQS (inert until then, threefa/daedalus precedent):
+#   1. kubectl apply -f remote/argocd/projects/pmap.tenant.yaml
+#   2. kubectl apply -f remote/argocd/projects/pmap.appproject.yaml
+#   3. Publish ghcr.io/premarital-asset-protection/pmap-web-server.rs:main
+#      and pmap-api-server.rs:main; imagePullSecret if packages are private
+#   4. ArgoCD repo cred for git@github.com:premarital-asset-protection/pmap-infra.git
+#   5. Do not create Cloudflare app/api records until this Ingress is serving TLS
+#
+# repoURL is pmap-infra directly (not a k8s-cluster submodule path).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-pmap
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: pmap
+  source:
+    repoURL: git@github.com:premarital-asset-protection/pmap-infra.git
+    targetRevision: main
+    path: k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: pmap
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
