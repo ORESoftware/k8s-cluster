@@ -1,0 +1,81 @@
+name: Dispatch sustainable-bike creator after validated trigger
+run-name: Dispatch sustainable-bike creator from ${{ github.event_name }} @ ${{ github.sha }}
+
+on:
+  workflow_run:
+    workflows:
+      - DEN-3843 sustainable-bike publication trigger
+    types: [completed]
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+concurrency:
+  group: den-3843-trusted-dispatch
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.head_branch == 'agent/den-3843-publication-trigger' &&
+       github.event.workflow_run.head_repository.full_name == 'ORESoftware/k8s-cluster') ||
+      (github.event_name == 'pull_request_target' &&
+       github.event.pull_request.number == 1388 &&
+       github.event.pull_request.head.ref == 'agent/den-3843-publication-trigger' &&
+       github.event.pull_request.head.repo.full_name == 'ORESoftware/k8s-cluster' &&
+       github.event.pull_request.user.login == 'ORESoftware')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch the trusted default-branch creator
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          WORKFLOW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "$EVENT_NAME" in
+            workflow_run)
+              [[ "$WORKFLOW_RUN_ID" =~ ^[0-9]+$ ]]
+              [[ "$WORKFLOW_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+              test "$WORKFLOW_HEAD_BRANCH" = 'agent/den-3843-publication-trigger'
+              test "$WORKFLOW_HEAD_REPOSITORY" = 'ORESoftware/k8s-cluster'
+              source="validated workflow run ${WORKFLOW_RUN_ID} at ${WORKFLOW_HEAD_SHA}"
+              ;;
+            pull_request_target)
+              test "$PR_NUMBER" = '1388'
+              [[ "$PR_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+              test "$PR_HEAD_BRANCH" = 'agent/den-3843-publication-trigger'
+              test "$PR_HEAD_REPOSITORY" = 'ORESoftware/k8s-cluster'
+              test "$PR_AUTHOR" = 'ORESoftware'
+              source="trusted pull_request_target #${PR_NUMBER} at ${PR_HEAD_SHA}"
+              ;;
+            *)
+              echo "unsupported event: $EVENT_NAME" >&2
+              exit 64
+              ;;
+          esac
+
+          gh workflow run ops-create-sustainable-bike.yml \
+            --repo ORESoftware/k8s-cluster \
+            --ref main
+          gh api --method POST repos/ORESoftware/k8s-cluster/issues/1381/comments \
+            -f body="Accepted ${source}; dispatched the trusted default-branch sustainable-bike creator." \
+            >/dev/null

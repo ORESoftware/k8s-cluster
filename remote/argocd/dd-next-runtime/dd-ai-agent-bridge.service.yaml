@@ -14,6 +14,7 @@ metadata:
 spec:
   selector:
     app: dd-ai-agent-bridge
+    app.kubernetes.io/component: bridge
   ports:
     - name: http
       port: 8142
@@ -82,10 +83,16 @@ metadata:
     app.kubernetes.io/component: slack-command
   annotations:
     denman.linear.app/issue: DEN-1298
+    denman.linear.app/rollout-issue: DEN-845
+    github.com/issue: ORESoftware/k8s-cluster#1111
+    dd.dev/source-repository: ORESoftware/ai-agent-bridge.rs
+    dd.dev/source-revision: 'c3e54e6cd0c6d56e3d2ed32902228d974e550a3f'
+    dd.dev/release-workflow-run: '31235992249'
+    dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-slack-command@sha256:01f80fbd4d3ba5226b4abdb7f5e603538924edb48e79e72b0af43246624900cb'
 spec:
   replicas: 1
   minReadySeconds: 5
-  progressDeadlineSeconds: 1800
+  progressDeadlineSeconds: 300
   strategy:
     type: Recreate
   selector:
@@ -99,7 +106,9 @@ spec:
         app.kubernetes.io/component: slack-command
       annotations:
         dd.dev/source-repository: ORESoftware/ai-agent-bridge.rs
-        dd.dev/source-revision: 0ba7d2d4eb8c44583503d4567af2de1f73bc5598
+        dd.dev/source-revision: 'c3e54e6cd0c6d56e3d2ed32902228d974e550a3f'
+        dd.dev/release-workflow-run: '31235992249'
+        dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-slack-command@sha256:01f80fbd4d3ba5226b4abdb7f5e603538924edb48e79e72b0af43246624900cb'
         dd.dev/activation-mode: signed-dry-run
     spec:
       automountServiceAccountToken: false
@@ -107,68 +116,37 @@ spec:
       terminationGracePeriodSeconds: 30
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: slack-command
-          image: rust:1.97.1-bookworm@sha256:77fac8b98f9f46062bb680b6d25d5bcaabfc400143952ebc572e924bcbedc3fa
+          image: ghcr.io/oresoftware/fiducia-slack-command@sha256:01f80fbd4d3ba5226b4abdb7f5e603538924edb48e79e72b0af43246624900cb
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
+            privileged: false
             readOnlyRootFilesystem: true
             runAsNonRoot: true
-            runAsUser: 1000
-            runAsGroup: 1000
+            runAsUser: 65532
+            runAsGroup: 65532
             capabilities:
               drop:
                 - ALL
             seccompProfile:
               type: RuntimeDefault
-          command:
-            - /bin/bash
-            - -lc
-          args:
-            - |
-              set -euo pipefail
-              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-
-              source_dir="$(mktemp -d /tmp/alex-main-agent-src.XXXXXX)"
-              git -C "${source_dir}" init --quiet
-              git -C "${source_dir}" remote add origin "${SLACK_COMMAND_SOURCE_REPOSITORY}"
-              git -C "${source_dir}" -c protocol.version=2 fetch \
-                --depth=1 origin "${SLACK_COMMAND_SOURCE_REVISION}"
-              git -C "${source_dir}" switch --detach FETCH_HEAD
-
-              actual_revision="$(git -C "${source_dir}" rev-parse HEAD)"
-              if [ "${actual_revision}" != "${SLACK_COMMAND_SOURCE_REVISION}" ]; then
-                echo "[dd-slack-command] source revision mismatch" >&2
-                exit 1
-              fi
-
-              registry="${source_dir}/config/alex-main-agent.channels.json"
-              test -f "${registry}"
-              export SLACK_PROJECT_REGISTRY_PATH="${registry}"
-
-              cd "${source_dir}"
-              cargo build --release --locked --bin fiducia-slack-command
-              binary="${CARGO_TARGET_DIR}/release/fiducia-slack-command"
-              test -x "${binary}"
-              exec "${binary}"
           env:
-            - name: SLACK_COMMAND_SOURCE_REPOSITORY
-              value: https://github.com/ORESoftware/ai-agent-bridge.rs.git
-            - name: SLACK_COMMAND_SOURCE_REVISION
-              value: 0ba7d2d4eb8c44583503d4567af2de1f73bc5598
             - name: SLACK_COMMAND_HOST
               value: 0.0.0.0
             - name: SLACK_COMMAND_PORT
               value: "8151"
             - name: SLACK_COMMAND_STATE_DIR
               value: /var/lib/slack-command/runs
+            - name: SLACK_PROJECT_REGISTRY_PATH
+              value: /etc/alex-main-agent/alex-main-agent.channels.json
             - name: SLACK_BRIDGE_URL
               value: http://dd-ai-agent-bridge.default.svc.cluster.local:8142/
             - name: SLACK_COORDINATOR_URL
@@ -223,10 +201,8 @@ spec:
               value: service.namespace=default,deployment.environment=remote-dev
             - name: HOME
               value: /tmp
-            - name: CARGO_HOME
-              value: /tmp/cargo
-            - name: CARGO_TARGET_DIR
-              value: /tmp/slack-command-target
+            - name: TMPDIR
+              value: /tmp
           ports:
             - name: http
               containerPort: 8151
@@ -234,19 +210,19 @@ spec:
           resources:
             requests:
               cpu: 50m
+              memory: 128Mi
+              ephemeral-storage: 128Mi
+            limits:
+              cpu: "1"
               memory: 512Mi
               ephemeral-storage: 1Gi
-            limits:
-              cpu: "2"
-              memory: 3Gi
-              ephemeral-storage: 8Gi
           startupProbe:
             httpGet:
               path: /healthz
               port: http
             periodSeconds: 5
             timeoutSeconds: 3
-            failureThreshold: 240
+            failureThreshold: 60
           readinessProbe:
             httpGet:
               path: /readyz
@@ -272,7 +248,7 @@ spec:
             claimName: dd-slack-command-state
         - name: tmp
           emptyDir:
-            sizeLimit: 8Gi
+            sizeLimit: 256Mi
 ---
 apiVersion: v1
 kind: Service

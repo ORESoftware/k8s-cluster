@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "execute": true,
+  "organization": "memebank",
+  "visibility": "private",
+  "recipient_id": "ncc-publish-20260805-f1f811bc7a369f44",
+  "recipient_fingerprint": "85df429fe9dbb795ebe8cab6c428883e2028f94a9e0017fcc00e70bab08daaf7",
+  "recipient_expires_at": 1786093975,
+  "token_ciphertext_sha256": "af2a063ec612daa866e3bb8f52d258bb1af18f44bb62988f7f7416779205ac48",
+  "token_ciphertext_base64": "GEBCp+U0O9PPQuuXjkqL/ooBKDARwNPjCDD8HuNPthh5CbS3C1AFSmLbURlH19GcY2DHP/gU08pq8i8ICIUI/lTvoI2TW7p1YY9zB1GCJ5YHc2RaBE2Uh8wilQPT+nJ6WzPMmvkD/w6afQx30L6gXwMn+XN642XyBDY/PKZW+hDNKD7sYdpDj3ekVRZRHhv+am3hp432Un8gzKELr+mj5n0obpBSfp5A9XBYMiqAU67aFGV27O3MwRVvPGic4AufWViLp1wD3OpGYyW8UyG4Jqp7CiICyUL+rg/5jjrXSZk8r1MIUPoe0QjQu6XW8EjxLfo1bHPG8+F4pvc7up4hJeSMfA+Ta4VQmql7vLg39AA2e414QlCDi6Tu3nLxraH+hTxOK9W0QdQ95S8gJG3HCcVqGeDNUD0ti9JHw5Cf50vir45BYzZLdVMpaNXhrDRjxS/iNPZ/stoPK0CYCYQw/ijq9W3XC+ooQD112cKtOo01VI/XNvEqSYiORsQNMxgLhOD+0BsiK3ebYpznZKrv4FZgbXb5G1UMSSrCZiecTPZdYcepVxwKGVFufdeXRiRqnaX6sFVuJtlozMRVBZ3ArkwPOEKNFpdiDjoIuqPEDw84Vn5rNr1M36WxW9l7rok0cq1IsCjT7pBHStVvyvBCJvcM3aObglzuQ84qNtx5cQw=",
+  "targets": [
+    {
+      "source": ".github",
+      "conflict_repository": "memebank/.github",
+      "target": "memebank/.github-2",
+      "source_root": "234c45d3d9114a822aa4bf2bef7efc6450a57fec",
+      "source_tip": "234c45d3d9114a822aa4bf2bef7efc6450a57fec"
+    },
+    {
+      "source": "mb-cli",
+      "conflict_repository": "memebank/mb-cli",
+      "target": "memebank/mb-cli-2",
+      "source_root": "fdc52d6edb879d1b9f8f5a90b3da18b9ac03a5db",
+      "source_tip": "b5cbe797fa05f52f1a8c6f87bf811d88d4ab54c4"
+    },
+    {
+      "source": "mb-clients",
+      "conflict_repository": "memebank/mb-clients",
+      "target": "memebank/mb-clients-2",
+      "source_root": "55d439625f79dea10c330125923a9d7813d34029",
+      "source_tip": "b1310e3a00c2168f9bca2fc1a59ac0b6faec2767"
+    },
+    {
+      "source": "mb-infra",
+      "conflict_repository": "memebank/mb-infra",
+      "target": "memebank/mb-infra-2",
+      "source_root": "0cb285d97ba4c80b9a075784ec50b7006517e84f",
+      "source_tip": "7c068b24ebc3dce9a1874aa1c8328504e85010ec"
+    },
+    {
+      "source": "mb-interfaces",
+      "conflict_repository": "memebank/mb-interfaces",
+      "target": "memebank/mb-interfaces-2",
+      "source_root": "93bcb095fcace95e55f5480e3d2d7a55390e5107",
+      "source_tip": "5c1a7a85855a95c281a05089e43ce1bcd0615172"
+    },
+    {
+      "source": "memebank-api-server.rs",
+      "conflict_repository": "memebank/memebank-api-server.rs",
+      "target": "memebank/memebank-api-server.rs-2",
+      "source_root": "bcd0249824dc161a738bd03df6adb38d4acfab40",
+      "source_tip": "77283ca5d9bfd665a9c252ee8f0d5eecd6bf5a00"
+    },
+    {
+      "source": "memebank-e2e",
+      "conflict_repository": "memebank/memebank-e2e",
+      "target": "memebank/memebank-e2e-2",
+      "source_root": "a1c7282173072ca9c29a9188502e876bc68260e4",
+      "source_tip": "a1c7282173072ca9c29a9188502e876bc68260e4"
+    },
+    {
+      "source": "memebank-flutter",
+      "conflict_repository": "memebank/mbk-flutter",
+      "target": "memebank/memebank-flutter-2",
+      "source_root": "d0c906e4b18286c285e9fad98c0cb615925faec0",
+      "source_tip": "ef5a1a86fdca6a3d5e12a2b9d4df1e2555d216da"
+    },
+    {
+      "source": "memebank-mcp-server.rs",
+      "conflict_repository": "memebank/memebank-mcp-server.rs",
+      "target": "memebank/memebank-mcp-server.rs-2",
+      "source_root": "77dbf5dd4d7620a6572b085ae6ed726343c230d1",
+      "source_tip": "77dbf5dd4d7620a6572b085ae6ed726343c230d1"
+    },
+    {
+      "source": "memebank-media-worker.rs",
+      "conflict_repository": "memebank/memebank-media-worker.rs",
+      "target": "memebank/memebank-media-worker.rs-2",
+      "source_root": "eb913af5b861f66c14642a881e9dbe95e04ec669",
+      "source_tip": "ee0422582ff4beebedf40b02b7fd2c324d856b68"
+    },
+    {
+      "source": "memebank-monorepo",
+      "conflict_repository": "memebank/memebank-monorepo",
+      "target": "memebank/memebank-monorepo-2",
+      "source_root": "be177ecd528a9b7d671dedb8fb7fe0fa0f974f99",
+      "source_tip": "0aa9a914a7a83950f0f91f725f34e2457f065f81"
+    },
+    {
+      "source": "memebank-web-server.rs",
+      "conflict_repository": "memebank/memebank-web-server.rs",
+      "target": "memebank/memebank-web-server.rs-2",
+      "source_root": "9849254db58b5dd74d3e5750134bd5cf7ad91182",
+      "source_tip": "a5f67c86cd0e3bcefbd190da3e8d291119af5f56"
+    },
+    {
+      "source": "memebank.github.io",
+      "conflict_repository": "memebank/memebank.github.io",
+      "target": "memebank/memebank.github.io-2",
+      "source_root": "a02b13bfc4d10ea8334beb199784fa58532c30d4",
+      "source_tip": "cadba1f33077f8a82803661386a0149ed1ed9b8c"
+    }
+  ]
+}

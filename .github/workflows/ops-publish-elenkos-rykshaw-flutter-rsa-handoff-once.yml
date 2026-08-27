@@ -1,0 +1,416 @@
+name: Publish validated Rykshaw Flutter with one-time RSA credential
+run-name: Publish validated Rykshaw source with RSA handoff @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-elenkos-rykshaw-flutter-rsa-handoff-once.yml
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-elenkos-rykshaw-flutter-rsa-handoff-once.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+concurrency:
+  group: den-3837-rsa-handoff-publish-validated-rykshaw
+  cancel-in-progress: false
+
+env:
+  SOURCE_REPOSITORY: ORESoftware/k8s-cluster
+  SOURCE_RUN_ID: '32684317285'
+  SOURCE_ARTIFACT_ID: '9505221048'
+  SOURCE_ARTIFACT_DIGEST: b2afe8d2c97da783c7923fcbd47e317636136146c57209979dc36c25c046633c
+  SOURCE_ARCHIVE_DIGEST: a18c7ade46094c738d8f8bd600a717e9813241a47668162111d594f17ee6be87
+  SOURCE_COMMIT: 65e7813adb45a2e66e954a5e66b3ecc8ec9bb3ff
+  TARGET_REPOSITORY: elenkos-systems/elenkos-rykshaw-flutter
+  TARGET_BRANCH: den-3837/rykshaw-volunteer-qa-beta
+  HANDOFF_ISSUE: '1431'
+  HANDOFF_CONFIRMATION: publish-den-3837-rykshaw-v1
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Validate immutable artifact and one-time handoff contract
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          workflow=.github/workflows/ops-publish-elenkos-rykshaw-flutter-rsa-handoff-once.yml
+          test -f "$workflow"
+          grep -qF "SOURCE_ARTIFACT_ID: '9505221048'" "$workflow"
+          grep -qF 'SOURCE_ARTIFACT_DIGEST: b2afe8d2c97da783c7923fcbd47e317636136146c57209979dc36c25c046633c' "$workflow"
+          grep -qF 'SOURCE_ARCHIVE_DIGEST: a18c7ade46094c738d8f8bd600a717e9813241a47668162111d594f17ee6be87' "$workflow"
+          grep -qF 'SOURCE_COMMIT: 65e7813adb45a2e66e954a5e66b3ecc8ec9bb3ff' "$workflow"
+          grep -qF 'TARGET_REPOSITORY: elenkos-systems/elenkos-rykshaw-flutter' "$workflow"
+          grep -qF 'TARGET_BRANCH: den-3837/rykshaw-volunteer-qa-beta' "$workflow"
+          grep -qF "HANDOFF_ISSUE: '1431'" "$workflow"
+          grep -qF 'rsa_padding_mode:oaep' "$workflow"
+          grep -qF 'rsa_oaep_md:sha256' "$workflow"
+          grep -qF 'rsa_mgf1_md:sha256' "$workflow"
+          grep -qF 'shred -u "$TOKEN_FILE"' "$workflow"
+          grep -qF 'git push --set-upstream origin "$TARGET_BRANCH"' "$workflow"
+          if grep -nE 'git push[^\n]*--force|visibility[=:][[:space:]]*public|private[=:][[:space:]]*false' "$workflow"; then
+            echo 'unsafe publication mutation detected' >&2
+            exit 1
+          fi
+          credential_pattern='gh''p_|github_''pat_|-----BEGIN (RSA |OPENSSH |EC )?PRIVATE'' KEY-----'
+          if grep -nE "$credential_pattern" "$workflow"; then
+            echo 'credential-shaped source material detected' >&2
+            exit 1
+          fi
+          git diff --check HEAD^ HEAD
+
+  publish:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Download, unwrap, and verify the exact validated Flutter artifact
+        id: source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          artifact_zip="$RUNNER_TEMP/rykshaw-artifact.zip"
+          wrapper="$RUNNER_TEMP/rykshaw-wrapper"
+          extracted="$RUNNER_TEMP/rykshaw-source"
+          rm -rf "$artifact_zip" "$wrapper" "$extracted"
+          mkdir -p "$wrapper" "$extracted"
+
+          metadata="$(gh api "repos/${SOURCE_REPOSITORY}/actions/artifacts/${SOURCE_ARTIFACT_ID}")"
+          test "$(jq -er .id <<<"$metadata")" = "$SOURCE_ARTIFACT_ID"
+          test "$(jq -er .name <<<"$metadata")" = "rykshaw-source-${SOURCE_COMMIT}"
+          test "$(jq -er .expired <<<"$metadata")" = false
+          test "$(jq -er .workflow_run.id <<<"$metadata")" = "$SOURCE_RUN_ID"
+          test "$(jq -er .workflow_run.head_sha <<<"$metadata")" = "$SOURCE_COMMIT"
+          test "$(jq -er .digest <<<"$metadata")" = "sha256:${SOURCE_ARTIFACT_DIGEST}"
+
+          gh api "repos/${SOURCE_REPOSITORY}/actions/artifacts/${SOURCE_ARTIFACT_ID}/zip" > "$artifact_zip"
+          printf '%s  %s\n' "$SOURCE_ARTIFACT_DIGEST" "$artifact_zip" | sha256sum --check --strict
+          unzip -q "$artifact_zip" -d "$wrapper"
+
+          test -f "$wrapper/source-meta.json"
+          test -f "$wrapper/source.sha256"
+          test -f "$wrapper/source.tar.gz"
+          test "$(find "$wrapper" -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 3
+          jq -e --arg repository "$TARGET_REPOSITORY" --arg validation "$SOURCE_COMMIT" --arg digest "$SOURCE_ARCHIVE_DIGEST" '
+            .schema == "oresoftware.normalized-source/v1" and
+            .target_repository == $repository and
+            .validation_sha == $validation and
+            .source_sha256 == $digest and
+            (.flutter_version | type == "string" and length > 0) and
+            (.telemetry_ref | test("^[0-9a-f]{40}$"))
+          ' "$wrapper/source-meta.json" >/dev/null
+          test "$(awk 'NF == 2 {print $1}' "$wrapper/source.sha256")" = "$SOURCE_ARCHIVE_DIGEST"
+          test "$(awk 'NF == 2 {print $2}' "$wrapper/source.sha256")" = source.tar.gz
+          (
+            cd "$wrapper"
+            sha256sum --check --strict source.sha256
+          )
+
+          tar -tzf "$wrapper/source.tar.gz" > "$RUNNER_TEMP/source-members.txt"
+          test -s "$RUNNER_TEMP/source-members.txt"
+          if grep -nE '(^/|(^|/)\.\.(/|$)|^\./)' "$RUNNER_TEMP/source-members.txt"; then
+            echo 'unsafe archive path detected' >&2
+            exit 1
+          fi
+          if grep -nvE '^elenkos-rykshaw-flutter(/|$)' "$RUNNER_TEMP/source-members.txt"; then
+            echo 'archive contains an unexpected top-level path' >&2
+            exit 1
+          fi
+          if tar -tvzf "$wrapper/source.tar.gz" | awk 'substr($1,1,1) != "-" && substr($1,1,1) != "d" {print; bad=1} END {exit bad ? 0 : 1}'; then
+            echo 'archive contains a non-file, non-directory entry' >&2
+            exit 1
+          fi
+
+          tar --extract --gzip --file "$wrapper/source.tar.gz" \
+            --directory "$extracted" \
+            --no-same-owner \
+            --no-same-permissions
+          source_root="$extracted/elenkos-rykshaw-flutter"
+          test -f "$source_root/pubspec.yaml"
+          test -f "$source_root/lib/main.dart"
+          test -f "$source_root/.zpkg.toml"
+          test "$(find "$source_root" -type f | wc -l)" -ge 80
+          test -z "$(find "$source_root" -type l -print -quit)"
+          test ! -e "$source_root/.git"
+          test ! -e "$source_root/env/dec"
+          test -z "$(find "$source_root" -type f \( -name '*.env' -o -name '*.pem' -o -name '*.p12' -o -name '*.jks' -o -name '*.keystore' \) -print -quit)"
+          credential_pattern='gh''p_|github_''pat_|-----BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY-----|service_role[^A-Za-z0-9_]*[:=][^$]'
+          if grep -RIlE --exclude-dir=.dart_tool --exclude='*.lock' "$credential_pattern" "$source_root" | grep -q .; then
+            echo 'credential-shaped material detected in validated source' >&2
+            exit 1
+          fi
+
+          printf 'source_root=%s\n' "$source_root" >> "$GITHUB_OUTPUT"
+          printf 'Verified validated source wrapper, inner archive, and %s files.\n' \
+            "$(find "$source_root" -type f | wc -l)"
+
+      - name: Receive repository-admin PAT through one-time RSA-OAEP-SHA256 handoff
+        id: handoff
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          handoff_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$(openssl rand -hex 16)"
+          private_key="$RUNNER_TEMP/den-3837-pat-private.pem"
+          public_key="$RUNNER_TEMP/den-3837-pat-public.pem"
+          matches="$RUNNER_TEMP/den-3837-pat-matches.txt"
+          encrypted="$RUNNER_TEMP/den-3837-pat-ciphertext.bin"
+          payload="$RUNNER_TEMP/den-3837-pat-payload.json"
+          token_file="$RUNNER_TEMP/den-3837-repository-admin-token"
+          public_comment_id=''
+          ciphertext_comment_id=''
+
+          cleanup_handoff() {
+            rm -f "$private_key" "$public_key" "$matches" "$encrypted" "$payload"
+            if [[ -n "${public_comment_id:-}" ]]; then
+              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/issues/comments/${public_comment_id}" >/dev/null 2>&1 || true
+            fi
+            if [[ -n "${ciphertext_comment_id:-}" ]]; then
+              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/issues/comments/${ciphertext_comment_id}" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup_handoff EXIT
+
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out "$private_key" >/dev/null 2>&1
+          openssl pkey -in "$private_key" -pubout -out "$public_key" >/dev/null 2>&1
+          key_b64="$(base64 --wrap=0 < "$public_key")"
+          public_comment_id="$(gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${HANDOFF_ISSUE}/comments" \
+            -f body="DEN3837_PAT_PUBLIC_KEY protocol=1 run_id=${handoff_id} key_b64=${key_b64} confirm=${HANDOFF_CONFIRMATION}" \
+            --jq .id)"
+          [[ "$public_comment_id" =~ ^[0-9]+$ ]]
+          unset key_b64
+
+          prefix="DEN3837_PAT_CIPHERTEXT protocol=1 run_id=${handoff_id} data="
+          ciphertext=''
+          for _ in $(seq 1 360); do
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${HANDOFF_ISSUE}/comments" \
+              --jq ".[] | select(.body | startswith(\"${prefix}\")) | .id" \
+              > "$matches"
+            count="$(awk 'NF{n++} END{print n+0}' "$matches")"
+            [[ "$count" -le 1 ]] || { echo "duplicate encrypted PAT payloads=${count}" >&2; exit 1; }
+            if [[ "$count" -eq 1 ]]; then
+              ciphertext_comment_id="$(cat "$matches")"
+              [[ "$ciphertext_comment_id" =~ ^[0-9]+$ ]]
+              body="$(gh api "repos/${GITHUB_REPOSITORY}/issues/comments/${ciphertext_comment_id}" --jq .body)"
+              ciphertext="${body#"$prefix"}"
+              break
+            fi
+            sleep 2
+          done
+          test -n "$ciphertext" || { echo 'encrypted PAT payload was not received' >&2; exit 1; }
+
+          CIPHERTEXT="$ciphertext" ENCRYPTED="$encrypted" python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          encoded = "".join(os.environ["CIPHERTEXT"].split())
+          encoded += "=" * (-len(encoded) % 4)
+          decoded = base64.urlsafe_b64decode(encoded)
+          if len(decoded) != 512:
+              raise SystemExit(f"unexpected RSA ciphertext length: {len(decoded)}")
+          Path(os.environ["ENCRYPTED"]).write_bytes(decoded)
+          PY
+          unset ciphertext body
+
+          openssl pkeyutl -decrypt \
+            -inkey "$private_key" \
+            -in "$encrypted" \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256 \
+            -out "$payload"
+
+          jq -e --arg run "$handoff_id" --arg confirm "$HANDOFF_CONFIRMATION" '
+            .run_id == $run and
+            .confirm == $confirm and
+            (.token | type == "string" and length >= 20 and (test("\\s") | not))
+          ' "$payload" >/dev/null
+          token="$(jq -r .token "$payload")"
+          printf '::add-mask::%s\n' "$token"
+          printf '%s' "$token" > "$token_file"
+          chmod 600 "$token_file"
+          unset token
+
+          printf 'token_file=%s\n' "$token_file" >> "$GITHUB_OUTPUT"
+          printf 'handoff_id=%s\n' "$handoff_id" >> "$GITHUB_OUTPUT"
+
+      - name: Verify credential, create private repository, push branch, and open PR
+        id: target
+        shell: bash
+        env:
+          SOURCE_ROOT: ${{ steps.source.outputs.source_root }}
+          TOKEN_FILE: ${{ steps.handoff.outputs.token_file }}
+        run: |
+          set -Eeuo pipefail
+          test -f "$TOKEN_FILE"
+          test "$(stat -c '%a' "$TOKEN_FILE")" = 600
+          token="$(cat "$TOKEN_FILE")"
+          printf '::add-mask::%s\n' "$token"
+          export GH_TOKEN="$token"
+          unset token
+
+          test "$(gh api user --jq .login)" = ORESoftware
+          test "$(gh api orgs/elenkos-systems --jq .login)" = elenkos-systems
+
+          repository_json="$RUNNER_TEMP/target-repository.json"
+          if gh api "repos/${TARGET_REPOSITORY}" > "$repository_json" 2>/dev/null; then
+            echo "FOUND ${TARGET_REPOSITORY}"
+          else
+            gh api --method POST orgs/elenkos-systems/repos \
+              -f name=elenkos-rykshaw-flutter \
+              -f description='Invite-only Flutter volunteer QA portal with compliance-gated sandbox appreciation flows' \
+              -F private=true \
+              -F has_issues=true \
+              -F has_projects=false \
+              -F has_wiki=false \
+              -F has_discussions=true \
+              -F auto_init=true \
+              > "$repository_json"
+            echo "CREATED ${TARGET_REPOSITORY}"
+          fi
+
+          test "$(jq -er .full_name < "$repository_json")" = "$TARGET_REPOSITORY"
+          test "$(jq -er .visibility < "$repository_json")" = private
+          gh api --method PATCH "repos/${TARGET_REPOSITORY}" \
+            -f description='Invite-only Flutter volunteer QA portal with compliance-gated sandbox appreciation flows' \
+            -F private=true \
+            -F has_issues=true \
+            -F has_projects=false \
+            -F has_wiki=false \
+            -F has_discussions=true \
+            -F allow_merge_commit=true \
+            -F allow_squash_merge=true \
+            -F allow_rebase_merge=false \
+            -F delete_branch_on_merge=false \
+            -f default_branch=main \
+            >/dev/null
+
+          for _ in $(seq 1 30); do
+            if gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/main" >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/main" >/dev/null
+
+          gh auth setup-git
+          checkout="$RUNNER_TEMP/elenkos-rykshaw-flutter"
+          rm -rf "$checkout"
+          git clone --quiet "https://github.com/${TARGET_REPOSITORY}.git" "$checkout"
+          cd "$checkout"
+          git fetch --quiet origin main
+
+          if git ls-remote --exit-code --heads origin "refs/heads/${TARGET_BRANCH}" >/dev/null 2>&1; then
+            git checkout -B "$TARGET_BRANCH" "origin/$TARGET_BRANCH"
+          else
+            git checkout -b "$TARGET_BRANCH" origin/main
+          fi
+
+          rsync -a --delete --exclude=.git/ "$SOURCE_ROOT/" "$checkout/"
+          test -f pubspec.yaml
+          test -f lib/main.dart
+          test -f .zpkg.toml
+          test ! -e env/dec
+
+          git config user.name ORESoftware
+          git config user.email alex@oresoftware.com
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'Validated source is already committed on the target branch.'
+          else
+            git commit -m 'feat(DEN-3837): publish validated Rykshaw Flutter beta'
+          fi
+          git push --set-upstream origin "$TARGET_BRANCH"
+
+          head_sha="$(git rev-parse HEAD)"
+          [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
+          remote_sha="$(git ls-remote origin "refs/heads/${TARGET_BRANCH}" | awk '{print $1}')"
+          test "$remote_sha" = "$head_sha"
+
+          pr_url="$(gh pr list \
+            --repo "$TARGET_REPOSITORY" \
+            --state open \
+            --base main \
+            --head "$TARGET_BRANCH" \
+            --json url \
+            --jq '.[0].url // empty')"
+          if [[ -z "$pr_url" ]]; then
+            pr_url="$(gh pr create \
+              --repo "$TARGET_REPOSITORY" \
+              --base main \
+              --head "$TARGET_BRANCH" \
+              --title 'feat(DEN-3837): volunteer QA and non-custodial rewards beta' \
+              --body $'Publishes the Flutter beta validated by ORESoftware/k8s-cluster run 32684317285. The immutable source artifact passed canonical Dart formatting, fatal Flutter analysis, 12 tests, and Android debug compilation before this branch was published.\n\nScope includes volunteer QA assignments, bug reports, participant-entered activity records, versioned consent and re-consent, optional foreground-only location, Rust API/web environment contracts, Zed lifecycle gates, and ORES telemetry.\n\nSafety boundary: no wallet, stored value, custody, FX, cash-out, payroll execution, or internal P2P transfer. Cash-like appreciation remains a licensed-provider handoff behind program, jurisdiction, legal, tax, privacy, and store approval.\n\nLinear: DEN-3837')"
+          fi
+          test -n "$pr_url"
+
+          printf 'head_sha=%s\n' "$head_sha" >> "$GITHUB_OUTPUT"
+          printf 'pr_url=%s\n' "$pr_url" >> "$GITHUB_OUTPUT"
+          printf 'repository_url=https://github.com/%s\n' "$TARGET_REPOSITORY" >> "$GITHUB_OUTPUT"
+
+      - name: Destroy repository-admin credential
+        if: ${{ always() }}
+        shell: bash
+        env:
+          TOKEN_FILE: ${{ steps.handoff.outputs.token_file }}
+        run: |
+          set -Eeuo pipefail
+          if [[ -n "${TOKEN_FILE:-}" && -f "$TOKEN_FILE" ]]; then
+            shred -u "$TOKEN_FILE" 2>/dev/null || rm -f "$TOKEN_FILE"
+          fi
+
+      - name: Record publication receipt and close the handoff issue
+        if: ${{ success() }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_HEAD: ${{ steps.target.outputs.head_sha }}
+          TARGET_PR: ${{ steps.target.outputs.pr_url }}
+          TARGET_URL: ${{ steps.target.outputs.repository_url }}
+          HANDOFF_ID: ${{ steps.handoff.outputs.handoff_id }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$TARGET_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          body="$RUNNER_TEMP/publication-receipt.md"
+          cat > "$body" <<EOF
+          Published and remotely verified the validated Rykshaw Flutter source.
+
+          - Target repository: $TARGET_URL
+          - Target branch: \`$TARGET_BRANCH\`
+          - Remote head: \`$TARGET_HEAD\`
+          - Pull request: $TARGET_PR
+          - Validated source run: https://github.com/$SOURCE_REPOSITORY/actions/runs/$SOURCE_RUN_ID
+          - Validated source commit: \`$SOURCE_COMMIT\`
+          - Artifact ID: \`$SOURCE_ARTIFACT_ID\`
+          - Outer artifact SHA-256: \`$SOURCE_ARTIFACT_DIGEST\`
+          - Inner source SHA-256: \`$SOURCE_ARCHIVE_DIGEST\`
+          - RSA handoff ID: \`$HANDOFF_ID\`
+          - Publisher run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+
+          The plaintext credential was never posted or committed and was shredded after publication.
+          EOF
+          gh issue comment "$HANDOFF_ISSUE" --repo "$GITHUB_REPOSITORY" --body-file "$body"
+          gh issue close "$HANDOFF_ISSUE" --repo "$GITHUB_REPOSITORY" --reason completed
+          cat "$body" >> "$GITHUB_STEP_SUMMARY"

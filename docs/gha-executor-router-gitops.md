@@ -1,7 +1,9 @@
 # GHA executor router GitOps and activation
 
-Linear: DEN-1597  
-Parent: DEN-1550  
+Linear: DEN-1597
+
+Parent: DEN-1550
+
 Core router: pull request #665
 Last reviewed: 2026-08-04
 

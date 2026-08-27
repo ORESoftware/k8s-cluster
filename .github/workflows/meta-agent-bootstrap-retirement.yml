@@ -1,0 +1,104 @@
+name: Meta Agent bootstrap retirement
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/meta-agent-bootstrap-retirement.yml
+      - .github/workflows/ops-owner-device-create-meta-agent-repo.yml
+      - docs/operations/meta-agent-repository-publication-completion.md
+      - docs/operations/meta-agent-ephemeral-credential-publication.md
+      - scripts/critical-org-fleet/assets/meta.part*
+      - scripts/critical-org-fleet/publish_meta_control_plane.py
+      - scripts/ops/verify_meta_agent_source_snapshot.py
+      - remote/tests/general/meta-agent-bootstrap-retirement.test.mjs
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/meta-agent-bootstrap-retirement.yml
+      - .github/workflows/ops-owner-device-create-meta-agent-repo.yml
+      - docs/operations/meta-agent-repository-publication-completion.md
+      - docs/operations/meta-agent-ephemeral-credential-publication.md
+      - scripts/critical-org-fleet/assets/meta.part*
+      - scripts/critical-org-fleet/publish_meta_control_plane.py
+      - scripts/ops/verify_meta_agent_source_snapshot.py
+      - remote/tests/general/meta-agent-bootstrap-retirement.test.mjs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meta-agent-bootstrap-retirement-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out without persisted credentials or submodules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Validate the focused workflow
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/meta-agent-bootstrap-retirement.yml
+
+      - name: Run retirement and recovery-evidence contracts
+        run: node --test remote/tests/general/meta-agent-bootstrap-retirement.test.mjs
+
+      - name: Verify the live canonical repository and initial refs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          target=meta-agents-demo/meta-agent-control-plane.rs
+          metadata="$(gh api "repos/${target}")"
+          test "$(jq -r .owner.login <<<"$metadata")" = meta-agents-demo
+          test "$(jq -r .visibility <<<"$metadata")" = public
+          test "$(jq -r .private <<<"$metadata")" = false
+          test "$(jq -r .archived <<<"$metadata")" = false
+          test "$(jq -r .disabled <<<"$metadata")" = false
+          test "$(jq -r .default_branch <<<"$metadata")" = main
+
+          initial_main=4d6ec3ad0ec7b688f0e777129eee7e0f0d999df1
+          initial_feature=789d48039da232faed985d4f8de176959f117e08
+          feature_ref=agent/den-1057-meta-agent-control-plane
+          gh api "repos/${target}/commits/${initial_main}" --jq .sha | grep -Fx "$initial_main"
+          gh api "repos/${target}/commits/${initial_feature}" --jq .sha | grep -Fx "$initial_feature"
+
+          current_feature="$(
+            gh api --paginate "repos/${target}/branches?per_page=100" \
+              --jq ".[] | select(.name == \"${feature_ref}\") | .commit.sha"
+          )"
+          if test -z "$current_feature"; then
+            echo "merged feature branch is absent by repository cleanup policy"
+          else
+            [[ "$current_feature" =~ ^[0-9a-f]{40}$ ]]
+          fi
+          true
+
+      - name: Reject conflict markers and accidental credential material
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          if git grep -nE '^(<{7}|={7}|>{7})' -- \
+            .github/workflows/meta-agent-bootstrap-retirement.yml \
+            docs/operations/meta-agent-repository-publication-completion.md \
+            remote/tests/general/meta-agent-bootstrap-retirement.test.mjs; then
+            echo 'Git conflict markers are forbidden.' >&2
+            exit 1
+          fi
+          if git grep -nE 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]+' -- \
+            .github/workflows/meta-agent-bootstrap-retirement.yml \
+            docs/operations/meta-agent-repository-publication-completion.md \
+            remote/tests/general/meta-agent-bootstrap-retirement.test.mjs; then
+            echo 'Credential-like material is forbidden.' >&2
+            exit 1
+          fi

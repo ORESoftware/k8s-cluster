@@ -1,0 +1,288 @@
+name: Publish validated Elenkos Rykshaw Flutter artifact directly
+run-name: Publish validated Rykshaw artifact @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-elenkos-rykshaw-flutter-direct-once.yml
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-elenkos-rykshaw-flutter-direct-once.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+concurrency:
+  group: den-3837-publish-validated-rykshaw-artifact-directly
+  cancel-in-progress: false
+
+env:
+  SOURCE_REPOSITORY: ORESoftware/k8s-cluster
+  SOURCE_RUN_ID: '32684317285'
+  SOURCE_ARTIFACT_ID: '9505221048'
+  SOURCE_ARTIFACT_DIGEST: b2afe8d2c97da783c7923fcbd47e317636136146c57209979dc36c25c046633c
+  SOURCE_COMMIT: 65e7813adb45a2e66e954a5e66b3ecc8ec9bb3ff
+  TARGET_REPOSITORY: elenkos-systems/elenkos-rykshaw-flutter
+  TARGET_BRANCH: den-3837/rykshaw-volunteer-qa-beta
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the exact reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Validate immutable source and publication boundaries
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          workflow=.github/workflows/ops-publish-elenkos-rykshaw-flutter-direct-once.yml
+          test -f "$workflow"
+          grep -qF "SOURCE_RUN_ID: '32684317285'" "$workflow"
+          grep -qF "SOURCE_ARTIFACT_ID: '9505221048'" "$workflow"
+          grep -qF 'SOURCE_ARTIFACT_DIGEST: b2afe8d2c97da783c7923fcbd47e317636136146c57209979dc36c25c046633c' "$workflow"
+          grep -qF 'SOURCE_COMMIT: 65e7813adb45a2e66e954a5e66b3ecc8ec9bb3ff' "$workflow"
+          grep -qF 'TARGET_REPOSITORY: elenkos-systems/elenkos-rykshaw-flutter' "$workflow"
+          grep -qF 'TARGET_BRANCH: den-3837/rykshaw-volunteer-qa-beta' "$workflow"
+          grep -qF 'GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN' "$workflow"
+          grep -qF 'git push --set-upstream origin "$TARGET_BRANCH"' "$workflow"
+          if grep -nE 'git push[^\n]*--force|visibility[=:][[:space:]]*public|private[=:][[:space:]]*false' "$workflow"; then
+            echo 'unsafe target mutation detected' >&2
+            exit 1
+          fi
+          credential_pattern='gh''p_|github_''pat_|-----BEGIN (RSA )?PRIVATE KEY-----'
+          if grep -nE "$credential_pattern" "$workflow"; then
+            echo 'credential-shaped source material detected' >&2
+            exit 1
+          fi
+          git diff --check HEAD^ HEAD
+
+  publish:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TARGET_GH_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
+    steps:
+      - name: Download and verify the exact validated Flutter artifact
+        id: source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          archive="$RUNNER_TEMP/rykshaw-source.zip"
+          unpacked="$RUNNER_TEMP/rykshaw-source"
+          rm -rf "$archive" "$unpacked"
+          mkdir -p "$unpacked"
+
+          metadata="$(gh api "repos/${SOURCE_REPOSITORY}/actions/artifacts/${SOURCE_ARTIFACT_ID}")"
+          test "$(jq -er .id <<<"$metadata")" = "$SOURCE_ARTIFACT_ID"
+          test "$(jq -er .name <<<"$metadata")" = "rykshaw-source-${SOURCE_COMMIT}"
+          test "$(jq -er .expired <<<"$metadata")" = false
+          test "$(jq -er .workflow_run.id <<<"$metadata")" = "$SOURCE_RUN_ID"
+          test "$(jq -er .workflow_run.head_sha <<<"$metadata")" = "$SOURCE_COMMIT"
+          test "$(jq -er .digest <<<"$metadata")" = "sha256:${SOURCE_ARTIFACT_DIGEST}"
+
+          gh api "repos/${SOURCE_REPOSITORY}/actions/artifacts/${SOURCE_ARTIFACT_ID}/zip" > "$archive"
+          printf '%s  %s\n' "$SOURCE_ARTIFACT_DIGEST" "$archive" | sha256sum --check --strict
+          unzip -q "$archive" -d "$unpacked"
+
+          if [[ -f "$unpacked/pubspec.yaml" ]]; then
+            source_root="$unpacked"
+          elif [[ -f "$unpacked/normalized-source/pubspec.yaml" ]]; then
+            source_root="$unpacked/normalized-source"
+          else
+            mapfile -t manifests < <(find "$unpacked" -type f -name pubspec.yaml -print)
+            test "${#manifests[@]}" -eq 1
+            source_root="$(dirname "${manifests[0]}")"
+          fi
+
+          test -f "$source_root/pubspec.yaml"
+          test -f "$source_root/lib/main.dart"
+          test -f "$source_root/.zpkg.toml"
+          test "$(find "$source_root" -type f | wc -l)" -ge 40
+          test -z "$(find "$source_root" -type l -print -quit)"
+          test ! -e "$source_root/.git"
+          test ! -e "$source_root/env/dec"
+          test -z "$(find "$source_root" -type f \( -name '*.env' -o -name '*.pem' -o -name '*.p12' -o -name '*.jks' -o -name '*.keystore' \) -print -quit)"
+          credential_pattern='gh''p_|github_''pat_|-----BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY-----|service_role[^A-Za-z0-9_]*[:=][^$]'
+          if grep -RIlE --exclude-dir=.dart_tool --exclude='*.lock' "$credential_pattern" "$source_root" | grep -q .; then
+            echo 'credential-shaped material detected in validated artifact' >&2
+            exit 1
+          fi
+
+          printf 'source_root=%s\n' "$source_root" >> "$GITHUB_OUTPUT"
+          printf 'Validated artifact %s from run %s at source commit %s\n' \
+            "$SOURCE_ARTIFACT_ID" "$SOURCE_RUN_ID" "$SOURCE_COMMIT"
+
+      - name: Verify protected repository-admin credential
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "${TARGET_GH_TOKEN:-}" || {
+            echo 'Neither GITHUB_REPOSITORY_ADMIN_TOKEN nor ORG_GITOPS_TOKEN is configured.' >&2
+            exit 1
+          }
+          printf '::add-mask::%s\n' "$TARGET_GH_TOKEN"
+          test "$(GH_TOKEN="$TARGET_GH_TOKEN" gh api user --jq .login)" = ORESoftware
+          test "$(GH_TOKEN="$TARGET_GH_TOKEN" gh api orgs/elenkos-systems --jq .login)" = elenkos-systems
+
+      - name: Create or reconcile the exact private target repository
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          repository_json="$RUNNER_TEMP/target-repository.json"
+          if GH_TOKEN="$TARGET_GH_TOKEN" gh api "repos/${TARGET_REPOSITORY}" > "$repository_json" 2>/dev/null; then
+            echo "FOUND ${TARGET_REPOSITORY}"
+          else
+            GH_TOKEN="$TARGET_GH_TOKEN" gh api --method POST orgs/elenkos-systems/repos \
+              -f name=elenkos-rykshaw-flutter \
+              -f description='Invite-only Flutter volunteer QA portal with compliance-gated sandbox appreciation flows' \
+              -F private=true \
+              -F has_issues=true \
+              -F has_projects=false \
+              -F has_wiki=false \
+              -F has_discussions=true \
+              -F auto_init=true \
+              > "$repository_json"
+            echo "CREATED ${TARGET_REPOSITORY}"
+          fi
+
+          test "$(jq -er .full_name < "$repository_json")" = "$TARGET_REPOSITORY"
+          test "$(jq -er .visibility < "$repository_json")" = private
+          GH_TOKEN="$TARGET_GH_TOKEN" gh api --method PATCH "repos/${TARGET_REPOSITORY}" \
+            -f description='Invite-only Flutter volunteer QA portal with compliance-gated sandbox appreciation flows' \
+            -F private=true \
+            -F has_issues=true \
+            -F has_projects=false \
+            -F has_wiki=false \
+            -F has_discussions=true \
+            -F allow_merge_commit=true \
+            -F allow_squash_merge=true \
+            -F allow_rebase_merge=false \
+            -F delete_branch_on_merge=false \
+            -f default_branch=main \
+            >/dev/null
+
+          for _ in $(seq 1 30); do
+            if GH_TOKEN="$TARGET_GH_TOKEN" gh api "repos/${TARGET_REPOSITORY}/git/ref/heads/main" >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo 'target main branch did not become available' >&2
+          exit 1
+
+      - name: Commit, push, and open or update the target pull request
+        id: target
+        shell: bash
+        env:
+          SOURCE_ROOT: ${{ steps.source.outputs.source_root }}
+        run: |
+          set -Eeuo pipefail
+          printf '::add-mask::%s\n' "$TARGET_GH_TOKEN"
+          export GH_TOKEN="$TARGET_GH_TOKEN"
+          gh auth setup-git
+
+          checkout="$RUNNER_TEMP/elenkos-rykshaw-flutter"
+          rm -rf "$checkout"
+          git clone --quiet "https://github.com/${TARGET_REPOSITORY}.git" "$checkout"
+          cd "$checkout"
+          git fetch --quiet origin main
+
+          if git ls-remote --exit-code --heads origin "refs/heads/${TARGET_BRANCH}" >/dev/null 2>&1; then
+            git checkout -B "$TARGET_BRANCH" "origin/$TARGET_BRANCH"
+          else
+            git checkout -b "$TARGET_BRANCH" origin/main
+          fi
+
+          rsync -a --delete --exclude=.git/ "$SOURCE_ROOT/" "$checkout/"
+          test -f pubspec.yaml
+          test -f lib/main.dart
+          test ! -e env/dec
+
+          git config user.name ORESoftware
+          git config user.email alex@oresoftware.com
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'Validated source is already committed on the target branch.'
+          else
+            git commit -m 'feat(DEN-3837): publish validated Rykshaw Flutter beta'
+          fi
+          git push --set-upstream origin "$TARGET_BRANCH"
+
+          head_sha="$(git rev-parse HEAD)"
+          [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
+          remote_sha="$(git ls-remote origin "refs/heads/${TARGET_BRANCH}" | awk '{print $1}')"
+          test "$remote_sha" = "$head_sha"
+
+          pr_url="$(gh pr list \
+            --repo "$TARGET_REPOSITORY" \
+            --state open \
+            --base main \
+            --head "$TARGET_BRANCH" \
+            --json url \
+            --jq '.[0].url // empty')"
+          if [[ -z "$pr_url" ]]; then
+            pr_url="$(gh pr create \
+              --repo "$TARGET_REPOSITORY" \
+              --base main \
+              --head "$TARGET_BRANCH" \
+              --title 'feat(DEN-3837): volunteer QA and non-custodial rewards beta' \
+              --body $'Publishes the Flutter beta validated by ORESoftware/k8s-cluster run 32684317285. The immutable source artifact passed Dart normalization, fatal Flutter analysis, 12 tests, and Android debug compilation before this branch was published.\n\nScope includes volunteer QA assignments, bug reports, participant-entered activity records, versioned consent and re-consent, optional foreground-only location, Rust API/web environment contracts, Zed lifecycle gates, and ORES telemetry.\n\nSafety boundary: no wallet, stored value, custody, FX, cash-out, payroll execution, or internal P2P transfer. Cash-like appreciation remains a licensed-provider handoff behind program, jurisdiction, legal, tax, privacy, and store approval.\n\nLinear: DEN-3837')"
+          fi
+          test -n "$pr_url"
+
+          printf 'head_sha=%s\n' "$head_sha" >> "$GITHUB_OUTPUT"
+          printf 'pr_url=%s\n' "$pr_url" >> "$GITHUB_OUTPUT"
+          printf 'repository_url=https://github.com/%s\n' "$TARGET_REPOSITORY" >> "$GITHUB_OUTPUT"
+
+      - name: Record idempotent publication receipt
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_HEAD: ${{ steps.target.outputs.head_sha }}
+          TARGET_PR: ${{ steps.target.outputs.pr_url }}
+          TARGET_URL: ${{ steps.target.outputs.repository_url }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$TARGET_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          title='[receipt] DEN-3837 Rykshaw Flutter direct publication'
+          body="$RUNNER_TEMP/receipt.md"
+          cat > "$body" <<EOF
+          <!-- den-3837-rykshaw-direct-publication-receipt -->
+          Target repository: $TARGET_URL
+          Target branch: \`$TARGET_BRANCH\`
+          Remote head: \`$TARGET_HEAD\`
+          Pull request: $TARGET_PR
+          Validated source run: https://github.com/$SOURCE_REPOSITORY/actions/runs/$SOURCE_RUN_ID
+          Validated source commit: \`$SOURCE_COMMIT\`
+          Artifact ID: \`$SOURCE_ARTIFACT_ID\`
+          Artifact SHA-256: \`$SOURCE_ARTIFACT_DIGEST\`
+          Publisher run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          EOF
+
+          issue="$(gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state all \
+            --search 'DEN-3837 Rykshaw Flutter direct publication in:title' \
+            --json number \
+            --jq '.[0].number // empty')"
+          if [[ -n "$issue" ]]; then
+            gh issue edit "$issue" --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$body"
+          fi
+          cat "$body" >> "$GITHUB_STEP_SUMMARY"

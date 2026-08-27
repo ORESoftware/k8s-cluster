@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oresoftware.github.io/schemas/prod-test-parity.v1.json",
+  "title": "Production/test GitHub org parity snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "policyVersion", "pairs", "exceptions"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "policyVersion": { "type": "string", "pattern": "^den-3444\\." },
+    "generatedAt": { "type": "string" },
+    "pairs": {
+      "type": "array",
+      "minItems": 10,
+      "items": { "$ref": "#/$defs/pair" }
+    },
+    "exceptions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/exception" }
+    }
+  },
+  "$defs": {
+    "canary": { "enum": ["required", "optional", "prohibited"] },
+    "role": {
+      "enum": ["interfaces", "lib", "clients", "cli", "web", "api", "desktop", "e2e", "infra", "monorepo", "other"]
+    },
+    "pair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["productionOrg", "testOrg", "canary", "defaultBranch", "visibility", "roles"],
+      "properties": {
+        "productionOrg": { "type": "string", "minLength": 1 },
+        "testOrg": { "type": "string", "minLength": 1 },
+        "canary": { "$ref": "#/$defs/canary" },
+        "defaultBranch": { "type": "string", "minLength": 1 },
+        "visibility": { "enum": ["public", "private", "internal"] },
+        "roles": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/role" }
+        }
+      }
+    },
+    "exception": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "owner", "reason", "scope", "expiresAt"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "missing-test-org",
+            "orphan-test-org",
+            "orphan-test-repository",
+            "excluded-organization"
+          ]
+        },
+        "productionOrg": { "type": "string" },
+        "testOrg": { "type": "string" },
+        "repository": { "type": "string" },
+        "owner": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 },
+        "scope": { "enum": ["org", "repository", "fleet"] },
+        "expiresAt": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

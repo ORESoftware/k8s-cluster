@@ -22,6 +22,27 @@ The application check is deliberately strict:
 - direct upstream application repositories remain valid, keeping submodules
   as inventory pins rather than render roots.
 
+DEN-1267 adds `catalog/channels.json`, the canonical registry binding each
+Slack project channel to its eponymous GitHub organization and Linear project.
+Its versioned JSON Schema is `catalog/channels.schema.json`.
+
+The registry records a diagnosis rather than a knob. Every tracked Linear
+project already enables all three writable Slack toggles (`slackNewIssue`,
+`slackIssueComments`, `slackIssueStatuses`), so a silent channel is never a
+notification-settings problem. What is missing is `slackChannelId`, and
+Linear's `ProjectUpdateInput` exposes no field for it — moving a channel from
+`unbound` to `bound` is an operator action in Linear's Slack integration
+surface, not an API write. The registry therefore names the remaining manual
+work and keeps it auditable.
+
+The channel check enforces:
+
+- every channel is eponymous with its GitHub owner (`#3fa-app` ↔ `3FA-app`);
+- no duplicate channel, owner, or Linear project;
+- a `bound` channel must have been inventoried; and
+- no immutable Slack channel ID or Linear UUID may enter this public
+  repository — those identifiers stay on DEN-1267.
+
 ## Data boundary
 
 This repository is public. It may contain:
