@@ -65,30 +65,6 @@ Example plan:
 | Playwright | `playwright` |
 | Puppeteer | `puppeteer` |
 
-## Accepted governance keys
-
-Three governance keys that appear in most fleet workflows are accepted because
-the lane satisfies their intent exactly, never approximately:
-
-- **`permissions`** (workflow and job level) — the independent lane issues no
-  `GITHUB_TOKEN`; the executor submits only a trusted repository, immutable
-  SHA, and reviewed profile name. With no token to restrict, any permissions
-  block is satisfied vacuously. Recorded as a plan note.
-- **`concurrency`** (workflow and job level) — accepted only when the group is
-  a pure function of run-constant contexts (`github.workflow`, `github.ref`,
-  `github.ref_name`, `github.repository`, `github.sha`, `github.event_name`)
-  and `cancel-in-progress` is a literal boolean. The lane serializes dispatch
-  per repository and workflow, which partitions runs at least as finely as any
-  such group, so "never two concurrent runs in one group" holds without
-  emulating GitHub's group bookkeeping. Dynamic groups fail closed with the
-  offending expression named.
-- **`timeout-minutes`** (job level) — clamped to 60 minutes and enforced as
-  the run coordinator's poll deadline: a caller may tighten the lane bound,
-  never extend it. The plan reports the clamp in `effectiveTimeoutMinutes`.
-  Step-level `timeout-minutes` is advisory under the job deadline.
-
-`GET /v1/capabilities` lists these under `acceptedGovernance`.
-
 Static `needs` dependencies are validated for unknown nodes and cycles. Runs
 execute in deterministic topological order and poll each build-server job to a
 terminal result before submitting its dependents.

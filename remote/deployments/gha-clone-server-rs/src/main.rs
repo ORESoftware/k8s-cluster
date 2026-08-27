@@ -864,7 +864,6 @@ async fn execute_plan(state: &AppState, run_id: Uuid, plan: WorkflowPlan) -> Res
             build_server_auth,
             job_id,
             &build.id,
-            job.effective_timeout_minutes,
         )
         .await?;
         update_run(state, run_id, |run| {
@@ -901,20 +900,13 @@ async fn wait_for_build(
     build_server_auth: &str,
     workflow_job_id: &str,
     build_job_id: &str,
-    job_timeout_minutes: Option<u64>,
 ) -> Result<BuildJobResponse, String> {
-    // A workflow's `timeout-minutes` may tighten the lane deadline, never
-    // extend it (the planner already clamps to MAX_JOB_TIMEOUT_MINUTES).
-    let timeout_seconds = job_timeout_minutes
-        .map(|minutes| minutes.saturating_mul(60))
-        .map_or(state.config.build_timeout_seconds, |requested| {
-            requested.min(state.config.build_timeout_seconds)
-        });
-    let deadline = Instant::now() + Duration::from_secs(timeout_seconds);
+    let deadline = Instant::now() + Duration::from_secs(state.config.build_timeout_seconds);
     loop {
         if Instant::now() >= deadline {
             return Err(format!(
-                "build-server job {build_job_id} for {workflow_job_id} exceeded {timeout_seconds} seconds"
+                "build-server job {build_job_id} for {workflow_job_id} exceeded {} seconds",
+                state.config.build_timeout_seconds
             ));
         }
         let response = state

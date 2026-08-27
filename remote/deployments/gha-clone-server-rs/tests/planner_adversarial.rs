@@ -411,22 +411,22 @@ jobs:
 
     assert!(!plan.independent_executable);
     for id in ["reusable_like", "ordinary"] {
-        let job_plan = job(&plan, id);
-        let reasons = job_plan.independent_reasons.join("\n");
-        let notes = job_plan.independent_notes.join("\n");
-        assert!(notes.contains("workflow-level permissions accepted"));
-        assert!(notes.contains("workflow-level concurrency accepted"));
+        let reasons = job(&plan, id).independent_reasons.join("\n");
+        assert!(reasons.contains("workflow-level permissions"));
+        assert!(reasons.contains("workflow-level concurrency"));
         assert!(reasons.contains("workflow-level defaults"));
     }
 
     let reasons = job(&plan, "reusable_like").independent_reasons.join("\n");
     for expected in [
         "job-level uses",
+        "job-level permissions",
         "job-level environment",
         "job-level secrets",
         "job-level defaults",
         "job-level outputs",
         "job-level continue-on-error",
+        "job-level timeout-minutes",
         "service containers",
         "job containers",
         "dynamic strategy/matrix",
@@ -467,6 +467,7 @@ jobs:
         "conditional steps are unsupported",
         "working-directory is unsupported",
         "continue-on-error is unsupported",
+        "timeout-minutes is unsupported",
         "shell is unsupported",
         "secret-bearing env/with values are unsupported",
     ] {
@@ -475,11 +476,6 @@ jobs:
             "missing reason {expected:?}: {reasons}"
         );
     }
-    let notes = job(&plan, "test").independent_notes.join("\n");
-    assert!(
-        notes.contains("step timeout-minutes is advisory"),
-        "missing advisory timeout note: {notes}"
-    );
     assert!(!job(&plan, "test").independent_supported);
 }
 

@@ -10,22 +10,6 @@ pub const PLAN_SCHEMA_VERSION: &str = "gha-clone-plan.v1";
 pub const MAX_WORKFLOW_BYTES_DEFAULT: usize = 256 * 1024;
 pub const MAX_JOBS_DEFAULT: usize = 64;
 pub const MAX_STEPS_PER_JOB_DEFAULT: usize = 128;
-/// Upper bound for a caller-requested job `timeout-minutes`. Mirrors the run
-/// coordinator's own `GHA_CLONE_BUILD_TIMEOUT_SECONDS` default (3600s) so a
-/// workflow can tighten the deadline but never extend the lane's bound.
-pub const MAX_JOB_TIMEOUT_MINUTES: u64 = 60;
-
-/// `${{ github.* }}` contexts that are constant for the whole run and safe to
-/// appear inside a concurrency group: they cannot smuggle secrets or vary
-/// mid-plan. Everything else stays rejected.
-const STATIC_CONCURRENCY_CONTEXTS: [&str; 6] = [
-    "github.workflow",
-    "github.ref",
-    "github.ref_name",
-    "github.repository",
-    "github.sha",
-    "github.event_name",
-];
 
 #[derive(Clone, Debug)]
 pub struct PlannerLimits {
@@ -87,10 +71,6 @@ pub struct JobPlan {
     pub independent_profile: Option<String>,
     pub independent_reasons: Vec<String>,
     pub independent_notes: Vec<String>,
-    /// Caller-requested `timeout-minutes` clamped to [`MAX_JOB_TIMEOUT_MINUTES`].
-    /// `None` means the workflow set no timeout and the lane default applies.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub effective_timeout_minutes: Option<u64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -102,9 +82,6 @@ pub struct CapabilityResponse {
     pub independent_profiles: Vec<String>,
     pub limits: CapabilityLimits,
     pub explicitly_unsupported: Vec<String>,
-    /// Governance keys the planner accepts because the lane satisfies their
-    /// intent exactly (not approximately); each entry states the mechanism.
-    pub accepted_governance: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -166,16 +143,6 @@ pub fn capabilities(limits: &PlannerLimits) -> CapabilityResponse {
             "arbitrary marketplace actions, job containers, service containers, KVM, and caller-selected commands"
                 .to_string(),
             "secret-bearing expressions or mutable branch execution".to_string(),
-            "concurrency groups containing non-static expressions".to_string(),
-        ],
-        accepted_governance: vec![
-            "permissions (workflow and job level): the independent lane issues no GITHUB_TOKEN, so any permissions restriction is satisfied vacuously"
-                .to_string(),
-            "concurrency (workflow and job level, static groups only): dispatch is serialized per repository and workflow, which is at least as strict as any static concurrency group"
-                .to_string(),
-            format!(
-                "timeout-minutes (job level): enforced by the run coordinator, clamped to {MAX_JOB_TIMEOUT_MINUTES} minutes; step level is advisory under the job deadline"
-            ),
         ],
     }
 }
@@ -386,23 +353,11 @@ pub fn build_plan(
     }
 
     let mut workflow_reasons = Vec::new();
-    let mut workflow_notes = Vec::new();
-    for (key_value, value) in root {
-        let Some(key) = key_value.as_str() else {
-            continue;
-        };
-        match key {
-            "name" | "run-name" | "on" | "jobs" => {}
-            "permissions" => accept_permissions("workflow", &mut workflow_notes),
-            "concurrency" => review_concurrency(
-                "workflow-level concurrency",
-                value,
-                &mut workflow_reasons,
-                &mut workflow_notes,
-            ),
-            _ => workflow_reasons.push(format!(
+    for key in root.keys().filter_map(Value::as_str) {
+        if !matches!(key, "name" | "run-name" | "on" | "jobs") {
+            workflow_reasons.push(format!(
                 "workflow-level {key} is unsupported by the independent lane"
-            )),
+            ));
         }
     }
 
@@ -434,7 +389,6 @@ pub fn build_plan(
         match compile_job(&id, job, limits) {
             Ok(mut plan) => {
                 plan.independent_reasons.extend(workflow_reasons.clone());
-                plan.independent_notes.extend(workflow_notes.clone());
                 if !plan.independent_reasons.is_empty() {
                     plan.independent_supported = false;
                     plan.independent_profile = None;
@@ -504,11 +458,13 @@ fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPla
 
     for key in [
         "uses",
+        "permissions",
         "environment",
         "secrets",
         "defaults",
         "outputs",
         "continue-on-error",
+        "timeout-minutes",
     ] {
         if mapping_get(job, key).is_some() {
             reasons.push(format!(
@@ -516,40 +472,6 @@ fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPla
             ));
         }
     }
-    if mapping_get(job, "permissions").is_some() {
-        accept_permissions("job", &mut notes);
-    }
-    if let Some(value) = mapping_get(job, "concurrency") {
-        review_concurrency(
-            &format!("jobs.{id} concurrency"),
-            value,
-            &mut reasons,
-            &mut notes,
-        );
-    }
-    let effective_timeout_minutes = match mapping_get(job, "timeout-minutes") {
-        None => None,
-        Some(value) => match value.as_u64().filter(|minutes| *minutes > 0) {
-            None => {
-                reasons.push(format!(
-                    "jobs.{id}.timeout-minutes must be a positive integer; expressions and fractions are unsupported"
-                ));
-                None
-            }
-            Some(requested) if requested > MAX_JOB_TIMEOUT_MINUTES => {
-                notes.push(format!(
-                    "jobs.{id}.timeout-minutes {requested} exceeds the lane cap; enforced at {MAX_JOB_TIMEOUT_MINUTES} minutes"
-                ));
-                Some(MAX_JOB_TIMEOUT_MINUTES)
-            }
-            Some(requested) => {
-                notes.push(format!(
-                    "jobs.{id}.timeout-minutes {requested} is enforced by the run coordinator"
-                ));
-                Some(requested)
-            }
-        },
-    };
     if has_services {
         reasons.push("service containers require the isolated ARC DinD lane".into());
     }
@@ -594,17 +516,17 @@ fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPla
         if mapping_get(step, "if").is_some() {
             reasons.push(format!("{path}: conditional steps are unsupported"));
         }
-        for key in ["working-directory", "continue-on-error", "shell"] {
+        for key in [
+            "working-directory",
+            "continue-on-error",
+            "timeout-minutes",
+            "shell",
+        ] {
             if mapping_get(step, key).is_some() {
                 reasons.push(format!(
                     "{path}: {key} is unsupported by the fixed-profile executor"
                 ));
             }
-        }
-        if mapping_get(step, "timeout-minutes").is_some() {
-            notes.push(format!(
-                "{path}: step timeout-minutes is advisory; the job deadline and profile caps bound execution"
-            ));
         }
         if contains_secret_expression(mapping_get(step, "env"))
             || contains_secret_expression(mapping_get(step, "with"))
@@ -660,97 +582,7 @@ fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPla
         independent_profile: if independent_supported { profile } else { None },
         independent_reasons: reasons,
         independent_notes: notes,
-        effective_timeout_minutes,
     })
-}
-
-/// `permissions` restricts a workflow's `GITHUB_TOKEN`. The independent lane
-/// never mints one — the executor submits only (repository, immutable SHA,
-/// reviewed profile) to the build server — so every permissions block is
-/// satisfied by construction rather than approximated.
-fn accept_permissions(level: &str, notes: &mut Vec<String>) {
-    notes.push(format!(
-        "{level}-level permissions accepted: the independent lane issues no GITHUB_TOKEN, so the restriction is satisfied vacuously"
-    ));
-}
-
-/// Accept a concurrency block only when its group is a pure function of
-/// run-constant contexts. The lane serializes dispatch per (repository,
-/// workflow), which partitions runs at least as finely as any such group, so
-/// "never two concurrent runs in one group" holds without emulating GitHub's
-/// group bookkeeping. Anything dynamic stays rejected.
-fn review_concurrency(
-    path: &str,
-    value: &Value,
-    reasons: &mut Vec<String>,
-    notes: &mut Vec<String>,
-) {
-    let (group, cancel_in_progress) = match value {
-        Value::String(group) => (Some(group.as_str()), None),
-        Value::Mapping(mapping) => {
-            for key in mapping.keys().filter_map(Value::as_str) {
-                if !matches!(key, "group" | "cancel-in-progress") {
-                    reasons.push(format!("{path}: unknown key {key}"));
-                }
-            }
-            (
-                mapping_get(mapping, "group").and_then(Value::as_str),
-                mapping_get(mapping, "cancel-in-progress"),
-            )
-        }
-        _ => {
-            reasons.push(format!("{path} must be a string or a mapping"));
-            return;
-        }
-    };
-
-    let Some(group) = group else {
-        reasons.push(format!("{path}: group must be a string"));
-        return;
-    };
-    for expression in non_static_expressions(group) {
-        reasons.push(format!(
-            "{path}: group expression {expression:?} is not in the static context allowlist ({})",
-            STATIC_CONCURRENCY_CONTEXTS.join(", ")
-        ));
-    }
-    match cancel_in_progress {
-        None | Some(Value::Bool(_)) => {}
-        Some(other) => reasons.push(format!(
-            "{path}: cancel-in-progress must be a literal boolean, got {}",
-            compact_yaml(other)
-        )),
-    }
-    if reasons.iter().all(|reason| !reason.starts_with(path)) {
-        notes.push(format!(
-            "{path} accepted: the lane serializes dispatch per repository and workflow, which is at least as strict as this static group"
-        ));
-    }
-}
-
-/// Every `${{ ... }}` occurrence in `text` whose trimmed body is not one of
-/// the run-constant contexts. An unterminated expression is returned verbatim
-/// so it fails closed.
-fn non_static_expressions(text: &str) -> Vec<String> {
-    let mut offenders = Vec::new();
-    let mut rest = text;
-    while let Some(start) = rest.find("${{") {
-        let after = &rest[start + 3..];
-        match after.find("}}") {
-            Some(end) => {
-                let body = after[..end].trim();
-                if !STATIC_CONCURRENCY_CONTEXTS.contains(&body) {
-                    offenders.push(body.to_string());
-                }
-                rest = &after[end + 2..];
-            }
-            None => {
-                offenders.push(after.trim().to_string());
-                break;
-            }
-        }
-    }
-    offenders
 }
 
 fn classify_profile(text: &str) -> Option<String> {
@@ -1225,124 +1057,6 @@ jobs:
     }
 
     #[test]
-    fn governance_keys_are_accepted_with_exact_semantics() {
-        let plan = build_plan(
-            &request(
-                r#"
-name: ci
-permissions:
-  contents: read
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    timeout-minutes: 30
-    steps:
-      - run: "cargo test"
-        timeout-minutes: 10
-"#,
-            ),
-            &PlannerLimits::default(),
-        )
-        .expect("valid plan");
-
-        let job = &plan.jobs[0];
-        assert!(
-            job.independent_supported,
-            "reasons: {:?}",
-            job.independent_reasons
-        );
-        assert_eq!(job.effective_timeout_minutes, Some(30));
-        let notes = job.independent_notes.join("\n");
-        assert!(notes.contains("permissions accepted"));
-        assert!(notes.contains("concurrency accepted"));
-        assert!(notes.contains("timeout-minutes 30 is enforced"));
-        assert!(notes.contains("step timeout-minutes is advisory"));
-    }
-
-    #[test]
-    fn job_timeout_above_the_lane_cap_is_clamped() {
-        let plan = build_plan(
-            &request(
-                r#"
-jobs:
-  slow:
-    runs-on: ubuntu-latest
-    timeout-minutes: 720
-    steps: [{ run: "cargo test" }]
-"#,
-            ),
-            &PlannerLimits::default(),
-        )
-        .expect("valid plan");
-
-        let job = &plan.jobs[0];
-        assert!(job.independent_supported);
-        assert_eq!(job.effective_timeout_minutes, Some(MAX_JOB_TIMEOUT_MINUTES));
-        assert!(job
-            .independent_notes
-            .iter()
-            .any(|note| note.contains("exceeds the lane cap")));
-    }
-
-    #[test]
-    fn dynamic_concurrency_groups_and_zero_timeouts_fail_closed() {
-        let plan = build_plan(
-            &request(
-                r#"
-concurrency:
-  group: ci-${{ github.head_ref || github.run_id }}
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps: [{ run: "cargo test" }]
-"#,
-            ),
-            &PlannerLimits::default(),
-        )
-        .expect("plan is valid but unsupported");
-        let job = &plan.jobs[0];
-        assert!(!job.independent_supported);
-        assert!(job
-            .independent_reasons
-            .iter()
-            .any(|reason| reason.contains("static context allowlist")));
-
-        let zero = build_plan(
-            &request(
-                r#"
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 0
-    steps: [{ run: "cargo test" }]
-"#,
-            ),
-            &PlannerLimits::default(),
-        )
-        .expect("plan is valid but unsupported");
-        assert!(!zero.jobs[0].independent_supported);
-        assert!(zero.jobs[0]
-            .independent_reasons
-            .iter()
-            .any(|reason| reason.contains("positive integer")));
-    }
-
-    #[test]
-    fn capabilities_declare_accepted_governance() {
-        let response = capabilities(&PlannerLimits::default());
-        assert_eq!(response.accepted_governance.len(), 3);
-        assert!(response
-            .explicitly_unsupported
-            .iter()
-            .any(|entry| entry.contains("non-static expressions")));
-    }
-
-    #[test]
     fn branch_refs_can_be_planned_but_not_executed() {
         let mut request = request(
             r#"
@@ -1403,13 +1117,10 @@ jobs:
 
         assert!(!plan.independent_executable);
         let reasons = plan.jobs[0].independent_reasons.join("\n");
+        assert!(reasons.contains("workflow-level permissions"));
+        assert!(reasons.contains("workflow-level concurrency"));
         assert!(reasons.contains("job-level defaults"));
         assert!(reasons.contains("working-directory"));
-        // permissions and concurrency are no longer rejected, but neither are
-        // they silent: each acceptance states the mechanism that satisfies it.
-        let notes = plan.jobs[0].independent_notes.join("\n");
-        assert!(notes.contains("workflow-level permissions accepted"));
-        assert!(notes.contains("workflow-level concurrency accepted"));
     }
 
     #[test]
