@@ -218,7 +218,10 @@ pub(crate) fn validate_pubkey(value: &str, label: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn authorize_send(headers: &HeaderMap, state: &AppState) -> Result<(), (StatusCode, &'static str)> {
+pub(crate) fn authorize_send(
+    headers: &HeaderMap,
+    state: &AppState,
+) -> Result<(), (StatusCode, &'static str)> {
     let Some(secret) = &state.send_auth_secret else {
         return Err((
             StatusCode::SERVICE_UNAVAILABLE,
@@ -351,7 +354,10 @@ pub(crate) fn enforce_broadcast_coordination(
     Ok(())
 }
 
-pub(crate) fn validate_solana_rpc_url(raw: &str, allow_private_rpc: bool) -> Result<String, String> {
+pub(crate) fn validate_solana_rpc_url(
+    raw: &str,
+    allow_private_rpc: bool,
+) -> Result<String, String> {
     let parsed = reqwest::Url::parse(raw)
         .map_err(|error| format!("SOLANA_RPC_URL must be an absolute URL: {error}"))?;
     match parsed.scheme() {

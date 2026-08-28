@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "execute": true,
+  "recipient_id": "ncc-publish-20260805-af2d37e386ae48da",
+  "purpose": "Create the missing private networking-components repositories using a one-time RSA-OAEP encrypted GitHub PAT."
+}

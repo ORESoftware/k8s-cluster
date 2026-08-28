@@ -1,329 +1,326 @@
-// Benefactor lead-scraping orchestrator (ported from dd-next-1 patterns).
-// One run targets a single ICP service_category. Flow per query:
-//   Serper search -> candidate business URLs -> skip aggregators + recently-scraped domains
-//   -> fetch page via web-scraper service (cheerio, escalate to playwright) with direct fallback
-//   -> extract+validate emails (dd-next-1 regex/filters) -> follow one contact subpage
-//   -> dedupe -> insert benefactor.benefactor_leads -> update domain memory + query stats.
+// Benefactor lead-discovery orchestrator.
+//
+// Security/ownership boundary:
+// - arbitrary-domain retrieval is performed only by the private dd-web-scraper service;
+// - this process never directly fetches a discovered URL and never sends outreach;
+// - provider/search and scraper responses are bounded in bytes and time;
+// - dry-run mode performs no database mutations and emits a deterministic, identifier-hashed report.
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
+import {
+  buildDryRunReport,
+  canonicalJson,
+  confidenceForContact,
+  extractEmailsFromText,
+  extractPhonesFromText,
+  hostOf,
+  mergeProviderResults,
+  normalizeCandidateUrl,
+  normalizeEmail,
+  normalizePhone,
+  normalizeScraperServiceUrl,
+  parseBoolean,
+  parseBoundedInteger,
+  providerStatuses,
+  readJsonCapped,
+  sanitizeLogValue,
+} from './pipeline-lib.mjs';
+import { createSearchProviders } from './providers/index.mjs';
+
 const require = createRequire('/work/package.json');
 const pg = require('pg');
 const cheerio = require('cheerio');
 
-const RDS = process.env.RDS_URL;
-const PG_SSL_CA_FILE = process.env.PG_SSL_CA_FILE || '';
-const SERPER_KEY = process.env.SERPER_API_KEY || '';
-const BRAVE_KEY = process.env.BRAVE_SEARCH_API_KEY || '';
-const SCRAPER_URL = process.env.SCRAPER_URL || 'http://dd-web-scraper.default.svc.cluster.local:8097';
-const SCRAPER_AUTH = process.env.SCRAPER_AUTH || '';
-const CATEGORY = process.env.ICP_CATEGORY;
-const MAX_QUERIES = parseInt(process.env.MAX_QUERIES || '8', 10);
-const TARGET_EMAILS = parseInt(process.env.TARGET_EMAILS || '30', 10);
-const MAX_PAGES_PER_QUERY = parseInt(process.env.MAX_PAGES_PER_QUERY || '8', 10);
-const DOMAIN_SKIP_DAYS = parseInt(process.env.DOMAIN_SKIP_DAYS || '14', 10);
-const QUERY_COOLDOWN_DAYS = parseInt(process.env.QUERY_COOLDOWN_DAYS || '30', 10);
-const ZERO_NEW_RETIRE = parseInt(process.env.ZERO_NEW_RETIRE || '3', 10);
-const SCRAPE_THROTTLE_DAYS = parseInt(process.env.SCRAPE_THROTTLE_DAYS || '30', 10);
-const SCRAPE_REQUEST_TYPE = process.env.SCRAPE_REQUEST_TYPE || 'scrape_collect';
-const REQUIRE_ROLE_EMAIL = (process.env.REQUIRE_ROLE_EMAIL || 'true').toLowerCase() !== 'false';
-const ALLOW_DIRECT_FALLBACK = (process.env.ALLOW_DIRECT_FALLBACK || 'false').toLowerCase() === 'true';
-const DEADLINE_MS = Date.now() + parseInt(process.env.DEADLINE_SECONDS || '420', 10) * 1000;
-if (!CATEGORY) { console.error('ICP_CATEGORY required'); process.exit(2); }
-
-// ── email extraction (faithful port of dd-next-1) ─────────────────────────────
-const EMAIL_REGEX = /[\w.%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
-const CONSUMER_WEBMAIL = new Set(['gmail.com','yahoo.com','hotmail.com','outlook.com','aol.com','icloud.com','me.com','live.com','msn.com','comcast.net','att.net','verizon.net','sbcglobal.net','bellsouth.net','cox.net','protonmail.com','ymail.com']);
-const BLOCKED_EMAIL_DOMAINS = new Set(['example.com','example.org','example.net','test.com','acme.com','sample.com','website.com','placeholder.com','company.com','mycompany.com','nowhere.net','yourdomain.com','domain.com','email.com','sentry.io','wixpress.com','wix.com','godaddy.com','squarespace.com','shopify.com','weebly.com','wordpress.com','wordpress.org','mailchimp.com','constantcontact.com','hubspot.com','sendgrid.net','sendinblue.com','googleapis.com','cloudflare.com','fastly.net','amazonaws.com','azurewebsites.net','herokuapp.com','mailgun.com','sparkpost.com','postmarkapp.com','mandrillapp.com','amazonses.com','gravatar.com','disqus.com','mailinator.com','guerrillamail.com','tempmail.com','sharklasers.com','dispostable.com','throwaway.email','yopmail.com','trashmail.com','fakeinbox.com','grr.la','tempail.com','temp-mail.org','10minutemail.com','porch.com','angi.com','angieslist.com','homeadvisor.com','thumbtack.com','yelp.com','bbb.org','bark.com','houzz.com','buildzoom.com','networx.com','expertise.com','fixr.com','craftjack.com','servicetitan.com','homeguide.com','barrons.com','benzinga.com','nasdaq.com','marketwatch.com','fool.com','seekingalpha.com','investopedia.com','cnbc.com','bloomberg.com','reuters.com','wsj.com','yahoo.com','finance.yahoo.com','threebestrated.com','consumeraffairs.com','sitejabber.com','bestcompany.com','sentry-next.wixpress.com','sentry.wixpress.com','facebook.com','instagram.com','linkedin.com','twitter.com','x.com','pinterest.com','youtube.com','neogov.com','governmentjobs.com','patch.com','scionhealth.com','latofonts.com','indeed.com','ziprecruiter.com','glassdoor.com','monster.com','careerbuilder.com','salary.com','simplyhired.com','snagajob.com','usajobs.gov','google.com','gstatic.com','schema.org','w3.org','jquery.com','jsdelivr.net','unpkg.com','cloudfront.net','typekit.com','myfonts.com','adobe.com','wpengine.com','elementor.com','cdn-website.com','godaddysites.com','duckduckgo.com','bing.com']);
-// Allowlisted TLDs: any 2-letter ccTLD/short TLD plus these common business TLDs. Rejecting
-// everything else kills word-bleed artifacts (e.g. "...comno", "...aievery") and .edu/.gov/.mil
-// addresses (schools/cities/bases are not benefactor lead targets).
-const COMMON_TLDS = new Set(['com','net','org','biz','info','pro','dev','app','xyz','online','tech','site','agency','services','company','solutions','group','team','homes','builders','construction','plumbing','llc','inc','email','live','store','shop','works','care','build','plus','life']);
-const BLOCKED_EMAIL_PREFIXES = ['no-reply','noreply','donotreply','do-not-reply','postmaster','mailer-daemon','wordpress','example','user','you','your','name','test','root','hostmaster','abuse','sentry'];
-const ROLE_EMAIL_PREFIXES = new Set(['admin','appointments','booking','business','care','contact','customerservice','estimates','hello','help','info','inquiries','marketing','office','operations','owner','partnerships','quotes','reception','sales','service','support','team']);
-const BLOCKED_PATH_EXT = /\.(?:png|jpg|jpeg|gif|webp|svg|css|js|ico|woff2?|ttf|otf|eot)$/i;
-const emailValidationStats = { checked: 0, accepted: 0, consumerDomain: 0, blockedDomain: 0, nonRole: 0 };
-
-function deobfuscate(text) {
-  return text
-    // Neutralize JSON unicode escapes (> = '>', etc.) so they can't bleed into a local-part.
-    .replace(/\\u[0-9a-fA-F]{4}/g, ' ')
-    .replace(/&commat;|&#64;|&#x40;/gi, '@').replace(/&#46;|&#x2e;/gi, '.')
-    .replace(/\s*[[({]\s*at\s*[\])}]\s*/gi, '@').replace(/\s*[[({]\s*dot\s*[\])}]\s*/gi, '.')
-    .replace(/([A-Z0-9._%+-])\s+at\s+([A-Z0-9.-]+\s+(?:dot|\.))/gi, '$1@$2')
-    .replace(/([A-Z0-9_-])\s+dot\s+([A-Z]{2,})/gi, '$1.$2');
+function requiredEnv(name) {
+  const value = String(process.env[name] ?? '').trim();
+  if (!value) throw new Error(`${name} is required`);
+  return value;
 }
-function isValidEmail(email) {
-  emailValidationStats.checked++;
-  const lower = email.toLowerCase().trim();
-  if (lower.length < 6 || lower.length > 254) return false;
-  const at = lower.indexOf('@');
-  if (at < 1 || at !== lower.lastIndexOf('@')) return false;
-  const local = lower.slice(0, at), domain = lower.slice(at + 1);
-  if (!local || !domain || !domain.includes('.')) return false;
-  if (local.length > 40 || /\.\./.test(local) || local.startsWith('.') || local.endsWith('.')) return false;
-  const tld = domain.slice(domain.lastIndexOf('.') + 1);
-  if (tld.length < 2 || tld.length > 24) return false;
-  if (!(/^[a-z]{2}$/.test(tld) || COMMON_TLDS.has(tld))) return false;
-  if (BLOCKED_PATH_EXT.test(domain)) return false;
-  if (/[^\x20-\x7E]/.test(lower) || domain.startsWith('xn--')) return false;
-  if (/sentry/.test(domain) || domain.endsWith('.wixpress.com')) return false;
-  if (CONSUMER_WEBMAIL.has(domain)) { emailValidationStats.consumerDomain++; return false; }
-  if (BLOCKED_EMAIL_DOMAINS.has(domain)) { emailValidationStats.blockedDomain++; return false; }
-  for (const p of BLOCKED_EMAIL_PREFIXES) if (local === p || local.startsWith(p + '.') || local.startsWith(p + '+')) return false;
-  const rolePrefix = local.split('+', 1)[0].split(/[._-]/, 1)[0];
-  if (REQUIRE_ROLE_EMAIL && !ROLE_EMAIL_PREFIXES.has(rolePrefix)) { emailValidationStats.nonRole++; return false; }
-  if (/^\d+$/.test(local)) return false;
-  emailValidationStats.accepted++;
-  return true;
+
+const config = {
+  rdsUrl: requiredEnv('RDS_URL'),
+  pgSslCaFile: requiredEnv('PG_SSL_CA_FILE'),
+  scraperUrl: process.env.SCRAPER_URL || 'http://dd-web-scraper.default.svc.cluster.local:8097',
+  scraperAllowedHosts: String(process.env.SCRAPER_ALLOWED_HOSTS || 'dd-web-scraper.default.svc.cluster.local')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean),
+  scraperAuth: requiredEnv('SCRAPER_AUTH'),
+  category: requiredEnv('ICP_CATEGORY'),
+  serperKey: String(process.env.SERPER_API_KEY || ''),
+  braveKey: String(process.env.BRAVE_SEARCH_API_KEY || ''),
+  apolloKey: String(process.env.APOLLO_API_KEY || ''),
+  hunterKey: String(process.env.HUNTER_API_KEY || ''),
+  datalaneKey: String(process.env.DATALANE_API_KEY || ''),
+  linkedinExportPath: String(process.env.LINKEDIN_SALES_NAVIGATOR_EXPORT || ''),
+  maxQueries: parseBoundedInteger('MAX_QUERIES', process.env.MAX_QUERIES, { defaultValue: 8, min: 1, max: 100 }),
+  targetEmails: parseBoundedInteger('TARGET_EMAILS', process.env.TARGET_EMAILS, { defaultValue: 30, min: 1, max: 2_000 }),
+  maxPagesPerQuery: parseBoundedInteger('MAX_PAGES_PER_QUERY', process.env.MAX_PAGES_PER_QUERY, { defaultValue: 8, min: 1, max: 50 }),
+  domainSkipDays: parseBoundedInteger('DOMAIN_SKIP_DAYS', process.env.DOMAIN_SKIP_DAYS, { defaultValue: 14, min: 0, max: 365 }),
+  queryCooldownDays: parseBoundedInteger('QUERY_COOLDOWN_DAYS', process.env.QUERY_COOLDOWN_DAYS, { defaultValue: 30, min: 0, max: 365 }),
+  zeroNewRetire: parseBoundedInteger('ZERO_NEW_RETIRE', process.env.ZERO_NEW_RETIRE, { defaultValue: 3, min: 1, max: 100 }),
+  scrapeThrottleDays: parseBoundedInteger('SCRAPE_THROTTLE_DAYS', process.env.SCRAPE_THROTTLE_DAYS, { defaultValue: 30, min: 1, max: 365 }),
+  deadlineSeconds: parseBoundedInteger('DEADLINE_SECONDS', process.env.DEADLINE_SECONDS, { defaultValue: 420, min: 30, max: 3_600 }),
+  providerTimeoutMs: parseBoundedInteger('PROVIDER_TIMEOUT_MS', process.env.PROVIDER_TIMEOUT_MS, { defaultValue: 15_000, min: 1_000, max: 60_000 }),
+  scraperTimeoutMs: parseBoundedInteger('SCRAPER_TIMEOUT_MS', process.env.SCRAPER_TIMEOUT_MS, { defaultValue: 45_000, min: 5_000, max: 120_000 }),
+  responseBodyTimeoutMs: parseBoundedInteger('RESPONSE_BODY_TIMEOUT_MS', process.env.RESPONSE_BODY_TIMEOUT_MS, { defaultValue: 20_000, min: 1_000, max: 60_000 }),
+  maxProviderResponseBytes: parseBoundedInteger('MAX_PROVIDER_RESPONSE_BYTES', process.env.MAX_PROVIDER_RESPONSE_BYTES, { defaultValue: 2 * 1024 * 1024, min: 16_384, max: 8 * 1024 * 1024 }),
+  maxScraperResponseBytes: parseBoundedInteger('MAX_SCRAPER_RESPONSE_BYTES', process.env.MAX_SCRAPER_RESPONSE_BYTES, { defaultValue: 3 * 1024 * 1024, min: 64 * 1024, max: 12 * 1024 * 1024 }),
+  dbStatementTimeoutMs: parseBoundedInteger('DB_STATEMENT_TIMEOUT_MS', process.env.DB_STATEMENT_TIMEOUT_MS, { defaultValue: 30_000, min: 1_000, max: 120_000 }),
+  requireRoleEmail: parseBoolean(process.env.REQUIRE_ROLE_EMAIL, true),
+  dryRun: parseBoolean(process.env.PIPELINE_DRY_RUN, false),
+  scrapeRequestType: String(process.env.SCRAPE_REQUEST_TYPE || 'scrape_collect').trim(),
+};
+
+config.scraperUrl = normalizeScraperServiceUrl(config.scraperUrl, config.scraperAllowedHosts);
+if (!/^[a-z0-9][a-z0-9._:-]{0,127}$/i.test(config.category)) {
+  throw new Error('ICP_CATEGORY contains unsupported characters');
 }
-function emailsFromText(text) {
-  const out = new Set();
-  for (const raw of (deobfuscate(text || '').match(EMAIL_REGEX) || [])) {
-    const clean = raw.toLowerCase().replace(/[.,;:)]+$/, '');
-    if (isValidEmail(clean)) out.add(clean);
+if (!/^[a-z0-9][a-z0-9._:-]{0,127}$/i.test(config.scrapeRequestType)) {
+  throw new Error('SCRAPE_REQUEST_TYPE contains unsupported characters');
+}
+const statuses = providerStatuses(config);
+const searchProviders = createSearchProviders({
+  braveKey: config.braveKey,
+  serperKey: config.serperKey,
+  fetchJson: providerFetchJson,
+});
+if (!searchProviders.some((provider) => provider.configured)) {
+  throw new Error('at least one search provider must be configured');
+}
+if (String(process.env.ALLOW_DIRECT_FALLBACK || '').toLowerCase() === 'true') {
+  throw new Error('ALLOW_DIRECT_FALLBACK is no longer supported; arbitrary domains must stay behind dd-web-scraper');
+}
+
+const deadlineMs = Date.now() + config.deadlineSeconds * 1_000;
+const AGGREGATOR = /(?:^|\.)(?:yelp|angi|angieslist|homeadvisor|thumbtack|bbb|houzz|facebook|instagram|linkedin|twitter|x|pinterest|youtube|yellowpages|mapquest|nextdoor|indeed|glassdoor|ziprecruiter|tripadvisor|reddit|wikipedia|amazon|google|bing|duckduckgo|porch|expertise|threebestrated|manta|chamberofcommerce|governmentjobs|neogov|patch|monster|careerbuilder|simplyhired|snagajob|usajobs|salary|scionhealth|ihireconstruction|builtin|wellfound|jobcase|recruit|talent)\.[a-z.]+$/i;
+
+function errorSummary(error) {
+  const code = typeof error?.code === 'string' ? ` code=${sanitizeLogValue(error.code, 40)}` : '';
+  return `${error?.name || 'Error'}${code}`;
+}
+
+function providerLog(provider, message) {
+  console.warn(`[benefactor-pipeline] provider=${provider} ${sanitizeLogValue(message)}`);
+}
+
+async function fetchJson(url, init, { timeoutMs, maxBytes }) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    if (!response.ok) throw new Error(`upstream_http_${response.status}`);
+    return await readJsonCapped(response, {
+      maxBytes,
+      timeoutMs: config.responseBodyTimeoutMs,
+    });
+  } finally {
+    clearTimeout(timer);
   }
-  return out;
 }
+
+async function providerFetchJson(url, init) {
+  return fetchJson(url, init, {
+    timeoutMs: config.providerTimeoutMs,
+    maxBytes: config.maxProviderResponseBytes,
+  });
+}
+
+async function searchAllProviders(query, count) {
+  const batches = [];
+  for (const adapter of searchProviders) {
+    if (!adapter.configured) continue;
+    const status = statuses.find((entry) => entry.provider === adapter.name);
+    status.requests += 1;
+    try {
+      const results = await adapter.search(query, count);
+      status.status = 'ok';
+      status.resultCount += results.length;
+      batches.push({ provider: adapter.name, results });
+    } catch (error) {
+      status.status = 'degraded_error';
+      status.failures += 1;
+      counters.providerFailures += 1;
+      providerLog(adapter.name, `search_failed ${errorSummary(error)}`);
+      batches.push({ provider: adapter.name, results: [] });
+    }
+  }
+  return mergeProviderResults(batches, Math.max(count, config.maxPagesPerQuery));
+}
+
 function extractFromHtml(html, baseUrl) {
-  const out = new Set();
-  let businessName = '', contactUrl = null;
+  const emails = new Set();
+  const phones = new Set();
+  let businessName = '';
+  let contactUrl = null;
   try {
     const $ = cheerio.load(html);
-    $('a[href^="mailto:"]').each((_, el) => {
-      let e = ($(el).attr('href') || '').replace(/^mailto:/i, '').split('?')[0];
-      try { e = decodeURIComponent(e); } catch {}
-      e = e.split(/[\s,;<>()]/)[0].trim().toLowerCase();
-      if (isValidEmail(e)) out.add(e);
+    $('a[href^="mailto:"]').each((_, element) => {
+      let email = ($(element).attr('href') || '').replace(/^mailto:/i, '').split('?')[0];
+      try { email = decodeURIComponent(email); } catch {}
+      const normalized = normalizeEmail(email.split(/[\s,;<>()]/)[0], {
+        requireRoleEmail: config.requireRoleEmail,
+      });
+      if (normalized) emails.add(normalized);
     });
-    const t = ($('title').first().text() || '').trim();
-    businessName = t.replace(/\s*[-|–—]\s*(?:Home|Contact|About|Services|Welcome).*$/i, '').replace(/\s*[-|–—]\s*$/, '').trim().slice(0, 200);
-    const re = /\/(?:contact|about|team|connect|get-in-touch|reach-us)(?:\/|$|[?#])/i;
-    $('a[href]').each((_, el) => {
+    $('a[href^="tel:"]').each((_, element) => {
+      let phone = ($(element).attr('href') || '').replace(/^tel:/i, '').split('?')[0];
+      try { phone = decodeURIComponent(phone); } catch {}
+      const normalized = normalizePhone(phone);
+      if (normalized) phones.add(normalized);
+    });
+    const title = ($('title').first().text() || '').trim();
+    businessName = title
+      .replace(/\s*[-|–—]\s*(?:Home|Contact|About|Services|Welcome).*$/i, '')
+      .replace(/\s*[-|–—]\s*$/, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 200);
+    const contactPattern = /\/(?:contact|about|team|connect|get-in-touch|reach-us)(?:\/|$|[?#])/i;
+    $('a[href]').each((_, element) => {
       if (contactUrl) return;
-      const href = $(el).attr('href') || '';
-      if (re.test(href)) { try { const r = new URL(href, baseUrl); if (r.origin === new URL(baseUrl).origin) contactUrl = r.href; } catch {} }
+      const href = $(element).attr('href') || '';
+      if (!contactPattern.test(href)) return;
+      try {
+        const candidate = normalizeCandidateUrl(new URL(href, baseUrl).toString());
+        if (new URL(candidate).origin === new URL(baseUrl).origin) contactUrl = candidate;
+      } catch {}
     });
-  } catch { /* fall through to raw-html regex below */ }
-  // Harvest emails by regexing the RAW html (not cheerio .text()): tag boundaries (`<`, `>`, `"`)
-  // delimit the match, so adjacent words/labels can't bleed into the email — this removes the
-  // earlier artifacts like `x@gmail.comaddress` and `serviceservice@lameyelectric.com`.
-  for (const e of emailsFromText(html)) out.add(e);
-  return { emails: [...out], businessName, contactUrl };
-}
-
-// ── search ────────────────────────────────────────────────────────────────────
-const AGGREGATOR = /(?:^|\.)(?:yelp|angi|angieslist|homeadvisor|thumbtack|bbb|houzz|facebook|instagram|linkedin|twitter|x|pinterest|youtube|yellowpages|mapquest|nextdoor|indeed|glassdoor|ziprecruiter|tripadvisor|reddit|wikipedia|amazon|google|bing|duckduckgo|porch|expertise|threebestrated|manta|chamberofcommerce|governmentjobs|neogov|patch|monster|careerbuilder|simplyhired|snagajob|usajobs|salary|scionhealth|ihireconstruction|builtin|wellfound|jobcase|recruit|talent)\.[a-z.]+$/i;
-function hostOf(u) { try { return new URL(u).hostname.replace(/^www\./, '').toLowerCase(); } catch { return null; } }
-function normUrl(u) { try { const x = new URL(u); if (!/^https?:$/.test(x.protocol)) return null; x.hash=''; return x.toString(); } catch { return null; } }
-
-async function serper(q, num) {
-  if (!SERPER_KEY) return [];
-  try {
-    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 15000);
-    const res = await fetch('https://google.serper.dev/search', { method: 'POST', headers: { 'X-API-KEY': SERPER_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ q, num: Math.min(num, 10), gl: 'us', hl: 'en' }), signal: ctl.signal });
-    clearTimeout(t);
-    if (!res.ok) { const b = await res.text().catch(() => ''); console.log(`  serper HTTP ${res.status} ${b.slice(0, 160)}`); return []; }
-    const j = await res.json();
-    return (j.organic || []).map((o) => normUrl(o.link)).filter(Boolean);
-  } catch (e) { console.log('  serper err', e.message); return []; }
-}
-async function brave(q, num) {
-  if (!BRAVE_KEY) return [];
-  try {
-    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 15000);
-    const res = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=${num}`, { headers: { 'X-Subscription-Token': BRAVE_KEY, Accept: 'application/json' }, signal: ctl.signal });
-    clearTimeout(t);
-    if (!res.ok) return [];
-    const j = await res.json();
-    return ((j.web && j.web.results) || []).map((o) => normUrl(o.url)).filter(Boolean);
-  } catch { return []; }
-}
-
-// ── page fetch via web-scraper service, fallback to direct fetch ───────────────
-async function scrapeViaService(url, strategy) {
-  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 45000);
-  try {
-    const res = await fetch(`${SCRAPER_URL}/scrape`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-server-auth': SCRAPER_AUTH },
-      body: JSON.stringify({ url, strategy, includeHtml: true, includeText: true, includeLinks: true, timeoutMs: 30000, waitUntil: 'domcontentloaded', maxHtmlChars: 800000 }),
-      signal: ctl.signal,
-    });
-    clearTimeout(t);
-    if (!res.ok) return null;
-    const j = await res.json();
-    if (!j || j.ok === false) return null;
-    const ex = j.extraction || {};
-    return { html: ex.html || '', text: ex.text || '', strategy: j.strategy };
-  } catch { clearTimeout(t); return null; }
-}
-async function scrapeDirect(url) {
-  if (!ALLOW_DIRECT_FALLBACK || !(await robotsAllows(url))) return null;
-  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 15000);
-  try {
-    const res = await fetch(url, { headers: { 'User-Agent': 'BenefactorLeadResearch/1.0 (+https://benefactor.cc)', Accept: 'text/html,application/xhtml+xml' }, redirect: 'follow', signal: ctl.signal });
-    clearTimeout(t);
-    if (!res.ok) return null;
-    const ct = res.headers.get('content-type') || '';
-    if (ct && !/text|html/.test(ct)) return null;
-    const html = (await res.text()).slice(0, 800000);
-    return { html, text: '', strategy: 'direct' };
-  } catch { clearTimeout(t); return null; }
-}
-
-const robotsCache = new Map();
-async function robotsAllows(url) {
-  let parsed;
-  try { parsed = new URL(url); } catch { return false; }
-  const cacheKey = parsed.origin;
-  if (robotsCache.has(cacheKey)) return robotsCache.get(cacheKey)(parsed.pathname || '/');
-
-  try {
-    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 8000);
-    const res = await fetch(`${parsed.origin}/robots.txt`, {
-      headers: { 'User-Agent': 'BenefactorLeadResearch/1.0 (+https://benefactor.cc)' },
-      redirect: 'follow',
-      signal: ctl.signal,
-    });
-    clearTimeout(t);
-    if (res.status === 404) {
-      const allowAll = () => true;
-      robotsCache.set(cacheKey, allowAll);
-      return true;
-    }
-    if (!res.ok) return false;
-    const groups = [];
-    let group = null;
-    for (const rawLine of (await res.text()).slice(0, 500000).split(/\r?\n/)) {
-      const line = rawLine.replace(/#.*$/, '').trim();
-      if (!line) continue;
-      const match = line.match(/^([^:]+):\s*(.*)$/);
-      if (!match) continue;
-      const key = match[1].trim().toLowerCase();
-      const value = match[2].trim();
-      if (key === 'user-agent') {
-        if (!group || group.rules.length) { group = { agents: [], rules: [] }; groups.push(group); }
-        group.agents.push(value.toLowerCase());
-      } else if (group && (key === 'allow' || key === 'disallow')) {
-        group.rules.push({ allow: key === 'allow', path: value });
-      }
-    }
-    const matching = groups.filter(({ agents }) => agents.some((agent) => agent === '*' || agent === 'benefactorleadresearch'));
-    const selected = matching.some(({ agents }) => agents.includes('benefactorleadresearch'))
-      ? matching.filter(({ agents }) => agents.includes('benefactorleadresearch'))
-      : matching;
-    const isAllowed = (pathname) => {
-      const rules = selected.flatMap(({ rules }) => rules).filter(({ path }) => path && pathname.startsWith(path));
-      if (!rules.length) return true;
-      rules.sort((a, b) => b.path.length - a.path.length || Number(b.allow) - Number(a.allow));
-      return rules[0].allow;
-    };
-    robotsCache.set(cacheKey, isAllowed);
-    return isAllowed(parsed.pathname || '/');
   } catch {
-    return false;
+    // Raw extraction below remains available when the document is malformed.
   }
-}
-async function fetchPage(url) {
-  // cheerio (fast, no browser) -> if thin/no-email escalate to playwright -> direct fallback
-  let r = await scrapeViaService(url, 'cheerio');
-  if (!r || (r.html.length < 400 && !r.text)) {
-    const pw = await scrapeViaService(url, 'playwright');
-    if (pw && (pw.html || pw.text)) r = pw;
-  }
-  if (!r || (!r.html && !r.text)) r = await scrapeDirect(url);
-  return r;
+  for (const email of extractEmailsFromText(html, { requireRoleEmail: config.requireRoleEmail })) emails.add(email);
+  for (const phone of extractPhonesFromText(html)) phones.add(phone);
+  return {
+    emails: [...emails].sort(),
+    phones: [...phones].sort(),
+    businessName,
+    contactUrl,
+  };
 }
 
-// ── main ───────────────────────────────────────────────────────────────────────
-if (!RDS || !PG_SSL_CA_FILE) {
-  console.error('RDS_URL and PG_SSL_CA_FILE are required');
-  process.exit(2);
+async function scrapeViaPrivateService(candidateUrl, strategy) {
+  const url = normalizeCandidateUrl(candidateUrl);
+  const endpoint = new URL('/scrape', config.scraperUrl);
+  const body = await fetchJson(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-server-auth': config.scraperAuth,
+    },
+    body: JSON.stringify({
+      url,
+      strategy,
+      includeHtml: true,
+      includeText: true,
+      includeLinks: true,
+      timeoutMs: Math.min(30_000, config.scraperTimeoutMs - 1_000),
+      waitUntil: 'domcontentloaded',
+      maxHtmlChars: 800_000,
+      respectRobots: true,
+      rejectPrivateNetwork: true,
+    }),
+  }, {
+    timeoutMs: config.scraperTimeoutMs,
+    maxBytes: config.maxScraperResponseBytes,
+  });
+  if (!body || body.ok === false) return null;
+  const extraction = body.extraction || {};
+  return {
+    html: typeof extraction.html === 'string' ? extraction.html.slice(0, 800_000) : '',
+    text: typeof extraction.text === 'string' ? extraction.text.slice(0, 800_000) : '',
+    strategy: sanitizeLogValue(body.strategy || strategy, 32),
+  };
 }
-const databaseUrl = new URL(RDS);
-if (!['postgres:', 'postgresql:'].includes(databaseUrl.protocol)) {
-  console.error('RDS_URL must use the postgres or postgresql scheme');
-  process.exit(2);
+
+async function fetchPage(candidateUrl) {
+  let result = null;
+  try {
+    result = await scrapeViaPrivateService(candidateUrl, 'cheerio');
+  } catch (error) {
+    console.warn(`[benefactor-pipeline] scraper=cheerio result=failed ${errorSummary(error)}`);
+  }
+  if (!result || (result.html.length < 400 && !result.text)) {
+    try {
+      const playwright = await scrapeViaPrivateService(candidateUrl, 'playwright');
+      if (playwright && (playwright.html || playwright.text)) result = playwright;
+    } catch (error) {
+      console.warn(`[benefactor-pipeline] scraper=playwright result=failed ${errorSummary(error)}`);
+    }
+  }
+  return result;
 }
-databaseUrl.searchParams.delete('sslmode');
-databaseUrl.searchParams.delete('uselibpqcompat');
+
+function validateDatabaseUrl(raw) {
+  const url = new URL(raw);
+  if (!['postgres:', 'postgresql:'].includes(url.protocol)) {
+    throw new Error('RDS_URL must use the postgres or postgresql scheme');
+  }
+  url.searchParams.delete('sslmode');
+  url.searchParams.delete('uselibpqcompat');
+  return url.toString();
+}
+
 const db = new pg.Client({
-  connectionString: databaseUrl.toString(),
-  ssl: { ca: readFileSync(PG_SSL_CA_FILE, 'utf8'), rejectUnauthorized: true },
-  statement_timeout: 0,
+  connectionString: validateDatabaseUrl(config.rdsUrl),
+  ssl: {
+    ca: readFileSync(config.pgSslCaFile, 'utf8'),
+    rejectUnauthorized: true,
+  },
+  statement_timeout: config.dbStatementTimeoutMs,
+  query_timeout: config.dbStatementTimeoutMs + 5_000,
+  application_name: 'benefactor-orchestrator',
 });
-await db.connect();
-await db.query(`set search_path = benefactor, public`);
 
-const queries = (await db.query(
-  `select id, query_text, query_variant, service_category, target_city, target_state, benefactor_icp_slug, benefactor_icp_name
-   from benefactor.benefactor_scrape_queries
-   where service_category=$1 and is_active and not is_soft_deleted
-     and (cooldown_until is null or cooldown_until <= now())
-   order by priority desc, total_runs asc, random()
-   limit $2`, [CATEGORY, MAX_QUERIES])).rows;
-console.log(`[${CATEGORY}] loaded ${queries.length} queries`);
+const counters = {
+  queriesLoaded: 0,
+  queriesRun: 0,
+  urlsVisited: 0,
+  pagesWithEmail: 0,
+  contactsCollected: 0,
+  phonesCollected: 0,
+  leadsInserted: 0,
+  duplicateLeads: 0,
+  suppressedSkips: 0,
+  throttledSkips: 0,
+  providerFailures: 0,
+  persistenceFailures: 0,
+};
+const collected = new Map();
 
 async function domainSkip(domain) {
-  const r = await db.query(`select status, is_blocked, is_permanently_blocked, last_scraped_at from benefactor.benefactor_leads_domains where domain=$1 and domain_kind='website' limit 1`, [domain]);
-  const row = r.rows[0]; if (!row) return false;
+  const result = await db.query(
+    `select is_blocked, is_permanently_blocked, last_scraped_at
+       from benefactor.benefactor_leads_domains
+      where domain=$1 and domain_kind='website'
+      limit 1`,
+    [domain],
+  );
+  const row = result.rows[0];
+  if (!row) return false;
   if (row.is_blocked || row.is_permanently_blocked) return true;
-  if (row.last_scraped_at && (Date.now() - new Date(row.last_scraped_at).getTime()) < DOMAIN_SKIP_DAYS * 86400000) return true;
-  return false;
+  return Boolean(row.last_scraped_at
+    && Date.now() - new Date(row.last_scraped_at).getTime() < config.domainSkipDays * 86_400_000);
 }
-async function recordDomain(domain, { found, emails }) {
+
+async function recordDomain(domain, emailCount) {
+  if (config.dryRun) return;
   await db.query(
-    `insert into benefactor.benefactor_leads_domains (domain, domain_kind, status, source, scrape_count, email_found_count, last_scraped_at, last_email_found_at)
-     values ($1,'website',$2,'orchestrator',1,$3, now(), $4)
+    `insert into benefactor.benefactor_leads_domains
+       (domain, domain_kind, status, source, scrape_count, email_found_count, last_scraped_at, last_email_found_at)
+     values ($1, 'website', 'scraped_recently', 'orchestrator', 1, $2, now(), $3)
      on conflict (domain, domain_kind) do update set
        scrape_count = benefactor.benefactor_leads_domains.scrape_count + 1,
-       email_found_count = benefactor.benefactor_leads_domains.email_found_count + $3,
-       status = $2, last_scraped_at = now(),
-       last_email_found_at = coalesce($4, benefactor.benefactor_leads_domains.last_email_found_at)`,
-    [domain, found ? 'scraped_recently' : 'scraped_recently', emails, found ? new Date() : null]);
+       email_found_count = benefactor.benefactor_leads_domains.email_found_count + $2,
+       status = 'scraped_recently',
+       last_scraped_at = now(),
+       last_email_found_at = coalesce($3, benefactor.benefactor_leads_domains.last_email_found_at)`,
+    [domain, emailCount, emailCount > 0 ? new Date() : null],
+  );
 }
 
-const collected = new Map(); // email -> lead record
-let urlsVisited = 0, pagesWithEmail = 0;
-
-for (const q of queries) {
-  if (collected.size >= TARGET_EMAILS || Date.now() > DEADLINE_MS) break;
-  let qFound = 0, qVisited = 0;
-  let urls = await serper(q.query_text, 12);
-  if (urls.length === 0) urls = await brave(q.query_text, 12);
-  // unique business domains, skip aggregators
-  const seen = new Set(); const pick = [];
-  for (const u of urls) {
-    const h = hostOf(u); if (!h || AGGREGATOR.test(h) || seen.has(h)) continue;
-    // Skip non-business pages: government/edu sites and licensing boards/directories are not leads.
-    if (/(\.gov|\.edu|\.mil)$|licens|stateboard|state-board/i.test(h)) continue;
-    seen.add(h); pick.push(u); if (pick.length >= MAX_PAGES_PER_QUERY) break;
-  }
-  console.log(`[${CATEGORY}] q="${q.query_text.slice(0,60)}" -> ${urls.length} results, ${pick.length} business urls`);
-  for (const url of pick) {
-    if (collected.size >= TARGET_EMAILS || Date.now() > DEADLINE_MS) break;
-    const domain = hostOf(url); if (!domain) continue;
-    if (await domainSkip(domain)) continue;
-    urlsVisited++; qVisited++;
-    const page = await fetchPage(url);
-    let found = new Set();
-    if (page && (page.html || page.text)) {
-      const r1 = extractFromHtml(page.html || `<body>${page.text}</body>`, url);
-      r1.emails.forEach((e) => found.add(e));
-      if (found.size === 0 && r1.contactUrl) {
-        const cp = await fetchPage(r1.contactUrl);
-        if (cp && (cp.html || cp.text)) extractFromHtml(cp.html || `<body>${cp.text}</body>`, r1.contactUrl).emails.forEach((e) => found.add(e));
-      }
-      var bizName = r1.businessName;
-    }
-    await recordDomain(domain, { found: found.size > 0, emails: found.size });
-    if (found.size > 0) pagesWithEmail++;
-    for (const email of found) {
-      qFound++;
-      if (collected.has(email)) continue;
-      collected.set(email, { email, url, domain, bizName: bizName || '', q });
-    }
-  }
+async function updateQueryStats(queryId, urlsVisited, emailsFound) {
+  if (config.dryRun) return;
   await db.query(
     `update benefactor.benefactor_scrape_queries set
        total_runs = total_runs + 1,
@@ -339,37 +336,92 @@ for (const q of queries) {
        is_active = case when $3 = 0 and consecutive_zero_new_runs + 1 >= $6 then false else is_active end,
        updated_at = now()
      where id = $1`,
-    [q.id, qVisited, qFound, qFound > 0, QUERY_COOLDOWN_DAYS, ZERO_NEW_RETIRE]);
+    [queryId, urlsVisited, emailsFound, emailsFound > 0, config.queryCooldownDays, config.zeroNewRetire],
+  );
 }
 
-// ── persist leads ───────────────────────────────────────────────────────────────
-let inserted = 0, throttledSkips = 0;
-for (const rec of collected.values()) {
+async function persistContact(record) {
+  await db.query('begin');
   try {
-    const throttle = await db.query(
-      `select 1 from benefactor.benefactor_leads_throttling
-        where email = $1 and request_type = $2 and not is_soft_deleted
-          and (next_allowed_at is null or next_allowed_at > now())
-        limit 1`,
-      [rec.email, SCRAPE_REQUEST_TYPE]);
-    if (throttle.rows.length) { throttledSkips++; continue; }
+    const existing = await db.query(
+      `select id, lead_status
+         from benefactor.benefactor_leads
+        where lower(primary_email) = lower($1) and not is_soft_deleted
+        order by created_at asc
+        limit 1
+        for update`,
+      [record.email],
+    );
+    if (existing.rows[0]?.lead_status === 'unsubscribed' || existing.rows[0]?.lead_status === 'do_not_contact') {
+      counters.suppressedSkips += 1;
+      await db.query('rollback');
+      return;
+    }
 
-    const res = await db.query(
+    const throttle = await db.query(
+      `select 1
+         from benefactor.benefactor_leads_throttling
+        where lower(email) = lower($1) and request_type = $2 and not is_soft_deleted
+          and (next_allowed_at is null or next_allowed_at > now())
+        limit 1
+        for update`,
+      [record.email, config.scrapeRequestType],
+    );
+    if (throttle.rows.length) {
+      counters.throttledSkips += 1;
+      await db.query('rollback');
+      return;
+    }
+
+    const metadata = {
+      benefactorIcpName: record.icpName,
+      benefactorIcpSlug: record.icpSlug,
+      collectedAt: record.collectedAt,
+      confidence: record.confidence,
+      pipeline: 'benefactor-orchestrator',
+      phones: record.phones,
+      provider: record.provider,
+      providerRank: record.providerRank,
+      scrapeQuery: record.query,
+      scrapeQueryRowId: record.queryId,
+      scrapeSourceUrl: record.sourceUrl,
+      verificationStatus: record.verificationStatus,
+    };
+    const inserted = await db.query(
       `insert into benefactor.benefactor_leads
-         (business_name, primary_email, service_category, city, state, source_url, source_query, source_tool, source_engine, tags, meta_data, lead_status, outreach_status)
-       values ($1,$2,$3,$4,$5,$6,$7,'orchestrator','serper',$8,$9,'new','pending')
+         (business_name, primary_email, service_category, city, state, source_url, source_query,
+          source_tool, source_engine, tags, meta_data, lead_status, outreach_status)
+       values ($1,$2,$3,$4,$5,$6,$7,'orchestrator',$8,$9,$10,'new','pending')
        on conflict (primary_email) where primary_email <> '' do nothing
        returning id`,
-      [rec.bizName, rec.email, rec.q.service_category, rec.q.target_city, rec.q.target_state, rec.url, rec.q.query_text,
-       JSON.stringify(['benefactor-scrape','orchestrator', `category:${rec.q.service_category}`, rec.q.benefactor_icp_slug ? `icp:${rec.q.benefactor_icp_slug}` : 'icp:unknown']),
-       JSON.stringify({ scrapeSourceUrl: rec.url, scrapeQuery: rec.q.query_text, scrapeQueryRowId: rec.q.id, benefactorIcpSlug: rec.q.benefactor_icp_slug, benefactorIcpName: rec.q.benefactor_icp_name, pipeline: 'benefactor-orchestrator', importedAt: new Date().toISOString() })]);
-    if (res.rows.length) inserted++;
-    const leadId = res.rows[0]?.id || null;
+      [
+        record.businessName,
+        record.email,
+        record.serviceCategory,
+        record.city,
+        record.state,
+        record.sourceUrl,
+        record.query,
+        record.provider,
+        JSON.stringify([
+          'benefactor-scrape',
+          'orchestrator',
+          `category:${record.serviceCategory}`,
+          record.icpSlug ? `icp:${record.icpSlug}` : 'icp:unknown',
+          `provider:${record.provider}`,
+        ]),
+        JSON.stringify(metadata),
+      ],
+    );
+    if (inserted.rows.length) counters.leadsInserted += 1;
+    else counters.duplicateLeads += 1;
+    const leadId = inserted.rows[0]?.id || existing.rows[0]?.id || null;
 
     await db.query(
       `insert into benefactor.benefactor_leads_throttling
-         (benefactor_lead_id, email, request_type, last_request_at, next_allowed_at, request_count, throttle_window_days, last_request_source)
-       values ($1,$2,$3, now(), now() + make_interval(days => $4::int), 1, $4, 'orchestrator')
+         (benefactor_lead_id, email, request_type, last_request_at, next_allowed_at,
+          request_count, throttle_window_days, last_request_source)
+       values ($1,$2,$3,now(),now() + make_interval(days => $4::int),1,$4,'orchestrator')
        on conflict (email, request_type) where is_soft_deleted = false
        do update set
          last_request_at = now(),
@@ -377,9 +429,129 @@ for (const rec of collected.values()) {
          request_count = benefactor.benefactor_leads_throttling.request_count + 1,
          benefactor_lead_id = coalesce(benefactor.benefactor_leads_throttling.benefactor_lead_id, excluded.benefactor_lead_id),
          updated_at = now()`,
-      [leadId, rec.email, SCRAPE_REQUEST_TYPE, SCRAPE_THROTTLE_DAYS]);
-  } catch (e) { console.log('  persist skip:', e.message.split('\n')[0]); }
+      [leadId, record.email, config.scrapeRequestType, config.scrapeThrottleDays],
+    );
+    await db.query('commit');
+  } catch (error) {
+    await db.query('rollback').catch(() => {});
+    throw error;
+  }
 }
 
-console.log(`\n[${CATEGORY}] DONE queries=${queries.length} urlsVisited=${urlsVisited} pagesWithEmail=${pagesWithEmail} emailsCollected=${collected.size} leadsInserted=${inserted} throttledSkips=${throttledSkips} emailChecks=${emailValidationStats.checked} acceptedChecks=${emailValidationStats.accepted} consumerRejected=${emailValidationStats.consumerDomain} blockedDomainRejected=${emailValidationStats.blockedDomain} nonRoleRejected=${emailValidationStats.nonRole}`);
-await db.end();
+async function run() {
+  console.log(`[benefactor-pipeline] category=${config.category} mode=${config.dryRun ? 'dry-run' : 'persist'} providers=${statuses.map((item) => `${item.provider}:${item.status}`).join(',')}`);
+  await db.connect();
+  await db.query('set search_path = benefactor, public');
+  const queries = (await db.query(
+    `select id, query_text, query_variant, service_category, target_city, target_state,
+            benefactor_icp_slug, benefactor_icp_name
+       from benefactor.benefactor_scrape_queries
+      where service_category=$1 and is_active and not is_soft_deleted
+        and (cooldown_until is null or cooldown_until <= now())
+      order by priority desc, total_runs asc, id asc
+      limit $2`,
+    [config.category, config.maxQueries],
+  )).rows;
+  counters.queriesLoaded = queries.length;
+
+  for (const query of queries) {
+    if (collected.size >= config.targetEmails || Date.now() > deadlineMs) break;
+    counters.queriesRun += 1;
+    let queryVisited = 0;
+    const queryNewEmails = new Set();
+    const candidates = await searchAllProviders(query.query_text, Math.max(12, config.maxPagesPerQuery * 2));
+    const selected = candidates
+      .filter((candidate) => !AGGREGATOR.test(candidate.domain))
+      .filter((candidate) => !/(\.gov|\.edu|\.mil)$|licens|stateboard|state-board/i.test(candidate.domain))
+      .slice(0, config.maxPagesPerQuery);
+    console.log(`[benefactor-pipeline] query_id=${query.id} provider_candidates=${candidates.length} selected=${selected.length}`);
+
+    for (const candidate of selected) {
+      if (collected.size >= config.targetEmails || Date.now() > deadlineMs) break;
+      if (await domainSkip(candidate.domain)) continue;
+      counters.urlsVisited += 1;
+      queryVisited += 1;
+      const firstPage = await fetchPage(candidate.url);
+      let contacts = { emails: [], phones: [], businessName: '', contactUrl: null };
+      let foundOnContactPage = false;
+      if (firstPage && (firstPage.html || firstPage.text)) {
+        contacts = extractFromHtml(firstPage.html || `<body>${firstPage.text}</body>`, candidate.url);
+        if (!contacts.emails.length && contacts.contactUrl) {
+          const contactPage = await fetchPage(contacts.contactUrl);
+          if (contactPage && (contactPage.html || contactPage.text)) {
+            const followup = extractFromHtml(contactPage.html || `<body>${contactPage.text}</body>`, contacts.contactUrl);
+            contacts = {
+              emails: followup.emails,
+              phones: [...new Set([...contacts.phones, ...followup.phones])].sort(),
+              businessName: contacts.businessName || followup.businessName,
+              contactUrl: contacts.contactUrl,
+            };
+            foundOnContactPage = contacts.emails.length > 0;
+          }
+        }
+      }
+      await recordDomain(candidate.domain, contacts.emails.length);
+      if (contacts.emails.length) counters.pagesWithEmail += 1;
+      for (const email of contacts.emails) {
+        if (collected.has(email)) continue;
+        queryNewEmails.add(email);
+        const record = {
+          businessName: contacts.businessName,
+          city: query.target_city,
+          collectedAt: new Date().toISOString(),
+          confidence: confidenceForContact({
+            email,
+            websiteDomain: candidate.domain,
+            foundOnContactPage,
+          }),
+          domain: candidate.domain,
+          email,
+          icpName: query.benefactor_icp_name,
+          icpSlug: query.benefactor_icp_slug,
+          phones: contacts.phones,
+          provider: candidate.provider,
+          providerRank: candidate.providerRank,
+          query: query.query_text,
+          queryId: query.id,
+          serviceCategory: query.service_category,
+          sourceUrl: foundOnContactPage && contacts.contactUrl ? contacts.contactUrl : candidate.url,
+          state: query.target_state,
+          verificationStatus: 'syntax_valid',
+        };
+        collected.set(email, record);
+      }
+    }
+    await updateQueryStats(query.id, queryVisited, queryNewEmails.size);
+  }
+
+  counters.contactsCollected = collected.size;
+  counters.phonesCollected = new Set([...collected.values()].flatMap((record) => record.phones)).size;
+  if (!config.dryRun) {
+    for (const record of collected.values()) {
+      try {
+        await persistContact(record);
+      } catch (error) {
+        counters.persistenceFailures += 1;
+        console.error(`[benefactor-pipeline] persistence_failed ${errorSummary(error)}`);
+      }
+    }
+  }
+
+  const report = buildDryRunReport({
+    category: config.category,
+    providers: statuses,
+    records: [...collected.values()],
+    counters,
+  });
+  console.log(`BENEFACTOR_PIPELINE_REPORT ${canonicalJson(report)}`);
+  console.log(`[benefactor-pipeline] done category=${config.category} mode=${config.dryRun ? 'dry-run' : 'persist'} contacts=${collected.size} inserted=${counters.leadsInserted} report=${report.reportDigest}`);
+}
+
+try {
+  await run();
+} catch (error) {
+  console.error(`[benefactor-pipeline] fatal ${errorSummary(error)}`);
+  process.exitCode = 1;
+} finally {
+  await db.end().catch(() => {});
+}

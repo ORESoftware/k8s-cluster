@@ -1,0 +1,233 @@
+name: Publish HypeSiege hsg fleet from protected App runtime v2
+run-name: Publish HypeSiege hsg fleet from protected App runtime v2 @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-hsg-protected-runtime-v2.yml
+      - scripts/ops/run_hsg_protected_publisher_remote.sh
+      - scripts/ops/select_hypesiege_github_app_from_protected_sources.py
+      - scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-hsg-protected-runtime-v2.yml
+      - scripts/ops/run_hsg_protected_publisher_remote.sh
+      - scripts/ops/select_hypesiege_github_app_from_protected_sources.py
+      - scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-hypesiege-hsg-protected-runtime-v2
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate the protected runtime and App-only publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime=scripts/ops/run_hsg_protected_publisher_remote.sh
+          selector=scripts/ops/select_hypesiege_github_app_from_protected_sources.py
+          publisher=scripts/ops/publish_hypesiege_hsg_fleet_with_app.sh
+          bash -n "$runtime"
+          bash -n "$publisher"
+          python3 -m py_compile "$selector"
+          python3 "$selector" \
+            --organization hypesiege \
+            --app-id-out "$RUNNER_TEMP/self-test-id" \
+            --private-key-out "$RUNNER_TEMP/self-test-key" \
+            --evidence-out "$RUNNER_TEMP/self-test-evidence" \
+            --self-test
+          grep -q 'export HOME=' "$runtime"
+          grep -q 'HSG_SELECTOR_DIAGNOSTIC_BASE64' "$runtime"
+          grep -q 'HSG_PUBLISHER_DIAGNOSTIC_BASE64' "$runtime"
+          grep -q 'api_request()' "$publisher"
+          grep -q 'GH_PAT must not be present' "$publisher"
+          if grep -nE '(^|[[:space:]])gh([[:space:]]|$)' "$publisher"; then
+            echo 'protected publisher must not depend on the gh binary' >&2
+            exit 1
+          fi
+          for target in \
+            hsg-web-mash \
+            hsg-web-leptos \
+            hsg-web-dioxus \
+            hsg-api \
+            hsg-infra \
+            hsg-cli \
+            hsg-interfaces \
+            hsg-sync
+          do
+            grep -q "$target" "$publisher"
+          done
+          git diff --check
+
+  publish:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: publish-hypesiege-hsg-protected-runtime-v2
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Run the reviewed protected publisher over SSM
+        shell: bash
+        env:
+          TRUSTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -n "${INSTANCE_ID:-}"
+          [[ "$TRUSTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+          bootstrap="/tmp/hsg-protected-bootstrap-${TRUSTED_SHA}"
+          remote_command="bootstrap='$bootstrap'; export HOME=\"\$bootstrap/home\"; export GIT_TERMINAL_PROMPT=0; mkdir -p \"\$HOME\" \"\$bootstrap/repo\"; chmod 700 \"\$HOME\"; git config --global init.defaultBranch main; git init \"\$bootstrap/repo\" >/dev/null; git -C \"\$bootstrap/repo\" remote add origin https://github.com/ORESoftware/k8s-cluster.git; git -C \"\$bootstrap/repo\" fetch --quiet --depth=1 origin '$TRUSTED_SHA'; git -C \"\$bootstrap/repo\" switch --quiet --detach FETCH_HEAD; test \"\$(git -C \"\$bootstrap/repo\" rev-parse HEAD)\" = '$TRUSTED_SHA'; status=0; bash \"\$bootstrap/repo/scripts/ops/run_hsg_protected_publisher_remote.sh\" '$AWS_REGION' || status=\$?; python3 -c 'import shutil,sys; shutil.rmtree(sys.argv[1], ignore_errors=True)' \"\$bootstrap\"; exit \$status"
+          parameters="$RUNNER_TEMP/ssm-parameters.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment 'Publish HypeSiege hsg repositories with protected App runtime v2' \
+              --parameters "file://$parameters" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+          test -n "$command_id"
+          printf 'ssm_command_id=%s\n' "$command_id"
+
+          status=Pending
+          for _ in $(seq 1 600); do
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query Status \
+                --output text 2>/dev/null || true
+            )"
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut|Cancelling) break ;;
+            esac
+            sleep 3
+          done
+
+          invocation="$RUNNER_TEMP/hsg-protected-runtime-v2-invocation.json"
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json > "$invocation"
+
+          stdout="$(jq -r '.Stdout // ""' "$invocation")"
+          printf '%s\n' "$stdout"
+
+          decode_marker() {
+            local marker="$1"
+            local destination="$2"
+            local encoded_value
+            encoded_value="$(printf '%s\n' "$stdout" | sed -n "s/^${marker}=//p" | tail -n 1)"
+            if [[ -n "$encoded_value" ]]; then
+              printf '%s' "$encoded_value" | base64 --decode > "$destination"
+            fi
+          }
+
+          decode_marker HSG_SELECTOR_DIAGNOSTIC_BASE64 "$RUNNER_TEMP/hsg-selector-diagnostic.json"
+          decode_marker HSG_SELECTOR_BASE64 "$RUNNER_TEMP/hsg-protected-app-selector.json"
+          decode_marker HSG_PUBLISHER_DIAGNOSTIC_BASE64 "$RUNNER_TEMP/hsg-publisher-diagnostic.json"
+          decode_marker HSG_REPORT_BASE64 "$RUNNER_TEMP/hypesiege-hsg-publication.json"
+
+          if [[ -s "$RUNNER_TEMP/hsg-selector-diagnostic.json" ]]; then
+            echo 'selector_diagnostic='
+            jq . "$RUNNER_TEMP/hsg-selector-diagnostic.json"
+          fi
+          if [[ -s "$RUNNER_TEMP/hsg-publisher-diagnostic.json" ]]; then
+            echo 'publisher_diagnostic='
+            jq . "$RUNNER_TEMP/hsg-publisher-diagnostic.json"
+          fi
+
+          if [[ "$status" != Success ]]; then
+            jq -r '.Stderr // ""' "$invocation" >&2
+            exit 1
+          fi
+
+          selector="$RUNNER_TEMP/hsg-protected-app-selector.json"
+          report="$RUNNER_TEMP/hypesiege-hsg-publication.json"
+          test -s "$selector"
+          test -s "$report"
+          jq -e '
+            .schema_version == 1 and
+            .organization == "hypesiege" and
+            .repository_selection == "all" and
+            .permissions.administration == "write" and
+            .permissions.contents == "write" and
+            .permissions.pull_requests == "write" and
+            .pat_used == false
+          ' "$selector" >/dev/null
+          jq -e '
+            .schema_version == 1 and
+            .organization == "hypesiege" and
+            (.repositories | length) == 8 and
+            all(.repositories[];
+              (.target | startswith("hypesiege/hsg-")) and
+              .visibility == "private" and
+              .default_branch == "main" and
+              (.main_sha | test("^[0-9a-f]{40}$")) and
+              (.migration_sha | test("^[0-9a-f]{40}$")) and
+              ((.pull_request == "merged-on-main") or (.pull_request | startswith("https://github.com/hypesiege/hsg-")))
+            )
+          ' "$report" >/dev/null
+
+      - name: Add the verified publication summary
+        if: success()
+        shell: bash
+        run: |
+          selector="$RUNNER_TEMP/hsg-protected-app-selector.json"
+          report="$RUNNER_TEMP/hypesiege-hsg-publication.json"
+          {
+            echo '# HypeSiege hsg-* publication'
+            echo
+            jq -r '"- GitHub App: `\(.app_slug)`"' "$selector"
+            jq -r '"- Installation: `\(.installation_id)`"' "$selector"
+            echo '- PAT used: `false`'
+            echo
+            jq -r '.repositories[] | "- `\(.target)` — main `\(.main_sha)`; migration `\(.migration_sha)`; PR \(.pull_request)"' "$report"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload non-secret publication evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hypesiege-hsg-protected-runtime-v2
+          path: |
+            ${{ runner.temp }}/hsg-selector-diagnostic.json
+            ${{ runner.temp }}/hsg-protected-app-selector.json
+            ${{ runner.temp }}/hsg-publisher-diagnostic.json
+            ${{ runner.temp }}/hypesiege-hsg-publication.json
+            ${{ runner.temp }}/hsg-protected-runtime-v2-invocation.json
+          if-no-files-found: warn
+          retention-days: 14

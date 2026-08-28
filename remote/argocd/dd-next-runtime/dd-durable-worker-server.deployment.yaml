@@ -1,0 +1,129 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-durable-worker-server
+  namespace: default
+  labels:
+    app: dd-durable-worker-server
+    app.kubernetes.io/name: dd-durable-worker-server
+    app.kubernetes.io/component: durable-execution-control-plane
+    app.kubernetes.io/part-of: dd-agent-runtime
+spec:
+  # Deliberately inert until the image is digest-pinned and the shadow rollout
+  # gates in OPERATIONS.md have passed.
+  replicas: 0
+  revisionHistoryLimit: 3
+  minReadySeconds: 5
+  progressDeadlineSeconds: 600
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: dd-durable-worker-server
+  template:
+    metadata:
+      annotations:
+        dd.dev/rollout-mode: shadow-disabled
+        dd.dev/image-policy: publish-on-dev-pin-digest-before-scale
+        prometheus.io/path: /metrics
+        prometheus.io/port: '8152'
+        prometheus.io/scrape: 'true'
+      labels:
+        app: dd-durable-worker-server
+        app.kubernetes.io/name: dd-durable-worker-server
+        app.kubernetes.io/component: durable-execution-control-plane
+        app.kubernetes.io/part-of: dd-agent-runtime
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: durable-worker-server
+          # The dev tag is published only after the full Rust, protocol, manifest,
+          # and container suite succeeds on dev. Replace this with the emitted
+          # sha256 digest before scaling the Deployment above zero.
+          image: ghcr.io/oresoftware/dd-durable-worker-server:dev
+          imagePullPolicy: Always
+          env:
+            - name: PORT
+              value: '8152'
+            - name: RUST_LOG
+              value: dd_durable_worker_server=info,tower_http=info
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: NATS_REQUIRE_TLS
+              value: 'false'
+            - name: DURABLE_WORKER_STATE_BUCKET
+              value: DD_DURABLE_WORKER_STATE
+            - name: DURABLE_WORKER_EVENT_STREAM
+              value: DD_DURABLE_WORKER_EVENTS
+            - name: DURABLE_WORKER_EVENT_SUBJECT
+              value: dd.durable.run.*.events
+            - name: DURABLE_WORKER_NATS_REPLICAS
+              value: '1'
+            - name: DURABLE_WORKER_POLL_MAX_WAIT_MS
+              value: '30000'
+            - name: DURABLE_WORKER_SCHEDULER_INTERVAL_MS
+              value: '1000'
+            - name: DURABLE_WORKER_SHADOW_MODE
+              value: 'true'
+            - name: DURABLE_WORKER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+          ports:
+            - name: http
+              containerPort: 8152
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: '2'
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3

@@ -1,0 +1,101 @@
+name: durable-worker-python-sdk
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/durable-worker-python-sdk.yml'
+      - 'remote/worker-sdks/README.md'
+      - 'remote/worker-sdks/python/durable-worker/**'
+      - 'remote/tests/general/durable-worker-python-sdk.test.mjs'
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - '.github/workflows/durable-worker-python-sdk.yml'
+      - 'remote/worker-sdks/README.md'
+      - 'remote/worker-sdks/python/durable-worker/**'
+      - 'remote/tests/general/durable-worker-python-sdk.test.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: durable-worker-python-sdk-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract-and-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - '3.11'
+          - '3.12'
+          - '3.13'
+    steps:
+      - name: Checkout without persistent credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Compile dependency-free package, tests, and example
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q \
+            remote/worker-sdks/python/durable-worker/src \
+            remote/worker-sdks/python/durable-worker/tests \
+            remote/worker-sdks/python/durable-worker/examples
+
+      - name: Run client, retry, heartbeat, progress, and fencing tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$PWD/remote/worker-sdks/python/durable-worker/src"
+          python -m unittest discover \
+            -s remote/worker-sdks/python/durable-worker/tests \
+            -v
+
+      - name: Stress lease-fencing cancellation lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$PWD/src"
+          for attempt in $(seq 1 20); do
+            python -m unittest \
+              tests.test_client.WorkerLoopTests.test_fenced_heartbeat_cancels_handler_and_suppresses_terminal_mutations \
+              >/dev/null
+          done
+        working-directory: remote/worker-sdks/python/durable-worker
+
+      - name: Enforce repository and packaging contract
+        run: node --test remote/tests/general/durable-worker-python-sdk.test.mjs
+
+      - name: Inspect package metadata without installing dependencies
+        shell: bash
+        working-directory: remote/worker-sdks/python/durable-worker
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import pathlib
+          import tomllib
+
+          project = tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']
+          assert project['name'] == 'oresoftware-durable-worker'
+          assert project['requires-python'] == '>=3.11'
+          assert project['dependencies'] == []
+          PY
+
+      - name: Assert validation did not mutate tracked files
+        run: git diff --exit-code

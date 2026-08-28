@@ -1,0 +1,15 @@
+**
+!remote/
+remote/**
+!remote/deployments/
+remote/deployments/**
+!remote/deployments/ci-profile-runner-rs/
+!remote/deployments/ci-profile-runner-rs/Cargo.toml
+!remote/deployments/ci-profile-runner-rs/Cargo.lock
+!remote/deployments/ci-profile-runner-rs/src/
+!remote/deployments/ci-profile-runner-rs/src/**
+!remote/libs/
+remote/libs/**
+!remote/libs/telemetry-rs/
+!remote/libs/telemetry-rs/**
+**/._*

@@ -1,0 +1,88 @@
+name: contract-service-seaorm
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/contract-service-seaorm-branch.yml"
+      - "scripts/ci/init-submodules-with-report.sh"
+      - "remote/deployments/contract-service-rs/**"
+      - "remote/libs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contract-service-seaorm-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      EXPECTED_SHARED_COMMIT: 3c84cab532b27d328378f09fba5841f02644ae3b
+      SERVICE_DIR: remote/deployments/contract-service-rs
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: "1.97.0"
+          components: rustfmt, clippy
+      - name: Materialize the immutable public schema and SeaORM adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          git init -q remote/libs
+          git -C remote/libs remote add origin \
+            https://github.com/ORESoftware/k8s-libs-and-shared-defs.git
+          GIT_TERMINAL_PROMPT=0 git -C remote/libs fetch \
+            --no-tags --depth=1 origin "$EXPECTED_SHARED_COMMIT"
+          git -C remote/libs checkout -q --detach FETCH_HEAD
+          test "$(git -C remote/libs rev-parse HEAD)" = "$EXPECTED_SHARED_COMMIT"
+          test -z "$(git -C remote/libs status --porcelain=v1 --untracked-files=all)"
+      - name: Validate shared authority and migration policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test "$SERVICE_DIR/scripts/seaorm-policy.test.mjs"
+          EXPECTED_SHARED_COMMIT="$EXPECTED_SHARED_COMMIT" \
+            node "$SERVICE_DIR/scripts/check-seaorm-policy.mjs"
+      - name: Generate lockfile and execute the exact Rust suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$SERVICE_DIR"
+          cargo generate-lockfile
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets
+          cargo check --locked --all-targets
+          ! grep -RInE \
+            '(^|[^A-Za-z0-9_])sqlx::(query|query_as|query_scalar|migrate!)|\bPgPool(Options)?\b|^sqlx[[:space:]]*=' \
+            Cargo.toml src
+      - name: Record non-secret lock and contract evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 test-results
+          sha256sum "$SERVICE_DIR/Cargo.lock" \
+            > test-results/contract-service-cargo-lock.sha256
+          printf '%s\n' "$EXPECTED_SHARED_COMMIT" \
+            > test-results/shared-schema-commit.txt
+      - name: Upload generated lockfile and validation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: contract-service-seaorm-${{ github.run_id }}
+          path: |
+            remote/deployments/contract-service-rs/Cargo.lock
+            test-results/contract-service-cargo-lock.sha256
+            test-results/shared-schema-commit.txt
+          if-no-files-found: error
+          retention-days: 14

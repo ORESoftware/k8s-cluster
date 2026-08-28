@@ -1,0 +1,36 @@
+# Serving certificate for the fiducia load balancer's HTTPS listener (TLS_PORT,
+# default 8443) — FID-SEC-1 / DEN-1240, phase 1 (foundation).
+#
+# Signed by the namespace CA (fiducia-ca). cert-manager writes tls.crt/tls.key
+# AND ca.crt into the Secret `fiducia-load-balance-tls`. At cutover:
+#   * the LB mounts tls.crt/tls.key read-only and sets FIDUCIA_TLS_CERT_PATH /
+#     FIDUCIA_TLS_KEY_PATH / TLS_PORT=8443 (see fiducia-load-balance.rs);
+#   * ESO's webhook `caProvider` and the gateway's proxy_ssl_trusted_certificate
+#     verify against ca.crt (published from the fiducia-internal-ca Secret).
+# INERT until the LB mounts it — creating the Secret changes no running traffic.
+#
+# SANs cover every in-cluster resolution form clients use for the LB Service.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: fiducia-load-balance-tls
+  namespace: fiducia
+spec:
+  secretName: fiducia-load-balance-tls
+  duration: 2160h    # 90d
+  renewBefore: 360h  # 15d
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages:
+    - server auth
+  dnsNames:
+    - fiducia-load-balance.fiducia.svc.cluster.local
+    - fiducia-load-balance.fiducia.svc
+    - fiducia-load-balance.fiducia
+    - fiducia-load-balance
+  issuerRef:
+    kind: Issuer
+    name: fiducia-ca
+    group: cert-manager.io

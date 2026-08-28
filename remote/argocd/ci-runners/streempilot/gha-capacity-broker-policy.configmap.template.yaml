@@ -1,0 +1,25 @@
+# BILLING/PARITY-GATED TEMPLATE: excluded from active Kustomizations.
+# `includedMinutes` is a conservative placeholder and must be reconciled from
+# the authorized organization billing summary before mutation is enabled.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gha-capacity-broker-policy
+  namespace: arc-runners-streempilot
+  annotations:
+    dd.dev/activation-state: billing-parity-and-operator-gated
+    dd.dev/linear-issue: DEN-1549
+data:
+  policy.json: |-
+    {
+      "includedMinutes": 2000,
+      "warnPercent": 70,
+      "selfHostedPercent": 85,
+      "hardStopPercent": 100,
+      "preferSelfHosted": false,
+      "selfHostedReady": false,
+      "buildServerEnabled": true,
+      "hostedRunsOn": ["ubuntu-latest"],
+      "selfHostedRunsOn": ["streempilot-ci"],
+      "selectedRepositoryIds": [1318677845, 1318677882, 1318677908, 1318678075]
+    }

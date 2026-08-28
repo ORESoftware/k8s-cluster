@@ -1,0 +1,61 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-ai-agent-runner
+  namespace: default
+  labels:
+    app: dd-ai-agent-runner
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-ai-agent-runner
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # The runner accepts no application traffic — it polls the bridge. Only the
+    # health endpoint (:8144) is scrapable, and only from central Prometheus
+    # (kubelet probes are exempt from NetworkPolicy on this CNI).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app: dd-prometheus
+      ports:
+        - protocol: TCP
+          port: 8144
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Workflow polling and submission against the bridge.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-ai-agent-bridge
+      ports:
+        - protocol: TCP
+          port: 8142
+    # Provider APIs (OpenAI, Anthropic, Google, Moonshot, Alibaba) over HTTPS.
+    # Exclude cluster, loopback, and metadata ranges so this rule cannot become
+    # a generic internal-network escape hatch.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

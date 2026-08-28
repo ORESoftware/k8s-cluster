@@ -1,0 +1,66 @@
+name: Benefactor contact CronJob contract
+
+on:
+  pull_request:
+    paths:
+      - remote/argocd/benefactor-contact-pipeline/**
+      - remote/argocd/apps/benefactor-contact-pipeline.application.yaml
+      - scripts/ops/test_benefactor_contact_cronjob.py
+      - .github/workflows/benefactor-contact-cronjob-contract.yml
+  push:
+    branches:
+      - main
+    paths:
+      - remote/argocd/benefactor-contact-pipeline/**
+      - remote/argocd/apps/benefactor-contact-pipeline.application.yaml
+      - scripts/ops/test_benefactor_contact_cronjob.py
+      - .github/workflows/benefactor-contact-cronjob-contract.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benefactor-contact-cronjob-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/benefactor-contact-cronjob-contract.yml
+
+      - name: Run focused CronJob contracts
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ops/test_benefactor_contact_cronjob.py
+          python3 scripts/ops/test_benefactor_contact_cronjob.py -v
+
+      - name: Reject conflicts and credential-shaped material
+        run: |
+          set -euo pipefail
+          targets=(
+            remote/argocd/benefactor-contact-pipeline
+            remote/argocd/apps/benefactor-contact-pipeline.application.yaml
+            scripts/ops/test_benefactor_contact_cronjob.py
+            .github/workflows/benefactor-contact-cronjob-contract.yml
+          )
+          if grep -RInE '^(<<<<<<<|=======|>>>>>>>)' "${targets[@]}"; then
+            exit 1
+          fi
+          credential_pattern='gh''p_|github_''pat_|cf''at_|AI''za[A-Za-z0-9_-]{20,}|xo''x[baprs]-[A-Za-z0-9-]{10,}|-----BE''GIN (RSA )?PRIVATE KEY-----'
+          if grep -RInE "$credential_pattern" "${targets[@]}"; then
+            echo 'credential-shaped material detected' >&2
+            exit 1
+          fi
+          git diff --check HEAD^ HEAD

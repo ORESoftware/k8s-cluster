@@ -1,3 +1,5 @@
+mod auth;
+
 use std::{
     collections::HashMap,
     env,
@@ -27,8 +29,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, RwLock};
 
+use crate::auth::{sanitize_client_metadata, PeerIdentity, SignalAuthConfig, SignalAuthError};
+
 static STARTED_AT: Lazy<Instant> = Lazy::new(Instant::now);
 static PEER_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+const MAX_SIGNAL_FRAME_BYTES: usize = 64 * 1024;
 static HTTP_REQUESTS: Lazy<IntCounterVec> = Lazy::new(|| {
     let counter = IntCounterVec::new(
         Opts::new(
@@ -109,6 +114,7 @@ static SIGNAL_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
 struct AppState {
     rooms: Arc<RwLock<HashMap<String, RoomState>>>,
     admin_runtime_clients: Arc<RwLock<HashMap<u64, mpsc::UnboundedSender<Message>>>>,
+    signal_auth: SignalAuthConfig,
 }
 
 #[derive(Clone, Default)]
@@ -130,6 +136,8 @@ struct PeerSummary {
     connected_at_ms: u64,
     #[serde(skip_serializing_if = "Option::is_none", rename = "userAgent")]
     user_agent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    identity: Option<PeerIdentity>,
     metadata: Value,
 }
 
@@ -413,7 +421,24 @@ async fn handle_signal_text(
         "hello" => {
             SIGNAL_MESSAGES.with_label_values(&["hello", "local"]).inc();
             if !metadata.is_null() {
-                update_peer_metadata(state, room_id, peer_id, metadata).await;
+                match sanitize_client_metadata(metadata) {
+                    Ok(metadata) => {
+                        update_peer_metadata(state, room_id, peer_id, metadata).await;
+                    }
+                    Err(message) => {
+                        SIGNAL_ERRORS.with_label_values(&["invalid_metadata"]).inc();
+                        send_json(
+                            own_tx,
+                            json!({
+                                "type": "error",
+                                "code": "invalid_metadata",
+                                "message": message,
+                                "atMs": now_ms(),
+                            }),
+                        );
+                        return true;
+                    }
+                }
             }
             send_json(
                 own_tx,
@@ -504,6 +529,7 @@ async fn signal_socket(
     room_id: String,
     peer_id: String,
     user_agent: Option<String>,
+    identity: Option<PeerIdentity>,
 ) {
     let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
     let connected_at_ms = now_ms();
@@ -511,6 +537,7 @@ async fn signal_socket(
         peer_id: peer_id.clone(),
         connected_at_ms,
         user_agent,
+        identity,
         metadata: Value::Null,
     };
 
@@ -796,6 +823,17 @@ async fn signal_ws(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Response {
+    let identity = match state.signal_auth.identity_from_headers(&headers) {
+        Ok(identity) => identity,
+        Err(
+            error @ (SignalAuthError::AuthenticationRequired
+            | SignalAuthError::UntrustedProxy
+            | SignalAuthError::InvalidIdentity),
+        ) => {
+            record_http("GET", "/signal", StatusCode::UNAUTHORIZED);
+            return (StatusCode::UNAUTHORIZED, error.public_message()).into_response();
+        }
+    };
     let room_id = match normalize_id(query.room, "room") {
         Ok(room_id) => room_id,
         Err(message) => {
@@ -816,7 +854,11 @@ async fn signal_ws(
         .map(str::to_string);
 
     record_http("GET", "/signal", StatusCode::SWITCHING_PROTOCOLS);
-    ws.on_upgrade(move |socket| signal_socket(socket, state, room_id, peer_id, user_agent))
+    ws.max_message_size(MAX_SIGNAL_FRAME_BYTES)
+        .max_frame_size(MAX_SIGNAL_FRAME_BYTES)
+        .on_upgrade(move |socket| {
+            signal_socket(socket, state, room_id, peer_id, user_agent, identity)
+        })
 }
 
 async fn root() -> impl IntoResponse {
@@ -921,9 +963,13 @@ async fn main() {
     let addr: SocketAddr = format!("{host}:{port}")
         .parse()
         .expect("HOST/PORT must form a socket address");
+    let signal_auth =
+        SignalAuthConfig::from_env().expect("invalid WebRTC shared-auth configuration");
+    tracing::info!(auth_mode = ?signal_auth.mode, "configured WebRTC upgrade authentication");
     let state = AppState {
         rooms: Arc::new(RwLock::new(HashMap::new())),
         admin_runtime_clients: Arc::new(RwLock::new(HashMap::new())),
+        signal_auth,
     };
 
     let app = Router::new()
@@ -973,6 +1019,7 @@ mod tests {
         AppState {
             rooms: Arc::new(RwLock::new(HashMap::new())),
             admin_runtime_clients: Arc::new(RwLock::new(HashMap::new())),
+            signal_auth: SignalAuthConfig::disabled(),
         }
     }
 
@@ -996,6 +1043,7 @@ mod tests {
                     peer_id: peer.to_string(),
                     connected_at_ms: 0,
                     user_agent: None,
+                    identity: None,
                     metadata: Value::Null,
                 },
                 tx: tx.clone(),
@@ -1111,8 +1159,8 @@ mod tests {
     fn normalize_id_rejects_illegal_characters() {
         // path-traversal / spoofing / injection shaped inputs must be rejected
         for bad in [
-            "room/1", "room 1", "a:b", "a@b", "a$b", "a\tb", "café", "a\nb", "../etc", "a*b", "a?b",
-            "a=b", "a,b", "a;b", "a#b", "a%b",
+            "room/1", "room 1", "a:b", "a@b", "a$b", "a\tb", "café", "a\nb", "../etc", "a*b",
+            "a?b", "a=b", "a,b", "a;b", "a#b", "a%b",
         ] {
             assert!(
                 normalize_id(Some(bad.to_string()), "peer").is_err(),
@@ -1141,7 +1189,9 @@ mod tests {
         assert!(should_forward_admin_runtime_message(
             r#"{"type":"k8s-runtime-event","x":1}"#
         ));
-        assert!(should_forward_admin_runtime_message(r#"{"type":"task-event"}"#));
+        assert!(should_forward_admin_runtime_message(
+            r#"{"type":"task-event"}"#
+        ));
     }
 
     #[test]
@@ -1151,7 +1201,9 @@ mod tests {
         assert!(!should_forward_admin_runtime_message(r#"{"type":5}"#));
         assert!(!should_forward_admin_runtime_message("not json"));
         assert!(!should_forward_admin_runtime_message("[1,2,3]"));
-        assert!(!should_forward_admin_runtime_message("\"k8s-runtime-event\""));
+        assert!(!should_forward_admin_runtime_message(
+            "\"k8s-runtime-event\""
+        ));
     }
 
     #[test]
@@ -1216,7 +1268,10 @@ mod tests {
         let saved = save(&["NATS_URL"]);
 
         env::remove_var("NATS_URL");
-        assert_eq!(nats_url(), "nats://dd-nats.messaging.svc.cluster.local:4222");
+        assert_eq!(
+            nats_url(),
+            "nats://dd-nats.messaging.svc.cluster.local:4222"
+        );
 
         env::set_var("NATS_URL", "nats://localhost:4222");
         assert_eq!(nats_url(), "nats://localhost:4222");
@@ -1390,7 +1445,10 @@ mod tests {
         let _a = insert_peer(&state, "r1", "A").await;
         let _b = insert_peer(&state, "r1", "B").await;
         update_peer_metadata(&state, "r1", "A", json!({"role":"host"})).await;
-        assert_eq!(peer_metadata(&state, "r1", "A").await, json!({"role":"host"}));
+        assert_eq!(
+            peer_metadata(&state, "r1", "A").await,
+            json!({"role":"host"})
+        );
         assert_eq!(peer_metadata(&state, "r1", "B").await, Value::Null);
     }
 
@@ -1462,7 +1520,10 @@ mod tests {
         let frames = drain(&mut rx);
         assert_eq!(frames.len(), 1);
         assert_eq!(frames[0]["type"], json!("hello-ack"));
-        assert_eq!(peer_metadata(&state, "r1", "A").await, json!({"ua":"firefox"}));
+        assert_eq!(
+            peer_metadata(&state, "r1", "A").await,
+            json!({"ua":"firefox"})
+        );
     }
 
     #[tokio::test]
@@ -1489,7 +1550,10 @@ mod tests {
         )
         .await;
         assert!(!keep, "bye closes the connection");
-        assert!(drain(&mut ra).is_empty(), "sender gets no echo of its own bye");
+        assert!(
+            drain(&mut ra).is_empty(),
+            "sender gets no echo of its own bye"
+        );
         let frames = drain(&mut rb);
         assert_eq!(frames.len(), 1);
         assert_eq!(frames[0]["type"], json!("signal"));
