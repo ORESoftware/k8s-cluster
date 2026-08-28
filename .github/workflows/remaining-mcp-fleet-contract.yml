@@ -1,0 +1,98 @@
+name: Remaining MCP fleet contract
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/ops/remaining_mcp_fleet.py'
+      - 'scripts/ops/remaining_mcp_fleet_data.py'
+      - 'scripts/ops/remaining_mcp_fleet_templates.py'
+      - 'scripts/ops/publish_remaining_mcp_fleet.py'
+      - 'scripts/ops/test_remaining_mcp_fleet.py'
+      - 'requests/remaining-mcp-fleet-2026-08-04.json'
+      - '.github/workflows/remaining-mcp-fleet-contract.yml'
+      - '.github/workflows/ops-publish-remaining-mcp-fleet.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/ops/remaining_mcp_fleet.py'
+      - 'scripts/ops/remaining_mcp_fleet_data.py'
+      - 'scripts/ops/remaining_mcp_fleet_templates.py'
+      - 'scripts/ops/publish_remaining_mcp_fleet.py'
+      - 'scripts/ops/test_remaining_mcp_fleet.py'
+      - 'requests/remaining-mcp-fleet-2026-08-04.json'
+      - '.github/workflows/remaining-mcp-fleet-contract.yml'
+      - '.github/workflows/ops-publish-remaining-mcp-fleet.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: remaining-mcp-fleet-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/remaining-mcp-fleet-contract.yml .github/workflows/ops-publish-remaining-mcp-fleet.yml
+      - name: Compile generator, publisher, and tests
+        run: >-
+          python3 -m py_compile
+          scripts/ops/remaining_mcp_fleet.py
+          scripts/ops/remaining_mcp_fleet_data.py
+          scripts/ops/remaining_mcp_fleet_templates.py
+          scripts/ops/publish_remaining_mcp_fleet.py
+          scripts/ops/test_remaining_mcp_fleet.py
+      - name: Run deterministic and adversarial fixtures
+        run: python3 scripts/ops/test_remaining_mcp_fleet.py -v
+      - name: Validate exact execution request
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, sys
+          sys.path.insert(0, 'scripts/ops')
+          import remaining_mcp_fleet as fleet
+          request = json.loads(pathlib.Path('requests/remaining-mcp-fleet-2026-08-04.json').read_text())
+          fleet.validate_request_manifest(request)
+          assert request == fleet.request_manifest()
+          print(f"validated template {fleet.template_digest()} for {len(fleet.SERVER_SPECS)} servers and {len(fleet.MONOREPO_SPECS)} monorepos")
+          PY
+      - name: Generate source snapshots and prove deterministic file sets
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, pathlib, shutil, sys
+          sys.path.insert(0, 'scripts/ops')
+          import remaining_mcp_fleet as fleet
+          root = pathlib.Path('/tmp/generated-remaining-mcp-fleet')
+          shutil.rmtree(root, ignore_errors=True)
+          records = []
+          for spec in fleet.SERVER_SPECS:
+              target = root / spec.owner / spec.name
+              files = fleet.write_server_tree(spec, target)
+              digest = hashlib.sha256()
+              for relative in sorted(files):
+                  digest.update(relative.encode())
+                  digest.update(b'\0')
+                  digest.update(files[relative].encode())
+                  digest.update(b'\0')
+              records.append({'repository': spec.full_name, 'files': len(files), 'source_sha256': digest.hexdigest()})
+          pathlib.Path('/tmp/remaining-mcp-fleet-source.json').write_text(json.dumps(records, indent=2, sort_keys=True) + '\n')
+          print(pathlib.Path('/tmp/remaining-mcp-fleet-source.json').read_text())
+          PY
+      - name: Upload reviewed generated-source evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: remaining-mcp-fleet-source-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/remaining-mcp-fleet-source.json
+          retention-days: 14
+          if-no-files-found: error

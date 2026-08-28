@@ -94,6 +94,14 @@ data:
         static_configs:
           - targets:
               - dd-akrion-web-server-rs.default.svc.cluster.local:8127
+      # DEN-680: the bridge exposes a public, bounded-label Prometheus
+      # endpoint; NetworkPolicy limits this scrape to dd-prometheus.
+      - job_name: dd-ai-agent-bridge
+        metrics_path: /metrics
+        scrape_timeout: 10s
+        static_configs:
+          - targets:
+              - dd-ai-agent-bridge.default.svc.cluster.local:8142
       - job_name: dd-sonus-auris-site
         metrics_path: /metrics
         static_configs:
@@ -369,6 +377,69 @@ data:
             annotations:
               summary: "Application metrics target {{ $labels.job }} is down"
               description: "Prometheus cannot scrape {{ $labels.instance }}/metrics for {{ $labels.job }}."
+          - alert: DDAIAgentBridgeTargetMissing
+            expr: absent(up{job="dd-ai-agent-bridge"})
+            for: 2m
+            labels:
+              severity: critical
+              service: dd-ai-agent-bridge
+            annotations:
+              summary: AI agent bridge scrape target is missing
+              description: "Prometheus has no dd-ai-agent-bridge target, so bridge transport, queue, persistence, lease, and control-plane metrics are unavailable."
+          - alert: DDAIAgentBridgeTargetDown
+            expr: up{job="dd-ai-agent-bridge"} == 0
+            for: 2m
+            labels:
+              severity: critical
+              service: dd-ai-agent-bridge
+            annotations:
+              summary: AI agent bridge metrics target is down
+              description: "Prometheus cannot scrape dd-ai-agent-bridge /metrics; verify the Deployment, Service, NetworkPolicy, probes, and source revision."
+          - alert: DDAIAgentBridgeCapacityNearLimit
+            expr: max by (resource) (ai_agent_bridge_capacity{kind="current"} / clamp_min(ai_agent_bridge_capacity{kind="limit"}, 1)) > 0.8
+            for: 10m
+            labels:
+              severity: warning
+              service: dd-ai-agent-bridge
+            annotations:
+              summary: "AI agent bridge {{ $labels.resource }} capacity is near its limit"
+              description: "A bounded bridge resource has remained above 80% of its configured limit for ten minutes."
+          - alert: DDAIAgentBridgeHttpCapacityRejected
+            expr: sum(increase(ai_agent_bridge_http_rejected_total{reason="capacity"}[5m])) > 0
+            for: 1m
+            labels:
+              severity: warning
+              service: dd-ai-agent-bridge
+            annotations:
+              summary: AI agent bridge is rejecting HTTP work at capacity
+              description: "The bridge rejected one or more ordinary HTTP requests before execution because its bounded admission semaphore was exhausted."
+          - alert: DDAIAgentBridgePersistenceWritesShed
+            expr: sum(increase(ai_agent_bridge_persistence_shed_writes_total[5m])) > 0
+            for: 1m
+            labels:
+              severity: warning
+              service: dd-ai-agent-bridge
+            annotations:
+              summary: AI agent bridge persistence writes are being shed
+              description: "Best-effort PostgreSQL persistence could not accept one or more writes; in-memory coordination may have advanced without equivalent durable evidence."
+          - alert: DDAIAgentBridgeLeaseErrorsIncreasing
+            expr: sum(increase(ai_agent_bridge_file_lease_errors_total{reason=~"conflict|owner_mismatch|stale_fencing_token"}[5m])) > 0
+            for: 1m
+            labels:
+              severity: warning
+              service: dd-ai-agent-bridge
+            annotations:
+              summary: AI agent bridge lease or fencing errors are increasing
+              description: "The bridge recorded conflicting ownership, an owner mismatch, or a stale fencing token; inspect the bounded audit records before accepting repository output."
+          - alert: DDAIAgentBridgeControlPlaneErrorsIncreasing
+            expr: ai_agent_bridge_dependency_configured{dependency="control_plane"} == 1 and on() sum(increase(ai_agent_bridge_control_plane_requests_total{result=~"server_error|transport_error"}[5m])) > 0
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-ai-agent-bridge
+            annotations:
+              summary: AI agent bridge control-plane requests are failing
+              description: "The external Fiducia control plane is configured and recent requests have failed at the server or transport boundary."
           - alert: SharedAuthServerTargetMissing
             expr: absent(up{job="dd-shared-auth"})
             for: 2m

@@ -1,0 +1,389 @@
+name: Probe direct OIDC scheduled digest delivery once
+run-name: Probe direct OIDC digest delivery from ${{ github.sha }}
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ops-probe-scheduled-digest-direct-oidc-once-20260813.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ops-probe-scheduled-digest-direct-oidc-once-20260813
+  cancel-in-progress: false
+
+jobs:
+  probe-and-canary:
+    if: github.actor == 'ORESoftware'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Configure trusted main-ref AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: scheduled-digest-direct-oidc
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Probe SES, SNS, and IAM and send at most one fixed-recipient canary
+        shell: bash
+        env:
+          DIGEST_RECIPIENT: alexander.d.mills@gmail.com
+        run: |
+          set -Eeuo pipefail
+          test "$DIGEST_RECIPIENT" = 'alexander.d.mills@gmail.com'
+
+          probe="$RUNNER_TEMP/scheduled-digest-direct-oidc.py"
+          cat > "$probe" <<'PY'
+          import json
+          import os
+          import subprocess
+          import tempfile
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          RECIPIENT = "alexander.d.mills@gmail.com"
+          SUBJECT = "[MANUAL CANARY] Scheduled-task digest direct OIDC delivery"
+          SOURCE_CANDIDATES = (
+              "scheduled-digest@oresoftware.com",
+              "noreply@oresoftware.com",
+              "alex@oresoftware.com",
+              RECIPIENT,
+          )
+          DEFAULT_REGIONS = (
+              "us-east-1",
+              "us-east-2",
+              "us-west-2",
+              "us-west-1",
+              "eu-west-1",
+              "eu-central-1",
+              "ap-southeast-2",
+          )
+          ACTIONS = (
+              "ses:GetAccount",
+              "ses:ListEmailIdentities",
+              "ses:SendEmail",
+              "ses:SendRawEmail",
+              "sns:ListSubscriptions",
+              "sns:Publish",
+              "iam:GetRole",
+              "iam:ListRolePolicies",
+              "iam:ListAttachedRolePolicies",
+              "iam:PutRolePolicy",
+          )
+
+          result = {
+              "schema_version": 1,
+              "recipient_fixed": True,
+              "caller_identity_readable": False,
+              "role_name_resolved": False,
+              "iam_get_role_allowed": False,
+              "iam_inline_policy_count": 0,
+              "iam_attached_policy_count": 0,
+              "iam_simulation_available": False,
+              "iam_simulated_decisions": {},
+              "regions_considered": 0,
+              "ses_account_readable_regions": 0,
+              "ses_sending_enabled_regions": 0,
+              "ses_production_regions": 0,
+              "ses_identity_listing_regions": 0,
+              "ses_verified_identity_count": 0,
+              "ses_send_succeeded": False,
+              "ses_error_category": "not_attempted",
+              "sns_listing_regions": 0,
+              "sns_matching_confirmed_subscriptions": 0,
+              "sns_publish_succeeded": False,
+              "sns_error_category": "not_attempted",
+              "delivery_succeeded": False,
+              "delivery_provider": "none",
+          }
+
+          def run(command, timeout=40):
+              try:
+                  return subprocess.run(
+                      command,
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.PIPE,
+                      text=True,
+                      timeout=timeout,
+                      check=False,
+                  )
+              except FileNotFoundError:
+                  return None
+              except subprocess.TimeoutExpired:
+                  return None
+              except subprocess.SubprocessError:
+                  return None
+
+          def run_json(arguments, timeout=40):
+              completed = run(["aws", *arguments, "--output", "json"], timeout=timeout)
+              if not completed or completed.returncode != 0:
+                  return None, completed
+              try:
+                  return json.loads(completed.stdout), completed
+              except json.JSONDecodeError:
+                  return None, completed
+
+          def classify(completed):
+              if completed is None:
+                  return "command_or_timeout"
+              text = (completed.stderr or "").lower()
+              if "accessdenied" in text or "not authorized" in text:
+                  return "access_denied"
+              if "email address is not verified" in text or "message rejected" in text:
+                  return "identity_or_sandbox_rejected"
+              if "throttl" in text or "quota" in text or "maximum sending rate" in text:
+                  return "quota_or_rate_limited"
+              if "could not connect" in text or "endpoint" in text or "timed out" in text:
+                  return "network_or_endpoint"
+              if "invalidparameter" in text or "invalid parameter" in text:
+                  return "invalid_parameter"
+              return "request_failed"
+
+          regions = []
+          for candidate in (os.environ.get("AWS_REGION"), *DEFAULT_REGIONS):
+              if candidate and candidate not in regions:
+                  regions.append(candidate)
+          result["regions_considered"] = len(regions)
+
+          caller, _ = run_json(["sts", "get-caller-identity"])
+          role_name = None
+          role_arn = None
+          if isinstance(caller, dict):
+              result["caller_identity_readable"] = True
+              arn = caller.get("Arn")
+              account = caller.get("Account")
+              marker = ":assumed-role/"
+              if isinstance(arn, str) and isinstance(account, str) and marker in arn:
+                  suffix = arn.split(marker, 1)[1]
+                  role_name = suffix.split("/", 1)[0]
+                  if role_name:
+                      role_arn = "arn:aws:iam::" + account + ":role/" + role_name
+                      result["role_name_resolved"] = True
+
+          if role_name:
+              role, _ = run_json(["iam", "get-role", "--role-name", role_name])
+              result["iam_get_role_allowed"] = isinstance(role, dict) and isinstance(role.get("Role"), dict)
+
+              inline, _ = run_json(["iam", "list-role-policies", "--role-name", role_name])
+              if isinstance(inline, dict) and isinstance(inline.get("PolicyNames"), list):
+                  result["iam_inline_policy_count"] = len(inline["PolicyNames"])
+
+              attached, _ = run_json(["iam", "list-attached-role-policies", "--role-name", role_name])
+              if isinstance(attached, dict) and isinstance(attached.get("AttachedPolicies"), list):
+                  result["iam_attached_policy_count"] = len(attached["AttachedPolicies"])
+
+          if role_arn:
+              simulation, _ = run_json([
+                  "iam", "simulate-principal-policy",
+                  "--policy-source-arn", role_arn,
+                  "--action-names", *ACTIONS,
+              ])
+              evaluations = simulation.get("EvaluationResults") if isinstance(simulation, dict) else None
+              if isinstance(evaluations, list):
+                  result["iam_simulation_available"] = True
+                  for entry in evaluations:
+                      if not isinstance(entry, dict):
+                          continue
+                      action = entry.get("EvalActionName")
+                      decision = entry.get("EvalDecision")
+                      if action in ACTIONS and decision in {"allowed", "implicitDeny", "explicitDeny"}:
+                          result["iam_simulated_decisions"][action] = decision
+
+          timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+          body_text = "\n".join([
+              "Scheduled-task digest direct OIDC delivery canary",
+              "",
+              "This message tests the trusted GitHub OIDC delivery lane for the daily scheduled-runs digest.",
+              "The permanent report target is 07:00 America/Chicago and the preceding 24 hours.",
+              "",
+              "Generated at: " + timestamp,
+              "Recipient: " + RECIPIENT,
+              "Long-lived mail credential used: none",
+          ])
+          body_html = (
+              "<h1>Scheduled-task digest direct OIDC delivery canary</h1>"
+              "<p>This message tests the trusted GitHub OIDC delivery lane for the daily scheduled-runs digest.</p>"
+              "<p>The permanent report target is <strong>07:00 America/Chicago</strong> and the preceding 24 hours.</p>"
+              "<p><strong>Generated at:</strong> " + timestamp + "<br>"
+              "<strong>Recipient:</strong> " + RECIPIENT + "<br>"
+              "<strong>Long-lived mail credential used:</strong> none</p>"
+          )
+
+          with tempfile.TemporaryDirectory(prefix="scheduled-digest-direct-") as directory:
+              root = Path(directory)
+              destination_path = root / "destination.json"
+              content_path = root / "content.json"
+              destination_path.write_text(
+                  json.dumps({"ToAddresses": [RECIPIENT]}, separators=(",", ":")),
+                  encoding="utf-8",
+              )
+              content_path.write_text(
+                  json.dumps({
+                      "Simple": {
+                          "Subject": {"Data": SUBJECT, "Charset": "UTF-8"},
+                          "Body": {
+                              "Text": {"Data": body_text, "Charset": "UTF-8"},
+                              "Html": {"Data": body_html, "Charset": "UTF-8"},
+                          },
+                      }
+                  }, separators=(",", ":")),
+                  encoding="utf-8",
+              )
+              destination_path.chmod(0o600)
+              content_path.chmod(0o600)
+
+              for region in regions:
+                  account, _ = run_json(["sesv2", "get-account", "--region", region])
+                  if isinstance(account, dict):
+                      result["ses_account_readable_regions"] += 1
+                      if account.get("SendingEnabled") is True:
+                          result["ses_sending_enabled_regions"] += 1
+                      if account.get("ProductionAccessEnabled") is True:
+                          result["ses_production_regions"] += 1
+
+                  verified = []
+                  token = None
+                  listing_succeeded = False
+                  for _ in range(10):
+                      args = ["sesv2", "list-email-identities", "--page-size", "100", "--region", region]
+                      if token:
+                          args.extend(["--next-token", token])
+                      page, _ = run_json(args)
+                      if not isinstance(page, dict):
+                          break
+                      listing_succeeded = True
+                      for item in page.get("EmailIdentities", []):
+                          if not isinstance(item, dict) or item.get("VerifiedForSendingStatus") is not True:
+                              continue
+                          identity = item.get("IdentityName")
+                          identity_type = str(item.get("IdentityType") or "").upper()
+                          if isinstance(identity, str) and identity:
+                              verified.append((identity, identity_type))
+                      token = page.get("NextToken")
+                      if not token:
+                          break
+                  if listing_succeeded:
+                      result["ses_identity_listing_regions"] += 1
+                  result["ses_verified_identity_count"] += len(verified)
+
+                  sources = []
+                  for candidate in SOURCE_CANDIDATES:
+                      candidate_domain = candidate.rsplit("@", 1)[-1].lower()
+                      for identity, identity_type in verified:
+                          if identity_type == "EMAIL_ADDRESS" and identity.lower() == candidate.lower():
+                              sources.append(candidate)
+                              break
+                          if identity_type == "DOMAIN" and identity.lower() == candidate_domain:
+                              sources.append(candidate)
+                              break
+                  for identity, identity_type in verified:
+                      if identity_type == "EMAIL_ADDRESS":
+                          sources.append(identity)
+                      elif identity_type == "DOMAIN":
+                          sources.append("scheduled-digest@" + identity)
+                  if not sources:
+                      sources.extend(SOURCE_CANDIDATES)
+
+                  deduped = []
+                  seen = set()
+                  for source in sources:
+                      key = source.lower()
+                      if key not in seen:
+                          seen.add(key)
+                          deduped.append(source)
+
+                  for source in deduped[:20]:
+                      completed = run([
+                          "aws", "sesv2", "send-email",
+                          "--region", region,
+                          "--from-email-address", source,
+                          "--destination", "file://" + str(destination_path),
+                          "--content", "file://" + str(content_path),
+                          "--output", "json",
+                      ], timeout=45)
+                      if completed and completed.returncode == 0:
+                          result["ses_send_succeeded"] = True
+                          result["ses_error_category"] = "none"
+                          result["delivery_succeeded"] = True
+                          result["delivery_provider"] = "ses"
+                          break
+                      result["ses_error_category"] = classify(completed)
+                      if result["ses_error_category"] in {
+                          "access_denied", "quota_or_rate_limited", "network_or_endpoint"
+                      }:
+                          break
+                  if result["delivery_succeeded"]:
+                      break
+
+              if not result["delivery_succeeded"]:
+                  for region in regions:
+                      token = None
+                      listing_succeeded = False
+                      matches = []
+                      for _ in range(20):
+                          args = ["sns", "list-subscriptions", "--region", region]
+                          if token:
+                              args.extend(["--next-token", token])
+                          page, completed = run_json(args)
+                          if not isinstance(page, dict):
+                              result["sns_error_category"] = classify(completed)
+                              break
+                          listing_succeeded = True
+                          for subscription in page.get("Subscriptions", []):
+                              if not isinstance(subscription, dict):
+                                  continue
+                              if subscription.get("Endpoint") != RECIPIENT:
+                                  continue
+                              if subscription.get("Protocol") not in {"email", "email-json"}:
+                                  continue
+                              subscription_arn = subscription.get("SubscriptionArn")
+                              topic_arn = subscription.get("TopicArn")
+                              if subscription_arn == "PendingConfirmation" or not isinstance(topic_arn, str):
+                                  continue
+                              matches.append(topic_arn)
+                          token = page.get("NextToken")
+                          if not token:
+                              break
+                      if listing_succeeded:
+                          result["sns_listing_regions"] += 1
+                      result["sns_matching_confirmed_subscriptions"] += len(matches)
+
+                      for topic_arn in matches:
+                          completed = run([
+                              "aws", "sns", "publish",
+                              "--region", region,
+                              "--topic-arn", topic_arn,
+                              "--subject", SUBJECT,
+                              "--message", body_text,
+                              "--output", "json",
+                          ], timeout=45)
+                          if completed and completed.returncode == 0:
+                              result["sns_publish_succeeded"] = True
+                              result["sns_error_category"] = "none"
+                              result["delivery_succeeded"] = True
+                              result["delivery_provider"] = "sns"
+                              break
+                          result["sns_error_category"] = classify(completed)
+                      if result["delivery_succeeded"]:
+                          break
+
+          print(json.dumps(result, sort_keys=True, separators=(",", ":")))
+          PY
+
+          summary="$(python3 "$probe")"
+          jq -e '
+            .schema_version == 1 and
+            .recipient_fixed == true and
+            (.delivery_succeeded | type == "boolean") and
+            (.delivery_provider | type == "string") and
+            (.iam_simulated_decisions | type == "object")
+          ' <<<"$summary" >/dev/null
+          jq . <<<"$summary"
+          jq -e '.delivery_succeeded == true' <<<"$summary" >/dev/null

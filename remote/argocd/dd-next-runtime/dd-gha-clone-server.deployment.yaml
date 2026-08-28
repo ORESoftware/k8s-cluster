@@ -1,0 +1,149 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-gha-clone-server
+  namespace: default
+  labels:
+    app: dd-gha-clone-server
+spec:
+  # Deliberately non-runnable until an immutable reviewed image replaces the
+  # all-zero digest. Merge must not enable API, webhook, or build execution.
+  replicas: 0
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-gha-clone-server
+  template:
+    metadata:
+      labels:
+        app: dd-gha-clone-server
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gha-clone-server
+          # Activation gate: replace this sentinel with a signed, scanned,
+          # SBOM-attested image digest built from the exact merged clone commit.
+          image: ghcr.io/oresoftware/gha-clone-server@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          command: ["/usr/local/bin/gha-clone-server"]
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: "8125"
+            - name: RUST_LOG
+              value: gha_clone_server=info
+            - name: GHA_CLONE_GITHUB_API_BASE_URL
+              value: https://api.github.com
+            - name: GHA_CLONE_EXECUTION_ENABLED
+              value: "false"
+            - name: GHA_CLONE_WEBHOOK_EXECUTION_ENABLED
+              value: "false"
+            - name: GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS
+              value: failure,cancelled,timed_out,action_required,startup_failure,stale
+            - name: GHA_CLONE_WEBHOOK_IGNORED_WORKFLOWS
+              value: GHA continuity server
+            - name: GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS
+              value: "86400"
+            - name: GHA_CLONE_MAX_WEBHOOK_DELIVERIES
+              value: "4096"
+            # The clone server cannot address an executor directly. The router
+            # owns provider readiness selection and accepted-build pinning.
+            - name: GHA_CLONE_BUILD_SERVER_URL
+              value: http://dd-gha-executor-router.default.svc.cluster.local:8126
+            - name: GHA_CLONE_BUILD_POLL_SECONDS
+              value: "2"
+            - name: GHA_CLONE_BUILD_TIMEOUT_SECONDS
+              value: "3600"
+            - name: GHA_CLONE_MAX_WORKFLOW_BYTES
+              value: "262144"
+            - name: GHA_CLONE_MAX_JOBS
+              value: "64"
+            - name: GHA_CLONE_MAX_STEPS_PER_JOB
+              value: "128"
+            - name: GHA_CLONE_MAX_RUNS
+              value: "256"
+            - name: GHA_CLONE_ALLOWED_REPOSITORIES
+              valueFrom:
+                configMapKeyRef:
+                  name: dd-gha-clone-server
+                  key: GHA_CLONE_ALLOWED_REPOSITORIES
+            - name: GHA_CLONE_WORKFLOW_RULES_JSON
+              valueFrom:
+                configMapKeyRef:
+                  name: dd-gha-clone-server
+                  key: GHA_CLONE_WORKFLOW_RULES_JSON
+            - name: GHA_CLONE_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gha-clone-server-secrets
+                  key: auth_secret
+            - name: GHA_CLONE_GITHUB_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gha-clone-server-secrets
+                  key: github_webhook_secret
+            - name: GHA_CLONE_GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gha-clone-server-secrets
+                  key: github_app_installation_token
+            - name: GHA_CLONE_BUILD_SERVER_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: dd-gha-executor-router-secrets
+                  key: inbound_auth
+          ports:
+            - name: http
+              containerPort: 8125
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 12
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi

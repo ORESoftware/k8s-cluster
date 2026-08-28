@@ -248,6 +248,18 @@ class FinalizerContractTests(unittest.TestCase):
         self.assertEqual(sample["visibility"], "public")
         self.assertEqual(sample["main_sha"], ref_by_slug[sample["slug"]])
 
+    def test_extracted_visibility_contract_is_explicit(self) -> None:
+        self.assertEqual(
+            finalizer.EXTRACTED["meta-agents-demo/meta-agent-control-plane.rs"][
+                "visibility"
+            ],
+            "public",
+        )
+        self.assertEqual(
+            finalizer.EXTRACTED["file-tunnel/ftnl-mcp-server.rs"]["visibility"],
+            "private",
+        )
+
     def test_markdown_distinguishes_public_and_private_repositories(self) -> None:
         report = {
             "source": {
@@ -283,14 +295,25 @@ class FinalizerContractTests(unittest.TestCase):
                 "meta-agents-demo/meta-agent-control-plane.rs": {
                     "id": 3,
                     "main_sha": "c" * 40,
+                    "visibility": "public",
                     "ci": "active",
                     "ci_action": "already-active",
-                }
+                },
+                "file-tunnel/ftnl-mcp-server.rs": {
+                    "id": 4,
+                    "main_sha": "d" * 40,
+                    "visibility": "private",
+                    "ci": "active",
+                    "ci_action": "activated",
+                },
             },
         }
         rendered = finalizer.markdown(report)
         self.assertIn("`hypesiege/example`", rendered)
         self.assertIn("; public", rendered)
+        self.assertIn("## meta-agents-demo/meta-agent-control-plane.rs", rendered)
+        self.assertIn("visibility: public", rendered)
+        self.assertIn("## file-tunnel/ftnl-mcp-server.rs", rendered)
         self.assertIn("visibility: private", rendered)
         self.assertIn("All 34 approved repositories", rendered)
 

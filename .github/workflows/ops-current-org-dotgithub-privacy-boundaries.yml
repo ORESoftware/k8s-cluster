@@ -1,0 +1,42 @@
+name: Validate organization relationship privacy boundaries
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/ops/publish_current_org_repository_relationships.py
+      - tests/ops/test_publish_current_org_repository_privacy_boundaries.py
+      - .github/workflows/ops-current-org-dotgithub-privacy-boundaries.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: org-relationship-privacy-boundaries-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate exact private-reference boundaries
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Compile publisher and focused regression suite
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile \
+            scripts/ops/publish_current_org_repository_relationships.py \
+            tests/ops/test_publish_current_org_repository_privacy_boundaries.py
+
+      - name: Run boundary-aware privacy regressions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 tests/ops/test_publish_current_org_repository_privacy_boundaries.py -v

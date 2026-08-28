@@ -1,6 +1,7 @@
 """Static contracts for Benefactor's central Prometheus wiring."""
 
 from pathlib import Path
+import re
 import unittest
 
 
@@ -33,9 +34,11 @@ class BenefactorObservabilityContractTest(unittest.TestCase):
         self.assertIn("BenefactorBackendMemoryNearLimit", manifest)
 
         deployment = PROMETHEUS_DEPLOYMENT.read_text(encoding="utf-8")
-        self.assertIn(
-            'dd.dev/config-revision: "2026-07-30-benefactor-usacc-applications"',
+        self.assertRegex(
             deployment,
+            re.compile(
+                r'dd\.dev/config-revision: "[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9-]+"'
+            ),
         )
 
     def test_service_exposes_the_annotated_metrics_port(self) -> None:

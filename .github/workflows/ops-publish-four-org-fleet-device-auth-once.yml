@@ -1,0 +1,23 @@
+name: Retired requested-fleet publisher
+run-name: Retired requested-fleet publisher @ ${{ github.sha }}
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-four-org-fleet-device-auth-once.yml
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: publish-all-requested-fleets-20260804
+  cancel-in-progress: true
+
+jobs:
+  retired:
+    if: ${{ false }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: One-time publication is retired
+        run: echo 'The requested fleets are already published and remotely verified.'

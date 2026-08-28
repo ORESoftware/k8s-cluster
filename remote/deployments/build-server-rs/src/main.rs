@@ -17,9 +17,11 @@ mod events;
 mod exec;
 mod fiducia;
 mod gh_secrets;
+mod gha_workflow;
 mod http;
 mod jobs;
 mod lambda_exec;
+mod nats_submit;
 mod profiles;
 mod state;
 mod types;
@@ -30,7 +32,8 @@ mod webhooks;
 use config::{config_from_env, env_u64, env_usize, env_value, Config};
 use exec::append_log;
 use http::build_router;
-use jobs::{enqueue_build, submit_from_nats};
+use jobs::enqueue_build;
+use nats_submit::submit_from_nats;
 use state::{AppState, Counters, DEFAULT_PORT, SERVICE_NAME};
 use types::{BuildJobRecord, BuildRequest, BuildStatus, DeployRequest, NatsSubmitError};
 use util::now_ms;
@@ -116,8 +119,10 @@ async fn main() {
 
     // The production route table lives with the handlers it composes
     // (`http::build_router`), so the e2e suite drives the exact same router
-    // in-process via `tower::ServiceExt::oneshot`.
-    let app = build_router(state);
+    // in-process via `tower::ServiceExt::oneshot`. The GHA indie worker mounts
+    // a second authenticated route set that compiles bounded workflow YAML to
+    // the same fixed-profile queue instead of accepting caller-supplied shell.
+    let app = build_router(state.clone()).merge(gha_workflow::router(state));
 
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 

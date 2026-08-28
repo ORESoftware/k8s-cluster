@@ -6,12 +6,14 @@ import test from "node:test";
 
 const FIDUCIA_RELEASE = "957618c8ff7ca746519889573443b5e9e68dde19";
 const AKRION_RELEASE = "1bd5dc5a050ce05f9a495e08038cc02e9647e092";
-const CANONICAL_RELEASE = "e09bb95160aaf95a836e810eb20b65e74f6317a6";
-const CANONICAL_PACKAGE = "ghcr.io/canonical-cloud/canonical-web-server-rs";
+const CANONICAL_RELEASE = "488791e252c2ac94de78e1cd4d71165b53c2a2c3";
+const CANONICAL_WEB_PACKAGE = "ghcr.io/canonical-cloud/canonical-web-server";
+const CANONICAL_REVOKER_PACKAGE =
+  "ghcr.io/canonical-cloud/canonical-session-revoker";
 const CANONICAL_WEB_DIGEST =
-  "sha256:61ec2bc5ca5f73bee07f3da1ef29149defbb0e7f14a4070d43dff311dec9421e";
+  "sha256:5e58011c4bf98e9567cf1cf8c901fc71ddb83dc20a4696f17e378e10b050871a";
 const CANONICAL_REVOKER_DIGEST =
-  "sha256:beb1b3414f429836be78cd41005070bf86dfd367389dbe7b202a89a5308d297b";
+  "sha256:cb675d56785093ef8a944ed5af5bd5d2387eb052d5e914ebe956cefe09361d5b";
 const SONUS_EXPORTER =
   "docker.io/nginx/nginx-prometheus-exporter:1.5.1@sha256:9f6d963bb2b19d706d401cc3e2c3ea8de2f1c471b96a2156ca45e76f650b1625";
 
@@ -189,19 +191,21 @@ test("Fiducia and Akrion build the reviewed merged revisions", async () => {
   assert.doesNotMatch(akrion, /AKRION_WEB_GIT_REF\n\s*value:\s*dev/);
 });
 
-test("Canonical pins matching immutable tags and verified registry digests", async () => {
+test("Canonical pins attested monorepo-owned registry digests", async () => {
   const web = await read("remote/argocd/canonical-cloud/web.deployment.yaml");
   const revoker = await read("remote/argocd/canonical-cloud/revoker.deployment.yaml");
   const service = await read("remote/argocd/canonical-cloud/web.service.yaml");
 
-  const webImage = `${CANONICAL_PACKAGE}:web-${CANONICAL_RELEASE}@${CANONICAL_WEB_DIGEST}`;
-  const revokerImage = `${CANONICAL_PACKAGE}:revoker-${CANONICAL_RELEASE}@${CANONICAL_REVOKER_DIGEST}`;
+  const webImage = `${CANONICAL_WEB_PACKAGE}@${CANONICAL_WEB_DIGEST}`;
+  const revokerImage = `${CANONICAL_REVOKER_PACKAGE}@${CANONICAL_REVOKER_DIGEST}`;
   assert.ok(web.includes(`image: ${webImage}`));
   assert.ok(revoker.includes(`image: ${revokerImage}`));
   assert.ok(web.includes(`canonical.cloud/release-sha: "${CANONICAL_RELEASE}"`));
   assert.ok(revoker.includes(`canonical.cloud/release-sha: "${CANONICAL_RELEASE}"`));
   assert.doesNotMatch(web, /ghcr\.io\/canonical-cloud\/canonical-web-server:/);
   assert.doesNotMatch(revoker, /ghcr\.io\/canonical-cloud\/canonical-session-revoker:/);
+  assert.doesNotMatch(web, /canonical-web-server-rs/);
+  assert.doesNotMatch(revoker, /canonical-web-server-rs/);
   assertScrapeAnnotations(web, 8081);
   assertScrapeAnnotations(service, 8081);
 });

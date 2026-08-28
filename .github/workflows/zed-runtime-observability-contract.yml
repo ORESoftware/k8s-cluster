@@ -1,0 +1,44 @@
+name: Zed runtime observability contract
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - remote/argocd/apps/zed.applications.yaml
+      - remote/argocd/clusters/aws/**
+      - remote/argocd/clusters/hetzner/**
+      - remote/argocd/observability/**
+      - remote/argocd/projects/zed.*.yaml
+      - remote/tests/general/zed-runtime-observability-contract.test.mjs
+      - .github/workflows/zed-runtime-observability-contract.yml
+  pull_request:
+    paths:
+      - remote/argocd/apps/zed.applications.yaml
+      - remote/argocd/clusters/aws/**
+      - remote/argocd/clusters/hetzner/**
+      - remote/argocd/observability/**
+      - remote/argocd/projects/zed.*.yaml
+      - remote/tests/general/zed-runtime-observability-contract.test.mjs
+      - .github/workflows/zed-runtime-observability-contract.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zed-runtime-observability-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact source without retained credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify Zed AWS Hetzner pgvector and OTEL contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test remote/tests/general/zed-runtime-observability-contract.test.mjs

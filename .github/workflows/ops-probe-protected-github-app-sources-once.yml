@@ -1,0 +1,253 @@
+name: Probe protected GitHub App credential sources once
+run-name: Probe protected GitHub App credential sources @ ${{ github.sha }}
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-probe-protected-github-app-sources-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+concurrency:
+  group: probe-protected-github-app-sources-20260804
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Configure trusted-main AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: protected-github-app-source-probe
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Inventory only redacted candidate names and key names
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+          GH_TOKEN: ${{ github.token }}
+          TRACKING_ISSUE: '860'
+        run: |
+          set -Eeuo pipefail
+          test -n "${INSTANCE_ID:-}"
+          trusted_sha="$(git rev-parse HEAD)"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          region="${AWS_REGION:?AWS region required}"
+
+          probe="$RUNNER_TEMP/probe-protected-github-app-sources.sh"
+          cat > "$probe" <<'REMOTE'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          umask 077
+          region="${1:?region required}"
+          work="$(mktemp -d /tmp/github-app-source-probe.XXXXXX)"
+          cleanup() { rm -rf "$work"; }
+          trap cleanup EXIT
+
+          echo 'PROTECTED_GITHUB_APP_SOURCE_EVIDENCE_BEGIN'
+          echo 'schema_version=1'
+
+          echo '[aws-secrets-manager]'
+          if command -v aws >/dev/null 2>&1; then
+            if aws secretsmanager list-secrets \
+              --region "$region" \
+              --query 'SecretList[].Name' \
+              --output json > "$work/secret-names.json" 2>/dev/null; then
+              python3 - "$work/secret-names.json" > "$work/candidate-names.txt" <<'PY'
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          names = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          pattern = re.compile(
+              r'(github|(?:^|[/_.-])gh(?:[/_.-]|$)|arc[-_/].*github|runner.*github|'
+              r'submodule.*app|codex.*connector|connector.*github)',
+              re.IGNORECASE,
+          )
+          for name in sorted({str(item) for item in names if isinstance(item, str)}):
+              if pattern.search(name):
+                  print(name)
+          PY
+              candidate_count="$(wc -l < "$work/candidate-names.txt" | tr -d ' ')"
+              echo "candidate_secret_count=$candidate_count"
+              while IFS= read -r secret_name; do
+                test -n "$secret_name" || continue
+                printf 'secret=%s readable=' "$secret_name"
+                if aws secretsmanager get-secret-value \
+                  --region "$region" \
+                  --secret-id "$secret_name" \
+                  --query SecretString \
+                  --output text > "$work/secret-value" 2>/dev/null; then
+                  echo yes
+                  SECRET_NAME="$secret_name" python3 - "$work/secret-value" <<'PY'
+          import json
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          raw = Path(sys.argv[1]).read_text(encoding='utf-8')
+          try:
+              payload = json.loads(raw)
+          except json.JSONDecodeError:
+              print(f"secret={os.environ['SECRET_NAME']} format=non-json key_names=unavailable")
+              raise SystemExit(0)
+          if not isinstance(payload, dict):
+              print(f"secret={os.environ['SECRET_NAME']} format=json-non-object key_names=unavailable")
+              raise SystemExit(0)
+          keys = sorted(str(key) for key in payload)
+          interesting = re.compile(
+              r'(github|(?:^|_)gh(?:_|$)|app|installation|private.*key|token|pat|oauth)',
+              re.IGNORECASE,
+          )
+          selected = [key for key in keys if interesting.search(key)]
+          print(
+              f"secret={os.environ['SECRET_NAME']} format=json-object "
+              f"interesting_key_names={','.join(selected) if selected else '(none)'}"
+          )
+          PY
+                else
+                  echo no
+                fi
+                : > "$work/secret-value"
+              done < "$work/candidate-names.txt"
+            else
+              echo 'list_secrets=denied-or-unavailable'
+            fi
+          else
+            echo 'aws_cli=absent'
+          fi
+
+          echo '[kubernetes-secrets]'
+          if command -v kubectl >/dev/null 2>&1; then
+            kubeconfig=''
+            for candidate in /etc/kubernetes/admin.conf /root/.kube/config /home/ec2-user/.kube/config; do
+              if test -r "$candidate" && KUBECONFIG="$candidate" kubectl get secrets -A -o json > "$work/kube-secrets.json" 2>/dev/null; then
+                kubeconfig="$candidate"
+                break
+              fi
+            done
+            if test -n "$kubeconfig"; then
+              echo 'kube_access=yes'
+              python3 - "$work/kube-secrets.json" <<'PY'
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          document = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          pattern = re.compile(
+              r'(github|(?:^|[/_.-])gh(?:[/_.-]|$)|app[_-]?(?:id|key|installation)|'
+              r'installation[_-]?id|private[_-]?key|oauth[_-]?token|github[_-]?token)',
+              re.IGNORECASE,
+          )
+          rows = []
+          for item in document.get('items', []):
+              metadata = item.get('metadata') or {}
+              namespace = str(metadata.get('namespace') or 'default')
+              name = str(metadata.get('name') or '')
+              data = item.get('data') or {}
+              keys = sorted(str(key) for key in data if pattern.search(str(key)))
+              if pattern.search(name) or keys:
+                  rows.append((namespace, name, keys))
+          print(f"candidate_kubernetes_secret_count={len(rows)}")
+          for namespace, name, keys in sorted(rows):
+              print(
+                  f"kubernetes_secret={namespace}/{name} "
+                  f"interesting_key_names={','.join(keys) if keys else '(none)'}"
+              )
+          PY
+            else
+              echo 'kube_access=no'
+            fi
+          else
+            echo 'kubectl=absent'
+          fi
+
+          echo '[filesystem-metadata]'
+          find /root /home /etc \
+            -xdev -maxdepth 6 -type f \
+            \( -iname '*github*app*' -o -iname '*github*key*' -o -iname '*gh*app*.pem' \) \
+            -printf 'candidate_file=%p owner=%u mode=%m\n' 2>/dev/null \
+            | sort \
+            | head -n 100 || true
+
+          echo 'PROTECTED_GITHUB_APP_SOURCE_EVIDENCE_END'
+          REMOTE
+          chmod 700 "$probe"
+
+          encoded_probe="$(base64 --wrap=0 "$probe")"
+          remote_command="probe=/tmp/probe-protected-github-app-sources.sh; printf '%s' '$encoded_probe' | base64 --decode > \"\$probe\"; chmod 700 \"\$probe\"; status=0; bash \"\$probe\" '$region' || status=\$?; rm -f \"\$probe\"; exit \$status"
+          parameters="$RUNNER_TEMP/ssm-parameters.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "Redacted GitHub App credential-source inventory from $trusted_sha" \
+              --parameters "file://$parameters" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+          echo "ssm_command_id=$command_id"
+
+          status=Pending
+          for _ in $(seq 1 240); do
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query Status \
+                --output text 2>/dev/null || true
+            )"
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut|Cancelling) break ;;
+            esac
+            sleep 2
+          done
+
+          response="$RUNNER_TEMP/ssm-response.json"
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json > "$response"
+
+          observed_status="$(jq -r .Status "$response")"
+          stdout_file="$RUNNER_TEMP/probe-stdout.txt"
+          jq -r .Stdout "$response" > "$stdout_file"
+          test "$observed_status" = Success
+          grep -q '^PROTECTED_GITHUB_APP_SOURCE_EVIDENCE_BEGIN$' "$stdout_file"
+          grep -q '^PROTECTED_GITHUB_APP_SOURCE_EVIDENCE_END$' "$stdout_file"
+
+          {
+            echo 'Protected-host GitHub App credential-source inventory completed.'
+            echo
+            echo 'Only secret names, key names, file metadata, and boolean readability are included; no credential values are emitted.'
+            echo
+            echo '```text'
+            cat "$stdout_file"
+            echo '```'
+          } > "$RUNNER_TEMP/issue-comment.md"
+          gh issue comment "$TRACKING_ISSUE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body-file "$RUNNER_TEMP/issue-comment.md"

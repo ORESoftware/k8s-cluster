@@ -1,0 +1,46 @@
+name: Dispatch Elenkos protected-PAT publisher from exact comment
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+
+jobs:
+  dispatch:
+    if: >-
+      github.event.issue.number == 1345 &&
+      github.event.comment.body == 'ops-run-elenkos-protected-pat:6f26d7c44a244bd696b01f6f7d19b99f'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Validate trusted-main publisher and dispatch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          workflow="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/ops-bootstrap-elenkos-sonus-ci-20260819.yml?ref=main")"
+          test "$(jq -er .name <<<"$workflow")" = ops-bootstrap-elenkos-sonus-ci-20260819.yml
+          encoded="$(jq -er .content <<<"$workflow" | tr -d '\n')"
+          decoded="$(printf '%s' "$encoded" | base64 --decode)"
+          grep -F 'name: Bootstrap Elenkos repositories with protected PAT (one shot)' <<<"$decoded" >/dev/null
+          grep -F 'ELENKOS_ADMIN_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}' <<<"$decoded" >/dev/null
+          grep -F 'bash scripts/ops/validate_elenkos_fleet_payload_20260819.sh' <<<"$decoded" >/dev/null
+          grep -F -- '--execute' <<<"$decoded" >/dev/null
+          unset encoded decoded workflow
+
+          gh workflow run ops-bootstrap-elenkos-sonus-ci-20260819.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+
+          gh api --method DELETE \
+            "repos/${GITHUB_REPOSITORY}/issues/comments/${{ github.event.comment.id }}" \
+            >/dev/null || true
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/1345/comments" \
+            -f body="Dispatched the trusted-main Elenkos protected-PAT publisher from exact one-time comment. Trigger run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            >/dev/null

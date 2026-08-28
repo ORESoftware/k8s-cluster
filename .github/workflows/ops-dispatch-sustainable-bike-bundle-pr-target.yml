@@ -1,0 +1,206 @@
+name: Dispatch complete sustainable-bike bundle import from exact carrier
+run-name: Dispatch sustainable-bike bundle import from ${{ github.event_name }} @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-dispatch-sustainable-bike-bundle-pr-target.yml
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+    paths:
+      - .github/import/sustainable-bike-bundle-dispatch
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+  pull-requests: write
+  statuses: write
+
+concurrency:
+  group: den-3843-sustainable-bike-bundle-pr-target-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  validate-workflow:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate exact dispatch contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test '${{ github.repository }}' = 'ORESoftware/k8s-cluster'
+          printf 'carrier=%s target=%s workflow=%s bundle=%s\n' \
+            'agent/den-3843-sustainable-bike-bundle-dispatch-carrier' \
+            'ORESoftware/sustainable-bike' \
+            'ops-import-sustainable-bike-bundle-via-ssm.yml' \
+            'ba05db2234aa7fb51d3784d3b725cca757b5d2a4b3399b4b60f8fc62982ab756'
+
+  dispatch-and-monitor:
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.user.login == 'ORESoftware' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-3843-sustainable-bike-bundle-dispatch-carrier' &&
+      github.event.pull_request.title == 'DO NOT MERGE: dispatch complete sustainable-bike bundle import'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      REPOSITORY: ORESoftware/k8s-cluster
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      MARKER_PATH: .github/import/sustainable-bike-bundle-dispatch
+      WORKFLOW_FILE: ops-import-sustainable-bike-bundle-via-ssm.yml
+    steps:
+      - name: Validate exact metadata-only carrier against current main
+        id: carrier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          pull="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+          head_sha="$(jq -er '.head.sha | select(test("^[0-9a-f]{40}$"))' <<<"$pull")"
+          main_sha="$(gh api "repos/${REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          jq -e '
+            .draft == true and
+            .user.login == "ORESoftware" and
+            .base.ref == "main" and
+            .head.repo.full_name == "ORESoftware/k8s-cluster" and
+            .head.ref == "agent/den-3843-sustainable-bike-bundle-dispatch-carrier" and
+            .title == "DO NOT MERGE: dispatch complete sustainable-bike bundle import" and
+            .commits == 1 and
+            .changed_files == 1 and
+            .additions == 5 and
+            .deletions == 0
+          ' <<<"$pull" >/dev/null
+
+          commits="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/commits?per_page=100")"
+          test "$(jq 'length' <<<"$commits")" -eq 1
+          parent_sha="$(jq -er '.[0].parents[0].sha | select(test("^[0-9a-f]{40}$"))' <<<"$commits")"
+
+          files="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100")"
+          jq -e --arg path "$MARKER_PATH" '
+            length == 1 and
+            .[0].filename == $path and
+            .[0].status == "added" and
+            .[0].changes == 5
+          ' <<<"$files" >/dev/null
+
+          encoded="$(gh api "repos/${REPOSITORY}/contents/${MARKER_PATH}?ref=${head_sha}" --jq '.content')"
+          marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
+          expected="$(printf '%s\n' \
+            'target=ORESoftware/sustainable-bike' \
+            'tracking=DEN-3843' \
+            'bundle_sha256=ba05db2234aa7fb51d3784d3b725cca757b5d2a4b3399b4b60f8fc62982ab756' \
+            'bundle_size=240001' \
+            'action=dispatch-protected-bundle-import')"
+          test "$marker" = "$expected"
+
+          comparison="$(gh api "repos/${REPOSITORY}/compare/${parent_sha}...${main_sha}")"
+          jq -e '(.status == "ahead" or .status == "identical") and .behind_by == 0' <<<"$comparison" >/dev/null
+          printf 'head_sha=%s\nmain_sha=%s\n' "$head_sha" "$main_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch trusted-main importer and identify exact run
+        id: dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          endpoint="repos/${REPOSITORY}/actions/workflows/${WORKFLOW_FILE}/runs?event=workflow_dispatch&branch=main&per_page=20"
+          before_id="$(gh api "$endpoint" --jq '.workflow_runs[0].id // 0')"
+          [[ "$before_id" =~ ^[0-9]+$ ]]
+
+          gh workflow run "$WORKFLOW_FILE" --repo "$REPOSITORY" --ref main
+
+          run_json=''
+          for _ in $(seq 1 90); do
+            runs="$(gh api "$endpoint")"
+            run_json="$(
+              jq -c --argjson before "$before_id" --arg main "${{ steps.carrier.outputs.main_sha }}" '
+                [.workflow_runs[]
+                  | select(.id > $before)
+                  | select(.event == "workflow_dispatch")
+                  | select(.head_branch == "main")
+                  | select(.head_sha == $main)]
+                | sort_by(.id)
+                | first // empty
+              ' <<<"$runs"
+            )"
+            test -n "$run_json" && break
+            sleep 2
+          done
+          test -n "$run_json"
+
+          run_id="$(jq -er '.id | select(type == "number" and . > 0)' <<<"$run_json")"
+          run_url="$(jq -er '.html_url | select(startswith("https://github.com/ORESoftware/k8s-cluster/actions/runs/"))' <<<"$run_json")"
+          head_sha="$(jq -er '.head_sha | select(test("^[0-9a-f]{40}$"))' <<<"$run_json")"
+          test "$head_sha" = '${{ steps.carrier.outputs.main_sha }}'
+          printf 'run_id=%s\nrun_url=%s\nhead_sha=%s\n' "$run_id" "$run_url" "$head_sha" >> "$GITHUB_OUTPUT"
+
+          gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" \
+            --body "Exact owner carrier accepted. Dispatched protected importer run ${run_url} at trusted main \`${head_sha}\`." >/dev/null
+
+      - name: Monitor importer to terminal state
+        id: monitor
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+          RUN_URL: ${{ steps.dispatch.outputs.run_url }}
+          HEAD_SHA: ${{ steps.dispatch.outputs.head_sha }}
+          CARRIER_HEAD_SHA: ${{ steps.carrier.outputs.head_sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+          status=queued
+          conclusion=''
+          for _ in $(seq 1 1200); do
+            run="$(gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}")"
+            status="$(jq -er .status <<<"$run")"
+            conclusion="$(jq -r '.conclusion // empty' <<<"$run")"
+            if [[ "$status" == completed ]]; then
+              break
+            fi
+            sleep 2
+          done
+          test "$status" = completed
+          test -n "$conclusion"
+
+          gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" \
+            --body "Protected sustainable-bike bundle importer completed with **${conclusion}** at \`${HEAD_SHA}\`: ${RUN_URL}" >/dev/null
+
+          state=failure
+          description='protected bundle importer failed'
+          if [[ "$conclusion" == success ]]; then
+            state=success
+            description='all bundle commits and refs imported and verified'
+          fi
+          gh api --method POST "repos/${REPOSITORY}/statuses/${CARRIER_HEAD_SHA}" \
+            -f state="$state" \
+            -f context='ops/den-3843-complete-bundle-import' \
+            -f description="$description" \
+            -f target_url="$RUN_URL" >/dev/null
+
+          printf 'conclusion=%s\n' "$conclusion" >> "$GITHUB_OUTPUT"
+          test "$conclusion" = success
+
+      - name: Close successful carrier without merge
+        if: steps.monitor.outputs.conclusion == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr close "$PR_NUMBER" --repo "$REPOSITORY" \
+            --comment 'Exact protected import succeeded; closing metadata-only carrier without merge. Refs DEN-3843.' >/dev/null

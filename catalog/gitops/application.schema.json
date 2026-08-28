@@ -1,0 +1,223 @@
+{
+  "$id": "https://github.com/ORESoftware/k8s-cluster/blob/dev/catalog/gitops/application.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "spec": {
+            "properties": {
+              "migration": {
+                "properties": {
+                  "phase": {
+                    "const": "pilot-inert"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "spec": {
+            "properties": {
+              "argo": {
+                "properties": {
+                  "automated": {
+                    "const": false
+                  },
+                  "prune": {
+                    "const": false
+                  },
+                  "selfHeal": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "description": "Pairs one exact k8s-cluster gitlink inventory pin with one direct Argo CD application-repository source at the same commit.",
+  "properties": {
+    "$schema": {
+      "const": "../application.schema.json"
+    },
+    "apiVersion": {
+      "const": "oresoftware.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "GitOpsApplication"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "argo": {
+          "additionalProperties": false,
+          "properties": {
+            "automated": {
+              "type": "boolean"
+            },
+            "destinationServer": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "namespace": {
+              "minLength": 1,
+              "not": {
+                "const": "default"
+              },
+              "type": "string"
+            },
+            "project": {
+              "minLength": 1,
+              "not": {
+                "const": "default"
+              },
+              "type": "string"
+            },
+            "prune": {
+              "type": "boolean"
+            },
+            "selfHeal": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "project",
+            "namespace",
+            "destinationServer",
+            "automated",
+            "prune",
+            "selfHeal"
+          ],
+          "type": "object"
+        },
+        "inventory": {
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "const": "git-submodule"
+            },
+            "path": {
+              "pattern": "^remote/deployments/[A-Za-z0-9._/-]+$",
+              "type": "string"
+            },
+            "repository": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "revision": {
+              "pattern": "^[0-9a-f]{40}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "mode",
+            "path",
+            "repository",
+            "revision"
+          ],
+          "type": "object"
+        },
+        "migration": {
+          "additionalProperties": false,
+          "properties": {
+            "phase": {
+              "enum": [
+                "pilot-inert",
+                "migration-ready",
+                "active",
+                "retired"
+              ]
+            },
+            "staticApplication": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "phase",
+            "staticApplication"
+          ],
+          "type": "object"
+        },
+        "owner": {
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.-]+$",
+          "type": "string"
+        },
+        "source": {
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "const": "direct-repository"
+            },
+            "path": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "renderer": {
+              "enum": [
+                "kustomize",
+                "helm",
+                "jsonnet",
+                "plain-yaml"
+              ]
+            },
+            "repository": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "targetRevision": {
+              "pattern": "^[0-9a-f]{40}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "mode",
+            "repository",
+            "targetRevision",
+            "path",
+            "renderer"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "owner",
+        "inventory",
+        "source",
+        "argo",
+        "migration"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "$schema",
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "ORESoftware GitOps application composition record",
+  "type": "object"
+}
