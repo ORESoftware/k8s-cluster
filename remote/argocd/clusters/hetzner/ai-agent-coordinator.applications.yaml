@@ -35,7 +35,7 @@ spec:
   project: ai-agent-coordinator
   source:
     repoURL: https://github.com/ORESoftware/ai-agent-coordinator.rs.git
-    targetRevision: a6fb1f89e064c21dc1e435931c75e9871746d0f7
+    targetRevision: d25e04e50be4a9fad039cfcfa6c321e9c99a1e02
     path: deploy/overlays/cross-org-linear-pilot
   destination:
     server: https://kubernetes.default.svc

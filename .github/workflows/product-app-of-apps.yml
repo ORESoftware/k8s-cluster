@@ -1,0 +1,46 @@
+name: Hypesiege and StreemPilot app-of-apps
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/product-app-of-apps.yml'
+      - 'docs/hypesiege-streempilot-gitops.md'
+      - 'remote/argocd/apps/hypesiege*.yaml'
+      - 'remote/argocd/apps/streempilot*.yaml'
+      - 'remote/argocd/projects/hypesiege*.yaml'
+      - 'remote/argocd/projects/streempilot*.yaml'
+      - 'tools/test_product_app_of_apps.rb'
+  push:
+    branches: [main, dev]
+    paths:
+      - '.github/workflows/product-app-of-apps.yml'
+      - 'docs/hypesiege-streempilot-gitops.md'
+      - 'remote/argocd/apps/hypesiege*.yaml'
+      - 'remote/argocd/apps/streempilot*.yaml'
+      - 'remote/argocd/projects/hypesiege*.yaml'
+      - 'remote/argocd/projects/streempilot*.yaml'
+      - 'tools/test_product_app_of_apps.rb'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: product-app-of-apps-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate GitHub Actions
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # v1.7.12
+        with:
+          args: ./.github/workflows/product-app-of-apps.yml
+      - name: Verify product app-of-apps contract
+        run: ruby tools/test_product_app_of_apps.rb

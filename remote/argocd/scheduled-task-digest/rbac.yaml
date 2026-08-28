@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dd-scheduled-task-digest
+  namespace: default
+  labels:
+    app.kubernetes.io/name: dd-scheduled-task-digest
+    app.kubernetes.io/component: scheduler
+    app.kubernetes.io/part-of: project-automation
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dd-scheduled-task-digest-readonly
+  labels:
+    app.kubernetes.io/name: dd-scheduled-task-digest
+    app.kubernetes.io/component: scheduler
+    app.kubernetes.io/part-of: project-automation
+rules:
+  - apiGroups:
+      - batch
+    resources:
+      - cronjobs
+      - jobs
+    verbs:
+      - get
+      - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dd-scheduled-task-digest-readonly
+  labels:
+    app.kubernetes.io/name: dd-scheduled-task-digest
+    app.kubernetes.io/component: scheduler
+    app.kubernetes.io/part-of: project-automation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dd-scheduled-task-digest-readonly
+subjects:
+  - kind: ServiceAccount
+    name: dd-scheduled-task-digest
+    namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dd-scheduled-task-digest-delivery
+  namespace: default
+  labels:
+    app.kubernetes.io/name: dd-scheduled-task-digest
+    app.kubernetes.io/component: scheduler
+    app.kubernetes.io/part-of: project-automation
+rules:
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - create
+      - update
+      - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dd-scheduled-task-digest-delivery
+  namespace: default
+  labels:
+    app.kubernetes.io/name: dd-scheduled-task-digest
+    app.kubernetes.io/component: scheduler
+    app.kubernetes.io/part-of: project-automation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dd-scheduled-task-digest-delivery
+subjects:
+  - kind: ServiceAccount
+    name: dd-scheduled-task-digest
+    namespace: default

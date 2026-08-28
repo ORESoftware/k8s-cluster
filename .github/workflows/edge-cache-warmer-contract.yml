@@ -1,0 +1,56 @@
+name: edge cache warmer contract
+
+on:
+  pull_request:
+    paths:
+      - remote/argocd/edge-cache-warmer/**
+      - remote/argocd/apps/edge-cache-warmer.application.yaml
+      - remote/tests/general/edge-cache-warmer-config.test.ts
+      - .github/workflows/edge-cache-warmer-contract.yml
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - remote/argocd/edge-cache-warmer/**
+      - remote/argocd/apps/edge-cache-warmer.application.yaml
+      - remote/tests/general/edge-cache-warmer-config.test.ts
+      - .github/workflows/edge-cache-warmer-contract.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: edge-cache-warmer-contract-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d
+        with:
+          version: v1.32.2
+
+      - name: Render fail-closed overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl kustomize remote/argocd/edge-cache-warmer > "${RUNNER_TEMP}/edge-cache-warmer.yaml"
+          test -s "${RUNNER_TEMP}/edge-cache-warmer.yaml"
+
+      - name: Enforce activation gates
+        run: node --experimental-strip-types --test remote/tests/general/edge-cache-warmer-config.test.ts

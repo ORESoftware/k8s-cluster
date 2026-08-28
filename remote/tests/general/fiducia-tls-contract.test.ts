@@ -41,7 +41,7 @@ test('cert-manager owns the private CA and hostname-scoped service certificate',
 
   assert.match(server, /secretName:\s*fiducia-load-balance-tls/);
   assert.match(server, /rotationPolicy:\s*Always/);
-  assert.match(server, /renewBefore:\s*240h/);
+  assert.match(server, /renewBefore:\s*360h/);
   assert.match(server, /fiducia-load-balance\.fiducia\.svc\.cluster\.local/);
   assert.match(server, /usages:\s*\n\s*- server auth/);
   assert.doesNotMatch(rendered, /BEGIN (?:EC |RSA )?PRIVATE KEY/);

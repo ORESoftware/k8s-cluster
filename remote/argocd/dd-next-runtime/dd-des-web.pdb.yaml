@@ -1,0 +1,14 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-des-web
+  namespace: default
+  labels:
+    app: dd-des-web
+    app.kubernetes.io/name: des-web
+    app.kubernetes.io/part-of: discrete-event-systems
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-des-web

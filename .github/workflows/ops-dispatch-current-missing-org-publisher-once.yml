@@ -1,0 +1,49 @@
+name: Dispatch corrected missing-organization publisher once
+run-name: Retrigger corrected publisher after root credential-boundary fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-dispatch-current-missing-org-publisher-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: dispatch-current-missing-organization-publisher
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch the corrected trusted-main publisher
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          response="$(mktemp)"
+          trap 'rm -f "$response"' EXIT
+          request_id="den-319-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          status="$(
+            curl --silent --show-error \
+              --output "$response" \
+              --write-out '%{http_code}' \
+              --request POST \
+              --header 'Accept: application/vnd.github+json' \
+              --header "Authorization: Bearer ${GH_TOKEN}" \
+              --header 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/ops-publish-missing-org-repositories-dispatch.yml/dispatches" \
+              --data "{\"ref\":\"main\",\"inputs\":{\"request_id\":\"${request_id}\"}}"
+          )"
+          if [[ "$status" != 204 ]]; then
+            echo "missing-organization publisher dispatch failed with HTTP ${status}" >&2
+            cat "$response" >&2
+            exit 1
+          fi
+          echo "Corrected missing-organization publisher dispatched from trusted main with request ${request_id}."

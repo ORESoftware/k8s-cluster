@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-durable-worker-server
+  namespace: default
+  labels:
+    app: dd-durable-worker-server
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: dd-durable-worker-server

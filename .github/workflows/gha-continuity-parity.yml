@@ -1,0 +1,339 @@
+name: GHA continuity parity evidence
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.github/workflows/gha-continuity-parity.yml'
+      - 'scripts/ci/gha_continuity_evidence.py'
+      - 'scripts/ci/test_gha_continuity_evidence.py'
+      - 'remote/deployments/gha-clone-server-rs/examples/plan_fixture.rs'
+      - 'remote/deployments/gha-clone-server-rs/tests/fixtures/parity-rust-node.yml'
+      - 'remote/tests/ui/gha-continuity.playwright.test.mjs'
+      - 'docs/gha-continuity-parity-evidence.md'
+  push:
+    branches: [dev, main]
+    paths:
+      - '.github/workflows/gha-continuity-parity.yml'
+      - 'scripts/ci/gha_continuity_evidence.py'
+      - 'scripts/ci/test_gha_continuity_evidence.py'
+      - 'remote/deployments/gha-clone-server-rs/examples/plan_fixture.rs'
+      - 'remote/deployments/gha-clone-server-rs/tests/fixtures/parity-rust-node.yml'
+      - 'remote/tests/ui/gha-continuity.playwright.test.mjs'
+      - 'docs/gha-continuity-parity-evidence.md'
+  workflow_dispatch:
+    inputs:
+      run_arc_lanes:
+        description: Run deterministic planner evidence on both AWS and Hetzner ARC scale sets
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gha-continuity-parity-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PARITY_REPOSITORY: ORESoftware/k8s-cluster
+  PARITY_WORKFLOW_PATH: .github/workflows/gha-continuity-parity.yml
+  PARITY_FIXTURE: remote/deployments/gha-clone-server-rs/tests/fixtures/parity-rust-node.yml
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/gha-continuity-parity.yml
+      - name: Compile and test the evidence contract
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/gha_continuity_evidence.py \
+            scripts/ci/test_gha_continuity_evidence.py
+          python3 -m unittest -v scripts/ci/test_gha_continuity_evidence.py
+      - name: Reject conflict markers, credentials, and execution-bearing evidence fields
+        run: |
+          set -euo pipefail
+          git diff --check
+          if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- \
+            .github/workflows/gha-continuity-parity.yml \
+            scripts/ci/gha_continuity_evidence.py \
+            scripts/ci/test_gha_continuity_evidence.py \
+            remote/deployments/gha-clone-server-rs/examples/plan_fixture.rs \
+            remote/deployments/gha-clone-server-rs/tests/fixtures/parity-rust-node.yml \
+            remote/tests/ui/gha-continuity.playwright.test.mjs; then
+            exit 1
+          fi
+          ! grep -RIE \
+            'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' \
+            scripts/ci/gha_continuity_evidence.py \
+            scripts/ci/test_gha_continuity_evidence.py \
+            remote/tests/ui/gha-continuity.playwright.test.mjs
+
+  browser:
+    needs: contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+      - name: Build the real continuity server before the browser timeout starts
+        run: cargo build --locked --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - name: Install pinned test dependencies and Chromium
+        working-directory: remote/tests
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+      - name: Exercise the real server through Chromium and APIRequest
+        env:
+          GHA_CLONE_SERVER_BIN: ${{ github.workspace }}/remote/deployments/gha-clone-server-rs/target/debug/gha-clone-server
+        run: pnpm --dir remote/tests exec node --test ui/gha-continuity.playwright.test.mjs
+
+  hosted-evidence:
+    needs: contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+      - name: Generate canonical hosted planner evidence
+        run: |
+          set -euo pipefail
+          cargo run --locked --quiet \
+            --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml \
+            --example plan_fixture -- \
+            "$PARITY_REPOSITORY" "$GITHUB_SHA" "$PARITY_WORKFLOW_PATH" "$PARITY_FIXTURE" \
+            | jq -S . > hosted-plan.json
+          plan_id="$(jq -r '.planId' hosted-plan.json)"
+          printf '%s' "$plan_id" | grep -Eq '^[0-9a-f]{64}$'
+          python3 scripts/ci/gha_continuity_evidence.py emit \
+            --lane hosted \
+            --repository "$PARITY_REPOSITORY" \
+            --revision "$GITHUB_SHA" \
+            --workflow-path "$PARITY_WORKFLOW_PATH" \
+            --plan-id "sha256:$plan_id" \
+            --status succeeded \
+            --artifact workflow-plan.json=hosted-plan.json \
+            --output hosted.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gha-parity-hosted
+          path: hosted.json
+          if-no-files-found: error
+          retention-days: 14
+
+  independent-evidence:
+    needs: contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+      - name: Build and start the real independent continuity server
+        run: |
+          set -euo pipefail
+          cargo build --locked --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml
+          PORT=18135 \
+          HOST=127.0.0.1 \
+          GHA_CLONE_AUTH_SECRET=parity-auth-secret \
+          GHA_CLONE_ALLOWED_REPOSITORIES="$PARITY_REPOSITORY" \
+          GHA_CLONE_EXECUTION_ENABLED=false \
+          GHA_CLONE_WEBHOOK_EXECUTION_ENABLED=false \
+            remote/deployments/gha-clone-server-rs/target/debug/gha-clone-server \
+            >"$RUNNER_TEMP/gha-clone-server.log" 2>&1 &
+          echo "server_pid=$!" >> "$GITHUB_ENV"
+          for _ in $(seq 1 100); do
+            curl --fail --silent http://127.0.0.1:18135/healthz >/dev/null && exit 0
+            sleep 0.1
+          done
+          cat "$RUNNER_TEMP/gha-clone-server.log" >&2
+          exit 1
+      - name: Generate canonical independent runtime evidence
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg repository "$PARITY_REPOSITORY" \
+            --arg revision "$GITHUB_SHA" \
+            --arg workflowPath "$PARITY_WORKFLOW_PATH" \
+            --rawfile workflowYaml "$PARITY_FIXTURE" \
+            '{repository:$repository, revision:$revision, workflowPath:$workflowPath, workflowYaml:$workflowYaml}' \
+            > request.json
+          curl --fail --silent --show-error \
+            -H 'content-type: application/json' \
+            -H 'x-server-auth: parity-auth-secret' \
+            --data-binary @request.json \
+            http://127.0.0.1:18135/v1/plans \
+            | jq -S . > independent-plan.json
+          plan_id="$(jq -r '.planId' independent-plan.json)"
+          printf '%s' "$plan_id" | grep -Eq '^[0-9a-f]{64}$'
+          python3 scripts/ci/gha_continuity_evidence.py emit \
+            --lane independent \
+            --repository "$PARITY_REPOSITORY" \
+            --revision "$GITHUB_SHA" \
+            --workflow-path "$PARITY_WORKFLOW_PATH" \
+            --plan-id "sha256:$plan_id" \
+            --status succeeded \
+            --artifact workflow-plan.json=independent-plan.json \
+            --output independent.json
+          ! grep -Fq 'parity-auth-secret' "$RUNNER_TEMP/gha-clone-server.log"
+      - name: Stop the fixture server
+        if: always()
+        run: |
+          if test -n "${server_pid:-}"; then
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gha-parity-independent
+          path: independent.json
+          if-no-files-found: error
+          retention-days: 14
+
+  arc-aws-evidence:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_arc_lanes }}
+    needs: contracts
+    runs-on:
+      group: sonus-aws
+      labels: sonus-ci
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Prove isolated AWS ARC runner
+        run: |
+          set -euo pipefail
+          test "$RUNNER_OS" = Linux
+          test "$(id -u)" != 0
+          test ! -e /var/run/docker.sock
+          test ! -e /run/containerd/containerd.sock
+          test ! -e /var/run/secrets/kubernetes.io/serviceaccount/token
+      - name: Generate canonical AWS ARC planner evidence
+        run: |
+          set -euo pipefail
+          cargo run --locked --quiet \
+            --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml \
+            --example plan_fixture -- \
+            "$PARITY_REPOSITORY" "$GITHUB_SHA" "$PARITY_WORKFLOW_PATH" "$PARITY_FIXTURE" \
+            | jq -S . > arc-aws-plan.json
+          plan_id="$(jq -r '.planId' arc-aws-plan.json)"
+          python3 scripts/ci/gha_continuity_evidence.py emit \
+            --lane arc-aws --repository "$PARITY_REPOSITORY" --revision "$GITHUB_SHA" \
+            --workflow-path "$PARITY_WORKFLOW_PATH" --plan-id "sha256:$plan_id" \
+            --status succeeded --artifact workflow-plan.json=arc-aws-plan.json \
+            --output arc-aws.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gha-parity-arc-aws
+          path: arc-aws.json
+          if-no-files-found: error
+          retention-days: 14
+
+  arc-hetzner-evidence:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_arc_lanes }}
+    needs: contracts
+    runs-on:
+      group: sonus-hetzner
+      labels: sonus-ci
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Prove isolated Hetzner ARC runner
+        run: |
+          set -euo pipefail
+          test "$RUNNER_OS" = Linux
+          test "$(id -u)" != 0
+          test ! -e /var/run/docker.sock
+          test ! -e /run/containerd/containerd.sock
+          test ! -e /var/run/secrets/kubernetes.io/serviceaccount/token
+      - name: Generate canonical Hetzner ARC planner evidence
+        run: |
+          set -euo pipefail
+          cargo run --locked --quiet \
+            --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml \
+            --example plan_fixture -- \
+            "$PARITY_REPOSITORY" "$GITHUB_SHA" "$PARITY_WORKFLOW_PATH" "$PARITY_FIXTURE" \
+            | jq -S . > arc-hetzner-plan.json
+          plan_id="$(jq -r '.planId' arc-hetzner-plan.json)"
+          python3 scripts/ci/gha_continuity_evidence.py emit \
+            --lane arc-hetzner --repository "$PARITY_REPOSITORY" --revision "$GITHUB_SHA" \
+            --workflow-path "$PARITY_WORKFLOW_PATH" --plan-id "sha256:$plan_id" \
+            --status succeeded --artifact workflow-plan.json=arc-hetzner-plan.json \
+            --output arc-hetzner.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gha-parity-arc-hetzner
+          path: arc-hetzner.json
+          if-no-files-found: error
+          retention-days: 14
+
+  compare:
+    if: ${{ always() && !cancelled() }}
+    needs:
+      - hosted-evidence
+      - independent-evidence
+      - arc-aws-evidence
+      - arc-hetzner-evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download every completed lane evidence artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.0
+        with:
+          pattern: gha-parity-*
+          path: evidence
+          merge-multiple: true
+      - name: Compare exact identity, status, and normalized artifact digests
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(find evidence -maxdepth 1 -type f -name '*.json' -print | sort)
+          test "${#files[@]}" -ge 2
+          required=(--require-lane hosted --require-lane independent)
+          if [[ "${{ github.event_name }}" == workflow_dispatch && "${{ inputs.run_arc_lanes }}" == true ]]; then
+            required+=(--require-lane arc-aws --require-lane arc-hetzner)
+          fi
+          python3 scripts/ci/gha_continuity_evidence.py compare \
+            "${files[@]}" "${required[@]}" --output parity-report.json
+          jq -e '.parity == true' parity-report.json >/dev/null
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gha-continuity-parity-report
+          path: parity-report.json
+          if-no-files-found: error
+          retention-days: 30

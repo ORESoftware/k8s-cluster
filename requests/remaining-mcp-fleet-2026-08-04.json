@@ -1,0 +1,60 @@
+{
+  "execute": true,
+  "monorepos": [
+    {
+      "full_name": "cliptown/cliptown-monorepo",
+      "issue": "DEN-162",
+      "visibility": "public"
+    },
+    {
+      "full_name": "opto-sync/opto-sync-monorepo",
+      "issue": "DEN-163",
+      "visibility": "public"
+    },
+    {
+      "full_name": "voxletra/vxl-monorepo",
+      "issue": "DEN-164",
+      "visibility": "private"
+    },
+    {
+      "full_name": "zed-pkg/zed-monorepo",
+      "issue": "DEN-165",
+      "visibility": "public"
+    },
+    {
+      "full_name": "zed-pkg-test/zed-pkg-test-monorepo",
+      "issue": "DEN-166",
+      "visibility": "public"
+    }
+  ],
+  "request_id": "DEN-162-166-2026-08-04",
+  "schema_version": 1,
+  "servers": [
+    {
+      "full_name": "cliptown/cliptown-mcp-server.rs",
+      "issue": "DEN-162",
+      "visibility": "public"
+    },
+    {
+      "full_name": "opto-sync/opto-sync-mcp-server.rs",
+      "issue": "DEN-163",
+      "visibility": "public"
+    },
+    {
+      "full_name": "voxletra/vxl-mcp-server.rs",
+      "issue": "DEN-164",
+      "visibility": "private"
+    },
+    {
+      "full_name": "zed-pkg/zed-mcp-server.rs",
+      "issue": "DEN-165",
+      "visibility": "public"
+    },
+    {
+      "full_name": "zed-pkg-test/zed-pkg-test-mcp-server.rs",
+      "issue": "DEN-166",
+      "visibility": "public"
+    }
+  ],
+  "template_digest": "01f0edc885c594c6a307a8eb92a523dfc91b0d1353dd35d4235d6acdc963df18"
+}

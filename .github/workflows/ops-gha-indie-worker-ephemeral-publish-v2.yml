@@ -1,0 +1,438 @@
+name: Publish GHA clone and indie-worker repositories v2
+run-name: Publish gha-indie-worker repositories from an encrypted owner response
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+    paths:
+      - .github/gha-indie-worker-ephemeral-publish-v2-trigger
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: gha-indie-worker-ephemeral-owner-v2-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    if: >-
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.user.login == 'ORESoftware' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'agent/gha-indie-worker-ephemeral-publish-v2-') &&
+      github.event.pull_request.title == 'DO NOT MERGE: publish GHA clone and indie worker repositories v2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      REPOSITORY: ${{ github.repository }}
+      MARKER_PATH: .github/gha-indie-worker-ephemeral-publish-v2-trigger
+      SOURCE_REPOSITORY: ORESoftware/k8s-cluster
+      SOURCE_SHA: 5cfac43c6900898f36f588d044ca34083da1c726
+      TARGET_ORG: gha-indie-worker
+      CLONE_REPOSITORY: gha-clone-server.rs
+      CLONE_PREFIX: remote/deployments/gha-clone-server-rs
+      WORKER_REPOSITORY: gha-indie-worker.rs
+      WORKER_PREFIX: remote/deployments/build-server-rs
+
+    steps:
+      - name: Validate the metadata-only carrier against current main
+        id: carrier
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          pull="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+          head_sha="$(jq -er '.head.sha' <<<"$pull")"
+          main_sha="$(gh api "repos/${REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          jq -e '
+            .draft == true and
+            .user.login == "ORESoftware" and
+            .base.ref == "main" and
+            .head.repo.full_name == "ORESoftware/k8s-cluster" and
+            (.head.ref | startswith("agent/gha-indie-worker-ephemeral-publish-v2-")) and
+            .title == "DO NOT MERGE: publish GHA clone and indie worker repositories v2" and
+            .commits == 1 and
+            .changed_files == 1 and
+            .additions == 7 and
+            .deletions == 0
+          ' <<<"$pull" >/dev/null
+
+          commits="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/commits?per_page=100")"
+          test "$(jq 'length' <<<"$commits")" -eq 1
+          parent_sha="$(jq -er '.[0].parents[0].sha' <<<"$commits")"
+          [[ "$parent_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          files="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100")"
+          jq -e --arg path "$MARKER_PATH" '
+            length == 1 and
+            .[0].filename == $path and
+            .[0].status == "added" and
+            .[0].changes == 7
+          ' <<<"$files" >/dev/null
+
+          encoded="$(
+            gh api \
+              "repos/${REPOSITORY}/contents/${MARKER_PATH}?ref=${head_sha}" \
+              --jq '.content'
+          )"
+          marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
+          test "$(wc -l <<<"$marker" | tr -d ' ')" -eq 7
+          test "$(sed -n 's/^target-org=//p' <<<"$marker")" = "$TARGET_ORG"
+          test "$(sed -n 's/^source-repository=//p' <<<"$marker")" = "$SOURCE_REPOSITORY"
+          test "$(sed -n 's/^source-sha=//p' <<<"$marker")" = "$SOURCE_SHA"
+          test "$(sed -n 's/^clone-repository=//p' <<<"$marker")" = "$CLONE_REPOSITORY"
+          test "$(sed -n 's/^worker-repository=//p' <<<"$marker")" = "$WORKER_REPOSITORY"
+          test "$(sed -n 's/^trusted-main=//p' <<<"$marker")" = "$parent_sha"
+          test "$(sed -n 's/^protocol=//p' <<<"$marker")" = rsa-oaep-sha256-v2
+
+          comparison="$(gh api "repos/${REPOSITORY}/compare/${parent_sha}...${main_sha}")"
+          jq -e '(.status == "ahead" or .status == "identical") and .behind_by == 0' \
+            <<<"$comparison" >/dev/null
+
+          printf 'head_sha=%s\n' "$head_sha" >> "$GITHUB_OUTPUT"
+          printf 'trusted_sha=%s\n' "$main_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the immutable reviewed source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/k8s-cluster
+          ref: ${{ env.SOURCE_SHA }}
+          path: source
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Issue one-time challenge, publish, and verify
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CARRIER_HEAD_SHA: ${{ steps.carrier.outputs.head_sha }}
+          TRUSTED_SHA: ${{ steps.carrier.outputs.trusted_sha }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          stage=challenge-bootstrap
+          workflow_token="$GH_TOKEN"
+          source_root="$GITHUB_WORKSPACE/source"
+          work="$(mktemp -d "$RUNNER_TEMP/gha-indie-worker-credential-broker-v2.XXXXXX")"
+          owner_token=''
+
+          cleanup() {
+            unset owner_token GHA_OWNER_TOKEN GH_TOKEN GITHUB_TOKEN
+            unset GIT_ASKPASS GIT_TERMINAL_PROMPT
+            rm -rf "$work"
+          }
+          report_failure() {
+            status=$?
+            trap - ERR
+            GH_TOKEN="$workflow_token" gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" \
+              --body "Ephemeral GHA repository publication v2 failed at bounded stage \`${stage}\`. No credential was written to Git, Actions outputs, artifacts, or the environment file." >/dev/null || true
+            exit "$status"
+          }
+          trap cleanup EXIT
+          trap report_failure ERR
+
+          test "$(git -C "$source_root" rev-parse HEAD)" = "$SOURCE_SHA"
+          source_date="$(git -C "$source_root" show -s --format=%cI "$SOURCE_SHA")"
+          [[ "$source_date" == *T* ]]
+
+          private_key="$work/private.pem"
+          public_key="$work/public.pem"
+          ciphertext_file="$work/ciphertext.bin"
+          openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key"
+          chmod 600 "$private_key"
+          openssl pkey -in "$private_key" -pubout -out "$public_key"
+          nonce="$(openssl rand -hex 24)"
+          [[ "$nonce" =~ ^[0-9a-f]{48}$ ]]
+
+          challenge_body="$work/challenge.md"
+          {
+            printf '<!-- gha-indie-worker-credential-challenge-v2:%s -->\n' "$nonce"
+            printf "One-time RSA-OAEP-SHA256 challenge for \`%s/%s\` and \`%s/%s\`. The private key exists only in this runner and is destroyed on exit. Reply with the matching encrypted ciphertext marker.\n\n" \
+              "$TARGET_ORG" "$CLONE_REPOSITORY" "$TARGET_ORG" "$WORKER_REPOSITORY"
+            printf '%s\n' "\`\`\`pem"
+            cat "$public_key"
+            printf '%s\n' "\`\`\`"
+          } > "$challenge_body"
+          challenge_json="$(
+            jq -n --rawfile body "$challenge_body" '{body:$body}' \
+              | gh api --method POST "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" --input -
+          )"
+          challenge_id="$(jq -er '.id | select(type == "number" and . > 0)' <<<"$challenge_json")"
+          response_marker="<!-- gha-indie-worker-credential-response-v2:${nonce} -->"
+
+          stage=await-encrypted-response
+          response_body=''
+          for _ in $(seq 1 180); do
+            comments="$(gh api --paginate "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" --slurp)"
+            response_body="$(
+              jq -r \
+                --arg marker "$response_marker" \
+                --argjson challenge_id "$challenge_id" '
+                [
+                  .[][]
+                  | select(.id > $challenge_id)
+                  | select(.user.login == "ORESoftware")
+                  | select(.body | startswith($marker + "\n"))
+                ]
+                | sort_by(.id)
+                | last
+                | .body // empty
+              ' <<<"$comments"
+            )"
+            test -n "$response_body" && break
+            sleep 5
+          done
+          test -n "$response_body"
+          test "$(grep -c '^ciphertext-base64=' <<<"$response_body")" -eq 1
+          ciphertext="$(sed -n 's/^ciphertext-base64=//p' <<<"$response_body")"
+          [[ "$ciphertext" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#ciphertext}" -le 8192
+          printf '%s' "$ciphertext" | base64 --decode > "$ciphertext_file"
+          test -s "$ciphertext_file"
+
+          stage=decrypt-ciphertext
+          if ! owner_token="$(
+            openssl pkeyutl -decrypt \
+              -inkey "$private_key" \
+              -in "$ciphertext_file" \
+              -pkeyopt rsa_padding_mode:oaep \
+              -pkeyopt rsa_oaep_md:sha256 \
+              -pkeyopt rsa_mgf1_md:sha256 \
+              2>/dev/null
+          )"; then
+            false
+          fi
+
+          stage=validate-owner-token
+          test -n "$owner_token"
+          [[ "$owner_token" != *$'\n'* && "$owner_token" != *$'\r'* && "$owner_token" != *$'\t'* && "$owner_token" != *' '* ]]
+          [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
+          echo "::add-mask::$owner_token"
+          test "$(GH_TOKEN="$owner_token" gh api user --jq '.login' 2>/dev/null)" = ORESoftware
+          test "$(
+            GH_TOKEN="$owner_token" gh api "/user/memberships/orgs/${TARGET_ORG}" \
+              --jq '.role + ":" + .state' 2>/dev/null
+          )" = admin:active
+
+          export GHA_OWNER_TOKEN="$owner_token"
+          export GIT_TERMINAL_PROMPT=0
+          askpass="$work/git-askpass.sh"
+          cat > "$askpass" <<'ASKPASS'
+          #!/usr/bin/env bash
+          case "$1" in
+            *Username*) printf '%s\n' 'x-access-token' ;;
+            *Password*) printf '%s\n' "$GHA_OWNER_TOKEN" ;;
+            *) exit 1 ;;
+          esac
+          ASKPASS
+          chmod 700 "$askpass"
+          export GIT_ASKPASS="$askpass"
+
+          report="$work/success.md"
+          {
+            echo '## GHA indie-worker repository publication v2 complete'
+            echo
+            echo "Pinned source: \`${SOURCE_REPOSITORY}@${SOURCE_SHA}\`"
+            echo
+            echo '| Repository | Main commit | Imported files | Created | Topics | Main protection |'
+            echo '|---|---|---:|---:|---|---|'
+          } > "$report"
+
+          publish_repo() {
+            repo_name="$1"
+            prefix="$2"
+            role="$3"
+            description="$4"
+            topics_csv="$5"
+            full_repo="${TARGET_ORG}/${repo_name}"
+            repo_api="repos/${full_repo}"
+            created=no
+
+            stage="${repo_name}-inspect-or-create"
+            if ! repo_json="$(GH_TOKEN="$owner_token" gh api "$repo_api" 2>/dev/null)"; then
+              repo_json="$(
+                GH_TOKEN="$owner_token" gh api --method POST "orgs/${TARGET_ORG}/repos" \
+                  -f name="$repo_name" \
+                  -f description="$description" \
+                  -F private=false \
+                  -F has_issues=true \
+                  -F has_projects=false \
+                  -F has_wiki=false \
+                  -F is_template=false \
+                  -F auto_init=false \
+                  -F allow_squash_merge=true \
+                  -F allow_merge_commit=false \
+                  -F allow_rebase_merge=true \
+                  -F allow_auto_merge=true \
+                  -F delete_branch_on_merge=true
+              )"
+              created=yes
+            fi
+            jq -e \
+              --arg org "$TARGET_ORG" \
+              '.owner.login == $org and .private == false and .archived == false and .disabled == false' \
+              <<<"$repo_json" >/dev/null
+            repo_url="$(jq -er '.html_url' <<<"$repo_json")"
+
+            stage="${repo_name}-bootstrap-before-git-database"
+            bootstrap_line="temporary bootstrap for ${full_repo}; removed by the immediately following import commit"
+            if ! GH_TOKEN="$owner_token" gh api "$repo_api/git/ref/heads/main" >/dev/null 2>&1; then
+              bootstrap_b64="$(printf '%s\n' "$bootstrap_line" | base64 -w0)"
+              GH_TOKEN="$owner_token" gh api --method PUT "$repo_api/contents/.gha-indie-bootstrap" \
+                -f message='chore: bootstrap main for reviewed source import' \
+                -f content="$bootstrap_b64" >/dev/null
+            fi
+
+            stage="${repo_name}-validate-reviewed-source"
+            source_dir="$source_root/$prefix"
+            test -d "$source_dir"
+            test -f "$source_dir/Cargo.toml"
+            source_tree="$work/${repo_name}.source-tree"
+            git -C "$source_root" ls-tree -r "$SOURCE_SHA" -- "$prefix" > "$source_tree"
+            test -s "$source_tree"
+            awk '$1 != "100644" && $1 != "100755" { bad=1 } END { exit bad }' "$source_tree"
+            source_count="$(wc -l < "$source_tree" | tr -d ' ')"
+            test "$source_count" -gt 0
+
+            stage="${repo_name}-clone-and-classify-main"
+            target_dir="$work/target-${repo_name}"
+            git clone --quiet "https://github.com/${full_repo}.git" "$target_dir"
+            current_main="$(git -C "$target_dir" rev-parse HEAD)"
+            current_tree="$(git -C "$target_dir" rev-parse 'HEAD^{tree}')"
+            current_names="$(git -C "$target_dir" ls-tree -r --name-only HEAD)"
+            current_commit_count="$(git -C "$target_dir" rev-list --count HEAD)"
+            current_subject="$(git -C "$target_dir" log -1 --format=%s HEAD)"
+            bootstrap_ok=no
+            if [[
+              "$current_names" == '.gha-indie-bootstrap' &&
+              "$current_commit_count" == 1 &&
+              "$current_subject" == 'chore: bootstrap main for reviewed source import'
+            ]]; then
+              observed_bootstrap="$(git -C "$target_dir" show HEAD:.gha-indie-bootstrap)"
+              if [[ "$observed_bootstrap" == "$bootstrap_line" ]]; then
+                bootstrap_ok=yes
+              fi
+            fi
+
+            stage="${repo_name}-build-reviewed-tree"
+            find "$target_dir" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf -- {} +
+            cp -a "$source_dir"/. "$target_dir"/
+            cat > "$target_dir/SOURCE_PROVENANCE.md" <<PROVENANCE
+          # Source provenance
+
+          This repository was split from \`${SOURCE_REPOSITORY}\` at immutable commit \`${SOURCE_SHA}\`.
+
+          - Source path: \`${prefix}\`
+          - Imported role: ${role}
+          - Import date: 2026-08-04
+          - History policy: the import commit preserves every source file byte and executable mode; this provenance file is the only added file.
+
+          This code is an independent continuity lane, not a claim to reproduce GitHub's proprietary Actions control plane. Native workflow semantics remain GitHub-hosted Actions and Actions Runner Controller (ARC).
+          PROVENANCE
+            git -C "$target_dir" add -A
+            desired_tree="$(git -C "$target_dir" write-tree)"
+
+            if [[ "$current_tree" == "$desired_tree" ]]; then
+              expected_commit="$current_main"
+              git -C "$target_dir" reset --hard --quiet HEAD
+            else
+              test "$bootstrap_ok" = yes
+              stage="${repo_name}-commit-and-fast-forward"
+              git -C "$target_dir" config user.name ORESoftware
+              git -C "$target_dir" config user.email '11139560+ORESoftware@users.noreply.github.com'
+              GIT_AUTHOR_DATE="$source_date" GIT_COMMITTER_DATE="$source_date" \
+                git -C "$target_dir" commit --quiet \
+                  -m "Import ${role} from ${SOURCE_REPOSITORY}@${SOURCE_SHA}"
+              expected_commit="$(git -C "$target_dir" rev-parse HEAD)"
+              test "$(git -C "$target_dir" rev-parse 'HEAD^{tree}')" = "$desired_tree"
+              git -C "$target_dir" push --quiet origin HEAD:main
+            fi
+
+            stage="${repo_name}-configure-and-verify"
+            GH_TOKEN="$owner_token" gh api --method PATCH "$repo_api" \
+              -f description="$description" \
+              -f default_branch=main \
+              -F has_issues=true \
+              -F has_projects=false \
+              -F has_wiki=false \
+              -F allow_squash_merge=true \
+              -F allow_merge_commit=false \
+              -F allow_rebase_merge=true \
+              -F allow_auto_merge=true \
+              -F delete_branch_on_merge=true >/dev/null
+
+            topics_payload="$(jq -n --arg csv "$topics_csv" '{names: ($csv | split(","))}')"
+            topics_state=configured
+            if ! GH_TOKEN="$owner_token" gh api --method PUT "$repo_api/topics" \
+              --input - <<<"$topics_payload" >/dev/null 2>&1; then
+              topics_state=not-configured
+            fi
+
+            protection_state=enabled
+            if ! GH_TOKEN="$owner_token" gh api --method PUT "$repo_api/branches/main/protection" \
+              --input - >/dev/null 2>&1 <<'PROTECTION'
+          {
+            "required_status_checks": null,
+            "enforce_admins": true,
+            "required_pull_request_reviews": {
+              "dismiss_stale_reviews": true,
+              "require_code_owner_reviews": false,
+              "required_approving_review_count": 1
+            },
+            "restrictions": null,
+            "required_conversation_resolution": true,
+            "allow_force_pushes": false,
+            "allow_deletions": false
+          }
+          PROTECTION
+            then
+              protection_state=not-enabled
+            fi
+
+            remote_sha="$(git -C "$target_dir" ls-remote origin refs/heads/main | awk '{print $1}')"
+            test "$remote_sha" = "$expected_commit"
+            GH_TOKEN="$owner_token" gh api "$repo_api/contents/SOURCE_PROVENANCE.md?ref=main" >/dev/null
+            if GH_TOKEN="$owner_token" gh api "$repo_api/contents/.gha-indie-bootstrap?ref=main" >/dev/null 2>&1; then
+              echo "bootstrap file survived import in ${full_repo}" >&2
+              return 1
+            fi
+            test "$(GH_TOKEN="$owner_token" gh api "$repo_api" --jq '.default_branch')" = main
+
+            printf '| [`%s`](%s) | `%s` | %s | %s | %s | %s |\n' \
+              "$full_repo" "$repo_url" "$expected_commit" "$source_count" \
+              "$created" "$topics_state" "$protection_state" >> "$report"
+          }
+
+          publish_repo \
+            "$CLONE_REPOSITORY" \
+            "$CLONE_PREFIX" \
+            'planner, workflow-subset compiler, run coordinator, and pre-submit executor router' \
+            'Bounded fail-closed GitHub Actions continuity planner and executor router in Rust.' \
+            'github-actions,ci,rust,continuity,arc,fail-closed'
+
+          publish_repo \
+            "$WORKER_REPOSITORY" \
+            "$WORKER_PREFIX" \
+            'fixed-profile build worker, sandbox boundary, logs, artifacts, and terminal status' \
+            'Fixed-profile immutable-SHA worker for the independent GHA continuity lane.' \
+            'github-actions,ci,rust,worker,sandbox,immutable-sha'
+
+          unset owner_token GHA_OWNER_TOKEN
+          export GH_TOKEN="$workflow_token"
+          {
+            echo
+            echo 'The decrypted credential existed only in this runner and has been removed from process state. Rotate the disclosed credential now that live repository verification has succeeded.'
+          } >> "$report"
+          gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" --body-file "$report" >/dev/null
+
+          stage=close-execution-carrier
+          gh api --method PATCH "repos/${REPOSITORY}/pulls/${PR_NUMBER}" -f state=closed >/dev/null

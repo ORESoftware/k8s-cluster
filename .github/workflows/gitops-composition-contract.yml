@@ -1,0 +1,82 @@
+name: GitOps composition contract
+
+on:
+  pull_request:
+    paths:
+      - ".gitmodules"
+      - "catalog/gitops/**"
+      - "docs/gitops-application-fleet.md"
+      - "remote/deployments/**"
+      - "remote/argocd/application-sets/gitops-composition-catalog-pilot.applicationset.yaml"
+      - "remote/argocd/apps/**"
+      - "tools/gitops_composition.py"
+      - "tools/test_gitops_composition.py"
+      - ".github/workflows/gitops-composition-contract.yml"
+  push:
+    branches: [dev]
+    paths:
+      - ".gitmodules"
+      - "catalog/gitops/**"
+      - "docs/gitops-application-fleet.md"
+      - "remote/deployments/**"
+      - "remote/argocd/application-sets/gitops-composition-catalog-pilot.applicationset.yaml"
+      - "remote/argocd/apps/**"
+      - "tools/gitops_composition.py"
+      - "tools/test_gitops_composition.py"
+      - ".github/workflows/gitops-composition-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gitops-composition-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Exact gitlink and Argo source contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the superproject without child worktrees
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+
+      - name: Compile the validator
+        run: python3 -m py_compile tools/gitops_composition.py tools/test_gitops_composition.py
+
+      - name: Run unit and adversarial tests
+        run: python3 tools/test_gitops_composition.py
+
+      - name: Validate catalog against .gitmodules and indexed gitlinks
+        run: |
+          mkdir -p artifacts
+          python3 tools/gitops_composition.py check \
+            --root . \
+            --format json \
+            > artifacts/gitops-composition-report.json
+
+      - name: Render deterministic non-applied Application preview
+        run: |
+          python3 tools/gitops_composition.py render \
+            --root . \
+            > artifacts/gitops-application-preview.json
+          python3 tools/gitops_composition.py render \
+            --root . \
+            > artifacts/gitops-application-preview-second.json
+          cmp artifacts/gitops-application-preview.json artifacts/gitops-application-preview-second.json
+
+      - name: Upload validation evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gitops-composition-evidence
+          path: |
+            artifacts/gitops-composition-report.json
+            artifacts/gitops-application-preview.json
+          if-no-files-found: error
+          retention-days: 14

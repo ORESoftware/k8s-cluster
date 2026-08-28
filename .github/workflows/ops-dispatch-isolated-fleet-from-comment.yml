@@ -1,0 +1,119 @@
+name: Dispatch isolated canonical fleet publisher from exact comment
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  dispatch:
+    if: >-
+      github.event.issue.pull_request != null &&
+      github.event.issue.number == 471 &&
+      github.event.comment.user.login == 'ORESoftware' &&
+      github.event.comment.body == 'ops-run-canonical-fleet-isolated:a778474bb146d7bc3c2996e59023a9d6e30567ed'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Validate exact carrier and trusted workflow before dispatch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          pull="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/471")"
+          jq -e '
+            .state == "open" and
+            .draft == true and
+            .user.login == "ORESoftware" and
+            .base.ref == "main" and
+            .head.repo.full_name == "ORESoftware/k8s-cluster" and
+            .head.ref == "agent/critical-org-fleet-device-auth-20260731-v1" and
+            .title == "DO NOT MERGE: publish exact 34-repository organization fleet" and
+            .commits == 1 and
+            .changed_files == 1
+          ' <<<"$pull" >/dev/null
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/ops-run-canonical-fleet-isolated.yml?ref=main" --jq .name)" = ops-run-canonical-fleet-isolated.yml
+
+      - name: Dispatch the registered trusted-main publisher
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          before="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run ops-run-canonical-fleet-isolated.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/471/comments" \
+            -f body="Dispatched isolated canonical fleet publisher from trusted main after ${before}. The child workflow will post the fresh owner code and exact run URL here." >/dev/null
+
+  dispatch_gap_bootstrap:
+    if: >-
+      github.event.issue.pull_request != null &&
+      github.event.issue.number == 471 &&
+      github.event.comment.user.login == 'ORESoftware' &&
+      github.event.comment.body == 'ops-run-canonical-gap-bootstrap:112cb7e8249c6a2a41de9799fca870f5cabde055'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Validate exact carrier and pinned safe-bootstrap sources
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          pull="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/471")"
+          jq -e '
+            .state == "open" and
+            .draft == true and
+            .user.login == "ORESoftware" and
+            .base.ref == "main" and
+            .head.repo.full_name == "ORESoftware/k8s-cluster" and
+            .head.ref == "agent/critical-org-fleet-device-auth-20260731-v1" and
+            .title == "DO NOT MERGE: publish exact 34-repository organization fleet" and
+            .commits == 1 and
+            .changed_files == 1
+          ' <<<"$pull" >/dev/null
+
+          head_sha="$(jq -er .head.sha <<<"$pull")"
+          files="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/471/files?per_page=100")"
+          test "$(jq 'length' <<<"$files")" -eq 1
+          jq -e '
+            .[0].filename == ".github/critical-org-fleet-device-auth-trigger" and
+            .[0].status == "added" and
+            .[0].changes == 3
+          ' <<<"$files" >/dev/null
+
+          encoded="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/critical-org-fleet-device-auth-trigger?ref=${head_sha}" --jq .content)"
+          marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
+          test "$(sed -n 's/^target=//p' <<<"$marker")" = critical-org-fleet-v1
+          test "$(sed -n 's/^fleet-source=//p' <<<"$marker")" = 5d9a0c2cb44dff607bc3953954ce4b9af08e5789
+
+          workflow="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/ops-bootstrap-canonical-repository-gaps.yml?ref=main")"
+          test "$(jq -er .name <<<"$workflow")" = ops-bootstrap-canonical-repository-gaps.yml
+          test "$(jq -er .sha <<<"$workflow")" = 112cb7e8249c6a2a41de9799fca870f5cabde055
+
+          script="$(gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/ops/bootstrap_missing_canonical_repositories.py?ref=main")"
+          test "$(jq -er .name <<<"$script")" = bootstrap_missing_canonical_repositories.py
+          test "$(jq -er .sha <<<"$script")" = 9d9021a0584de8e3f7def2f32a067b4f6701e6c2
+
+      - name: Dispatch the pinned safe public gap bootstrap
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          before="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run ops-bootstrap-canonical-repository-gaps.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/471/comments" \
+            -f body="Dispatched the pinned safe public canonical repository-gap bootstrap from trusted main after ${before}. The child workflow will post one fresh owner code and exact run URL here; ignore all earlier codes." >/dev/null

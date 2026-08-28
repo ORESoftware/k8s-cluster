@@ -16,3 +16,249 @@ metadata:
   labels:
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
+---
+# Temporary DEN-2050 control-plane probe. Remove this ExternalSecret and the
+# completed Job below after issue ORESoftware/k8s-cluster#1263 receives its
+# sanitized receipt. No Cloudflare or GitHub credential value is printed.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: dd-den2050-cloudflare-probe
+  namespace: default
+  labels:
+    app: dd-den2050-cloudflare-probe
+    dd.dev/temporary: "true"
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: dd-cluster-secrets
+  target:
+    name: dd-den2050-cloudflare-probe
+    creationPolicy: Owner
+  data:
+    - secretKey: CLOUDFLARE_DNS_API_TOKEN
+      remoteRef:
+        key: dd/remote-dev/cloudflare
+        property: CLOUDFLARE_DNS_API_TOKEN
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: dd-den2050-cloudflare-probe-v1
+  namespace: default
+  labels:
+    app: dd-den2050-cloudflare-probe
+    dd.dev/temporary: "true"
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app: dd-den2050-cloudflare-probe
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: probe
+          image: docker.io/library/node:24-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: CLOUDFLARE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-den2050-cloudflare-probe
+                  key: CLOUDFLARE_DNS_API_TOKEN
+            - name: GH_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: GH_PAT
+            - name: CF_ACCOUNT_ID
+              value: 62b833940607839add74bd2379cac303
+            - name: CF_TUNNEL_ID
+              value: 2eb5c6d9-a2b7-4c5e-9222-2f43e91f90e1
+            - name: CF_ZONE_ID
+              value: b559136046dcffc550ee8b3ed49cdf09
+            - name: RESULT_REPOSITORY
+              value: ORESoftware/k8s-cluster
+            - name: RESULT_ISSUE
+              value: "1263"
+          command:
+            - /usr/local/bin/node
+            - --input-type=module
+            - -e
+          args:
+            - |
+              const required = [
+                "CLOUDFLARE_API_TOKEN", "GH_PAT", "CF_ACCOUNT_ID",
+                "CF_TUNNEL_ID", "CF_ZONE_ID", "RESULT_REPOSITORY", "RESULT_ISSUE"
+              ];
+              for (const name of required) {
+                if (!process.env[name]) throw new Error(`missing required environment: ${name}`);
+              }
+
+              const cfToken = process.env.CLOUDFLARE_API_TOKEN;
+              const ghToken = process.env.GH_PAT;
+              const account = process.env.CF_ACCOUNT_ID;
+              const tunnelId = process.env.CF_TUNNEL_ID;
+              const zoneId = process.env.CF_ZONE_ID;
+              const cfBase = "https://api.cloudflare.com/client/v4";
+
+              async function cf(path) {
+                const response = await fetch(`${cfBase}${path}`, {
+                  headers: {
+                    authorization: `Bearer ${cfToken}`,
+                    accept: "application/json"
+                  },
+                  signal: AbortSignal.timeout(30000)
+                });
+                let body = null;
+                try { body = await response.json(); } catch { body = null; }
+                return {
+                  status: response.status,
+                  ok: response.ok && body?.success === true,
+                  result: body?.result ?? null,
+                  errors: Array.isArray(body?.errors)
+                    ? body.errors.map(({code, message}) => ({code, message})).slice(0, 5)
+                    : []
+                };
+              }
+
+              const [verify, tunnels, configuration, connections, access, dns] = await Promise.all([
+                cf("/user/tokens/verify"),
+                cf(`/accounts/${account}/cfd_tunnel?is_deleted=false&per_page=100`),
+                cf(`/accounts/${account}/cfd_tunnel/${tunnelId}/configurations`),
+                cf(`/accounts/${account}/cfd_tunnel/${tunnelId}/connections`),
+                cf(`/accounts/${account}/access/apps?per_page=200`),
+                cf(`/zones/${zoneId}/dns_records?per_page=500`)
+              ]);
+
+              const wanted = /(zpkg|registry|ssh|mac[-.]?mini|workstation|toolbox|credistrata)/i;
+              const tunnelRows = Array.isArray(tunnels.result) ? tunnels.result : [];
+              const tunnel = tunnelRows
+                .filter(row => row?.id === tunnelId || row?.name === "zpkg-registry-local")
+                .map(row => ({
+                  id: row.id,
+                  name: row.name,
+                  status: row.status,
+                  remote_config: row.remote_config,
+                  created_at: row.created_at
+                }));
+              const ingressRows = configuration.result?.config?.ingress
+                ?? configuration.result?.ingress
+                ?? [];
+              const ingress = Array.isArray(ingressRows)
+                ? ingressRows.map(row => ({
+                    hostname: row?.hostname ?? null,
+                    service: row?.service ?? null,
+                    originRequest: row?.originRequest ?? null
+                  }))
+                : [];
+              const connectorRows = Array.isArray(connections.result) ? connections.result : [];
+              const connectors = connectorRows.map(row => ({
+                id: row?.id ?? null,
+                colo_name: row?.colo_name ?? null,
+                opened_at: row?.opened_at ?? null,
+                is_pending_reconnect: row?.is_pending_reconnect ?? null,
+                uuid: row?.uuid ?? null
+              }));
+              const accessRows = Array.isArray(access.result) ? access.result : [];
+              const accessApps = accessRows
+                .filter(row => wanted.test(String(row?.domain ?? "")) ||
+                               wanted.test(String(row?.name ?? "")) ||
+                               /ssh|self_hosted/i.test(String(row?.type ?? "")))
+                .map(row => ({
+                  id: row?.id ?? null,
+                  name: row?.name ?? null,
+                  domain: row?.domain ?? null,
+                  type: row?.type ?? null,
+                  session_duration: row?.session_duration ?? null
+                }));
+              const dnsRows = Array.isArray(dns.result) ? dns.result : [];
+              const dnsRecords = dnsRows
+                .filter(row => wanted.test(String(row?.name ?? "")) ||
+                               String(row?.content ?? "").includes(tunnelId) ||
+                               /cfargotunnel\.com/i.test(String(row?.content ?? "")))
+                .map(row => ({
+                  id: row?.id ?? null,
+                  type: row?.type ?? null,
+                  name: row?.name ?? null,
+                  content: row?.content ?? null,
+                  proxied: row?.proxied ?? null,
+                  ttl: row?.ttl ?? null
+                }));
+
+              const endpointStatus = {
+                verify: {status: verify.status, ok: verify.ok, errors: verify.errors},
+                tunnels: {status: tunnels.status, ok: tunnels.ok, errors: tunnels.errors},
+                configuration: {status: configuration.status, ok: configuration.ok, errors: configuration.errors},
+                connections: {status: connections.status, ok: connections.ok, errors: connections.errors},
+                access: {status: access.status, ok: access.ok, errors: access.errors},
+                dns: {status: dns.status, ok: dns.ok, errors: dns.errors}
+              };
+              const receipt = {
+                schema: "den2050.cloudflare-workstation-probe/v1",
+                observed_at: new Date().toISOString(),
+                token_status: verify.result?.status ?? null,
+                endpoint_status: endpointStatus,
+                tunnel,
+                ingress,
+                connectors,
+                access_apps: accessApps,
+                dns_records: dnsRecords,
+                conclusions: {
+                  token_valid: verify.ok && verify.result?.status === "active",
+                  tunnel_readable: tunnels.ok && configuration.ok,
+                  tunnel_remotely_managed: tunnel.some(row => row.remote_config === true),
+                  live_connector_count: connectors.length,
+                  ssh_or_tcp_ingress_present: ingress.some(row => /^(ssh|tcp):\/\//i.test(String(row.service ?? ""))),
+                  relevant_access_app_count: accessApps.length
+                }
+              };
+
+              // Only the sanitized receipt is emitted. Neither credential is included in it.
+              console.log(JSON.stringify(receipt, null, 2));
+              const repository = process.env.RESULT_REPOSITORY;
+              const issue = process.env.RESULT_ISSUE;
+              const comment = [
+                "### DEN-2050 in-cluster Cloudflare tunnel receipt",
+                "",
+                "```json",
+                JSON.stringify(receipt, null, 2),
+                "```"
+              ].join("\n");
+              const ghResponse = await fetch(
+                `https://api.github.com/repos/${repository}/issues/${issue}/comments`,
+                {
+                  method: "POST",
+                  headers: {
+                    authorization: `Bearer ${ghToken}`,
+                    accept: "application/vnd.github+json",
+                    "content-type": "application/json",
+                    "x-github-api-version": "2022-11-28",
+                    "user-agent": "den2050-cloudflare-probe"
+                  },
+                  body: JSON.stringify({body: comment}),
+                  signal: AbortSignal.timeout(30000)
+                }
+              );
+              if (!ghResponse.ok) {
+                const errorText = (await ghResponse.text()).slice(0, 1000);
+                throw new Error(`GitHub receipt failed: HTTP ${ghResponse.status}: ${errorText}`);
+              }
+              if (!receipt.conclusions.token_valid) process.exitCode = 2;
