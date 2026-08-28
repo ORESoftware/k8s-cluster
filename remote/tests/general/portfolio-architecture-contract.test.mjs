@@ -8,8 +8,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "../../..");
 const contractPath = resolve(repoRoot, "docs/architecture/portfolio-contract.json");
 const catalogPath = resolve(repoRoot, "docs/architecture/portfolio-organizations.json");
+const webApiDataAccessPath = resolve(repoRoot, "docs/architecture/web-api-data-access.md");
 const contract = JSON.parse(await readFile(contractPath, "utf8"));
 const catalog = JSON.parse(await readFile(catalogPath, "utf8"));
+const webApiDataAccess = await readFile(webApiDataAccessPath, "utf8");
 
 const expectedOrganizations = [
   "3FA-app",
@@ -187,6 +189,51 @@ test("data and async integration fail closed", () => {
     "traceparent"
   ]) {
     assert.ok(envelope.has(field), `event envelope must include ${field}`);
+  }
+});
+
+test("web/API data access records all four paths and the initial ten adopters", () => {
+  for (const heading of [
+    "### P1 — direct read-only database query",
+    "### P2 — stateless HTTP request to the API cluster",
+    "### P3 — bounded stateful connection to the API cluster",
+    "### P4 — NATS/message-queue command with asynchronous result"
+  ]) {
+    assert.ok(webApiDataAccess.includes(heading), `missing decision path: ${heading}`);
+  }
+
+  for (const organization of [
+    "sonus-auris",
+    "zed-pkg",
+    "quaestor-ledger",
+    "daedalus-fab",
+    "fiducia-cloud",
+    "canonical-cloud",
+    "cliptown",
+    "file-tunnel",
+    "embedded-alerts",
+    "evento-globolo"
+  ]) {
+    assert.ok(
+      webApiDataAccess.includes("| `" + organization + "` |"),
+      `missing web/API adoption record for ${organization}`
+    );
+  }
+
+  for (const requiredContract of [
+    "default_transaction_read_only=on",
+    "idempotency key",
+    "heartbeat",
+    "drain",
+    "outbox insertion",
+    "dead-letter",
+    "W3C trace context",
+    "declarative schema authority"
+  ]) {
+    assert.ok(
+      webApiDataAccess.includes(requiredContract),
+      `web/API ADR is missing required contract: ${requiredContract}`
+    );
   }
 });
 

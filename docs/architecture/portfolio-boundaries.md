@@ -62,6 +62,11 @@ Use the actual responsibility: API, worker, scheduler, ingestion, processor, or 
 
 ## API and data rules
 
+Traditional web/API pairs select their per-operation transport and data boundary through the
+canonical [web-to-API data-access ADR](web-api-data-access.md). Its P1–P4 contracts govern direct
+read-only database queries, stateless HTTP, bounded stateful API connections, and asynchronous
+NATS/message-queue commands.
+
 1. A product service does not read or write another product's tables. Shared database
    infrastructure still uses separate schemas, roles, and migration authorities.
 2. External commands and queries use HTTPS REST/JSON by default. WebSocket is the normal
