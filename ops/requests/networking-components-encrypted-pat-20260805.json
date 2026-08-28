@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "execute": true,
+  "request_id": "networking-components-missing-foundations-20260805",
+  "organization": "networking-components",
+  "visibility": "private",
+  "default_branch": "dev",
+  "repository_count": 10,
+  "source_bundle_sha256": "f8d4f941a433fd5d4a42b5f9aad0d67ab23c7f51257556168672f93f1e861de1",
+  "recipient_id": "ncc-publish-20260805-af2d37e386ae48da",
+  "recipient_fingerprint": "3b800c62c62d6741ebd70a5371af3663bf90cdc9f4530517998de98dedeb98c6",
+  "ciphertext_base64": "tek9gPSuRvUwplwtHOYE4dy8XnKm7mROZTuzYhf4meJ0S68z1UMNRt8xuPuK6eqEEYMSc6vjRl6BELH0iGGBHJgAuSkSlSPrTSmDwkgXRjimyxW/V294v/wXwdEL4LASkxTfwkb4iZ89o4VrouC/1MBL8zptsn7TOiasXzASsXpPBH1dWDu27xlKvBlzRo5vqC/I/Rfz0pkN1TC4/Np0sjXlV36BiUU5BjvX2XqQ4b1W67+fbnaAiPuam4Ldw4Yaybw5r+k3EBkM3gli4AifuONmwopCIXV+F21UC9hSdw0hoSDdbi14oio7rFb54el3YJmKHGVN/GA07gfgqwceNYG5Tayy7HHleZI7/2RQKseN1bJsoBoEsAHd72RqPHVBxOBMk+Ah1E+5WnI1PLEYEPzKv4iSGovB9UNsiu0/Kq0CKRuKgPiUESTELfT+ydCbDQE2QfGHOrTpXOeA6asbqv+bWDFhZB9/+GVVzeBHV+G+nBnbZHc4P8W11JpwW3/jd5GU6i9zHB5zjP1S3J4ZLPVCNTePcnHgzJSpQR8YLIDney7zmZuhmIoLlkIvZOpO65acse8v46ZnGeRWkEb0pJnXs5uhcb9OVCZbC8sPOVjuEz4cdhRdpP+/SMmsTVdyZXoK1dvjoo0+fLAwyRJzyN6dr0nTqm3Z7neH9mNj8IY=",
+  "repositories": [
+    "ncc-dhcp-server",
+    "ncc-ipam",
+    "ncc-firewall",
+    "ncc-forward-proxy",
+    "ncc-ntp",
+    "ncc-stun-turn",
+    "ncc-service-discovery",
+    "ncc-network-controller",
+    "ncc-observability",
+    "ncc-pki"
+  ]
+}

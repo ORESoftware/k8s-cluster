@@ -1,10 +1,11 @@
-# DEN-2745 deployment bridge.
+# DEN-2745 deployment contract.
 #
-# The Hetzner root Application intentionally reconciles this cluster overlay
-# from `dev`. The reviewed project-automation package, including the active
-# nightly interdependency CronJob, is maintained on `main`. This child
-# Application therefore sources that immutable reviewed branch without
-# fast-forwarding 955 unrelated commits through the deployment branch.
+# The Hetzner root Application reconciles the cluster Application catalog from
+# `dev`, while this child intentionally sources the reviewed project-automation
+# workload package (including the active nightly interdependency CronJob) from
+# `main`. The explicit revisions are deliberate and survive the 2026-08-07
+# two-way dev<->main convergence: the package always deploys from the reviewed
+# branch no matter how far the catalog branch moves between reconciliations.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

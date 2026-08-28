@@ -6,9 +6,10 @@ metadata:
   labels:
     app: dd-gha-executor-router
 spec:
-  # Deliberately non-runnable until an immutable reviewed image replaces the
-  # all-zero digest. Merge must not change the live execution path.
-  replicas: 0
+  # The router is the only clone-server egress target. It selects the reviewed
+  # AWS build-server lane and refuses unconfigured or unhealthy executors.
+  replicas: 1
+  minReadySeconds: 10
   strategy:
     type: Recreate
   selector:
@@ -29,9 +30,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gha-executor-router
-          # Activation gate: replace this sentinel with a signed, scanned,
-          # SBOM-attested image digest built from the exact merged router commit.
-          image: ghcr.io/oresoftware/gha-executor-router@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          # Built from 5f7432f065e655f424334ae709209ca5267710d2 on the native amd64 node,
+          # scanned by ECR with zero findings, then copied byte-for-byte to GHCR.
+          image: ghcr.io/oresoftware/gha-executor-router@sha256:e87bee0e28911fbdc096d2fec0c1a65811b7d2173594d81c377dc437ac658e8f
           imagePullPolicy: IfNotPresent
           command: ["/usr/local/bin/gha-executor-router"]
           env:
@@ -42,7 +43,7 @@ spec:
             - name: RUST_LOG
               value: gha_executor_router=info
             - name: GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED
-              value: "false"
+              value: "true"
             - name: GHA_EXECUTOR_ROUTER_AUTH_PATH
               value: /var/run/secrets/gha-executor-router/inbound-auth
             - name: GHA_EXECUTOR_ROUTER_EXECUTORS_JSON

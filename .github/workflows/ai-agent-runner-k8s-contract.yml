@@ -1,0 +1,75 @@
+name: ai-agent-runner Kubernetes contract
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.github/workflows/ai-agent-runner-k8s-contract.yml'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-runner.deployment.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-runner.networkpolicy.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.networkpolicy.yaml'
+      - 'remote/argocd/dd-next-runtime/kustomization.yaml'
+      - 'remote/tests/general/ai-agent-runner-k8s-contract.test.mjs'
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/ai-agent-runner-k8s-contract.yml'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-runner.deployment.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-runner.networkpolicy.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.networkpolicy.yaml'
+      - 'remote/argocd/dd-next-runtime/kustomization.yaml'
+      - 'remote/tests/general/ai-agent-runner-k8s-contract.test.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-agent-runner-k8s-contract-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Zero-replica immutable runner contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout without credentials or private gitlinks
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Run runner GitOps contract
+        env:
+          AI_AGENT_RUNNER_AUDIT_PATH: ${{ runner.temp }}/ai-agent-runner-audit.json
+        run: node --test remote/tests/general/ai-agent-runner-k8s-contract.test.mjs
+
+      - name: Setup kubectl 1.31.0
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+        with:
+          version: v1.31.0
+
+      - name: Render applied runtime overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl kustomize remote/argocd/dd-next-runtime >"${RUNNER_TEMP}/dd-next-runtime.yaml"
+          grep -Fq 'ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:e78d56c95485c4aaea33621268be35c83813a06962f50bb27010df5a0859867c' "${RUNNER_TEMP}/dd-next-runtime.yaml"
+          runner_block="$(awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: dd-ai-agent-runner/{print}' "${RUNNER_TEMP}/dd-next-runtime.yaml")"
+          grep -Eq '^  replicas: 0$' <<<"${runner_block}"
+          if grep -Eq 'git clone|cargo build|GH_PAT|hostPath:' <<<"${runner_block}"; then
+            echo '::error::rendered runner contains a forbidden runtime build, PAT, or hostPath pattern'
+            exit 1
+          fi
+
+      - name: Upload runner audit
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ai-agent-runner-audit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ai-agent-runner-audit.json
+          retention-days: 14
+          if-no-files-found: warn

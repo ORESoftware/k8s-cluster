@@ -198,3 +198,50 @@ test('renders a reviewable Markdown reconciliation report', () => {
   assert.match(markdown, /github\.com\/ORESoftware/);
   assert.match(markdown, /google-chat:AAQAoHKdzvI:/);
 });
+
+test('--since narrows the plan without discarding dedup accounting', () => {
+  const early = message({ id: 'early', createTime: '2026-05-11T12:00:00.000Z' });
+  const late = message({
+    id: 'late',
+    createTime: '2026-06-20T12:00:00.000Z',
+    thread: {
+      name: 'spaces/AAQAoHKdzvI/threads/t2',
+      sourceKey: 'google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/threads/t2',
+    },
+  });
+  const documents = [emailPage([early, late])];
+
+  const full = build(documents);
+  assert.equal(full.stats.plannedMessages, 2);
+  assert.equal(full.stats.windowedOutMessages, 0);
+  assert.equal(full.source.windowStartInclusive, START_TIME_INCLUSIVE);
+
+  const windowed = build(documents, { since: '2026-06-05T04:00:00.000Z' });
+  assert.equal(windowed.stats.uniqueMessages, 2, 'dedup still sees every message');
+  assert.equal(windowed.stats.windowedOutMessages, 1);
+  assert.equal(windowed.stats.plannedMessages, 1);
+  assert.equal(windowed.stats.candidates, 1);
+  assert.equal(windowed.source.windowStartInclusive, '2026-06-05T04:00:00.000Z');
+
+  const keys = windowed.candidates.flatMap((candidate) => candidate.sourceKeys);
+  assert.ok(keys.every((key) => key.includes('late')), 'only in-window messages are planned');
+});
+
+test('--since is inclusive at its own boundary and may only narrow', () => {
+  const exact = message({ id: 'exact', createTime: '2026-06-05T04:00:00.000Z' });
+  const plan = build([emailPage([exact])], { since: '2026-06-05T04:00:00.000Z' });
+  assert.equal(plan.stats.plannedMessages, 1, 'a message exactly at --since is kept');
+
+  assert.throws(
+    () => build([emailPage([exact])], { since: '2026-01-01T00:00:00.000Z' }),
+    /can only narrow the window/,
+    'a --since before the fixed boundary is rejected rather than clamped',
+  );
+  assert.throws(() => build([emailPage([exact])], { since: 'not-a-timestamp' }), /--since/);
+});
+
+test('a narrowed window is disclosed in the Markdown report', () => {
+  const late = message({ id: 'late', createTime: '2026-06-20T12:00:00.000Z' });
+  const markdown = renderMarkdown(build([emailPage([late])], { since: '2026-06-05T04:00:00.000Z' }));
+  assert.match(markdown, /Window narrowed to messages at or after `2026-06-05T04:00:00\.000Z`/);
+});

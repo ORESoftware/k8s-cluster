@@ -1,0 +1,109 @@
+import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { readdir, readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import test from 'node:test';
+
+function repositoryRoot() {
+  for (const candidate of [process.cwd(), resolve(process.cwd(), '../..')]) {
+    if (existsSync(resolve(candidate, '.github/workflows'))) {
+      return candidate;
+    }
+  }
+  throw new Error(`unable to locate repository root from ${process.cwd()}`);
+}
+
+const root = repositoryRoot();
+const retiredWorkflow = resolve(
+  root,
+  '.github/workflows/ops-owner-device-create-meta-agent-repo.yml',
+);
+const completionDocument = resolve(
+  root,
+  'docs/operations/meta-agent-repository-publication-completion.md',
+);
+const publicationOrchestrator = resolve(
+  root,
+  'scripts/ops/publish_meta_agent_control_plane_from_actions.sh',
+);
+const snapshotVerifier = resolve(
+  root,
+  'scripts/ops/verify_meta_agent_source_snapshot.py',
+);
+const ephemeralRunbook = resolve(
+  root,
+  'docs/operations/meta-agent-ephemeral-credential-publication.md',
+);
+
+const read = (path) => readFile(path, 'utf8');
+const normalizedText = (value) => value.replace(/\s+/g, ' ').trim();
+
+test('completed interactive Meta owner bootstrap is absent from the active workflow surface', async () => {
+  assert.equal(existsSync(retiredWorkflow), false);
+
+  const workflowDirectory = resolve(root, '.github/workflows');
+  const workflowNames = (await readdir(workflowDirectory)).filter((name) =>
+    /\.ya?ml$/.test(name),
+  );
+  for (const name of workflowNames) {
+    const content = await read(resolve(workflowDirectory, name));
+    const isMetaOwnerDeviceFlow =
+      content.includes('meta-agents-demo/meta-agent-control-plane.rs') &&
+      content.includes('https://github.com/login/device/code');
+    assert.equal(
+      isMetaOwnerDeviceFlow,
+      false,
+      `${name} restores the retired Meta repository owner-device flow`,
+    );
+  }
+});
+
+test('completion record pins the exact target and initial reviewed history', async () => {
+  const document = normalizedText(await read(completionDocument));
+  for (const contract of [
+    'Status: completed on 2026-08-03 UTC and reverified on 2026-08-04 UTC.',
+    '`meta-agents-demo/meta-agent-control-plane.rs`',
+    '`4d6ec3ad0ec7b688f0e777129eee7e0f0d999df1`',
+    '`789d48039da232faed985d4f8de176959f117e08`',
+    'Repository creation is no longer an active cluster operation',
+    'must not be restored',
+    'never use force pushes',
+    'must be revoked and rotated',
+    'DEN-1057, DEN-1058, and DEN-319',
+  ]) {
+    assert.equal(document.includes(contract), true, `missing contract: ${contract}`);
+  }
+});
+
+test('active recovery tooling pins immutable source history without restoring sealed assets', async () => {
+  assert.equal(existsSync(publicationOrchestrator), true);
+  assert.equal(existsSync(snapshotVerifier), true);
+  assert.equal(existsSync(ephemeralRunbook), true);
+
+  const orchestrator = await read(publicationOrchestrator);
+  const verifier = await read(snapshotVerifier);
+  const document = normalizedText(await read(completionDocument));
+
+  for (const contract of [
+    '55ee15c190b7cfa4e075f6984c7cb551acd4b9d3',
+    '1ddaa03743b864348162149b7d2d2e2dce7eab585cf092ea14547c647fcec031',
+    'e2fe6eaa622db02a54f83e27a822f64ad4b54971c883f97bbda4ac0a4db5d278',
+  ]) {
+    assert.equal(orchestrator.includes(contract), true, `orchestrator lost ${contract}`);
+    assert.equal(verifier.includes(contract), true, `verifier lost ${contract}`);
+    assert.equal(document.includes(contract), true, `completion record lost ${contract}`);
+  }
+
+  const target = 'meta-agents-demo/meta-agent-control-plane.rs';
+  assert.equal(orchestrator.includes(target), true);
+  assert.equal(document.includes(target), true);
+
+  assert.equal(
+    document.includes('intentionally not restored to the active working tree'),
+    true,
+  );
+  assert.equal(verifier.includes('git/commits/{SOURCE_SHA}'), true);
+  assert.equal(verifier.includes('git/trees/{tree_sha}?recursive=1'), true);
+  assert.equal(verifier.includes('meta\\.part[^/]+'), true);
+  assert.equal(verifier.includes('verify-bundle-heads'), true);
+});

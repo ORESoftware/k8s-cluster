@@ -17,12 +17,25 @@ const files = {
     'remote/argocd/dd-next-runtime/dd-gha-executor-router.externalsecret.yaml',
   routerPolicy:
     'remote/argocd/dd-next-runtime/dd-gha-executor-router.networkpolicy.yaml',
+  buildPolicy:
+    'remote/argocd/dd-next-runtime/dd-build-server.networkpolicy.yaml',
   kustomization: 'remote/argocd/dd-next-runtime/kustomization.yaml',
-  runbook: 'docs/gha-executor-router-activation.md',
+  prerequisiteRunbook: 'docs/gha-executor-router-activation.md',
+  activeRunbook: 'docs/operations/gha-budget-webhook-activation.md',
 };
 
 const zeroDigest =
   'sha256:0000000000000000000000000000000000000000000000000000000000000000';
+const publishedImages = {
+  clone:
+    'ghcr.io/oresoftware/gha-clone-server@sha256:719a50b3d8cf105cd8c78bb66ce9d10dca072e4de28f6f7ba4fa79db446a2be8',
+  router:
+    'ghcr.io/oresoftware/gha-executor-router@sha256:e87bee0e28911fbdc096d2fec0c1a65811b7d2173594d81c377dc437ac658e8f',
+};
+const publishedRevisions = {
+  clone: '812704baf1e03b87615719b3cf140e2dd6bb63d6',
+  router: '5f7432f065e655f424334ae709209ca5267710d2',
+};
 
 function requireAll(text, values, label) {
   for (const value of values) {
@@ -40,19 +53,21 @@ function literalEnv(text, name) {
   return (match[1] ?? match[2]).trim();
 }
 
-test('clone and router cannot be activated by merging the scaffold', () => {
+test('digest-pinned clone and router are active as a single bounded lane', () => {
   const clone = read(files.cloneDeployment);
   const router = read(files.routerDeployment);
 
-  for (const [label, deployment, binary] of [
-    ['clone', clone, 'gha-clone-server'],
-    ['router', router, 'gha-executor-router'],
+  for (const [label, deployment, binary, image] of [
+    ['clone', clone, 'gha-clone-server', publishedImages.clone],
+    ['router', router, 'gha-executor-router', publishedImages.router],
   ]) {
     requireAll(
       deployment,
       [
-        'replicas: 0',
-        zeroDigest,
+        'replicas: 1',
+        'minReadySeconds: 10',
+        image,
+        publishedRevisions[label],
         `command: ["/usr/local/bin/${binary}"]`,
         'automountServiceAccountToken: false',
         'readOnlyRootFilesystem: true',
@@ -61,6 +76,10 @@ test('clone and router cannot be activated by merging the scaffold', () => {
       ],
       `${label} deployment`,
     );
+    assert.ok(
+      !deployment.includes(zeroDigest),
+      `${label} deployment still uses the all-zero image sentinel`,
+    );
     assert.doesNotMatch(
       deployment,
       /cargo run|git clone|git init|SOURCE_REF|SOURCE_URL|\/bin\/(?:ba)?sh/,
@@ -68,14 +87,18 @@ test('clone and router cannot be activated by merging the scaffold', () => {
     );
   }
 
-  assert.equal(literalEnv(clone, 'GHA_CLONE_EXECUTION_ENABLED'), 'false');
+  assert.equal(literalEnv(clone, 'GHA_CLONE_EXECUTION_ENABLED'), 'true');
   assert.equal(
     literalEnv(clone, 'GHA_CLONE_WEBHOOK_EXECUTION_ENABLED'),
-    'false',
+    'true',
+  );
+  assert.equal(
+    literalEnv(clone, 'GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS'),
+    'action_required',
   );
   assert.equal(
     literalEnv(router, 'GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED'),
-    'false',
+    'true',
   );
 });
 
@@ -157,6 +180,15 @@ test('router reuses the existing AWS authority without duplicating it', () => {
   );
 });
 
+test('build server admits the authenticated continuity router on its API port', () => {
+  const policy = read(files.buildPolicy);
+  requireAll(
+    policy,
+    ['name: dd-build-server', 'app: dd-gha-executor-router', 'port: 8100'],
+    'build-server continuity ingress',
+  );
+});
+
 test('disabled Hetzner has no public route or dormant credential surface', () => {
   const policy = read(files.routerPolicy);
   const config = read(files.routerConfig);
@@ -167,7 +199,7 @@ test('disabled Hetzner has no public route or dormant credential surface', () =>
   assert.ok(!hetznerEntry.includes('"authPath"'));
 });
 
-test('Argo tracks the complete inert router surface', () => {
+test('Argo tracks the complete active router surface', () => {
   const kustomization = read(files.kustomization);
   for (const filename of [
     'dd-gha-executor-router.configmap.yaml',
@@ -180,10 +212,10 @@ test('Argo tracks the complete inert router surface', () => {
   }
 });
 
-test('runbook requires immutable images, provider proof, and rollback', () => {
-  const runbook = read(files.runbook);
+test('runbooks require immutable images, live proof, provider boundaries, and rollback', () => {
+  const prerequisites = read(files.prerequisiteRunbook);
   requireAll(
-    runbook,
+    prerequisites,
     [
       'digest-pinned',
       'SBOM',
@@ -192,8 +224,22 @@ test('runbook requires immutable images, provider proof, and rollback', () => {
       'pre-submit',
       'Fiducia',
       'Rollback',
-      'replicas: 0',
     ],
-    'activation runbook',
+    'router prerequisite runbook',
+  );
+
+  const active = read(files.activeRunbook);
+  requireAll(
+    active,
+    [
+      'action_required',
+      'X-Hub-Signature-256',
+      'immutable 40-hex commit SHA',
+      'workflow path',
+      'Live proof and exact-SHA execution canary',
+      'Rollback',
+      'scale clone server and router to `0`',
+    ],
+    'active webhook runbook',
   );
 });

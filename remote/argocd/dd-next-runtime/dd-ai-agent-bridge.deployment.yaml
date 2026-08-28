@@ -5,16 +5,22 @@ metadata:
   namespace: default
   annotations:
     argocd.argoproj.io/sync-options: Prune=false
+    denman.linear.app/issue: DEN-845
+    github.com/issue: ORESoftware/k8s-cluster#1111
+    dd.dev/source-repository: ORESoftware/ai-agent-bridge.rs
+    dd.dev/source-revision: 'ec667946b1f8725b6baea8e67ae6a701d602dc04'
+    dd.dev/release-workflow-run: '31264194679'
+    dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:bbf105c29cdbcec23d87ed0b21cfd548c43982cf6573aaf34a2fb1f4dc69a305'
   labels:
     app: dd-ai-agent-bridge
+    app.kubernetes.io/component: bridge
 spec:
   replicas: 1
   minReadySeconds: 5
-  progressDeadlineSeconds: 1800
+  progressDeadlineSeconds: 300
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      # Single-node friendly: don't try to schedule a second builder pod.
       maxSurge: 0
       maxUnavailable: 1
   selector:
@@ -23,107 +29,42 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/ai-agent-bridge-revision: '2026-07-30-auth-otel-network-hardening+fiducia-binary'
+        dd.dev/ai-agent-bridge-revision: '2026-08-08-immutable-digest-ec66794'
+        dd.dev/source-repository: ORESoftware/ai-agent-bridge.rs
+        dd.dev/source-revision: 'ec667946b1f8725b6baea8e67ae6a701d602dc04'
+        dd.dev/release-workflow-run: '31264194679'
+        dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:bbf105c29cdbcec23d87ed0b21cfd548c43982cf6573aaf34a2fb1f4dc69a305'
       labels:
         app: dd-ai-agent-bridge
+        app.kubernetes.io/component: bridge
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
       terminationGracePeriodSeconds: 30
       securityContext:
-        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
         fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: ai-agent-bridge
-          image: docker.io/library/rust:1.95-bookworm
+          image: ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:bbf105c29cdbcec23d87ed0b21cfd548c43982cf6573aaf34a2fb1f4dc69a305
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
+            privileged: false
             readOnlyRootFilesystem: true
             runAsNonRoot: true
-            runAsUser: 1000
-            runAsGroup: 1000
+            runAsUser: 65532
+            runAsGroup: 65532
             capabilities:
               drop:
                 - ALL
             seccompProfile:
               type: RuntimeDefault
-          command:
-            - /bin/bash
-            - -lc
-          args:
-            - |
-              set -euo pipefail
-              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-
-              # ai-agent-bridge is a k8s-cluster submodule at
-              # remote/deployments/ai-agent-bridge. Its Cargo.toml has an OPTIONAL
-              # path dep on ../../libs/pg-defs/generated/rust (only compiled with
-              # --features postgres), but cargo still resolves that path at build
-              # time — so the build root must contain BOTH this submodule and
-              # remote/libs. Prefer the mounted superproject; otherwise clone
-              # k8s-cluster and init just those two submodules so unrelated private
-              # submodules can't block startup (mirrors dd-soccer-rs).
-              # The binary this manifest execs. Also used to validate the mounted
-              # source below — see the staleness guard.
-              bin_name="fiducia-ai-agent-bridge"
-
-              build_root=""
-              mounted="/opt/dd-next-1"
-              # STALENESS GUARD. The hostPath mount is the EC2 node's own checkout,
-              # shared by ~93 deployments, and nothing keeps it in lockstep with the
-              # manifests ArgoCD delivers from Git. On 2026-07-31 that split took this
-              # service down: Git pinned the submodule at d9b4bf7 (crate renamed to
-              # fiducia-ai-agent-bridge) while the node sat at 2d82df2 (crate
-              # ai-agent-bridge), so the build "succeeded" in 0.14s and then exec'd a
-              # path that did not exist — 78 CrashLoopBackOff restarts.
-              #
-              # Requiring the mounted crate to declare the binary we are about to exec
-              # turns that silent mismatch into an automatic fallback to the pinned
-              # clone below, which is self-contained and immune to node drift.
-              if [ -f "${mounted}/remote/deployments/ai-agent-bridge/Cargo.toml" ] \
-                 && [ -f "${mounted}/remote/libs/pg-defs/generated/rust/Cargo.toml" ] \
-                 && grep -q "^name = \"${bin_name}\"" \
-                      "${mounted}/remote/deployments/ai-agent-bridge/Cargo.toml"; then
-                build_root="${mounted}"
-                echo "[dd-ai-agent-bridge] using mounted superproject at ${mounted}"
-              else
-                if [ -f "${mounted}/remote/deployments/ai-agent-bridge/Cargo.toml" ]; then
-                  echo "[dd-ai-agent-bridge] mounted source is STALE (does not build ${bin_name}); cloning instead"
-                fi
-                # GH_PAT (dd-git-clone-token) authenticates private fetches via an
-                # HTTP header so an auth failure cannot print the token.
-                git_auth_args=()
-                if [ -n "${GH_PAT:-}" ]; then
-                  authhdr="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_PAT" | base64 | tr -d '\n')"
-                  git_auth_args=(-c "http.https://github.com/.extraheader=${authhdr}")
-                  git config --global url."https://github.com/".insteadOf "git@github.com:"
-                fi
-                clone="$(mktemp -d /tmp/ai-agent-bridge-src.XXXXXX)"
-                echo "[dd-ai-agent-bridge] mounted source absent; cloning k8s-cluster@${K8S_GIT_REF:-dev}"
-                git clone --depth 1 --branch "${K8S_GIT_REF:-dev}" "${git_auth_args[@]}" \
-                  "${K8S_GIT_URL:-https://github.com/ORESoftware/k8s-cluster.git}" "${clone}"
-                git -C "${clone}" "${git_auth_args[@]}" submodule update --init --depth 1 \
-                  remote/libs remote/deployments/ai-agent-bridge
-                build_root="${clone}"
-              fi
-
-              cd "${build_root}/remote/deployments/ai-agent-bridge"
-              echo "[dd-ai-agent-bridge] building ($(git rev-parse --short HEAD 2>/dev/null || echo '?'))"
-              # Default (in-memory) build: no Postgres, no pg-defs compilation. Flip
-              # to `--features postgres` once the ai_agent_bridge schema migration
-              # is applied and the DATABASE_URL env below is enabled.
-              cargo build --release --locked
-              built="${CARGO_TARGET_DIR:-target}/release/${bin_name}"
-              # Fail with the actual cause rather than bash's bare "No such file or
-              # directory", which is what the 2026-07-31 stale-source outage looked
-              # like from the logs.
-              if [ ! -x "${built}" ]; then
-                echo "[dd-ai-agent-bridge] FATAL: cargo did not produce ${built}" >&2
-                echo "[dd-ai-agent-bridge] binaries present: $(ls "${CARGO_TARGET_DIR:-target}/release/" 2>/dev/null | grep -v '\.d$' | tr '\n' ' ')" >&2
-                exit 1
-              fi
-              exec "${built}"
           env:
             - name: HOST
               value: 0.0.0.0
@@ -135,11 +76,6 @@ spec:
               value: json
             - name: RUST_LOG
               value: info,ai_agent_bridge=info,hyper=warn,reqwest=warn
-            # The binary refuses a non-loopback bind without this global bearer,
-            # so every non-health HTTP route and every TCP connection fails
-            # closed; a missing secret must fail startup rather than expose the
-            # agent/channel/workflow APIs. Backed by the bridge's dedicated
-            # secret (enforced by the k8s contract test and kind smoke fixture).
             - name: API_AUTH_BEARER
               valueFrom:
                 secretKeyRef:
@@ -153,9 +89,6 @@ spec:
               value: http/protobuf
             - name: OTEL_RESOURCE_ATTRIBUTES
               value: service.namespace=default,deployment.environment=remote-dev
-            # claude-inbox backward-compat (supersedes the old ai-agent-bridge-rs):
-            # inbox.jsonl lives on the writable tmp mount. Use the same required
-            # bearer as the global API so the legacy route cannot drift open.
             - name: AI_AGENT_BRIDGE_DIR
               value: /tmp/claude_bridge
             - name: AI_AGENT_BRIDGE_TOKEN
@@ -163,57 +96,33 @@ spec:
                 secretKeyRef:
                   name: dd-ai-agent-bridge-secrets
                   key: inbox_token
-            # In-cluster embedder is optional — the built-in deterministic local
-            # embedder is used when this is unset. Enable once the endpoint/contract
-            # is confirmed:
-            # - name: EMBEDDINGS_URL
-            #   value: http://dd-embeddings-rs.default.svc.cluster.local:8090
-            # Postgres is OFF by default (in-memory-first). To enable durable
-            # persistence, build with --features postgres above and set:
-            # - name: DATABASE_URL
-            #   valueFrom:
-            #     secretKeyRef:
-            #       name: dd-remote-rest-api-secrets
-            #       key: RDS_DATABASE_URL
-            - name: K8S_GIT_URL
-              value: https://github.com/ORESoftware/k8s-cluster.git
-            - name: K8S_GIT_REF
-              value: dev
-            # Read access for the fallback clone path (public repo today, but this
-            # keeps it working if visibility ever changes / for private libs).
-            - name: GH_PAT
-              valueFrom:
-                secretKeyRef:
-                  name: dd-git-clone-token
-                  key: token
-                  optional: true
             - name: HOME
               value: /tmp
-            - name: CARGO_HOME
-              value: /tmp/cargo
-            - name: CARGO_TARGET_DIR
-              value: /tmp/ai-agent-bridge-target
+            - name: TMPDIR
+              value: /tmp
           ports:
             - name: http
               containerPort: 8142
+              protocol: TCP
             - name: tcp
               containerPort: 8143
+              protocol: TCP
           resources:
             requests:
-              cpu: '50m'
-              memory: 512Mi
-              ephemeral-storage: 1Gi
+              cpu: 50m
+              memory: 128Mi
+              ephemeral-storage: 128Mi
             limits:
-              cpu: '2'
-              memory: 3Gi
-              ephemeral-storage: 8Gi
+              cpu: '1'
+              memory: 1Gi
+              ephemeral-storage: 1Gi
           startupProbe:
             httpGet:
               path: /healthz
               port: http
-            # Cold release build from an empty /tmp can take a few minutes; allow ~15 min.
             periodSeconds: 5
-            failureThreshold: 180
+            timeoutSeconds: 3
+            failureThreshold: 60
           readinessProbe:
             httpGet:
               path: /readyz
@@ -229,16 +138,9 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
           volumeMounts:
-            - name: repo
-              mountPath: /opt/dd-next-1
-              readOnly: true
             - name: tmp
               mountPath: /tmp
       volumes:
-        - name: repo
-          hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
-            type: DirectoryOrCreate
         - name: tmp
           emptyDir:
-            sizeLimit: 8Gi
+            sizeLimit: 256Mi

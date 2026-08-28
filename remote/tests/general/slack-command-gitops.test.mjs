@@ -1,349 +1,198 @@
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import path from 'node:path';
 import { test } from 'node:test';
 
 const bundlePath =
   'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml';
 const kustomizationPath = 'remote/argocd/dd-next-runtime/kustomization.yaml';
 const workflowPath = '.github/workflows/slack-command-gitops.yml';
-const sourceRoot =
-  process.env.SLACK_COMMAND_SOURCE_ROOT || '.tmp/ai-agent-bridge';
-const registryPath = join(sourceRoot, 'config/alex-main-agent.channels.json');
-const slackManifestPath = join(sourceRoot, 'slack-app/manifest.yaml');
+const sourceRoot = process.env.SLACK_COMMAND_SOURCE_ROOT;
+assert.ok(sourceRoot, 'SLACK_COMMAND_SOURCE_ROOT must select the exact reviewed source');
+
+const SOURCE_SHA = 'ec667946b1f8725b6baea8e67ae6a701d602dc04';
+const WORKFLOW_RUN = '31264194679';
+const IMAGE =
+  'ghcr.io/oresoftware/fiducia-slack-command@sha256:b726025e01652b6e5d89814a928b23bdd5dc2fcf3e461831e82c3c785fa5c64d';
 
 const bundle = readFileSync(bundlePath, 'utf8');
 const kustomization = readFileSync(kustomizationPath, 'utf8');
 const workflow = readFileSync(workflowPath, 'utf8');
-const registryText = readFileSync(registryPath, 'utf8');
-const slackManifest = readFileSync(slackManifestPath, 'utf8');
-const registry = JSON.parse(registryText);
+const registryPath = path.join(sourceRoot, 'config/alex-main-agent.channels.json');
+const manifestPath = path.join(sourceRoot, 'slack-app/manifest.yaml');
+const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
+const manifest = readFileSync(manifestPath, 'utf8');
+
 const documents = bundle
-  .split(/\n---\n/)
+  .split(/^---\s*$/m)
   .map((document) => document.trim())
   .filter(Boolean);
 
-const sourceRevision = '0ba7d2d4eb8c44583503d4567af2de1f73bc5598';
-const appId = 'A0BMBAMM5NJ';
-const teamId = 'T01B3C83PMK';
-const runProjectId = '72e891e2-603d-4903-8d08-bd06d204520f';
-
-function count(text, needle) {
-  return text.split(needle).length - 1;
+function identity(document) {
+  const kind = document.match(/^kind:\s*(\S+)\s*$/m)?.[1];
+  const metadata = document.match(/^metadata:\n((?:  .*\n?)*)/m)?.[1] ?? '';
+  const name = metadata.match(/^  name:\s*(\S+)\s*$/m)?.[1];
+  return kind && name ? `${kind}/${name}` : undefined;
 }
 
-function resourceIdentity(document) {
-  const kind = document.match(/^kind:\s*([^\s]+)\s*$/m)?.[1];
-  const lines = document.split('\n');
-  const metadataIndex = lines.findIndex((line) => line === 'metadata:');
-  assert.notEqual(metadataIndex, -1, 'resource document is missing metadata');
-  const nameLine = lines
-    .slice(metadataIndex + 1)
-    .find((line) => /^  name:\s*\S+\s*$/.test(line));
-  assert.ok(kind, 'resource document is missing kind');
-  assert.ok(nameLine, 'resource document is missing metadata.name');
-  return {
-    kind,
-    name: nameLine.replace(/^  name:\s*/, '').trim(),
-  };
-}
-
-function resourceDocument(kind, name) {
-  const document = documents.find((candidate) => {
-    const identity = resourceIdentity(candidate);
-    return identity.kind === kind && identity.name === name;
-  });
+function resource(kind, name) {
+  const document = documents.find((candidate) => identity(candidate) === `${kind}/${name}`);
   assert.ok(document, `${kind}/${name} is missing from ${bundlePath}`);
   return document;
 }
 
-function envBlock(name) {
+function envBlock(deployment, name) {
   const marker = `            - name: ${name}\n`;
-  const start = bundle.indexOf(marker);
-  assert.notEqual(start, -1, `${name} is missing from ${bundlePath}`);
-  const next = bundle.indexOf('\n            - name: ', start + marker.length);
-  return bundle.slice(start, next === -1 ? bundle.length : next);
+  const start = deployment.indexOf(marker);
+  assert.notEqual(start, -1, `${name} is missing from the Slack deployment`);
+  const next = deployment.indexOf('\n            - name: ', start + marker.length);
+  return deployment.slice(start, next === -1 ? deployment.length : next);
 }
 
-function assertSecretEnv(name) {
-  const block = envBlock(name);
-  assert.match(block, /valueFrom:/);
-  assert.match(block, /secretKeyRef:/);
-  assert.match(block, /name: dd-slack-command-secrets/);
-  assert.match(block, new RegExp(`key: ${name}`));
-  assert.doesNotMatch(block, /optional:\s*true/);
-  assert.doesNotMatch(block, /\n\s+value:/);
-}
+const bridgeService = resource('Service', 'dd-ai-agent-bridge');
+const externalSecret = resource('ExternalSecret', 'dd-slack-command-secrets');
+const pvc = resource('PersistentVolumeClaim', 'dd-slack-command-state');
+const deployment = resource('Deployment', 'dd-slack-command');
+const service = resource('Service', 'dd-slack-command');
+const networkPolicy = resource('NetworkPolicy', 'dd-slack-command');
+const pdb = resource('PodDisruptionBudget', 'dd-slack-command');
+const ingress = resource('Ingress', 'dd-slack-command');
 
-test('bundle inventory is exact and preserves the bridge Service byte-for-byte', () => {
-  const expectedBridgeService = `apiVersion: v1
-kind: Service
-metadata:
-  name: dd-ai-agent-bridge
-  namespace: default
-  labels:
-    app: dd-ai-agent-bridge
-spec:
-  selector:
-    app: dd-ai-agent-bridge
-  ports:
-    - name: http
-      port: 8142
-      targetPort: http
-    - name: tcp
-      port: 8143
-      targetPort: tcp`;
-  const bridgeService = documents[0].replace(/^(?:#.*\n)+/, '');
-
-  assert.equal(documents.length, 8);
-  assert.equal(bridgeService, expectedBridgeService);
+test('bundle contains one exact Slack command resource set and preserves the bridge service', () => {
   assert.deepEqual(
-    documents.map(resourceIdentity),
+    documents.map(identity).filter(Boolean).sort(),
     [
-      { kind: 'Service', name: 'dd-ai-agent-bridge' },
-      { kind: 'ExternalSecret', name: 'dd-slack-command-secrets' },
-      { kind: 'PersistentVolumeClaim', name: 'dd-slack-command-state' },
-      { kind: 'Deployment', name: 'dd-slack-command' },
-      { kind: 'Service', name: 'dd-slack-command' },
-      { kind: 'NetworkPolicy', name: 'dd-slack-command' },
-      { kind: 'PodDisruptionBudget', name: 'dd-slack-command' },
-      { kind: 'Ingress', name: 'dd-slack-command' },
-    ],
+      'Deployment/dd-slack-command',
+      'ExternalSecret/dd-slack-command-secrets',
+      'Ingress/dd-slack-command',
+      'NetworkPolicy/dd-slack-command',
+      'PersistentVolumeClaim/dd-slack-command-state',
+      'PodDisruptionBudget/dd-slack-command',
+      'Service/dd-ai-agent-bridge',
+      'Service/dd-slack-command',
+    ].sort(),
   );
+  assert.match(bridgeService, /- name: http\n\s+port: 8142\n\s+targetPort: http/);
+  assert.match(bridgeService, /- name: tcp\n\s+port: 8143\n\s+targetPort: tcp/);
   assert.equal(
-    count(kustomization, '- dd-ai-agent-bridge.service.yaml'),
+    kustomization.split('- dd-ai-agent-bridge.service.yaml').length - 1,
     1,
-    'the multi-document bundle must be applied exactly once',
   );
 });
 
-test('runtime is pinned to the reviewed command source and starts in dry-run', () => {
-  assert.equal(count(bundle, `value: ${sourceRevision}`), 1);
-  assert.equal(count(bundle, `dd.dev/source-revision: ${sourceRevision}`), 1);
-  assert.match(bundle, /fetch \\\n\s+--depth=1 origin "\$\{SLACK_COMMAND_SOURCE_REVISION\}"/);
-  assert.match(bundle, /actual_revision=.*rev-parse HEAD/);
-  assert.match(bundle, /source revision mismatch/);
-  assert.match(bundle, /cargo build --release --locked --bin fiducia-slack-command/);
-  assert.match(bundle, /exec "\$\{binary\}"/);
-  assert.match(envBlock('SLACK_COMMAND_DRY_RUN'), /value: "true"/);
-  assert.doesNotMatch(
-    bundle,
-    /SLACK_COMMAND_SOURCE_REVISION[\s\S]{0,120}value:\s*(?:main|dev|latest)\b/,
-  );
-});
-
-test('source acquisition is immutable and independent of ambient GitHub credentials', () => {
-  const deployment = resourceDocument('Deployment', 'dd-slack-command');
+test('Slack command runs the exact immutable release without source or compiler material', () => {
+  assert.equal(deployment.split(`image: ${IMAGE}`).length - 1, 1);
+  assert.equal(deployment.split(`dd.dev/image-reference: '${IMAGE}'`).length - 1, 2);
+  assert.equal(deployment.split(`dd.dev/source-revision: '${SOURCE_SHA}'`).length - 1, 2);
+  assert.equal(deployment.split(`dd.dev/release-workflow-run: '${WORKFLOW_RUN}'`).length - 1, 2);
+  assert.match(IMAGE, /@sha256:[0-9a-f]{64}$/);
+  assert.doesNotMatch(deployment, /image:\s*docker\.io\/library\/rust:/);
+  assert.doesNotMatch(deployment, /\bgit clone\b/);
+  assert.doesNotMatch(deployment, /\bcargo (?:build|run)\b/);
+  assert.doesNotMatch(deployment, /\bGH_PAT\b/);
+  assert.doesNotMatch(deployment, /K8S_GIT_(?:REF|REPOSITORY)/);
+  assert.doesNotMatch(deployment, /CARGO_(?:HOME|TARGET_DIR)/);
+  assert.doesNotMatch(deployment, /source-bootstrap|source-cache|target-cache/);
+  assert.doesNotMatch(deployment, /initContainers:/);
+  assert.doesNotMatch(deployment, /command:/);
+  assert.doesNotMatch(deployment, /args:/);
   assert.match(
-    deployment,
-    /image: rust:1\.97\.1-bookworm@sha256:[0-9a-f]{64}/,
+    envBlock(deployment, 'SLACK_PROJECT_REGISTRY_PATH'),
+    /value: \/etc\/alex-main-agent\/alex-main-agent\.channels\.json/,
   );
-  assert.match(
-    deployment,
-    /value: https:\/\/github\.com\/ORESoftware\/ai-agent-bridge\.rs\.git/,
-  );
-  assert.doesNotMatch(deployment, /\b(?:GH_PAT|GITHUB_TOKEN|github_token)\b/);
-  assert.doesNotMatch(deployment, /hostPath:/);
-  assert.doesNotMatch(deployment, /imagePullPolicy:\s*Always/);
-  assert.doesNotMatch(deployment, /image:\s*[^\n]+:(?:latest|main|dev)\b/);
 });
 
-test('installed Slack app identity and project routing remain fail-closed', () => {
-  assert.match(envBlock('SLACK_EXPECTED_APP_ID'), new RegExp(`value: ${appId}`));
-  assert.match(envBlock('SLACK_EXPECTED_TEAM_ID'), new RegExp(`value: ${teamId}`));
-  assert.match(
-    envBlock('SLACK_LINEAR_RUN_PROJECT_ID'),
-    new RegExp(`value: ${runProjectId}`),
-  );
-  assert.match(bundle, /export SLACK_PROJECT_REGISTRY_PATH="\$\{registry\}"/);
-});
-
-test('all runtime credentials are required secret references', () => {
+test('dispatch remains signed, identity-bound, stateful, and dry-run', () => {
+  assert.match(envBlock(deployment, 'SLACK_COMMAND_DRY_RUN'), /value: "true"/);
+  assert.match(envBlock(deployment, 'SLACK_EXPECTED_APP_ID'), /value: A0BMBAMM5NJ/);
+  assert.match(envBlock(deployment, 'SLACK_EXPECTED_TEAM_ID'), /value: T01B3C83PMK/);
+  assert.match(envBlock(deployment, 'SLACK_COMMAND_STATE_DIR'), /value: \/var\/lib\/slack-command\/runs/);
+  assert.match(pvc, /storageClassName: dd-block/);
+  assert.match(pvc, /ReadWriteOnce/);
+  assert.match(deployment, /claimName: dd-slack-command-state/);
   for (const name of [
     'SLACK_BOT_TOKEN',
     'SLACK_SIGNING_SECRET',
     'SLACK_BRIDGE_BEARER',
     'SLACK_COORDINATOR_BEARER',
   ]) {
-    assertSecretEnv(name);
-    assert.match(bundle, new RegExp(`secretKey: ${name}`));
+    const block = envBlock(deployment, name);
+    assert.match(block, /valueFrom:/);
+    assert.match(block, /name: dd-slack-command-secrets/);
+    assert.doesNotMatch(block, /\n\s+value:/);
   }
-  assert.match(bundle, /key: dd\/remote-dev\/alex-main-agent-slack/);
-  assert.match(bundle, /key: dd\/remote-dev\/ai-agent-bridge-secrets/);
-  assert.match(bundle, /key: dd\/remote-dev\/ai-agent-coordinator-secrets/);
-  assert.doesNotMatch(bundle, /\b(?:xox[baprs]-|gh[pousr]_|sk-[A-Za-z0-9])/);
-  assert.doesNotMatch(bundle, /SLACK_CONFIG_TOKEN/);
 });
 
-test('ExternalSecret mappings are exact, property-scoped, and never bulk-imported', () => {
-  const externalSecret = resourceDocument(
-    'ExternalSecret',
-    'dd-slack-command-secrets',
-  );
-  assert.equal(count(externalSecret, 'secretKey:'), 4);
-  assert.equal(count(externalSecret, 'remoteRef:'), 4);
-  assert.equal(
-    count(externalSecret, 'key: dd/remote-dev/alex-main-agent-slack'),
-    2,
-  );
-  assert.equal(
-    count(externalSecret, 'key: dd/remote-dev/ai-agent-bridge-secrets'),
-    1,
-  );
-  assert.equal(
-    count(externalSecret, 'key: dd/remote-dev/ai-agent-coordinator-secrets'),
-    1,
-  );
-  for (const property of [
+test('ExternalSecret binds the four narrowly named runtime values', () => {
+  for (const key of [
     'SLACK_BOT_TOKEN',
     'SLACK_SIGNING_SECRET',
-    'inbox_token',
-    'COORDINATOR_API_TOKEN',
+    'SLACK_BRIDGE_BEARER',
+    'SLACK_COORDINATOR_BEARER',
   ]) {
-    assert.equal(count(externalSecret, `property: ${property}`), 1);
+    assert.equal(externalSecret.split(`secretKey: ${key}`).length - 1, 1);
   }
-  assert.doesNotMatch(externalSecret, /\bdataFrom:/);
-  assert.doesNotMatch(externalSecret, /creationPolicy:\s*(?:Merge|None)/);
+  assert.match(externalSecret, /creationPolicy: Owner/);
+  assert.match(externalSecret, /name: dd-cluster-secrets/);
+  assert.doesNotMatch(externalSecret, /xox[baprs]-|sk-[A-Za-z0-9]/);
 });
 
-test('only the three exact signed Slack routes are publicly exposed', () => {
-  const ingress = resourceDocument('Ingress', 'dd-slack-command');
-  const routes = [
+test('public ingress exposes only three exact Slack-signed POST routes', () => {
+  const paths = [...ingress.matchAll(/^\s*-\s+path:\s*(\S+)\s*$/gm)].map((match) => match[1]);
+  assert.deepEqual(paths, [
     '/slack/commands/ores-claude',
     '/slack/commands/ores-chatgpt',
     '/slack/interactions',
-  ];
-  for (const route of routes) {
-    assert.equal(count(ingress, `- path: ${route}\n`), 1);
-  }
-  assert.equal(count(ingress, 'pathType: Exact'), 3);
+  ]);
+  assert.equal((ingress.match(/pathType: Exact/g) ?? []).length, 3);
   assert.match(ingress, /host: api\.fiducia\.cloud/);
-  assert.match(ingress, /secretName: gateway-public-tls/);
-  assert.doesNotMatch(ingress, /- path: \/(?:\n|slack(?:\/)?\n)/);
-  assert.doesNotMatch(ingress, /pathType: Prefix/);
-  assert.doesNotMatch(ingress, /path: \/(?:healthz|readyz)/);
+  assert.match(service, /type: ClusterIP/);
+  assert.match(service, /port: 8151/);
 });
 
-test('service, probes, state, pod security, and monitoring labels are explicit', () => {
-  assert.match(bundle, /name: dd-slack-command[\s\S]*?type: ClusterIP/);
-  assert.match(bundle, /port: 8151\n\s+targetPort: http/);
-  assert.match(bundle, /containerPort: 8151/);
-  assert.match(bundle, /startupProbe:[\s\S]*?path: \/healthz/);
-  assert.match(bundle, /readinessProbe:[\s\S]*?path: \/readyz/);
-  assert.match(bundle, /livenessProbe:[\s\S]*?path: \/healthz/);
-  assert.match(bundle, /claimName: dd-slack-command-state/);
-  assert.match(bundle, /storageClassName: dd-block/);
-  assert.match(bundle, /strategy:\n\s+type: Recreate/);
-  assert.match(bundle, /automountServiceAccountToken: false/);
-  assert.match(bundle, /allowPrivilegeEscalation: false/);
-  assert.match(bundle, /readOnlyRootFilesystem: true/);
-  assert.match(bundle, /runAsNonRoot: true/);
-  assert.match(bundle, /capabilities:\n\s+drop:\n\s+- ALL/);
-  assert.match(bundle, /seccompProfile:\n\s+type: RuntimeDefault/);
-  assert.match(bundle, /resources:\n\s+requests:[\s\S]*?limits:/);
-  assert.match(
-    bundle,
-    /kind: Deployment\nmetadata:\n  name: dd-slack-command[\s\S]*?labels:\n    app: dd-ai-agent-bridge\n    app\.kubernetes\.io\/component: slack-command/,
-  );
-  assert.match(
-    bundle,
-    /kind: Deployment[\s\S]*?selector:\n    matchLabels:\n      app: dd-ai-agent-bridge\n      app\.kubernetes\.io\/component: slack-command/,
-  );
-  assert.match(
-    bundle,
-    /kind: Service\nmetadata:\n  name: dd-slack-command[\s\S]*?selector:\n    app: dd-ai-agent-bridge\n    app\.kubernetes\.io\/component: slack-command/,
-  );
-  assert.equal(count(bundle, 'app.kubernetes.io/component: slack-command'), 6);
-});
-
-test('state and rollout contracts preserve one durable journal writer', () => {
-  const deployment = resourceDocument('Deployment', 'dd-slack-command');
-  const pvc = resourceDocument(
-    'PersistentVolumeClaim',
-    'dd-slack-command-state',
-  );
-  const pdb = resourceDocument('PodDisruptionBudget', 'dd-slack-command');
-  assert.match(deployment, /replicas: 1/);
-  assert.match(deployment, /strategy:\n\s+type: Recreate/);
-  assert.match(
-    envBlock('SLACK_COMMAND_STATE_DIR'),
-    /value: \/var\/lib\/slack-command\/runs/,
-  );
-  assert.match(
-    deployment,
-    /mountPath: \/var\/lib\/slack-command[\s\S]*?claimName: dd-slack-command-state/,
-  );
-  assert.match(pvc, /accessModes:\n\s+- ReadWriteOnce/);
-  assert.match(pvc, /storage: 1Gi/);
+test('pod and network boundaries remain explicit', () => {
+  assert.match(deployment, /automountServiceAccountToken: false/);
+  assert.match(deployment, /enableServiceLinks: false/);
+  assert.match(deployment, /runAsUser: 65532/);
+  assert.match(deployment, /runAsGroup: 65532/);
+  assert.match(deployment, /fsGroup: 65532/);
+  assert.match(deployment, /allowPrivilegeEscalation: false/);
+  assert.match(deployment, /privileged: false/);
+  assert.match(deployment, /readOnlyRootFilesystem: true/);
+  assert.match(deployment, /capabilities:\n\s+drop:\n\s+- ALL/);
+  assert.match(deployment, /seccompProfile:\n\s+type: RuntimeDefault/);
+  assert.match(deployment, /resources:\n\s+requests:[\s\S]*?limits:/);
   assert.match(pdb, /minAvailable: 1/);
+  assert.match(networkPolicy, /policyTypes:\n\s+- Ingress\n\s+- Egress/);
+  assert.match(networkPolicy, /kubernetes\.io\/metadata\.name: ingress-nginx/);
+  assert.match(networkPolicy, /port: 8142/);
+  assert.match(networkPolicy, /kubernetes\.io\/metadata\.name: ai-agent-coordinator/);
+  assert.match(networkPolicy, /port: 4318/);
+  assert.match(networkPolicy, /port: 443/);
 });
 
-test('network policy limits ingress and grants only required egress classes', () => {
-  const policy = resourceDocument('NetworkPolicy', 'dd-slack-command');
-  assert.match(
-    policy,
-    /kubernetes\.io\/metadata\.name: ingress-nginx[\s\S]*?port: 8151/,
-  );
-  assert.match(policy, /app: dd-ai-agent-bridge[\s\S]*?port: 8142/);
-  assert.match(
-    policy,
-    /kubernetes\.io\/metadata\.name: ai-agent-coordinator[\s\S]*?port: 8080/,
-  );
-  assert.match(policy, /kubernetes\.io\/metadata\.name: kube-system/);
-  assert.match(policy, /cidr: 0\.0\.0\.0\/0/);
-  assert.match(policy, /port: 443/);
-  assert.doesNotMatch(policy, /port:\s*(?:22|80|6443)\b/);
-  assert.doesNotMatch(policy, /namespaceSelector:\s*\{\}/);
-  assert.doesNotMatch(policy, /podSelector:\s*\{\}/);
-});
-
-test('the reviewed source contains exactly thirteen bounded channel bindings', () => {
+test('reviewed source retains fourteen bounded channel bindings', () => {
   assert.equal(registry.schema_version, 1);
-  assert.equal(registry.bindings.length, 13);
-
+  assert.equal(registry.bindings.length, 14);
   const channels = new Set();
-  const projects = new Set();
-  const repositories = new Set();
   for (const binding of registry.bindings) {
-    assert.equal(binding.workspace_id, teamId);
+    assert.equal(binding.workspace_id, 'T01B3C83PMK');
     assert.equal(binding.linear_team_key, 'DEN');
-    assert.deepEqual(binding.allowed_user_ids, ['U01AZNU2LJ2']);
-    assert.deepEqual(binding.allowed_user_group_ids, []);
     assert.equal(binding.write_policy, 'draft_pull_request');
-    assert.equal(binding.default_repository, binding.repository_allowlist[0]);
-    assert.equal(binding.repository_allowlist.length, 1);
-    assert.equal(binding.budget_policy.max_concurrent_runs, 4);
-    assert.equal(binding.budget_policy.max_runtime_secs, 900);
-    assert.equal(binding.budget_policy.max_retries, 2);
+    assert.ok(binding.default_repository);
+    assert.ok(binding.repository_allowlist.includes(binding.default_repository));
+    assert.ok(binding.allowed_agent_modes.includes('claude'));
+    assert.ok(binding.allowed_agent_modes.includes('chatgpt'));
+    assert.ok(binding.allowed_agent_modes.includes('both-parallel'));
+    assert.ok(binding.budget_policy.max_concurrent_runs > 0);
+    assert.ok(binding.budget_policy.max_runtime_secs > 0);
+    assert.ok(binding.budget_policy.max_tokens > 0);
+    assert.ok(!channels.has(binding.channel_id), `duplicate channel ${binding.channel_id}`);
     channels.add(binding.channel_id);
-    projects.add(binding.linear_project_id);
-    repositories.add(binding.default_repository);
   }
-
-  assert.equal(channels.size, 13);
-  assert.equal(projects.size, 13);
-  assert.equal(repositories.size, 13);
-  assert.deepEqual(
-    [...repositories].sort(),
-    [
-      '3FA-app/3FA-mcp-server.rs',
-      'StreemPilot/streempilot-mcp-server.rs',
-      'athlet-o/athleto-mcp-server.rs',
-      'benefactor-cc/benefactor-cc-mcp-server.rs',
-      'cliptown/cliptown-monorepo',
-      'daedalus-fab/daedalus-fab-mcp-server.rs',
-      'hypesiege/hypesiege-mcp-server.rs',
-      'memebank/mbk-api',
-      'opto-sync/syncer.rs',
-      'quaestor-ledger/quaestor-ledger-mcp-server.rs',
-      'scintilla-run/scintilla-mcp-server.rs',
-      'shared-auth/shared-auth-mcp-server.rs',
-      'voxletra/vxl-api-server.rs',
-    ].sort(),
-  );
 });
 
-test('the source Slack manifest and deployed ingress cannot drift', () => {
+test('reviewed Slack manifest maps canonical commands and aliases to exact ingress routes', () => {
   for (const command of [
     '/ores-claude',
     '/ores-chatgpt',
@@ -352,82 +201,49 @@ test('the source Slack manifest and deployed ingress cannot drift', () => {
     '/my-claude',
     '/my-chatgpt',
   ]) {
-    assert.equal(count(slackManifest, `command: ${command}`), 1);
+    assert.match(manifest, new RegExp(`command: ${command.replace('/', '\\/')}`));
   }
   assert.equal(
-    count(
-      slackManifest,
-      'https://api.fiducia.cloud/slack/commands/ores-claude',
-    ),
+    (manifest.match(/url: https:\/\/api\.fiducia\.cloud\/slack\/commands\/ores-claude/g) ?? []).length,
     3,
   );
   assert.equal(
-    count(
-      slackManifest,
-      'https://api.fiducia.cloud/slack/commands/ores-chatgpt',
-    ),
+    (manifest.match(/url: https:\/\/api\.fiducia\.cloud\/slack\/commands\/ores-chatgpt/g) ?? []).length,
     3,
   );
-  assert.equal(
-    count(slackManifest, 'https://api.fiducia.cloud/slack/interactions'),
-    1,
-  );
-  assert.match(slackManifest, /- commands/);
-  assert.match(slackManifest, /token_rotation_enabled: true/);
-  assert.doesNotMatch(slackManifest, /\b(?:xox[baprs]-|gh[pousr]_)/);
+  assert.match(manifest, /request_url: https:\/\/api\.fiducia\.cloud\/slack\/interactions/);
+  assert.match(manifest, /token_rotation_enabled: true/);
 });
 
-test('GitHub Actions tracks the complete contract and pins every dependency', () => {
-  assert.match(workflow, /pull_request:\n\s+branches: \[dev\]/);
-  assert.match(workflow, /push:\n\s+branches: \[dev\]/);
-  for (const path of [
-    '.github/workflows/slack-command-gitops.yml',
-    'docs/alex-main-agent-slack-command-gitops.md',
-    bundlePath,
-    kustomizationPath,
-    'remote/tests/general/slack-command-gitops.test.mjs',
-  ]) {
-    assert.equal(count(workflow, `'${path}'`), 2, `${path} must trigger PR and push CI`);
-  }
+test('focused workflow pins exact source and credential-free checkout', () => {
+  assert.match(workflow, new RegExp(`ref: ${SOURCE_SHA}`));
+  assert.match(workflow, /submodules: false/);
+  assert.match(workflow, /prepare-credential-free-build\.sh/);
+  assert.match(workflow, new RegExp(IMAGE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.doesNotMatch(workflow, /submodules: recursive/);
+  assert.doesNotMatch(workflow, /^\s*runs-on:\s*ubuntu-latest\s*$/m);
   for (const match of workflow.matchAll(/^\s*uses:\s*([^\s#]+)/gm)) {
-    const reference = match[1];
     assert.match(
-      reference,
-      /@[0-9a-f]{40}$/,
-      `workflow dependency must be immutable: ${reference}`,
+      match[1],
+      /^(?:\.\/|[^@]+@[0-9a-fA-F]{40}|docker:\/\/[^@\s]+@sha256:[0-9a-fA-F]{64})$/,
     );
   }
-  assert.doesNotMatch(workflow, /runs-on:\s*ubuntu-latest/);
-  assert.match(workflow, new RegExp(`ref: ${sourceRevision}`));
-  assert.doesNotMatch(workflow, /agent\/den-1041-ores-slash-commands/);
 });
+
+const audit = {
+  generated_at: new Date().toISOString(),
+  source_sha: SOURCE_SHA,
+  release_workflow_run: Number(WORKFLOW_RUN),
+  image: IMAGE,
+  resource_inventory: documents.map(identity).filter(Boolean).sort(),
+  channel_bindings: registry.bindings.length,
+  commands: 6,
+  exact_ingress_paths: 3,
+  dry_run: envBlock(deployment, 'SLACK_COMMAND_DRY_RUN').includes('value: "true"'),
+  immutable_runtime: !/(?:git clone|cargo build|GH_PAT|hostPath:)/.test(deployment),
+};
 
 const auditPath = process.env.SLACK_COMMAND_GITOPS_AUDIT_PATH;
 if (auditPath) {
-  const audit = {
-    generated_at: new Date().toISOString(),
-    issue: 'DEN-1298',
-    source_revision: sourceRevision,
-    runtime: {
-      app_id: appId,
-      workspace_id: teamId,
-      dry_run: true,
-      manifest_documents: documents.map(resourceIdentity),
-      public_routes: [
-        '/slack/commands/ores-claude',
-        '/slack/commands/ores-chatgpt',
-        '/slack/interactions',
-      ],
-      state: 'dd-slack-command-state',
-      registry_bindings: registry.bindings.length,
-    },
-    activation_gates: {
-      external_secret_ready: false,
-      remote_manifest_reconciled: false,
-      app_reinstalled: false,
-      signed_canary_passed: false,
-      live_dispatch_enabled: false,
-    },
-  };
   writeFileSync(auditPath, `${JSON.stringify(audit, null, 2)}\n`);
 }

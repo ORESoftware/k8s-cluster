@@ -1,0 +1,326 @@
+name: Scheduled task digest bootstrap canary
+
+on:
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - .github/workflows/scheduled-task-digest-bootstrap-canary.yml
+  push:
+    branches:
+      - dev
+    paths:
+      - .github/workflows/scheduled-task-digest-bootstrap-canary.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: scheduled-task-digest-bootstrap-canary
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate bootstrap contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate fixed production contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test '${{ github.event.repository.full_name }}' = 'ORESoftware/k8s-cluster'
+          test '${{ github.base_ref || github.ref_name }}' = 'dev'
+
+  bootstrap-and-canary:
+    name: Bootstrap AWS Application and send one labeled canary
+    needs: validate
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.0.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Apply the child Application and run a real mail canary
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${INSTANCE_ID:-}" || {
+            echo 'AWS_SSM_INSTANCE_ID is required.' >&2
+            exit 1
+          }
+
+          python3 - <<'PY' >"${RUNNER_TEMP}/scheduled-task-digest-bootstrap-ssm.json"
+          import json
+          import os
+          import textwrap
+
+          run_id = os.environ["GITHUB_RUN_ID"]
+          run_attempt = os.environ["GITHUB_RUN_ATTEMPT"]
+          job_name = f"dd-scheduled-task-digest-canary-{run_id}-{run_attempt}"
+          script = textwrap.dedent('''\
+          set -euo pipefail
+          export KUBECONFIG=/etc/kubernetes/admin.conf
+
+          cat <<'APP' | kubectl -n argocd apply -f -
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: dd-scheduled-task-digest
+            namespace: argocd
+            labels:
+              app.kubernetes.io/name: dd-scheduled-task-digest
+              app.kubernetes.io/component: scheduler
+              app.kubernetes.io/part-of: project-automation
+            annotations:
+              denman.linear.app/issue: DEN-3562
+          spec:
+            project: default
+            source:
+              repoURL: https://github.com/ORESoftware/k8s-cluster.git
+              targetRevision: dev
+              path: remote/argocd/scheduled-task-digest
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: default
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+                - CreateNamespace=true
+                - ServerSideApply=true
+          APP
+
+          kubectl -n argocd annotate application dd-scheduled-task-digest argocd.argoproj.io/refresh=hard --overwrite >/dev/null
+          for attempt in $(seq 1 120); do
+            sync_status="$(kubectl -n argocd get application dd-scheduled-task-digest -o jsonpath='{.status.sync.status}' 2>/dev/null || true)"
+            health_status="$(kubectl -n argocd get application dd-scheduled-task-digest -o jsonpath='{.status.health.status}' 2>/dev/null || true)"
+            if [ "$sync_status" = "Synced" ] && [ "$health_status" = "Healthy" ] && kubectl -n default get cronjob dd-scheduled-task-digest >/dev/null 2>&1; then
+              break
+            fi
+            if [ "$attempt" -eq 120 ]; then
+              kubectl -n argocd get application dd-scheduled-task-digest -o yaml >&2 || true
+              kubectl -n default get cronjob dd-scheduled-task-digest -o yaml >&2 || true
+              exit 1
+            fi
+            sleep 5
+          done
+
+          echo "stage=application-ready sync=${sync_status} health=${health_status}"
+          cron_json=/tmp/dd-scheduled-task-digest-cronjob.json
+          kubectl -n default get cronjob dd-scheduled-task-digest -o json >"$cron_json" || {
+            echo "stage=cronjob-read result=missing" >&2
+            exit 31
+          }
+          jq -e '
+            .spec.schedule == "0 7 * * *" and
+            .spec.timeZone == "America/Chicago" and
+            .spec.suspend == false and
+            .spec.concurrencyPolicy == "Forbid" and
+            .metadata.annotations["dd.dev/recipient"] == "alexander.d.mills@gmail.com"
+          ' "$cron_json" >/dev/null || {
+            echo "stage=cronjob-contract result=mismatch" >&2
+            jq '{name:.metadata.name,schedule:.spec.schedule,timeZone:.spec.timeZone,suspend:.spec.suspend,concurrencyPolicy:.spec.concurrencyPolicy,recipient:.metadata.annotations["dd.dev/recipient"]}' "$cron_json" >&2 || true
+            exit 32
+          }
+          echo "stage=cronjob-contract result=ok"
+
+          if ! kubectl get crd externalsecrets.external-secrets.io >/dev/null 2>&1; then
+            echo "stage=external-secrets result=crd-missing" >&2
+            exit 33
+          fi
+          if ! kubectl get clustersecretstore dd-cluster-secrets >/dev/null 2>&1; then
+            echo "stage=external-secrets result=cluster-store-missing" >&2
+            exit 34
+          fi
+          cat <<'SECRETS' | kubectl apply -f - >/dev/null
+          apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: dd-agent-secrets
+            namespace: default
+          spec:
+            refreshInterval: 15m
+            secretStoreRef:
+              kind: ClusterSecretStore
+              name: dd-cluster-secrets
+            target:
+              name: dd-agent-secrets
+              creationPolicy: Owner
+            dataFrom:
+              - extract:
+                  key: dd/remote-dev/agent-secrets
+          ---
+          apiVersion: external-secrets.io/v1
+          kind: ExternalSecret
+          metadata:
+            name: dd-email-sms-contact-secrets
+            namespace: default
+          spec:
+            refreshInterval: 15m
+            secretStoreRef:
+              kind: ClusterSecretStore
+              name: dd-cluster-secrets
+            target:
+              name: dd-email-sms-contact-secrets
+              creationPolicy: Owner
+            dataFrom:
+              - extract:
+                  key: dd/remote-dev/email-sms-contact-secrets
+          SECRETS
+
+          secrets_ready=false
+          for attempt in $(seq 1 120); do
+            agent_auth="$(kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.SERVER_AUTH_SECRET}' 2>/dev/null || true)"
+            sendgrid="$(kubectl -n default get secret dd-email-sms-contact-secrets -o jsonpath='{.data.SENDGRID_API_KEY}' 2>/dev/null || true)"
+            if [ -n "$agent_auth" ] && [ -n "$sendgrid" ]; then
+              secrets_ready=true
+              break
+            fi
+            sleep 5
+          done
+          if [ "$secrets_ready" != true ]; then
+            echo "stage=external-secrets result=keys-not-ready" >&2
+            kubectl -n default get externalsecret dd-agent-secrets dd-email-sms-contact-secrets -o wide >&2 || true
+            exit 35
+          fi
+          echo "stage=external-secrets result=ok"
+
+          if ! kubectl -n argocd get application dd-next-runtime >/dev/null 2>&1; then
+            cat <<'RUNTIME' | kubectl -n argocd apply -f - >/dev/null
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: dd-next-runtime
+            namespace: argocd
+          spec:
+            project: default
+            source:
+              repoURL: https://github.com/ORESoftware/k8s-cluster.git
+              targetRevision: dev
+              path: remote/argocd/dd-next-runtime
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: default
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+                - CreateNamespace=true
+          RUNTIME
+          fi
+          kubectl -n argocd annotate application dd-next-runtime argocd.argoproj.io/refresh=hard --overwrite >/dev/null || true
+          kubectl -n default get service dd-email-sms-contact-rs >/dev/null || {
+            echo "stage=mail-service result=service-missing" >&2
+            kubectl -n argocd get application dd-next-runtime -o wide >&2 || true
+            exit 36
+          }
+          kubectl -n default rollout status deployment/dd-email-sms-contact-rs --timeout=900s >/dev/null || {
+            echo "stage=mail-service result=deployment-not-ready" >&2
+            kubectl -n default get deployment dd-email-sms-contact-rs -o wide >&2 || true
+            kubectl -n default get pods -l app=dd-email-sms-contact-rs -o wide >&2 || true
+            exit 37
+          }
+          endpoints="$(kubectl -n default get endpoints dd-email-sms-contact-rs -o jsonpath='{range .subsets[*].addresses[*]}{.ip}{" "}{end}' 2>/dev/null || true)"
+          if [ -z "$endpoints" ]; then
+            echo "stage=mail-service result=no-ready-endpoint" >&2
+            exit 38
+          fi
+          echo "stage=mail-service result=ready endpoints=$(wc -w <<<"$endpoints")"
+
+          kubectl -n default create job --from=cronjob/dd-scheduled-task-digest __JOB_NAME__ --dry-run=client -o json \
+            | jq '
+                .metadata.labels = ((.metadata.labels // {}) + {"dd.dev/manual-canary":"true"}) |
+                .spec.template.metadata.labels = ((.spec.template.metadata.labels // {}) + {"dd.dev/manual-canary":"true"}) |
+                .spec.template.spec.containers[0].env = (
+                  (.spec.template.spec.containers[0].env // [])
+                  | map(select(.name != "DRY_RUN" and .name != "FORCE_SEND" and .name != "RUN_MODE"))
+                  + [
+                      {"name":"DRY_RUN","value":"0"},
+                      {"name":"FORCE_SEND","value":"1"},
+                      {"name":"RUN_MODE","value":"manual-canary"}
+                    ]
+                )
+              ' \
+            | kubectl -n default apply -f - >/dev/null
+
+          terminal=""
+          for attempt in $(seq 1 180); do
+            complete="$(kubectl -n default get job __JOB_NAME__ -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' 2>/dev/null || true)"
+            failed="$(kubectl -n default get job __JOB_NAME__ -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}' 2>/dev/null || true)"
+            if [ "$complete" = "True" ]; then terminal=complete; break; fi
+            if [ "$failed" = "True" ]; then terminal=failed; break; fi
+            sleep 5
+          done
+
+          logs="$(kubectl -n default logs job/__JOB_NAME__ --all-containers=true 2>&1 || true)"
+          printf '%s\n' "$logs"
+          if [ "$terminal" != "complete" ]; then
+            kubectl -n default get job __JOB_NAME__ -o wide >&2 || true
+            kubectl -n default get pods -l job-name=__JOB_NAME__ -o wide >&2 || true
+            exit 1
+          fi
+          final_line="$(printf '%s\n' "$logs" | tail -n 1)"
+          jq -e '
+            .event == "scheduled_task_digest_complete" and
+            .status == "manual_canary_sent" and
+            .logicalDate != null
+          ' <<<"$final_line" >/dev/null
+          kubectl -n default get cronjob dd-scheduled-task-digest -o json \
+            | jq '{name:.metadata.name,schedule:.spec.schedule,timeZone:.spec.timeZone,suspend:.spec.suspend,lastScheduleTime:.status.lastScheduleTime}'
+          ''').replace('__JOB_NAME__', job_name)
+          print(json.dumps({"commands": [script]}))
+          PY
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --parameters "file://${RUNNER_TEMP}/scheduled-task-digest-bootstrap-ssm.json" \
+              --query Command.CommandId \
+              --output text
+          )"
+          test -n "$command_id"
+          echo "SSM command: $command_id"
+
+          status=Pending
+          for attempt in $(seq 1 240); do
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query Status \
+                --output text 2>/dev/null || true
+            )"
+            case "$status" in
+              Success|Cancelled|Failed|TimedOut|Cancelling) break ;;
+            esac
+            sleep 5
+          done
+
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json >"${RUNNER_TEMP}/scheduled-task-digest-bootstrap-evidence.json"
+          jq -r '.Stdout' "${RUNNER_TEMP}/scheduled-task-digest-bootstrap-evidence.json"
+          jq -r '.Stderr' "${RUNNER_TEMP}/scheduled-task-digest-bootstrap-evidence.json" >&2
+          jq -e '.Status == "Success"' "${RUNNER_TEMP}/scheduled-task-digest-bootstrap-evidence.json" >/dev/null
+
+      - name: Upload bootstrap and delivery evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scheduled-task-digest-bootstrap-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scheduled-task-digest-bootstrap-evidence.json
+          retention-days: 14
+          if-no-files-found: warn

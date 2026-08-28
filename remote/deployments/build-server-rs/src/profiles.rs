@@ -38,6 +38,7 @@ const RUST_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
     image: RUST_IMAGE,
     subdirectory: ".",
     script: r#"set -euo pipefail
+export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 crate_dir=.
 if [ ! -f "$crate_dir/Cargo.toml" ]; then
   if [ -f remote/deployments/gha-clone-server-rs/Cargo.toml ]; then

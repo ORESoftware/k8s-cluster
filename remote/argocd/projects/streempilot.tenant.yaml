@@ -1,0 +1,51 @@
+# Platform-owned tenancy boundary for StreemPilot. The HTTP control plane
+# runs here; TURN/SFU/media workers remain separate workloads.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: streempilot
+  labels:
+    app.kubernetes.io/part-of: streempilot
+    kubernetes.io/metadata.name: streempilot
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: streempilot-quota
+  namespace: streempilot
+spec:
+  hard:
+    requests.cpu: "8"
+    requests.memory: 16Gi
+    limits.cpu: "24"
+    limits.memory: 32Gi
+    pods: "60"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: streempilot-limits
+  namespace: streempilot
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "1"
+        memory: 1Gi
+      defaultRequest:
+        cpu: 150m
+        memory: 192Mi
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: streempilot-default-deny-ingress
+  namespace: streempilot
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress

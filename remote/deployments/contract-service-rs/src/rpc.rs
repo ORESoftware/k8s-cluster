@@ -37,7 +37,11 @@ pub(crate) fn signed_transaction_bytes_from_rpc_params(params: &Value) -> Result
     Ok(bytes)
 }
 
-pub(crate) async fn solana_rpc(state: &AppState, method: &str, params: Value) -> Result<Value, String> {
+pub(crate) async fn solana_rpc(
+    state: &AppState,
+    method: &str,
+    params: Value,
+) -> Result<Value, String> {
     record_rpc_request(&state.metrics, method);
     let _rpc_permit = state.rpc_slots.clone().try_acquire_owned().map_err(|_| {
         record_rpc_error(&state.metrics, method);

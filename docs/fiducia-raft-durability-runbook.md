@@ -1,6 +1,7 @@
 # Fiducia Raft durability, migration, backup, and restore runbook
 
-Status: PVC contract implemented; production migration and clean-room restore evidence still required.  
+Status: PVC contract implemented; production migration and clean-room restore evidence still required.
+
 Tracks: DEN-437
 
 ## Storage contract

@@ -1,0 +1,49 @@
+name: CI profile runner contract
+
+on:
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - .github/workflows/ci-profile-runner-contract.yml
+      - remote/deployments/ci-profile-runner-rs/**
+      - remote/argocd/dd-next-runtime/dd-ci-profile-runner.*.yaml
+      - remote/argocd/dd-next-runtime/dd-build-server.configmap.yaml
+      - remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml
+      - remote/argocd/dd-next-runtime/dd-build-server.networkpolicy.yaml
+      - remote/argocd/dd-next-runtime/kustomization.yaml
+      - remote/tests/general/ci-profile-runner-contract.test.mjs
+  push:
+    branches: [main, dev]
+    paths:
+      - .github/workflows/ci-profile-runner-contract.yml
+      - remote/deployments/ci-profile-runner-rs/**
+      - remote/argocd/dd-next-runtime/dd-ci-profile-runner.*.yaml
+      - remote/argocd/dd-next-runtime/dd-build-server.configmap.yaml
+      - remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml
+      - remote/argocd/dd-next-runtime/dd-build-server.networkpolicy.yaml
+      - remote/argocd/dd-next-runtime/kustomization.yaml
+      - remote/tests/general/ci-profile-runner-contract.test.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-profile-runner-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          components: rustfmt
+      - name: Check isolated runner formatting
+        run: rustfmt --edition 2021 --check remote/deployments/ci-profile-runner-rs/src/main.rs
+      - name: Run privilege-boundary contract
+        run: node --test remote/tests/general/ci-profile-runner-contract.test.mjs
