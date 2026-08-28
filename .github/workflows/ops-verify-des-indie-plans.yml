@@ -8,6 +8,7 @@ on:
       - scripts/ops/run_des_indie_browser_workflows.sh
       - remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml
       - remote/deployments/build-server-rs/src/gha_workflow.rs
+      - remote/deployments/build-server-rs/src/workflow_yaml.rs
       - remote/deployments/build-server-rs/src/profiles.rs
   workflow_dispatch:
 
