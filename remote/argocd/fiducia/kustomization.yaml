@@ -3,6 +3,7 @@
 #   control plane: fiducia-brain (StatefulSet x3, own Raft, leader reconciles)
 #   router:       fiducia-load-balance (Deployment x1)
 #   website:      fiducia-backend (Deployment + HPA, autoscaled)
+#   revocation:   fiducia-revocation-admin (immutable Deployment x1)
 #
 # Wired via remote/argocd/clusters/aws/applications.yaml (path remote/argocd/
 # fiducia) and clusters/hetzner/applications.yaml (path remote/argocd/
@@ -21,6 +22,8 @@ resources:
   # FID-SEC-1 / DEN-1240 phase 1: internal PKI (inert until the LB TLS cutover).
   - fiducia-internal-ca.certificate.yaml
   - fiducia-load-balance-tls.certificate.yaml
+  - fiducia-revocation-secrets.externalsecret.yaml
+  - fiducia-revocation-registry.externalsecret.yaml
   - fiducia-node.statefulset.yaml
   - fiducia-node.service.yaml
   - fiducia-node.networkpolicy.yaml
@@ -32,6 +35,8 @@ resources:
   - fiducia-backend.networkpolicy.yaml
   - fiducia-auth.deployment.yaml
   - fiducia-auth.networkpolicy.yaml
+  - fiducia-revocation-admin.deployment.yaml
+  - fiducia-revocation-admin.networkpolicy.yaml
   - fiducia-admin.deployment.yaml
   - fiducia-admin.networkpolicy.yaml
 
@@ -39,6 +44,12 @@ resources:
 # optional. Keep the source manifests readable while making the rendered GitOps
 # contract fail closed after the cloud-bootstrap ExternalSecrets reconcile.
 patches:
+  - path: fiducia-node.durable-storage.patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: StatefulSet
+      name: fiducia-node
   - path: fiducia-node.required-secrets.patch.yaml
     target:
       group: apps
@@ -63,3 +74,9 @@ patches:
       version: v1
       kind: Deployment
       name: fiducia-backend
+  - path: fiducia-load-balance.revocation.patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: fiducia-load-balance

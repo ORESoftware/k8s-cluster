@@ -417,6 +417,23 @@ async function persistContact(record) {
     else counters.duplicateLeads += 1;
     const leadId = inserted.rows[0]?.id || existing.rows[0]?.id || null;
 
+
+    // benefactor-primary-phone-persistence-v1
+    // Keep the first verified E.164 business phone, but never overwrite an
+    // operator-corrected or previously verified value.
+    if (leadId && record.phones[0]) {
+      await db.query(
+        `UPDATE benefactor.benefactor_leads
+            SET primary_phone = CASE
+                  WHEN COALESCE(BTRIM(primary_phone), '') = '' THEN $2
+                  ELSE primary_phone
+                END,
+                updated_at = now()
+          WHERE id = $1`,
+        [leadId, record.phones[0]],
+      );
+    }
+
     await db.query(
       `insert into benefactor.benefactor_leads_throttling
          (benefactor_lead_id, email, request_type, last_request_at, next_allowed_at,

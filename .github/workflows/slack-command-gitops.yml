@@ -1,0 +1,152 @@
+name: Slack command GitOps contract
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.github/workflows/slack-command-gitops.yml'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml'
+      - 'remote/argocd/dd-next-runtime/kustomization.yaml'
+      - 'remote/tests/general/slack-command-gitops.test.mjs'
+      - 'remote/deployments/ai-agent-bridge'
+      - 'docs/ai-agent-bridge-immutable-rollout-2026-08-07.md'
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/slack-command-gitops.yml'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml'
+      - 'remote/argocd/dd-next-runtime/kustomization.yaml'
+      - 'remote/tests/general/slack-command-gitops.test.mjs'
+      - 'remote/deployments/ai-agent-bridge'
+      - 'docs/ai-agent-bridge-immutable-rollout-2026-08-07.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: slack-command-gitops-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Exact source image routing and rendered GitOps contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      BRIDGE_SOURCE_SHA: c3e54e6cd0c6d56e3d2ed32902228d974e550a3f
+      BRIDGE_IMAGE: ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:6b7e447a9989fa127ad4b0b3edc51fcd37a6b94a96bcf61b42c22d2641bf0ea8
+      SLACK_COMMAND_IMAGE: ghcr.io/oresoftware/fiducia-slack-command@sha256:01f80fbd4d3ba5226b4abdb7f5e603538924edb48e79e72b0af43246624900cb
+      EXPECTED_SHARED_COMMIT: c8bdc06d74746acc6439f9527ebd02697fdf028b
+    steps:
+      - name: Checkout k8s-cluster without private gitlinks
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Checkout exact reviewed bridge source without private gitlinks
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/ai-agent-bridge.rs
+          ref: c3e54e6cd0c6d56e3d2ed32902228d974e550a3f
+          path: .tmp/ai-agent-bridge
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Verify source gitlink and immutable image refs
+        shell: bash
+        run: |
+          set -euo pipefail
+          gitlink_sha="$(git ls-tree HEAD remote/deployments/ai-agent-bridge | awk '$2 == "commit" {print $3}')"
+          test "${gitlink_sha}" = "${BRIDGE_SOURCE_SHA}"
+          grep -Fq "image: ${BRIDGE_IMAGE}" remote/argocd/dd-next-runtime/dd-ai-agent-bridge.deployment.yaml
+          grep -Fq "image: ${SLACK_COMMAND_IMAGE}" remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml
+          if grep -Eq 'git clone|cargo build|GH_PAT|hostPath:' remote/argocd/dd-next-runtime/dd-ai-agent-bridge.deployment.yaml; then
+            echo "::error::bridge Deployment contains a forbidden runtime build, PAT, or hostPath pattern"
+            exit 1
+          fi
+          slack_deployment="$(awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: dd-slack-command/{print}' remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml)"
+          if grep -Eq 'git clone|cargo build|GH_PAT|K8S_GIT_|CARGO_HOME|CARGO_TARGET_DIR' <<<"${slack_deployment}"; then
+            echo "::error::Slack command Deployment contains a forbidden runtime build or Git credential pattern"
+            exit 1
+          fi
+
+      - name: Prepare credential-free source build inputs
+        working-directory: .tmp/ai-agent-bridge
+        shell: bash
+        run: bash scripts/ci/prepare-credential-free-build.sh
+
+      - name: Reject mutable workflow dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('.github/workflows/slack-command-gitops.yml')
+          text = path.read_text(encoding='utf-8')
+          failures = []
+          for number, line in enumerate(text.splitlines(), 1):
+              match = re.match(r'^\s*uses:\s*([^\s#]+)', line)
+              if match:
+                  reference = match.group(1)
+                  git_action = re.fullmatch(r'[^@]+@[0-9a-fA-F]{40}', reference)
+                  docker_action = re.fullmatch(
+                      r'docker://[^@\s]+@sha256:[0-9a-fA-F]{64}',
+                      reference,
+                  )
+                  if not reference.startswith('./') and not (git_action or docker_action):
+                      failures.append(f'{path}:{number}: mutable action reference: {reference}')
+              if re.search(r'^\s*runs-on:\s*ubuntu-latest\s*$', line):
+                  failures.append(f'{path}:{number}: mutable runner label: ubuntu-latest')
+          for name, image in {
+              'BRIDGE_IMAGE': 'ghcr.io/oresoftware/fiducia-ai-agent-bridge',
+              'SLACK_COMMAND_IMAGE': 'ghcr.io/oresoftware/fiducia-slack-command',
+          }.items():
+              if not re.search(rf'{name}:\s+{re.escape(image)}@sha256:[0-9a-f]{{64}}', text):
+                  failures.append(f'{path}: {name} is not an exact digest')
+          if failures:
+              raise SystemExit('\n'.join(failures))
+          PY
+
+      - name: Validate focused workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: ./.github/workflows/slack-command-gitops.yml
+
+      - name: Run immutable Slack command GitOps contract
+        env:
+          SLACK_COMMAND_SOURCE_ROOT: ${{ github.workspace }}/.tmp/ai-agent-bridge
+          SLACK_COMMAND_GITOPS_AUDIT_PATH: ${{ runner.temp }}/slack-command-gitops-audit.json
+        run: node --test remote/tests/general/slack-command-gitops.test.mjs
+
+      - name: Setup Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.95.0'
+
+      - name: Compile-check exact Slack command source
+        run: cargo check --locked --manifest-path .tmp/ai-agent-bridge/Cargo.toml --bin fiducia-slack-command
+
+      - name: Setup kubectl 1.31.0
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+        with:
+          version: v1.31.0
+
+      - name: Build applied runtime overlay
+        run: kubectl kustomize remote/argocd/dd-next-runtime >/tmp/dd-next-runtime.yaml
+
+      - name: Upload immutable GitOps audit
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: slack-command-gitops-audit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/slack-command-gitops-audit.json
+          retention-days: 14
+          if-no-files-found: warn

@@ -1,0 +1,60 @@
+name: Bootstrap ORES OTEL repositories directly (one shot)
+run-name: Bootstrap ORES OTEL repositories directly from ${{ github.sha }}
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ops-bootstrap-ores-otel-direct-20260808.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-bootstrap-ores-otel-direct-20260808
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
+      GITHUB_REPOSITORY_ADMIN_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+          clean: true
+          show-progress: false
+
+      - name: Verify protected publisher and exact reviewed blobs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "${GH_TOKEN:-}" || {
+            echo 'Neither GITHUB_REPOSITORY_ADMIN_TOKEN nor ORG_GITOPS_TOKEN is configured.' >&2
+            exit 1
+          }
+          printf '::add-mask::%s\n' "$GH_TOKEN"
+          test "$(gh api user --jq .login)" = ORESoftware
+          test "$(git hash-object scripts/ops/bootstrap_ores_otel_repositories_20260808.sh)" = \
+            '49e194f206ce8bdacff6f643e021253b5b588f89'
+          test "$(git hash-object scripts/ops/bootstrap_ores_otel_repositories_20260808_part1.sh)" = \
+            '4bbf7f841a14421b3a6fb568f0a68eeb5c9e2adb'
+          test "$(git hash-object scripts/ops/bootstrap_ores_otel_repositories_20260808_part2.sh)" = \
+            '48faf2fbeb2f908ca0ec9a2e33f248eec1eed27a'
+          test "$(git hash-object scripts/ops/bootstrap_ores_otel_repositories_20260808_part3.sh)" = \
+            'bcb5db345e0b419cc07ad9c1039e250452c530ce'
+          for script in scripts/ops/bootstrap_ores_otel_repositories_20260808*.sh; do
+            bash -n "$script"
+          done
+
+      - name: Create, mirror, populate, and verify the ORES OTEL fleet
+        shell: bash
+        run: bash scripts/ops/bootstrap_ores_otel_repositories_20260808.sh

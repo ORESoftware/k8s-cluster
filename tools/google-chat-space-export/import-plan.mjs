@@ -21,6 +21,7 @@ function usage() {
   node tools/google-chat-space-export/import-plan.mjs \\
     --input <export-file-or-directory> [--input <another-path>] \\
     [--since <ISO-8601 timestamp>] \\
+    [--until <ISO-8601 timestamp>] \\
     [--existing-index <linear-issues.json>] \\
     [--project-map <project-map.json>] \\
     [--json <plan.json>] [--markdown <plan.md>]
@@ -31,6 +32,9 @@ Chat messages, then emits a dry-run plan. It never calls Linear or creates issue
 --since narrows the plan to messages created at or after the given instant. It can
 only narrow: a value earlier than ${START_TIME_INCLUSIVE} is rejected, so the fixed
 space/date boundary can never be widened from the command line.
+
+--until sets an exclusive upper boundary. Use it with --since to make a repeatable
+rolling window whose identity cannot change when newer messages arrive.
 `;
 }
 
@@ -38,6 +42,7 @@ function parseArgs(argv) {
   const options = {
     inputs: [],
     since: null,
+    until: null,
     existingIndex: null,
     projectMap: null,
     jsonOutput: null,
@@ -61,6 +66,9 @@ function parseArgs(argv) {
         break;
       case '--since':
         options.since = next();
+        break;
+      case '--until':
+        options.until = next();
         break;
       case '--existing-index':
         options.existingIndex = next();
@@ -104,6 +112,26 @@ function stableValue(value) {
 
 function stableStringify(value) {
   return JSON.stringify(stableValue(value));
+}
+
+export function computePlanId({
+  spaceName,
+  windowStartInclusive,
+  windowEndExclusive = null,
+  candidates,
+}) {
+  return `google-chat-import-plan:${sha256(
+    stableStringify({
+      spaceName,
+      windowStartInclusive,
+      windowEndExclusive,
+      candidates: candidates.map((candidate) => ({
+        key: candidate.candidateKey,
+        action: candidate.action,
+        messageCount: candidate.messageCount,
+      })),
+    }),
+  ).slice(0, 24)}`;
 }
 
 function normalizeWhitespace(value) {
@@ -163,6 +191,17 @@ export function resolveWindowStart(since) {
     );
   }
   return { iso: new Date(timestamp).toISOString(), timestamp, narrowed: timestamp > boundary };
+}
+
+export function resolveWindowEnd(until, startTimestamp) {
+  if (until === null || until === undefined || until === '') {
+    return { iso: null, timestamp: Number.POSITIVE_INFINITY, bounded: false };
+  }
+  const timestamp = validateTimestamp(until, '--until');
+  if (timestamp <= startTimestamp) {
+    throw new Error('--until must be later than the effective --since boundary');
+  }
+  return { iso: new Date(timestamp).toISOString(), timestamp, bounded: true };
 }
 
 function canonicalSourceKey(message) {
@@ -521,6 +560,7 @@ export function buildImportPlan(pageDocuments, options = {}) {
   const projectMap = normalizeProjectMap(options.projectMap);
   const existing = buildExistingIndex(options.existingIndex || []);
   const window = resolveWindowStart(options.since);
+  const windowEnd = resolveWindowEnd(options.until, window.timestamp);
   const uniqueMessages = new Map();
   const pageRuns = new Set();
   let rawMessageCount = 0;
@@ -558,8 +598,11 @@ export function buildImportPlan(pageDocuments, options = {}) {
       return time || left.sourceKey.localeCompare(right.sourceKey);
     });
 
-  const messages = window.narrowed
-    ? deduped.filter((message) => Date.parse(message.createTime) >= window.timestamp)
+  const messages = window.narrowed || windowEnd.bounded
+    ? deduped.filter((message) => {
+        const timestamp = Date.parse(message.createTime);
+        return timestamp >= window.timestamp && timestamp < windowEnd.timestamp;
+      })
     : deduped;
   const windowedOutMessages = deduped.length - messages.length;
 
@@ -663,9 +706,12 @@ export function buildImportPlan(pageDocuments, options = {}) {
     skippedNonActionable,
   };
 
-  const planId = `google-chat-import-plan:${sha256(
-    stableStringify(candidates.map((candidate) => ({ key: candidate.candidateKey, action: candidate.action }))),
-  ).slice(0, 24)}`;
+  const planId = computePlanId({
+    spaceName: EXPECTED_SPACE_NAME,
+    windowStartInclusive: window.iso,
+    windowEndExclusive: windowEnd.iso,
+    candidates,
+  });
 
   return {
     schemaVersion: PLAN_SCHEMA_VERSION,
@@ -676,6 +722,7 @@ export function buildImportPlan(pageDocuments, options = {}) {
       spaceId: EXPECTED_SPACE_ID,
       startTimeInclusive: START_TIME_INCLUSIVE,
       windowStartInclusive: window.iso,
+      ...(windowEnd.iso ? { windowEndExclusive: windowEnd.iso } : {}),
       runIds: [...pageRuns].sort(),
     },
     stats,
@@ -699,6 +746,9 @@ export function renderMarkdown(plan) {
     ...(plan.source.windowStartInclusive &&
     plan.source.windowStartInclusive !== plan.source.startTimeInclusive
       ? [`Window narrowed to messages at or after \`${plan.source.windowStartInclusive}\`.`]
+      : []),
+    ...(plan.source.windowEndExclusive
+      ? [`Window excludes messages at or after \`${plan.source.windowEndExclusive}\`.`]
       : []),
     '',
     '## Reconciliation summary',
@@ -765,7 +815,12 @@ export async function main(argv = process.argv.slice(2)) {
   }
   const existingIndex = options.existingIndex ? await readJson(options.existingIndex) : [];
   const projectMap = options.projectMap ? await readJson(options.projectMap) : null;
-  const plan = buildImportPlan(pageDocuments, { existingIndex, projectMap, since: options.since });
+  const plan = buildImportPlan(pageDocuments, {
+    existingIndex,
+    projectMap,
+    since: options.since,
+    until: options.until,
+  });
   const json = `${JSON.stringify(plan, null, 2)}\n`;
   const markdown = renderMarkdown(plan);
 

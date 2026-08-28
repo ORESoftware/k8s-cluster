@@ -1,0 +1,22 @@
+# AppProject for premarital-asset-protection — namespace `pmap` only.
+# Source repo is pmap-infra (k8s + Cloudflare). App binaries are images from GHCR.
+#
+#   kubectl apply -f remote/argocd/projects/pmap.tenant.yaml
+#   kubectl apply -f remote/argocd/projects/pmap.appproject.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: pmap
+  namespace: argocd
+spec:
+  description: "Tenant project for premarital-asset-protection — namespace pmap, no cluster resources."
+  sourceRepos:
+    - "git@github.com:premarital-asset-protection/pmap-infra.git"
+    - "https://github.com/premarital-asset-protection/pmap-infra.git"
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: pmap
+  clusterResourceWhitelist: []
+  namespaceResourceBlacklist:
+    - { group: "", kind: ResourceQuota }
+    - { group: "", kind: LimitRange }

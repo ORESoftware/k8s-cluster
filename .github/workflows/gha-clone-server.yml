@@ -4,28 +4,52 @@ on:
   pull_request:
     paths:
       - 'remote/deployments/gha-clone-server-rs/**'
-      - 'remote/deployments/build-server-rs/src/profiles.rs'
-      - 'remote/deployments/build-server-rs/readme.md'
+      - 'remote/deployments/build-server-rs/**'
       - 'remote/argocd/dd-next-runtime/dd-gha-clone-server*'
+      - 'remote/argocd/dd-next-runtime/dd-gha-executor-router*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml'
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
+      - 'remote/tests/general/gha-clone-webhook-config.test.ts'
+      - 'remote/tests/general/gha-clone-streempilot-config.test.ts'
+      - 'remote/tests/general/gha-executor-router-activation.test.mjs'
+      - 'remote/tests/general/build-server-profile-repository-policy.test.mjs'
       - 'docs/gha-continuity-architecture.md'
+      - 'docs/gha-independent-executor-routing.md'
+      - 'docs/gha-executor-router-gitops.md'
+      - 'docs/gha-executor-router-activation.md'
+      - 'docs/streempilot-ci-continuity.md'
+      - 'docs/build-server-profile-repository-policy.md'
       - '.github/actionlint.yaml'
+      - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/gha-clone-server.yml'
+      - '.github/workflows/gha-clone-server-meta.yml'
   push:
     branches: [main, dev]
     paths:
       - 'remote/deployments/gha-clone-server-rs/**'
-      - 'remote/deployments/build-server-rs/src/profiles.rs'
-      - 'remote/deployments/build-server-rs/readme.md'
+      - 'remote/deployments/build-server-rs/**'
       - 'remote/argocd/dd-next-runtime/dd-gha-clone-server*'
+      - 'remote/argocd/dd-next-runtime/dd-gha-executor-router*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml'
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
+      - 'remote/tests/general/gha-clone-webhook-config.test.ts'
+      - 'remote/tests/general/gha-clone-streempilot-config.test.ts'
+      - 'remote/tests/general/gha-executor-router-activation.test.mjs'
+      - 'remote/tests/general/build-server-profile-repository-policy.test.mjs'
       - 'docs/gha-continuity-architecture.md'
+      - 'docs/gha-independent-executor-routing.md'
+      - 'docs/gha-executor-router-gitops.md'
+      - 'docs/gha-executor-router-activation.md'
+      - 'docs/streempilot-ci-continuity.md'
+      - 'docs/build-server-profile-repository-policy.md'
       - '.github/actionlint.yaml'
+      - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/gha-clone-server.yml'
+      - '.github/workflows/gha-clone-server-meta.yml'
   workflow_dispatch:
     inputs:
       run_arc_smoke:
@@ -43,7 +67,7 @@ concurrency:
 
 jobs:
   rust:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -59,21 +83,68 @@ jobs:
       - name: Run Clippy
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo clippy --locked --all-targets -- -D warnings
-      - name: Run unit tests
+      - name: Run unit, process, webhook, meta, and StreemPilot mirror integration tests
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo test --locked --all-targets
+      - name: Prove real-process AWS and Hetzner routing boundaries
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --test executor_router_http
+
+  build-server-profile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt
+      - name: Check the modified build-server policy and idempotency modules formatting
+        working-directory: remote/deployments/build-server-rs
+        run: >-
+          rustfmt --edition 2021 --check
+          src/config.rs
+          src/config/profile_policy.rs
+          src/jobs.rs
+          src/nats_submit.rs
+          src/validation.rs
+      - name: Compile the complete build server against the exact private library gitlink
+        working-directory: remote/deployments/build-server-rs
+        run: cargo check --locked --all-targets
+      - name: Test the fixed-profile registry and reviewed fallbacks
+        working-directory: remote/deployments/build-server-rs
+        run: cargo test --locked profiles::tests -- --nocapture
+      - name: Test exact repository-to-profile admission and downgrade rejection
+        working-directory: remote/deployments/build-server-rs
+        run: cargo test --locked config::profile_policy::tests -- --nocapture
+      - name: Test build request idempotency and retry semantics
+        working-directory: remote/deployments/build-server-rs
+        run: cargo test --locked idempotency_tests -- --nocapture
+      - name: Test strict NATS conflict and redelivery classification
+        working-directory: remote/deployments/build-server-rs
+        run: cargo test --locked nats_submit::tests -- --nocapture
 
   contracts:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Validate workflow syntax
+      - name: Validate orchestration workflow syntax
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
           args: .github/workflows/gha-clone-server.yml
+      - name: Validate bounded meta workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/gha-clone-server-meta.yml
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 10.33.0
@@ -84,9 +155,31 @@ jobs:
           cache-dependency-path: remote/tests/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: remote/tests
-      - name: Validate deployment and execution boundary
+      - name: Validate deployment, routing, execution, webhook, activation, and StreemPilot boundaries
         working-directory: remote/tests
-        run: pnpm exec tsx --test general/gha-clone-server-config.test.ts
+        run: |
+          pnpm exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts \
+            general/gha-clone-streempilot-config.test.ts
+          node --test \
+            general/gha-executor-router-activation.test.mjs \
+            general/build-server-profile-repository-policy.test.mjs
+      - name: Install pinned kubectl renderer
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
+        with:
+          version: v1.32.2
+      - name: Render the complete continuity overlay
+        run: |
+          set -euo pipefail
+          rendered="${RUNNER_TEMP}/dd-next-runtime.yaml"
+          kubectl kustomize remote/argocd/dd-next-runtime >"$rendered"
+          test -s "$rendered"
+          grep -F 'name: dd-gha-clone-server' "$rendered"
+          grep -F 'name: dd-gha-executor-router' "$rendered"
+          test "$(grep -c 'replicas: 0' "$rendered")" -ge 2
+      - name: Validate webhook registration shell syntax
+        run: bash -n remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh
       - name: Reject committed credentials
         run: |
           if grep -RIE \
@@ -94,7 +187,13 @@ jobs:
             'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|BEGIN (RSA |EC )?PRIVATE KEY' \
             remote/deployments/gha-clone-server-rs \
             remote/argocd/dd-next-runtime/dd-gha-clone-server* \
-            docs/gha-continuity-architecture.md; then
+            remote/argocd/dd-next-runtime/dd-gha-executor-router* \
+            docs/gha-continuity-architecture.md \
+            docs/gha-independent-executor-routing.md \
+            docs/gha-executor-router-gitops.md \
+            docs/gha-executor-router-activation.md \
+            docs/streempilot-ci-continuity.md \
+            docs/build-server-profile-repository-policy.md; then
             echo 'credential-like material found in GHA continuity files' >&2
             exit 1
           fi

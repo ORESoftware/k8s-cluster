@@ -1,0 +1,304 @@
+{
+  "$schema": "./owner-registry.schema.json",
+  "apiVersion": "oresoftware.dev/v1alpha1",
+  "kind": "NamespaceOwnerRegistry",
+  "metadata": {
+    "name": "k8s-cluster-namespace-owners"
+  },
+  "spec": {
+    "platformOwner": "ores",
+    "allowedEnvironments": [
+      "dev",
+      "staging",
+      "prod",
+      "shared"
+    ],
+    "owners": [
+      {
+        "namespaceId": "3fa-app",
+        "githubOwner": "3FA-app",
+        "kind": "product",
+        "aliases": [],
+        "description": "Three-factor authentication applications and product-specific runtime data."
+      },
+      {
+        "namespaceId": "akrion-sim",
+        "githubOwner": "akrion-sim",
+        "kind": "product",
+        "aliases": [],
+        "description": "Akrion simulation, soccer, training, web, and game-engine resources."
+      },
+      {
+        "namespaceId": "apostille-me",
+        "githubOwner": "apostille-me",
+        "kind": "product",
+        "aliases": [],
+        "description": "Apostille workflow product resources."
+      },
+      {
+        "namespaceId": "athlet-o",
+        "githubOwner": "athlet-o",
+        "kind": "product",
+        "aliases": [],
+        "description": "AthletO application, backend, and sports coordination resources."
+      },
+      {
+        "namespaceId": "benefactor-cc",
+        "githubOwner": "benefactor-cc",
+        "kind": "product",
+        "aliases": [
+          "benefactor"
+        ],
+        "description": "Benefactor lead-generation, API, web, and outreach resources."
+      },
+      {
+        "namespaceId": "canonical-cloud",
+        "githubOwner": "canonical-cloud",
+        "kind": "product",
+        "aliases": [],
+        "description": "Canonical Plus application, API, Shared Auth realm, and infrastructure resources."
+      },
+      {
+        "namespaceId": "canonical-cloud-test",
+        "githubOwner": "canonical-cloud-test",
+        "kind": "test",
+        "aliases": [],
+        "description": "Canonical CI and end-to-end resources kept outside the production organization."
+      },
+      {
+        "namespaceId": "claritas-viz",
+        "githubOwner": "claritas-viz",
+        "kind": "product",
+        "aliases": [],
+        "description": "Claritas visualization product resources."
+      },
+      {
+        "namespaceId": "cliptown",
+        "githubOwner": "cliptown",
+        "kind": "product",
+        "aliases": [],
+        "description": "Cliptown native clipboard product resources."
+      },
+      {
+        "namespaceId": "daedalus-fab",
+        "githubOwner": "daedalus-fab",
+        "kind": "product",
+        "aliases": [
+          "daedalus"
+        ],
+        "description": "Daedalus fabrication and durable Meshy integration resources."
+      },
+      {
+        "namespaceId": "discrete-event-systems",
+        "githubOwner": "discrete-event-systems",
+        "kind": "product",
+        "aliases": [
+          "des"
+        ],
+        "description": "Discrete-event systems product, API, CLI, and application resources."
+      },
+      {
+        "namespaceId": "discrete-event-systems-test",
+        "githubOwner": "discrete-event-systems-test",
+        "kind": "test",
+        "aliases": [],
+        "description": "Discrete-event systems CI and end-to-end test resources."
+      },
+      {
+        "namespaceId": "drone-mngr",
+        "githubOwner": "drone-mngr",
+        "kind": "product",
+        "aliases": [],
+        "description": "Drone Manager monorepo and operational product resources."
+      },
+      {
+        "namespaceId": "embedded-alerts",
+        "githubOwner": "embedded-alerts",
+        "kind": "product",
+        "aliases": [],
+        "description": "Embedded alerting product resources."
+      },
+      {
+        "namespaceId": "evento-globolo",
+        "githubOwner": "evento-globolo",
+        "kind": "product",
+        "aliases": [],
+        "description": "Evento Globolo product resources."
+      },
+      {
+        "namespaceId": "fiducia-cloud",
+        "githubOwner": "fiducia-cloud",
+        "kind": "shared-service",
+        "aliases": [
+          "fiducia"
+        ],
+        "description": "Fiducia locks, leases, consensus, secret delivery, and fenced coordination services."
+      },
+      {
+        "namespaceId": "fiducia-cloud-test",
+        "githubOwner": "fiducia-cloud-test",
+        "kind": "test",
+        "aliases": [],
+        "description": "Fiducia fault, multi-node, and cloud-analogue test resources."
+      },
+      {
+        "namespaceId": "file-tunnel",
+        "githubOwner": "file-tunnel",
+        "kind": "product",
+        "aliases": [],
+        "description": "File Tunnel product and transport resources."
+      },
+      {
+        "namespaceId": "hacker-house-medellin",
+        "githubOwner": "hacker-house-medellin",
+        "kind": "product",
+        "aliases": [],
+        "description": "Hacker House Medellin product resources."
+      },
+      {
+        "namespaceId": "hypesiege",
+        "githubOwner": "hypesiege",
+        "kind": "product",
+        "aliases": [],
+        "description": "Hypesiege application, API, web, and media resources."
+      },
+      {
+        "namespaceId": "led-dynamo",
+        "githubOwner": "led-dynamo",
+        "kind": "product",
+        "aliases": [
+          "leddy"
+        ],
+        "description": "LED Dynamo device, firmware, API, and application resources."
+      },
+      {
+        "namespaceId": "memebank",
+        "githubOwner": "memebank",
+        "kind": "product",
+        "aliases": [],
+        "description": "MemeBank media, OCR, embedding, API, and application resources."
+      },
+      {
+        "namespaceId": "messaging-intel",
+        "githubOwner": "messaging-intel",
+        "kind": "product",
+        "aliases": [
+          "msgint"
+        ],
+        "description": "Messaging Intelligence discovery, connectors, review, and application resources."
+      },
+      {
+        "namespaceId": "meta-agents-demo",
+        "githubOwner": "meta-agents-demo",
+        "kind": "product",
+        "aliases": [
+          "meta-agents"
+        ],
+        "description": "Real-task AI agent control plane, runners, dashboard, and integration resources."
+      },
+      {
+        "namespaceId": "networking-components",
+        "githubOwner": "networking-components",
+        "kind": "product",
+        "aliases": [],
+        "description": "Networking component libraries, services, and application resources."
+      },
+      {
+        "namespaceId": "networking-components-test",
+        "githubOwner": "networking-components-test",
+        "kind": "test",
+        "aliases": [],
+        "description": "Networking Components integration and end-to-end test resources."
+      },
+      {
+        "namespaceId": "opto-sync",
+        "githubOwner": "opto-sync",
+        "kind": "product",
+        "aliases": [],
+        "description": "Opto Sync data synchronization and validation resources."
+      },
+      {
+        "namespaceId": "ores",
+        "githubOwner": "ORESoftware",
+        "kind": "platform",
+        "aliases": [
+          "dd",
+          "dancing-dragons"
+        ],
+        "description": "Shared ORESoftware cluster control plane, bootstrap, CI continuity, observability, and platform services."
+      },
+      {
+        "namespaceId": "quaestor-ledger",
+        "githubOwner": "quaestor-ledger",
+        "kind": "shared-service",
+        "aliases": [],
+        "description": "Cross-product billing and ledger resources."
+      },
+      {
+        "namespaceId": "sagitta-stack",
+        "githubOwner": "sagitta-stack",
+        "kind": "product",
+        "aliases": [],
+        "description": "Sagitta Stack server, runtime, and application resources."
+      },
+      {
+        "namespaceId": "scintilla-run",
+        "githubOwner": "scintilla-run",
+        "kind": "product",
+        "aliases": [],
+        "description": "Scintilla Run serverless, lambda-runner, and monorepo resources."
+      },
+      {
+        "namespaceId": "shared-auth",
+        "githubOwner": "shared-auth",
+        "kind": "shared-service",
+        "aliases": [],
+        "description": "Shared Auth identity, session, signing, revocation, and realm-specific service resources."
+      },
+      {
+        "namespaceId": "sonus-auris",
+        "githubOwner": "sonus-auris",
+        "kind": "product",
+        "aliases": [],
+        "description": "Sonus Auris encrypted audio capture, API, desktop, and mobile resources."
+      },
+      {
+        "namespaceId": "streempilot",
+        "githubOwner": "StreemPilot",
+        "kind": "product",
+        "aliases": [],
+        "description": "StreemPilot streaming, WebRTC, browser, API, and application resources."
+      },
+      {
+        "namespaceId": "usa-acc",
+        "githubOwner": "usa-acc",
+        "kind": "product",
+        "aliases": [],
+        "description": "USA-ACC application and REST API resources."
+      },
+      {
+        "namespaceId": "voxletra",
+        "githubOwner": "voxletra",
+        "kind": "product",
+        "aliases": [],
+        "description": "Voxletra product resources."
+      },
+      {
+        "namespaceId": "zed-pkg",
+        "githubOwner": "zed-pkg",
+        "kind": "shared-service",
+        "aliases": [
+          "zed"
+        ],
+        "description": "Zed package registry, CLI, dependency graph, and development-environment resources."
+      },
+      {
+        "namespaceId": "zed-pkg-test",
+        "githubOwner": "zed-pkg-test",
+        "kind": "test",
+        "aliases": [],
+        "description": "Zed package interoperability and platform test resources."
+      }
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+# Axum's concrete `Response` type is intentionally returned by authentication
+# helpers so every handler preserves the exact status, headers, and bounded JSON
+# body. It is 128 bytes on the pinned toolchain. Keep `result_large_err` active
+# for larger application error types while admitting this framework boundary.
+large-error-threshold = 192

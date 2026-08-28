@@ -8,15 +8,18 @@ on:
       - ops/registries/portfolio-project-links.csv
       - ops/evidence/github-organization-access.json
       - scripts/ops/portfolio_project_links.py
+      - scripts/ops/validate_github_linear_projects_by_org_doc.py
       - scripts/ops/validate_github_linear_registry_relationship.py
       - scripts/ops/validate_portfolio_project_links.py
       - scripts/ops/sync_portfolio_project_links.py
       - scripts/ops/sync_github_project_metadata.py
       - scripts/ops/tests/test_github_organization_access.py
+      - scripts/ops/tests/test_github_linear_projects_by_org_doc.py
       - scripts/ops/tests/test_github_linear_registry_relationship.py
       - scripts/ops/tests/test_portfolio_project_links.py
       - scripts/ops/tests/test_sync_portfolio_project_links.py
       - docs/portfolio/github-linear-project-registry.md
+      - docs/portfolio/github-linear-projects-by-org.md
       - docs/portfolio-project-linking.md
       - docs/daily-portfolio-project-sync.md
       - .github/workflows/validate-portfolio-project-links.yml
@@ -27,15 +30,18 @@ on:
       - ops/registries/portfolio-project-links.csv
       - ops/evidence/github-organization-access.json
       - scripts/ops/portfolio_project_links.py
+      - scripts/ops/validate_github_linear_projects_by_org_doc.py
       - scripts/ops/validate_github_linear_registry_relationship.py
       - scripts/ops/validate_portfolio_project_links.py
       - scripts/ops/sync_portfolio_project_links.py
       - scripts/ops/sync_github_project_metadata.py
       - scripts/ops/tests/test_github_organization_access.py
+      - scripts/ops/tests/test_github_linear_projects_by_org_doc.py
       - scripts/ops/tests/test_github_linear_registry_relationship.py
       - scripts/ops/tests/test_portfolio_project_links.py
       - scripts/ops/tests/test_sync_portfolio_project_links.py
       - docs/portfolio/github-linear-project-registry.md
+      - docs/portfolio/github-linear-projects-by-org.md
       - docs/portfolio-project-linking.md
       - docs/daily-portfolio-project-sync.md
       - .github/workflows/validate-portfolio-project-links.yml
@@ -87,6 +93,9 @@ jobs:
         run: >-
           python scripts/ops/validate_github_linear_registry_relationship.py
           --json-output artifacts/github-linear-registry-relationship.json
+
+      - name: Validate generated GitHub and Linear directory
+        run: python scripts/ops/validate_github_linear_projects_by_org_doc.py
 
       - name: Validate canonical mappings
         run: python scripts/ops/validate_portfolio_project_links.py

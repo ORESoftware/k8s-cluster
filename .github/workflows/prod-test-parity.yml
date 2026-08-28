@@ -1,0 +1,30 @@
+name: prod-test parity
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prod-test-parity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fixture-detect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.18.0
+      - name: Validate expected snapshot and fixture detector
+        run: node --test scripts/prod-test-parity/detect.test.mjs
+      - name: Emit markdown from aligned fixture
+        run: node scripts/prod-test-parity/detect.mjs --fixture scripts/prod-test-parity/fixtures/aligned.json --markdown

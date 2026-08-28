@@ -28,7 +28,11 @@ test('the live workflow uses OIDC and keeps the operator secret inside AWS', () 
   assert.match(live, /id-token: write/);
   assert.match(live, /contents: read/);
   assert.doesNotMatch(live, /contents: write/);
-  assert.match(live, /aws-actions\/configure-aws-credentials@v6/);
+  assert.match(
+    live,
+    /aws-actions\/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6/,
+  );
+  assert.doesNotMatch(live, /aws-actions\/configure-aws-credentials@v6/);
   assert.match(live, /id: aws[\s\S]*continue-on-error: true/);
   assert.match(live, /aws ssm send-command/);
   assert.match(live, /aws secretsmanager get-secret-value/);
@@ -82,7 +86,11 @@ test('the live job always creates and uploads a sanitized result', () => {
   assert.match(live, /failure_phase/);
   assert.match(live, /aws_outcome/);
   assert.match(live, /smoke_outcome/);
-  assert.match(live, /actions\/upload-artifact@v7/);
+  assert.match(
+    live,
+    /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7/,
+  );
+  assert.doesNotMatch(live, /actions\/upload-artifact@v7/);
   assert.match(live, /if: always\(\)/);
   assert.match(live, /retention-days: 14/);
 });
@@ -94,7 +102,11 @@ test('credential-free publisher writes only the sanitized result branch', () => 
   assert.doesNotMatch(publish, /id-token: write/);
   assert.doesNotMatch(publish, /aws-actions\/configure-aws-credentials/);
   assert.doesNotMatch(publish, /secrets\./);
-  assert.match(publish, /actions\/download-artifact@v8/);
+  assert.match(
+    publish,
+    /actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8/,
+  );
+  assert.doesNotMatch(publish, /actions\/download-artifact@v8/);
   assert.match(publish, /automation\/browser-mcp-verification-results/);
   assert.match(publish, /browser-mcp\/latest\.json/);
   assert.match(publish, /\.failure_phase/);

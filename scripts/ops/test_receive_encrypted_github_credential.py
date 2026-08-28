@@ -31,6 +31,19 @@ class EncryptedCredentialReceiverContractTests(unittest.TestCase):
         self.assertIn("MAX_RATE_WAIT_SECONDS", SCRIPT)
         self.assertIn("WAIT_RATE_BUDGET", SCRIPT)
 
+    def test_retries_transient_secondary_limits_during_identity_lookup(self) -> None:
+        self.assertIn("lookup_expected_login_with_retry", SCRIPT)
+        self.assertIn("WAIT_IDENTITY_API", SCRIPT)
+        self.assertIn("IDENTITY_MAX_WAIT_SECONDS", SCRIPT)
+        self.assertIn("IDENTITY_RETRY_INITIAL_SECONDS", SCRIPT)
+        self.assertIn("IDENTITY_RETRY_MAX_SECONDS", SCRIPT)
+        self.assertIn("redact_output", SCRIPT)
+        self.assertNotIn('gh auth status', SCRIPT)
+        self.assertLess(
+            SCRIPT.index("wait_for_rate_budget\nlogin=\"$(lookup_expected_login_with_retry)\""),
+            SCRIPT.index("GH_TOKEN=%s"),
+        )
+
     def test_exports_both_required_tokens_without_printing_them(self) -> None:
         self.assertIn("GH_TOKEN=%s", SCRIPT)
         self.assertIn("GITHUB_REPOSITORY_ADMIN_TOKEN=%s", SCRIPT)

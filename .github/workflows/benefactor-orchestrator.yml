@@ -51,10 +51,16 @@ jobs:
           node --check providers/index.mjs
           node --check orchestrate.mjs
           node --check orchestrate.test.mjs
+          node --check scraper-contact-bridge.mjs
+          node --check scraper-contact-preload.mjs
+          node --check scraper-contact-bridge.test.mjs
+          node --check provider-diagnostics-bridge.mjs
+          node --check provider-diagnostics-bridge.test.mjs
+          node --check persistence-contract.test.mjs
 
       - name: Run focused pipeline contracts
         working-directory: remote/deployments/benefactor-orchestrator
-        run: node --test orchestrate.test.mjs
+        run: node --test orchestrate.test.mjs scraper-contact-bridge.test.mjs provider-diagnostics-bridge.test.mjs persistence-contract.test.mjs
 
       - name: Reject unresolved conflicts and accidental credentials
         shell: bash

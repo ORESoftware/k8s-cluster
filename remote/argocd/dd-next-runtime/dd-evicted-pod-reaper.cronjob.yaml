@@ -1,0 +1,123 @@
+# dd-evicted-pod-reaper — hourly hygiene: delete Evicted pod tombstones older
+# than MAX_AGE_SECONDS (default 3 days) from the `default` namespace.
+#
+# Why: when a node crosses its ephemeral-storage / memory eviction threshold the
+# kubelet evicts pods, leaving Failed/Evicted tombstones behind indefinitely. On
+# Hetzner a single disk-leaking workload (a crash-looping build-from-source pod
+# whose /tmp emptyDir grew to 180Gi) once produced ~3,600 of them. This reaps the
+# tombstones so they never pile up again. It does NOT address the eviction CAUSE
+# (a workload filling a node's disk) — that is separate — it only clears debris.
+#
+# Scope is deliberately narrow: it only ever deletes pods whose `.status.reason`
+# is exactly "Evicted" (never Running/Pending, never Error/OOMKilled Failed pods
+# that may still carry diagnostic value), only in `default`, and only past the
+# age gate. RBAC (dd-evicted-pod-reaper-rbac.yaml) grants pods get/list/delete in
+# this one namespace.
+#
+# Tuning: lower MAX_AGE_SECONDS for tidier retention (e.g. 3600 = 1h); widen
+# TARGET_NAMESPACE + a ClusterRole to cover more namespaces. Image is
+# docker.io/alpine/k8s (busybox `date`: `-D` gives the input format for `-d`,
+# which is why the cutoff is logged as an epoch — busybox can parse iso->epoch
+# but not format epoch->iso).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dd-evicted-pod-reaper
+  namespace: default
+  labels:
+    app: dd-evicted-pod-reaper
+    app.kubernetes.io/name: dd-evicted-pod-reaper
+    app.kubernetes.io/part-of: dd-next-runtime
+    dd.dev/component: runtime-hygiene
+  annotations:
+    dd.dev/note: Reaps Evicted pod tombstones older than MAX_AGE_SECONDS from default. Hygiene only; not the eviction root cause.
+spec:
+  schedule: '17 * * * *' # hourly, off the top of the hour
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    metadata:
+      labels:
+        app: dd-evicted-pod-reaper
+        app.kubernetes.io/part-of: dd-next-runtime
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 600
+      activeDeadlineSeconds: 600
+      template:
+        metadata:
+          labels:
+            app: dd-evicted-pod-reaper
+            app.kubernetes.io/part-of: dd-next-runtime
+        spec:
+          serviceAccountName: dd-evicted-pod-reaper
+          automountServiceAccountToken: true
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 5
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: reaper
+              image: docker.io/alpine/k8s:1.31.4
+              imagePullPolicy: IfNotPresent
+              command: [/bin/sh, -c]
+              env:
+                - name: TARGET_NAMESPACE
+                  value: default
+                - name: MAX_AGE_SECONDS
+                  value: '259200' # 3 days
+              args:
+                - |
+                  set -eu
+                  ns="${TARGET_NAMESPACE:-default}"
+                  max="${MAX_AGE_SECONDS:-259200}"
+                  now="$(date -u +%s)"
+                  cutoff="$((now - max))"
+                  # busybox date can PARSE iso->epoch (-D gives the input format,
+                  # used in the filter below) but not format epoch->iso, so the
+                  # cutoff is logged as an epoch, not a date string.
+                  echo "reaper: ns=$ns now=$now cutoff_epoch=$cutoff (reaping Evicted older than ${max}s)"
+                  # name<TAB>creationTimestamp for Evicted pods only.
+                  kubectl -n "$ns" get pods --field-selector=status.phase=Failed \
+                    -o go-template='{{range .items}}{{if eq .status.reason "Evicted"}}{{.metadata.name}}{{"\t"}}{{.metadata.creationTimestamp}}{{"\n"}}{{end}}{{end}}' > /tmp/evicted.txt || true
+                  del=/tmp/del.txt; : > "$del"
+                  kept=0
+                  while IFS="$(printf '\t')" read -r name ts; do
+                    [ -z "$name" ] && continue
+                    # busybox date: -D gives the INPUT format for -d.
+                    e="$(date -u -D '%Y-%m-%dT%H:%M:%SZ' -d "$ts" +%s 2>/dev/null || echo '')"
+                    [ -z "$e" ] && { echo "skip (unparseable ts): $name $ts"; continue; }
+                    if [ "$e" -lt "$cutoff" ]; then echo "$name" >> "$del"; else kept=$((kept+1)); fi
+                  done < /tmp/evicted.txt
+                  n="$(grep -c . "$del" || true)"
+                  echo "reaper: deleting=$n keeping_recent=$kept"
+                  if [ "$n" -gt 0 ]; then
+                    xargs -a "$del" -n 50 kubectl -n "$ns" delete pod --ignore-not-found --wait=false
+                  fi
+                  echo "reaper: done"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 64Mi

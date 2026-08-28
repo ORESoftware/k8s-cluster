@@ -80,6 +80,40 @@ and mutable branch/tag execution.
 A job can be supported by ARC while rejected by the independent mirror. This is
 a normal and preserved distinction, not a failure to report.
 
+## Failure webhook contract
+
+The webhook is a fallback trigger, not a second unconstrained workflow runner.
+For `workflow_run`, it accepts work only after all of these conditions hold:
+
+- the raw body has a valid `X-Hub-Signature-256` HMAC;
+- `X-GitHub-Delivery` is a UUID;
+- the repository is exactly allowlisted;
+- `workflow_run.head_sha` is a full immutable commit SHA;
+- `action` is `completed`;
+- the conclusion is in the configured failure set;
+- the workflow name is outside the exact recursion-exclusion set;
+- `workflow_run.path` exactly matches a reviewed repository rule;
+- the workflow fetched at that SHA passes the bounded compiler;
+- every planned job maps to an operator-reviewed fixed profile;
+- the delivery has not already claimed an independent dispatch.
+
+The service records a delivery claim only after workflow retrieval, planning,
+and execution readiness succeed. Transient GitHub/API failures therefore remain
+retryable using the original delivery ID. A write lock serializes concurrent
+copies inside one process so only one copy can dispatch.
+
+Delivery retention is bounded by a nonzero TTL and entry cap. It is initially an
+in-memory map, which is sufficient only while the deployment uses one replica
+and the `Recreate` strategy. Horizontal webhook execution requires a shared
+durable claim store or a Fiducia-fenced authoritative claim. Scaling replicas
+without that shared claim would weaken the duplicate-delivery guarantee and is
+therefore outside the activation contract.
+
+The GitHub workflow-read origin defaults to `https://api.github.com` and is
+explicitly declared in GitOps. Configuration rejects credentials, query strings,
+fragments, and non-HTTPS origins; plain HTTP is accepted only for loopback test
+servers so the complete fetch path can be exercised hermetically.
+
 ## Existing build server integration
 
 `dd-build-server` remains the executor and owns its existing containerd,
@@ -127,10 +161,16 @@ secret.
 6. Scale `dd-gha-clone-server` from zero to one with execution still disabled.
 7. Submit plan-only fixtures and compare classifications to the original GHA
    workflows.
-8. Enable API execution only for trusted immutable commits.
-9. Enable webhook execution only after HMAC, workflow fetch and idempotency
-   evidence.
-10. Keep positive GitHub-hosted budget for native platforms and emergency use.
+8. Enable API execution only for trusted immutable commits and prove the meta
+   self-test through the real `dd-build-server`.
+9. Register only the `workflow_run` failure webhook through the secret-safe
+   registration script.
+10. Prove HMAC rejection, exact-path filtering, recursion exclusion, retry after
+    transient retrieval failure, concurrent duplicate suppression, and
+    build-server idempotency.
+11. Enable webhook execution only while the deployment remains single-replica,
+    until shared delivery persistence or Fiducia fencing is implemented.
+12. Keep positive GitHub-hosted budget for native platforms and emergency use.
 
 ## Rollback
 

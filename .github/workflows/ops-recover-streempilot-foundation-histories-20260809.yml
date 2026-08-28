@@ -1,0 +1,19 @@
+name: Retired StreemPilot foundation history recovery
+run-name: Retired StreemPilot foundation history recovery @ ${{ github.sha }}
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ops-recover-streempilot-foundation-histories-20260809
+  cancel-in-progress: true
+
+jobs:
+  retired:
+    if: ${{ false }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: One-time recovery is retired
+        run: echo 'Eight non-destructive recovery branches and draft PRs were published and verified by run 31297720582.'

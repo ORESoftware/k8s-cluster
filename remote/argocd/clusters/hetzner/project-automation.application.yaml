@@ -1,13 +1,23 @@
+# DEN-2745 deployment contract.
+#
+# The Hetzner root Application reconciles the cluster Application catalog from
+# `dev`, while this child intentionally sources the reviewed project-automation
+# workload package (including the active nightly interdependency CronJob) from
+# `main`. The explicit revisions are deliberate and survive the 2026-08-07
+# two-way dev<->main convergence: the package always deploys from the reviewed
+# branch no matter how far the catalog branch moves between reconciliations.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: dd-project-automation
   namespace: argocd
+  annotations:
+    denman.linear.app/issue: DEN-2745
 spec:
   project: default
   source:
     repoURL: https://github.com/ORESoftware/k8s-cluster.git
-    targetRevision: dev
+    targetRevision: main
     path: remote/argocd/project-automation
   destination:
     server: https://kubernetes.default.svc

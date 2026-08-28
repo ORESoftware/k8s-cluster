@@ -1,0 +1,45 @@
+# RBAC for dd-evicted-pod-reaper: least privilege — get/list/delete pods in the
+# `default` namespace only. Verified: the SA can delete pods in `default` but is
+# denied in `kube-system` (`kubectl auth can-i delete pods -n kube-system --as
+# system:serviceaccount:default:dd-evicted-pod-reaper` -> no).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dd-evicted-pod-reaper
+  namespace: default
+  labels:
+    app: dd-evicted-pod-reaper
+    app.kubernetes.io/name: dd-evicted-pod-reaper
+    app.kubernetes.io/part-of: dd-next-runtime
+    dd.dev/component: runtime-hygiene
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dd-evicted-pod-reaper
+  namespace: default
+  labels:
+    app: dd-evicted-pod-reaper
+    app.kubernetes.io/part-of: dd-next-runtime
+rules:
+  - apiGroups: ['']
+    resources: [pods]
+    verbs: [get, list, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dd-evicted-pod-reaper
+  namespace: default
+  labels:
+    app: dd-evicted-pod-reaper
+    app.kubernetes.io/part-of: dd-next-runtime
+subjects:
+  - kind: ServiceAccount
+    name: dd-evicted-pod-reaper
+    namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dd-evicted-pod-reaper

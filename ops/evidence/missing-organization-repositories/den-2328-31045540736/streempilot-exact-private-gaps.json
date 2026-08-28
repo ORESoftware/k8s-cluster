@@ -1,0 +1,24 @@
+{
+  "created_count": 1,
+  "expected_repositories": [
+    "StreemPilot/streempilot-media-router.rs"
+  ],
+  "generator_sha256": "a57b00961ee57ae09bf3bb2e2d09afbdd1ddbbbde832b027802f82a1fc5dfa84",
+  "organization": "StreemPilot",
+  "preserved_count": 0,
+  "repositories": [
+    {
+      "default_branch": "main",
+      "disposition": "created",
+      "expected_sealed_sha": "a3b01146f85ee61400b72ed3f333c76b4413a4fa",
+      "full_name": "StreemPilot/streempilot-media-router.rs",
+      "html_url": "https://github.com/StreemPilot/streempilot-media-router.rs",
+      "main_sha": "a3b01146f85ee61400b72ed3f333c76b4413a4fa",
+      "repository_id": 1324470250,
+      "visibility": "private"
+    }
+  ],
+  "schema_version": 1,
+  "sealed_source_repository": "ORESoftware/ai-agent-coordinator.rs",
+  "sealed_source_sha": "5d9a0c2cb44dff607bc3953954ce4b9af08e5789"
+}

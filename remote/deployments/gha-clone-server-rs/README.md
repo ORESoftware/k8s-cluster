@@ -30,8 +30,12 @@ constant time over SHA-256 digests.
 - `POST /v1/plans` — parse workflow YAML and return per-job parity/support data.
 - `POST /v1/runs` — enqueue a fully supported immutable plan.
 - `GET /v1/runs/<uuid>` — inspect sequential build-server submissions.
-- `POST /webhooks/github` — verify `X-Hub-Signature-256`, fetch allowlisted
-  workflow files at the event's exact SHA, and plan or execute them.
+- `POST /webhooks/github` — verify `X-Hub-Signature-256` and a UUID
+  `X-GitHub-Delivery`; for `workflow_run`, accept only the completed terminal
+  phase, configured failure conclusions, the exact reviewed workflow path, and
+  a workflow name outside the recursion-exclusion set. The service then fetches
+  that path at the event's exact SHA, plans it, and either returns the plan or
+  performs a bounded, deduplicated independent dispatch.
 - `GET /healthz`, `GET /readyz`.
 
 Example plan:
@@ -50,6 +54,7 @@ Example plan:
 | Workflow evidence | Fixed build-server profile |
 | --- | --- |
 | Cargo/rustfmt/Clippy/tests | `rust-verify` |
+| This repository's bounded GHA-clone meta workflow | `rust-verify`, with an exact reviewed fallback to `remote/deployments/gha-clone-server-rs` when the repository root is not a Cargo crate |
 | npm/pnpm/yarn/Node tests | `node-verify` |
 | Python compile/pytest | `python-verify` |
 | Flutter analyze/tests | `flutter-verify` |
@@ -63,6 +68,72 @@ Example plan:
 Static `needs` dependencies are validated for unknown nodes and cycles. Runs
 execute in deterministic topological order and poll each build-server job to a
 terminal result before submitting its dependents.
+
+## Meta self-test: the server uses itself
+
+`.github/workflows/gha-clone-server-meta.yml` is deliberately limited to the
+independent compiler's supported subset. It describes one Rust verification job
+for this service and contains no secrets, dynamic expressions, matrices,
+conditions, service containers, caller-selected working directory, or mutable
+revision.
+
+`tests/meta_self_test.rs` starts the real `gha-clone-server` binary, starts a
+recording build-server double, submits that exact workflow through the running
+server's authenticated `POST /v1/runs` endpoint, polls `GET /v1/runs/<uuid>` to a
+terminal state, and verifies the outgoing request contains only:
+
+- `ORESoftware/k8s-cluster`;
+- an exact 40-hex commit SHA;
+- `jobKind=run-profile`;
+- the fixed `rust-verify` profile;
+- the deterministic plan/job request ID.
+
+That gives CI an end-to-end test of the real HTTP server, authentication,
+planner, run store, topological dispatcher, build submission, polling, and
+terminal-state update. The build-server double does not execute repository code;
+its purpose is to keep pull-request CI hermetic and credential-free.
+
+After deployment activation, submitting the same fixture at the exact merged SHA
+uses the real `dd-build-server`. Its `rust-verify` profile first accepts a root
+`Cargo.toml`; for this monorepo it has one additional exact, operator-reviewed
+fallback to `remote/deployments/gha-clone-server-rs/Cargo.toml`. It performs no
+filesystem search and accepts no caller-selected directory or command.
+
+This is dogfooding, not unbounded recursion. The independent execution does not
+start another GitHub Actions workflow or emit a webhook that re-submits itself;
+it creates one fixed build-server job for the immutable commit and stops at its
+terminal result. Duplicate delivery is bounded by the deterministic request ID,
+the webhook-delivery claim, and the build server's idempotency path.
+
+## Failure webhook contract
+
+GitHub emits `workflow_run` completion events for every conclusion. The
+continuity service therefore applies all of these checks before fetching or
+submitting work:
+
+1. the raw request body has a valid SHA-256 HMAC;
+2. `X-GitHub-Delivery` is a valid UUID;
+3. the repository is exactly allowlisted;
+4. `workflow_run.head_sha` is a full 40-hex commit SHA;
+5. `action` is `completed`;
+6. `conclusion` is in `GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS`;
+7. `workflow_run.name` is not in `GHA_CLONE_WEBHOOK_IGNORED_WORKFLOWS`;
+8. `workflow_run.path` exactly matches one configured path for that repository;
+9. the fetched workflow plans successfully and every job is independently
+   executable;
+10. the delivery UUID has not already claimed an independent dispatch within
+    the bounded retention window.
+
+The delivery claim is inserted only after workflow retrieval, planning, and
+execution-readiness checks succeed. A transient GitHub fetch or planning failure
+therefore remains retryable with the same GitHub delivery ID. Concurrent copies
+of the same delivery are serialized through one in-process claim and can create
+at most one independent run set.
+
+Delivery retention is intentionally bounded by both a TTL and a maximum entry
+count. It is in-memory in the first deployment, so keep exactly one replica.
+Horizontal scaling requires a shared durable delivery store or a Fiducia-fenced
+claim before webhook execution may be enabled.
 
 ## Fail-closed exclusions
 
@@ -87,19 +158,51 @@ These jobs still receive an ARC classification such as `sonus-ci`,
 | `GHA_CLONE_AUTH_SECRET` | operator/API authentication |
 | `GHA_CLONE_GITHUB_WEBHOOK_SECRET` | GitHub webhook HMAC |
 | `GHA_CLONE_GITHUB_TOKEN` | short-lived GitHub App installation token for private workflow reads |
+| `GHA_CLONE_GITHUB_API_BASE_URL` | GitHub API origin; production default `https://api.github.com`, with HTTP accepted only for loopback tests |
 | `GHA_CLONE_BUILD_SERVER_URL` | internal `dd-build-server` origin |
 | `GHA_CLONE_BUILD_SERVER_AUTH` | scoped build-server auth |
 | `GHA_CLONE_ALLOWED_REPOSITORIES` | exact comma-separated `owner/repo` allowlist |
-| `GHA_CLONE_WORKFLOW_RULES_JSON` | map of repository to workflow paths |
+| `GHA_CLONE_WORKFLOW_RULES_JSON` | exact map of repository to one or more `.github/workflows/*.yml` or `.yaml` paths |
 | `GHA_CLONE_EXECUTION_ENABLED` | independent API execution, default `false` |
 | `GHA_CLONE_WEBHOOK_EXECUTION_ENABLED` | webhook execution, default `false` |
+| `GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS` | comma-separated terminal conclusions eligible for fallback |
+| `GHA_CLONE_WEBHOOK_IGNORED_WORKFLOWS` | exact workflow names excluded to prevent fallback recursion |
+| `GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS` | nonzero in-memory delivery-deduplication TTL |
+| `GHA_CLONE_MAX_WEBHOOK_DELIVERIES` | nonzero upper bound on retained delivery UUIDs |
 | `GHA_CLONE_MAX_WORKFLOW_BYTES` | parser input bound |
 | `GHA_CLONE_MAX_JOBS` | workflow job bound |
 | `GHA_CLONE_MAX_STEPS_PER_JOB` | per-job step bound |
 | `GHA_CLONE_BUILD_TIMEOUT_SECONDS` | terminal build wait bound |
 
+Repository names and workflow rules are validated at startup. Invalid repository
+syntax, paths outside `.github/workflows`, traversal, backslashes, duplicate
+paths, empty rule lists, unsafe GitHub API origins, and zero retention bounds
+cause the process to exit before binding its network listener.
+
 Use a GitHub App and External Secrets. Do not put classic PATs, private keys, or
 shared secrets in source, Argo parameters, Linear, logs, URLs, or image layers.
+
+## Register the GitHub failure webhook
+
+Run `scripts/register-github-webhook.sh` only after the HTTPS ingress and
+ExternalSecret value exist. The script reads `GH_TOKEN` and
+`GITHUB_WEBHOOK_SECRET` from the environment, updates an existing hook with the
+same URL or creates one, sends request bodies through stdin, and never prints
+either secret.
+
+`ORESoftware` is a GitHub user account, so register a repository hook:
+
+```console
+GH_TOKEN=... GITHUB_WEBHOOK_SECRET=... \
+  bash scripts/register-github-webhook.sh \
+  --repo ORESoftware/k8s-cluster \
+  --url https://ci.example.com/webhooks/github
+```
+
+For an actual GitHub organization, use `--org <organization>`. The registration
+script subscribes only to `workflow_run`; GitHub sends every completed
+conclusion and the Rust service performs the failure-only, exact-path,
+recursion, and duplicate-delivery checks.
 
 ## Deployment state
 
@@ -109,11 +212,19 @@ exist. Activation requires:
 
 1. provision `dd-gha-clone-server-secrets` through the reviewed ExternalSecret;
 2. verify the GitHub App is installed only on allowlisted organizations/repos;
-3. confirm `dd-build-server` is healthy and its new fixed profiles are present;
+3. confirm `dd-build-server` is healthy and its fixed profiles include the
+   reviewed monorepo Rust fallback;
 4. pin the deployment to the merged source revision;
 5. scale to one replica and run plan-only fixtures;
-6. enable API execution for immutable trusted commits;
-7. enable webhook execution only after HMAC and idempotency evidence.
+6. enable API execution for immutable trusted commits and submit
+   `.github/workflows/gha-clone-server-meta.yml` at the exact merged SHA;
+7. verify the real build-server job tests this crate and the run reaches
+   `succeeded` without creating a second independent run;
+8. register the failure-only `workflow_run` webhook and prove HMAC, exact-path
+   filtering, recursion exclusion, retry after transient retrieval failure,
+   concurrent duplicate suppression, and build-server idempotency;
+9. enable webhook execution only while the deployment remains single-replica,
+   until shared delivery persistence or Fiducia fencing is implemented.
 
 AWS is the initial independent executor because the existing build server,
 containerd/buildkit, ECR and Postgres are there. Hetzner can immediately host ARC

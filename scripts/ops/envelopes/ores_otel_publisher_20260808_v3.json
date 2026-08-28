@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "purpose": "one-time ORES OTEL repository fleet publication",
+  "key_id": "ores-otel-20260808-v3",
+  "algorithm": "RSA-OAEP-SHA256",
+  "public_key_sha256": "331d808d264ec4691bc949bd7c0322502aba0bdbcf3d6ed40c4322a3f5513127",
+  "ciphertext_sha256": "37b9f6a6abd5985aba43a8c45d01157482dac353103cf95aa142a96d2f613523",
+  "ciphertext_b64": "hlinx1N8DEs+r1/DDDB55ZGB+n4yzytYz2Kq+unVF0BF25ZXNL4+bRcO8zjf9U2Srn23xwswDtY6cL3D/YBa0eiGYPzX+T0mVYXDfVj1XVxX+JU4mZQ1rD7/rAifIvCeoYMo1Sh/+5BNoohFDIULl+8OdplA8Dtu82BlUNUTRJc9DsIcDBro5Gx07s42HxG0PC6M2nS6cQIcc7TzS897wtU6+UTa/K9me/c/NzqpEWb1nM679W3JZS5eANS7QjinlNtdYyZZ2GYnEYUdMVl+UIApva6gp+ppqZZM1Qin1fWGMzU19Rb/a/1362at+dZSbRnQFheH+BoeFIxdoG7jIREXEjZaMRNtOeR+hMsnUJ4Id50goJLTCW5LI5APlF4JodCIY4B96kFO8RqsyrKPmdT21XipNCvM3T4EMsJe2EkIVV3Tsm0pePscZXZdhjFZhLHMjDU6cGPEF1MuBtnqItEphzfdVJmbJluOf5SIEOfOcI1jlDcuImgzy9RGis3W",
+  "targets": [
+    "ores-otel/ores.otel.log",
+    "ores-otel-test/*"
+  ],
+  "delete_after_use": true
+}

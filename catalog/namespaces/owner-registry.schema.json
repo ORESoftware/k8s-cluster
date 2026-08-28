@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.oresoftware.com/k8s-cluster/namespace-owner-registry.schema.json",
+  "title": "ORESoftware namespace owner registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "$schema": {"const": "./owner-registry.schema.json"},
+    "apiVersion": {"const": "oresoftware.dev/v1alpha1"},
+    "kind": {"const": "NamespaceOwnerRegistry"},
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platformOwner", "allowedEnvironments", "owners"],
+      "properties": {
+        "platformOwner": {"const": "ores"},
+        "allowedEnvironments": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"
+          }
+        },
+        "owners": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/owner"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "dnsLabel": {
+      "type": "string",
+      "maxLength": 63,
+      "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"
+    },
+    "owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["namespaceId", "githubOwner", "kind", "aliases", "description"],
+      "properties": {
+        "namespaceId": {"$ref": "#/$defs/dnsLabel"},
+        "githubOwner": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$"
+        },
+        "kind": {
+          "enum": ["platform", "product", "shared-service", "test"]
+        },
+        "aliases": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/dnsLabel"}
+        },
+        "description": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

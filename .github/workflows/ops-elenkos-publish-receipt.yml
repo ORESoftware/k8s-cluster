@@ -1,0 +1,63 @@
+name: Record Elenkos publication receipt
+
+on:
+  workflow_run:
+    workflows:
+      - Bootstrap Elenkos repository fleets
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  record:
+    if: >-
+      ${{
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main'
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Create bounded publication receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+        run: |
+          set -Eeuo pipefail
+          case "$CONCLUSION" in
+            success|failure|cancelled|timed_out|action_required|neutral|skipped|stale) ;;
+            *) echo "unexpected workflow conclusion: $CONCLUSION" >&2; exit 1 ;;
+          esac
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RUN_URL" == https://github.com/ORESoftware/k8s-cluster/actions/runs/* ]]
+          [[ -n "$WORKFLOW_NAME" ]]
+
+          receipt="$RUNNER_TEMP/elenkos-publication-receipt.md"
+          cat > "$receipt" <<EOF
+          Automated receipt for the protected Elenkos fleet publisher.
+
+          - Workflow: \`$WORKFLOW_NAME\`
+          - Conclusion: \`$CONCLUSION\`
+          - Run ID: \`$RUN_ID\`
+          - Attempt: \`$RUN_ATTEMPT\`
+          - Trusted k8s-cluster SHA: \`$HEAD_SHA\`
+          - Run: $RUN_URL
+          - Intended scope: 22 private repositories (11 in \`elenkos-systems\`, mirrored by 11 identically named repositories in \`elenkos-systems-test\`)
+          - Credential model: protected GitHub App installation tokens; no plaintext PAT in repository content, workflow inputs, or receipt
+
+          A successful conclusion means the protected publisher verified all 22 repositories, their \`main\` refs, immutable bootstrap tags, private visibility, Zed manifests, and source fingerprints. A non-success conclusion is an operational receipt only and does not claim repository publication.
+          EOF
+
+          gh issue create \
+            --repo ORESoftware/k8s-cluster \
+            --title "Elenkos fleet publication receipt: $CONCLUSION (run $RUN_ID)" \
+            --body-file "$receipt"

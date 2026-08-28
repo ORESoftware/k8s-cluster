@@ -63,12 +63,19 @@ class ExactGapRetryRunnerTests(unittest.TestCase):
             ),
         ]
 
-    def test_transient_classifier_is_bounded_to_rate_and_service_failures(self) -> None:
+    def test_transient_classifier_is_bounded_to_rate_service_and_head_propagation(self) -> None:
         self.assertTrue(MODULE.is_transient_failure("secondary rate limit exceeded", 403))
         self.assertTrue(MODULE.is_transient_failure("HTTP 503 service unavailable", 503))
         self.assertTrue(MODULE.is_transient_failure("connection reset by peer"))
+        self.assertTrue(
+            MODULE.is_transient_failure(
+                "GitHub API 422 for GET /repos/hypesiege/example/commits/main: "
+                "No commit found for SHA: main"
+            )
+        )
         self.assertFalse(MODULE.is_transient_failure("Bad credentials", 401))
         self.assertFalse(MODULE.is_transient_failure("Repository visibility mismatch", 422))
+        self.assertFalse(MODULE.is_transient_failure("No commit found for SHA: other"))
 
     def test_retry_delay_is_bounded(self) -> None:
         self.assertEqual(MODULE.retry_delay(1, {"Retry-After": "2"}), 5)
@@ -113,6 +120,7 @@ class ExactGapRetryRunnerTests(unittest.TestCase):
         self.assertNotIn("git push --" + "force", source)
         self.assertIn("--token-file", source)
         self.assertIn("VERIFIED_ENCRYPTED_EXACT_PRIVATE_GAPS", source)
+        self.assertIn("no commit found for sha: main", source)
 
 
 if __name__ == "__main__":
