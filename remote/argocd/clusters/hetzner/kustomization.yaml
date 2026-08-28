@@ -10,6 +10,7 @@ resources:
   - applications.yaml
   - ai-agent-coordinator.applications.yaml
   - gha-ci.applications.yaml
+  - daedalus-ci.applications.yaml
   - zed.bootstrap.application.yaml
   # The root adopts the complete current overlay; retain newer child Application
   # declarations while adding drift detection and self-healing for the set.
