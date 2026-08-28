@@ -26,8 +26,8 @@ test('the production server mounts authenticated workflow routes', async () => {
   const source = await readRepoFile(
     'remote/deployments/build-server-rs/src/gha_workflow.rs',
   );
-
   assert.match(main, /mod gha_workflow;/);
+  assert.match(main, /mod workflow_yaml;/);
   assert.match(main, /build_router\(state\.clone\(\)\)\.merge\(gha_workflow::router\(state\)\)/);
   for (const route of [
     '/gha/workflows/capabilities',
@@ -40,9 +40,30 @@ test('the production server mounts authenticated workflow routes', async () => {
   assert.match(source, /require_auth\(&headers, &state\.build\)/);
 });
 
+test('the production pod starts from one fail-closed exact source commit', async () => {
+  const deployment = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml',
+  );
+
+  assert.match(
+    deployment,
+    /name:\s*BUILD_SERVER_GIT_REVISION\s+value:\s*[0-9a-f]{40}/,
+  );
+  assert.match(deployment, /fetch --depth 1 origin "\$revision"/);
+  assert.match(deployment, /rev-parse FETCH_HEAD\)" = "\$revision"/);
+  assert.match(deployment, /switch --detach "\$revision"/);
+  assert.match(deployment, /rev-parse HEAD\)" = "\$revision"/);
+  assert.match(deployment, /exact source or remote\/libs checkout failed/);
+  assert.doesNotMatch(deployment, /git clone --depth 1 --branch/);
+  assert.doesNotMatch(deployment, /using mounted source/);
+});
+
 test('workflow YAML is bounded before it can reach fixed-profile execution', async () => {
   const source = await readRepoFile(
     'remote/deployments/build-server-rs/src/gha_workflow.rs',
+  );
+  const strictParser = await readRepoFile(
+    'remote/deployments/build-server-rs/src/workflow_yaml.rs',
   );
 
   for (const boundary of [
@@ -59,6 +80,18 @@ test('workflow YAML is bounded before it can reach fixed-profile execution', asy
   ]) {
     assert.ok(source.includes(boundary), `missing fail-closed boundary: ${boundary}`);
   }
+  for (const boundary of [
+    'duplicate mapping key',
+    'anchors, aliases, and tags are not supported',
+    'multiple YAML documents and directives are not supported',
+    'tabs are not accepted in workflow YAML',
+  ]) {
+    assert.ok(
+      strictParser.includes(boundary),
+      `missing strict YAML boundary: ${boundary}`,
+    );
+  }
+  assert.match(source, /workflow_yaml::parse_yaml/);
   assert.match(source, /serde_yaml::from_str/);
   assert.match(source, /validate_yaml_shape/);
   assert.match(source, /is_full_commit_sha/);
@@ -79,7 +112,7 @@ test('the compiler emits only immutable fixed-profile build requests', async () 
   );
   assert.match(source, /validate_build_request\(&state\.build\.config, &request\)/);
   assert.match(source, /enqueue_build\(&state\.build, build_request, "gha-yaml"\)/);
-  assert.doesNotMatch(source, /command:\s|runner_image|build_args: Some|deploy: Some/);
+  assert.doesNotMatch(source, /command:\s*Some|runner_image|build_args: Some|deploy: Some/);
 });
 
 test('unsupported GitHub Actions semantics fail closed instead of being approximated', async () => {
@@ -103,6 +136,10 @@ test('unsupported GitHub Actions semantics fail closed instead of being approxim
     'non-Linux native execution is unavailable',
     'checkout input',
     'bounded static label',
+    'outside the independent worker event policy',
+    'contains filters or inputs that the fixed-profile endpoint cannot evaluate',
+    'not represented by fixed profile',
+    'shell composition or redirection is not represented',
   ]) {
     assert.ok(source.includes(rejected), `missing rejection contract: ${rejected}`);
   }
@@ -183,6 +220,12 @@ test('unit tests cover valid DAGs, authenticated HTTP, and adversarial structure
     'plan_id_is_stable_and_changes_with_yaml',
     'build_request_is_profile_only_and_immutable',
     'workflow_path_and_yaml_limits_fail_closed',
+    'strict_fixed_profile_planner_rejects_ambiguous_yaml',
+    'repository_ci_workflow_remains_parseable',
+    'trigger_policy_fails_closed_on_unevaluated_or_elevated_events',
+    'rejects_run_intent_that_the_selected_profile_would_not_execute',
+    'accepts_only_the_reviewed_run_surface_for_fixed_profiles',
+    'immutable_revisions_are_lowercase_and_job_ids_match_github_syntax',
   ]) {
     assert.match(source, new RegExp(`fn ${unitTest}\\(`));
   }
@@ -199,5 +242,5 @@ test('standalone publication provenance remains explicit', async () => {
     /gha-indie-worker\.rs` from `remote\/deployments\/build-server-rs/,
   );
   assert.match(design, /canonical source for\s+`gha-indie-worker\/gha-indie-worker\.rs`/);
-  assert.match(design, /currently cannot create a branch/);
+  assert.match(design, /must merge here first/);
 });
