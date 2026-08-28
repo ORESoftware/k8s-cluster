@@ -1,0 +1,48 @@
+# Layer-1 tenancy for premarital-asset-protection.
+# Apply before the Application. Manifests: github.com/premarital-asset-protection/pmap-infra k8s/
+#
+# Hosts: app.pmap.pro (web), api.pmap.pro (API). Marketing stays on GitHub Pages.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pmap
+  labels:
+    app.kubernetes.io/part-of: pmap
+    kubernetes.io/metadata.name: pmap
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: pmap-quota
+  namespace: pmap
+spec:
+  hard:
+    requests.cpu: "2"
+    requests.memory: 4Gi
+    limits.cpu: "4"
+    limits.memory: 8Gi
+    pods: "20"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: pmap-limits
+  namespace: pmap
+spec:
+  limits:
+    - type: Container
+      default: { cpu: 500m, memory: 512Mi }
+      defaultRequest: { cpu: 100m, memory: 128Mi }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pmap-default-deny-ingress
+  namespace: pmap
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]

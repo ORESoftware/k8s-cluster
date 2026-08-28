@@ -1,0 +1,192 @@
+name: Ensure user membership across ORESoftware-owned organizations
+run-name: Ensure ${{ inputs.username || 'the1mills' }} organization membership @ ${{ github.sha }}
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ops-invite-org-member.yml'
+      - 'scripts/ops/invite_org_member_all.py'
+      - 'scripts/ops/run_protected_org_member_inviter.sh'
+      - 'tests/ops/test_invite_org_member_all.py'
+      - 'tests/ops/test_run_protected_org_member_inviter.py'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ops-invite-org-member.yml'
+      - 'scripts/ops/invite_org_member_all.py'
+      - 'scripts/ops/run_protected_org_member_inviter.sh'
+      - 'tests/ops/test_invite_org_member_all.py'
+      - 'tests/ops/test_run_protected_org_member_inviter.py'
+  workflow_dispatch:
+    inputs:
+      username:
+        description: GitHub username to invite where no active or pending membership exists
+        required: true
+        default: the1mills
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-org-member-inviter-${{ github.event_name }}-${{ github.ref }}-${{ inputs.username || 'the1mills' }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Check out the exact pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind validation to the exact head revision
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+
+      - name: Compile and test the fail-closed inviter
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ops/run_protected_org_member_inviter.sh
+          python3 -m py_compile scripts/ops/invite_org_member_all.py
+          python3 -m unittest discover -s tests/ops -p 'test_invite_org_member_all.py' -v
+          python3 -m unittest discover -s tests/ops -p 'test_run_protected_org_member_inviter.py' -v
+
+  invite:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      TARGET_USERNAME: ${{ inputs.username || 'the1mills' }}
+    steps:
+      - name: Check out the exact trusted main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind execution to exact trusted main
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          [[ "$TARGET_USERNAME" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$ ]]
+          [[ "$TARGET_USERNAME" != *--* ]]
+
+      - name: Validate before credential access
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ops/run_protected_org_member_inviter.sh
+          python3 -m py_compile scripts/ops/invite_org_member_all.py
+          python3 -m unittest discover -s tests/ops -p 'test_invite_org_member_all.py' -v
+          python3 -m unittest discover -s tests/ops -p 'test_run_protected_org_member_inviter.py' -v
+
+      - name: Configure trusted main-ref AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: protected-org-member-inviter
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Invite the user to every owned organization where membership is missing
+        id: invite
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/org-member-invitation.md"
+          error_log="$RUNNER_TEMP/org-member-invitation.stderr"
+          : > "$report"
+          : > "$error_log"
+
+          set +e
+          bash scripts/ops/run_protected_org_member_inviter.sh \
+            "$GITHUB_SHA" \
+            "$GITHUB_WORKSPACE" \
+            "$TARGET_USERNAME" \
+            >"$report" \
+            2>"$error_log"
+          status=$?
+          set -e
+
+          cat "$error_log" >&2
+          cat "$report"
+          cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          test "$status" -eq 0
+          grep -Fq '<!-- org-member-invitation-report-complete -->' "$report"
+
+      - name: Upload the sanitized invitation report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: org-member-invitation-${{ env.TARGET_USERNAME }}
+          path: ${{ runner.temp }}/org-member-invitation.md
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Report the sanitized result on the implementation pull request
+        if: ${{ always() }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INVITE_OUTCOME: ${{ steps.invite.outcome }}
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/org-member-invitation.md"
+          body="$RUNNER_TEMP/org-member-invitation-comment.md"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          if [[ "$INVITE_OUTCOME" == success ]] &&
+             [[ -s "$report" ]] &&
+             grep -Fq '<!-- org-member-invitation-report-complete -->' "$report"; then
+            cp "$report" "$body"
+            {
+              echo
+              echo "Trusted-main workflow run: ${run_url}"
+            } >> "$body"
+          else
+            {
+              echo '# Organization membership invitation run did not complete'
+              echo
+              echo "Target user: \`${TARGET_USERNAME}\`"
+              echo
+              echo "Step outcome: \`${INVITE_OUTCOME:-not-started}\`"
+              echo
+              echo "Trusted-main workflow run: ${run_url}"
+              echo
+              echo 'No credential values or raw error logs are included in this comment.'
+            } > "$body"
+          fi
+
+          gh issue comment 1411 --repo "$GITHUB_REPOSITORY" --body-file "$body"
+
+      - name: Enforce invitation success after reporting
+        if: ${{ always() }}
+        shell: bash
+        env:
+          INVITE_OUTCOME: ${{ steps.invite.outcome }}
+        run: |
+          set -euo pipefail
+          test "$INVITE_OUTCOME" = success

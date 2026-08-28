@@ -151,6 +151,18 @@
       "target_preview": "ores/dev/agents/provider-credentials"
     },
     {
+      "column": 25,
+      "line": 69,
+      "owner": "ores",
+      "path": ".github/workflows/ops-create-sustainable-bike.yml",
+      "reference": "dd/remote-dev/agent-secrets",
+      "rule_id": "remote-dev.agent-secrets",
+      "scope": "active",
+      "status": "review-required",
+      "system": "slash-namespace",
+      "target_preview": "ores/dev/agents/provider-credentials"
+    },
+    {
       "column": 95,
       "line": 99,
       "owner": "ores",
@@ -14587,6 +14599,18 @@
       "target_preview": "ores/dev/agents/provider-credentials"
     },
     {
+      "column": 17,
+      "line": 81,
+      "owner": "ores",
+      "path": "scripts/ops/run_protected_org_member_inviter.sh",
+      "reference": "dd/remote-dev/agent-secrets",
+      "rule_id": "remote-dev.agent-secrets",
+      "scope": "active",
+      "status": "review-required",
+      "system": "slash-namespace",
+      "target_preview": "ores/dev/agents/provider-credentials"
+    },
+    {
       "column": 19,
       "line": 107,
       "owner": "ores",
@@ -14959,6 +14983,18 @@
       "target_preview": "ores/dev/agents/provider-credentials"
     },
     {
+      "column": 14,
+      "line": 20,
+      "owner": "ores",
+      "path": "tests/ops/test_run_protected_org_member_inviter.py",
+      "reference": "dd/remote-dev/agent-secrets",
+      "rule_id": "remote-dev.agent-secrets",
+      "scope": "test",
+      "status": "review-required",
+      "system": "slash-namespace",
+      "target_preview": "ores/dev/agents/provider-credentials"
+    },
+    {
       "column": 49,
       "line": 27,
       "owner": "ores",
@@ -14975,29 +15011,29 @@
     "byOwner": {
       "benefactor-cc": 3,
       "fiducia-cloud": 81,
-      "ores": 497,
+      "ores": 500,
       "shared-auth": 13,
       "unclassified": 653
     },
     "byScope": {
-      "active": 978,
+      "active": 980,
       "documentation": 184,
-      "test": 85
+      "test": 86
     },
     "byStatus": {
       "classified": 114,
-      "review-required": 480,
+      "review-required": 483,
       "unclassified": 653
     },
     "bySystem": {
       "generated-package": 82,
       "host-path": 192,
       "metadata-key": 405,
-      "slash-namespace": 454,
+      "slash-namespace": 457,
       "source-package": 114
     },
     "distinctReferences": 239,
-    "total": 1247,
+    "total": 1250,
     "unclassifiedActive": 538
   },
   "valid": true
