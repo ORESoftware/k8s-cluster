@@ -1,3 +1,5 @@
+pub mod credentials;
+
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use hmac::{Hmac, Mac};
