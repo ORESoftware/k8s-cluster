@@ -1,0 +1,79 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-push-notification-server
+  namespace: default
+  labels:
+    app: dd-push-notification-server
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-push-notification-server
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # In-cluster producers. Application-layer bearer auth (SERVER_AUTH_SECRET)
+    # remains mandatory on every /v1/* route regardless of this allowlist.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dd-remote-gateway
+        - podSelector:
+            matchLabels:
+              app: dd-dev-server-api
+        - podSelector:
+            matchLabels:
+              app: dd-agent-worker-broker
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: dd-remote-dev
+              app.kubernetes.io/component: thread-pod
+      ports:
+        - protocol: TCP
+          port: 8121
+    # Warm pool workers use the node network, so pod selectors cannot identify
+    # them. Keep this exception constrained to the EC2 VPC instead of the pod
+    # network; bearer auth remains mandatory.
+    - from:
+        - ipBlock:
+            cidr: 172.31.0.0/16
+      ports:
+        - protocol: TCP
+          port: 8121
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Future durable JetStream ingestion (DEN-795). Allowed now so enabling
+    # NATS_URL in the deployment is a one-line change.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: messaging
+      ports:
+        - protocol: TCP
+          port: 4222
+    # Provider APIs (FCM, APNs, Expo, browser Web Push services, SendGrid,
+    # Twilio) plus crates.io and the guarded GitHub fallback for the in-pod
+    # build. Exclude cluster, loopback, and metadata ranges so this rule cannot
+    # become a generic internal-network escape hatch; the server's own Web Push
+    # SSRF policy blocks private/reserved targets at the application layer too.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

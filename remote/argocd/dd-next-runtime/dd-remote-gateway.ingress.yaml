@@ -77,3 +77,41 @@ spec:
                 name: dd-remote-gateway
                 port:
                   number: 443
+---
+# Dedicated GitHub webhook ingress. It deliberately bypasses the broad gateway
+# route so the existing build-server /webhooks/ prefix cannot be confused with
+# the workflow compiler. The only public path is exact and HMAC-authenticated.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dd-gha-clone-webhook
+  namespace: default
+  labels:
+    app: dd-gha-clone-server
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /webhooks/github
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "5"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "65"
+    nginx.ingress.kubernetes.io/limit-rps: "5"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "2"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - hello.95-217-171-250.sslip.io
+      secretName: gateway-public-tls
+  rules:
+    - host: hello.95-217-171-250.sslip.io
+      http:
+        paths:
+          - path: /gha-webhooks/github
+            pathType: Exact
+            backend:
+              service:
+                name: dd-gha-clone-server
+                port:
+                  number: 8125

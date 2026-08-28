@@ -130,7 +130,12 @@ pub(crate) async fn publish_blockchain_event(state: &AppState, subject: &str, pa
     }
 }
 
-pub(crate) async fn publish_contract_event(state: &AppState, event_type: &str, request_id: &str, ok: bool) {
+pub(crate) async fn publish_contract_event(
+    state: &AppState,
+    event_type: &str,
+    request_id: &str,
+    ok: bool,
+) {
     let Some(nats) = &state.nats else {
         return;
     };

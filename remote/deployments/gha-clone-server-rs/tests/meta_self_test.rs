@@ -22,6 +22,8 @@ use tokio::{
 
 const SERVER_AUTH: &str = "meta-server-auth";
 const BUILD_AUTH: &str = "meta-build-auth";
+const REPOSITORY: &str = "gha-indie-worker/gha-clone-server.rs";
+const WORKFLOW_PATH: &str = ".github/workflows/gha-clone-server-meta.yml";
 const REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
 
 #[derive(Clone, Default)]
@@ -112,7 +114,7 @@ async fn wait_until_ready(client: &reqwest::Client, base_url: &str, child: &mut 
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn running_server_submits_its_own_workflow_to_the_fixed_build_profile() {
+async fn running_server_submits_the_standalone_workflow_to_the_fixed_build_profile() {
     let mock_state = MockBuildState::default();
     let mock_listener = TcpListener::bind("127.0.0.1:0")
         .await
@@ -141,7 +143,7 @@ async fn running_server_submits_its_own_workflow_to_the_fixed_build_profile() {
         .env("GHA_CLONE_AUTH_SECRET", SERVER_AUTH)
         .env("GHA_CLONE_EXECUTION_ENABLED", "true")
         .env("GHA_CLONE_WEBHOOK_EXECUTION_ENABLED", "false")
-        .env("GHA_CLONE_ALLOWED_REPOSITORIES", "ORESoftware/k8s-cluster")
+        .env("GHA_CLONE_ALLOWED_REPOSITORIES", REPOSITORY)
         .env("GHA_CLONE_WORKFLOW_RULES_JSON", "{}")
         .env(
             "GHA_CLONE_BUILD_SERVER_URL",
@@ -165,17 +167,16 @@ async fn running_server_submits_its_own_workflow_to_the_fixed_build_profile() {
         .expect("HTTP client");
     wait_until_ready(&client, &server_url, &mut child).await;
 
-    let workflow_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../.github/workflows/gha-clone-server-meta.yml");
+    let workflow_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(WORKFLOW_PATH);
     let workflow_yaml = fs::read_to_string(&workflow_path)
         .unwrap_or_else(|error| panic!("read {}: {error}", workflow_path.display()));
     let response = client
         .post(format!("{server_url}/v1/runs"))
         .header("x-gha-clone-auth", SERVER_AUTH)
         .json(&json!({
-            "repository": "ORESoftware/k8s-cluster",
+            "repository": REPOSITORY,
             "revision": REVISION,
-            "workflowPath": ".github/workflows/gha-clone-server-meta.yml",
+            "workflowPath": WORKFLOW_PATH,
             "workflowYaml": workflow_yaml
         }))
         .send()
@@ -209,12 +210,9 @@ async fn running_server_submits_its_own_workflow_to_the_fixed_build_profile() {
         sleep(Duration::from_millis(100)).await;
     };
 
-    assert_eq!(final_run["repository"], "ORESoftware/k8s-cluster");
+    assert_eq!(final_run["repository"], REPOSITORY);
     assert_eq!(final_run["revision"], REVISION);
-    assert_eq!(
-        final_run["workflowPath"],
-        ".github/workflows/gha-clone-server-meta.yml"
-    );
+    assert_eq!(final_run["workflowPath"], WORKFLOW_PATH);
     assert_eq!(final_run["submissions"][0]["profile"], "rust-verify");
     assert_eq!(final_run["submissions"][0]["status"], "succeeded");
 
@@ -225,7 +223,7 @@ async fn running_server_submits_its_own_workflow_to_the_fixed_build_profile() {
     assert_eq!(submission["jobKind"], "run-profile");
     assert_eq!(
         submission["repoUrl"],
-        "https://github.com/ORESoftware/k8s-cluster.git"
+        "https://github.com/gha-indie-worker/gha-clone-server.rs.git"
     );
     assert_eq!(submission["gitRef"], REVISION);
     assert_eq!(submission["profile"], "rust-verify");

@@ -191,6 +191,31 @@ pub async fn record_webhook_delivery(
     }
 }
 
+/// Release only the provisional claim for a delivery that was not accepted.
+/// Permanent rejections retain their row; transient enqueue failures delete
+/// this exact `received` row so GitHub can redeliver the same delivery ID.
+pub async fn release_webhook_delivery_claim(
+    db: &DatabaseConnection,
+    provider: &str,
+    delivery_id: &str,
+) -> bool {
+    let deleted = webhook_deliveries::Entity::delete_many()
+        .filter(webhook_deliveries::Column::Provider.eq(provider))
+        .filter(webhook_deliveries::Column::DeliveryId.eq(delivery_id))
+        .filter(webhook_deliveries::Column::Action.eq("received"))
+        .exec(db)
+        .await;
+    match deleted {
+        Ok(result) => result.rows_affected > 0,
+        Err(error) => {
+            tracing::warn!(
+                "failed to release provisional webhook delivery {provider}/{delivery_id}: {error}"
+            );
+            false
+        }
+    }
+}
+
 /// Latest synced value hash for a (repo, secret) pair, to skip unchanged values.
 pub async fn last_synced_sha256(
     db: &DatabaseConnection,

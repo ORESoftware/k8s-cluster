@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - .github/chat-relay-trigger/**
-      - .github/workflows/ephemeral-google-chat-relay-get.yml
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,13 +16,14 @@ concurrency:
 
 jobs:
   export:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       RELAY_ISSUE: '86'
       CHAT_EXEC_URL: https://script.google.com/macros/s/AKfycbzIMOO0eQ12WjgRvLmYAdn3zryB57Ush6uWfQWc-iHNvVu6X0ULbPfPv7WMaYdMp2Tq/exec
       EXPECTED_SPACE: spaces/AAQAoHKdzvI
+      EXPECTED_DISPLAY_NAME: alex-alex-me
       EXPECTED_START: '2026-05-10T04:00:00.000Z'
     steps:
       - name: Generate one-time RSA key and publish public key
@@ -42,25 +43,61 @@ jobs:
           echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
           gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/issues/${RELAY_ISSUE}/comments" \
-            -f body="CHAT_RELAY_GET_PUBLIC_KEY run_id=${run_id} key_b64=${key_b64}" >/dev/null
+            -f body="CHAT_RELAY_GET_PUBLIC_KEY protocol=2 run_id=${run_id} key_b64=${key_b64} payload_fields=run_id,token,archive_passphrase" >/dev/null
 
-      - name: Receive and decrypt payload
+      - name: Receive exactly one run-bound encrypted payload
+        id: payload
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          prefix="CHAT_RELAY_GET_CIPHERTEXT run_id=${{ steps.keypair.outputs.run_id }} data="
+          run_id="${{ steps.keypair.outputs.run_id }}"
+          prefix="CHAT_RELAY_GET_CIPHERTEXT run_id=${run_id} data="
+          matches="${RUNNER_TEMP}/ciphertext-matches"
           ciphertext=''
-          for attempt in $(seq 1 180); do
-            ciphertext="$(gh api --paginate \
+
+          query_matches() {
+            gh api --paginate \
               "repos/${GITHUB_REPOSITORY}/issues/${RELAY_ISSUE}/comments" \
-              --jq ".[] | select(.body | startswith(\"${prefix}\")) | .body" |
-              tail -n1 | sed "s#^${prefix}##")"
-            [ -z "$ciphertext" ] || break
+              --jq ".[] | select(.body | startswith(\"${prefix}\")) | .body" \
+              > "$matches"
+          }
+
+          reject_duplicates() {
+            local count="$1"
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/issues/${RELAY_ISSUE}/comments" \
+              -f body="CHAT_RELAY_GET_REJECTED run_id=${run_id} reason=duplicate_ciphertexts count=${count}" >/dev/null
+            echo "Expected exactly one ciphertext for ${run_id}; observed ${count}." >&2
+            exit 1
+          }
+
+          for attempt in $(seq 1 180); do
+            query_matches
+            count="$(awk 'NF { count += 1 } END { print count + 0 }' "$matches")"
+            if [ "$count" -gt 1 ]; then
+              reject_duplicates "$count"
+            fi
+            if [ "$count" -eq 1 ]; then
+              sleep 10
+              query_matches
+              count="$(awk 'NF { count += 1 } END { print count + 0 }' "$matches")"
+              [ "$count" -eq 1 ] || reject_duplicates "$count"
+              line="$(cat "$matches")"
+              ciphertext="${line#"$prefix"}"
+              break
+            fi
             sleep 5
           done
-          test -n "$ciphertext"
+
+          test -n "$ciphertext" || {
+            echo "Timed out waiting for one encrypted payload for ${run_id}." >&2
+            exit 1
+          }
+
+          ciphertext_sha256="$(printf '%s' "$ciphertext" | sha256sum | awk '{print $1}')"
+          echo "ciphertext_sha256=${ciphertext_sha256}" >> "$GITHUB_OUTPUT"
           printf '%s' "$ciphertext" | base64 -d > "${RUNNER_TEMP}/payload.bin"
           openssl pkeyutl -decrypt -inkey "${RUNNER_TEMP}/private.pem" \
             -in "${RUNNER_TEMP}/payload.bin" \
@@ -68,17 +105,20 @@ jobs:
             -pkeyopt rsa_oaep_md:sha256 \
             -pkeyopt rsa_mgf1_md:sha256 \
             -out "${RUNNER_TEMP}/payload.json"
-          jq -e '(.token|length>=32) and (.archive_passphrase|length>=32)' \
-            "${RUNNER_TEMP}/payload.json" >/dev/null
+          jq -e --arg run_id "$run_id" '
+            (.run_id == $run_id) and
+            (.token | type == "string" and length >= 32) and
+            (.archive_passphrase | type == "string" and length >= 32)
+          ' "${RUNNER_TEMP}/payload.json" >/dev/null
           token="$(jq -r .token "${RUNNER_TEMP}/payload.json")"
           passphrase="$(jq -r .archive_passphrase "${RUNNER_TEMP}/payload.json")"
           echo "::add-mask::${token}"
           echo "::add-mask::${passphrase}"
           printf '%s' "$token" > "${RUNNER_TEMP}/token"
           printf '%s' "$passphrase" > "${RUNNER_TEMP}/passphrase"
-          rm -f "${RUNNER_TEMP}/payload.bin" "${RUNNER_TEMP}/payload.json"
+          rm -f "$matches" "${RUNNER_TEMP}/payload.bin" "${RUNNER_TEMP}/payload.json"
 
-      - name: Fetch and paginate Chat messages with GET
+      - name: Fetch and paginate fixed Chat messages with GET
         id: fetch
         shell: bash
         env:
@@ -121,8 +161,10 @@ jobs:
 
           bridge_get status "$out/status.json"
           bridge_get probe "$out/probe.json"
-          jq -e --arg space "$EXPECTED_SPACE" '.data.space.name == $space' \
-            "$out/probe.json" >/dev/null
+          jq -e --arg space "$EXPECTED_SPACE" --arg display "$EXPECTED_DISPLAY_NAME" '
+            .data.space.name == $space and
+            (.data.space.displayName == $display or .data.space.expectedDisplayName == $display)
+          ' "$out/probe.json" >/dev/null
 
           page_token=''
           pages=0
@@ -146,17 +188,32 @@ jobs:
             [ -n "$page_token" ] || break
           done
 
+          if [ -n "$first_time" ]; then
+            python -c '
+          import datetime as dt, sys
+          expected = dt.datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
+          observed = dt.datetime.fromisoformat(sys.argv[2].replace("Z", "+00:00"))
+          if observed < expected:
+              raise SystemExit(f"first message {observed.isoformat()} predates boundary {expected.isoformat()}")
+          ' "$EXPECTED_START" "$first_time"
+          fi
+
           jq -n --arg runId "${{ steps.keypair.outputs.run_id }}" \
-            --arg space "$EXPECTED_SPACE" --arg startBoundary "$EXPECTED_START" \
+            --arg space "$EXPECTED_SPACE" --arg displayName "$EXPECTED_DISPLAY_NAME" \
+            --arg startBoundary "$EXPECTED_START" \
             --arg firstMessageTime "$first_time" --arg lastMessageTime "$last_time" \
+            --arg relayCiphertextSha256 "${{ steps.payload.outputs.ciphertext_sha256 }}" \
             --argjson pages "$pages" --argjson messages "$messages" \
-            '{runId:$runId,space:$space,startBoundary:$startBoundary,pages:$pages,messages:$messages,firstMessageTime:$firstMessageTime,lastMessageTime:$lastMessageTime,exportedAt:(now|todateiso8601)}' \
+            '{relayProtocol:2,runId:$runId,space:$space,displayName:$displayName,startBoundary:$startBoundary,pages:$pages,messages:$messages,firstMessageTime:$firstMessageTime,lastMessageTime:$lastMessageTime,relayCiphertextSha256:$relayCiphertextSha256,exportedAt:(now|todateiso8601)}' \
             > "$out/manifest.json"
-          find "$out" -type f -print0 | sort -z | xargs -0 sha256sum > "$out/SHA256SUMS"
+          manifest_sha256="$(sha256sum "$out/manifest.json" | awk '{print $1}')"
+          find "$out" -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > "$out/SHA256SUMS"
           echo "pages=${pages}" >> "$GITHUB_OUTPUT"
           echo "messages=${messages}" >> "$GITHUB_OUTPUT"
+          echo "manifest_sha256=${manifest_sha256}" >> "$GITHUB_OUTPUT"
 
       - name: Encrypt export
+        id: encrypt
         shell: bash
         run: |
           set -euo pipefail
@@ -166,8 +223,10 @@ jobs:
             --symmetric --cipher-algo AES256 \
             --output "${RUNNER_TEMP}/chat-export.tar.gz.gpg" \
             "${RUNNER_TEMP}/chat-export.tar.gz"
-          sha256sum "${RUNNER_TEMP}/chat-export.tar.gz.gpg" > \
+          archive_sha256="$(sha256sum "${RUNNER_TEMP}/chat-export.tar.gz.gpg" | awk '{print $1}')"
+          printf '%s  %s\n' "$archive_sha256" chat-export.tar.gz.gpg > \
             "${RUNNER_TEMP}/chat-export.tar.gz.gpg.sha256"
+          echo "archive_sha256=${archive_sha256}" >> "$GITHUB_OUTPUT"
           rm -rf "${RUNNER_TEMP}/chat-export" "${RUNNER_TEMP}/chat-export.tar.gz"
 
       - name: Upload encrypted artifact
@@ -177,17 +236,18 @@ jobs:
           path: |
             ${{ runner.temp }}/chat-export.tar.gz.gpg
             ${{ runner.temp }}/chat-export.tar.gz.gpg.sha256
+          if-no-files-found: error
           retention-days: 1
           compression-level: 0
 
-      - name: Publish completion
+      - name: Publish hash-bound completion
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/issues/${RELAY_ISSUE}/comments" \
-            -f body="CHAT_RELAY_GET_COMPLETE run_id=${{ steps.keypair.outputs.run_id }} artifact=encrypted-google-chat-export-get-${{ steps.keypair.outputs.run_id }} pages=${{ steps.fetch.outputs.pages }} messages=${{ steps.fetch.outputs.messages }}" >/dev/null
+            -f body="CHAT_RELAY_GET_COMPLETE protocol=2 run_id=${{ steps.keypair.outputs.run_id }} artifact=encrypted-google-chat-export-get-${{ steps.keypair.outputs.run_id }} pages=${{ steps.fetch.outputs.pages }} messages=${{ steps.fetch.outputs.messages }} ciphertext_sha256=${{ steps.payload.outputs.ciphertext_sha256 }} manifest_sha256=${{ steps.fetch.outputs.manifest_sha256 }} archive_sha256=${{ steps.encrypt.outputs.archive_sha256 }}" >/dev/null
 
       - name: Destroy secrets
         if: always()
@@ -195,4 +255,5 @@ jobs:
         run: |
           rm -f "${RUNNER_TEMP}/private.pem" "${RUNNER_TEMP}/public.pem" \
             "${RUNNER_TEMP}/payload.bin" "${RUNNER_TEMP}/payload.json" \
+            "${RUNNER_TEMP}/ciphertext-matches" \
             "${RUNNER_TEMP}/token" "${RUNNER_TEMP}/passphrase"

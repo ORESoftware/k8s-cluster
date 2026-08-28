@@ -1,0 +1,236 @@
+name: Sync Linear next steps to organization projects
+run-name: Sync Linear next steps to 40 organization projects
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/sync-linear-next-steps-to-org-projects.yml
+      - scripts/ci/linear_project_sync_github.py
+      - scripts/ci/sync_linear_next_steps_to_org_projects.py
+      - ops/linear-github-project-sync/2026-08-04/**
+      - tests/ops/test_sync_linear_next_steps_to_org_projects.py
+  workflow_dispatch:
+    inputs:
+      tracker_issue:
+        description: Issue number that receives the bounded sync report
+        required: true
+        type: string
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-linear-next-steps-to-org-projects-2026-08-04
+  cancel-in-progress: false
+
+jobs:
+  validate-pr:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out pull-request revision without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate the immutable selection and synchronizer
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile \
+            scripts/ci/linear_project_sync_github.py \
+            scripts/ci/sync_linear_next_steps_to_org_projects.py \
+            tests/ops/test_sync_linear_next_steps_to_org_projects.py
+          python3 scripts/ci/sync_linear_next_steps_to_org_projects.py \
+            --manifest-dir ops/linear-github-project-sync/2026-08-04 \
+            --validate-only
+          python3 tests/ops/test_sync_linear_next_steps_to_org_projects.py -v
+
+  sync:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        !github.event.issue.pull_request &&
+        github.actor == 'ORESoftware' &&
+        github.event.comment.body == 'linear-project-sync:2026-08-04-v1'
+      )
+    permissions:
+      contents: read
+      issues: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      TRACKER_ISSUE: ${{ github.event_name == 'workflow_dispatch' && inputs.tracker_issue || github.event.issue.number }}
+    steps:
+      - name: Check out trusted default branch without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate immutable selection and tracker target
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/ci/sync_linear_next_steps_to_org_projects.py \
+            --manifest-dir ops/linear-github-project-sync/2026-08-04 \
+            --validate-only
+          [[ "${TRACKER_ISSUE:-}" =~ ^[0-9]+$ ]]
+
+      - name: Receive an ephemeral encrypted credential and synchronize
+        id: synchronize
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+
+          report="$RUNNER_TEMP/linear-project-sync.md"
+          private_key="$RUNNER_TEMP/linear-project-sync-private.pem"
+          public_key="$RUNNER_TEMP/linear-project-sync-public.pem"
+          encrypted_token="$RUNNER_TEMP/linear-project-sync-token.enc"
+          plaintext_token="$RUNNER_TEMP/linear-project-sync-token.txt"
+          handshake_comment_id=""
+          ciphertext_comment_id=""
+
+          cleanup() {
+            unset PROJECT_SYNC_GITHUB_TOKEN || true
+            for path in "$private_key" "$public_key" "$encrypted_token" "$plaintext_token"; do
+              if [[ -f "$path" ]]; then
+                shred -u "$path" 2>/dev/null || rm -f "$path"
+              fi
+            done
+            if [[ -n "$handshake_comment_id" ]]; then
+              gh api --method DELETE \
+                "repos/${GITHUB_REPOSITORY}/issues/comments/${handshake_comment_id}" \
+                >/dev/null 2>&1 || true
+            fi
+            if [[ -n "$ciphertext_comment_id" ]]; then
+              gh api --method DELETE \
+                "repos/${GITHUB_REPOSITORY}/issues/comments/${ciphertext_comment_id}" \
+                >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup EXIT
+
+          fail_bounded() {
+            local message="$1"
+            printf '# Linear → GitHub Projects v2 sync failed\n\nFatal: %s\n' "$message" > "$report"
+            echo 'exit_code=2' >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          openssl genpkey \
+            -algorithm RSA \
+            -pkeyopt rsa_keygen_bits:4096 \
+            -out "$private_key" \
+            >/dev/null 2>&1 || fail_bounded 'could not generate ephemeral RSA key'
+          openssl pkey \
+            -in "$private_key" \
+            -pubout \
+            -out "$public_key" \
+            >/dev/null 2>&1 || fail_bounded 'could not derive ephemeral RSA public key'
+
+          nonce="$(openssl rand -hex 16)"
+          public_key_b64="$(base64 -w0 "$public_key")"
+          handshake_body="$(jq -nc \
+            --arg kind 'linear-project-sync-public-key' \
+            --arg nonce "$nonce" \
+            --arg public_key "$public_key_b64" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            '{kind:$kind,nonce:$nonce,public_key:$public_key,run_id:$run_id}')"
+          handshake_response="$(gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${TRACKER_ISSUE}/comments" \
+            -f body="$handshake_body")" \
+            || fail_bounded 'could not publish the ephemeral public key'
+          handshake_comment_id="$(jq -er '.id | select(type == "number" and . > 0)' <<<"$handshake_response")" \
+            || fail_bounded 'public-key comment returned no valid ID'
+
+          ciphertext=""
+          for _ in $(seq 1 200); do
+            comments="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${TRACKER_ISSUE}/comments?per_page=100")" \
+              || { sleep 3; continue; }
+            match="$(jq -c --arg nonce "$nonce" '
+              [
+                .[]
+                | select(.user.login == "ORESoftware")
+                | {id, parsed:(.body | fromjson?)}
+                | select(.parsed.kind == "linear-project-sync-ciphertext")
+                | select(.parsed.nonce == $nonce)
+              ]
+              | last // empty
+            ' <<<"$comments")"
+            if [[ -n "$match" ]]; then
+              ciphertext="$(jq -r '.parsed.ciphertext // empty' <<<"$match")"
+              ciphertext_comment_id="$(jq -r '.id // empty' <<<"$match")"
+              if [[ -n "$ciphertext" && -n "$ciphertext_comment_id" ]]; then
+                break
+              fi
+            fi
+            sleep 3
+          done
+
+          if [[ -z "$ciphertext" ]]; then
+            fail_bounded 'encrypted credential handoff was not received'
+          fi
+
+          printf '%s' "$ciphertext" | base64 -d > "$encrypted_token" \
+            || fail_bounded 'ciphertext was not valid base64'
+          openssl pkeyutl \
+            -decrypt \
+            -inkey "$private_key" \
+            -in "$encrypted_token" \
+            -out "$plaintext_token" \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256 \
+            || fail_bounded 'ephemeral credential decryption failed'
+
+          PROJECT_SYNC_GITHUB_TOKEN="$(tr -d '\r\n' < "$plaintext_token")"
+          if [[ -z "$PROJECT_SYNC_GITHUB_TOKEN" ]]; then
+            fail_bounded 'decrypted credential was empty'
+          fi
+          echo "::add-mask::$PROJECT_SYNC_GITHUB_TOKEN"
+          export PROJECT_SYNC_GITHUB_TOKEN
+
+          viewer="$(GH_TOKEN="$PROJECT_SYNC_GITHUB_TOKEN" gh api graphql -f query='query{viewer{login}}')" \
+            || fail_bounded 'decrypted credential could not authenticate to GitHub'
+          jq -e '.data.viewer.login == "ORESoftware"' <<<"$viewer" >/dev/null \
+            || fail_bounded 'decrypted credential authenticated as an unexpected GitHub user'
+
+          set +e
+          python3 scripts/ci/sync_linear_next_steps_to_org_projects.py \
+            --manifest-dir ops/linear-github-project-sync/2026-08-04 \
+            --report-path "$report"
+          exit_code=$?
+          set -e
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Publish bounded sync evidence to the tracker issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          report="$RUNNER_TEMP/linear-project-sync.md"
+          if [[ ! -s "$report" ]]; then
+            printf '%s\n' '# Linear → GitHub Projects v2 sync failed before bounded evidence was produced' > "$report"
+          fi
+          printf '\nWorkflow run: https://github.com/%s/actions/runs/%s\n' \
+            "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> "$report"
+          gh issue comment "$TRACKER_ISSUE" --repo "$GITHUB_REPOSITORY" --body-file "$report"
+
+      - name: Require a complete warning-free sync
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "${{ steps.synchronize.outputs.exit_code }}" = 0

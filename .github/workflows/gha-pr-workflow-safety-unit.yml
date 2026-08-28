@@ -1,0 +1,35 @@
+name: GHA PR workflow safety unit tests
+
+on:
+  pull_request:
+    paths:
+      - "scripts/security/check-pr-workflow-safety.mjs"
+      - "scripts/security/check-pr-workflow-safety.test.mjs"
+      - ".github/workflows/gha-pr-workflow-safety.yml"
+      - ".github/workflows/gha-pr-workflow-safety-unit.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gha-pr-workflow-safety-unit-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout pull request without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Run adversarial scanner tests
+        run: node --test scripts/security/check-pr-workflow-safety.test.mjs
+
+      - name: Scan the guard workflows themselves
+        run: >-
+          node scripts/security/check-pr-workflow-safety.mjs
+          .github/workflows/gha-pr-workflow-safety.yml
+          .github/workflows/gha-pr-workflow-safety-unit.yml

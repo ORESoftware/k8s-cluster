@@ -13,7 +13,15 @@ CERTBOT_WORK_DIR="${CERTBOT_WORK_DIR:-/home/ec2-user/letsencrypt/work}"
 CERTBOT_LOGS_DIR="${CERTBOT_LOGS_DIR:-/home/ec2-user/letsencrypt/logs}"
 K8S_NAMESPACE="${K8S_NAMESPACE:-default}"
 K8S_SECRET_NAME="${K8S_SECRET_NAME:-dd-remote-gateway-tls}"
-K8S_GATEWAY_DEPLOYMENT="${K8S_GATEWAY_DEPLOYMENT:-dd-remote-gateway}"
+if [ -n "${K8S_GATEWAY_WORKLOAD:-}" ]; then
+  GATEWAY_WORKLOAD="${K8S_GATEWAY_WORKLOAD}"
+elif [ -n "${K8S_GATEWAY_DEPLOYMENT:-}" ]; then
+  # Backward compatibility for operator overrides from before the gateway was
+  # migrated from a Deployment to the Git-desired DaemonSet.
+  GATEWAY_WORKLOAD="deployment/${K8S_GATEWAY_DEPLOYMENT}"
+else
+  GATEWAY_WORKLOAD="daemonset/dd-remote-gateway"
+fi
 KUBECTL_BIN="${KUBECTL_BIN:-kubectl}"
 KUBECTL_KUBECONFIG="${KUBECTL_KUBECONFIG:-/etc/kubernetes/admin.conf}"
 KUBECTL_SUDO="${KUBECTL_SUDO:-sudo}"
@@ -60,8 +68,16 @@ deploy_gateway_secret() {
 
   create_gateway_secret_manifest | kubectl apply --validate=false -f -
 
-  kubectl rollout restart "deployment/${K8S_GATEWAY_DEPLOYMENT}" -n "${K8S_NAMESPACE}"
-  kubectl rollout status "deployment/${K8S_GATEWAY_DEPLOYMENT}" -n "${K8S_NAMESPACE}" --timeout=180s
+  case "${GATEWAY_WORKLOAD}" in
+    deployment/*|daemonset/*) ;;
+    *)
+      echo "ERROR: K8S_GATEWAY_WORKLOAD must be deployment/NAME or daemonset/NAME" >&2
+      exit 64
+      ;;
+  esac
+
+  kubectl rollout restart "${GATEWAY_WORKLOAD}" -n "${K8S_NAMESPACE}"
+  kubectl rollout status "${GATEWAY_WORKLOAD}" -n "${K8S_NAMESPACE}" --timeout=180s
 }
 
 renew_certificate() {

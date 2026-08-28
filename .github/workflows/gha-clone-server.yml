@@ -4,14 +4,31 @@ on:
   pull_request:
     paths:
       - 'remote/deployments/gha-clone-server-rs/**'
-      - 'remote/deployments/build-server-rs/src/profiles.rs'
-      - 'remote/deployments/build-server-rs/readme.md'
+      - 'remote/deployments/build-server-rs/**'
       - 'remote/argocd/dd-next-runtime/dd-gha-clone-server*'
+      - 'remote/argocd/dd-next-runtime/dd-gha-executor-router*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-remote-gateway.ingress.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml'
+      - 'remote/ec2/renew-letsencrypt-gateway-cert.sh'
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
       - 'remote/tests/general/gha-clone-webhook-config.test.ts'
+      - 'remote/tests/general/gha-clone-streempilot-config.test.ts'
+      - 'remote/tests/general/gha-executor-router-activation.test.mjs'
+      - 'remote/tests/general/gha-clone-budget-webhook-activation.test.mjs'
+      - 'remote/tests/general/gha-clone-webhook-preflight.test.mjs'
+      - 'remote/tests/general/build-server-profile-repository-policy.test.mjs'
+      - 'scripts/ops/register_gha_clone_budget_webhook.sh'
+      - 'scripts/ops/canary_gha_clone_budget_webhook.py'
       - 'docs/gha-continuity-architecture.md'
+      - 'docs/gha-independent-executor-routing.md'
+      - 'docs/gha-executor-router-gitops.md'
+      - 'docs/gha-executor-router-activation.md'
+      - 'docs/operations/gha-budget-webhook-activation.md'
+      - 'docs/streempilot-ci-continuity.md'
+      - 'docs/build-server-profile-repository-policy.md'
       - '.github/actionlint.yaml'
       - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/gha-clone-server.yml'
@@ -20,14 +37,31 @@ on:
     branches: [main, dev]
     paths:
       - 'remote/deployments/gha-clone-server-rs/**'
-      - 'remote/deployments/build-server-rs/src/profiles.rs'
-      - 'remote/deployments/build-server-rs/readme.md'
+      - 'remote/deployments/build-server-rs/**'
       - 'remote/argocd/dd-next-runtime/dd-gha-clone-server*'
+      - 'remote/argocd/dd-next-runtime/dd-gha-executor-router*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-remote-gateway.ingress.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml'
+      - 'remote/ec2/renew-letsencrypt-gateway-cert.sh'
       - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/gha-clone-server-config.test.ts'
       - 'remote/tests/general/gha-clone-webhook-config.test.ts'
+      - 'remote/tests/general/gha-clone-streempilot-config.test.ts'
+      - 'remote/tests/general/gha-executor-router-activation.test.mjs'
+      - 'remote/tests/general/gha-clone-budget-webhook-activation.test.mjs'
+      - 'remote/tests/general/gha-clone-webhook-preflight.test.mjs'
+      - 'remote/tests/general/build-server-profile-repository-policy.test.mjs'
+      - 'scripts/ops/register_gha_clone_budget_webhook.sh'
+      - 'scripts/ops/canary_gha_clone_budget_webhook.py'
       - 'docs/gha-continuity-architecture.md'
+      - 'docs/gha-independent-executor-routing.md'
+      - 'docs/gha-executor-router-gitops.md'
+      - 'docs/gha-executor-router-activation.md'
+      - 'docs/operations/gha-budget-webhook-activation.md'
+      - 'docs/streempilot-ci-continuity.md'
+      - 'docs/build-server-profile-repository-policy.md'
       - '.github/actionlint.yaml'
       - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/gha-clone-server.yml'
@@ -49,7 +83,7 @@ concurrency:
 
 jobs:
   rust:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -65,12 +99,15 @@ jobs:
       - name: Run Clippy
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo clippy --locked --all-targets -- -D warnings
-      - name: Run unit and meta integration tests
+      - name: Run unit, process, webhook, meta, and StreemPilot mirror integration tests
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo test --locked --all-targets
+      - name: Prove real-process AWS and Hetzner routing boundaries
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: cargo test --locked --test executor_router_http
 
   build-server-profile:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -84,18 +121,33 @@ jobs:
         with:
           toolchain: '1.90.0'
           components: rustfmt
-      - name: Check the modified fixed-profile source formatting
+      - name: Check the modified build-server policy and idempotency modules formatting
         working-directory: remote/deployments/build-server-rs
-        run: rustfmt --edition 2021 --check src/profiles.rs
-      - name: Compile the build server against the exact private library gitlink
+        run: >-
+          rustfmt --edition 2021 --check
+          src/config.rs
+          src/config/profile_policy.rs
+          src/jobs.rs
+          src/nats_submit.rs
+          src/validation.rs
+      - name: Compile the complete build server against the exact private library gitlink
         working-directory: remote/deployments/build-server-rs
         run: cargo check --locked --all-targets
-      - name: Test the fixed-profile registry and meta fallback
+      - name: Test the fixed-profile registry and reviewed fallbacks
         working-directory: remote/deployments/build-server-rs
         run: cargo test --locked profiles::tests -- --nocapture
+      - name: Test exact repository-to-profile admission and downgrade rejection
+        working-directory: remote/deployments/build-server-rs
+        run: cargo test --locked config::profile_policy::tests -- --nocapture
+      - name: Test build request idempotency and retry semantics
+        working-directory: remote/deployments/build-server-rs
+        run: cargo test --locked idempotency_tests -- --nocapture
+      - name: Test strict NATS conflict and redelivery classification
+        working-directory: remote/deployments/build-server-rs
+        run: cargo test --locked nats_submit::tests -- --nocapture
 
   contracts:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -119,14 +171,53 @@ jobs:
           cache-dependency-path: remote/tests/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: remote/tests
-      - name: Validate deployment, execution, and webhook boundaries
+      - name: Validate deployment, routing, execution, webhook, activation, and StreemPilot boundaries
         working-directory: remote/tests
         run: |
           pnpm exec tsx --test \
             general/gha-clone-server-config.test.ts \
-            general/gha-clone-webhook-config.test.ts
-      - name: Validate webhook registration shell syntax
-        run: bash -n remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh
+            general/gha-clone-webhook-config.test.ts \
+            general/gha-clone-streempilot-config.test.ts
+          node --test \
+            general/gha-executor-router-activation.test.mjs \
+            general/gha-clone-budget-webhook-activation.test.mjs \
+            general/gha-clone-webhook-preflight.test.mjs \
+            general/build-server-profile-repository-policy.test.mjs
+      - name: Install pinned kubectl renderer
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
+        with:
+          version: v1.32.2
+      - name: Render the complete continuity overlay
+        run: |
+          set -euo pipefail
+          rendered="${RUNNER_TEMP}/dd-next-runtime.yaml"
+          kubectl kustomize remote/argocd/dd-next-runtime >"$rendered"
+          test -s "$rendered"
+          for deployment in dd-gha-clone-server dd-gha-executor-router; do
+            awk -v target="$deployment" '
+              BEGIN { RS="---"; found=0 }
+              {
+                record = "\n" $0 "\n"
+                if (index(record, "\nkind: Deployment\n") && index(record, "\n  name: " target "\n") && index(record, "\n  replicas: 1\n")) {
+                  found++
+                }
+              }
+              END {
+                if (found != 1) {
+                  printf "expected exactly one rendered Deployment %s at replicas=1; found=%d\n", target, found > "/dev/stderr"
+                  exit 1
+                }
+              }
+            ' "$rendered"
+          done
+      - name: Validate webhook operator tooling syntax
+        run: |
+          set -euo pipefail
+          bash -n remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh
+          bash -n remote/ec2/renew-letsencrypt-gateway-cert.sh
+          bash -n scripts/ops/preflight_gha_clone_webhook.sh
+          bash -n scripts/ops/register_gha_clone_budget_webhook.sh
+          python3 -m py_compile scripts/ops/canary_gha_clone_budget_webhook.py
       - name: Reject committed credentials
         run: |
           if grep -RIE \
@@ -134,7 +225,18 @@ jobs:
             'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|BEGIN (RSA |EC )?PRIVATE KEY' \
             remote/deployments/gha-clone-server-rs \
             remote/argocd/dd-next-runtime/dd-gha-clone-server* \
-            docs/gha-continuity-architecture.md; then
+            remote/argocd/dd-next-runtime/dd-gha-executor-router* \
+            remote/argocd/dd-next-runtime/dd-remote-gateway.ingress.yaml \
+            remote/tests/general/gha-clone-budget-webhook-activation.test.mjs \
+            scripts/ops/register_gha_clone_budget_webhook.sh \
+            scripts/ops/canary_gha_clone_budget_webhook.py \
+            docs/gha-continuity-architecture.md \
+            docs/gha-independent-executor-routing.md \
+            docs/gha-executor-router-gitops.md \
+            docs/gha-executor-router-activation.md \
+            docs/operations/gha-budget-webhook-activation.md \
+            docs/streempilot-ci-continuity.md \
+            docs/build-server-profile-repository-policy.md; then
             echo 'credential-like material found in GHA continuity files' >&2
             exit 1
           fi

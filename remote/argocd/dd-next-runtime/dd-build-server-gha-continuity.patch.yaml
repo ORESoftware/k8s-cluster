@@ -10,4 +10,55 @@ spec:
         - name: build-server
           env:
             - name: BUILD_SERVER_ALLOWED_PROFILES
-              value: rust-verify,node-verify,python-verify,flutter-verify,flutter-android-debug,flutter-web-release,flutter-linux-release,flutter-linux-desktop-entrypoint,flutter-web-e2e,playwright,puppeteer,browser-e2e
+              value: rust-verify,rust-generated-verify,node-verify,node-hardened-verify,node-hardened-test,python-verify,flutter-verify,flutter-android-debug,flutter-web-release,flutter-linux-release,flutter-linux-desktop-entrypoint,flutter-web-e2e,playwright,puppeteer,browser-e2e
+            - name: BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON
+              value: >-
+                [{"repository":"https://github.com/ORESoftware/k8s-cluster.git","profiles":["rust-verify"]},{"repository":"https://github.com/messaging-intel/msgint-connectors.git","profiles":["node-hardened-verify","node-hardened-test"]},{"repository":"https://github.com/3FA-app/3fa-interfaces.git","profiles":["node-hardened-test","rust-generated-verify"]},{"repository":"https://github.com/zed-pkg/zed-cli.git","profiles":["rust-verify"]},{"repository":"https://github.com/gha-indie-worker-test/gha-clone-server.rs.git","profiles":["rust-verify"]},{"repository":"https://github.com/gha-indie-worker-test/gha-indie-worker.rs.git","profiles":["rust-verify"]}]
+            # Permit only the two reviewed DES black-box repositories, not the
+            # entire test organization, to reach executable browser profiles.
+            - name: BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES
+              value: https://github.com/ORESoftware/,https://github.com/sonus-auris/,https://github.com/discrete-event-systems-test/des-web-playwright-e2e,https://github.com/discrete-event-systems-test/des-web-puppeteer-e2e,git@github.com:ORESoftware/,git@github.com:sonus-auris/,git@github.com:discrete-event-systems-test/des-web-playwright-e2e,git@github.com:discrete-event-systems-test/des-web-puppeteer-e2e
+            # The build-server stays unprivileged. The adapter delegates only
+            # the exact DES Playwright/Puppeteer nerdctl invocations after
+            # verifying the cloned remote and detached commit SHA; every other
+            # nerdctl command falls through to the host binary unchanged.
+            - name: BUILD_SERVER_NERDCTL_BIN
+              value: /etc/dd-build-server/nerdctl-profile-adapter.sh
+            # Execution is enabled only for workflows that pass the fail-closed
+            # static planner, immutable-revision check, exact repository
+            # allowlist, and fixed reviewed browser profiles above.
+            - name: BUILD_SERVER_GHA_WORKFLOW_EXECUTION_ENABLED
+              value: 'true'
+            - name: BUILD_SERVER_GHA_MAX_YAML_BYTES
+              value: '262144'
+            - name: BUILD_SERVER_GHA_MAX_JOBS
+              value: '64'
+            - name: BUILD_SERVER_GHA_MAX_STEPS_PER_JOB
+              value: '128'
+            - name: BUILD_SERVER_GHA_MAX_YAML_NODES
+              value: '16384'
+            - name: BUILD_SERVER_GHA_MAX_YAML_DEPTH
+              value: '64'
+            - name: BUILD_SERVER_GHA_POLL_MILLISECONDS
+              value: '250'
+            - name: BUILD_SERVER_GHA_RUN_TIMEOUT_SECONDS
+              value: '3600'
+            - name: BUILD_SERVER_GHA_MAX_RUNS
+              value: '512'
+          volumeMounts:
+            - name: profile-runner-auth
+              mountPath: /var/run/secrets/dd-ci-profile-runner-auth
+              readOnly: true
+      volumes:
+        - name: rules
+          configMap:
+            name: dd-build-server-rules
+            optional: true
+            defaultMode: 0555
+        - name: profile-runner-auth
+          secret:
+            secretName: dd-agent-secrets
+            defaultMode: 0400
+            items:
+              - key: SERVER_AUTH_SECRET
+                path: SERVER_AUTH_SECRET

@@ -1,0 +1,407 @@
+name: Publish exact private repository gaps with encrypted credential once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-exact-repository-gaps-encrypted-once.yml
+      - scripts/ops/publish_missing_org_repositories.py
+      - scripts/ops/publish_missing_org_repositories_current.py
+      - scripts/ops/private_repository_creation.py
+      - scripts/ops/repository_fleet_visibility.py
+      - scripts/ops/repository_fleet_remote_state.py
+      - scripts/ops/test_repository_fleet_visibility.py
+      - scripts/ops/test_repository_fleet_remote_state.py
+      - scripts/ops/test_private_repository_creation.py
+      - scripts/ops/test_private_fleet_publisher_contract.py
+      - scripts/ops/test_encrypted_repository_gap_workflow.py
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: den-2328-encrypted-exact-repository-gaps
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/main' &&
+      (github.actor == 'ORESoftware' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      REPOSITORY: ${{ github.repository }}
+      DEFAULT_BRANCH: main
+      HANDSHAKE_NONCE: f2a7d8c9e54b4c63a1e292b6df6c0c11
+      PUBLIC_KEY_PATH: .github/tmp/repo-gaps-f2a7d8c9e54b4c63a1e292b6df6c0c11.pub.pem
+      CIPHERTEXT_PATH: .github/tmp/repo-gaps-f2a7d8c9e54b4c63a1e292b6df6c0c11.enc.b64
+      EVIDENCE_DIR: ops/evidence/missing-organization-repositories
+      CREATION_ALLOWLIST: StreemPilot/streempilot-media-router.rs,hypesiege/hypesiege-scheduler.rs,hypesiege/hypesiege-publishing-worker.rs,hypesiege/hypesiege-analytics.rs
+
+    steps:
+      - name: Check out exact trusted main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+          show-progress: false
+
+      - name: Validate exact trusted source and create-only contracts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REPOSITORY" = ORESoftware/k8s-cluster
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -m py_compile \
+            scripts/ops/publish_missing_org_repositories.py \
+            scripts/ops/publish_missing_org_repositories_current.py \
+            scripts/ops/private_repository_creation.py \
+            scripts/ops/repository_fleet_visibility.py \
+            scripts/ops/repository_fleet_remote_state.py \
+            scripts/ops/test_repository_fleet_visibility.py \
+            scripts/ops/test_repository_fleet_remote_state.py \
+            scripts/ops/test_private_repository_creation.py \
+            scripts/ops/test_private_fleet_publisher_contract.py \
+            scripts/ops/test_encrypted_repository_gap_workflow.py
+          python3 scripts/ops/test_repository_fleet_visibility.py -v
+          python3 scripts/ops/test_repository_fleet_remote_state.py -v
+          python3 scripts/ops/test_private_repository_creation.py -v
+          python3 scripts/ops/test_private_fleet_publisher_contract.py -v
+          python3 scripts/ops/test_encrypted_repository_gap_workflow.py -v
+
+      - name: Bind exact trusted main to one-time encrypted credential
+        shell: bash
+        env:
+          GITHUB_TOKEN_VALUE: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+
+          repo_api="https://api.github.com/repos/${REPOSITORY}"
+          repo_api_call() {
+            local method="$1"
+            local url="$2"
+            local data="${3:-}"
+            if [[ -n "$data" ]]; then
+              curl --fail-with-body --silent --show-error \
+                --request "$method" \
+                --url "$url" \
+                --header 'Accept: application/vnd.github+json' \
+                --header "Authorization: Bearer ${GITHUB_TOKEN_VALUE}" \
+                --header 'X-GitHub-Api-Version: 2022-11-28' \
+                --data-binary "$data"
+            else
+              curl --fail-with-body --silent --show-error \
+                --request "$method" \
+                --url "$url" \
+                --header 'Accept: application/vnd.github+json' \
+                --header "Authorization: Bearer ${GITHUB_TOKEN_VALUE}" \
+                --header 'X-GitHub-Api-Version: 2022-11-28'
+            fi
+          }
+
+          put_file() {
+            local path="$1"
+            local source_file="$2"
+            local message="$3"
+            local content payload
+            content="$(base64 -w0 "$source_file")"
+            payload="$(jq -nc \
+              --arg message "$message" \
+              --arg content "$content" \
+              --arg branch "$DEFAULT_BRANCH" \
+              '{message:$message,content:$content,branch:$branch}')"
+            repo_api_call PUT "${repo_api}/contents/${path}" "$payload" >/dev/null
+          }
+
+          delete_file_if_present() {
+            local path="$1"
+            local message="$2"
+            local metadata sha payload
+            if metadata="$(repo_api_call GET "${repo_api}/contents/${path}?ref=${DEFAULT_BRANCH}" 2>/dev/null)"; then
+              sha="$(jq -r '.sha // empty' <<<"$metadata")"
+              if [[ -n "$sha" ]]; then
+                payload="$(jq -nc \
+                  --arg message "$message" \
+                  --arg sha "$sha" \
+                  --arg branch "$DEFAULT_BRANCH" \
+                  '{message:$message,sha:$sha,branch:$branch}')"
+                repo_api_call DELETE "${repo_api}/contents/${path}" "$payload" >/dev/null || true
+              fi
+            fi
+          }
+
+          cleanup_credentials() {
+            delete_file_if_present "$PUBLIC_KEY_PATH" 'ci: remove expired DEN-2328 public key'
+            delete_file_if_present "$CIPHERTEXT_PATH" 'ci: remove encrypted DEN-2328 credential'
+            shred -u \
+              /tmp/den-2328-private.pem \
+              /tmp/den-2328-public.pem \
+              /tmp/den-2328-token.enc \
+              /tmp/den-2328-token.txt \
+              2>/dev/null || true
+          }
+          trap cleanup_credentials EXIT
+
+          delete_file_if_present "$PUBLIC_KEY_PATH" 'ci: remove stale DEN-2328 public key'
+          delete_file_if_present "$CIPHERTEXT_PATH" 'ci: remove stale encrypted DEN-2328 credential'
+
+          openssl genpkey \
+            -algorithm RSA \
+            -pkeyopt rsa_keygen_bits:4096 \
+            -out /tmp/den-2328-private.pem >/dev/null 2>&1
+          openssl pkey \
+            -in /tmp/den-2328-private.pem \
+            -pubout \
+            -out /tmp/den-2328-public.pem >/dev/null 2>&1
+          put_file \
+            "$PUBLIC_KEY_PATH" \
+            /tmp/den-2328-public.pem \
+            'ci: publish ephemeral DEN-2328 repository-gap key'
+          echo "HANDSHAKE_READY nonce=${HANDSHAKE_NONCE} path=${PUBLIC_KEY_PATH}"
+
+          ciphertext=''
+          for _ in $(seq 1 720); do
+            if metadata="$(repo_api_call GET "${repo_api}/contents/${CIPHERTEXT_PATH}?ref=${DEFAULT_BRANCH}" 2>/dev/null)"; then
+              ciphertext="$(jq -r '.content // empty' <<<"$metadata" \
+                | tr -d '\n' \
+                | base64 -d \
+                | tr -d '\r\n')"
+              [[ -z "$ciphertext" ]] || break
+            fi
+            sleep 5
+          done
+          if [[ -z "$ciphertext" ]]; then
+            echo "encrypted credential was not received for handshake ${HANDSHAKE_NONCE}" >&2
+            exit 1
+          fi
+
+          printf '%s' "$ciphertext" | base64 -d > /tmp/den-2328-token.enc
+          openssl pkeyutl \
+            -decrypt \
+            -inkey /tmp/den-2328-private.pem \
+            -in /tmp/den-2328-token.enc \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256 \
+            > /tmp/den-2328-token.txt
+
+          USER_TOKEN="$(tr -d '\r\n' < /tmp/den-2328-token.txt)"
+          test -n "$USER_TOKEN"
+          test "${#USER_TOKEN}" -ge 20
+          echo "::add-mask::$USER_TOKEN"
+          printf 'GH_TOKEN=%s\n' "$USER_TOKEN" >> "$GITHUB_ENV"
+          printf 'GITHUB_REPOSITORY_ADMIN_TOKEN=%s\n' "$USER_TOKEN" >> "$GITHUB_ENV"
+
+          cleanup_credentials
+          trap - EXIT
+
+      - name: Wait for owner REST quota and verify exact ownership
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          import subprocess
+          import time
+          from datetime import datetime, timezone
+
+          minimum = 1800
+          maximum_wait = 10800
+          started = time.monotonic()
+          while True:
+              payload = json.loads(subprocess.check_output(
+                  ['gh', 'api', 'rate_limit'], text=True
+              ))
+              core = payload['resources']['core']
+              remaining = int(core['remaining'])
+              reset = int(core['reset'])
+              if remaining >= minimum:
+                  print(f'RATE_BUDGET core={remaining}')
+                  break
+              now = int(time.time())
+              sleep_for = min(120, max(5, reset - now + 10))
+              elapsed = int(time.monotonic() - started)
+              if elapsed + sleep_for > maximum_wait:
+                  raise SystemExit(
+                      f'owner REST quota did not recover: {remaining}/{minimum}; '
+                      f'reset={datetime.fromtimestamp(reset, timezone.utc).isoformat()}'
+                  )
+              print(
+                  f'WAIT_RATE_BUDGET core={remaining}/{minimum} '
+                  f'sleep={sleep_for}s '
+                  f'reset={datetime.fromtimestamp(reset, timezone.utc).isoformat()}',
+                  flush=True,
+              )
+              time.sleep(sleep_for)
+          PY
+          test "$(gh api user --jq .login)" = ORESoftware
+          for organization in hypesiege StreemPilot; do
+            test "$(gh api "user/memberships/orgs/${organization}" --jq '.role + ":" + .state')" = admin:active
+          done
+          gh auth setup-git >/dev/null
+
+      - name: Publish only reviewed missing private repositories
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf "$EVIDENCE_DIR"
+          mkdir -p "$EVIDENCE_DIR"
+
+          python3 - <<'PY' | tee "$EVIDENCE_DIR/preflight.log"
+          import base64
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          source_repository = 'ORESoftware/ai-agent-coordinator.rs'
+          source_sha = '5d9a0c2cb44dff607bc3953954ce4b9af08e5789'
+          manifest_path = 'repository-fleets/hypesiege-streempilot.json'
+          allowed = set(os.environ['CREATION_ALLOWLIST'].split(','))
+
+          content = subprocess.check_output([
+              'gh', 'api',
+              f'repos/{source_repository}/contents/{manifest_path}?ref={source_sha}',
+              '--jq', '.content',
+          ], text=True)
+          manifest = json.loads(base64.b64decode(''.join(content.split())).decode())
+          records = manifest.get('repositories')
+          if not isinstance(records, list) or len(records) != 32:
+              raise SystemExit('sealed fleet must contain exactly 32 repositories')
+          names = {record.get('full_name') for record in records}
+          if not allowed <= names:
+              raise SystemExit(f'allowlist is not contained in sealed fleet: {sorted(allowed - names)}')
+
+          missing = []
+          preserved = []
+          for full_name in sorted(names, key=str.casefold):
+              completed = subprocess.run(
+                  ['gh', 'api', f'repos/{full_name}'],
+                  text=True,
+                  capture_output=True,
+              )
+              if completed.returncode != 0:
+                  if 'HTTP 404' in completed.stderr or 'Not Found' in completed.stderr:
+                      missing.append(full_name)
+                      continue
+                  raise SystemExit(
+                      f'unable to classify {full_name}: {completed.stderr[-400:]}'
+                  )
+              repository = json.loads(completed.stdout)
+              ref = json.loads(subprocess.check_output(
+                  ['gh', 'api', f'repos/{full_name}/git/ref/heads/main'],
+                  text=True,
+              ))
+              preserved.append({
+                  'full_name': full_name,
+                  'repository_id': repository.get('id'),
+                  'visibility': repository.get('visibility'),
+                  'default_branch': repository.get('default_branch'),
+                  'main_sha': ref.get('object', {}).get('sha'),
+              })
+
+          unexpected = set(missing) - allowed
+          if unexpected:
+              raise SystemExit(
+                  f'refusing to create repositories outside exact allowlist: {sorted(unexpected)}'
+              )
+          evidence = {
+              'allowed_missing': sorted(allowed),
+              'observed_missing': sorted(missing),
+              'preserved': preserved,
+              'sealed_source_repository': source_repository,
+              'sealed_source_sha': source_sha,
+          }
+          path = Path(os.environ['EVIDENCE_DIR']) / 'preflight.json'
+          path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + '\n')
+          print(f"VERIFIED_PREFLIGHT missing={len(missing)} preserved={len(preserved)}")
+          PY
+
+          python3 scripts/ops/publish_missing_org_repositories_current.py \
+            2>&1 | tee "$EVIDENCE_DIR/publisher.log"
+          grep -F 'VERIFIED private canonical fleet remote state' \
+            "$EVIDENCE_DIR/publisher.log"
+
+          python3 - <<'PY' | tee "$EVIDENCE_DIR/postflight.log"
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          targets = sorted(os.environ['CREATION_ALLOWLIST'].split(','), key=str.casefold)
+          evidence = []
+          for full_name in targets:
+              repository = json.loads(subprocess.check_output(
+                  ['gh', 'api', f'repos/{full_name}'], text=True
+              ))
+              if repository.get('private') is not True:
+                  raise SystemExit(f'{full_name} is not private')
+              if repository.get('visibility') != 'private':
+                  raise SystemExit(f'{full_name} visibility is not private')
+              if repository.get('default_branch') != 'main':
+                  raise SystemExit(f'{full_name} default branch is not main')
+              ref = json.loads(subprocess.check_output(
+                  ['gh', 'api', f'repos/{full_name}/git/ref/heads/main'], text=True
+              ))
+              head = ref.get('object', {}).get('sha')
+              if not isinstance(head, str) or len(head) != 40:
+                  raise SystemExit(f'{full_name} has no exact 40-character main SHA')
+              evidence.append({
+                  'full_name': full_name,
+                  'repository_id': repository.get('id'),
+                  'visibility': repository.get('visibility'),
+                  'default_branch': repository.get('default_branch'),
+                  'main_sha': head,
+                  'html_url': repository.get('html_url'),
+              })
+          path = Path(os.environ['EVIDENCE_DIR']) / 'requested-gaps.json'
+          path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + '\n')
+          print(f'VERIFIED_REQUESTED_GAPS {len(evidence)}/4')
+          PY
+
+      - name: Open reviewed evidence pull request
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cp -a "$EVIDENCE_DIR" /tmp/den-2328-evidence
+          git fetch origin "$DEFAULT_BRANCH"
+          evidence_branch="agent/DEN-2328-evidence-${GITHUB_RUN_ID}"
+          git checkout -B "$evidence_branch" "origin/${DEFAULT_BRANCH}"
+          rm -rf "$EVIDENCE_DIR"
+          mkdir -p "$(dirname "$EVIDENCE_DIR")"
+          cp -a /tmp/den-2328-evidence "$EVIDENCE_DIR"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$EVIDENCE_DIR"
+          if git diff --cached --quiet; then
+            echo 'repository publication evidence already matches main'
+            exit 0
+          fi
+          git commit -m 'ops(DEN-2328): record encrypted repository-gap evidence'
+          git push -u origin "$evidence_branch"
+          evidence_pr_url="$(gh pr create \
+            --repo "$REPOSITORY" \
+            --base "$DEFAULT_BRANCH" \
+            --head "$evidence_branch" \
+            --title 'ops(DEN-2328): record encrypted repository-gap evidence' \
+            --body "Records the exact create-only repository publication evidence from trusted run ${GITHUB_RUN_ID}. Existing repository IDs and main SHAs were preserved by the bounded publisher.")"
+          printf '%s\n' "$evidence_pr_url" | tee "$EVIDENCE_DIR/evidence-pr.txt"
+
+      - name: Upload repository publication evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: encrypted-exact-repository-gaps-${{ github.run_id }}
+          path: ops/evidence/missing-organization-repositories
+          if-no-files-found: warn
+          retention-days: 30
+          include-hidden-files: true

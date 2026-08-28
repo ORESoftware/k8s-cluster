@@ -4,6 +4,8 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 
 use crate::{fiducia, gh_secrets, profiles, webhooks};
 
+pub(crate) mod profile_policy;
+
 #[derive(Clone)]
 pub(crate) struct Config {
     pub(crate) work_root: PathBuf,
@@ -19,6 +21,9 @@ pub(crate) struct Config {
     pub(crate) allowed_image_prefixes: Vec<String>,
     pub(crate) allowed_namespaces: HashSet<String>,
     pub(crate) allowed_profiles: HashSet<String>,
+    /// Compiled profile repository policy. Plain entries are organization/repo
+    /// prefixes; `exact:` entries are startup-validated repository-to-profile
+    /// bindings emitted by config::profile_policy.
     pub(crate) allowed_profile_repo_prefixes: Vec<String>,
     pub(crate) profile_cpus: String,
     pub(crate) profile_memory: String,
@@ -90,6 +95,14 @@ pub(crate) fn first_env(keys: &[&str]) -> Option<String> {
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
     })
+}
+
+/// Read a structured environment value without normalizing it first.
+///
+/// Size-bounded parsers must inspect the original UTF-8 bytes before
+/// trimming whitespace or applying any other normalization.
+pub(crate) fn raw_env(key: &str) -> Option<String> {
+    env::var(key).ok()
 }
 
 pub(crate) fn env_value(key: &str, fallback: &str) -> String {
@@ -209,6 +222,22 @@ pub(crate) fn config_from_env() -> Config {
         false
     };
 
+    let allowed_profiles = parse_namespaces(&env_value(
+        "BUILD_SERVER_ALLOWED_PROFILES",
+        &profiles::names().collect::<Vec<_>>().join(","),
+    ));
+    let allowed_profile_repo_prefixes = profile_policy::compile_rules(
+        parse_csv(&env_value(
+            "BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES",
+            "https://github.com/ORESoftware/,https://github.com/sonus-auris/,git@github.com:ORESoftware/,git@github.com:sonus-auris/",
+        )),
+        raw_env("BUILD_SERVER_PROFILE_REPOSITORY_RULES_JSON").as_deref(),
+        &allowed_profiles,
+    )
+    .unwrap_or_else(|error| {
+        panic!("invalid build-server profile repository policy: {error}")
+    });
+
     Config {
         work_root: PathBuf::from(env_value(
             "BUILD_SERVER_WORK_ROOT",
@@ -226,14 +255,8 @@ pub(crate) fn config_from_env() -> Config {
             "BUILD_SERVER_ALLOWED_NAMESPACES",
             "default",
         )),
-        allowed_profiles: parse_namespaces(&env_value(
-            "BUILD_SERVER_ALLOWED_PROFILES",
-            &profiles::names().collect::<Vec<_>>().join(","),
-        )),
-        allowed_profile_repo_prefixes: parse_csv(&env_value(
-            "BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES",
-            "https://github.com/ORESoftware/,https://github.com/sonus-auris/,git@github.com:ORESoftware/,git@github.com:sonus-auris/",
-        )),
+        allowed_profiles,
+        allowed_profile_repo_prefixes,
         profile_cpus: env_value("BUILD_SERVER_PROFILE_CPUS", "4"),
         profile_memory: env_value("BUILD_SERVER_PROFILE_MEMORY", "8g"),
         profile_pids_limit: env_value("BUILD_SERVER_PROFILE_PIDS_LIMIT", "2048"),

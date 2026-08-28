@@ -13,7 +13,7 @@ It exposes authenticated JSON endpoints for:
 - `GET /builds/<jobId>/logs` to read the capped build log from disk.
 - `GET /builds/<jobId>/artifacts` to stream the fixed-profile output archive after a successful
   profile build.
-- `POST /webhooks/github` and `POST /webhooks/registry` for GitHub push/workflow_run events and
+- `POST /webhooks/github` and `POST /webhooks/registry` for failure-only GitHub workflow runs and
   container-registry image events (see **Webhooks**).
 - `POST /secrets/sync` and `GET /secrets/sync/status` to push selected secrets to GitHub Actions
   (see **GitHub Actions secret sync**).
@@ -56,10 +56,16 @@ Built on the cluster's shared infrastructure so it composes with the rest of the
 ## Webhooks
 
 `POST /webhooks/github` verifies the GitHub `X-Hub-Signature-256` HMAC
-(`BUILD_SERVER_GITHUB_WEBHOOK_SECRET`, constant-time) and dedupes on `X-GitHub-Delivery`. Rules
-(`BUILD_SERVER_WEBHOOK_RULES` inline JSON, or `BUILD_SERVER_WEBHOOK_RULES_PATH` mounted from the
-`dd-build-server-rules` ConfigMap) map `repo`/`branch`/`event` to a `build-server.v1` job, with
-`{sha}`/`{shortSha}`/`{ref}` substituted into the image tag. `POST /webhooks/registry` authenticates
+(`BUILD_SERVER_GITHUB_WEBHOOK_SECRET`, constant-time) and dedupes actionable failures on
+`X-GitHub-Delivery`. Rules (`BUILD_SERVER_WEBHOOK_RULES` inline JSON, or
+`BUILD_SERVER_WEBHOOK_RULES_PATH` mounted from the `dd-build-server-rules` ConfigMap) must declare
+`events: ["workflow_run"]` and a non-empty supported `failureConclusions` subset. Only completed
+workflow runs matching the exact repository, branch, and admitted failure conclusion can produce a
+`build-server.v1` job. Signed push/pull events and successful, non-completed, or unmatched runs
+return `202` before delivery claims. `{sha}`/`{shortSha}`/`{ref}` may be substituted into an image
+tag. Supported failure conclusions are `failure`, `cancelled`, `timed_out`, `action_required`,
+`startup_failure`, and `stale`. Production direct rules remain empty because exact workflow-path
+replay belongs to `gha-clone-server`. `POST /webhooks/registry` authenticates
 a shared-secret header (`BUILD_SERVER_REGISTRY_WEBHOOK_SECRET`), normalizes ECR EventBridge and
 docker distribution v2 payloads, and relays them to NATS. These two paths are reachable through the
 gateway WITHOUT the operator cookie (GitHub can't present it) and carry no operator credential — the
@@ -76,13 +82,36 @@ SHA-256 hashes are persisted, for change detection — never the values. Rules c
 `BUILD_SERVER_GH_SYNC_RULES`/`_PATH`; the PAT from `GH_PAT` (dd-agent-secrets) or
 `GH_SECRETS_SYNC_TOKEN`. Disabled by default (`BUILD_SERVER_GH_SYNC_ENABLED`).
 
+## Bounded GitHub Actions workflow YAML
+
+The authenticated `/gha/workflows/plan` endpoint consumes an ordinary workflow file together with
+its exact repository, workflow path, and revision. `/gha/workflows/runs` accepts the same document
+only when workflow execution is explicitly enabled and every job maps to an installed fixed
+profile. Planning and execution use the same strict YAML admission path: duplicate keys, merge
+keys, aliases, anchors, tags, tabs, directives, multiple documents, and excessive input fail before
+profile classification.
+
+Profile classification is fail-closed at the command boundary. Each `run` command must be inside
+the reviewed command surface of the selected profile; shell composition, redirection, repository
+scripts, publishing/deployment operations, and unrelated commands produce a non-executable plan.
+The worker runs the fixed reviewed profile, not the workflow's literal shell source, so this lane
+provides bounded verification coverage rather than byte-for-byte command parity.
+
+The independent event policy accepts only unfiltered `push`, `pull_request`, and
+`workflow_dispatch` declarations. Other events, trigger filters, and manual inputs remain visible
+in a non-executable compatibility plan instead of being silently ignored. The explicit API does
+not decide whether an event matches a workflow; the authenticated upstream dispatcher must prove
+the event, ref, workflow path, and immutable revision. This is a fixed-profile continuity path, not
+a claim that the service reproduces GitHub's proprietary workflow control plane.
+
 The server intentionally does not accept caller-supplied shell commands. A submitted job is a
 `build-server.v1` JSON document:
 
 - `schemaVersion`: optional; when present it must be `build-server.v1`.
 - `jobKind`: optional; `build-image`, `build-and-deploy`, or `run-profile`.
 - `repoUrl`: `https://`, `ssh://`, or `git@` repo URL.
-- `gitRef`: optional branch or tag, passed to `git clone --branch`.
+- `gitRef`: an optional branch or tag for image jobs. A full 40- or 64-hex commit object ID is
+  fetched directly and checked out detached; `run-profile` requires that immutable form.
 - `image`: explicit image tag or digest to build. The deployment currently allowlists
   `710156900967.dkr.ecr.us-east-1.amazonaws.com/`.
 - `contextDir` and `dockerfile`: relative paths inside the cloned repo.
@@ -93,7 +122,8 @@ The server intentionally does not accept caller-supplied shell commands. A submi
 - `deploy.path`: relative path inside the cloned repo.
 - `deploy.namespace`: namespace allowlisted by `BUILD_SERVER_ALLOWED_NAMESPACES`.
 
-For `jobKind: run-profile`, supply `repoUrl`, optional `gitRef`, and `profile`. Omit `image`,
+For `jobKind: run-profile`, supply `repoUrl`, an immutable full commit OID in `gitRef`, and
+`profile`. Omit `image`,
 `push`, `deploy`, `buildArgs`, and `dockerfile`; the server rejects them for profile jobs. The
 profile name selects an operator-reviewed runner image, commands, and artifact paths compiled into
 the server:
@@ -115,7 +145,7 @@ Example:
   "schemaVersion": "build-server.v1",
   "jobKind": "run-profile",
   "repoUrl": "https://github.com/sonus-auris/sonus-auris-ui.dart.git",
-  "gitRef": "main",
+  "gitRef": "0123456789abcdef0123456789abcdef01234567",
   "profile": "flutter-android-debug"
 }
 ```

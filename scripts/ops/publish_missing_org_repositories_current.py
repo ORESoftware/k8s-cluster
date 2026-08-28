@@ -1,12 +1,29 @@
 #!/usr/bin/env python3
-"""Run the fixed allowlist publisher against either sealed publisher transport form."""
+"""Run the bounded publisher with its current transport and visibility contract."""
 
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+from private_repository_creation import (
+    ensure_private_repository as ensure_private_repository_with_api,
+)
+from repository_fleet_remote_state import (
+    RemoteFleetStateError,
+    classify_remote_fleet,
+    verify_created_repositories,
+    verify_preserved_existing,
+)
+from repository_fleet_visibility import project_private_execution_manifest
+from repository_rename_alias_guard import (
+    RepositoryRenameAliasError,
+    RepositoryRenameAliasGuard,
+)
 
 MODULE_PATH = Path(__file__).with_name("publish_missing_org_repositories.py")
 SPEC = importlib.util.spec_from_file_location("bounded_missing_repo_publisher", MODULE_PATH)
@@ -15,6 +32,16 @@ if SPEC is None or SPEC.loader is None:
 MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
+
+FLEET_SOURCE_REPOSITORY = "ORESoftware/ai-agent-coordinator.rs"
+FLEET_SOURCE_SHA = "5d9a0c2cb44dff607bc3953954ce4b9af08e5789"
+FLEET_GENERATOR_SHA256 = (
+    "a57b00961ee57ae09bf3bb2e2d09afbdd1ddbbbde832b027802f82a1fc5dfa84"
+)
+
+
+def fail(message: str) -> None:
+    raise RuntimeError(message)
 
 
 def repair_or_validate_publisher(path: Path) -> None:
@@ -32,11 +59,11 @@ case \"$1\" in *Username*) echo x-access-token;; *) echo \"$GITHUB_REPOSITORY_AD
 
     if broken in text:
         if text.count(broken) != 1:
-            MODULE.fail("publisher contains an unexpected number of legacy transport defects")
+            fail("publisher contains an unexpected number of legacy transport defects")
         path.write_text(text.replace(broken, fixed, 1), encoding="utf-8")
         text = path.read_text(encoding="utf-8")
     elif "askpass.write_text(" not in text:
-        MODULE.fail("publisher lacks the bounded non-interactive Git credential transport")
+        fail("publisher lacks the bounded non-interactive Git credential transport")
 
     required = (
         "GITHUB_REPOSITORY_ADMIN_TOKEN",
@@ -46,10 +73,260 @@ case \"$1\" in *Username*) echo x-access-token;; *) echo \"$GITHUB_REPOSITORY_AD
     )
     missing = [snippet for snippet in required if snippet not in text]
     if missing:
-        MODULE.fail(f"publisher credential contract is incomplete: {missing}")
+        fail(f"publisher credential contract is incomplete: {missing}")
 
     subprocess.run([sys.executable, "-m", "py_compile", str(path)], check=True)
 
 
+def ensure_private_repository(
+    owner: str, name: str, description: str
+) -> dict[str, object]:
+    """Create or safely reconcile the exact private repository."""
+
+    return ensure_private_repository_with_api(
+        MODULE.api,
+        owner,
+        name,
+        description,
+    )
+
+
+def publish_current_hypesiege_and_streempilot(work: Path) -> None:
+    """Create only canonical gaps while preserving every existing history."""
+
+    carrier = work / "fleet-carrier"
+    MODULE.run(
+        [
+            "git",
+            "clone",
+            "--filter=blob:none",
+            "--no-checkout",
+            f"https://github.com/{FLEET_SOURCE_REPOSITORY}.git",
+            str(carrier),
+        ]
+    )
+    MODULE.run(
+        [
+            "git",
+            "-C",
+            str(carrier),
+            "fetch",
+            "--depth=1",
+            "origin",
+            FLEET_SOURCE_SHA,
+        ]
+    )
+    MODULE.run(
+        ["git", "-C", str(carrier), "checkout", "--detach", FLEET_SOURCE_SHA]
+    )
+    actual_source_sha = MODULE.run(
+        ["git", "-C", str(carrier), "rev-parse", "HEAD"]
+    ).strip()
+    if actual_source_sha != FLEET_SOURCE_SHA:
+        fail(
+            "fleet source checkout mismatch: "
+            f"{actual_source_sha} != {FLEET_SOURCE_SHA}"
+        )
+
+    payload_dir = carrier / "repository-fleets/hypesiege-streempilot"
+    checked_manifest_path = carrier / "repository-fleets/hypesiege-streempilot.json"
+    reconstructor = carrier / "scripts/reconstruct_hypesiege_streempilot_fleet.py"
+    publisher = carrier / "scripts/publish_hypesiege_streempilot_fleet.py"
+    source_root = work / "hypesiege-streempilot-fleet"
+    generated_manifest_path = work / "hypesiege-streempilot-manifest.json"
+    execution_manifest_path = work / "hypesiege-streempilot-private-execution.json"
+
+    MODULE.run(
+        [
+            sys.executable,
+            "-m",
+            "py_compile",
+            str(reconstructor),
+            str(publisher),
+        ]
+    )
+    MODULE.run(
+        [
+            sys.executable,
+            str(reconstructor),
+            "--payload-dir",
+            str(payload_dir),
+            "--output-root",
+            str(source_root),
+            "--manifest-out",
+            str(generated_manifest_path),
+        ]
+    )
+
+    checked_manifest = json.loads(
+        checked_manifest_path.read_text(encoding="utf-8")
+    )
+    generated_manifest = json.loads(
+        generated_manifest_path.read_text(encoding="utf-8")
+    )
+    if generated_manifest != checked_manifest:
+        fail("reconstructed fleet does not exactly match the checked-in schema-v2 ledger")
+    if generated_manifest.get("generator_sha256") != FLEET_GENERATOR_SHA256:
+        fail("reviewed fleet generator identity changed")
+    if generated_manifest.get("schema_version") != 2:
+        fail("reviewed fleet manifest must use schema version 2")
+    if generated_manifest.get("repository_count") != 32:
+        fail("reviewed fleet must contain exactly 32 repositories")
+    if generated_manifest.get("total_tracked_files") != 888:
+        fail("reviewed fleet tracked-file total changed")
+    if generated_manifest.get("total_gitlinks") != 30:
+        fail("reviewed fleet gitlink total changed")
+    if generated_manifest.get("organizations") != {
+        "hypesiege": 15,
+        "streempilot": 17,
+    }:
+        fail("reviewed fleet organization counts changed")
+
+    records = generated_manifest.get("repositories")
+    if not isinstance(records, list) or len(records) != 32:
+        fail("reviewed fleet repository ledger is malformed")
+    if any(
+        not isinstance(record, dict) or record.get("visibility") != "public"
+        for record in records
+    ):
+        fail("sealed product-intent ledger is no longer uniformly public")
+
+    # Keep the sealed reviewed ledger unchanged as provenance. The operational
+    # manifest is a deep-copy projection, and the helper proves that visibility
+    # is the only field that moved.
+    execution_manifest = project_private_execution_manifest(generated_manifest)
+    execution_manifest_path.write_text(
+        json.dumps(execution_manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    execution_records = execution_manifest.get("repositories")
+    if not isinstance(execution_records, list) or len(execution_records) != 32:
+        fail("private execution manifest repository ledger is malformed")
+    if any(
+        not isinstance(record, dict) or record.get("visibility") != "private"
+        for record in execution_records
+    ):
+        fail("private execution manifest contains a non-private repository")
+    canonical_full_names = {
+        str(record["full_name"])
+        for record in execution_records
+        if isinstance(record.get("full_name"), str)
+    }
+    if len(canonical_full_names) != 32:
+        fail("private execution manifest repository identities are malformed")
+    print("VERIFIED private execution projection for 32 reviewed histories")
+
+    alias_guard = RepositoryRenameAliasGuard(
+        api_base=MODULE.API,
+        token=MODULE.TOKEN,
+        api=MODULE.api,
+        main_ref_lookup=MODULE.main_ref,
+        canonical_full_names=canonical_full_names,
+    )
+
+    try:
+        missing_records, existing_snapshot = classify_remote_fleet(
+            execution_records,
+            repository_lookup=alias_guard.repository_lookup,
+            main_ref_lookup=MODULE.main_ref,
+        )
+    except (RemoteFleetStateError, RepositoryRenameAliasError) as error:
+        fail(str(error))
+
+    print(
+        "VERIFIED remote fleet partition "
+        f"missing={len(missing_records)} preserved={len(existing_snapshot)} "
+        f"renamed_aliases={len(alias_guard.snapshots)}"
+    )
+    for full_name in sorted(existing_snapshot, key=str.casefold):
+        state = existing_snapshot[full_name]
+        disposition = (
+            "SEALED" if state["matches_sealed_commit"] else "DIVERGENT_REVIEWED"
+        )
+        print(f"PRESERVE_{disposition} {full_name} {state['head']}")
+
+    environment = os.environ.copy()
+    environment["GITHUB_REPOSITORY_ADMIN_TOKEN"] = MODULE.TOKEN
+
+    # Only missing canonical identities are eligible for creation. Existing
+    # repositories may contain later reviewed product work and must never be
+    # reset to the old deterministic root merely to make the fleet count match.
+    for record in missing_records:
+        full_name = record.get("full_name")
+        owner = record.get("org")
+        name = record.get("name")
+        description = record.get("description")
+        if (
+            not isinstance(full_name, str)
+            or not isinstance(owner, str)
+            or not isinstance(name, str)
+            or not isinstance(description, str)
+            or full_name.casefold() != f"{owner}/{name}".casefold()
+        ):
+            fail("reviewed fleet contains an invalid repository identity")
+
+        # Pre-create through the alias-aware create-only API. This converts a
+        # proven old-name redirect into the exact empty private repository before
+        # the sealed publisher performs its own exact-identity GET and push.
+        try:
+            ensure_private_repository_with_api(
+                alias_guard.api,
+                owner,
+                name,
+                description,
+            )
+        except (RuntimeError, RepositoryRenameAliasError) as error:
+            fail(str(error))
+
+        MODULE.run(
+            [
+                sys.executable,
+                str(publisher),
+                "--manifest",
+                str(execution_manifest_path),
+                "--source-root",
+                str(source_root),
+                "--repository",
+                full_name,
+                "--execute",
+                "--confirm-repository",
+                full_name,
+            ],
+            env=environment,
+        )
+
+    try:
+        verify_created_repositories(
+            missing_records,
+            repository_lookup=alias_guard.repository_lookup,
+            main_ref_lookup=MODULE.main_ref,
+        )
+        verify_preserved_existing(
+            existing_snapshot,
+            repository_lookup=alias_guard.repository_lookup,
+            main_ref_lookup=MODULE.main_ref,
+        )
+        alias_guard.verify_preserved()
+    except (RemoteFleetStateError, RepositoryRenameAliasError) as error:
+        fail(str(error))
+
+    for record in missing_records:
+        full_name = str(record["full_name"])
+        print(f"VERIFIED_CREATED_PRIVATE {full_name} {record['commit']}")
+    for full_name in sorted(existing_snapshot, key=str.casefold):
+        print(
+            f"VERIFIED_PRESERVED_PRIVATE {full_name} "
+            f"{existing_snapshot[full_name]['head']}"
+        )
+    print(
+        "VERIFIED private canonical fleet remote state "
+        f"created={len(missing_records)} preserved={len(existing_snapshot)} "
+        f"renamed_targets={len(alias_guard.snapshots)} "
+        f"total={len(missing_records) + len(existing_snapshot)}"
+    )
+
+
 MODULE.repair_publisher = repair_or_validate_publisher
+MODULE.ensure_repository = ensure_private_repository
+MODULE.publish_hypesiege_and_streempilot = publish_current_hypesiege_and_streempilot
 raise SystemExit(MODULE.main())

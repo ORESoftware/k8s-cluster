@@ -3,7 +3,7 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use crate::config::Config;
+use crate::config::{profile_policy, Config};
 use crate::ecr::{ecr_image, EcrImage};
 use crate::profiles;
 use crate::types::{BuildRequest, DeployRequest};
@@ -13,6 +13,12 @@ pub(crate) fn clean_optional(value: Option<&str>) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
+}
+
+/// Git object IDs admitted for immutable execution. GitHub currently emits
+/// full SHA-1 IDs, while Git repositories may use the SHA-256 object format.
+pub(crate) fn is_full_commit_oid(value: &str) -> bool {
+    matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 pub(crate) fn ensure_allowed_prefix(
@@ -36,7 +42,11 @@ pub(crate) fn ensure_allowed_prefix(
     }
 }
 
-pub(crate) fn validate_no_whitespace(name: &str, value: &str, max_len: usize) -> Result<(), String> {
+pub(crate) fn validate_no_whitespace(
+    name: &str,
+    value: &str,
+    max_len: usize,
+) -> Result<(), String> {
     if value.trim().is_empty() {
         return Err(format!("{name} must not be empty"));
     }
@@ -78,7 +88,11 @@ pub(crate) fn has_explicit_image_version(image: &str) -> bool {
     image.contains('@') || last_path.contains(':')
 }
 
-pub(crate) fn validate_image(config: &Config, image: &str, push: bool) -> Result<Option<EcrImage>, String> {
+pub(crate) fn validate_image(
+    config: &Config,
+    image: &str,
+    push: bool,
+) -> Result<Option<EcrImage>, String> {
     validate_no_whitespace("image", image, 512)?;
     // A leading dash would be parsed by nerdctl as a flag in the `-t <image>`
     // and `push <image>` positions; reject it before it reaches argv.
@@ -147,7 +161,9 @@ pub(crate) fn validate_relative_path(name: &str, value: &str) -> Result<PathBuf,
     Ok(clean)
 }
 
-pub(crate) fn validate_build_args(build_args: &Option<BTreeMap<String, String>>) -> Result<(), String> {
+pub(crate) fn validate_build_args(
+    build_args: &Option<BTreeMap<String, String>>,
+) -> Result<(), String> {
     let Some(build_args) = build_args else {
         return Ok(());
     };
@@ -231,7 +247,10 @@ pub(crate) fn validate_rollout_resource(value: &str) -> Result<String, String> {
     Ok(resource)
 }
 
-pub(crate) fn validate_deploy(config: &Config, deploy: &Option<DeployRequest>) -> Result<(), String> {
+pub(crate) fn validate_deploy(
+    config: &Config,
+    deploy: &Option<DeployRequest>,
+) -> Result<(), String> {
     let Some(deploy) = deploy else {
         return Ok(());
     };
@@ -254,7 +273,10 @@ pub(crate) fn validate_deploy(config: &Config, deploy: &Option<DeployRequest>) -
     Ok(())
 }
 
-pub(crate) fn validate_build_request(config: &Config, request: &BuildRequest) -> Result<(), String> {
+pub(crate) fn validate_build_request(
+    config: &Config,
+    request: &BuildRequest,
+) -> Result<(), String> {
     if let Some(schema_version) = clean_optional(request.schema_version.as_deref()) {
         if schema_version != "build-server.v1" {
             return Err("schemaVersion must be build-server.v1".to_string());
@@ -276,12 +298,6 @@ pub(crate) fn validate_build_request(config: &Config, request: &BuildRequest) ->
         "BUILD_SERVER_ALLOWED_REPO_PREFIXES",
     )?;
     if job_kind == "run-profile" {
-        ensure_allowed_prefix(
-            "profile repoUrl",
-            &request.repo_url,
-            &config.allowed_profile_repo_prefixes,
-            "BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES",
-        )?;
         let profile = clean_optional(request.profile.as_deref())
             .ok_or_else(|| "profile is required for jobKind=run-profile".to_string())?;
         if profiles::find(&profile).is_none() || !config.allowed_profiles.contains(&profile) {
@@ -289,6 +305,11 @@ pub(crate) fn validate_build_request(config: &Config, request: &BuildRequest) ->
                 "profile {profile:?} is not allowed by BUILD_SERVER_ALLOWED_PROFILES"
             ));
         }
+        profile_policy::ensure_repository_profile_allowed(
+            &request.repo_url,
+            &profile,
+            &config.allowed_profile_repo_prefixes,
+        )?;
         if !request.image.trim().is_empty() {
             return Err("image must be omitted for jobKind=run-profile".to_string());
         }
@@ -299,6 +320,15 @@ pub(crate) fn validate_build_request(config: &Config, request: &BuildRequest) ->
         {
             return Err(
                 "run-profile does not accept image, push, deploy, buildArgs, or dockerfile"
+                    .to_string(),
+            );
+        }
+
+        let git_ref = clean_optional(request.git_ref.as_deref())
+            .ok_or_else(|| "gitRef is required for jobKind=run-profile".to_string())?;
+        if !is_full_commit_oid(&git_ref) {
+            return Err(
+                "gitRef must be a full 40- or 64-hex commit object ID for jobKind=run-profile"
                     .to_string(),
             );
         }
@@ -372,10 +402,7 @@ mod tests {
         assert!(validate_relative_path("contextDir", "c:d").is_err());
 
         // Rollout resource must be a clean TYPE/NAME positional, never a flag.
-        assert_eq!(
-            validate_rollout_resource("api").unwrap(),
-            "deployment/api"
-        );
+        assert_eq!(validate_rollout_resource("api").unwrap(), "deployment/api");
         assert_eq!(
             validate_rollout_resource("deployment.apps/api").unwrap(),
             "deployment.apps/api"
@@ -413,5 +440,19 @@ mod tests {
             assert!(names.contains(expected));
         }
         assert!(profiles::find("sh -c evil").is_none());
+    }
+
+    #[test]
+    fn immutable_commit_detection_accepts_only_full_object_ids() {
+        assert!(is_full_commit_oid(
+            "0123456789abcdef0123456789abcdef01234567"
+        ));
+        assert!(is_full_commit_oid(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        ));
+        assert!(!is_full_commit_oid("main"));
+        assert!(!is_full_commit_oid(
+            "0123456789abcdef0123456789abcdef0123456z"
+        ));
     }
 }

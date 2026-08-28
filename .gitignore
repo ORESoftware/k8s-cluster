@@ -7,6 +7,13 @@ dist/
 *.tsbuildinfo
 
 # ──────────────────────────────────────────────
+# Python
+# ──────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# ──────────────────────────────────────────────
 # Rust / Cargo
 # ──────────────────────────────────────────────
 target/
@@ -129,3 +136,6 @@ remote/deployments/soccer-rs/out/
 # an embedded gitlink here would be unclonable (no .gitmodules entry).
 /remote/deployments/daedalus-api-server-rs/
 /remote/deployments/daedalus-web-server-rs/
+# Python bytecode / test caches
+__pycache__/
+*.py[cod]

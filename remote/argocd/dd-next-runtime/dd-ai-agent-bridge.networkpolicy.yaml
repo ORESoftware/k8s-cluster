@@ -24,6 +24,10 @@ spec:
             matchLabels:
               app.kubernetes.io/part-of: dd-remote-dev
               app.kubernetes.io/component: thread-pod
+        # DEN-845: the provider runner polls workflows over HTTP.
+        - podSelector:
+            matchLabels:
+              app: dd-ai-agent-runner
       ports:
         - protocol: TCP
           port: 8142

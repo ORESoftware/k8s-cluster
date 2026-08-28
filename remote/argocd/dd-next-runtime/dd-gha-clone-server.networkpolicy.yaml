@@ -9,13 +9,24 @@ spec:
       app: dd-gha-clone-server
   policyTypes: [Ingress, Egress]
   ingress:
+    # In-cluster operator access through the existing hardened gateway.
     - from:
         - podSelector:
             matchLabels:
               app: dd-remote-gateway
-        - podSelector:
+      ports:
+        - protocol: TCP
+          port: 8125
+    # Public GitHub deliveries terminate at ingress-nginx and are then accepted
+    # only after the clone server validates X-Hub-Signature-256 and delivery ID.
+    - from:
+        - namespaceSelector:
             matchLabels:
-              app: dd-build-server
+              kubernetes.io/metadata.name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+              app.kubernetes.io/component: controller
       ports:
         - protocol: TCP
           port: 8125
@@ -32,10 +43,10 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              app: dd-build-server
+              app: dd-gha-executor-router
       ports:
         - protocol: TCP
-          port: 8100
+          port: 8126
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

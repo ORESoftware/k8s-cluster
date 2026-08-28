@@ -1,0 +1,36 @@
+{
+  "$schema": "../application.schema.json",
+  "apiVersion": "oresoftware.dev/v1alpha1",
+  "kind": "GitOpsApplication",
+  "metadata": {
+    "name": "dd-fabrication-server"
+  },
+  "spec": {
+    "argo": {
+      "automated": false,
+      "destinationServer": "https://kubernetes.default.svc",
+      "namespace": "daedalus",
+      "project": "daedalus",
+      "prune": false,
+      "selfHeal": false
+    },
+    "inventory": {
+      "mode": "git-submodule",
+      "path": "remote/deployments/fabrication-server-rs",
+      "repository": "git@github.com:daedalus-fab/fabrication-server.rs.git",
+      "revision": "6a79b186b0693e968146caaba3d41cc4281ddba1"
+    },
+    "migration": {
+      "phase": "pilot-inert",
+      "staticApplication": "remote/argocd/apps/daedalus.applications.yaml"
+    },
+    "owner": "daedalus-fab",
+    "source": {
+      "mode": "direct-repository",
+      "path": "k8s",
+      "renderer": "kustomize",
+      "repository": "git@github.com:daedalus-fab/fabrication-server.rs.git",
+      "targetRevision": "6a79b186b0693e968146caaba3d41cc4281ddba1"
+    }
+  }
+}

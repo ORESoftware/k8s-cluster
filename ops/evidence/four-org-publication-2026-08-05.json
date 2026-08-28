@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-08-05T02:57:00Z",
+  "tracking_issue": "https://github.com/ORESoftware/k8s-cluster/issues/860",
+  "control_pull_request": "https://github.com/ORESoftware/k8s-cluster/pull/899",
+  "control_merge_sha": "7d767095ddd7f988c2d8cb2ab2ed15689a13df3d",
+  "execution_carrier": {
+    "url": "https://github.com/ORESoftware/k8s-cluster/pull/902",
+    "head_sha": "9120ec52094343008ced1167f9176adc5456c116",
+    "merged": false,
+    "closed_after_verification": true
+  },
+  "workflow": {
+    "run_id": 30970346116,
+    "url": "https://github.com/ORESoftware/k8s-cluster/actions/runs/30970346116",
+    "conclusion": "success",
+    "authenticated_actor": "ORESoftware",
+    "local_fleet_validation": "passed",
+    "remote_verification": "passed"
+  },
+  "summary": {
+    "organizations": 4,
+    "repositories": 48,
+    "repositories_per_organization": 12,
+    "review_pull_requests_verified": 20,
+    "astro_marketing_sites": 4,
+    "cloudflare_worker_packages": 4
+  },
+  "organizations": [
+    {
+      "login": "apostille-me",
+      "public_repository_count": 12,
+      "representative_repository": "apostille-me/apme-api",
+      "marketing_repository": "apostille-me/apostille-me.github.io"
+    },
+    {
+      "login": "evento-globolo",
+      "public_repository_count": 12,
+      "representative_repository": "evento-globolo/evgl-libs",
+      "marketing_repository": "evento-globolo/evento-globolo.github.io"
+    },
+    {
+      "login": "hacker-house-medellin",
+      "public_repository_count": 12,
+      "representative_repository": "hacker-house-medellin/hhm-sync",
+      "marketing_repository": "hacker-house-medellin/hacker-house-medellin.github.io"
+    },
+    {
+      "login": "embedded-alerts",
+      "public_repository_count": 12,
+      "representative_repository": "embedded-alerts/eal-infra",
+      "marketing_repository": "embedded-alerts/embedded-alerts.github.io"
+    }
+  ],
+  "credential_boundary": {
+    "transport": "one-time RSA-OAEP-SHA256 with MGF1-SHA256",
+    "stored_in_git": false,
+    "stored_in_workflow_inputs": false,
+    "stored_in_actions_outputs": false,
+    "stored_in_artifacts": false,
+    "stored_in_linear": false,
+    "embedded_in_remotes": false,
+    "ephemeral_private_key_destroyed": true,
+    "rotation_required_after_plaintext_chat_disclosure": true
+  },
+  "verification_sources": [
+    "trusted generator and sealed overlay validation",
+    "48 independent local Git histories",
+    "Rust checks and tests",
+    "four Astro builds and tests",
+    "four Cloudflare Worker tests",
+    "remote repository metadata and default branches",
+    "remote feature branches and pull requests"
+  ]
+}

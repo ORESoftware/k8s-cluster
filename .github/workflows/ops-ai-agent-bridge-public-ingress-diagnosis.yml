@@ -1,0 +1,44 @@
+name: Diagnose AI agent bridge public ingress
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-ai-agent-bridge-public-ingress-diagnosis
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout current dev without persisted credentials or private gitlinks
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+      - name: Verify scripts and classifier contract
+        run: |
+          set -euo pipefail
+          bash -n scripts/ci/run-ai-agent-bridge-public-ingress-diagnostic.sh
+          python3 -m py_compile scripts/ci/classify-ai-agent-bridge-public-ingress.py
+          node --test remote/tests/general/ai-agent-bridge-public-ingress-diagnosis-contract.test.mjs
+          python3 scripts/ci/classify-ai-agent-bridge-public-ingress.py --self-test
+      - name: Probe and classify the public ingress without credentials
+        env:
+          AI_BRIDGE_PUBLIC_EVIDENCE_PATH: ${{ runner.temp }}/ai-agent-bridge-public-ingress.json
+        run: bash scripts/ci/run-ai-agent-bridge-public-ingress-diagnostic.sh
+      - name: Upload metadata-only diagnosis
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ai-agent-bridge-public-ingress-diagnosis-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ai-agent-bridge-public-ingress.json
+          retention-days: 14
+          if-no-files-found: warn

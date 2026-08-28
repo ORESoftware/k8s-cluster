@@ -10,7 +10,7 @@ use std::{
 
 use axum::{
     extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -33,6 +33,7 @@ const WEBHOOK_DELIVERY: &str = "4f5f1f6e-68a6-4d95-90b4-c0a892938f0f";
 const BUILD_AUTH: &str = "test-build-auth";
 const REPOSITORY: &str = "owner/repo";
 const REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
+const UPSTREAM_RESPONSE_BYTES_FOR_TEST: usize = 64 * 1024;
 
 const SERVER_ENV_VARS: &[&str] = &[
     "HOST",
@@ -327,6 +328,37 @@ async fn planning_enforces_auth_allowlists_and_structural_rejection() {
     .await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
+    let response = client
+        .post(format!("{}/v1/plans", server.base_url))
+        .header("x-gha-clone-auth", AUTH_SECRET)
+        .json(&plan_request(REPOSITORY, rust_workflow()))
+        .send()
+        .await
+        .expect("alias auth request");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = client
+        .post(format!("{}/v1/plans", server.base_url))
+        .header("x-server-auth", AUTH_SECRET)
+        .header("x-gha-clone-auth", AUTH_SECRET)
+        .json(&plan_request(REPOSITORY, rust_workflow()))
+        .send()
+        .await
+        .expect("ambiguous auth request");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    let mut duplicate_headers = HeaderMap::new();
+    duplicate_headers.append("x-server-auth", HeaderValue::from_static(AUTH_SECRET));
+    duplicate_headers.append("x-server-auth", HeaderValue::from_static(AUTH_SECRET));
+    let response = client
+        .post(format!("{}/v1/plans", server.base_url))
+        .headers(duplicate_headers)
+        .json(&plan_request(REPOSITORY, rust_workflow()))
+        .send()
+        .await
+        .expect("duplicate auth request");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
     let response = post_plan(
         &client,
         &server,
@@ -491,25 +523,43 @@ async fn webhook_guards_reject_bad_inputs_before_any_github_fetch() {
     let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::ACCEPTED);
     assert_eq!(value["accepted"], false);
+    assert_eq!(
+        value["reason"],
+        "only workflow_run events may trigger the failure fallback"
+    );
 
     let short_revision = serde_json::to_vec(&json!({
         "repository": { "full_name": REPOSITORY },
-        "after": "abc123"
+        "workflow_run": { "head_sha": "abc123" }
     }))
     .unwrap();
     let signature = webhook_signature(&short_revision);
-    let response = post_webhook(&client, &server, "push", &short_revision, Some(&signature)).await;
+    let response = post_webhook(
+        &client,
+        &server,
+        "workflow_run",
+        &short_revision,
+        Some(&signature),
+    )
+    .await;
     let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(value["error"], "webhook revision is not a full commit SHA");
 
     let no_rules = serde_json::to_vec(&json!({
         "repository": { "full_name": REPOSITORY },
-        "after": REVISION
+        "workflow_run": { "head_sha": REVISION }
     }))
     .unwrap();
     let signature = webhook_signature(&no_rules);
-    let response = post_webhook(&client, &server, "push", &no_rules, Some(&signature)).await;
+    let response = post_webhook(
+        &client,
+        &server,
+        "workflow_run",
+        &no_rules,
+        Some(&signature),
+    )
+    .await;
     let (status, value) = response_json(response).await;
     assert_eq!(status, StatusCode::ACCEPTED);
     assert_eq!(value["accepted"], false);
@@ -519,14 +569,38 @@ async fn webhook_guards_reject_bad_inputs_before_any_github_fetch() {
         .contains("no workflow mirror rules"));
 }
 
+#[tokio::test]
+async fn inbound_json_is_rejected_before_unbounded_allocation() {
+    let mut env = dormant_env();
+    env.insert("GHA_CLONE_MAX_WORKFLOW_BYTES", "64".to_string());
+    let server = spawn_server(env).await;
+    let client = Client::new();
+    let oversized = "x".repeat(70 * 1024);
+
+    let response = client
+        .post(format!("{}/v1/plans", server.base_url))
+        .header("x-server-auth", AUTH_SECRET)
+        .json(&plan_request(REPOSITORY, &oversized))
+        .send()
+        .await
+        .expect("oversized plan request");
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+}
+
 #[derive(Clone, Copy, Debug)]
 enum MockMode {
     Succeed,
     RejectSubmission,
     InvalidSubmissionJson,
+    InvalidSubmissionId,
+    RedirectSubmission,
+    UnknownSubmissionStatus,
+    OversizedSubmissionBody,
     FailBuild,
     UnknownStatus,
     InvalidStatusJson,
+    MismatchedStatusId,
+    OversizedStatusBody,
     KeepRunning,
 }
 
@@ -536,6 +610,7 @@ struct MockBuildState {
     submissions: Arc<Mutex<Vec<Value>>>,
     auth_headers: Arc<Mutex<Vec<Option<String>>>>,
     next_id: Arc<AtomicUsize>,
+    status_requests: Arc<AtomicUsize>,
 }
 
 struct MockBuildServer {
@@ -557,6 +632,7 @@ impl MockBuildServer {
             submissions: Arc::new(Mutex::new(Vec::new())),
             auth_headers: Arc::new(Mutex::new(Vec::new())),
             next_id: Arc::new(AtomicUsize::new(0)),
+            status_requests: Arc::new(AtomicUsize::new(0)),
         };
         let app = Router::new()
             .route("/builds", post(mock_submit))
@@ -595,6 +671,24 @@ async fn mock_submit(
             (StatusCode::INTERNAL_SERVER_ERROR, "simulated rejection").into_response()
         }
         MockMode::InvalidSubmissionJson => (StatusCode::ACCEPTED, "not-json").into_response(),
+        MockMode::InvalidSubmissionId => (
+            StatusCode::ACCEPTED,
+            Json(json!({ "id": "..", "status": "queued", "error": null })),
+        )
+            .into_response(),
+        MockMode::RedirectSubmission => {
+            axum::response::Redirect::temporary("/redirected").into_response()
+        }
+        MockMode::UnknownSubmissionStatus => (
+            StatusCode::ACCEPTED,
+            Json(json!({ "id": "build-unknown", "status": "mystery", "error": null })),
+        )
+            .into_response(),
+        MockMode::OversizedSubmissionBody => (
+            StatusCode::ACCEPTED,
+            "x".repeat(UPSTREAM_RESPONSE_BYTES_FOR_TEST + 1),
+        )
+            .into_response(),
         _ => {
             let index = state.next_id.fetch_add(1, Ordering::SeqCst) + 1;
             (
@@ -611,6 +705,7 @@ async fn mock_submit(
 }
 
 async fn mock_status(State(state): State<MockBuildState>, Path(id): Path<String>) -> Response {
+    state.status_requests.fetch_add(1, Ordering::SeqCst);
     match state.mode {
         MockMode::FailBuild => (
             StatusCode::OK,
@@ -627,6 +722,20 @@ async fn mock_status(State(state): State<MockBuildState>, Path(id): Path<String>
         )
             .into_response(),
         MockMode::InvalidStatusJson => (StatusCode::OK, "not-json").into_response(),
+        MockMode::MismatchedStatusId => (
+            StatusCode::OK,
+            Json(json!({
+                "id": format!("{id}-other"),
+                "status": "succeeded",
+                "error": null
+            })),
+        )
+            .into_response(),
+        MockMode::OversizedStatusBody => (
+            StatusCode::OK,
+            "x".repeat(UPSTREAM_RESPONSE_BYTES_FOR_TEST + 1),
+        )
+            .into_response(),
         MockMode::KeepRunning => (
             StatusCode::OK,
             Json(json!({ "id": id, "status": "running", "error": null })),
@@ -645,12 +754,63 @@ fn execution_env(mock: &MockBuildServer, timeout_seconds: u64) -> BTreeMap<&'sta
     env.insert("GHA_CLONE_EXECUTION_ENABLED", "true".to_string());
     env.insert("GHA_CLONE_BUILD_SERVER_URL", mock.base_url.clone());
     env.insert("GHA_CLONE_BUILD_SERVER_AUTH", BUILD_AUTH.to_string());
-    env.insert("GHA_CLONE_BUILD_POLL_SECONDS", "0".to_string());
+    env.insert("GHA_CLONE_BUILD_POLL_SECONDS", "1".to_string());
     env.insert(
         "GHA_CLONE_BUILD_TIMEOUT_SECONDS",
         timeout_seconds.to_string(),
     );
     env
+}
+
+#[test]
+fn zero_runtime_bounds_fail_configuration_before_bind() {
+    for name in [
+        "GHA_CLONE_MAX_WORKFLOW_BYTES",
+        "GHA_CLONE_MAX_JOBS",
+        "GHA_CLONE_MAX_STEPS_PER_JOB",
+        "GHA_CLONE_BUILD_POLL_SECONDS",
+        "GHA_CLONE_BUILD_TIMEOUT_SECONDS",
+        "GHA_CLONE_MAX_RUNS",
+        "GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS",
+        "GHA_CLONE_MAX_WEBHOOK_DELIVERIES",
+    ] {
+        let mut command = Command::new(SERVER_BINARY);
+        for &variable in SERVER_ENV_VARS {
+            command.env_remove(variable);
+        }
+        let mut child = command
+            .env(name, "0")
+            .env("RUST_LOG", "error")
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("run invalid clone-server configuration");
+
+        let mut exit_status = None;
+        for _ in 0..200 {
+            exit_status = child.try_wait().expect("read invalid-config process");
+            if exit_status.is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let Some(exit_status) = exit_status else {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("{name}=0 started a server instead of failing configuration");
+        };
+
+        let mut stderr = String::new();
+        if let Some(mut pipe) = child.stderr.take() {
+            std::io::Read::read_to_string(&mut pipe, &mut stderr)
+                .expect("read invalid-config stderr");
+        }
+        assert_eq!(exit_status.code(), Some(2), "{name}: {stderr}");
+        assert!(
+            stderr.contains(name) && stderr.contains("greater than zero"),
+            "{name}: {stderr}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -715,6 +875,22 @@ async fn asynchronous_execution_failures_are_persisted_and_observable() {
             2,
             "build server returned invalid job JSON",
         ),
+        (MockMode::InvalidSubmissionId, 2, "invalid job ID"),
+        (
+            MockMode::RedirectSubmission,
+            2,
+            "build server rejected rust with HTTP 307",
+        ),
+        (
+            MockMode::UnknownSubmissionStatus,
+            2,
+            "invalid accepted status",
+        ),
+        (
+            MockMode::OversizedSubmissionBody,
+            2,
+            "submission response exceeds 65536-byte limit",
+        ),
         (MockMode::FailBuild, 2, "ended as failed: simulated failure"),
         (MockMode::UnknownStatus, 2, "unknown status"),
         (
@@ -722,7 +898,13 @@ async fn asynchronous_execution_failures_are_persisted_and_observable() {
             2,
             "build status JSON is invalid",
         ),
-        (MockMode::KeepRunning, 0, "exceeded 0 seconds"),
+        (MockMode::MismatchedStatusId, 2, "mismatched job ID"),
+        (
+            MockMode::OversizedStatusBody,
+            2,
+            "status response exceeds 65536-byte limit",
+        ),
+        (MockMode::KeepRunning, 1, "exceeded 1 seconds"),
     ];
 
     for (mode, timeout, expected) in cases {
@@ -740,5 +922,61 @@ async fn asynchronous_execution_failures_are_persisted_and_observable() {
             run["error"].as_str().unwrap().contains(expected),
             "mode {mode:?} expected {expected:?}: {run}"
         );
+        let should_poll = matches!(
+            mode,
+            MockMode::FailBuild
+                | MockMode::UnknownStatus
+                | MockMode::InvalidStatusJson
+                | MockMode::MismatchedStatusId
+                | MockMode::OversizedStatusBody
+                | MockMode::KeepRunning
+        );
+        let status_requests = mock.state.status_requests.load(Ordering::SeqCst);
+        if should_poll {
+            assert!(
+                status_requests >= 1,
+                "mode {mode:?} never polled build status"
+            );
+        } else {
+            assert_eq!(
+                status_requests, 0,
+                "mode {mode:?} polled an untrusted build identity"
+            );
+        }
     }
+}
+
+#[tokio::test]
+async fn active_run_capacity_is_atomic_and_rejects_before_second_submission() {
+    let mock = MockBuildServer::start(MockMode::KeepRunning).await;
+    let mut env = execution_env(&mock, 30);
+    env.insert("GHA_CLONE_MAX_RUNS", "1".to_string());
+    let server = spawn_server(env).await;
+    let client = Client::new();
+
+    let (status, first) = response_json(post_run(&client, &server, rust_workflow()).await).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert_eq!(first["status"], "queued");
+
+    let mut submitted = false;
+    for _ in 0..200 {
+        if mock.state.submissions.lock().await.len() == 1 {
+            submitted = true;
+            break;
+        }
+        sleep(Duration::from_millis(10)).await;
+    }
+    assert!(submitted, "first active run never reached the build server");
+
+    let (status, rejected) = response_json(post_run(&client, &server, rust_workflow()).await).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(rejected["error"], "run capacity is full");
+    assert_eq!(rejected["maxRuns"], 1);
+    assert_eq!(rejected["activeRuns"], 1);
+    assert_eq!(rejected["requestedRuns"], 1);
+
+    sleep(Duration::from_millis(25)).await;
+    assert_eq!(mock.state.submissions.lock().await.len(), 1);
+    let (_, health) = get_json(&client, &server, "/healthz").await;
+    assert_eq!(health["runsRetained"], 1);
 }
