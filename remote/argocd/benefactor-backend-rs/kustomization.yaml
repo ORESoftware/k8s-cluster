@@ -11,4 +11,4 @@ resources:
 images:
   - name: ghcr.io/benefactor-cc/backend.rs
     newName: ghcr.io/benefactor-cc/backend.rs
-    digest: sha256:46f6274e11505bb9845bfbba942953f02bf3599abc2c17193e470bb993484789
+    digest: sha256:d0e17aa84df8ae3e999d0c97d7d762c9a9564858fede53b34ad35d7985326124

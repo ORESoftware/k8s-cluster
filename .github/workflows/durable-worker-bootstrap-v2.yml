@@ -1,0 +1,19 @@
+# Retired one-use carrier.
+#
+# The original workflow wrote to agent/durable-worker-server-rs-v2 and deleted
+# itself after materialization. It must not remain as an automatic feature-
+# branch trigger on main. Historical source remains available in Git history.
+name: durable-worker-bootstrap-v2 (retired)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  retired:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'durable-worker-bootstrap-v2 is retired; use the reviewed durable-worker implementation PR'

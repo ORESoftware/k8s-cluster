@@ -1,0 +1,85 @@
+name: GitHub and Linear project registry
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/github-linear-project-registry.yml'
+      - 'docs/portfolio/github-linear-project-registry.md'
+      - 'ops/portfolio/github-linear-project-registry.tsv'
+      - 'scripts/ci/check-github-linear-project-registry.mjs'
+      - 'scripts/ci/check-github-linear-project-registry.test.mjs'
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - '.github/workflows/github-linear-project-registry.yml'
+      - 'docs/portfolio/github-linear-project-registry.md'
+      - 'ops/portfolio/github-linear-project-registry.tsv'
+      - 'scripts/ci/check-github-linear-project-registry.mjs'
+      - 'scripts/ci/check-github-linear-project-registry.test.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-linear-project-registry-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout without credentials or submodules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Setup Node 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Check validator syntax and positive/negative fixtures
+        run: |
+          set -euo pipefail
+          node --check scripts/ci/check-github-linear-project-registry.mjs
+          node --check scripts/ci/check-github-linear-project-registry.test.mjs
+          node --test scripts/ci/check-github-linear-project-registry.test.mjs
+
+      - name: Validate the canonical 64-organization registry
+        run: |
+          set -euo pipefail
+          node scripts/ci/check-github-linear-project-registry.mjs >/tmp/github-linear-project-registry.json
+          python3 -m json.tool /tmp/github-linear-project-registry.json >/dev/null
+          test "$(python3 -c 'import json; print(json.load(open("/tmp/github-linear-project-registry.json"))["organizationCount"])')" = '64'
+
+      - name: Publish the derived organization map to the run summary
+        run: node scripts/ci/check-github-linear-project-registry.mjs --markdown >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Reject whitespace, conflict markers, and credential-shaped values
+        run: |
+          set -euo pipefail
+          git diff --check
+          if git grep -nE '^(<<<<<<< |=======|>>>>>>> )' -- \
+            .github/workflows/github-linear-project-registry.yml \
+            docs/portfolio/github-linear-project-registry.md \
+            ops/portfolio/github-linear-project-registry.tsv \
+            scripts/ci/check-github-linear-project-registry.mjs \
+            scripts/ci/check-github-linear-project-registry.test.mjs; then
+            echo 'git conflict marker detected' >&2
+            exit 1
+          fi
+          if git grep -nE '(gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|https?://[^/[:space:]:@]+:[^/[:space:]@]+@)' -- \
+            .github/workflows/github-linear-project-registry.yml \
+            docs/portfolio/github-linear-project-registry.md \
+            ops/portfolio/github-linear-project-registry.tsv \
+            scripts/ci/check-github-linear-project-registry.mjs \
+            scripts/ci/check-github-linear-project-registry.test.mjs; then
+            echo 'credential-shaped value detected' >&2
+            exit 1
+          fi

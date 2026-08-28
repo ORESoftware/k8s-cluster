@@ -1,0 +1,281 @@
+name: Publish sealed HypeSiege and StreemPilot fleet
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/ops-publish-sealed-hypesiege-streempilot.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ops-publish-sealed-hypesiege-streempilot
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      COORDINATOR_SHA: e125b9c7c0be1d625abad3ff276311639d52585e
+      EXPECTED_GENERATOR_SHA256: a57b00961ee57ae09bf3bb2e2d09afbdd1ddbbbde832b027802f82a1fc5dfa84
+      SOURCE_ROOT: /tmp/hypesiege-streempilot-fleet
+      GENERATED_MANIFEST: /tmp/hypesiege-streempilot-manifest.json
+      REPORT_JSON: /tmp/hypesiege-streempilot-publication.json
+      REPORT_MARKDOWN: /tmp/hypesiege-streempilot-publication.md
+
+    steps:
+      - name: Check out the trusted default branch revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Configure short-lived AWS credentials from trusted main
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: hypesiege-streempilot-repository-publisher
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Load and mask the protected repository-administration credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret_json="$(aws secretsmanager get-secret-value \
+            --secret-id dd/remote-dev/agent-secrets \
+            --query SecretString \
+            --output text)"
+          token="$(jq -er '.GH_PAT | select(type == "string" and length > 0)' <<<"$secret_json")"
+          printf '::add-mask::%s\n' "$token"
+          {
+            printf 'GH_TOKEN=%s\n' "$token"
+            printf 'GITHUB_REPOSITORY_ADMIN_TOKEN=%s\n' "$token"
+          } >> "$GITHUB_ENV"
+          unset token secret_json
+
+      - name: Verify exact publisher identity and organization ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api user --jq .login)" = ORESoftware
+          for org in hypesiege StreemPilot; do
+            membership="$(gh api "/user/memberships/orgs/$org" --jq '.role + ":" + .state')"
+            test "$membership" = admin:active
+            echo "$org owner membership verified"
+          done
+
+      - name: Fetch the exact reviewed coordinator product commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          coordinator="$RUNNER_TEMP/ai-agent-coordinator"
+          git init "$coordinator"
+          git -C "$coordinator" remote add origin \
+            https://github.com/ORESoftware/ai-agent-coordinator.rs.git
+          git -C "$coordinator" fetch --depth=1 origin "$COORDINATOR_SHA"
+          git -C "$coordinator" checkout --detach FETCH_HEAD
+          test "$(git -C "$coordinator" rev-parse HEAD)" = "$COORDINATOR_SHA"
+          echo "COORDINATOR_ROOT=$coordinator" >> "$GITHUB_ENV"
+
+      - name: Reconstruct and validate the complete deterministic fleet
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$COORDINATOR_ROOT"
+          python3 -m py_compile \
+            scripts/reconstruct_hypesiege_streempilot_fleet.py \
+            scripts/publish_hypesiege_streempilot_fleet.py \
+            scripts/test_publish_hypesiege_streempilot_fleet.py
+          python3 -m unittest -v scripts/test_publish_hypesiege_streempilot_fleet.py
+          python3 scripts/reconstruct_hypesiege_streempilot_fleet.py \
+            --payload-dir repository-fleets/hypesiege-streempilot \
+            --output-root "$SOURCE_ROOT" \
+            --manifest-out "$GENERATED_MANIFEST"
+          GENERATED_MANIFEST="$GENERATED_MANIFEST" python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          checked = json.loads(
+              Path('repository-fleets/hypesiege-streempilot.json').read_text()
+          )
+          generated = json.loads(Path(os.environ['GENERATED_MANIFEST']).read_text())
+          assert generated == checked, 'reconstructed fleet differs from reviewed ledger'
+          assert generated['schema_version'] == 2
+          assert generated['generator_sha256'] == os.environ['EXPECTED_GENERATOR_SHA256']
+          assert generated['repository_count'] == 32
+          assert generated['total_tracked_files'] == 888
+          assert generated['total_gitlinks'] == 30
+          assert generated['organizations'] == {'hypesiege': 15, 'streempilot': 17}
+
+          seen = {'hypesiege': 0, 'streempilot': 0}
+          for record in generated['repositories']:
+              org = record['org']
+              if record['kind'] == 'monorepo':
+                  expected = 14 if org == 'hypesiege' else 16
+                  assert seen[org] == expected, f'{record["full_name"]} precedes a child'
+              else:
+                  seen[org] += 1
+          assert seen == {'hypesiege': 14, 'streempilot': 16}
+          PY
+
+      - name: Create and push every reviewed repository child-first
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r repository; do
+            echo "Publishing $repository"
+            python3 "$COORDINATOR_ROOT/scripts/publish_hypesiege_streempilot_fleet.py" \
+              --manifest "$GENERATED_MANIFEST" \
+              --source-root "$SOURCE_ROOT" \
+              --repository "$repository" \
+              --execute \
+              --confirm-repository "$repository"
+          done < <(jq -r '.repositories[].full_name' "$GENERATED_MANIFEST")
+
+      - name: Verify exact remote IDs, visibility, branches, and commit SHAs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+
+          token = os.environ['GH_TOKEN']
+          manifest = json.loads(Path(os.environ['GENERATED_MANIFEST']).read_text())
+
+          def get(path: str):
+              request = Request(
+                  'https://api.github.com' + path,
+                  headers={
+                      'Accept': 'application/vnd.github+json',
+                      'Authorization': f'Bearer {token}',
+                      'X-GitHub-Api-Version': '2022-11-28',
+                      'User-Agent': 'sealed-hypesiege-streempilot-verifier',
+                  },
+              )
+              with urlopen(request, timeout=30) as response:
+                  return json.load(response)
+
+          repositories = []
+          counts = {'hypesiege': 0, 'streempilot': 0}
+          for record in manifest['repositories']:
+              metadata = get(f"/repos/{record['full_name']}")
+              ref = get(f"/repos/{record['full_name']}/git/ref/heads/main")
+              observed = ref['object']['sha']
+              assert metadata['full_name'].casefold() == record['full_name'].casefold()
+              assert metadata['default_branch'] == 'main'
+              assert metadata['visibility'] == record['visibility']
+              assert observed == record['commit']
+              counts[record['org']] += 1
+              repositories.append({
+                  'repository': metadata['full_name'],
+                  'repository_id': metadata['id'],
+                  'node_id': metadata['node_id'],
+                  'visibility': metadata['visibility'],
+                  'default_branch': metadata['default_branch'],
+                  'main_sha': observed,
+                  'expected_sha': record['commit'],
+                  'html_url': metadata['html_url'],
+              })
+
+          assert counts == {'hypesiege': 15, 'streempilot': 17}
+          report = {
+              'success': True,
+              'verified_at': datetime.now(timezone.utc).isoformat(),
+              'k8s_cluster_sha': os.environ['GITHUB_SHA'],
+              'coordinator_sha': os.environ['COORDINATOR_SHA'],
+              'generator_sha256': manifest['generator_sha256'],
+              'repository_count': len(repositories),
+              'organization_counts': counts,
+              'total_tracked_files': manifest['total_tracked_files'],
+              'total_gitlinks': manifest['total_gitlinks'],
+              'repositories': repositories,
+          }
+          Path(os.environ['REPORT_JSON']).write_text(
+              json.dumps(report, indent=2, sort_keys=True) + '\n'
+          )
+
+          lines = [
+              '# HypeSiege and StreemPilot repository publication',
+              '',
+              'Overall result: **SUCCESS**',
+              '',
+              f"- Coordinator product commit: `{report['coordinator_sha']}`",
+              f"- Repositories verified: `{report['repository_count']}/32`",
+              f"- HypeSiege: `{counts['hypesiege']}/15`",
+              f"- StreemPilot: `{counts['streempilot']}/17`",
+              f"- Generator SHA-256: `{report['generator_sha256']}`",
+              '',
+          ]
+          for item in repositories:
+              lines.append(
+                  f"- `{item['repository']}` — `{item['default_branch']}` "
+                  f"`{item['main_sha']}`; {item['visibility']}; ID `{item['repository_id']}`"
+              )
+          Path(os.environ['REPORT_MARKDOWN']).write_text('\n'.join(lines) + '\n')
+          print('\n'.join(lines))
+          PY
+
+      - name: Persist non-secret publication evidence on trusted main
+        shell: bash
+        run: |
+          set -euo pipefail
+          publish_report() {
+            source_path="$1"
+            target_path="$2"
+            message="$3"
+            encoded="$(base64 --wrap=0 "$source_path")"
+            existing_sha="$(
+              gh api "repos/${GITHUB_REPOSITORY}/contents/${target_path}?ref=main" \
+                --jq .sha 2>/dev/null || true
+            )"
+            payload="$RUNNER_TEMP/report-payload.json"
+            if [[ -n "$existing_sha" ]]; then
+              jq -nc \
+                --arg message "$message" \
+                --arg content "$encoded" \
+                --arg branch main \
+                --arg sha "$existing_sha" \
+                '{message:$message,content:$content,branch:$branch,sha:$sha}' \
+                > "$payload"
+            else
+              jq -nc \
+                --arg message "$message" \
+                --arg content "$encoded" \
+                --arg branch main \
+                '{message:$message,content:$content,branch:$branch}' \
+                > "$payload"
+            fi
+            gh api --method PUT \
+              "repos/${GITHUB_REPOSITORY}/contents/${target_path}" \
+              --input "$payload" >/dev/null
+          }
+
+          publish_report "$REPORT_MARKDOWN" \
+            docs/ops/hypesiege-streempilot-publication-2026-07-31.md \
+            'docs: record verified HypeSiege and StreemPilot publication'
+          publish_report "$REPORT_JSON" \
+            docs/ops/hypesiege-streempilot-publication-2026-07-31.json \
+            'docs: record machine-readable HypeSiege and StreemPilot inventory'
+
+      - name: Upload publication evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hypesiege-streempilot-publication
+          path: |
+            ${{ env.REPORT_MARKDOWN }}
+            ${{ env.REPORT_JSON }}
+          if-no-files-found: error
+          retention-days: 14

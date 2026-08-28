@@ -1,0 +1,123 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dd-scheduled-task-digest
+  namespace: default
+  labels:
+    app.kubernetes.io/name: dd-scheduled-task-digest
+    app.kubernetes.io/component: scheduler
+    app.kubernetes.io/part-of: project-automation
+  annotations:
+    denman.linear.app/issue: DEN-3562
+    dd.dev/recipient: alexander.d.mills@gmail.com
+    dd.dev/evidence-window: 24h
+    dd.dev/digest.exclude: "true"
+spec:
+  schedule: "0 7 * * *"
+  timeZone: America/Chicago
+  suspend: false
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 7
+  jobTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dd-scheduled-task-digest
+        app.kubernetes.io/component: scheduler
+        app.kubernetes.io/part-of: project-automation
+        dd.dev/scheduled-task: "true"
+      annotations:
+        denman.linear.app/issue: DEN-3562
+        dd.dev/digest.exclude: "true"
+    spec:
+      activeDeadlineSeconds: 900
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 604800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: dd-scheduled-task-digest
+            app.kubernetes.io/component: scheduler
+            app.kubernetes.io/part-of: project-automation
+            dd.dev/scheduled-task: "true"
+          annotations:
+            denman.linear.app/issue: DEN-3562
+            dd.dev/digest.exclude: "true"
+        spec:
+          serviceAccountName: dd-scheduled-task-digest
+          automountServiceAccountToken: true
+          enableServiceLinks: false
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 30
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: digest
+              image: docker.io/library/node:24.18.0-alpine3.24@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd
+              imagePullPolicy: IfNotPresent
+              command:
+                - node
+                - /opt/digest/main.mjs
+              env:
+                - name: RUN_MODE
+                  value: scheduled
+                - name: EMAIL_SERVICE_URL
+                  value: http://dd-email-sms-contact-rs.default.svc.cluster.local:8120
+                - name: LEASE_NAMESPACE
+                  value: default
+                - name: LEASE_NAME
+                  value: dd-scheduled-task-digest-delivery
+                - name: NODE_EXTRA_CA_CERTS
+                  value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+                - name: HOME
+                  value: /tmp
+                - name: POD_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.name
+                - name: SERVER_AUTH_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: dd-agent-secrets
+                      key: SERVER_AUTH_SECRET
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                  ephemeral-storage: 32Mi
+                limits:
+                  cpu: "1"
+                  memory: 512Mi
+                  ephemeral-storage: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 1000
+                runAsGroup: 1000
+                capabilities:
+                  drop:
+                    - ALL
+                seccompProfile:
+                  type: RuntimeDefault
+              volumeMounts:
+                - name: source
+                  mountPath: /opt/digest
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: source
+              configMap:
+                name: dd-scheduled-task-digest
+                defaultMode: 0440
+            - name: tmp
+              emptyDir:
+                sizeLimit: 128Mi

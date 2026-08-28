@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-sound-recorder-passwd
+  namespace: default
+  labels:
+    app: dd-sound-recorder-rs
+# Minimal NSS passwd/group so the container's non-root uid 1000 is resolvable.
+# The pod runs with runAsUser: 1000 and readOnlyRootFilesystem: true, and the
+# base image (rust:bookworm) has no /etc/passwd entry for that uid. OpenSSH
+# calls getpwuid()/getgrgid() at startup and aborts with
+# "No user exists for uid 1000" before it can present the deploy key, so the
+# git clone of the private Sonus source fails "Could not read from remote
+# repository". Mounting these two files (subPath, read-only) makes the lookups
+# succeed while keeping the deploy-key-first auth path unchanged. HOME=/tmp
+# matches the deployment's env.
+data:
+  passwd: |
+    root:x:0:0:root:/root:/bin/bash
+    sonus:x:1000:1000:sonus:/tmp:/bin/bash
+  group: |
+    root:x:0:
+    sonus:x:1000:

@@ -268,11 +268,11 @@ async fn verify_source_lock(
                 .and_then(|items| items.first())
                 .map(|status| {
                     !status.is_null()
-                        && status.get("err").map_or(true, Value::is_null)
+                        && status.get("err").is_none_or(Value::is_null)
                         && status
                             .get("confirmationStatus")
                             .and_then(|c| c.as_str())
-                            .map_or(false, |c| c == "confirmed" || c == "finalized")
+                            .is_some_and(|c| c == "confirmed" || c == "finalized")
                 })
                 .unwrap_or(false);
             Ok(confirmed)
@@ -285,10 +285,7 @@ async fn verify_source_lock(
                 .evm_rpc("eth_getTransactionReceipt", json!([lock_ref]))
                 .await?;
             // status "0x1" means the lock tx succeeded and is mined.
-            let confirmed = receipt
-                .get("status")
-                .and_then(|s| s.as_str())
-                .map_or(false, |s| s == "0x1");
+            let confirmed = receipt.get("status").and_then(|s| s.as_str()) == Some("0x1");
             Ok(confirmed)
         }
     }

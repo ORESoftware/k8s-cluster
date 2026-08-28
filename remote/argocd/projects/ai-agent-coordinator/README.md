@@ -39,6 +39,9 @@ Linear delivery worker, dry-run-only Sonus Auris/Daedalus Fab overlay, reusable
 manifest validator, locked-down container canary, and the bounded one-shot
 Meta Agents repository-bootstrap Job reviewed under DEN-1058.
 
+The generated application catalog is committed in the same promotion branch and
+validated against this exact immutable revision before merge.
+
 ## Bootstrap order
 
 Each cloud cluster root includes two Applications:

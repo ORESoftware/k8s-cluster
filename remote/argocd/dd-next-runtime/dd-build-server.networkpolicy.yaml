@@ -20,6 +20,11 @@ spec:
         - podSelector:
             matchLabels:
               app: dd-runtime-config
+        # The continuity router is the only webhook execution path allowed to
+        # submit fixed-profile jobs directly to this service.
+        - podSelector:
+            matchLabels:
+              app: dd-gha-executor-router
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability
@@ -83,6 +88,15 @@ spec:
       ports:
         - protocol: TCP
           port: 8083
+    # Exact DES Playwright/Puppeteer profile delegation. The target service
+    # authenticates every request and independently revalidates repo + SHA.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-ci-profile-runner
+      ports:
+        - protocol: TCP
+          port: 8147
     # Amazon RDS Postgres (own database dd_build_server) inside the VPC.
     - to:
         - ipBlock:

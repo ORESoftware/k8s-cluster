@@ -1,0 +1,47 @@
+# Child Applications managed by hypesiege-root. Argo tracks the service
+# repositories directly; hypesiege-infra is Cloudflare/Terraform only.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-hypesiege-api-server
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: hypesiege
+  source:
+    repoURL: git@github.com:hypesiege/hypesiege-api-server.rs.git
+    targetRevision: main
+    path: deploy/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: hypesiege
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-hypesiege-web-server
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: hypesiege
+  source:
+    repoURL: git@github.com:hypesiege/hypesiege-web-server.rs.git
+    targetRevision: main
+    path: deploy/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: hypesiege
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

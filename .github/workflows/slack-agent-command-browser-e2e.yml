@@ -1,0 +1,251 @@
+name: Slack agent command browser e2e
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/slack-agent-command-browser-e2e.yml'
+      - 'scripts/ci/run-slack-command-e2e.sh'
+      - 'remote/tests/fixtures/slack-command-*'
+      - 'remote/tests/ui/slack-agent-command*.playwright.test.mjs'
+      - 'remote/tests/package.json'
+      - 'remote/tests/pnpm-lock.yaml'
+      - 'tools/google-chat-space-export/**'
+      - 'remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs'
+      - 'remote/tests/general/slack-agent-command-workflow-contract.test.mjs'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/slack-agent-command-browser-e2e.yml'
+      - 'scripts/ci/run-slack-command-e2e.sh'
+      - 'remote/tests/fixtures/slack-command-*'
+      - 'remote/tests/ui/slack-agent-command*.playwright.test.mjs'
+      - 'remote/tests/package.json'
+      - 'remote/tests/pnpm-lock.yaml'
+      - 'tools/google-chat-space-export/**'
+      - 'remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs'
+      - 'remote/tests/general/slack-agent-command-workflow-contract.test.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: slack-agent-command-browser-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: 'true'
+  CARGO_INCREMENTAL: '0'
+  NODE_OPTIONS: '--unhandled-rejections=strict'
+  RUST_BACKTRACE: '1'
+  POSTGRES_TEST_IMAGE: postgres:17.9-bookworm@sha256:47f917f7409eacd22fc5dfb1dee634e1b55cf0c01d1a7eb701be2227a03e0641
+
+jobs:
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    defaults:
+      run:
+        shell: bash
+    services:
+      postgres:
+        image: postgres:17.9-bookworm@sha256:47f917f7409eacd22fc5dfb1dee634e1b55cf0c01d1a7eb701be2227a03e0641
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: coordinator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username postgres --dbname coordinator"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - name: Checkout integration harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Checkout bridge source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ORESoftware/ai-agent-bridge.rs
+          ref: 63d4d9be4343d3eeba02205ec64dd443716c5249
+          path: .e2e/bridge
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Checkout coordinator source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ORESoftware/ai-agent-coordinator.rs
+          ref: 06ff42f28d8795c8f39c3ca48259602fbadf62e8
+          path: .e2e/coordinator
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/slack-agent-command-browser-e2e.yml
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.97.1'
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Initialize private evidence directories
+        run: |
+          umask 077
+          mkdir -p \
+            "$RUNNER_TEMP/slack-command-e2e-results" \
+            "$RUNNER_TEMP/slack-command-e2e-logs"
+          chmod 700 \
+            "$RUNNER_TEMP/slack-command-e2e-results" \
+            "$RUNNER_TEMP/slack-command-e2e-logs"
+
+      - name: Install browser-test dependencies without lifecycle scripts
+        working-directory: remote/tests
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Run Google Chat bridge and import-planner regressions
+        run: |
+          set -euo pipefail
+          node --check tools/google-chat-space-export/import-plan.mjs
+          node --test \
+            tools/google-chat-space-export/test/app.test.mjs \
+            tools/google-chat-space-export/test/import-plan.test.mjs \
+            | tee "$RUNNER_TEMP/slack-command-e2e-results/google-chat-tests.tap"
+
+      - name: Verify Slack alias, observable-event, and idempotency source contracts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          bridge = Path('.e2e/bridge')
+          coordinator = Path('.e2e/coordinator')
+          bridge_commands = (bridge / 'src/slack_commands_parts/part1.rs').read_text()
+          bridge_jobs = (bridge / 'src/slack_commands_parts/part4.rs').read_text()
+          bridge_payload = (bridge / 'src/slack_commands_parts/part5.rs').read_text()
+          manifest = (bridge / 'slack-app/manifest.yaml').read_text()
+          coordinator_jobs = (coordinator / 'src/jobs.rs').read_text()
+          coordinator_slack = (coordinator / 'src/slack_run.rs').read_text()
+
+          aliases = {
+              '/ores-claude': '/slack/commands/ores-claude',
+              '/x-claude': '/slack/commands/ores-claude',
+              '/my-claude': '/slack/commands/ores-claude',
+              '/ores-chatgpt': '/slack/commands/ores-chatgpt',
+              '/x-chatgpt': '/slack/commands/ores-chatgpt',
+              '/my-chatgpt': '/slack/commands/ores-chatgpt',
+          }
+          for command, endpoint in aliases.items():
+              assert f'"{command}"' in bridge_commands, command
+              pattern = rf'- command: {re.escape(command)}\s+url: https://api\.fiducia\.cloud{re.escape(endpoint)}'
+              assert re.search(pattern, manifest), command
+
+          assert re.search(
+              r'\.header\(\s*"idempotency-key"\s*,\s*&request\.run_id\s*\)',
+              bridge_jobs,
+              re.S,
+          )
+          assert 'slack-command:{}' not in bridge_jobs
+          assert '"observable_event": observable_event' in bridge_payload
+          assert 'pub observable_event: Option<Value>' in coordinator_slack
+          assert 'validate_observable_event(event, self)?' in coordinator_slack
+          assert 'slack_agent_run Idempotency-Key must equal payload.run_id' in coordinator_jobs
+          PY
+
+      - name: Run AI bridge and workflow contracts
+        run: |
+          set -euo pipefail
+          node --test \
+            remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs \
+            remote/tests/general/slack-agent-command-workflow-contract.test.mjs \
+            | tee "$RUNNER_TEMP/slack-command-e2e-results/integration-contracts.tap"
+
+      - name: Install pinned Chromium runtime
+        working-directory: remote/tests
+        run: |
+          set -euo pipefail
+          pnpm exec playwright --version \
+            | tee "$RUNNER_TEMP/slack-command-e2e-results/playwright-version.txt"
+          pnpm exec playwright install --with-deps chromium
+
+      - name: Record and verify tested revisions
+        env:
+          BRIDGE_REF: 63d4d9be4343d3eeba02205ec64dd443716c5249
+          COORDINATOR_REF: 06ff42f28d8795c8f39c3ca48259602fbadf62e8
+        run: |
+          set -euo pipefail
+          bridge_commit="$(git -C .e2e/bridge rev-parse HEAD)"
+          coordinator_commit="$(git -C .e2e/coordinator rev-parse HEAD)"
+          test "$bridge_commit" = "$BRIDGE_REF"
+          test "$coordinator_commit" = "$COORDINATOR_REF"
+          jq -n \
+            --arg harness "$GITHUB_SHA" \
+            --arg bridge_ref "$BRIDGE_REF" \
+            --arg bridge_commit "$bridge_commit" \
+            --arg coordinator_ref "$COORDINATOR_REF" \
+            --arg coordinator_commit "$coordinator_commit" \
+            --arg postgres_image "$POSTGRES_TEST_IMAGE" \
+            '{
+              schema_version: 5,
+              harness_commit: $harness,
+              bridge_ref: $bridge_ref,
+              bridge_commit: $bridge_commit,
+              coordinator_ref: $coordinator_ref,
+              coordinator_commit: $coordinator_commit,
+              alias_contract: "six_manifest_commands_to_two_canonical_endpoints",
+              idempotency_contract: "header_equals_payload_run_id",
+              observable_event_contract: "validated_sanitized_task_created_v1",
+              postgres_image: $postgres_image
+            }' >"$RUNNER_TEMP/slack-command-e2e-results/revisions.json"
+
+      - name: Run real-service Playwright integration with a bounded deadline
+        env:
+          SLACK_E2E_LOG_DIR: ${{ runner.temp }}/slack-command-e2e-logs
+          PLAYWRIGHT_OUTPUT_DIR: ${{ runner.temp }}/slack-command-e2e-results
+          SLACK_COMMAND_STATE_DIR: ${{ runner.temp }}/slack-command-state
+        run: timeout --signal=TERM --kill-after=30s 60m bash scripts/ci/run-slack-command-e2e.sh
+
+      - name: Publish run summary
+        if: always()
+        run: |
+          {
+            echo '## Slack agent command browser E2E'
+            echo
+            echo "- Harness: \`${GITHUB_SHA}\`"
+            echo "- Bridge: 63d4d9be4343d3eeba02205ec64dd443716c5249"
+            echo "- Coordinator: 06ff42f28d8795c8f39c3ca48259602fbadf62e8"
+            echo "- Commands: /ores-claude, /x-claude, /my-claude, /ores-chatgpt, /x-chatgpt, /my-chatgpt"
+            echo "- Idempotency: Idempotency-Key == payload.run_id"
+            echo "- Observable event: validated sanitized task_created v1"
+            echo "- Run attempt: \`${GITHUB_RUN_ATTEMPT}\`"
+            echo "- Evidence artifact: \`slack-agent-command-browser-e2e-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload browser evidence and service logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: slack-agent-command-browser-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/slack-command-e2e-results
+            ${{ runner.temp }}/slack-command-e2e-logs
+          if-no-files-found: error
+          retention-days: 14

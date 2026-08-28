@@ -1,0 +1,293 @@
+name: Publish Astro marketing site fleet from trusted comment
+run-name: Publish Astro marketing sites for PR #${{ github.event.issue.number }}
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: ops-publish-astro-marketing-sites
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: >-
+      github.event.issue.pull_request &&
+      github.actor == 'chatgpt' &&
+      startsWith(github.event.comment.body, 'ops-publish-marketing-sites:')
+    runs-on: ubuntu-24.04
+    outputs:
+      request_id: ${{ steps.contract.outputs.request_id }}
+      pr_number: ${{ steps.contract.outputs.pr_number }}
+      target_sha: ${{ steps.contract.outputs.target_sha }}
+      trusted_main: ${{ steps.contract.outputs.trusted_main }}
+    steps:
+      - name: Validate exact one-file trusted-main carrier
+        id: contract
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          EVENT_PR_NUMBER: ${{ github.event.issue.number }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          IFS=: read -r command pr_number target_sha trailing <<<"$COMMENT_BODY"
+          test "$command" = ops-publish-marketing-sites
+          test -z "${trailing:-}"
+          [[ "$pr_number" =~ ^[0-9]+$ ]]
+          [[ "$target_sha" =~ ^[0-9a-f]{40}$ ]]
+          test "$pr_number" = "$EVENT_PR_NUMBER"
+
+          pr="$(gh api "repos/${REPOSITORY}/pulls/${pr_number}")"
+          test "$(jq -r '.state' <<<"$pr")" = open
+          test "$(jq -r '.draft' <<<"$pr")" = true
+          test "$(jq -r '.title' <<<"$pr")" = \
+            'DO NOT MERGE: supervised Astro marketing site publication'
+          author="$(jq -r '.user.login' <<<"$pr")"
+          [[ "$author" == ORESoftware || "$author" == chatgpt ]]
+          test "$(jq -r '.head.repo.full_name' <<<"$pr")" = "$REPOSITORY"
+          test "$(jq -r '.head.sha' <<<"$pr")" = "$target_sha"
+          test "$(jq -r '.base.ref' <<<"$pr")" = main
+          test "$(jq -r '.commits' <<<"$pr")" = 1
+          head_ref="$(jq -r '.head.ref' <<<"$pr")"
+          [[ "$head_ref" == agent/marketing-sites-publish-trigger-main-* ]]
+
+          trusted_main="$(gh api "repos/${REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$trusted_main" =~ ^[0-9a-f]{40}$ ]]
+          test "$(jq -r '.base.sha' <<<"$pr")" = "$trusted_main"
+
+          commit="$(gh api "repos/${REPOSITORY}/commits/${target_sha}")"
+          test "$(jq '.parents | length' <<<"$commit")" = 1
+          test "$(jq -r '.parents[0].sha' <<<"$commit")" = "$trusted_main"
+
+          mapfile -t changed_files < <(
+            gh api --paginate \
+              "repos/${REPOSITORY}/pulls/${pr_number}/files?per_page=100" \
+              --jq '.[].filename'
+          )
+          test "${#changed_files[@]}" -eq 1
+          test "${changed_files[0]}" = .github/marketing-sites-publish-trigger-main
+
+          marker="$(
+            gh api \
+              "repos/${REPOSITORY}/contents/.github/marketing-sites-publish-trigger-main?ref=${target_sha}" \
+              --jq '.content' \
+              | tr -d '\n' \
+              | base64 --decode
+          )"
+          test "$marker" = "trusted-main:${trusted_main}"
+
+          {
+            printf 'request_id=pr-%s-%s\n' "$pr_number" "$target_sha"
+            printf 'pr_number=%s\n' "$pr_number"
+            printf 'target_sha=%s\n' "$target_sha"
+            printf 'trusted_main=%s\n' "$trusted_main"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Mark exact carrier pending
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.contract.outputs.pr_number }}
+          REPOSITORY: ${{ github.repository }}
+          TARGET_SHA: ${{ steps.contract.outputs.target_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_url="https://github.com/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          gh api --method POST "repos/${REPOSITORY}/statuses/${TARGET_SHA}" \
+            -f state=pending \
+            -f context='ops/astro-marketing-site-publication' \
+            -f description="trusted-main publisher run ${GITHUB_RUN_ID} is executing" \
+            -f target_url="$run_url" >/dev/null
+          gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" \
+            --body "Astro marketing-site publisher started: ${run_url}" >/dev/null
+
+  publish:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out trusted main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate.outputs.trusted_main }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Configure protected AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: astro-marketing-site-publisher
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Publish and verify from protected SSM host
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+          TRUSTED_SHA: ${{ needs.validate.outputs.trusted_main }}
+        run: |
+          set -euo pipefail
+          test -n "${INSTANCE_ID:-}"
+          [[ "$TRUSTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+          remote_script="$RUNNER_TEMP/publish-astro-marketing-sites.sh"
+          cat > "$remote_script" <<'REMOTE_EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          umask 077
+
+          trusted_sha="${1:?trusted SHA required}"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          stage=initialization
+          work="$(mktemp -d /tmp/astro-marketing-publisher.XXXXXX)"
+
+          cleanup() {
+            unset GH_TOKEN GITHUB_TOKEN encoded_pat
+            unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
+            rm -rf "$work"
+          }
+          trap cleanup EXIT
+          trap 'rc=$?; printf "publisher-stage=%s status=failed rc=%s\n" "$stage" "$rc" >&2; exit "$rc"' ERR
+
+          stage=protected-credential
+          command -v kubectl >/dev/null
+          command -v git >/dev/null
+          command -v node >/dev/null
+          command -v npm >/dev/null
+          test -r /etc/kubernetes/admin.conf
+          encoded_pat="$(
+            KUBECONFIG=/etc/kubernetes/admin.conf \
+              kubectl -n default get secret dd-agent-secrets \
+              -o jsonpath='{.data.GH_PAT}'
+          )"
+          test -n "$encoded_pat"
+          GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode)"
+          unset encoded_pat
+          test -n "$GH_TOKEN"
+          [[ "$GH_TOKEN" != *$'\n'* && "$GH_TOKEN" != *$'\r'* ]]
+          export GH_TOKEN
+          printf 'publisher-stage=%s status=passed\n' "$stage"
+
+          stage=git-credential-transport
+          git_askpass="$work/git-askpass.sh"
+          cat > "$git_askpass" <<'ASKPASS_EOF'
+          #!/usr/bin/env sh
+          case "${1:-}" in
+            *Username*) printf '%s\n' 'x-access-token' ;;
+            *Password*) printf '%s\n' "${GH_TOKEN:?GH_TOKEN is required}" ;;
+            *) exit 1 ;;
+          esac
+          ASKPASS_EOF
+          chmod 700 "$git_askpass"
+          export GIT_ASKPASS="$git_askpass"
+          export GIT_ASKPASS_REQUIRE=force
+          export GIT_TERMINAL_PROMPT=0
+          printf 'publisher-stage=%s status=passed\n' "$stage"
+
+          stage=trusted-publisher-source
+          git init "$work/k8s-cluster"
+          git -C "$work/k8s-cluster" remote add origin \
+            https://github.com/ORESoftware/k8s-cluster.git
+          git -C "$work/k8s-cluster" fetch --depth=1 origin "$trusted_sha"
+          git -C "$work/k8s-cluster" checkout --detach FETCH_HEAD
+          test "$(git -C "$work/k8s-cluster" rev-parse HEAD)" = "$trusted_sha"
+          printf 'publisher-stage=%s status=passed sha=%s\n' "$stage" "$trusted_sha"
+
+          stage=publisher-static-validation
+          python3 -m py_compile \
+            "$work/k8s-cluster/scripts/ops/publish_marketing_sites.py"
+          printf 'publisher-stage=%s status=passed\n' "$stage"
+
+          stage=bounded-site-publication
+          cd "$work/k8s-cluster"
+          python3 scripts/ops/publish_marketing_sites.py
+          printf 'publisher-stage=%s status=passed\n' "$stage"
+
+          stage=complete
+          printf 'publisher-stage=%s status=success\n' "$stage"
+          REMOTE_EOF
+          chmod 700 "$remote_script"
+
+          encoded_script="$(base64 --wrap=0 "$remote_script")"
+          remote_command="printf '%s' '$encoded_script' | base64 --decode > /tmp/publish-astro-marketing-sites.sh; chmod 700 /tmp/publish-astro-marketing-sites.sh; bash /tmp/publish-astro-marketing-sites.sh '$TRUSTED_SHA' > /tmp/publish-astro-marketing-sites.log 2>&1; status=\$?; if test -f /tmp/publish-astro-marketing-sites.log; then tail -c 60000 /tmp/publish-astro-marketing-sites.log; fi; rm -f /tmp/publish-astro-marketing-sites.sh /tmp/publish-astro-marketing-sites.log; exit \$status"
+          parameters="$RUNNER_TEMP/ssm-parameters.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "Publish bounded Astro marketing fleet from $TRUSTED_SHA" \
+              --parameters "file://$parameters" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+          echo "ssm_command_id=$command_id"
+
+          status=Pending
+          for _ in $(seq 1 2400); do
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query Status \
+                --output text 2>/dev/null || true
+            )"
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut|Cancelling)
+                break
+                ;;
+            esac
+            sleep 3
+          done
+
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json
+          test "$status" = Success
+
+  report:
+    if: always() && needs.validate.result == 'success'
+    needs: [validate, publish]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Report exact publication result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.validate.outputs.pr_number }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          REPOSITORY: ${{ github.repository }}
+          TARGET_SHA: ${{ needs.validate.outputs.target_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_url="https://github.com/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          if [[ "$PUBLISH_RESULT" == success ]]; then
+            state=success
+            description='all fourteen Astro marketing sites published and verified'
+          else
+            state=failure
+            description='Astro marketing-site publisher failed; inspect the linked run'
+          fi
+          gh api --method POST "repos/${REPOSITORY}/statuses/${TARGET_SHA}" \
+            -f state="$state" \
+            -f context='ops/astro-marketing-site-publication' \
+            -f description="$description" \
+            -f target_url="$run_url" >/dev/null
+          gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" \
+            --body "Astro marketing-site publisher completed with **${PUBLISH_RESULT}**: ${run_url}" >/dev/null
+          test "$PUBLISH_RESULT" = success

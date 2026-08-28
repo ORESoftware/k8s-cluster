@@ -171,3 +171,37 @@ test('browser-test-server is deployed through Argo runtime manifests and the gat
     /location \/browser-test\/[\s\S]*X-Server-Auth "\$\{DD_REMOTE_DEV_SERVER_AUTH_VALUE\}"[\s\S]*dd-browser-test-server\.default\.svc\.cluster\.local:8104/,
   );
 });
+
+test('Benefactor documentation uses the shared runtime without weakening collection or delivery boundaries', async () => {
+  const document = await readRepoFile('docs/benefactor-node-browser-automation.md');
+  const readme = await readRepoFile('remote/deployments/browser-test-server/readme.md');
+  const readmeUpper = await readRepoFile('remote/deployments/browser-test-server/README.md');
+
+  assert.match(document, /dd-browser-test-server\.default\.svc\.cluster\.local:8104\/run/);
+  assert.match(document, /dd-selenium-server\.default\.svc\.cluster\.local:8105\/run/);
+  assert.match(document, /Playwright — default/);
+  assert.match(document, /Puppeteer — Chromium\/CDP-specific/);
+  assert.match(document, /Selenium — compatibility and Grid lane/);
+  assert.match(document, /Do not execute every source through all three engines/);
+  assert.match(document, /Do not bypass CAPTCHAs/);
+  assert.match(document, /Browser output never goes directly to a sender/);
+  assert.match(document, /Browser jobs never call either provider/);
+  assert.match(document, /screenshots off by default/);
+  assert.match(document, /BROWSER_TEST_ALLOW_EVALUATE=false/);
+  assert.match(document, /SERVER_AUTH_SECRET/);
+  assert.match(document, /ChatGPT task is an orchestration signal/);
+  assert.match(document, /connected Benefactor control-plane or queue/);
+  assert.match(document, /source and exact source URL/);
+  assert.match(document, /engine and adapter version/);
+  assert.match(document, /Gmail and SendGrid consume the same deterministic/);
+  assert.match(document, /never receive database credentials/);
+
+  for (const contents of [readme, readmeUpper]) {
+    assert.match(contents, /benefactor-node-browser-automation\.md/);
+    assert.match(contents, /Playwright/);
+    assert.match(contents, /Puppeteer/);
+    assert.match(contents, /Selenium/);
+    assert.match(contents, /CAPTCHAs/);
+    assert.match(contents, /source-policy/);
+  }
+});

@@ -1,0 +1,69 @@
+name: Google Chat reconciliation safety
+
+on:
+  pull_request:
+    paths:
+      - 'tools/google-chat-space-export/**'
+      - 'docs/audits/google-chat/**'
+      - '.github/workflows/google-chat-import-safety.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/google-chat-space-export/**'
+      - 'docs/audits/google-chat/**'
+      - '.github/workflows/google-chat-import-safety.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: google-chat-reconciliation-safety-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Check out without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+
+      - name: Validate command-line source syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check tools/google-chat-space-export/fetch-bridge-pages.mjs
+          node --check tools/google-chat-space-export/sanitize-export.mjs
+          node --check tools/google-chat-space-export/sensitive-content.mjs
+          node --check tools/google-chat-space-export/import-plan.mjs
+
+      - name: Run sanitizer, planner, mandatory-pipeline, and audit-ledger contracts
+        run: >-
+          node --test
+          tools/google-chat-space-export/test/sensitive-content.test.mjs
+          tools/google-chat-space-export/test/import-plan.test.mjs
+          tools/google-chat-space-export/test/reconciliation-pipeline.test.mjs
+          tools/google-chat-space-export/test/audit-ledger-2026-08-04.test.mjs
+
+      - name: Reject conflict markers and committed private-output paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -nE '^(<{7}|={7}|>{7})' -- \
+            .github/workflows/google-chat-import-safety.yml \
+            tools/google-chat-space-export \
+            docs/audits/google-chat; then
+            echo 'Git conflict markers are forbidden.' >&2
+            exit 1
+          fi
+          if git ls-files | grep -E '(^|/)(private|raw-export|sanitized-export)/'; then
+            echo 'Private Google Chat export material must not be committed.' >&2
+            exit 1
+          fi

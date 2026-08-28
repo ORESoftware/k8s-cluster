@@ -58,7 +58,10 @@ test('rendered authoritative Raft volume cannot regress to emptyDir', () => {
   const podVolumes = node.match(/\n\s{6}volumes:\n[\s\S]*?(?=\n\s{2}volumeClaimTemplates:|$)/)?.[0] ?? '';
 
   assert.doesNotMatch(podVolumes, /- name:\s*data\s*\n\s*emptyDir:/);
-  assert.match(podVolumes, /- name:\s*tmp\s*\n\s*emptyDir:/);
+  assert.match(
+    podVolumes,
+    /-\s+(?:name:\s*tmp[\s\S]{0,120}emptyDir:|emptyDir:[\s\S]{0,120}name:\s*tmp)/,
+  );
 });
 
 test('durability patch records one-voter-at-a-time rollout and deletion controls', async () => {
