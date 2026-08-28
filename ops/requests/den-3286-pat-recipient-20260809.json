@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "execute": true,
+  "tracking_issue": "DEN-3286",
+  "recipient_id": "den-3286-publish-20260809-2b9b8273dfbbc871",
+  "source_merge_commit": "317842a2fb1fa13d98dd81a9f180e7d6ea3b0d57",
+  "purpose": "Retry the one-time OAEP-SHA256 recipient after a pre-write protected-host Python compatibility failure",
+  "expires_in_seconds": 21600,
+  "attempt": 2,
+  "previous_run_id": 31296608762,
+  "previous_write_count": 0
+}

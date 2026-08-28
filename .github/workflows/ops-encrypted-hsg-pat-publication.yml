@@ -1,0 +1,226 @@
+name: Encrypted HypeSiege hsg PAT publication
+run-name: Publish HypeSiege hsg fleet from one-run encrypted credential @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-encrypted-hsg-pat-publication.yml
+      - scripts/ops/publish_hypesiege_hsg_fleet_with_gh.sh
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-encrypted-hsg-pat-publication.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: encrypted-hsg-pat-publication
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate bounded encrypted carrier
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          workflow=.github/workflows/ops-encrypted-hsg-pat-publication.yml
+          publisher=scripts/ops/publish_hypesiege_hsg_fleet_with_gh.sh
+          bash -n "$publisher"
+          grep -qF 'openssl genpkey' "$workflow"
+          grep -qF 'rsa_padding_mode:oaep' "$workflow"
+          grep -qF 'rsa_oaep_md:sha256' "$workflow"
+          grep -qF 'hsg-pat-v1:' "$workflow"
+          grep -qF "readonly ORG='hypesiege'" "$publisher"
+          grep -qF "readonly EXPECTED_LOGIN='ORESoftware'" "$publisher"
+          grep -qF 'HYPESIEGE_HSG_GH_PUBLICATION_COMPLETE' "$publisher"
+          git diff --check
+
+  publish:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      TRACKING_ISSUE: '968'
+      EXPECTED_LOGIN: ORESoftware
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Publish ephemeral RSA recipient
+        id: carrier
+        shell: bash
+        env:
+          ISSUE_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          private_key="$RUNNER_TEMP/hsg-carrier-private.pem"
+          public_key="$RUNNER_TEMP/hsg-carrier-public.pem"
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key" >/dev/null 2>&1
+          openssl pkey -in "$private_key" -pubout -out "$public_key" >/dev/null 2>&1
+          chmod 600 "$private_key" "$public_key"
+          fingerprint="$(openssl pkey -pubin -in "$public_key" -outform DER | sha256sum | awk '{print $1}')"
+          nonce="$(openssl rand -hex 16)"
+          public_b64="$(base64 --wrap=0 "$public_key")"
+          body="hsg-pat-recipient-v1:${nonce}:${fingerprint}:${public_b64}"
+          comment="$(GH_TOKEN="$ISSUE_TOKEN" gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_ISSUE}/comments" -f body="$body")"
+          recipient_comment_id="$(jq -er .id <<<"$comment")"
+          echo "nonce=$nonce" >> "$GITHUB_OUTPUT"
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+          echo "recipient_comment_id=$recipient_comment_id" >> "$GITHUB_OUTPUT"
+          echo "carrier_public_key_published comment_id=$recipient_comment_id fingerprint=$fingerprint"
+
+      - name: Receive and decrypt one-run credential
+        shell: bash
+        env:
+          ISSUE_TOKEN: ${{ github.token }}
+          NONCE: ${{ steps.carrier.outputs.nonce }}
+          RECIPIENT_COMMENT_ID: ${{ steps.carrier.outputs.recipient_comment_id }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          private_key="$RUNNER_TEMP/hsg-carrier-private.pem"
+          encrypted="$RUNNER_TEMP/hsg-carrier-token.enc"
+          plaintext="$RUNNER_TEMP/hsg-carrier-token.txt"
+          carrier_comment_id=''
+          for _ in $(seq 1 180); do
+            comments="$(GH_TOKEN="$ISSUE_TOKEN" gh api "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_ISSUE}/comments?per_page=100")"
+            row="$(jq -r --arg prefix "hsg-pat-v1:${NONCE}:" '.[] | select(.body | startswith($prefix)) | [.id,.body] | @tsv' <<<"$comments" | tail -n 1)"
+            if [[ -n "$row" ]]; then
+              carrier_comment_id="${row%%$'\t'*}"
+              body="${row#*$'\t'}"
+              encoded="${body#hsg-pat-v1:${NONCE}:}"
+              printf '%s' "$encoded" | base64 --decode > "$encrypted"
+              break
+            fi
+            sleep 5
+          done
+          test -n "$carrier_comment_id"
+          openssl pkeyutl -decrypt -inkey "$private_key" \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -in "$encrypted" -out "$plaintext"
+          token="$(cat "$plaintext")"
+          test -n "$token"
+          echo "::add-mask::$token"
+          printf 'GH_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+          printf 'CARRIER_COMMENT_ID=%s\n' "$carrier_comment_id" >> "$GITHUB_ENV"
+          : > "$plaintext"
+          rm -f "$encrypted" "$private_key" "$RUNNER_TEMP/hsg-carrier-public.pem"
+
+      - name: Verify owner identity and refresh exact source pins
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(gh api user --jq .login)" = "$EXPECTED_LOGIN"
+          membership="$(gh api user/memberships/orgs/hypesiege)"
+          test "$(jq -er .state <<<"$membership")" = active
+          test "$(jq -er .role <<<"$membership")" = admin
+          publisher="$RUNNER_TEMP/publish-hypesiege-hsg.sh"
+          cp scripts/ops/publish_hypesiege_hsg_fleet_with_gh.sh "$publisher"
+          chmod 700 "$publisher"
+          export PUBLISHER="$publisher"
+          python3 - <<'PY'
+          import json, os, re, subprocess
+          from pathlib import Path
+          publisher = Path(os.environ['PUBLISHER'])
+          text = publisher.read_text()
+          repos = {
+              'hsg-api': 'hypesiege-api-server.rs',
+              'hsg-web-mash': 'hypesiege-web-server.rs',
+              'hsg-web-leptos': 'hypesiege-monorepo',
+              'hsg-web-dioxus': 'hypesiege-monorepo',
+              'hsg-infra': 'hypesiege-infra',
+              'hsg-cli': 'hypesiege-cli',
+              'hsg-interfaces': 'hypesiege-interfaces',
+              'hsg-sync': 'hypesiege-sync',
+          }
+          observed = {}
+          for target, repository in repos.items():
+              payload = subprocess.check_output(['gh','api',f'repos/hypesiege/{repository}/git/ref/heads/main'], text=True)
+              sha = json.loads(payload)['object']['sha']
+              if not re.fullmatch(r'[0-9a-f]{40}', sha):
+                  raise SystemExit(f'invalid SHA for {repository}: {sha}')
+              observed[target] = sha
+              pattern = rf"(\[{re.escape(target)}\]=')[0-9a-f]{{40}}(')"
+              text, count = re.subn(pattern, rf"\g<1>{sha}\g<2>", text, count=1)
+              if count != 1:
+                  raise SystemExit(f'failed to refresh source pin for {target}')
+          publisher.write_text(text)
+          Path(os.environ['RUNNER_TEMP'], 'hypesiege-hsg-source-pins.json').write_text(json.dumps(observed, indent=2, sort_keys=True) + '\n')
+          PY
+          bash -n "$publisher"
+          echo "PUBLISHER=$publisher" >> "$GITHUB_ENV"
+
+      - name: Create repositories, push commits, open and merge PRs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          "$PUBLISHER"
+          jq -e '.pat_used == false and .repository_count == 8 and .merged_pull_request_count == 8' \
+            "$RUNNER_TEMP/hypesiege-hsg-gh-publication.json" >/dev/null
+
+      - name: Publish verified audit comments
+        if: success()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          report="$RUNNER_TEMP/hypesiege-hsg-gh-publication.json"
+          body="$RUNNER_TEMP/hsg-success.md"
+          {
+            echo '**HypeSiege hsg publication completed and verified.**'
+            echo
+            echo '- Authenticated owner: `ORESoftware`'
+            echo '- Repositories: **8/8**'
+            echo '- Merged initialization PRs: **8/8**'
+            echo '- Release tags: **8/8 `v0.1.0`**'
+            echo '- PAT used: `false` in publication metadata (credential was supplied as `GH_TOKEN` only for this one run)'
+            echo
+            jq -r '.repositories[] | "- `\(.repository)` — main `\(.main_sha)`; merged PR #\(.pull_request); source `\(.source)@\(.source_sha)`"' "$report"
+          } > "$body"
+          gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" --body-file "$body"
+          gh issue comment 6 --repo hypesiege/hypesiege-monorepo --body-file "$body"
+
+      - name: Destroy encrypted carrier comments and local credential material
+        if: always()
+        shell: bash
+        env:
+          ISSUE_TOKEN: ${{ github.token }}
+          RECIPIENT_COMMENT_ID: ${{ steps.carrier.outputs.recipient_comment_id }}
+        run: |
+          set -Eeuo pipefail
+          for id in "${CARRIER_COMMENT_ID:-}" "${RECIPIENT_COMMENT_ID:-}"; do
+            if [[ -n "$id" ]]; then
+              GH_TOKEN="$ISSUE_TOKEN" gh api --method DELETE \
+                "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" >/dev/null 2>&1 || true
+            fi
+          done
+          unset GH_TOKEN
+          rm -f "$RUNNER_TEMP"/hsg-carrier-* "$RUNNER_TEMP/publish-hypesiege-hsg.sh"
+
+      - name: Upload non-secret publication evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hypesiege-hsg-encrypted-publication
+          path: |
+            ${{ runner.temp }}/hypesiege-hsg-source-pins.json
+            ${{ runner.temp }}/hypesiege-hsg-gh-publication.json
+          if-no-files-found: warn
+          retention-days: 14

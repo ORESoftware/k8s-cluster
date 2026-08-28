@@ -1,0 +1,109 @@
+name: Benefactor contact batch image
+
+on:
+  pull_request:
+    paths:
+      - 'remote/deployments/benefactor-orchestrator/**'
+      - '.github/workflows/benefactor-contact-batch.yml'
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - 'remote/deployments/benefactor-orchestrator/**'
+      - '.github/workflows/benefactor-contact-batch.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: benefactor-contact-batch-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Check syntax and focused contracts
+        working-directory: remote/deployments/benefactor-orchestrator
+        run: |
+          set -euo pipefail
+          node --check contact-batch-lib.mjs
+          node --check contact-batch.mjs
+          node --check hubspot-sync-lib.mjs
+          node --check hubspot-sync.mjs
+          node --test contact-batch.test.mjs hubspot-sync.test.mjs
+
+      - name: Reject conflicts and credential-shaped literals
+        run: |
+          set -euo pipefail
+          if grep -RInE '^(<<<<<<<|=======|>>>>>>>)' remote/deployments/benefactor-orchestrator; then
+            exit 1
+          fi
+          if grep -RInE '(ghp_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,})' remote/deployments/benefactor-orchestrator; then
+            exit 1
+          fi
+
+  image:
+    name: Build image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        with:
+          images: ghcr.io/oresoftware/benefactor-contact-orchestrator
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=sha-
+
+      - name: Build and publish
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          file: remote/deployments/benefactor-orchestrator/Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=benefactor-contact-orchestrator
+          cache-to: type=gha,mode=max,scope=benefactor-contact-orchestrator
+          provenance: mode=max
+          sbom: true

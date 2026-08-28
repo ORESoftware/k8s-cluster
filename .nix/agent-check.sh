@@ -44,6 +44,7 @@ catalog_static_checks() {
 		tools/channel_catalog.py \
 		tools/repository_catalog.py \
 		tools/test_application_catalog.py \
+		tools/test_application_catalog_multisource.py \
 		tools/test_channel_catalog.py \
 		tools/test_repository_catalog.py
 	ruff format --check \
@@ -51,6 +52,7 @@ catalog_static_checks() {
 		tools/channel_catalog.py \
 		tools/repository_catalog.py \
 		tools/test_application_catalog.py \
+		tools/test_application_catalog_multisource.py \
 		tools/test_channel_catalog.py \
 		tools/test_repository_catalog.py
 	nixfmt --check flake.nix .nix/dev-shell.nix
@@ -62,6 +64,7 @@ unit_tests() {
 		cd tools
 		python -m unittest -v \
 			test_application_catalog.py \
+			test_application_catalog_multisource.py \
 			test_channel_catalog.py \
 			test_repository_catalog.py
 	)

@@ -1,0 +1,319 @@
+name: Publish exact private repository gaps with encrypted PAT retry
+run-name: Encrypted exact repository gaps @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-exact-repository-gaps-encrypted-retry.yml
+      - scripts/ops/run_exact_private_repository_gaps_with_retry.py
+      - scripts/ops/test_run_exact_private_repository_gaps_with_retry.py
+      - scripts/ops/publish_exact_private_repository_gaps.py
+      - scripts/ops/publish_missing_org_repositories.py
+      - scripts/ops/private_repository_creation.py
+      - scripts/ops/repository_fleet_visibility.py
+      - scripts/ops/repository_fleet_remote_state.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-exact-repository-gaps-encrypted-retry.yml
+      - scripts/ops/run_exact_private_repository_gaps_with_retry.py
+      - scripts/ops/test_run_exact_private_repository_gaps_with_retry.py
+      - scripts/ops/publish_exact_private_repository_gaps.py
+      - scripts/ops/publish_missing_org_repositories.py
+      - scripts/ops/private_repository_creation.py
+      - scripts/ops/repository_fleet_visibility.py
+      - scripts/ops/repository_fleet_remote_state.py
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: den-2328-encrypted-pat-exact-gaps
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+          submodules: false
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/ops-publish-exact-repository-gaps-encrypted-retry.yml
+
+      - name: Compile exact publisher and retry contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ops/run_exact_private_repository_gaps_with_retry.py \
+            scripts/ops/test_run_exact_private_repository_gaps_with_retry.py \
+            scripts/ops/publish_exact_private_repository_gaps.py \
+            scripts/ops/test_publish_exact_private_repository_gaps.py \
+            scripts/ops/publish_missing_org_repositories.py \
+            scripts/ops/private_repository_creation.py \
+            scripts/ops/repository_fleet_visibility.py \
+            scripts/ops/repository_fleet_remote_state.py
+
+      - name: Run exact, retry, visibility, and preservation tests
+        shell: bash
+        env:
+          GH_TOKEN: unit-test-installation-token
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/test_run_exact_private_repository_gaps_with_retry.py -v
+          python3 scripts/ops/test_publish_exact_private_repository_gaps.py -v
+          python3 scripts/ops/test_repository_fleet_visibility.py -v
+          python3 scripts/ops/test_repository_fleet_remote_state.py -v
+          python3 scripts/ops/test_private_repository_creation.py -v
+
+      - name: Reject credentials, public creation, force updates, and conflict markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          targets=(
+            .github/workflows/ops-publish-exact-repository-gaps-encrypted-retry.yml
+            scripts/ops/run_exact_private_repository_gaps_with_retry.py
+            scripts/ops/test_run_exact_private_repository_gaps_with_retry.py
+          )
+          credential_pattern='gh''p_|github_''pat_|BEGIN [A-Z ]*PRIVATE KEY'
+          unsafe_pattern='git push --''force|--visibility[ =]+public|"private"[[:space:]]*:[[:space:]]*false'
+          if grep -nE "$credential_pattern" "${targets[@]}"; then
+            echo 'credential-shaped source material detected' >&2
+            exit 1
+          fi
+          if grep -nE "$unsafe_pattern" "${targets[@]}"; then
+            echo 'unsafe repository mutation path detected' >&2
+            exit 1
+          fi
+          if grep -nE '^(<{7}|={7}|>{7})' "${targets[@]}"; then
+            echo 'merge-conflict markers detected' >&2
+            exit 1
+          fi
+          grep -qF 'StreemPilot/streempilot-media-router.rs' scripts/ops/run_exact_private_repository_gaps_with_retry.py
+          grep -qF 'hypesiege/hypesiege-scheduler.rs' scripts/ops/run_exact_private_repository_gaps_with_retry.py
+          grep -qF 'hypesiege/hypesiege-publishing-worker.rs' scripts/ops/run_exact_private_repository_gaps_with_retry.py
+          grep -qF 'hypesiege/hypesiege-analytics.rs' scripts/ops/run_exact_private_repository_gaps_with_retry.py
+          grep -qF 'ISSUE_NUMBER: 1051' .github/workflows/ops-publish-exact-repository-gaps-encrypted-retry.yml
+          git diff --check HEAD^ HEAD
+
+  publish:
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      ISSUE_NUMBER: 1051
+      CONFIRMATION: publish-exact-four-private-gaps
+      EVIDENCE_DIR: ops/evidence/missing-organization-repositories/den-2328-${{ github.run_id }}
+    steps:
+      - name: Check out exact trusted main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: true
+          submodules: false
+
+      - name: Publish run-bound key and receive exactly one ciphertext
+        id: handoff
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+          run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$(openssl rand -hex 16)"
+          private_key="$RUNNER_TEMP/den-2328-private.pem"
+          public_key="$RUNNER_TEMP/den-2328-public.pem"
+          matches="$RUNNER_TEMP/den-2328-ciphertext-matches"
+          encrypted="$RUNNER_TEMP/den-2328-token.bin"
+          payload="$RUNNER_TEMP/den-2328-payload.json"
+          token_file="$RUNNER_TEMP/den-2328-github-token"
+
+          openssl genpkey -algorithm RSA \
+            -pkeyopt rsa_keygen_bits:4096 \
+            -out "$private_key" >/dev/null 2>&1
+          openssl pkey -in "$private_key" -pubout \
+            -out "$public_key" >/dev/null 2>&1
+          key_b64="$(base64 -w0 < "$public_key")"
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+            -f body="DEN2328_PAT_PUBLIC_KEY protocol=2 run_id=${run_id} key_b64=${key_b64} confirm=${CONFIRMATION}" >/dev/null
+          echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
+          echo "token_file=${token_file}" >> "$GITHUB_OUTPUT"
+          echo "HANDSHAKE_READY run_id=${run_id} issue=${ISSUE_NUMBER}"
+
+          prefix="DEN2328_PAT_CIPHERTEXT protocol=2 run_id=${run_id} data="
+          query_matches() {
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+              --jq ".[] | select(.body | startswith(\"${prefix}\")) | .body" \
+              > "$matches"
+          }
+          reject_duplicates() {
+            local count="$1"
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+              -f body="DEN2328_PAT_REJECTED protocol=2 run_id=${run_id} reason=duplicate_ciphertexts count=${count}" >/dev/null
+            echo "expected exactly one ciphertext; observed ${count}" >&2
+            exit 1
+          }
+
+          ciphertext=''
+          for _ in $(seq 1 360); do
+            query_matches
+            count="$(awk 'NF { count += 1 } END { print count + 0 }' "$matches")"
+            if [ "$count" -gt 1 ]; then
+              reject_duplicates "$count"
+            fi
+            if [ "$count" -eq 1 ]; then
+              sleep 10
+              query_matches
+              count="$(awk 'NF { count += 1 } END { print count + 0 }' "$matches")"
+              [ "$count" -eq 1 ] || reject_duplicates "$count"
+              line="$(cat "$matches")"
+              ciphertext="${line#"$prefix"}"
+              break
+            fi
+            sleep 5
+          done
+          test -n "$ciphertext" || {
+            echo "encrypted credential was not received for ${run_id}" >&2
+            exit 1
+          }
+
+          printf '%s' "$ciphertext" | base64 -d > "$encrypted"
+          openssl pkeyutl -decrypt \
+            -inkey "$private_key" \
+            -in "$encrypted" \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256 \
+            -out "$payload"
+          jq -e --arg run_id "$run_id" --arg confirmation "$CONFIRMATION" '
+            (.run_id == $run_id) and
+            (.confirm == $confirmation) and
+            (.token | type == "string" and length >= 20 and (test("\\s") | not))
+          ' "$payload" >/dev/null
+          token="$(jq -r .token "$payload")"
+          echo "::add-mask::${token}"
+          printf '%s' "$token" > "$token_file"
+          chmod 600 "$token_file"
+          rm -f "$matches" "$encrypted" "$payload"
+
+      - name: Publish and verify the exact four private repositories
+        id: execute
+        shell: bash
+        env:
+          TOKEN_FILE: ${{ steps.handoff.outputs.token_file }}
+        run: |
+          set -Eeuo pipefail
+          rm -rf "$EVIDENCE_DIR"
+          mkdir -p "$EVIDENCE_DIR"
+          result="$EVIDENCE_DIR/combined-evidence.json"
+          python3 scripts/ops/run_exact_private_repository_gaps_with_retry.py \
+            --token-file "$TOKEN_FILE" \
+            --evidence-dir "$EVIDENCE_DIR" \
+            --result "$result" \
+            2>&1 | tee "$RUNNER_TEMP/den-2328-execution.log"
+          grep -F 'VERIFIED_ENCRYPTED_EXACT_PRIVATE_GAPS' \
+            "$RUNNER_TEMP/den-2328-execution.log"
+          jq -e '
+            .schema_version == 1 and
+            .expected_repository_count == 4 and
+            .summary.failures == 0 and
+            .summary.verified == 4 and
+            (([.repositories[].full_name] | sort) == ([
+              "StreemPilot/streempilot-media-router.rs",
+              "hypesiege/hypesiege-analytics.rs",
+              "hypesiege/hypesiege-publishing-worker.rs",
+              "hypesiege/hypesiege-scheduler.rs"
+            ] | sort)) and
+            (all(.repositories[];
+              .visibility == "private" and
+              .default_branch == "main" and
+              (.repository_id | type == "number" and . > 0) and
+              (.main_sha | test("^[0-9a-f]{40}$")) and
+              .main_sha == .expected_sealed_sha))
+          ' "$result" >/dev/null
+          echo 'VERIFIED_ENCRYPTED_PAT_EXACT_GAPS 4/4'
+
+      - name: Upload bounded non-secret publication evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: den-2328-encrypted-exact-gaps-${{ github.run_id }}
+          path: ops/evidence/missing-organization-repositories/den-2328-${{ github.run_id }}/*.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Open reviewed evidence pull request
+        id: evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          branch="evidence/den-2328-encrypted-gaps-${GITHUB_RUN_ID}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "$branch"
+          git add "$EVIDENCE_DIR"/*.json
+          git commit -m 'evidence(DEN-2328): record encrypted exact-gap publication'
+          git push origin "$branch"
+          pr_url="$(gh pr create \
+            --base main \
+            --head "$branch" \
+            --title 'evidence(DEN-2328): encrypted exact private repository publication' \
+            --body 'Records bounded non-secret evidence for the exact four private HypeSiege/StreemPilot repositories published from the sealed reviewed fleet through a run-bound RSA-OAEP credential handoff.')"
+          echo "pr_url=${pr_url}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish bounded completion receipt
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.handoff.outputs.run_id }}
+          PR_URL: ${{ steps.evidence.outputs.pr_url }}
+        run: |
+          set -Eeuo pipefail
+          result="$EVIDENCE_DIR/combined-evidence.json"
+          summary="$(jq -r '.summary | "created=\(.created) preserved_exact=\(.preserved_exact) verified=\(.verified) failures=\(.failures)"' "$result")"
+          repositories="$(jq -r '[.repositories[] | "`" + .full_name + "`@`" + .main_sha + "`"] | join(", ")' "$result")"
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+            -f body="DEN2328_PAT_COMPLETE protocol=2 run_id=${RUN_ID} ${summary}\n\nRepositories: ${repositories}\n\nEvidence PR: ${PR_URL}" >/dev/null
+
+      - name: Destroy all credential material
+        if: always()
+        shell: bash
+        run: |
+          shred -u \
+            "$RUNNER_TEMP/den-2328-private.pem" \
+            "$RUNNER_TEMP/den-2328-public.pem" \
+            "$RUNNER_TEMP/den-2328-token.bin" \
+            "$RUNNER_TEMP/den-2328-payload.json" \
+            "$RUNNER_TEMP/den-2328-github-token" \
+            2>/dev/null || true
+          rm -f \
+            "$RUNNER_TEMP/den-2328-ciphertext-matches" \
+            "$RUNNER_TEMP/den-2328-execution.log"

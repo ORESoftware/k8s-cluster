@@ -22,7 +22,23 @@ async function readRepoFile(relativePath: string): Promise<string> {
 
 test('rust solana contract service is deployed, scraped, and guarded', async () => {
   const cargo = await readRepoFile('remote/deployments/contract-service-rs/Cargo.toml');
-  const source = await readRepoFile('remote/deployments/contract-service-rs/src/main.rs');
+  const sourceFiles = [
+  'remote/deployments/contract-service-rs/src/main.rs',
+  'remote/deployments/contract-service-rs/src/confirm.rs',
+  'remote/deployments/contract-service-rs/src/coordination.rs',
+  'remote/deployments/contract-service-rs/src/handlers.rs',
+  'remote/deployments/contract-service-rs/src/metrics.rs',
+  'remote/deployments/contract-service-rs/src/nats.rs',
+  'remote/deployments/contract-service-rs/src/rpc.rs',
+  'remote/deployments/contract-service-rs/src/settlement.rs',
+  'remote/deployments/contract-service-rs/src/shared.rs',
+  'remote/deployments/contract-service-rs/src/solana_features.rs',
+  'remote/deployments/contract-service-rs/src/state.rs',
+  'remote/deployments/contract-service-rs/src/validation.rs',
+];
+const source = (
+  await Promise.all(sourceFiles.map((path) => readRepoFile(path)))
+).join('\n');
   const coordination = await readRepoFile(
     'remote/deployments/contract-service-rs/src/coordination.rs',
   );
@@ -45,7 +61,7 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
   );
   const prometheus = await readRepoFile('remote/argocd/observability/prometheus.configmap.yaml');
   const otel = await readRepoFile('remote/argocd/observability/otel-collector.configmap.yaml');
-  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const home = await readRepoFile('remote/deployments/web-home-rs/src/home.rs');
   const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
 
   assert.match(cargo, /name = "dd-contract-service"/);
@@ -178,6 +194,7 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
 test('blockchain feature suite is wired in, keyless, and off by default', async () => {
   const cargo = await readRepoFile('remote/deployments/contract-service-rs/Cargo.toml');
   const main = await readRepoFile('remote/deployments/contract-service-rs/src/main.rs');
+  const nats = await readRepoFile('remote/deployments/contract-service-rs/src/nats.rs');
   const mod = await readRepoFile('remote/deployments/contract-service-rs/src/blockchain/mod.rs');
   const evm = await readRepoFile('remote/deployments/contract-service-rs/src/blockchain/evm.rs');
   const readme = await readRepoFile('remote/deployments/contract-service-rs/readme.md');
@@ -196,7 +213,7 @@ test('blockchain feature suite is wired in, keyless, and off by default', async 
   assert.match(main, /mod blockchain;/);
   assert.match(main, /\.merge\(blockchain::router\(\)\)/);
   assert.match(main, /blockchain::BlockchainState::from_env/);
-  assert.match(main, /pub\(crate\) async fn publish_blockchain_event/);
+  assert.match(nats, /pub\(crate\) async fn publish_blockchain_event/);
 
   // Keyless, custody-ready seam: only an External signer exists.
   assert.match(mod, /enum SignerBackend \{\s*External,?\s*\}/);

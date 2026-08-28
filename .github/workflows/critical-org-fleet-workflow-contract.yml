@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/ops-run-canonical-fleet-isolated.yml'
+      - '.github/workflows/ops-retry-expired-fleet-device-auth.yml'
       - '.github/workflows/ops-dispatch-isolated-fleet-from-comment.yml'
       - '.github/workflows/ops-supervise-full-critical-org-fleet-publication.yml'
       - '.github/workflows/ops-dispatch-full-critical-org-fleet-publication.yml'
@@ -12,10 +13,12 @@ on:
       - '.github/workflows/critical-org-fleet-workflow-contract.yml'
       - 'remote/tests/browser/critical-org-fleet-publication.test.mjs'
       - 'scripts/ops/tests/test_critical_org_fleet_workflows.py'
+      - 'scripts/ops/tests/test_device_auth_retry_workflow.py'
   push:
     branches: [main]
     paths:
       - '.github/workflows/ops-run-canonical-fleet-isolated.yml'
+      - '.github/workflows/ops-retry-expired-fleet-device-auth.yml'
       - '.github/workflows/ops-dispatch-isolated-fleet-from-comment.yml'
       - '.github/workflows/ops-supervise-full-critical-org-fleet-publication.yml'
       - '.github/workflows/ops-dispatch-full-critical-org-fleet-publication.yml'
@@ -24,6 +27,7 @@ on:
       - '.github/workflows/critical-org-fleet-workflow-contract.yml'
       - 'remote/tests/browser/critical-org-fleet-publication.test.mjs'
       - 'scripts/ops/tests/test_critical_org_fleet_workflows.py'
+      - 'scripts/ops/tests/test_device_auth_retry_workflow.py'
   workflow_dispatch:
 
 permissions:
@@ -55,10 +59,13 @@ jobs:
 
       - name: Compile and parse contract sources
         run: |
-          python -m py_compile scripts/ops/tests/test_critical_org_fleet_workflows.py
+          python -m py_compile \
+            scripts/ops/tests/test_critical_org_fleet_workflows.py \
+            scripts/ops/tests/test_device_auth_retry_workflow.py
           node --check remote/tests/browser/critical-org-fleet-publication.test.mjs
           ruby -e 'require "yaml"; ARGV.each { |path| YAML.load_file(path, aliases: true) }' \
             .github/workflows/ops-run-canonical-fleet-isolated.yml \
+            .github/workflows/ops-retry-expired-fleet-device-auth.yml \
             .github/workflows/critical-org-fleet-browser-canary.yml \
             .github/workflows/critical-org-fleet-workflow-contract.yml
 
@@ -66,5 +73,5 @@ jobs:
         run: >-
           python -m unittest discover
           -s scripts/ops/tests
-          -p 'test_critical_org_fleet_workflows.py'
+          -p 'test_*workflow*.py'
           -v

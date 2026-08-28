@@ -1,0 +1,47 @@
+# Child Applications managed by streempilot-root. The Rust services are the
+# HTML/JSON control plane; WebRTC media is not proxied through these pods.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-streempilot-api-server
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: streempilot
+  source:
+    repoURL: git@github.com:StreemPilot/streempilot-api-server.rs.git
+    targetRevision: main
+    path: deploy/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: streempilot
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-streempilot-web-server
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: streempilot
+  source:
+    repoURL: git@github.com:StreemPilot/sp-web-mash.git
+    targetRevision: main
+    path: deploy/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: streempilot
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

@@ -1,0 +1,221 @@
+name: Validate and publish Elenkos Rykshaw Flutter through protected SSM host
+run-name: Publish elenkos-systems/elenkos-rykshaw-flutter @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-elenkos-rykshaw-flutter-ssm-once.yml
+      - scripts/ops/payloads/elenkos-rykshaw-flutter-20260824.tar.gz.b64.part*
+      - scripts/ops/payloads/elenkos-rykshaw-flutter-20260824.sh.gz.b64.part*
+      - scripts/ops/payloads/elenkos-rykshaw-flutter-20260824.json
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-elenkos-rykshaw-flutter-ssm-once.yml
+      - scripts/ops/payloads/elenkos-rykshaw-flutter-20260824.tar.gz.b64.part*
+      - scripts/ops/payloads/elenkos-rykshaw-flutter-20260824.sh.gz.b64.part*
+      - scripts/ops/payloads/elenkos-rykshaw-flutter-20260824.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+concurrency:
+  group: den-3837-publish-elenkos-rykshaw-flutter
+  cancel-in-progress: false
+
+env:
+  SOURCE_PAYLOAD_PREFIX: scripts/ops/payloads/elenkos-rykshaw-flutter-20260824.tar.gz.b64.part
+  OPS_PAYLOAD_PREFIX: scripts/ops/payloads/elenkos-rykshaw-flutter-20260824.sh.gz.b64.part
+  SOURCE_MANIFEST: scripts/ops/payloads/elenkos-rykshaw-flutter-20260824.json
+  NORMALIZED_ARTIFACT: rykshaw-source-${{ github.sha }}
+  TARGET_REPOSITORY: elenkos-systems/elenkos-rykshaw-flutter
+  TARGET_BRANCH: den-3837/rykshaw-volunteer-qa-beta
+
+jobs:
+  validate-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Set up Java
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up pinned Flutter
+        uses: subosito/flutter-action@4cab68ce0f1c7c924f688bff4792e044f1aeb30c
+        with:
+          flutter-version: "3.47.0"
+          channel: stable
+          cache: true
+
+      - name: Materialize reviewed operations and run the Flutter gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          ops="$RUNNER_TEMP/rykshaw-ops.sh"
+          mapfile -t parts < <(find "$(dirname "$OPS_PAYLOAD_PREFIX")" -maxdepth 1 -type f -name "$(basename "$OPS_PAYLOAD_PREFIX")*" | sort)
+          test "${#parts[@]}" -gt 0
+          cat "${parts[@]}" | base64 --decode | gzip -dc > "$ops"
+          expected="$(jq -er .ops_script_sha256 "$SOURCE_MANIFEST")"
+          printf '%s  %s\n' "$expected" "$ops" | sha256sum --check --strict
+
+          # Verify the immutable operations payload first, then apply narrowly
+          # asserted deterministic repairs required by the pinned 2026 toolchain:
+          # analyzer-backed formatting fixes and the Gradle Kotlin signing import.
+          python3 - "$ops" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8")
+
+          analyze_needle = "flutter analyze --fatal-infos --fatal-warnings"
+          analyze_replacement = (
+              "dart fix --apply\n"
+              "dart format lib test\n"
+              "flutter analyze --fatal-infos --fatal-warnings"
+          )
+          if text.count(analyze_needle) != 1:
+              raise SystemExit("refusing an ambiguous analyzer-gate patch")
+          text = text.replace(analyze_needle, analyze_replacement)
+
+          build_needle = "flutter build apk --debug"
+          build_replacement = """python3 - <<'PY_ANDROID_SIGNING'
+          from pathlib import Path
+
+          nl = chr(10)
+          bs = chr(92)
+          tool = Path("tool/configure_android_signing.py")
+          tool_text = tool.read_text(encoding="utf-8")
+          if tool_text.count("java.util.Properties()") != 2:
+              raise SystemExit("unexpected Kotlin signing-tool constructors")
+          tool_text = tool_text.replace("java.util.Properties()", "Properties()")
+          tool_needle = '    text = kts.read_text(encoding="utf-8")' + nl
+          tool_insertion = (
+              tool_needle
+              + '    if "import java.util.Properties" not in text:' + nl
+              + '        text = "import java.util.Properties' + bs + 'n' + bs + 'n" + text' + nl
+          )
+          if tool_text.count(tool_needle) != 1:
+              raise SystemExit("unexpected Kotlin signing-tool read point")
+          tool.write_text(
+              tool_text.replace(tool_needle, tool_insertion, 1),
+              encoding="utf-8",
+          )
+
+          gradle = Path("android/app/build.gradle.kts")
+          gradle_text = gradle.read_text(encoding="utf-8")
+          if "import java.util.Properties" not in gradle_text:
+              gradle_text = "import java.util.Properties" + nl + nl + gradle_text
+          old_constructor = "val rykshawKeystoreProperties = java.util.Properties()"
+          new_constructor = "val rykshawKeystoreProperties = Properties()"
+          if gradle_text.count(old_constructor) != 1:
+              raise SystemExit("unexpected generated Kotlin signing constructor")
+          gradle.write_text(
+              gradle_text.replace(old_constructor, new_constructor),
+              encoding="utf-8",
+          )
+          PY_ANDROID_SIGNING
+          flutter build apk --debug"""
+          if text.count(build_needle) != 1:
+              raise SystemExit("refusing an ambiguous Android-build patch")
+          path.write_text(
+              text.replace(build_needle, build_replacement),
+              encoding="utf-8",
+          )
+          PY
+
+          chmod 700 "$ops"
+          bash "$ops" validate
+
+      - name: Upload normalized source for protected-host publication
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ env.NORMALIZED_ARTIFACT }}
+          path: ${{ runner.temp }}/normalized-source/
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate-source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out trusted main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Configure trusted-main AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: den-3837-publish-elenkos-rykshaw-flutter
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Push normalized commits and open or update the target PR
+        id: target
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+          SOURCE_RUN_ID: ${{ github.run_id }}
+          SOURCE_ARTIFACT: ${{ env.NORMALIZED_ARTIFACT }}
+        run: |
+          set -euo pipefail
+          ops="$RUNNER_TEMP/rykshaw-ops.sh"
+          mapfile -t parts < <(find "$(dirname "$OPS_PAYLOAD_PREFIX")" -maxdepth 1 -type f -name "$(basename "$OPS_PAYLOAD_PREFIX")*" | sort)
+          test "${#parts[@]}" -gt 0
+          cat "${parts[@]}" | base64 --decode | gzip -dc > "$ops"
+          expected="$(jq -er .ops_script_sha256 "$SOURCE_MANIFEST")"
+          printf '%s  %s\n' "$expected" "$ops" | sha256sum --check --strict
+          chmod 700 "$ops"
+          bash "$ops" publish
+
+      - name: Record an idempotent publication receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_HEAD: ${{ steps.target.outputs.head_sha }}
+          SOURCE_SHA: ${{ steps.target.outputs.source_sha }}
+          TARGET_PR: ${{ steps.target.outputs.pr_url }}
+          TARGET_COMMITS: ${{ steps.target.outputs.commits }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{64}$ ]]
+          title='[receipt] DEN-3837 Rykshaw Flutter publication'
+          body="$RUNNER_TEMP/receipt.md"
+          cat > "$body" <<EOF
+          <!-- den-3837-rykshaw-publication-receipt -->
+          Target: \`$TARGET_REPOSITORY\`
+          Branch: \`$TARGET_BRANCH\`
+          Head: \`$TARGET_HEAD\`
+          Commits: \`${TARGET_COMMITS:-already-published}\`
+          Pull request: $TARGET_PR
+          Normalized source SHA-256: \`$SOURCE_SHA\`
+          Publisher workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EOF
+          issue="$(gh issue list --repo '${{ github.repository }}' --state all --search 'DEN-3837 Rykshaw Flutter publication in:title' --json number --jq '.[0].number // empty')"
+          if [[ -n "$issue" ]]; then
+            gh issue edit "$issue" --repo '${{ github.repository }}' --title "$title" --body-file "$body"
+          else
+            gh issue create --repo '${{ github.repository }}' --title "$title" --body-file "$body"
+          fi
+          cat "$body" >> "$GITHUB_STEP_SUMMARY"

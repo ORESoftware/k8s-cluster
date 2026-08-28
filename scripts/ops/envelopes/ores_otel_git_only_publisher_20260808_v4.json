@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "purpose": "one-time ORES OTEL Git-only test fleet publication",
+  "key_id": "ores-otel-20260808-v4",
+  "algorithm": "RSA-OAEP-SHA256",
+  "public_key_sha256": "e0d09e3524a059935c6da4e3e374f6fb9b2b6f9817012d0f27b0ad57c9836a88",
+  "ciphertext_sha256": "d238d680a32e68b304cab4491284dfa8df7c308ae0c5bd46653eea9208f2be8a",
+  "ciphertext_b64": "NimYwT5TTcMmJ4i8Ts5wdBCE+mrJ5/UX4Zsb5ftIJDwD+tAEebCZW6CWt6W4eWkHNsodqesFgZshgDkeb70y7KkekvA3HdX9srhw0cEpJa1a4LLrwD7o6SWzc3i78SsRRIDg12J3JNNOG9gtSYZVwLBD/DZhOr0R/ZGTt0+0WAi3ui7WXS0+ODtsahZCApdvDhjAzL9l4vcWoY9oij3dLCVmtPA3s4mH9veaIeABd191vDjaGURsZBL0nZdeztWR3YS3jdcQwE8yecdIJ3QL2QrXyNaDqshnRmgjVmnngU+wenmKmedFOX22jPTAlGC4Qqs7FP0Vrs0myBB8l9aJ4+3dRniMaLqM+VlY8JyIGCgkYpDskpRLTDZUPEalhLhMWsfSPL4cQC7aaCFn9fXRAkpk1okdNo6Gnw0NuvyB865h0oWNcx74U8IooBYqhwjKxLFOX9U4qrBiXERMHObh4AaktIfV8Hp1FHzrsJl6ZvGyYlfTaJhK/XZUJw6bwwtb",
+  "targets": [
+    "ores-otel-test/ores-otel-log-nodejs-test",
+    "ores-otel-test/ores-otel-log-python-test",
+    "ores-otel-test/ores-otel-log-go-test",
+    "ores-otel-test/ores-otel-log-rust-test",
+    "ores-otel-test/ores-otel-log-java-test",
+    "ores-otel-test/ores-otel-log-dart-test",
+    "ores-otel-test/ores-otel-log-ruby-test",
+    "ores-otel-test/ores-otel-log-gleam-test",
+    "ores-otel-test/ores-otel-log-erlang-test",
+    "ores-otel-test/ores-otel-log-elixir-test",
+    "ores-otel-test/ores-otel-log-wasm-test",
+    "ores-otel-test/.github"
+  ],
+  "delete_after_use": true
+}

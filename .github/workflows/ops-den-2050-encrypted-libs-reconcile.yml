@@ -1,0 +1,403 @@
+name: DEN-2050 encrypted libs reconciliation
+run-name: DEN-2050 encrypted libs reconcile @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-den-2050-encrypted-libs-reconcile.yml
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-den-2050-encrypted-libs-reconcile.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+concurrency:
+  group: den-2050-encrypted-libs-reconcile
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Validate exact reconciliation boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow=.github/workflows/ops-den-2050-encrypted-libs-reconcile.yml
+          grep -qF 'ISSUE_NUMBER: 1220' "$workflow"
+          grep -qF 'RSA-OAEP-SHA256' "$workflow"
+          grep -qF 'StreemPilot/sp-libs' "$workflow"
+          grep -qF 'hypesiege/hypesiege-libs' "$workflow"
+          grep -qF 'streempilot/sp-interfaces' "$workflow"
+          grep -qF 'hypesiege/hypesiege-interfaces' "$workflow"
+          grep -qF 'v0.1.0' "$workflow"
+          credential_pattern='gh''p_|github_''pat_|BEGIN [A-Z ]*PRIVATE KEY'
+          unsafe_pattern='git push --''force|--visibility[ =]+public|"private"[[:space:]]*:[[:space:]]*false'
+          if grep -nE "$credential_pattern" "$workflow"; then
+            echo 'credential-shaped source material detected' >&2
+            exit 1
+          fi
+          if grep -nE "$unsafe_pattern" "$workflow"; then
+            echo 'unsafe repository mutation path detected' >&2
+            exit 1
+          fi
+          git diff --check HEAD^ HEAD
+
+  publish:
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      ISSUE_NUMBER: 1220
+      CONFIRMATION: reconcile-sp-libs-and-hypesiege-libs-v2
+      STREEMPILOT_SOURCE_REF: d9781ab2dc2df1a33953544dd74b1ef001259981
+      HYPESIEGE_SOURCE_REF: 9da72d0f584b1b61e0116891a1b36ebd2e0ff23a
+    steps:
+      - name: Check out exact trusted main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Publish run-bound RSA-OAEP-SHA256 key and receive one ciphertext
+        id: handoff
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+          run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$(openssl rand -hex 16)"
+          private_key="$RUNNER_TEMP/den-2050-v2-private.pem"
+          public_key="$RUNNER_TEMP/den-2050-v2-public.pem"
+          matches="$RUNNER_TEMP/den-2050-v2-ciphertext-matches"
+          encrypted="$RUNNER_TEMP/den-2050-v2-token.bin"
+          payload="$RUNNER_TEMP/den-2050-v2-payload.json"
+          token_file="$RUNNER_TEMP/den-2050-v2-github-token"
+
+          openssl genpkey -algorithm RSA \
+            -pkeyopt rsa_keygen_bits:4096 \
+            -out "$private_key" >/dev/null 2>&1
+          openssl pkey -in "$private_key" -pubout \
+            -out "$public_key" >/dev/null 2>&1
+          key_b64="$(base64 -w0 < "$public_key")"
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+            -f body="DEN2050_LIBS_V2_PAT_PUBLIC_KEY protocol=1 run_id=${run_id} key_b64=${key_b64} confirm=${CONFIRMATION}" >/dev/null
+          echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
+          echo "token_file=${token_file}" >> "$GITHUB_OUTPUT"
+          echo "HANDSHAKE_READY run_id=${run_id} issue=${ISSUE_NUMBER}"
+
+          prefix="DEN2050_LIBS_V2_PAT_CIPHERTEXT protocol=1 run_id=${run_id} data="
+          query_matches() {
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+              --jq ".[] | select(.body | startswith(\"${prefix}\")) | .body" \
+              > "$matches"
+          }
+          reject_duplicates() {
+            local count="$1"
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+              -f body="DEN2050_LIBS_V2_PAT_REJECTED protocol=1 run_id=${run_id} reason=duplicate_ciphertexts count=${count}" >/dev/null
+            echo "expected exactly one ciphertext; observed ${count}" >&2
+            exit 1
+          }
+
+          ciphertext=''
+          for _ in $(seq 1 360); do
+            query_matches
+            count="$(awk 'NF { count += 1 } END { print count + 0 }' "$matches")"
+            if [ "$count" -gt 1 ]; then
+              reject_duplicates "$count"
+            fi
+            if [ "$count" -eq 1 ]; then
+              sleep 5
+              query_matches
+              count="$(awk 'NF { count += 1 } END { print count + 0 }' "$matches")"
+              [ "$count" -eq 1 ] || reject_duplicates "$count"
+              line="$(cat "$matches")"
+              ciphertext="${line#"$prefix"}"
+              break
+            fi
+            sleep 5
+          done
+          test -n "$ciphertext" || {
+            echo "encrypted credential was not received for ${run_id}" >&2
+            exit 1
+          }
+
+          printf '%s' "$ciphertext" | base64 -d > "$encrypted"
+          openssl pkeyutl -decrypt \
+            -inkey "$private_key" \
+            -in "$encrypted" \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256 \
+            -out "$payload"
+          jq -e --arg run_id "$run_id" --arg confirmation "$CONFIRMATION" '
+            (.run_id == $run_id) and
+            (.confirm == $confirmation) and
+            (.token | type == "string" and length >= 20 and (test("\\s") | not))
+          ' "$payload" >/dev/null
+          token="$(jq -r .token "$payload")"
+          echo "::add-mask::${token}"
+          printf '%s' "$token" > "$token_file"
+          chmod 600 "$token_file"
+          rm -f "$matches" "$encrypted" "$payload"
+
+      - name: Reconcile exact package sources and immutable release tags
+        id: reconcile
+        shell: bash
+        env:
+          TOKEN_FILE: ${{ steps.handoff.outputs.token_file }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          token="$(cat "$TOKEN_FILE")"
+          echo "::add-mask::${token}"
+          export GH_TOKEN="$token"
+
+          work="$RUNNER_TEMP/den-2050-v2"
+          evidence="$RUNNER_TEMP/den-2050-v2-evidence.json"
+          rm -rf "$work"
+          mkdir -p "$work"
+          printf '{"schema_version":2,"repositories":[]}\n' > "$evidence"
+
+          login="$(gh api user --jq .login)"
+          test -n "$login"
+          for org in StreemPilot hypesiege; do
+            state="$(gh api "user/memberships/orgs/${org}" --jq .state)"
+            role="$(gh api "user/memberships/orgs/${org}" --jq .role)"
+            test "$state" = active
+            test "$role" = admin
+          done
+
+          fetch_source() {
+            local repo="$1" path="$2" ref="$3" out="$4"
+            mkdir -p "$(dirname "$out")"
+            gh api "repos/${repo}/contents/${path}?ref=${ref}" --jq .content \
+              | tr -d '\n' | base64 -d > "$out"
+            test -s "$out"
+          }
+
+          read_remote() {
+            local repo="$1" path="$2" ref="$3" out="$4"
+            gh api "repos/${repo}/contents/${path}?ref=${ref}" --jq .content 2>/dev/null \
+              | tr -d '\n' | base64 -d > "$out" 2>/dev/null
+          }
+
+          tag_sha() {
+            local repo="$1"
+            gh api "repos/${repo}/git/ref/tags/v0.1.0" --jq '.object.sha // empty' 2>/dev/null || true
+          }
+
+          create_tag_if_missing() {
+            local repo="$1" main_sha="$2" observed
+            observed="$(tag_sha "$repo")"
+            if [ -n "$observed" ]; then
+              test "$observed" = "$main_sha" || {
+                echo "immutable v0.1.0 tag diverges from main for ${repo}: tag=${observed} main=${main_sha}" >&2
+                exit 1
+              }
+            else
+              gh api --method POST "repos/${repo}/git/refs" \
+                -f ref='refs/tags/v0.1.0' -f sha="$main_sha" >/dev/null
+              observed="$(tag_sha "$repo")"
+              test "$observed" = "$main_sha"
+            fi
+          }
+
+          put_file() {
+            local repo="$1" branch="$2" path="$3" source="$4" message="$5"
+            local payload="$RUNNER_TEMP/den-2050-v2-put-$(echo "$repo-$path" | tr '/.' '__').json"
+            local encoded sha
+            encoded="$(base64 -w0 < "$source")"
+            sha="$(gh api "repos/${repo}/contents/${path}?ref=${branch}" --jq '.sha // empty' 2>/dev/null || true)"
+            if [ -n "$sha" ]; then
+              jq -n --arg message "$message" --arg content "$encoded" --arg branch "$branch" --arg sha "$sha" \
+                '{message:$message,content:$content,branch:$branch,sha:$sha}' > "$payload"
+            else
+              jq -n --arg message "$message" --arg content "$encoded" --arg branch "$branch" \
+                '{message:$message,content:$content,branch:$branch}' > "$payload"
+            fi
+            gh api --method PUT "repos/${repo}/contents/${path}" --input "$payload" >/dev/null
+          }
+
+          append_evidence() {
+            local full="$1" created="$2" pr_url="$3" main_sha="$4" dependency="$5"
+            local next="$work/evidence-next.json"
+            jq --arg full "$full" --argjson created "$created" --arg pr_url "$pr_url" \
+              --arg main_sha "$main_sha" --arg dependency "$dependency" \
+              '.repositories += [{full_name:$full,created:$created,private:true,default_branch:"main",pr_url:$pr_url,main_sha:$main_sha,tag:"v0.1.0",tag_sha:$main_sha,zed_dependency:$dependency}]' \
+              "$evidence" > "$next"
+            mv "$next" "$evidence"
+          }
+
+          # Reconcile StreemPilot/sp-libs. The first run already created the
+          # repository and merged initialization PR #1; this path verifies the
+          # reviewed bytes before creating only the missing immutable tag.
+          sp_repo='StreemPilot/sp-libs'
+          gh api "repos/${sp_repo}" > "$work/sp-repo.json"
+          jq -e '.private == true and .default_branch == "main"' "$work/sp-repo.json" >/dev/null
+          mkdir -p "$work/sp-source/src" "$work/sp-remote/src"
+          fetch_source StreemPilot/streempilot-monorepo 'libs/.zpkg.toml' "$STREEMPILOT_SOURCE_REF" "$work/sp-source/.zpkg.toml"
+          fetch_source StreemPilot/streempilot-monorepo 'libs/README.md' "$STREEMPILOT_SOURCE_REF" "$work/sp-source/README.md"
+          fetch_source StreemPilot/streempilot-monorepo 'incubator/sp-libs/Cargo.toml' "$STREEMPILOT_SOURCE_REF" "$work/sp-source/Cargo.toml"
+          fetch_source StreemPilot/streempilot-monorepo 'incubator/sp-libs/src/lib.rs' "$STREEMPILOT_SOURCE_REF" "$work/sp-source/src/lib.rs"
+          sed -i 's#https://github.com/StreemPilot/streempilot-monorepo#https://github.com/StreemPilot/sp-libs#' "$work/sp-source/.zpkg.toml"
+          read_remote "$sp_repo" '.zpkg.toml' main "$work/sp-remote/.zpkg.toml"
+          read_remote "$sp_repo" 'README.md' main "$work/sp-remote/README.md"
+          read_remote "$sp_repo" 'Cargo.toml' main "$work/sp-remote/Cargo.toml"
+          read_remote "$sp_repo" 'src/lib.rs' main "$work/sp-remote/src/lib.rs"
+          cmp -s "$work/sp-source/.zpkg.toml" "$work/sp-remote/.zpkg.toml"
+          cmp -s "$work/sp-source/README.md" "$work/sp-remote/README.md"
+          cmp -s "$work/sp-source/Cargo.toml" "$work/sp-remote/Cargo.toml"
+          cmp -s "$work/sp-source/src/lib.rs" "$work/sp-remote/src/lib.rs"
+          python3 - "$work/sp-remote/.zpkg.toml" <<'PY'
+          import sys, tomllib
+          manifest = tomllib.loads(open(sys.argv[1], 'rb').read().decode())
+          assert manifest['package']['name'] == 'sp-libs'
+          assert manifest['package']['version'] == '0.1.0'
+          assert manifest['dependencies'] == {'streempilot/sp-interfaces': '^0.1.0'}
+          PY
+          sp_main="$(gh api "repos/${sp_repo}/git/ref/heads/main" --jq .object.sha)"
+          create_tag_if_missing "$sp_repo" "$sp_main"
+          append_evidence "$sp_repo" false 'https://github.com/StreemPilot/sp-libs/pull/1' "$sp_main" 'streempilot/sp-interfaces'
+
+          # Reconcile hypesiege/hypesiege-libs. If the repo is absent, create it
+          # privately, seed the reviewed package on a branch, open a PR, squash
+          # merge with the expected head SHA, and tag the resulting main.
+          hs_repo='hypesiege/hypesiege-libs'
+          hs_created=false
+          if ! gh api "repos/${hs_repo}" > "$work/hs-repo.json" 2>/dev/null; then
+            hs_created=true
+            jq -n '{name:"hypesiege-libs",description:"Shared runtime-light Zed libraries for HypeSiege",private:true,has_issues:true,has_projects:false,has_wiki:false,auto_init:true}' \
+              > "$work/hs-create.json"
+            gh api --method POST 'orgs/hypesiege/repos' --input "$work/hs-create.json" > "$work/hs-repo.json"
+          fi
+          jq -e '.private == true and .default_branch == "main"' "$work/hs-repo.json" >/dev/null
+          mkdir -p "$work/hs-source" "$work/hs-remote"
+          fetch_source hypesiege/hypesiege-monorepo 'libs/.zpkg.toml' "$HYPESIEGE_SOURCE_REF" "$work/hs-source/.zpkg.toml"
+          fetch_source hypesiege/hypesiege-monorepo 'libs/README.md' "$HYPESIEGE_SOURCE_REF" "$work/hs-source/README.md"
+          sed -i 's#https://github.com/hypesiege/hypesiege-monorepo#https://github.com/hypesiege/hypesiege-libs#' "$work/hs-source/.zpkg.toml"
+          printf '# Provenance\n\nExtracted from `hypesiege/hypesiege-monorepo` at `%s`.\n\nThe source package dependency is `hypesiege/hypesiege-interfaces@^0.1.0`.\n' \
+            "$HYPESIEGE_SOURCE_REF" > "$work/hs-source/PROVENANCE.md"
+          printf '.vendor/\ntarget/\n*.log\n.env\n.env.*\n' > "$work/hs-source/.gitignore"
+          python3 - "$work/hs-source/.zpkg.toml" <<'PY'
+          import sys, tomllib
+          manifest = tomllib.loads(open(sys.argv[1], 'rb').read().decode())
+          assert manifest['package']['name'] == 'hypesiege-libs'
+          assert manifest['package']['version'] == '0.1.0'
+          assert manifest['dependencies'] == {'hypesiege/hypesiege-interfaces': '^0.1.0'}
+          PY
+
+          hs_main="$(gh api "repos/${hs_repo}/git/ref/heads/main" --jq .object.sha)"
+          hs_tag="$(tag_sha "$hs_repo")"
+          exact=false
+          if read_remote "$hs_repo" '.zpkg.toml' main "$work/hs-remote/.zpkg.toml" \
+              && read_remote "$hs_repo" 'README.md' main "$work/hs-remote/README.md" \
+              && cmp -s "$work/hs-source/.zpkg.toml" "$work/hs-remote/.zpkg.toml" \
+              && cmp -s "$work/hs-source/README.md" "$work/hs-remote/README.md"; then
+            exact=true
+          fi
+
+          if [ "$exact" = true ]; then
+            create_tag_if_missing "$hs_repo" "$hs_main"
+            hs_pr='already-seeded'
+          else
+            test -z "$hs_tag" || {
+              echo "hypesiege-libs has a published v0.1.0 tag but reviewed main source differs" >&2
+              exit 1
+            }
+            branch="agent/seed-zed-package-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            gh api --method POST "repos/${hs_repo}/git/refs" \
+              -f ref="refs/heads/${branch}" -f sha="$hs_main" >/dev/null
+            put_file "$hs_repo" "$branch" '.zpkg.toml' "$work/hs-source/.zpkg.toml" 'chore: seed canonical Zed package'
+            put_file "$hs_repo" "$branch" 'README.md' "$work/hs-source/README.md" 'docs: seed package README'
+            put_file "$hs_repo" "$branch" 'PROVENANCE.md' "$work/hs-source/PROVENANCE.md" 'docs: record extraction provenance'
+            put_file "$hs_repo" "$branch" '.gitignore' "$work/hs-source/.gitignore" 'chore: add package ignores'
+            head_sha="$(gh api "repos/${hs_repo}/git/ref/heads/${branch}" --jq .object.sha)"
+            jq -n --arg head "$branch" '{title:"Seed hypesiege-libs Zed package",head:$head,base:"main",body:"Extract reviewed hypesiege-libs@0.1.0 and declare hypesiege/hypesiege-interfaces@^0.1.0. Refs DEN-2050.",draft:false}' \
+              > "$work/hs-pr.json"
+            gh api --method POST "repos/${hs_repo}/pulls" --input "$work/hs-pr.json" > "$work/hs-pr-created.json"
+            hs_pr="$(jq -r .html_url "$work/hs-pr-created.json")"
+            hs_pr_number="$(jq -r .number "$work/hs-pr-created.json")"
+            jq -n --arg sha "$head_sha" '{merge_method:"squash",sha:$sha}' > "$work/hs-merge.json"
+            gh api --method PUT "repos/${hs_repo}/pulls/${hs_pr_number}/merge" --input "$work/hs-merge.json" \
+              | jq -e '.merged == true' >/dev/null
+            hs_main="$(gh api "repos/${hs_repo}/git/ref/heads/main" --jq .object.sha)"
+            create_tag_if_missing "$hs_repo" "$hs_main"
+          fi
+
+          read_remote "$hs_repo" '.zpkg.toml' main "$work/hs-remote/final.zpkg.toml"
+          cmp -s "$work/hs-source/.zpkg.toml" "$work/hs-remote/final.zpkg.toml"
+          hs_main="$(gh api "repos/${hs_repo}/git/ref/heads/main" --jq .object.sha)"
+          test "$(tag_sha "$hs_repo")" = "$hs_main"
+          append_evidence "$hs_repo" "$hs_created" "$hs_pr" "$hs_main" 'hypesiege/hypesiege-interfaces'
+
+          jq -e '
+            (.repositories | length) == 2 and
+            all(.repositories[];
+              .private == true and
+              .default_branch == "main" and
+              .tag == "v0.1.0" and
+              .main_sha == .tag_sha)
+          ' "$evidence" >/dev/null
+          cp "$evidence" "$RUNNER_TEMP/den-2050-v2-final-evidence.json"
+          echo 'VERIFIED_DEN2050_LIBS_RECONCILE 2/2'
+
+      - name: Upload non-secret reconciliation evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: den-2050-libs-reconcile-${{ github.run_id }}
+          path: ${{ runner.temp }}/den-2050-v2-final-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish bounded completion receipt
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.handoff.outputs.run_id }}
+        run: |
+          set -Eeuo pipefail
+          evidence="$RUNNER_TEMP/den-2050-v2-final-evidence.json"
+          summary="$(jq -r '[.repositories[] | "`" + .full_name + "`@`" + .main_sha + "` (`" + .tag + "`, PR " + .pr_url + ")"] | join(", ")' "$evidence")"
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+            -f body="DEN2050_LIBS_V2_PAT_COMPLETE protocol=1 run_id=${RUN_ID} verified=2 failures=0\n\nRepositories: ${summary}" >/dev/null
+
+      - name: Destroy all credential material
+        if: always()
+        shell: bash
+        run: |
+          shred -u \
+            "$RUNNER_TEMP/den-2050-v2-private.pem" \
+            "$RUNNER_TEMP/den-2050-v2-public.pem" \
+            "$RUNNER_TEMP/den-2050-v2-token.bin" \
+            "$RUNNER_TEMP/den-2050-v2-payload.json" \
+            "$RUNNER_TEMP/den-2050-v2-github-token" \
+            2>/dev/null || true
+          rm -f "$RUNNER_TEMP/den-2050-v2-ciphertext-matches"

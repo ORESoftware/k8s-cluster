@@ -1,0 +1,54 @@
+name: Repository check scope contract
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/repo-checks.yml
+      - .github/workflows/repo-check-scope-contract.yml
+      - scripts/ci/classify_repo_check_scope.py
+      - scripts/ci/test_classify_repo_check_scope.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repo-checks.yml
+      - .github/workflows/repo-check-scope-contract.yml
+      - scripts/ci/classify_repo_check_scope.py
+      - scripts/ci/test_classify_repo_check_scope.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repo-check-scope-contract-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out the exact event revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compile and run scope-classifier tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/classify_repo_check_scope.py \
+            scripts/ci/test_classify_repo_check_scope.py
+          python3 scripts/ci/test_classify_repo_check_scope.py -v
+
+      - name: Reject whitespace errors and conflict markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          ! git grep -nE '^(<{7}|={7}|>{7})' -- \
+            .github/workflows/repo-checks.yml \
+            .github/workflows/repo-check-scope-contract.yml \
+            scripts/ci/classify_repo_check_scope.py \
+            scripts/ci/test_classify_repo_check_scope.py

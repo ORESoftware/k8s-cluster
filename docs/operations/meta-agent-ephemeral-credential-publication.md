@@ -113,6 +113,46 @@ verifier, diagnostic test, fixture test, or runbook change:
 This prevents another owner-credential cycle from being used merely to discover
 a source retrieval or bundle verification defect.
 
+The reviewed bundle inventory contains exactly two branch refs plus symbolic
+`HEAD`:
+
+- `refs/heads/main` points to `4d6ec3ad0ec7b688f0e777129eee7e0f0d999df1`;
+- `refs/heads/agent/den-1057-meta-agent-control-plane` points to
+  `789d48039da232faed985d4f8de176959f117e08`;
+- symbolic `HEAD` points to that same reviewed feature SHA.
+
+`HEAD` is bundle metadata used to select the default checkout when cloning the
+bundle, not a third target branch. The broker requires that exact three-entry
+inventory but pushes only `main` and the reviewed feature branch. A missing,
+changed, duplicate, or additional entry fails closed.
+
+## Credential-free source certification
+
+`verify_meta_agent_source_snapshot.py` certifies the entire immutable source
+path in ordinary read-only CI before another owner challenge is issued. It uses
+only the workflow-scoped contents token and performs no organization or target
+repository mutation. The verifier reports bounded stages for:
+
+- exact source commit and tree retrieval;
+- complete, non-truncated tree inventory;
+- lexical `meta.part*` selection with duplicate/type/SHA rejection;
+- GitHub transport base64 decoding plus Git blob identity verification;
+- the second sealed-bundle base64 decode;
+- bundle SHA-256, repository-context verification, and exact three-entry head
+  inventory;
+- exact publisher blob identity, SHA-256, and Python compilation.
+
+The verifier writes only a credential-free temporary JSON report, validates it
+inside the job, and deletes it rather than uploading an artifact. Its unit tests
+cover malformed SHAs, tree truncation, absent/duplicate/non-blob assets,
+duplicate publisher selection, invalid transport base64, Git blob identity,
+two-layer decode order, missing/wrong/additional symbolic `HEAD`, exact bundle
+heads, and workflow-token preflight.
+
+A failed credential-free certification blocks further owner-token challenges.
+This prevents repeated authorization use while a read-only source defect is
+still unresolved.
+
 ## Failure classification
 
 The broker reports bounded stage names rather than credential material or raw
@@ -139,6 +179,10 @@ provider responses:
   did not match the reviewed contract;
 - `ensure-review-pull-request`: the ordinary feature-to-main PR could not be
   created or verified.
+
+The credential-free verifier further narrows reconstruction failures to source
+commit, source tree, asset selection, blob transport, sealed decode, bundle
+digest/context/heads, publisher blob, or publisher validation.
 
 These stages preserve fail-closed operation while making retries actionable.
 They do not log the token, GitHub response body, decrypted plaintext, private

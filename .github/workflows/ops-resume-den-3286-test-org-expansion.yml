@@ -1,0 +1,336 @@
+name: Resume DEN-3286 test organization expansion securely
+run-name: Complete DEN-3286 repository publication from a one-time encrypted response
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: publish-den-3286-test-organization-expansion-encrypted-v1
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event.issue.number == 1275 &&
+      github.actor == 'ORESoftware' &&
+      github.event.comment.body == 'ops-publish-den-3286:1275:rsa-oaep-sha256-v1:20260809T0555Z'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      REPOSITORY: ${{ github.repository }}
+      CARRIER_NUMBER: '1275'
+      EXPECTED_MANIFEST_SHA256: 5d1cf8cb7af82a81660bf2fe7536759c7b15bd01bef4a4a04730095ad998d056
+      EXPECTED_PUBLISHER_SHA256: 7578de348dab3221e70ed9b02ab22c99c624fe3c02dff8b0fd89a77ec34f71bb
+
+    steps:
+      - name: Check out trusted main without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Validate runner prerequisites
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for command in base64 gh git gzip jq openssl python3 sha256sum; do
+            command -v "$command" >/dev/null
+          done
+          python3 --version
+          openssl version
+
+      - name: Challenge, publish, and verify the exact DEN-3286 fleet
+        id: publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+
+          stage=challenge-bootstrap
+          workflow_token="$GH_TOKEN"
+          work="$(mktemp -d "$RUNNER_TEMP/den-3286-owner-broker.XXXXXX")"
+          owner_token=''
+          actor=''
+          membership=''
+          challenge_id=''
+          response_id=''
+
+          cleanup() {
+            unset owner_token actor membership PROTECTED_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN
+            unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
+            find "$work" -type f -exec sh -c 'for file do : > "$file"; done' sh {} + 2>/dev/null || true
+            rm -rf "$work"
+          }
+
+          report_failure() {
+            status=$?
+            trap - ERR
+            GH_TOKEN="$workflow_token" gh api --method POST \
+              "repos/${REPOSITORY}/issues/${CARRIER_NUMBER}/comments" \
+              -f body="DEN-3286 publication stopped safely at bounded stage \`${stage}\`. No plaintext owner credential was committed, uploaded, written to Actions outputs, placed in a Git remote, or retained after the job." >/dev/null || true
+            if [[ "$response_id" =~ ^[0-9]+$ ]]; then
+              GH_TOKEN="$workflow_token" gh api --method DELETE \
+                "repos/${REPOSITORY}/issues/comments/${response_id}" >/dev/null || true
+            fi
+            cleanup
+            exit "$status"
+          }
+
+          trap cleanup EXIT
+          trap report_failure ERR
+
+          private_key="$work/private.pem"
+          public_key="$work/public.pem"
+          ciphertext_file="$work/ciphertext.bin"
+          openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key"
+          chmod 600 "$private_key"
+          openssl pkey -in "$private_key" -pubout -out "$public_key"
+          nonce="$(openssl rand -hex 24)"
+          [[ "$nonce" =~ ^[0-9a-f]{48}$ ]]
+
+          challenge_body="$work/challenge.md"
+          {
+            printf '<!-- den-3286-credential-challenge-v1:%s -->\n' "$nonce"
+            printf 'One-time RSA-OAEP-SHA256/MGF1-SHA256 challenge for the reviewed DEN-3286 25-organization, 100-repository publisher. The private key exists only in this runner and is destroyed on exit.\n\n'
+            printf '```pem\n'
+            cat "$public_key"
+            printf '```\n'
+          } > "$challenge_body"
+
+          challenge_json="$(
+            jq -n --rawfile body "$challenge_body" '{body:$body}' \
+              | GH_TOKEN="$workflow_token" gh api --method POST \
+                  "repos/${REPOSITORY}/issues/${CARRIER_NUMBER}/comments" --input -
+          )"
+          challenge_id="$(jq -er '.id | select(type == "number" and . > 0)' <<<"$challenge_json")"
+          response_marker="<!-- den-3286-credential-response-v1:${nonce} -->"
+
+          stage=await-encrypted-response
+          response_body=''
+          for _ in $(seq 1 360); do
+            comments="$(
+              GH_TOKEN="$workflow_token" gh api --paginate \
+                "repos/${REPOSITORY}/issues/${CARRIER_NUMBER}/comments?per_page=100" --slurp
+            )"
+            response_json="$(
+              jq -c \
+                --arg marker "$response_marker" \
+                --argjson challenge_id "$challenge_id" '
+                [
+                  .[][]
+                  | select(.id > $challenge_id)
+                  | select(.user.login == "ORESoftware")
+                  | select(.body | startswith($marker + "\n"))
+                ]
+                | sort_by(.id)
+                | last // empty
+              ' <<<"$comments"
+            )"
+            if test -n "$response_json"; then
+              response_id="$(jq -er '.id | select(type == "number" and . > 0)' <<<"$response_json")"
+              response_body="$(jq -er '.body | select(type == "string")' <<<"$response_json")"
+              break
+            fi
+            sleep 5
+          done
+          test -n "$response_body"
+          [[ "$response_id" =~ ^[0-9]+$ ]]
+          test "$(grep -c '^ciphertext-base64=' <<<"$response_body")" -eq 1
+          ciphertext="$(sed -n 's/^ciphertext-base64=//p' <<<"$response_body")"
+          [[ "$ciphertext" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#ciphertext}" -le 8192
+          printf '%s' "$ciphertext" | base64 --decode > "$ciphertext_file"
+          test -s "$ciphertext_file"
+
+          stage=decrypt-ciphertext
+          owner_token="$(
+            openssl pkeyutl -decrypt \
+              -inkey "$private_key" \
+              -in "$ciphertext_file" \
+              -pkeyopt rsa_padding_mode:oaep \
+              -pkeyopt rsa_oaep_md:sha256 \
+              -pkeyopt rsa_mgf1_md:sha256 \
+              2>/dev/null
+          )"
+
+          stage=validate-owner-token-shape
+          test -n "$owner_token"
+          [[ "$owner_token" != *$'\n'* && "$owner_token" != *$'\r'* && "$owner_token" != *$'\t'* && "$owner_token" != *' '* ]]
+          [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
+          echo "::add-mask::$owner_token"
+
+          GH_TOKEN="$workflow_token" gh api --method DELETE \
+            "repos/${REPOSITORY}/issues/comments/${response_id}" >/dev/null
+          response_id=''
+
+          stage=validate-owner-identity
+          actor="$(GH_TOKEN="$owner_token" gh api user --jq '.login')"
+          test "$actor" = ORESoftware
+
+          organizations=(
+            zed-pkg-test
+            3fa-app-test
+            claritas-viz-test
+            cliptown-test
+            declarative-migrations-test
+            embedded-alerts-test
+            evento-globolo-test
+            fiducia-cloud-test
+            memebank-test
+            opto-sync-test
+            quaestor-ledger-test
+            sonus-auris-test
+            messaging-intel-test
+            scintilla-run-test
+            file-tunnel-test
+            r2g-test
+            shared-auth-test
+            hypesiege-test
+            streempilot-test
+            discrete-event-systems-test
+            networking-components-test
+            apostille-me-test
+            hacker-house-medellin-test
+            flags-2-env-test
+            ores-otel-test
+          )
+          for organization in "${organizations[@]}"; do
+            membership="$(
+              GH_TOKEN="$owner_token" gh api "user/memberships/orgs/${organization}" \
+                --jq '[.state,.role] | join(":")'
+            )"
+            test "$membership" = active:admin
+            printf 'OWNER_VERIFIED %s\n' "$organization"
+          done
+
+          stage=reconstruct-reviewed-publisher
+          manifest_carrier=scripts/ops/test-org-expansion-20260808.json.gz.b64
+          publisher_carrier=scripts/ops/publish_test_org_expansion_20260808.py.gz.b64
+          manifest_encoded="$work/manifest.gz.b64"
+          publisher_encoded="$work/publisher.gz.b64"
+          manifest="$work/test-org-expansion-20260808.json"
+          publisher="$work/publish_test_org_expansion_20260808.py"
+          report="$work/den-3286-test-org-expansion-publication.json"
+          markdown="$work/den-3286-test-org-expansion-publication.md"
+          publisher_stdout="$work/publisher.stdout"
+
+          test -s "$manifest_carrier"
+          test -s "$publisher_carrier"
+          tr -d '\r\n' < "$manifest_carrier" > "$manifest_encoded"
+          tr -d '\r\n' < "$publisher_carrier" > "$publisher_encoded"
+          test "$(wc -c < "$manifest_encoded" | tr -d '[:space:]')" = 7400
+          test "$(wc -c < "$publisher_encoded" | tr -d '[:space:]')" = 15908
+          printf '%s  %s\n' \
+            ee5e11b7683e12eed137a22a2656ae42bc230e3167e4b5280aa3445bec11e2ce \
+            "$manifest_encoded" | sha256sum --check --strict
+          printf '%s  %s\n' \
+            9fda9fd05bc1ffd7ef65ff85391fd848d7d77b779a56b9517d2c6792822d552a \
+            "$publisher_encoded" | sha256sum --check --strict
+          base64 --decode < "$manifest_encoded" | gzip --decompress > "$manifest"
+          base64 --decode < "$publisher_encoded" | gzip --decompress > "$publisher"
+          chmod 700 "$publisher"
+          printf '%s  %s\n' "$EXPECTED_MANIFEST_SHA256" "$manifest" \
+            | sha256sum --check --strict
+          printf '%s  %s\n' "$EXPECTED_PUBLISHER_SHA256" "$publisher" \
+            | sha256sum --check --strict
+          python3 -m py_compile "$publisher"
+
+          stage=publish-reviewed-fleet
+          export TRUSTED_SHA="$(git rev-parse HEAD)"
+          [[ "$TRUSTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if ! PROTECTED_GITHUB_TOKEN="$owner_token" python3 "$publisher" \
+            --manifest "$manifest" \
+            --report "$report" \
+            --markdown "$markdown" >"$publisher_stdout"; then
+            cat "$publisher_stdout" >&2 || true
+            exit 1
+          fi
+
+          stage=verify-publication-evidence
+          test -s "$report"
+          test -s "$markdown"
+          jq -e \
+            --arg trusted "$TRUSTED_SHA" \
+            --arg digest "$EXPECTED_MANIFEST_SHA256" '
+              .schema_version == 1 and
+              .tracking_issue == "DEN-3286" and
+              .source_commit == $trusted and
+              .publisher_identity == "ORESoftware" and
+              .credential_type == "protected-host-pat" and
+              .token_exposed == false and
+              .force_push_used == false and
+              .manifest_sha256 == $digest and
+              .expected_organization_count == 25 and
+              .verified_organization_count == 25 and
+              .repositories_per_organization == 4 and
+              .expected_repository_count == 100 and
+              .verified_repository_count == 100 and
+              (.created_repository_count + .adopted_empty_repository_count + .existing_repository_count) == 100 and
+              (.organizations | length) == 25 and
+              ([.organizations[].repositories[]] | length) == 100 and
+              ([.organizations[].repositories[].repository] | unique | length) == 100 and
+              all(.organizations[];
+                .membership.role == "admin" and
+                .membership.state == "active" and
+                (.repositories | length) == 4 and
+                all(.repositories[];
+                  .default_branch == "main" and
+                  (.action == "created" or .action == "adopted-empty" or .action == "existing") and
+                  (.commit | test("^[0-9a-f]{40}$")) and
+                  (.scaffold_sha256 | test("^[0-9a-f]{64}$")) and
+                  .url == ("https://github.com/" + .repository)
+                )
+              )
+            ' "$report" >/dev/null
+
+          if grep -Eq 'gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|lin_api_[A-Za-z0-9]{20,}|-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----' \
+            "$report" "$markdown" "$publisher_stdout"; then
+            echo 'credential-shaped content detected in publication evidence' >&2
+            exit 1
+          fi
+
+          created="$(jq -r '.created_repository_count' "$report")"
+          adopted="$(jq -r '.adopted_empty_repository_count' "$report")"
+          existing="$(jq -r '.existing_repository_count' "$report")"
+          verified="$(jq -r '.verified_repository_count' "$report")"
+
+          cp "$report" "$RUNNER_TEMP/den-3286-test-org-expansion-publication.json"
+          cp "$markdown" "$RUNNER_TEMP/den-3286-test-org-expansion-publication.md"
+
+          stage=record-sanitized-success
+          GH_TOKEN="$workflow_token" gh api --method POST \
+            "repos/${REPOSITORY}/issues/${CARRIER_NUMBER}/comments" \
+            -f body="DEN-3286 publication completed successfully. Verified organizations: 25; verified repositories: ${verified}; newly created: ${created}; safely adopted empty targets: ${adopted}; exact existing matches: ${existing}; force pushes: 0; plaintext credential exposure: 0." >/dev/null
+
+          GH_TOKEN="$workflow_token" gh api --method PATCH \
+            "repos/${REPOSITORY}/issues/${CARRIER_NUMBER}" \
+            -f state=closed -f state_reason=completed >/dev/null
+
+          stage=complete
+          printf 'den-3286-publisher stage=%s status=success verified=%s created=%s adopted=%s existing=%s\n' \
+            "$stage" "$verified" "$created" "$adopted" "$existing"
+
+      - name: Add verified publication summary
+        if: success()
+        shell: bash
+        run: cat "$RUNNER_TEMP/den-3286-test-org-expansion-publication.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload sanitized publication evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: den-3286-test-org-expansion-encrypted-publication
+          path: |
+            ${{ runner.temp }}/den-3286-test-org-expansion-publication.json
+            ${{ runner.temp }}/den-3286-test-org-expansion-publication.md
+          if-no-files-found: warn
+          retention-days: 14

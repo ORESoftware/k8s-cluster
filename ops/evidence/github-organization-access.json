@@ -1,0 +1,299 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-08-04",
+  "summary": {
+    "canonical_organizations": 41,
+    "github_app_installations": 40,
+    "repository_access_exceptions": 1
+  },
+  "organizations": [
+    {
+      "portfolio_key": "3fa-app",
+      "github_org": "3FA-app",
+      "github_owner_id": 292943121,
+      "github_app_installation_id": 149269793,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "agent-pontifex",
+      "github_org": "agent-pontifex",
+      "github_owner_id": 313080782,
+      "github_app_installation_id": 151252856,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "akrion-sim",
+      "github_org": "akrion-sim",
+      "github_owner_id": 297237523,
+      "github_app_installation_id": 149269920,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "anticaptrad",
+      "github_org": "anticaptrad",
+      "github_owner_id": 308909485,
+      "github_app_installation_id": 149270256,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "athlet-o",
+      "github_org": "athlet-o",
+      "github_owner_id": 306008767,
+      "github_app_installation_id": 149269951,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "benefactor-cc",
+      "github_org": "benefactor-cc",
+      "github_owner_id": 265349385,
+      "github_app_installation_id": 149269976,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "canonical-cloud",
+      "github_org": "canonical-cloud",
+      "github_owner_id": 297250874,
+      "github_app_installation_id": 149269997,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "channelsiege",
+      "github_org": "channelsiege",
+      "github_owner_id": 311154433,
+      "github_app_installation_id": 150239093,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "claritas-viz",
+      "github_org": "claritas-viz",
+      "github_owner_id": 306201730,
+      "github_app_installation_id": 149270025,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "cliptown",
+      "github_org": "cliptown",
+      "github_owner_id": 309492430,
+      "github_app_installation_id": 149270041,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "daedalus-fab",
+      "github_org": "daedalus-fab",
+      "github_owner_id": 306200852,
+      "github_app_installation_id": 149270070,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "dancing-dragons",
+      "github_org": "dancing-dragons",
+      "github_owner_id": 187996352,
+      "github_app_installation_id": null,
+      "access_mode": "repository_access",
+      "verified_repository": "dancing-dragons/dancing-dragons.github.io"
+    },
+    {
+      "portfolio_key": "declarative-migrations",
+      "github_org": "declarative-migrations",
+      "github_owner_id": 304551819,
+      "github_app_installation_id": 149270084,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "discrete-event-systems",
+      "github_org": "discrete-event-systems",
+      "github_owner_id": 306297904,
+      "github_app_installation_id": 150582683,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "drone-mngr",
+      "github_org": "drone-mngr",
+      "github_owner_id": 308176360,
+      "github_app_installation_id": 150582704,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "fanwaave",
+      "github_org": "fanwaave",
+      "github_owner_id": 311152026,
+      "github_app_installation_id": 151253995,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "fiducia-cloud",
+      "github_org": "fiducia-cloud",
+      "github_owner_id": 297262292,
+      "github_app_installation_id": 149270238,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "fifa-math",
+      "github_org": "fifa-math",
+      "github_owner_id": 308572676,
+      "github_app_installation_id": 151252918,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "file-tunnel",
+      "github_org": "file-tunnel",
+      "github_owner_id": 310631493,
+      "github_app_installation_id": 150239653,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "gha-indie-worker",
+      "github_org": "gha-indie-worker",
+      "github_owner_id": 312674563,
+      "github_app_installation_id": 151252952,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "hypeblitz",
+      "github_org": "hypeblitz",
+      "github_owner_id": 311154067,
+      "github_app_installation_id": 150582627,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "hypesiege",
+      "github_org": "hypesiege",
+      "github_owner_id": 311153811,
+      "github_app_installation_id": 150582557,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "memebank",
+      "github_org": "memebank",
+      "github_owner_id": 75922132,
+      "github_app_installation_id": 150239138,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "messaging-intel",
+      "github_org": "messaging-intel",
+      "github_owner_id": 308168184,
+      "github_app_installation_id": 149269830,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "meta-agents-demo",
+      "github_org": "meta-agents-demo",
+      "github_owner_id": 311188342,
+      "github_app_installation_id": 150239168,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "networking-components",
+      "github_org": "networking-components",
+      "github_owner_id": 310324248,
+      "github_app_installation_id": 150239197,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "omniblitz",
+      "github_org": "OmniBlitz",
+      "github_owner_id": 311152709,
+      "github_app_installation_id": 150239215,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "opto-sync",
+      "github_org": "opto-sync",
+      "github_owner_id": 308481609,
+      "github_app_installation_id": 149270324,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "quaestor-ledger",
+      "github_org": "quaestor-ledger",
+      "github_owner_id": 306201356,
+      "github_app_installation_id": 149270349,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "rust-ssr-demos",
+      "github_org": "rust-ssr-demos",
+      "github_owner_id": 309136194,
+      "github_app_installation_id": 149270457,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "sagitta-stack",
+      "github_org": "sagitta-stack",
+      "github_owner_id": 306201557,
+      "github_app_installation_id": 149270368,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "scintilla-run",
+      "github_org": "scintilla-run",
+      "github_owner_id": 306201161,
+      "github_app_installation_id": 149270405,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "shared-auth",
+      "github_org": "shared-auth",
+      "github_owner_id": 307325286,
+      "github_app_installation_id": 149270382,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "sonus-auris",
+      "github_org": "sonus-auris",
+      "github_owner_id": 292916213,
+      "github_app_installation_id": 149270483,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "streamkore",
+      "github_org": "streamkore",
+      "github_owner_id": 311151603,
+      "github_app_installation_id": 150239259,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "streempilot",
+      "github_org": "StreemPilot",
+      "github_owner_id": 311150932,
+      "github_app_installation_id": 150239245,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "unreal-unity-poc",
+      "github_org": "unreal-unity-poc",
+      "github_owner_id": 311178336,
+      "github_app_installation_id": 150239570,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "usa-acc",
+      "github_org": "usa-acc",
+      "github_owner_id": 292932113,
+      "github_app_installation_id": 149270512,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "voxletra",
+      "github_org": "voxletra",
+      "github_owner_id": 308588098,
+      "github_app_installation_id": 149270546,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "zed-pkg",
+      "github_org": "zed-pkg",
+      "github_owner_id": 308416455,
+      "github_app_installation_id": 149270563,
+      "access_mode": "github_app_installation"
+    },
+    {
+      "portfolio_key": "zed-pkg-test",
+      "github_org": "zed-pkg-test",
+      "github_owner_id": 309134292,
+      "github_app_installation_id": 149270578,
+      "access_mode": "github_app_installation"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "admin_secret": {
+    "exists": false,
+    "repository_admin_token_key_present": false
+  },
+  "apply": {
+    "error_class": "other",
+    "succeeded": false
+  },
+  "authorization": {
+    "ec2_user_can_create": true,
+    "etc_admin_conf_can_create": true,
+    "etc_admin_conf_exists": true,
+    "root_kubeconfig_can_create": false,
+    "root_kubeconfig_exists": false,
+    "selected_context": "ec2-user"
+  },
+  "bootstrap_job": {
+    "active": 0,
+    "exists": false,
+    "failed": 0,
+    "pod_waiting_reason": "",
+    "succeeded": 0
+  },
+  "observed_at": "2026-08-02T02:35:36Z",
+  "platform_application": {
+    "exists": false,
+    "health_status": "",
+    "sync_status": ""
+  },
+  "schema_version": 1,
+  "trusted_k8s_cluster_sha": "6a4c0726c4359db066d11b3a0653cebe6962b036",
+  "workload_application": {
+    "exists": false,
+    "health_status": "",
+    "sync_status": "",
+    "target_revision": ""
+  }
+}

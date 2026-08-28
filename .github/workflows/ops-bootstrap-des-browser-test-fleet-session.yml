@@ -1,0 +1,48 @@
+name: Bootstrap DES browser fleet with encrypted session handoff
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-bootstrap-des-browser-test-fleet-session.yml
+      - scripts/ops/bootstrap_des_browser_test_fleet_session.sh
+      - scripts/ops/bootstrap_des_browser_test_fleet_session_rate_limit_safe.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  id-token: write
+
+concurrency:
+  group: ops-bootstrap-des-browser-test-fleet-session
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Configure AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: des-browser-test-session-bootstrap
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Publish repositories, projects, and gateway secrets
+        shell: bash
+        env:
+          ISSUE_TOKEN: ${{ github.token }}
+          TRACKING_ISSUE: '1011'
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: bash scripts/ops/bootstrap_des_browser_test_fleet_session_rate_limit_safe.sh

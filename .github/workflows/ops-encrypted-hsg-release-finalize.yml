@@ -1,0 +1,226 @@
+name: Finalize HypeSiege hsg releases with encrypted credential
+run-name: Finalize eight HypeSiege hsg releases @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-encrypted-hsg-release-finalize.yml
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-encrypted-hsg-release-finalize.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: encrypted-hsg-release-finalize
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate bounded finalizer
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          workflow=.github/workflows/ops-encrypted-hsg-release-finalize.yml
+          for target in hsg-api hsg-web-mash hsg-web-leptos hsg-web-dioxus hsg-infra hsg-cli hsg-interfaces hsg-sync; do
+            grep -qF "$target" "$workflow"
+          done
+          grep -qF 'openssl genpkey' "$workflow"
+          grep -qF 'rsa_padding_mode:oaep' "$workflow"
+          grep -qF 'rsa_oaep_md:sha256' "$workflow"
+          grep -qF 'hsg-finalize-v1:' "$workflow"
+          grep -qF 'v0.1.0' "$workflow"
+          grep -qF 'pull_request_state:"MERGED"' "$workflow"
+          git diff --check
+
+  finalize:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      TRACKING_ISSUE: '968'
+      EXPECTED_LOGIN: ORESoftware
+      RELEASE_TAG: v0.1.0
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Publish ephemeral RSA recipient
+        id: carrier
+        shell: bash
+        env:
+          ISSUE_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          private_key="$RUNNER_TEMP/hsg-finalize-private.pem"
+          public_key="$RUNNER_TEMP/hsg-finalize-public.pem"
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key" >/dev/null 2>&1
+          openssl pkey -in "$private_key" -pubout -out "$public_key" >/dev/null 2>&1
+          chmod 600 "$private_key" "$public_key"
+          fingerprint="$(openssl pkey -pubin -in "$public_key" -outform DER | sha256sum | awk '{print $1}')"
+          nonce="$(openssl rand -hex 16)"
+          public_b64="$(base64 --wrap=0 "$public_key")"
+          body="hsg-finalize-recipient-v1:${nonce}:${fingerprint}:${public_b64}"
+          comment="$(GH_TOKEN="$ISSUE_TOKEN" gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_ISSUE}/comments" -f body="$body")"
+          recipient_comment_id="$(jq -er .id <<<"$comment")"
+          echo "nonce=$nonce" >> "$GITHUB_OUTPUT"
+          echo "recipient_comment_id=$recipient_comment_id" >> "$GITHUB_OUTPUT"
+          echo "recipient-ready comment_id=$recipient_comment_id fingerprint=$fingerprint"
+
+      - name: Receive and decrypt one-run credential
+        shell: bash
+        env:
+          ISSUE_TOKEN: ${{ github.token }}
+          NONCE: ${{ steps.carrier.outputs.nonce }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          private_key="$RUNNER_TEMP/hsg-finalize-private.pem"
+          encrypted="$RUNNER_TEMP/hsg-finalize-token.enc"
+          plaintext="$RUNNER_TEMP/hsg-finalize-token.txt"
+          carrier_comment_id=''
+          for _ in $(seq 1 180); do
+            comments="$(GH_TOKEN="$ISSUE_TOKEN" gh api "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_ISSUE}/comments?per_page=100")"
+            row="$(jq -r --arg prefix "hsg-finalize-v1:${NONCE}:" '.[] | select(.body | startswith($prefix)) | [.id,.body] | @tsv' <<<"$comments" | tail -n 1)"
+            if [[ -n "$row" ]]; then
+              carrier_comment_id="${row%%$'\t'*}"
+              body="${row#*$'\t'}"
+              encoded="${body#hsg-finalize-v1:${NONCE}:}"
+              printf '%s' "$encoded" | base64 --decode > "$encrypted"
+              break
+            fi
+            sleep 5
+          done
+          test -n "$carrier_comment_id"
+          openssl pkeyutl -decrypt -inkey "$private_key" \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -in "$encrypted" -out "$plaintext"
+          token="$(cat "$plaintext")"
+          test -n "$token"
+          echo "::add-mask::$token"
+          printf 'GH_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+          printf 'CARRIER_COMMENT_ID=%s\n' "$carrier_comment_id" >> "$GITHUB_ENV"
+          : > "$plaintext"
+          rm -f "$encrypted" "$private_key" "$RUNNER_TEMP/hsg-finalize-public.pem"
+
+      - name: Verify merged repositories and create releases
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(gh api user --jq .login)" = "$EXPECTED_LOGIN"
+          membership="$(gh api user/memberships/orgs/hypesiege)"
+          test "$(jq -er .state <<<"$membership")" = active
+          test "$(jq -er .role <<<"$membership")" = admin
+
+          repositories=(hsg-api hsg-web-mash hsg-web-leptos hsg-web-dioxus hsg-infra hsg-cli hsg-interfaces hsg-sync)
+          jsonl="$RUNNER_TEMP/hsg-finalize-repositories.jsonl"
+          : > "$jsonl"
+
+          for repository in "${repositories[@]}"; do
+            full="hypesiege/${repository}"
+            metadata="$(gh api "repos/${full}")"
+            test "$(jq -r .visibility <<<"$metadata")" = private
+            test "$(jq -r .default_branch <<<"$metadata")" = main
+            pr="$(gh pr view 1 --repo "$full" --json state,mergedAt,mergeCommit)"
+            test "$(jq -r .state <<<"$pr")" = MERGED
+            main_sha="$(gh api "repos/${full}/git/ref/heads/main" --jq .object.sha)"
+            [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]]
+            marker="$(gh api "repos/${full}/contents/.hsg-repository.json?ref=main" --jq .content | tr -d '\n' | base64 --decode)"
+            source_repository="$(jq -er .source_repository <<<"$marker")"
+            source_sha="$(jq -er .source_sha <<<"$marker")"
+            target_repository="$(jq -er .target_repository <<<"$marker")"
+            test "$target_repository" = "$full"
+
+            if ! gh api "repos/${full}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+              gh api --method POST "repos/${full}/git/refs" -f ref="refs/tags/${RELEASE_TAG}" -f sha="$main_sha" >/dev/null
+            fi
+            tag_sha="$(gh api "repos/${full}/git/ref/tags/${RELEASE_TAG}" --jq .object.sha)"
+            test "$tag_sha" = "$main_sha"
+
+            if ! gh release view "$RELEASE_TAG" --repo "$full" >/dev/null 2>&1; then
+              gh release create "$RELEASE_TAG" --repo "$full" \
+                --title "${repository} ${RELEASE_TAG}" \
+                --notes "Initial canonical HypeSiege repository release. Source: ${source_repository}@${source_sha}. Publication credential was supplied ephemerally and was not persisted." >/dev/null
+            fi
+            release_url="$(gh release view "$RELEASE_TAG" --repo "$full" --json url --jq .url)"
+
+            jq -nc \
+              --arg repository "$full" \
+              --arg main_sha "$main_sha" \
+              --arg source_repository "$source_repository" \
+              --arg source_sha "$source_sha" \
+              --arg release_url "$release_url" \
+              '{repository:$repository,main_sha:$main_sha,source_repository:$source_repository,source_sha:$source_sha,pull_request:1,pull_request_state:"MERGED",visibility:"private",default_branch:"main",tag:"v0.1.0",release_url:$release_url}' \
+              >> "$jsonl"
+          done
+
+          jq -s '{schema_version:1,organization:"hypesiege",authenticated_login:"ORESoftware",credential_transport:"rsa-oaep-sha256-one-run",credential_persisted:false,repository_count:length,merged_pull_request_count:([.[]|select(.pull_request_state=="MERGED")]|length),tagged_repository_count:([.[]|select(.tag=="v0.1.0")]|length),repositories:.}' "$jsonl" \
+            > "$RUNNER_TEMP/hypesiege-hsg-final-report.json"
+          jq -e '.repository_count==8 and .merged_pull_request_count==8 and .tagged_repository_count==8 and .credential_persisted==false' \
+            "$RUNNER_TEMP/hypesiege-hsg-final-report.json" >/dev/null
+
+      - name: Publish final audit comments
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          report="$RUNNER_TEMP/hypesiege-hsg-final-report.json"
+          body="$RUNNER_TEMP/hsg-final-report.md"
+          {
+            echo '**HypeSiege canonical hsg fleet publication is complete.**'
+            echo
+            echo '- Repositories: **8/8 private**'
+            echo '- Initialization PRs: **8/8 merged**'
+            echo '- Release tags: **8/8 `v0.1.0`**'
+            echo '- Credential persisted: **false**'
+            echo
+            jq -r '.repositories[] | "- `\(.repository)` — main `\(.main_sha)`; PR #1 merged; `v0.1.0`; source `\(.source_repository)@\(.source_sha)`"' "$report"
+            echo
+            echo "Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          } > "$body"
+          gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" --body-file "$body"
+          gh issue comment 6 --repo hypesiege/hypesiege-monorepo --body-file "$body"
+
+      - name: Destroy carrier comments and local credential material
+        if: always()
+        shell: bash
+        env:
+          ISSUE_TOKEN: ${{ github.token }}
+          RECIPIENT_COMMENT_ID: ${{ steps.carrier.outputs.recipient_comment_id }}
+        run: |
+          set -Eeuo pipefail
+          for id in "${CARRIER_COMMENT_ID:-}" "${RECIPIENT_COMMENT_ID:-}"; do
+            if [[ -n "$id" ]]; then
+              GH_TOKEN="$ISSUE_TOKEN" gh api --method DELETE \
+                "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" >/dev/null 2>&1 || true
+            fi
+          done
+          unset GH_TOKEN
+          rm -f "$RUNNER_TEMP"/hsg-finalize-* "$RUNNER_TEMP"/hsg-carrier-*
+
+      - name: Upload non-secret final evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hypesiege-hsg-final-report
+          path: ${{ runner.temp }}/hypesiege-hsg-final-report.json
+          if-no-files-found: warn
+          retention-days: 14

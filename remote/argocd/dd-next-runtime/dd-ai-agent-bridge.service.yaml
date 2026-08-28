@@ -1,3 +1,9 @@
+# Multi-document runtime bundle for the ai-agent-bridge family.
+#
+# The first document preserves the existing bridge Service. The remaining
+# documents add the separately isolated alex-main-agent slash-command ingress.
+# This file is already registered by the dd-next-runtime kustomization, so the
+# related resources render atomically without a second application boundary.
 apiVersion: v1
 kind: Service
 metadata:
@@ -8,6 +14,7 @@ metadata:
 spec:
   selector:
     app: dd-ai-agent-bridge
+    app.kubernetes.io/component: bridge
   ports:
     - name: http
       port: 8142
@@ -15,3 +22,390 @@ spec:
     - name: tcp
       port: 8143
       targetPort: tcp
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: dd-slack-command-secrets
+  namespace: default
+  labels:
+    app: dd-slack-command
+  annotations:
+    denman.linear.app/issue: DEN-1298
+spec:
+  refreshInterval: 15m
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: dd-cluster-secrets
+  target:
+    name: dd-slack-command-secrets
+    creationPolicy: Owner
+  data:
+    - secretKey: SLACK_BOT_TOKEN
+      remoteRef:
+        key: dd/remote-dev/alex-main-agent-slack
+        property: SLACK_BOT_TOKEN
+    - secretKey: SLACK_SIGNING_SECRET
+      remoteRef:
+        key: dd/remote-dev/alex-main-agent-slack
+        property: SLACK_SIGNING_SECRET
+    - secretKey: SLACK_BRIDGE_BEARER
+      remoteRef:
+        key: dd/remote-dev/ai-agent-bridge-secrets
+        property: inbox_token
+    - secretKey: SLACK_COORDINATOR_BEARER
+      remoteRef:
+        key: dd/remote-dev/ai-agent-coordinator-secrets
+        property: COORDINATOR_API_TOKEN
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dd-slack-command-state
+  namespace: default
+  labels:
+    app: dd-slack-command
+spec:
+  storageClassName: dd-block
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-slack-command
+  namespace: default
+  labels:
+    app: dd-ai-agent-bridge
+    app.kubernetes.io/component: slack-command
+  annotations:
+    denman.linear.app/issue: DEN-1298
+    denman.linear.app/rollout-issue: DEN-845
+    github.com/issue: ORESoftware/k8s-cluster#1111
+    dd.dev/source-repository: ORESoftware/ai-agent-bridge.rs
+    dd.dev/source-revision: 'c3e54e6cd0c6d56e3d2ed32902228d974e550a3f'
+    dd.dev/release-workflow-run: '31235992249'
+    dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-slack-command@sha256:01f80fbd4d3ba5226b4abdb7f5e603538924edb48e79e72b0af43246624900cb'
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 300
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-ai-agent-bridge
+      app.kubernetes.io/component: slack-command
+  template:
+    metadata:
+      labels:
+        app: dd-ai-agent-bridge
+        app.kubernetes.io/component: slack-command
+      annotations:
+        dd.dev/source-repository: ORESoftware/ai-agent-bridge.rs
+        dd.dev/source-revision: 'c3e54e6cd0c6d56e3d2ed32902228d974e550a3f'
+        dd.dev/release-workflow-run: '31235992249'
+        dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-slack-command@sha256:01f80fbd4d3ba5226b4abdb7f5e603538924edb48e79e72b0af43246624900cb'
+        dd.dev/activation-mode: signed-dry-run
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: slack-command
+          image: ghcr.io/oresoftware/fiducia-slack-command@sha256:01f80fbd4d3ba5226b4abdb7f5e603538924edb48e79e72b0af43246624900cb
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: SLACK_COMMAND_HOST
+              value: 0.0.0.0
+            - name: SLACK_COMMAND_PORT
+              value: "8151"
+            - name: SLACK_COMMAND_STATE_DIR
+              value: /var/lib/slack-command/runs
+            - name: SLACK_PROJECT_REGISTRY_PATH
+              value: /etc/alex-main-agent/alex-main-agent.channels.json
+            - name: SLACK_BRIDGE_URL
+              value: http://dd-ai-agent-bridge.default.svc.cluster.local:8142/
+            - name: SLACK_COORDINATOR_URL
+              value: http://ai-agent-coordinator.ai-agent-coordinator.svc.cluster.local:8080/
+            - name: SLACK_EXPECTED_APP_ID
+              value: A0BMBAMM5NJ
+            - name: SLACK_EXPECTED_TEAM_ID
+              value: T01B3C83PMK
+            - name: SLACK_CONTEXT_MESSAGE_COUNT
+              value: "5"
+            - name: SLACK_COMMAND_MAX_CONCURRENT_RUNS
+              value: "4"
+            - name: SLACK_COMMAND_DRY_RUN
+              value: "true"
+            - name: SLACK_LINEAR_RUN_PROJECT_ID
+              value: 72e891e2-603d-4903-8d08-bd06d204520f
+            - name: SLACK_CLAUDE_AGENT_KEY
+              value: claude-fable-5
+            - name: SLACK_CHATGPT_AGENT_KEY
+              value: gpt-5.6-sol
+            - name: SLACK_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-slack-command-secrets
+                  key: SLACK_BOT_TOKEN
+            - name: SLACK_SIGNING_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-slack-command-secrets
+                  key: SLACK_SIGNING_SECRET
+            - name: SLACK_BRIDGE_BEARER
+              valueFrom:
+                secretKeyRef:
+                  name: dd-slack-command-secrets
+                  key: SLACK_BRIDGE_BEARER
+            - name: SLACK_COORDINATOR_BEARER
+              valueFrom:
+                secretKeyRef:
+                  name: dd-slack-command-secrets
+                  key: SLACK_COORDINATOR_BEARER
+            - name: LOG_FORMAT
+              value: json
+            - name: RUST_LOG
+              value: info,ai_agent_bridge=info,hyper=warn,reqwest=warn
+            - name: OTEL_SERVICE_NAME
+              value: dd-slack-command
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: http/protobuf
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=default,deployment.environment=remote-dev
+            - name: HOME
+              value: /tmp
+            - name: TMPDIR
+              value: /tmp
+          ports:
+            - name: http
+              containerPort: 8151
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+              ephemeral-storage: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+              ephemeral-storage: 1Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: state
+              mountPath: /var/lib/slack-command
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: dd-slack-command-state
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-slack-command
+  namespace: default
+  labels:
+    app: dd-slack-command
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-ai-agent-bridge
+    app.kubernetes.io/component: slack-command
+  ports:
+    - name: http
+      port: 8151
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-slack-command
+  namespace: default
+  labels:
+    app: dd-slack-command
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-ai-agent-bridge
+      app.kubernetes.io/component: slack-command
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8151
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-ai-agent-bridge
+      ports:
+        - protocol: TCP
+          port: 8142
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ai-agent-coordinator
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ai-agent-coordinator
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app: dd-otel-collector
+      ports:
+        - protocol: TCP
+          port: 4318
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.0.0.0/24
+              - 192.168.0.0/16
+              - 192.0.2.0/24
+              - 198.18.0.0/15
+              - 198.51.100.0/24
+              - 203.0.113.0/24
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+      ports:
+        - protocol: TCP
+          port: 443
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-slack-command
+  namespace: default
+  labels:
+    app: dd-slack-command
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-ai-agent-bridge
+      app.kubernetes.io/component: slack-command
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dd-slack-command
+  namespace: default
+  labels:
+    app: dd-slack-command
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: 1m
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "3"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "5"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "5"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - api.fiducia.cloud
+      secretName: gateway-public-tls
+  rules:
+    - host: api.fiducia.cloud
+      http:
+        paths:
+          - path: /slack/commands/ores-claude
+            pathType: Exact
+            backend:
+              service:
+                name: dd-slack-command
+                port:
+                  name: http
+          - path: /slack/commands/ores-chatgpt
+            pathType: Exact
+            backend:
+              service:
+                name: dd-slack-command
+                port:
+                  name: http
+          - path: /slack/interactions
+            pathType: Exact
+            backend:
+              service:
+                name: dd-slack-command
+                port:
+                  name: http

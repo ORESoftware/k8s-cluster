@@ -1,0 +1,96 @@
+name: DEN-845 runner observability fix once
+
+on:
+  push:
+    branches:
+      - agent/den-845-bridge-immutable-digest
+    paths:
+      - .github/workflows/den-845-runner-observability-fix-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-845-runner-observability-fix-once
+  cancel-in-progress: false
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-845-bridge-immutable-digest
+          fetch-depth: 0
+
+      - name: Repair exporter fallback and add regression contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          config = Path('remote/argocd/observability/k8s-resource-exporter.configmap.yaml')
+          text = config.read_text()
+          old = '"dd-ai-agent-bridge,dd-akrion-web-server-rs,dd-alertmanager,dd-benefactor-marketing-rs,"'
+          new = '"dd-ai-agent-bridge,dd-ai-agent-runner,dd-akrion-web-server-rs,dd-alertmanager,dd-benefactor-marketing-rs,"'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one exporter fallback insertion point, found {text.count(old)}')
+          if 'dd-ai-agent-runner' in text:
+              raise SystemExit('runner already appears in exporter fallback; refusing ambiguous rewrite')
+          config.write_text(text.replace(old, new, 1))
+
+          test = Path('remote/tests/general/ai-agent-runner-observability-contract.test.mjs')
+          test.write_text(r'''import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          import test from 'node:test';
+
+          const runner = fs.readFileSync(
+            'remote/argocd/dd-next-runtime/dd-ai-agent-runner.deployment.yaml',
+            'utf8',
+          );
+          const exporterConfig = fs.readFileSync(
+            'remote/argocd/observability/k8s-resource-exporter.configmap.yaml',
+            'utf8',
+          );
+          const exporterDeployment = fs.readFileSync(
+            'remote/argocd/observability/k8s-resource-exporter.deployment.yaml',
+            'utf8',
+          );
+
+          test('zero-replica provider runner remains observable before activation', () => {
+            assert.match(runner, /name:\s*dd-ai-agent-runner/);
+            assert.match(runner, /replicas:\s*0/);
+            assert.match(exporterConfig, /DEFAULT_WATCH_APPS[\s\S]*dd-ai-agent-bridge,dd-ai-agent-runner,/);
+            assert.match(exporterDeployment, /name:\s*WATCH_APPS[\s\S]*value:[^\n]*dd-ai-agent-runner/);
+          });
+
+          test('runner observability uses the canonical application identity', () => {
+            assert.match(runner, /app:\s*dd-ai-agent-runner/);
+            assert.doesNotMatch(runner, /app:\s*dd-ai-agent-bridge\s*$/m);
+          });
+          ''')
+          PY
+
+      - name: Verify observability coverage and focused regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check remote/tests/general/ai-agent-runner-observability-contract.test.mjs
+          node --test remote/tests/general/ai-agent-runner-observability-contract.test.mjs
+          node remote/tools/check-observability-coverage.mjs
+
+      - name: Commit validated product files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name ORESoftware
+          git config user.email 11139560+ORESoftware@users.noreply.github.com
+          git add \
+            remote/argocd/observability/k8s-resource-exporter.configmap.yaml \
+            remote/tests/general/ai-agent-runner-observability-contract.test.mjs
+          git diff --cached --check
+          git commit -m 'test(DEN-845): register provider runner observability'
+          git push origin HEAD:agent/den-845-bridge-immutable-digest

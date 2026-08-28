@@ -1,0 +1,215 @@
+name: Migrate preserved StreemPilot repositories to canonical sp names
+run-name: Preserve legacy histories and migrate seven repositories to sp names
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: read
+
+concurrency:
+  group: ops-migrate-streempilot-repositories-to-sp-names-20260805
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.number == 901 &&
+      github.actor == 'ORESoftware' &&
+      github.event.comment.body == 'ops-migrate-streempilot-sp-names:901:rsa-v1:20260805T0430Z'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      REPOSITORY: ${{ github.repository }}
+      CARRIER_NUMBER: '901'
+      CHALLENGE_BRANCH: ops/streempilot-sp-credential-challenge-20260805
+      CHALLENGE_PATH: ops/streempilot-sp-migration-challenge.json
+      TARGET_ORG: StreemPilot
+      LEGACY_BRANCH: legacy/pre-sp-migration-20260805
+
+    steps:
+      - name: Check out trusted main without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+
+      - name: Broker one-time credential and migrate repositories
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          stage=challenge-bootstrap
+          workflow_token="$GH_TOKEN"
+          work="$(mktemp -d "$RUNNER_TEMP/streempilot-sp-migration.XXXXXX")"
+          owner_token=''
+          actor=''
+          membership=''
+
+          cleanup() {
+            unset owner_token actor membership GH_TOKEN OWNER_TOKEN GITHUB_TOKEN
+            find "$work" -type f -exec sh -c 'for file do : > "$file"; done' sh {} + 2>/dev/null || true
+            rm -rf "$work"
+          }
+          fail() {
+            status=$?
+            trap - ERR
+            printf 'STREEMPILOT_SP_MIGRATION_FAILED stage=%s\n' "$stage" >&2
+            exit "$status"
+          }
+          trap cleanup EXIT
+          trap fail ERR
+
+          private_key="$work/private.pem"
+          public_key="$work/public.pem"
+          ciphertext_file="$work/ciphertext.bin"
+          challenge="$work/challenge.json"
+          openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key"
+          chmod 600 "$private_key"
+          openssl pkey -in "$private_key" -pubout -out "$public_key"
+          nonce="$(openssl rand -hex 24)"
+          [[ "$nonce" =~ ^[0-9a-f]{48}$ ]]
+
+          stage=publish-challenge
+          jq -n \
+            --arg state awaiting-encrypted-response \
+            --arg purpose migrate-preserved-streempilot-repositories-to-canonical-sp-names \
+            --arg nonce "$nonce" \
+            --rawfile publicKey "$public_key" \
+            --arg algorithm RSA-OAEP-SHA256-MGF1-SHA256 \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg sourceCommit "$GITHUB_SHA" \
+            '{state:$state,purpose:$purpose,nonce:$nonce,publicKey:$publicKey,algorithm:$algorithm,runId:$runId,sourceCommit:$sourceCommit,privateKeyStored:false,plaintextCredentialStored:false}' \
+            > "$challenge"
+          challenge_sha="$(GH_TOKEN="$workflow_token" gh api "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}?ref=${CHALLENGE_BRANCH}" --jq '.sha')"
+          GH_TOKEN="$workflow_token" gh api --method PUT "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}" \
+            -f message='ops: publish StreemPilot migration credential challenge' \
+            -f content="$(base64 -w0 < "$challenge")" \
+            -f branch="$CHALLENGE_BRANCH" \
+            -f sha="$challenge_sha" >/dev/null
+
+          stage=await-encrypted-response
+          marker="<!-- streempilot-sp-migration-credential-response:${nonce} -->"
+          response=''
+          for _ in $(seq 1 300); do
+            comments="$(GH_TOKEN="$workflow_token" gh api --paginate "repos/${REPOSITORY}/issues/${CARRIER_NUMBER}/comments?per_page=100" --slurp)"
+            response="$(jq -r --arg marker "$marker" '[.[][] | select(.user.login == "ORESoftware") | select(.body | startswith($marker + "\n"))] | sort_by(.id) | last | .body // empty' <<<"$comments")"
+            test -n "$response" && break
+            sleep 3
+          done
+          test -n "$response"
+          test "$(grep -c '^ciphertext-base64=' <<<"$response")" -eq 1
+          ciphertext="$(sed -n 's/^ciphertext-base64=//p' <<<"$response")"
+          [[ "$ciphertext" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#ciphertext}" -le 8192
+          printf '%s' "$ciphertext" | base64 --decode > "$ciphertext_file"
+          test -s "$ciphertext_file"
+
+          stage=decrypt-and-validate-owner
+          owner_token="$(openssl pkeyutl -decrypt -inkey "$private_key" -in "$ciphertext_file" -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256 2>/dev/null)"
+          test -n "$owner_token"
+          [[ "$owner_token" != *$'\n'* && "$owner_token" != *$'\r'* && "$owner_token" != *$'\t'* && "$owner_token" != *' '* ]]
+          [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
+          echo "::add-mask::$owner_token"
+          export GH_TOKEN="$owner_token"
+          actor="$(gh api user --jq '.login')"
+          test "$actor" = ORESoftware
+          membership="$(gh api user/memberships/orgs/${TARGET_ORG} --jq '[.state,.role] | join(":")')"
+          test "$membership" = active:admin
+
+          stage=preserve-and-rename
+          mappings=(
+            'streempilot-web-server.rs:sp-web-mash:Maud, Axum, SeaORM, Supabase, HTMX, and WebSocket broadcast portal'
+            'streempilot-flutter-app:sp-web-leptos:Leptos SSR and Axum broadcast portal for StreemPilot'
+            'streempilot-mcp-server.rs:sp-web-dioxus:Dioxus SSR and Axum broadcast portal for StreemPilot'
+            'streempilot-infra:sp-infra:Kubernetes, WebRTC, observability, and Cloudflare Worker infrastructure for StreemPilot'
+            'streempilot-cli:sp-cli:Operator CLI for StreemPilot using flags-2-env'
+            'streempilot-interfaces:sp-interfaces:Shared OpenAPI, AsyncAPI, and domain contracts for StreemPilot'
+            'streempilot-sync:sp-sync:Offline-first StreemPilot synchronization using opto-sync'
+          )
+          migrated=0
+          already_present=0
+          for mapping in "${mappings[@]}"; do
+            IFS=: read -r source target description <<<"$mapping"
+            target_full="${TARGET_ORG}/${target}"
+            source_full="${TARGET_ORG}/${source}"
+
+            if gh api "repos/${target_full}" >/dev/null 2>&1; then
+              printf 'target-already-present=%s\n' "$target_full"
+              already_present=$((already_present + 1))
+              continue
+            fi
+            gh api "repos/${source_full}" >/dev/null
+            default_branch="$(gh api "repos/${source_full}" --jq '.default_branch')"
+            default_sha="$(gh api "repos/${source_full}/git/ref/heads/${default_branch}" --jq '.object.sha')"
+            [[ "$default_sha" =~ ^[0-9a-f]{40}$ ]]
+
+            legacy_ref="repos/${source_full}/git/refs/heads/${LEGACY_BRANCH}"
+            if ! gh api "$legacy_ref" >/dev/null 2>&1; then
+              gh api --method POST "repos/${source_full}/git/refs" \
+                -f ref="refs/heads/${LEGACY_BRANCH}" \
+                -f sha="$default_sha" >/dev/null
+            fi
+
+            patch="$work/${target}-rename.json"
+            jq -n \
+              --arg name "$target" \
+              --arg description "$description" \
+              '{name:$name,description:$description,private:true,has_wiki:false,delete_branch_on_merge:true,allow_merge_commit:true,allow_squash_merge:true,allow_rebase_merge:true,is_template:false}' \
+              > "$patch"
+            gh api --method PATCH "repos/${source_full}" --input "$patch" >/dev/null
+
+            for _ in $(seq 1 30); do
+              gh api "repos/${target_full}" >/dev/null 2>&1 && break
+              sleep 2
+            done
+            gh api "repos/${target_full}" >/dev/null
+            test "$(gh api "repos/${target_full}/git/ref/heads/${LEGACY_BRANCH}" --jq '.object.sha')" = "$default_sha"
+            printf 'repository-migrated=%s source=%s legacy_branch=%s legacy_sha=%s\n' "$target_full" "$source_full" "$LEGACY_BRANCH" "$default_sha"
+            migrated=$((migrated + 1))
+            sleep 3
+          done
+
+          stage=normalize-sp-api-settings
+          if gh api "repos/${TARGET_ORG}/sp-api" >/dev/null 2>&1; then
+            jq -n '{is_template:false,private:true,has_wiki:false,delete_branch_on_merge:true,allow_merge_commit:true,allow_squash_merge:true,allow_rebase_merge:true}' > "$work/sp-api-settings.json"
+            gh api --method PATCH "repos/${TARGET_ORG}/sp-api" --input "$work/sp-api-settings.json" >/dev/null
+          fi
+
+          stage=verify-canonical-repositories
+          verified=0
+          for target in sp-api sp-web-mash sp-web-leptos sp-web-dioxus sp-infra sp-cli sp-interfaces sp-sync; do
+            gh api "repos/${TARGET_ORG}/${target}" --jq '.full_name' >/dev/null
+            verified=$((verified + 1))
+          done
+          test "$verified" -eq 8
+
+          stage=record-sanitized-completion
+          unset owner_token GH_TOKEN
+          export GH_TOKEN="$workflow_token"
+          completed="$work/completed.json"
+          jq -n \
+            --arg state completed \
+            --arg purpose migrate-preserved-streempilot-repositories-to-canonical-sp-names \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg sourceCommit "$GITHUB_SHA" \
+            --arg authenticatedActor "$actor" \
+            --arg legacyBranch "$LEGACY_BRANCH" \
+            --argjson migrated "$migrated" \
+            --argjson alreadyPresent "$already_present" \
+            '{state:$state,purpose:$purpose,runId:$runId,sourceCommit:$sourceCommit,authenticatedActor:$authenticatedActor,legacyBranch:$legacyBranch,repositoriesMigrated:$migrated,repositoriesAlreadyPresent:$alreadyPresent,canonicalRepositoriesVerified:8,privateKeyStored:false,plaintextCredentialStored:false}' \
+            > "$completed"
+          completed_sha="$(gh api "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}?ref=${CHALLENGE_BRANCH}" --jq '.sha')"
+          gh api --method PUT "repos/${REPOSITORY}/contents/${CHALLENGE_PATH}" \
+            -f message='ops: complete StreemPilot repository migration challenge' \
+            -f content="$(base64 -w0 < "$completed")" \
+            -f branch="$CHALLENGE_BRANCH" \
+            -f sha="$completed_sha" >/dev/null
+          printf 'STREEMPILOT_SP_MIGRATION_COMPLETE actor=%s migrated=%s already_present=%s canonical=8\n' "$actor" "$migrated" "$already_present"

@@ -1,0 +1,343 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-push-notification-server
+  namespace: default
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+  labels:
+    app: dd-push-notification-server
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Single-node friendly: don't try to schedule a second builder pod.
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: dd-push-notification-server
+  template:
+    metadata:
+      annotations:
+        dd.dev/push-notification-server-revision: '2026-07-31-den-263-initial'
+      labels:
+        app: dd-push-notification-server
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: push-notification-server
+          # Matches the repo's rust-toolchain.toml (1.88.0) and Dockerfile builder
+          # stage, so rustup never downloads a second toolchain at pod start.
+          image: docker.io/library/rust:1.88-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+              # push-notification-server.rs is a k8s-cluster submodule at
+              # remote/deployments/push-notification-server.rs, pinned to a
+              # reviewed commit (DEN-263: never build a floating branch at
+              # deployment time). It is a standalone crate with no path deps on
+              # remote/libs, so only its own submodule needs to be initialized.
+              # Prefer the mounted superproject; otherwise clone k8s-cluster and
+              # init just this submodule (mirrors dd-ai-agent-bridge).
+              build_root=""
+              mounted="/opt/dd-next-1"
+              if [ -f "${mounted}/remote/deployments/push-notification-server.rs/Cargo.toml" ]; then
+                build_root="${mounted}"
+                echo "[dd-push-notification-server] using mounted superproject at ${mounted}"
+              else
+                # GH_PAT (dd-git-clone-token) authenticates private fetches via an
+                # HTTP header so an auth failure cannot print the token.
+                git_auth_args=()
+                if [ -n "${GH_PAT:-}" ]; then
+                  authhdr="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_PAT" | base64 | tr -d '\n')"
+                  git_auth_args=(-c "http.https://github.com/.extraheader=${authhdr}")
+                  git config --global url."https://github.com/".insteadOf "git@github.com:"
+                fi
+                clone="$(mktemp -d /tmp/push-notification-server-src.XXXXXX)"
+                echo "[dd-push-notification-server] mounted source absent; cloning k8s-cluster@${K8S_GIT_REF:-dev}"
+                git clone --depth 1 --branch "${K8S_GIT_REF:-dev}" "${git_auth_args[@]}" \
+                  "${K8S_GIT_URL:-https://github.com/ORESoftware/k8s-cluster.git}" "${clone}"
+                git -C "${clone}" "${git_auth_args[@]}" submodule update --init --depth 1 \
+                  remote/deployments/push-notification-server.rs
+                build_root="${clone}"
+              fi
+
+              cd "${build_root}/remote/deployments/push-notification-server.rs"
+              echo "[dd-push-notification-server] building ($(git rev-parse --short HEAD 2>/dev/null || echo '?'))"
+              cargo build --release --locked
+              exec "${CARGO_TARGET_DIR:-target}/release/push-notification-server"
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8121'
+            - name: RUST_LOG
+              value: push_notification_server=info
+            # HTTP ingestion fails closed unless an authenticator is enabled.
+            # Reuse the cluster's required server-to-server credential (same
+            # pattern as dd-ai-agent-bridge) so /v1/push/* and /v1/contact/*
+            # reject unauthenticated callers from the first boot. Shared-secret
+            # mode is migration-scoped; the workload-identity successor is
+            # tracked under DEN-840.
+            - name: ENABLE_SHARED_SECRET_AUTH
+              value: 'true'
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+            # Provider lanes (FCM, APNs, Expo, Web Push, SendGrid, Twilio) are
+            # configured EXCLUSIVELY from dd-push-notification-server-secrets.
+            # Every ref is optional so the pod boots before the AWS bundle
+            # exists; the server refuses to start on PARTIAL lane config by
+            # design, so populate complete per-lane bundles (see the
+            # ExternalSecret comments) rather than one key at a time.
+            - name: SENDGRID_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: SENDGRID_API_KEY
+                  optional: true
+            - name: SENDGRID_FROM_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: SENDGRID_FROM_EMAIL
+                  optional: true
+            - name: SENDGRID_FROM_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: SENDGRID_FROM_NAME
+                  optional: true
+            - name: SENDGRID_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: SENDGRID_REGION
+                  optional: true
+            - name: SENDGRID_SANDBOX_MODE
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: SENDGRID_SANDBOX_MODE
+                  optional: true
+            - name: TWILIO_ACCOUNT_SID
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: TWILIO_ACCOUNT_SID
+                  optional: true
+            - name: TWILIO_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: TWILIO_AUTH_TOKEN
+                  optional: true
+            - name: TWILIO_API_KEY_SID
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: TWILIO_API_KEY_SID
+                  optional: true
+            - name: TWILIO_API_KEY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: TWILIO_API_KEY_SECRET
+                  optional: true
+            - name: TWILIO_MESSAGING_SERVICE_SID
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: TWILIO_MESSAGING_SERVICE_SID
+                  optional: true
+            - name: TWILIO_FROM_NUMBER
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: TWILIO_FROM_NUMBER
+                  optional: true
+            - name: TWILIO_STATUS_CALLBACK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: TWILIO_STATUS_CALLBACK_URL
+                  optional: true
+            - name: TWILIO_VALIDITY_PERIOD_SECONDS
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: TWILIO_VALIDITY_PERIOD_SECONDS
+                  optional: true
+            - name: FCM_SERVICE_ACCOUNT_JSON
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: FCM_SERVICE_ACCOUNT_JSON
+                  optional: true
+            - name: FCM_PROJECT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: FCM_PROJECT_ID
+                  optional: true
+            - name: APNS_KEY_P8
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: APNS_KEY_P8
+                  optional: true
+            - name: APNS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: APNS_KEY_ID
+                  optional: true
+            - name: APNS_TEAM_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: APNS_TEAM_ID
+                  optional: true
+            - name: APNS_TOPIC
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: APNS_TOPIC
+                  optional: true
+            - name: APNS_ENVIRONMENT
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: APNS_ENVIRONMENT
+                  optional: true
+            - name: EXPO_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: EXPO_ACCESS_TOKEN
+                  optional: true
+            - name: VAPID_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: VAPID_PRIVATE_KEY
+                  optional: true
+            - name: VAPID_SUBJECT
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: VAPID_SUBJECT
+                  optional: true
+            - name: WEBPUSH_TTL_SECONDS
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: WEBPUSH_TTL_SECONDS
+                  optional: true
+            # Empty/unset keeps the strict built-in browser push-service host
+            # allowlist. Never set '*' here without reading docs/web-push.md.
+            - name: WEBPUSH_ALLOWED_HOSTS
+              valueFrom:
+                secretKeyRef:
+                  name: dd-push-notification-server-secrets
+                  key: WEBPUSH_ALLOWED_HOSTS
+                  optional: true
+            # Durable JetStream push ingestion stays OFF for the initial
+            # HTTP-only rollout (DEN-263 shadow phase). Flip on after the
+            # dedicated streams/ACLs are reviewed under DEN-795; the
+            # NetworkPolicy already allows egress to dd-nats:4222.
+            # - name: NATS_URL
+            #   value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: K8S_GIT_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: K8S_GIT_REF
+              value: dev
+            # Read access for the fallback clone path (public repo today, but this
+            # keeps it working if visibility ever changes).
+            - name: GH_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: dd-git-clone-token
+                  key: token
+                  optional: true
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/push-notification-server-target
+          ports:
+            - name: http
+              containerPort: 8121
+          resources:
+            requests:
+              cpu: '50m'
+              memory: 512Mi
+              ephemeral-storage: 1Gi
+            limits:
+              cpu: '2'
+              memory: 3Gi
+              ephemeral-storage: 8Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            # Cold release build from an empty /tmp can take a few minutes; allow ~15 min.
+            periodSeconds: 5
+            failureThreshold: 180
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: DirectoryOrCreate
+        - name: tmp
+          emptyDir:
+            sizeLimit: 8Gi

@@ -1,0 +1,133 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dd-chatgpt-rate-limit-resumer
+  namespace: default
+  labels:
+    app: dd-chatgpt-rate-limit-resumer
+  annotations:
+    dd.dev/note: Daily ChatGPT thread introspection; resumes only conversations whose latest UI state is a rate/request-limit error.
+spec:
+  schedule: "0 3 * * *"
+  timeZone: America/Chicago
+  suspend: false
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 1800
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 7
+  jobTemplate:
+    metadata:
+      labels:
+        app: dd-chatgpt-rate-limit-resumer
+    spec:
+      activeDeadlineSeconds: 3900
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 604800
+      template:
+        metadata:
+          labels:
+            app: dd-chatgpt-rate-limit-resumer
+        spec:
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 60
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: resumer
+              image: ghcr.io/oresoftware/dd-web-scraper@sha256:24d891d671d00f97e183d3a9f0ac972418f39c8e5b847e4e6186e39aa30f6cac
+              imagePullPolicy: IfNotPresent
+              command:
+                - node
+                - /app/remote/deployments/web-scraper-service/chatgpt-resumer/resumer.mjs
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 1000
+                runAsGroup: 1000
+                capabilities:
+                  drop:
+                    - ALL
+                seccompProfile:
+                  type: RuntimeDefault
+              env:
+                - name: HOME
+                  value: /tmp
+                - name: XDG_CACHE_HOME
+                  value: /tmp/.cache
+                - name: PLAYWRIGHT_BROWSERS_PATH
+                  value: /ms-playwright
+                - name: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
+                  value: "1"
+                - name: CHATGPT_BASE_URL
+                  value: https://chatgpt.com/
+                - name: CHATGPT_RESUMER_MAX_CHAT_SCAN
+                  value: "60"
+                - name: CHATGPT_RESUMER_MAX_RESUMES
+                  value: "8"
+                - name: CHATGPT_RESUMER_MAX_ATTEMPTS
+                  value: "7"
+                - name: CHATGPT_RESUMER_RETRY_COOLDOWN_HOURS
+                  value: "20"
+                - name: CHATGPT_RESUMER_ATTEMPT_WINDOW_DAYS
+                  value: "7"
+                - name: CHATGPT_RESUMER_RESPONSE_WAIT_MS
+                  value: "360000"
+                - name: CHATGPT_RESUMER_LOCK_STALE_MINUTES
+                  value: "90"
+                - name: CHATGPT_RESUMER_PAGE_TIMEOUT_MS
+                  value: "60000"
+                - name: CHATGPT_RESUMER_ALLOWED_DOMAIN_SUFFIXES
+                  value: chatgpt.com,openai.com,oaistatic.com,oaiusercontent.com
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 1Gi
+                  ephemeral-storage: 256Mi
+                limits:
+                  cpu: "2"
+                  memory: 4Gi
+                  ephemeral-storage: 2Gi
+              volumeMounts:
+                - name: script
+                  mountPath: /app/remote/deployments/web-scraper-service/chatgpt-resumer
+                  readOnly: true
+                - name: auth-seed
+                  mountPath: /seed
+                  readOnly: true
+                - name: state
+                  mountPath: /state
+                - name: tmp
+                  mountPath: /tmp
+                - name: dshm
+                  mountPath: /dev/shm
+          volumes:
+            - name: script
+              configMap:
+                name: dd-chatgpt-rate-limit-resumer
+                defaultMode: 0444
+            - name: auth-seed
+              secret:
+                secretName: dd-agent-secrets
+                optional: true
+                items:
+                  - key: CHATGPT_STORAGE_STATE_JSON
+                    path: storage-state.json
+            - name: state
+              persistentVolumeClaim:
+                claimName: dd-chatgpt-rate-limit-resumer-state
+            - name: tmp
+              emptyDir:
+                sizeLimit: 1Gi
+            - name: dshm
+              emptyDir:
+                medium: Memory
+                sizeLimit: 1Gi
