@@ -9,7 +9,8 @@
     shard_of/2,
     self_node_binary/0,
     parse_wal2json/1,
-    kill_named/1
+    kill_named/1,
+    pg_start_or_whereis/1
 ]).
 
 %% Build a process Name (which is just an Erlang atom internally) from a
@@ -255,6 +256,16 @@ to_binary(N) when is_atom(N) -> atom_to_binary(N, utf8).
 %% We `unlink/1` first because `actor.start` links the actor to the
 %% spawning test process; an `exit(Pid, kill)` on a linked process would
 %% propagate the kill signal back to the test runner via the link.
+%% Start Erlang `pg` under `Scope`, or return the already-running scope
+%% pid. Never returns the caller pid on `{already_started, Pid}`.
+pg_start_or_whereis(Scope) when is_atom(Scope) ->
+    case pg:start_link(Scope) of
+        {ok, Pid} -> {ok, Pid};
+        {error, {already_started, Pid}} when is_pid(Pid) -> {ok, Pid};
+        {error, Reason} ->
+            {error, list_to_binary(io_lib:format("~p", [Reason]))}
+    end.
+
 kill_named(NameBin) ->
     Name = binary_to_atom(NameBin, utf8),
     case erlang:whereis(Name) of

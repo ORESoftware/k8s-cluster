@@ -41,12 +41,12 @@ import gleam/list
 import gleam/option.{type Option, Some}
 import gleam/otp/actor
 import gleam/otp/supervision
-import gleam/result
 import gleam/string
 import gleamlang_presence_server/fanout.{type Fanout}
 import gleamlang_presence_server/groups.{
   type ConnGroup, type ConnMsg, ByConv, Outbound,
 }
+import gleamlang_presence_server/nats_wire
 import gleamlang_presence_server/registry.{type Registry}
 
 pub type Nats =
@@ -56,6 +56,7 @@ pub opaque type Message {
   Publish(subject: String, payload: BitArray, headers: List(#(String, String)))
   Subscribe(subject: String)
   Raw(subject: String, payload: BitArray, headers: List(#(String, String)))
+  Ignore
   Shutdown
 }
 
@@ -141,11 +142,17 @@ pub fn publish(
   payload payload: BitArray,
   headers headers: List(#(String, String)),
 ) -> Nil {
-  process.send(nats, Publish(subject, payload, headers))
+  case nats_wire.subject_is_safe(subject) {
+    False -> Nil
+    True -> process.send(nats, Publish(subject, payload, headers))
+  }
 }
 
 pub fn subscribe(nats: Nats, subject subject: String) -> Nil {
-  process.send(nats, Subscribe(subject))
+  case nats_wire.subject_is_safe(subject) {
+    False -> Nil
+    True -> process.send(nats, Subscribe(subject))
+  }
 }
 
 pub fn stop(nats: Nats) -> Nil {
@@ -186,17 +193,11 @@ pub fn conv_id_from_subject(subject: String) -> Result(String, Nil) {
 fn erlang_nodes() -> List(atom.Atom)
 
 pub fn source_node_is_cluster_peer(source_node: Option(String)) -> Bool {
-  case source_node {
-    Some(node_bin) -> {
-      // `atom.get` returns `Ok(atom)` only when the atom already exists.
-      // If we've never heard of this node, it can't be a cluster peer.
-      case atom.get(node_bin) {
-        Ok(node_atom) -> list.contains(erlang_nodes(), node_atom)
-        Error(_) -> False
-      }
-    }
-    _ -> False
-  }
+  nats_wire.source_node_already_delivered(
+    source_node,
+    self_node_binary(),
+    list.map(erlang_nodes(), atom.to_string),
+  )
 }
 
 /// Generic dispatch for an inbound `presence.broadcast.conv.<id>` packet:
@@ -213,7 +214,11 @@ pub fn dispatch_inbound_default(
   reg: Registry(ConnMsg, ConnGroup),
   _fan: Fanout,
 ) -> Nil {
-  case source_node_is_cluster_peer(inbound.source_node) {
+  case nats_wire.source_node_already_delivered(
+    inbound.source_node,
+    self_node_binary(),
+    list.map(erlang_nodes(), atom.to_string),
+  ) {
     True -> Nil
     False -> {
       case conv_id_from_subject(inbound.subject) {
@@ -239,27 +244,36 @@ pub fn dispatch_inbound_default(
 fn handle(state: State, msg: Message) -> actor.Next(State, Message) {
   case msg {
     Publish(subject, payload, headers) -> {
-      let headers_with_source = [#("Source-Node", state.self_node), ..headers]
-      let subj_bin = bit_array.from_string(subject)
-      let hdr_bins =
-        list.map(headers_with_source, fn(kv) {
-          #(bit_array.from_string(kv.0), bit_array.from_string(kv.1))
-        })
-      let _ = dd_nats_publish(state.client_pid, subj_bin, payload, hdr_bins)
-      actor.continue(state)
+      case nats_wire.subject_is_safe(subject) {
+        False -> actor.continue(state)
+        True -> {
+          let headers_with_source = [#("Source-Node", state.self_node), ..headers]
+          let subj_bin = bit_array.from_string(subject)
+          let hdr_bins =
+            list.map(headers_with_source, fn(kv) {
+              #(bit_array.from_string(kv.0), bit_array.from_string(kv.1))
+            })
+          let _ = dd_nats_publish(state.client_pid, subj_bin, payload, hdr_bins)
+          actor.continue(state)
+        }
+      }
     }
 
     Subscribe(subject) -> {
-      let _ =
-        dd_nats_subscribe(state.client_pid, bit_array.from_string(subject))
-      actor.continue(state)
+      case nats_wire.subject_is_safe(subject) {
+        False -> actor.continue(state)
+        True -> {
+          let _ =
+            dd_nats_subscribe(state.client_pid, bit_array.from_string(subject))
+          actor.continue(state)
+        }
+      }
     }
 
     Raw(subject, payload, headers) -> {
-      let source_node = lookup_header(headers, "Source-Node")
+      let source_node = nats_wire.header_get(headers, "Source-Node")
       case source_node {
         Some(node) if node == state.self_node -> {
-          // Self-originated; skip — local delivery already happened.
           actor.continue(state)
         }
         _ -> {
@@ -274,17 +288,10 @@ fn handle(state: State, msg: Message) -> actor.Next(State, Message) {
       }
     }
 
+    Ignore -> actor.continue(state)
+
     Shutdown -> actor.stop()
   }
-}
-
-fn lookup_header(
-  headers: List(#(String, String)),
-  key: String,
-) -> Option(String) {
-  list.find(headers, fn(kv) { kv.0 == key })
-  |> result.map(fn(kv) { kv.1 })
-  |> option.from_result
 }
 
 fn decode_nats_msg(raw: Dynamic) -> Message {
@@ -298,10 +305,14 @@ fn decode_nats_msg(raw: Dynamic) -> Message {
     decode.success(#(subject, payload, headers))
   }
   case decode.run(raw, pair) {
-    Ok(#(subject, payload, headers)) -> Raw(subject, payload, headers)
+    Ok(#(subject, payload, headers)) ->
+      case nats_wire.subject_is_safe(subject) {
+        False -> Ignore
+        True -> Raw(subject, payload, headers)
+      }
     Error(e) -> {
       io.println("nats: malformed inbound: " <> string.inspect(e))
-      Raw("", <<>>, [])
+      Ignore
     }
   }
 }
