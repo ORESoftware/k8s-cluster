@@ -88,7 +88,7 @@ Deployment/dd-ai-agent-runner
   -> exactly one approved provider over TLS during a bounded canary
 ```
 
-The first public edge is the ingress-nginx deployment used by the `api.fiducia.cloud` Ingress. One healthy public command endpoint is sufficient for Slack. Do not expose a second active edge until failover ownership and duplicate-delivery behavior are reviewed.
+The first public edge is the ingress-nginx deployment used by the `api.fiducia.cloud` Ingress. The AWS cluster intentionally does not claim `ingressClassName: nginx`; its direct gateway remains unaffected. One healthy public command endpoint is sufficient for Slack. Do not expose a second active edge until failover ownership and duplicate-delivery behavior are reviewed.
 
 Both runtime images are non-root, read-only-root, capability-dropped, seccomp-constrained images built from one reviewed source tree. The Slack command image includes the validated fourteen-binding channel registry at `/etc/alex-main-agent/alex-main-agent.channels.json`.
 
