@@ -82,6 +82,28 @@ SHA-256 hashes are persisted, for change detection — never the values. Rules c
 `BUILD_SERVER_GH_SYNC_RULES`/`_PATH`; the PAT from `GH_PAT` (dd-agent-secrets) or
 `GH_SECRETS_SYNC_TOKEN`. Disabled by default (`BUILD_SERVER_GH_SYNC_ENABLED`).
 
+## Bounded GitHub Actions workflow YAML
+
+The authenticated `/gha/workflows/plan` endpoint consumes an ordinary workflow file together with
+its exact repository, workflow path, and revision. `/gha/workflows/runs` accepts the same document
+only when workflow execution is explicitly enabled and every job maps to an installed fixed
+profile. Planning and execution use the same strict YAML admission path: duplicate keys, merge
+keys, aliases, anchors, tags, tabs, directives, multiple documents, and excessive input fail before
+profile classification.
+
+Profile classification is fail-closed at the command boundary. Each `run` command must be inside
+the reviewed command surface of the selected profile; shell composition, redirection, repository
+scripts, publishing/deployment operations, and unrelated commands produce a non-executable plan.
+The worker runs the fixed reviewed profile, not the workflow's literal shell source, so this lane
+provides bounded verification coverage rather than byte-for-byte command parity.
+
+The independent event policy accepts only unfiltered `push`, `pull_request`, and
+`workflow_dispatch` declarations. Other events, trigger filters, and manual inputs remain visible
+in a non-executable compatibility plan instead of being silently ignored. The explicit API does
+not decide whether an event matches a workflow; the authenticated upstream dispatcher must prove
+the event, ref, workflow path, and immutable revision. This is a fixed-profile continuity path, not
+a claim that the service reproduces GitHub's proprietary workflow control plane.
+
 The server intentionally does not accept caller-supplied shell commands. A submitted job is a
 `build-server.v1` JSON document:
 

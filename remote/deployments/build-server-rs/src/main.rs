@@ -28,6 +28,7 @@ mod types;
 mod util;
 mod validation;
 mod webhooks;
+mod workflow_yaml;
 
 use config::{config_from_env, env_u64, env_usize, env_value, Config};
 use exec::append_log;

@@ -19,7 +19,7 @@ resources:
   - availability-pdbs.yaml
   - fiducia-runtime-secrets.externalsecret.yaml
   - fiducia-kv-protection.externalsecret.yaml
-  # FID-SEC-1 / DEN-1240 phase 1: internal PKI (inert until the LB TLS cutover).
+  # FID-SEC-1 / DEN-1240 phase 1: internal PKI (cert-manager CA + serving cert).
   - fiducia-internal-ca.certificate.yaml
   - fiducia-load-balance-tls.certificate.yaml
   - fiducia-revocation-secrets.externalsecret.yaml
@@ -50,6 +50,17 @@ patches:
       version: v1
       kind: StatefulSet
       name: fiducia-node
+  - path: fiducia-load-balance.tls.patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: fiducia-load-balance
+  - path: fiducia-load-balance-tls.service.patch.yaml
+    target:
+      version: v1
+      kind: Service
+      name: fiducia-load-balance
   - path: fiducia-node.required-secrets.patch.yaml
     target:
       group: apps

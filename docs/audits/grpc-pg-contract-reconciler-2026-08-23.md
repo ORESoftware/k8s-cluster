@@ -9,7 +9,7 @@ inert, exact-commit pilot and cannot start a Pod as committed.
 
 | Boundary | Reviewed change | Immutable pin |
 | --- | --- | --- |
-| Shared SQL, JSON Schema, and generated ORM bindings | `ORESoftware/k8s-libs-and-shared-defs#49` | `57727a9eec1688c8d1b25de883c3a134f7485fd2` |
+| Shared SQL, JSON Schema, and generated ORM bindings | `ORESoftware/k8s-libs-and-shared-defs#49` (unioned with current `dev` `#50` enum contracts at k8s-libs `main`) | `46e307b133a85809957112157cadb0cdc2f2d39d` |
 | gRPC reconciliation server | `ORESoftware/grpc-pg-general-connect-server#5` | `37ac95d7be22729bac4a46be99b56a8517abea44` |
 | Fleet composition | this change | both pins above |
 

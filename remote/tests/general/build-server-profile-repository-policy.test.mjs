@@ -122,6 +122,16 @@ test('GitOps binds each reviewed repository to only its fixed profiles', () => {
       repository: 'https://github.com/gha-indie-worker-test/gha-indie-worker.rs.git',
       profiles: ['rust-verify'],
     },
+    {
+      repository:
+        'https://github.com/discrete-event-systems-test/des-web-playwright-e2e.git',
+      profiles: ['playwright'],
+    },
+    {
+      repository:
+        'https://github.com/discrete-event-systems-test/des-web-puppeteer-e2e.git',
+      profiles: ['puppeteer'],
+    },
   ]);
 
   const byRepository = new Map(
@@ -165,6 +175,18 @@ test('GitOps binds each reviewed repository to only its fixed profiles', () => {
   assert.doesNotMatch(
     patch,
     /BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES[\s\S]{0,500}gha-indie-worker-test/,
+  );
+  assert.deepEqual(
+    byRepository.get(
+      'https://github.com/discrete-event-systems-test/des-web-playwright-e2e.git',
+    ),
+    ['playwright'],
+  );
+  assert.deepEqual(
+    byRepository.get(
+      'https://github.com/discrete-event-systems-test/des-web-puppeteer-e2e.git',
+    ),
+    ['puppeteer'],
   );
 });
 
