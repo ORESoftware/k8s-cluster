@@ -1,404 +1,466 @@
 #!/usr/bin/env python3
+"""Reconstruct and verify the sealed Meta Agent publication source.
+
+The script performs read-only GitHub Git Database API calls against one exact
+commit, walks only the bounded directory path that owns the sealed bundle and
+publisher, removes both base64 layers from the bundle carrier, and verifies all
+reviewed digests, publishable branches, and declared auxiliary refs before any
+repository-administration credential is needed.
+"""
+
 from __future__ import annotations
 
 import argparse
 import base64
-import binascii
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
+import stat
 import subprocess
 import sys
-import tempfile
-from typing import Any, Iterable
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Iterable, Mapping, Sequence
 
-SOURCE_REPOSITORY = "ORESoftware/k8s-cluster"
-SOURCE_SHA = "55ee15c190b7cfa4e075f6984c7cb551acd4b9d3"
-BUNDLE_SHA256 = "1ddaa03743b864348162149b7d2d2e2dce7eab585cf092ea14547c647fcec031"
-PUBLISHER_SHA256 = "e2fe6eaa622db02a54f83e27a822f64ad4b54971c883f97bbda4ac0a4db5d278"
-EXPECTED_MAIN = "4d6ec3ad0ec7b688f0e777129eee7e0f0d999df1"
-EXPECTED_FEATURE = "789d48039da232faed985d4f8de176959f117e08"
-EXPECTED_FEATURE_REF = "refs/heads/agent/den-1057-meta-agent-control-plane"
-EXPECTED_HEADS = {
-    "HEAD": EXPECTED_FEATURE,
-    "refs/heads/main": EXPECTED_MAIN,
-    EXPECTED_FEATURE_REF: EXPECTED_FEATURE,
-}
-ASSET_PATTERN = re.compile(r"^scripts/critical-org-fleet/assets/meta\.part[^/]+$")
-PUBLISHER_PATH = "scripts/critical-org-fleet/publish_meta_control_plane.py"
-HEX_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
-API_ROOT = "https://api.github.com"
-API_VERSION = "2022-11-28"
+GITHUB_API_VERSION = "2022-11-28"
+DEFAULT_REPOSITORY = "ORESoftware/k8s-cluster"
+ASSET_NAME_PATTERN = re.compile(r"^meta\.part[^/]+$")
+SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+PUBLISHER_NAME = "publish_meta_control_plane.py"
+ALLOWED_AUXILIARY_REFS = frozenset({"HEAD"})
 
 
-class SnapshotError(RuntimeError):
-    """Fail-closed source snapshot error with a bounded stage identifier."""
-
-    def __init__(self, stage: str, message: str) -> None:
-        super().__init__(message)
-        self.stage = stage
+class VerificationError(RuntimeError):
+    """Raised when a fail-closed source verification invariant is violated."""
 
 
-class GitHubApi:
-    def __init__(self, token: str) -> None:
+@dataclass(frozen=True)
+class SnapshotResult:
+    source_sha: str
+    source_tree_sha: str
+    asset_count: int
+    bundle_sha256: str
+    publisher_sha256: str
+    heads: Mapping[str, str]
+    auxiliary_heads: Mapping[str, str]
+    bundle_path: Path
+    publisher_path: Path
+
+    def sanitized_json(self) -> str:
+        return json.dumps(
+            {
+                "asset_count": self.asset_count,
+                "auxiliary_heads": dict(sorted(self.auxiliary_heads.items())),
+                "bundle_path": str(self.bundle_path),
+                "bundle_sha256": self.bundle_sha256,
+                "heads": dict(sorted(self.heads.items())),
+                "publisher_path": str(self.publisher_path),
+                "publisher_sha256": self.publisher_sha256,
+                "source_sha": self.source_sha,
+                "source_tree_sha": self.source_tree_sha,
+                "status": "verified",
+            },
+            sort_keys=True,
+        )
+
+
+class GitHubClient:
+    def __init__(self, token: str, repository: str) -> None:
         if not token or any(character.isspace() for character in token):
-            raise SnapshotError("credential-preflight", "missing or malformed workflow token")
+            raise VerificationError("GitHub read token is missing or malformed")
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+            raise VerificationError("repository must be in owner/name form")
         self._token = token
+        self._repository = repository
 
-    def get_json(self, path: str, *, stage: str) -> dict[str, Any]:
+    def get(self, path: str) -> Mapping[str, Any]:
+        if not path.startswith("/"):
+            raise VerificationError("GitHub API path must be absolute")
         request = urllib.request.Request(
-            API_ROOT + path,
+            "https://api.github.com" + path,
             headers={
                 "Accept": "application/vnd.github+json",
                 "Authorization": f"Bearer {self._token}",
-                "X-GitHub-Api-Version": API_VERSION,
                 "User-Agent": "meta-agent-source-snapshot-verifier",
+                "X-GitHub-Api-Version": GITHUB_API_VERSION,
             },
         )
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 payload = json.load(response)
         except urllib.error.HTTPError as error:
-            error.read(4096)
-            raise SnapshotError(stage, f"GitHub API returned HTTP {error.code} for {path}") from error
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
-            raise SnapshotError(stage, f"GitHub API request failed for {path}") from error
+            raise VerificationError(
+                f"GitHub API returned HTTP {error.code} for {path}"
+            ) from error
+        except (urllib.error.URLError, TimeoutError) as error:
+            raise VerificationError(f"GitHub API request failed for {path}") from error
         if not isinstance(payload, dict):
-            raise SnapshotError(stage, f"GitHub API returned a non-object for {path}")
+            raise VerificationError(f"GitHub API returned a non-object for {path}")
         return payload
 
+    def commit(self, sha: str) -> Mapping[str, Any]:
+        return self.get(f"/repos/{self._repository}/git/commits/{sha}")
 
-def require_sha(value: object, *, stage: str, label: str) -> str:
-    if not isinstance(value, str) or HEX_SHA_PATTERN.fullmatch(value) is None:
-        raise SnapshotError(stage, f"{label} is not a lowercase 40-character Git SHA")
+    def tree(self, sha: str) -> Mapping[str, Any]:
+        return self.get(f"/repos/{self._repository}/git/trees/{sha}")
+
+    def blob(self, sha: str) -> Mapping[str, Any]:
+        return self.get(f"/repos/{self._repository}/git/blobs/{sha}")
+
+
+def require_sha(value: Any, identity: str) -> str:
+    if not isinstance(value, str) or SHA_PATTERN.fullmatch(value) is None:
+        raise VerificationError(f"{identity} must be a 40-character lowercase SHA")
     return value
 
 
-def select_asset_entries(tree_payload: dict[str, Any]) -> list[tuple[str, str]]:
-    stage = "select-source-assets"
-    if tree_payload.get("truncated") is not False:
-        raise SnapshotError(stage, "recursive source tree is truncated or missing its flag")
-    tree = tree_payload.get("tree")
-    if not isinstance(tree, list):
-        raise SnapshotError(stage, "recursive source tree is not a list")
+def require_sha256(value: str, identity: str) -> str:
+    normalized = value.lower()
+    if SHA256_PATTERN.fullmatch(normalized) is None:
+        raise VerificationError(f"{identity} must be a 64-character SHA-256")
+    return normalized
 
-    selected: list[tuple[str, str]] = []
-    seen_paths: set[str] = set()
-    for entry in tree:
+
+def require_tree_entries(
+    payload: Mapping[str, Any], identity: str
+) -> Sequence[Mapping[str, Any]]:
+    if payload.get("truncated") is True:
+        raise VerificationError(f"{identity} tree response is truncated")
+    raw_entries = payload.get("tree")
+    if not isinstance(raw_entries, list):
+        raise VerificationError(f"{identity} tree response is missing entries")
+    entries: list[Mapping[str, Any]] = []
+    for entry in raw_entries:
         if not isinstance(entry, dict):
-            continue
-        path = entry.get("path")
-        if not isinstance(path, str) or ASSET_PATTERN.fullmatch(path) is None:
-            continue
-        if path in seen_paths:
-            raise SnapshotError(stage, f"duplicate sealed asset path: {path}")
-        seen_paths.add(path)
-        if entry.get("type") != "blob":
-            raise SnapshotError(stage, f"sealed asset is not a blob: {path}")
-        sha = require_sha(entry.get("sha"), stage=stage, label=f"blob SHA for {path}")
-        selected.append((path, sha))
-
-    selected.sort(key=lambda item: item[0])
-    if not selected:
-        raise SnapshotError(stage, "no sealed meta.part assets were found")
-    return selected
+            raise VerificationError(f"{identity} tree contains a non-object entry")
+        entries.append(entry)
+    return entries
 
 
-def select_publisher_entry(tree_payload: dict[str, Any]) -> tuple[str, str]:
-    stage = "select-publisher-blob"
-    tree = tree_payload.get("tree")
-    if not isinstance(tree, list):
-        raise SnapshotError(stage, "recursive source tree is not a list")
-    matches: list[dict[str, Any]] = [
+def exact_entry(
+    entries: Sequence[Mapping[str, Any]],
+    *,
+    path: str,
+    entry_type: str,
+    identity: str,
+) -> Mapping[str, Any]:
+    matches = [
         entry
-        for entry in tree
-        if isinstance(entry, dict) and entry.get("path") == PUBLISHER_PATH
+        for entry in entries
+        if entry.get("path") == path and entry.get("type") == entry_type
     ]
     if len(matches) != 1:
-        raise SnapshotError(stage, f"expected one publisher blob, found {len(matches)}")
-    entry = matches[0]
-    if entry.get("type") != "blob":
-        raise SnapshotError(stage, "publisher path is not a blob")
-    sha = require_sha(entry.get("sha"), stage=stage, label="publisher blob SHA")
-    return PUBLISHER_PATH, sha
+        raise VerificationError(
+            f"{identity} must contain exactly one {entry_type} entry named {path!r}"
+        )
+    require_sha(matches[0].get("sha"), f"{identity}/{path} SHA")
+    return matches[0]
 
 
-def git_blob_sha(content: bytes) -> str:
-    header = f"blob {len(content)}\0".encode("ascii")
-    return hashlib.sha1(header + content).hexdigest()  # noqa: S324 - Git object identity
-
-
-def decode_github_blob(
-    payload: dict[str, Any],
-    *,
-    expected_sha: str,
-    stage: str,
-    label: str,
-) -> bytes:
+def decode_blob(payload: Mapping[str, Any], identity: str) -> bytes:
     if payload.get("encoding") != "base64":
-        raise SnapshotError(stage, f"{label} is not base64 encoded by GitHub")
-    encoded = payload.get("content")
-    if not isinstance(encoded, str):
-        raise SnapshotError(stage, f"{label} has no string content")
-    compact = "".join(encoded.split())
+        raise VerificationError(f"{identity} blob must use base64 transport encoding")
+    content = payload.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise VerificationError(f"{identity} blob content is missing")
     try:
-        content = base64.b64decode(compact, validate=True)
-    except (ValueError, binascii.Error) as error:
-        raise SnapshotError(stage, f"{label} has invalid GitHub transport base64") from error
-    if not content:
-        raise SnapshotError(stage, f"{label} decoded to empty content")
-    observed_sha = git_blob_sha(content)
-    if observed_sha != expected_sha:
-        raise SnapshotError(
-            stage,
-            f"{label} Git blob identity mismatch: {observed_sha} != {expected_sha}",
-        )
-    return content
+        return base64.b64decode(content, validate=False)
+    except (ValueError, TypeError) as error:
+        raise VerificationError(f"{identity} blob transport base64 is invalid") from error
 
 
-def decode_bundle_parts(parts: Iterable[bytes]) -> bytes:
-    stage = "decode-sealed-bundle"
-    combined = b"".join(parts)
-    if not combined:
-        raise SnapshotError(stage, "sealed bundle text is empty")
+def parse_expected_heads(values: Iterable[str]) -> Mapping[str, str]:
+    result: dict[str, str] = {}
+    for value in values:
+        if "=" not in value:
+            raise VerificationError("expected head must use ref=sha syntax")
+        ref, raw_sha = value.split("=", 1)
+        if not ref.startswith("refs/heads/") or ref in result:
+            raise VerificationError(f"invalid or duplicate expected ref: {ref!r}")
+        result[ref] = require_sha(raw_sha, f"expected SHA for {ref}")
+    if not result:
+        raise VerificationError("at least one expected head is required")
+    return result
+
+
+def parse_expected_auxiliary_heads(values: Iterable[str]) -> Mapping[str, str]:
+    result: dict[str, str] = {}
+    for value in values:
+        if "=" not in value:
+            raise VerificationError(
+                "expected auxiliary head must use ref=sha syntax"
+            )
+        ref, raw_sha = value.split("=", 1)
+        if ref not in ALLOWED_AUXILIARY_REFS or ref in result:
+            raise VerificationError(
+                f"invalid or duplicate expected auxiliary ref: {ref!r}"
+            )
+        result[ref] = require_sha(raw_sha, f"expected SHA for auxiliary ref {ref}")
+    return result
+
+
+def sha256_bytes(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def write_private(path: Path, value: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(value)
+    path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+
+
+def run_git(
+    command: Sequence[str], *, cwd: Path | None = None
+) -> subprocess.CompletedProcess[str]:
     try:
-        compact = b"".join(combined.split())
-        bundle = base64.b64decode(compact, validate=True)
-    except (ValueError, binascii.Error) as error:
-        raise SnapshotError(stage, "sealed bundle text is not valid base64") from error
-    if not bundle:
-        raise SnapshotError(stage, "sealed bundle decoded to empty bytes")
-    return bundle
-
-
-def sha256_bytes(content: bytes) -> str:
-    return hashlib.sha256(content).hexdigest()
-
-
-def run_command(
-    arguments: list[str],
-    *,
-    stage: str,
-    cwd: Path | None = None,
-) -> str:
-    process = subprocess.run(
-        arguments,
-        cwd=cwd,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
-    )
-    if process.returncode != 0:
-        detail = (process.stderr or process.stdout).strip().replace("\n", " ")[-1000:]
-        raise SnapshotError(
-            stage,
-            f"command failed ({process.returncode}): {' '.join(arguments)}; {detail}",
+        return subprocess.run(
+            ["git", *command],
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
         )
-    return process.stdout.strip()
+    except FileNotFoundError as error:
+        raise VerificationError("git executable is unavailable") from error
+    except subprocess.CalledProcessError as error:
+        stderr = error.stderr.strip()
+        suffix = f": {stderr}" if stderr else ""
+        raise VerificationError(f"git {' '.join(command)} failed{suffix}") from error
 
 
-def parse_bundle_heads(output: str) -> dict[str, str]:
-    stage = "verify-bundle-heads"
+def parse_bundle_heads(bundle_path: Path) -> Mapping[str, str]:
+    completed = run_git(["bundle", "list-heads", str(bundle_path)])
     observed: dict[str, str] = {}
-    for line in output.splitlines():
-        fields = line.split()
+    for line in completed.stdout.splitlines():
+        fields = line.split(maxsplit=1)
         if len(fields) != 2:
-            raise SnapshotError(stage, f"malformed bundle head line: {line!r}")
-        sha, ref = fields
-        require_sha(sha, stage=stage, label=f"bundle head SHA for {ref}")
+            raise VerificationError("git bundle list-heads returned malformed output")
+        sha = require_sha(fields[0], f"bundle ref {fields[1]} SHA")
+        ref = fields[1]
         if ref in observed:
-            raise SnapshotError(stage, f"duplicate bundle ref: {ref}")
+            raise VerificationError(f"bundle contains duplicate ref {ref}")
         observed[ref] = sha
-    if observed != EXPECTED_HEADS:
-        raise SnapshotError(stage, f"bundle heads differ: {observed!r}")
-    if observed["HEAD"] != observed[EXPECTED_FEATURE_REF]:
-        raise SnapshotError(stage, "bundle HEAD does not resolve to the reviewed feature SHA")
     return observed
 
 
-def verify_bundle(bundle: bytes, work: Path) -> dict[str, str]:
-    stage = "verify-bundle-digest"
-    observed_digest = sha256_bytes(bundle)
-    if observed_digest != BUNDLE_SHA256:
-        raise SnapshotError(
-            stage,
-            f"bundle SHA-256 mismatch: {observed_digest} != {BUNDLE_SHA256}",
-        )
+def validate_bundle_heads(
+    observed_heads: Mapping[str, str],
+    expected_heads: Mapping[str, str],
+    expected_auxiliary_heads: Mapping[str, str],
+) -> tuple[Mapping[str, str], Mapping[str, str]]:
+    """Validate publishable branches separately from non-pushable pseudo-refs."""
 
-    bundle_path = work / "meta-agent-control-plane.bundle"
-    bundle_path.write_bytes(bundle)
-    source_repository = work / "source-repository"
-    run_command(["git", "init", "--quiet", str(source_repository)], stage="initialize-bundle-context")
-    inside = run_command(
-        ["git", "-C", str(source_repository), "rev-parse", "--is-inside-work-tree"],
-        stage="initialize-bundle-context",
-    )
-    if inside != "true":
-        raise SnapshotError("initialize-bundle-context", "source context is not a Git work tree")
-    run_command(
-        ["git", "-C", str(source_repository), "bundle", "verify", str(bundle_path)],
-        stage="verify-bundle-context",
-    )
-    heads_output = run_command(
-        ["git", "bundle", "list-heads", str(bundle_path)],
-        stage="verify-bundle-heads",
-    )
-    return parse_bundle_heads(heads_output)
-
-
-def verify_publisher(content: bytes, work: Path) -> str:
-    stage = "verify-publisher"
-    observed_digest = sha256_bytes(content)
-    if observed_digest != PUBLISHER_SHA256:
-        raise SnapshotError(
-            stage,
-            f"publisher SHA-256 mismatch: {observed_digest} != {PUBLISHER_SHA256}",
-        )
-    publisher = work / "publish_meta_control_plane.py"
-    publisher.write_bytes(content)
-    run_command([sys.executable, "-m", "py_compile", str(publisher)], stage=stage)
-    return observed_digest
-
-
-def verify_snapshot(api: GitHubApi) -> dict[str, Any]:
-    print("source-snapshot-stage=load-source-commit status=running", flush=True)
-    commit = api.get_json(
-        f"/repos/{SOURCE_REPOSITORY}/git/commits/{SOURCE_SHA}",
-        stage="load-source-commit",
-    )
-    observed_commit = require_sha(
-        commit.get("sha"), stage="load-source-commit", label="source commit SHA"
-    )
-    if observed_commit != SOURCE_SHA:
-        raise SnapshotError(
-            "load-source-commit", f"source commit mismatch: {observed_commit} != {SOURCE_SHA}"
-        )
-    tree = commit.get("tree")
-    if not isinstance(tree, dict):
-        raise SnapshotError("load-source-commit", "source commit has no tree object")
-    tree_sha = require_sha(
-        tree.get("sha"), stage="load-source-commit", label="source tree SHA"
-    )
-    print(f"source-snapshot-stage=load-source-commit status=passed tree={tree_sha}", flush=True)
-
-    print("source-snapshot-stage=load-source-tree status=running", flush=True)
-    tree_payload = api.get_json(
-        f"/repos/{SOURCE_REPOSITORY}/git/trees/{tree_sha}?recursive=1",
-        stage="load-source-tree",
-    )
-    assets = select_asset_entries(tree_payload)
-    publisher_path, publisher_sha = select_publisher_entry(tree_payload)
-    print(
-        "source-snapshot-stage=load-source-tree status=passed "
-        f"asset_count={len(assets)} publisher_blob={publisher_sha}",
-        flush=True,
-    )
-
-    print("source-snapshot-stage=decode-source-assets status=running", flush=True)
-    part_contents: list[bytes] = []
-    for index, (path, sha) in enumerate(assets, start=1):
-        blob = api.get_json(
-            f"/repos/{SOURCE_REPOSITORY}/git/blobs/{sha}",
-            stage="decode-source-assets",
-        )
-        part_contents.append(
-            decode_github_blob(
-                blob,
-                expected_sha=sha,
-                stage="decode-source-assets",
-                label=f"asset {index}/{len(assets)} ({path})",
-            )
-        )
-    bundle = decode_bundle_parts(part_contents)
-    print(
-        "source-snapshot-stage=decode-source-assets status=passed "
-        f"encoded_bytes={sum(len(part) for part in part_contents)} bundle_bytes={len(bundle)}",
-        flush=True,
-    )
-
-    with tempfile.TemporaryDirectory(prefix="meta-agent-source-snapshot-") as temporary:
-        work = Path(temporary)
-        print("source-snapshot-stage=verify-bundle status=running", flush=True)
-        heads = verify_bundle(bundle, work)
-        print(
-            "source-snapshot-stage=verify-bundle status=passed "
-            f"bundle_sha256={BUNDLE_SHA256} heads={len(heads)} symbolic_head={heads['HEAD']}",
-            flush=True,
-        )
-
-        print("source-snapshot-stage=verify-publisher status=running", flush=True)
-        publisher_blob = api.get_json(
-            f"/repos/{SOURCE_REPOSITORY}/git/blobs/{publisher_sha}",
-            stage="load-publisher-blob",
-        )
-        publisher_content = decode_github_blob(
-            publisher_blob,
-            expected_sha=publisher_sha,
-            stage="load-publisher-blob",
-            label=publisher_path,
-        )
-        publisher_digest = verify_publisher(publisher_content, work)
-        print(
-            "source-snapshot-stage=verify-publisher status=passed "
-            f"publisher_sha256={publisher_digest}",
-            flush=True,
-        )
-
-    return {
-        "source_repository": SOURCE_REPOSITORY,
-        "source_sha": SOURCE_SHA,
-        "source_tree_sha": tree_sha,
-        "asset_count": len(assets),
-        "asset_paths": [path for path, _ in assets],
-        "bundle_sha256": BUNDLE_SHA256,
-        "bundle_bytes": len(bundle),
-        "heads": heads,
-        "symbolic_head": heads["HEAD"],
-        "publisher_path": publisher_path,
-        "publisher_blob_sha": publisher_sha,
-        "publisher_sha256": publisher_digest,
+    branch_heads = {
+        ref: sha for ref, sha in observed_heads.items() if ref.startswith("refs/heads/")
     }
+    auxiliary_heads = {
+        ref: sha for ref, sha in observed_heads.items() if not ref.startswith("refs/heads/")
+    }
+    if branch_heads != dict(expected_heads):
+        raise VerificationError(
+            "bundle branch refs do not exactly match the reviewed branch inventory"
+        )
+
+    unsupported = sorted(set(auxiliary_heads) - ALLOWED_AUXILIARY_REFS)
+    if unsupported:
+        raise VerificationError(
+            "bundle contains unsupported auxiliary refs: " + ", ".join(unsupported)
+        )
+    if auxiliary_heads != dict(expected_auxiliary_heads):
+        raise VerificationError(
+            "bundle auxiliary refs do not exactly match the reviewed auxiliary inventory"
+        )
+
+    expected_shas = frozenset(expected_heads.values())
+    for ref, sha in auxiliary_heads.items():
+        if sha not in expected_shas:
+            raise VerificationError(
+                f"bundle auxiliary ref {ref} points outside the reviewed branch SHAs"
+            )
+    return branch_heads, auxiliary_heads
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Verify the immutable Meta Agent source snapshot without a repository-admin credential."
+def reconstruct_and_verify(
+    *,
+    client: GitHubClient,
+    source_sha: str,
+    expected_bundle_sha256: str,
+    expected_publisher_sha256: str,
+    expected_heads: Mapping[str, str],
+    output_dir: Path,
+    expected_auxiliary_heads: Mapping[str, str] | None = None,
+) -> SnapshotResult:
+    expected_auxiliary_heads = dict(expected_auxiliary_heads or {})
+    commit = client.commit(source_sha)
+    if require_sha(commit.get("sha"), "source commit SHA") != source_sha:
+        raise VerificationError("source commit response does not match requested SHA")
+    commit_tree = commit.get("tree")
+    if not isinstance(commit_tree, dict):
+        raise VerificationError("source commit is missing its tree object")
+    root_tree_sha = require_sha(commit_tree.get("sha"), "source root tree SHA")
+
+    root_entries = require_tree_entries(client.tree(root_tree_sha), "root")
+    scripts_sha = require_sha(
+        exact_entry(
+            root_entries,
+            path="scripts",
+            entry_type="tree",
+            identity="root",
+        ).get("sha"),
+        "scripts tree SHA",
     )
-    parser.add_argument(
-        "--json-report",
-        type=Path,
-        help="Optional path for a credential-free JSON report.",
+
+    scripts_entries = require_tree_entries(client.tree(scripts_sha), "scripts")
+    fleet_sha = require_sha(
+        exact_entry(
+            scripts_entries,
+            path="critical-org-fleet",
+            entry_type="tree",
+            identity="scripts",
+        ).get("sha"),
+        "critical-org-fleet tree SHA",
     )
-    return parser.parse_args()
+
+    fleet_entries = require_tree_entries(client.tree(fleet_sha), "critical-org-fleet")
+    assets_sha = require_sha(
+        exact_entry(
+            fleet_entries,
+            path="assets",
+            entry_type="tree",
+            identity="critical-org-fleet",
+        ).get("sha"),
+        "assets tree SHA",
+    )
+    publisher_sha = require_sha(
+        exact_entry(
+            fleet_entries,
+            path=PUBLISHER_NAME,
+            entry_type="blob",
+            identity="critical-org-fleet",
+        ).get("sha"),
+        "publisher blob SHA",
+    )
+
+    asset_entries = require_tree_entries(client.tree(assets_sha), "assets")
+    sealed_parts = sorted(
+        (
+            entry
+            for entry in asset_entries
+            if entry.get("type") == "blob"
+            and isinstance(entry.get("path"), str)
+            and ASSET_NAME_PATTERN.fullmatch(str(entry["path"])) is not None
+        ),
+        key=lambda entry: str(entry["path"]),
+    )
+    if not sealed_parts:
+        raise VerificationError("assets tree contains no sealed meta.part files")
+
+    encoded_bundle = bytearray()
+    for entry in sealed_parts:
+        path = str(entry["path"])
+        blob_sha = require_sha(entry.get("sha"), f"assets/{path} blob SHA")
+        encoded_bundle.extend(decode_blob(client.blob(blob_sha), f"assets/{path}"))
+    try:
+        bundle_bytes = base64.b64decode(bytes(encoded_bundle), validate=False)
+    except (ValueError, TypeError) as error:
+        raise VerificationError("sealed bundle base64 is invalid") from error
+    if not bundle_bytes:
+        raise VerificationError("sealed bundle decoded to an empty payload")
+    observed_bundle_sha256 = sha256_bytes(bundle_bytes)
+    if observed_bundle_sha256 != expected_bundle_sha256:
+        raise VerificationError(
+            "sealed bundle SHA-256 does not match the reviewed digest"
+        )
+
+    publisher_bytes = decode_blob(client.blob(publisher_sha), PUBLISHER_NAME)
+    observed_publisher_sha256 = sha256_bytes(publisher_bytes)
+    if observed_publisher_sha256 != expected_publisher_sha256:
+        raise VerificationError(
+            "publisher SHA-256 does not match the reviewed digest"
+        )
+    try:
+        compile(publisher_bytes.decode("utf-8"), PUBLISHER_NAME, "exec")
+    except (UnicodeDecodeError, SyntaxError) as error:
+        raise VerificationError("publisher is not valid UTF-8 Python source") from error
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.chmod(stat.S_IRWXU)
+    bundle_path = output_dir / "meta-agent-control-plane-den-1057.bundle"
+    publisher_path = output_dir / PUBLISHER_NAME
+    write_private(bundle_path, bundle_bytes)
+    write_private(publisher_path, publisher_bytes)
+
+    repository_context = output_dir / "bundle-verification.git"
+    run_git(["init", "--bare", "--quiet", str(repository_context)])
+    run_git(["-C", str(repository_context), "bundle", "verify", str(bundle_path)])
+    observed_heads = parse_bundle_heads(bundle_path)
+    branch_heads, auxiliary_heads = validate_bundle_heads(
+        observed_heads,
+        expected_heads,
+        expected_auxiliary_heads,
+    )
+
+    return SnapshotResult(
+        source_sha=source_sha,
+        source_tree_sha=root_tree_sha,
+        asset_count=len(sealed_parts),
+        bundle_sha256=observed_bundle_sha256,
+        publisher_sha256=observed_publisher_sha256,
+        heads=branch_heads,
+        auxiliary_heads=auxiliary_heads,
+        bundle_path=bundle_path,
+        publisher_path=publisher_path,
+    )
 
 
-def main() -> int:
-    args = parse_args()
+def parse_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repository", default=DEFAULT_REPOSITORY)
+    parser.add_argument("--source-sha", required=True)
+    parser.add_argument("--bundle-sha256", required=True)
+    parser.add_argument("--publisher-sha256", required=True)
+    parser.add_argument("--expected-head", action="append", default=[])
+    parser.add_argument("--expected-auxiliary-head", action="append", default=[])
+    parser.add_argument("--output-dir", type=Path, required=True)
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(sys.argv[1:] if argv is None else argv)
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
     try:
-        report = verify_snapshot(GitHubApi(token))
-    except SnapshotError as error:
-        detail = str(error).replace("\n", " ")[:1200]
-        print(
-            f"source-snapshot-stage={error.stage} status=failed detail={detail}",
-            file=sys.stderr,
-            flush=True,
+        source_sha = require_sha(args.source_sha, "source SHA")
+        bundle_sha256 = require_sha256(args.bundle_sha256, "bundle SHA-256")
+        publisher_sha256 = require_sha256(
+            args.publisher_sha256, "publisher SHA-256"
         )
+        expected_heads = parse_expected_heads(args.expected_head)
+        expected_auxiliary_heads = parse_expected_auxiliary_heads(
+            args.expected_auxiliary_head
+        )
+        for ref, sha in expected_auxiliary_heads.items():
+            if sha not in frozenset(expected_heads.values()):
+                raise VerificationError(
+                    f"expected auxiliary ref {ref} points outside expected branch SHAs"
+                )
+        result = reconstruct_and_verify(
+            client=GitHubClient(token, args.repository),
+            source_sha=source_sha,
+            expected_bundle_sha256=bundle_sha256,
+            expected_publisher_sha256=publisher_sha256,
+            expected_heads=expected_heads,
+            expected_auxiliary_heads=expected_auxiliary_heads,
+            output_dir=args.output_dir.resolve(),
+        )
+    except VerificationError as error:
+        print(f"meta-agent-source-snapshot status=failed reason={error}", file=sys.stderr)
         return 1
-
-    if args.json_report is not None:
-        args.json_report.parent.mkdir(parents=True, exist_ok=True)
-        args.json_report.write_text(
-            json.dumps(report, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-    print("source-snapshot-stage=complete status=passed", flush=True)
+    print(result.sanitized_json())
     return 0
 
 

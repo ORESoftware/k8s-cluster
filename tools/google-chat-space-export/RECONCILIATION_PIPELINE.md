@@ -12,6 +12,12 @@ The Google Chat export is private input. The only supported path into the determ
 
 Raw message bodies, attachment metadata from quarantined messages, credential values, phone numbers, and private operational addresses must never be committed, copied into Linear, or included in pull-request descriptions.
 
+## Scheduled execution
+
+The daily workflow runs at 20:00 America/Chicago with a DST-aware dual-UTC gate. Pull requests execute only contract validation. Scheduled and manual executions read `CHAT_BRIDGE_TOKEN` from the protected repository Actions secret, create an exact 15-day UTC window, and keep raw pages, sanitized pages, the import plan, and coverage input only in a mode-restricted `RUNNER_TEMP` directory.
+
+Only three content-free files may leave that private directory: the fetch summary, safety report, and reconciliation receipt. The receipt starts from empty evidence and therefore fails the job whenever an actionable candidate lacks verified Linear and implementation references. This is an intentional gap signal for a separately controlled apply/review pass, not a false-green claim that GitHub Actions performed agentic reconciliation.
+
 ## Fetch
 
 ```bash
@@ -44,13 +50,14 @@ The sanitizer keeps source keys, timestamps, thread routing, and non-content pro
 node tools/google-chat-space-export/import-plan.mjs \
   --input ./private/google-chat-sanitized \
   --since 2026-06-05T04:00:00.000Z \
+  --until 2026-06-20T04:00:00.000Z \
   --existing-index ./private/linear-issue-index.json \
   --project-map tools/google-chat-space-export/import-project-map.example.json \
   --json ./private/google-chat-import-plan.json \
   --markdown ./private/google-chat-import-plan.md
 ```
 
-`--since` may only narrow the fixed May 10 bridge boundary. Deduplication is computed across all supplied messages, while `plannedMessages` and `windowedOutMessages` describe the selected window.
+`--since` may only narrow the fixed May 10 bridge boundary. `--until` is exclusive and must be later than the effective start. Use both for the same exact window on the initial and post-apply runs; the bounds are part of the plan ID. Deduplication is computed across all supplied messages, while `plannedMessages` and `windowedOutMessages` describe the selected window.
 
 Do not point the planner directly at the raw export. The integration test `reconciliation-pipeline.test.mjs` proves that quarantined secrets and contact values are absent from both the safety report and resulting plan while deterministic provenance survives.
 

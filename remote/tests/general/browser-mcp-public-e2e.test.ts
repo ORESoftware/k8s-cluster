@@ -15,12 +15,20 @@ const workflow = readFileSync(resolve(root, '.github/workflows/browser-mcp-publi
 const verifier = readFileSync(resolve(root, 'scripts/verify-browser-mcp.sh'), 'utf8');
 
 test('pull requests run only credential-free workflow contracts', () => {
+  const triggerBlock = workflow.slice(0, workflow.indexOf('\npermissions:'));
+
   assert.match(workflow, /pull_request:/);
   assert.match(workflow, /live:[\s\S]*if: github\.event_name != 'pull_request'/);
   assert.match(workflow, /publish:[\s\S]*if: always\(\) && github\.event_name != 'pull_request'/);
   assert.match(workflow, /contract:[\s\S]*persist-credentials: false/);
   assert.match(workflow, /actionlint@sha256:[0-9a-f]{64}/);
   assert.match(workflow, /browser-mcp-public-e2e\.test\.ts/);
+  assert.match(triggerBlock, /^  workflow_dispatch:/m);
+  assert.doesNotMatch(triggerBlock, /^  push:/m);
+  assert.match(
+    workflow,
+    /browser-mcp-public-oauth-e2e-\$\{\{ github\.event_name == 'pull_request' && github\.ref \|\| 'live' \}\}/,
+  );
 });
 
 test('the live workflow uses OIDC and keeps the operator secret inside AWS', () => {
@@ -111,6 +119,17 @@ test('credential-free publisher writes only the sanitized result branch', () => 
   assert.match(publish, /browser-mcp\/latest\.json/);
   assert.match(publish, /\.failure_phase/);
   assert.match(publish, /Validate result contains no credentials/);
+  assert.match(publish, /git ls-remote --exit-code --heads origin/);
+  assert.match(
+    publish,
+    /\+refs\/heads\/\$RESULTS_BRANCH:refs\/remotes\/origin\/\$RESULTS_BRANCH/,
+  );
+  assert.match(publish, /git rm -rf --ignore-unmatch \./);
+  assert.match(
+    publish,
+    /git push origin "HEAD:refs\/heads\/\$RESULTS_BRANCH"/,
+  );
+  assert.doesNotMatch(publish, /git fetch origin "\$RESULTS_BRANCH" \|\| true/);
   assert.doesNotMatch(publish, /HEAD:main/);
 });
 

@@ -18,7 +18,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-05-31-browser-job-runner'
+        dd.dev/telemetry-revision: '2026-08-22-browser-job-metering-v1'
       labels:
         app: dd-browser-job-runner
     spec:
@@ -60,6 +60,43 @@ spec:
               value: dd.remote.browser_jobs
             - name: BROWSER_JOB_NATS_RESULT_SUBJECT
               value: dd.remote.browser_jobs.results
+            # Content-free, replay-safe usage metering. Existing callers remain
+            # compatible while they adopt the optional request `metering` object;
+            # set REQUIRE=true only after every authorized caller sends opaque
+            # tenant/actor/automation/product ids.
+            - name: BROWSER_JOB_METERING_ENABLED
+              value: 'true'
+            - name: BROWSER_JOB_REQUIRE_METERING_CONTEXT
+              value: 'false'
+            - name: BROWSER_JOB_METERING_USAGE_SUBJECT
+              value: dd.remote.browser_jobs.usage
+            - name: BROWSER_JOB_METERING_KV_BUCKET
+              value: DD_BROWSER_USAGE
+            # Thirty-day periods aligned to Unix time. Policy thresholds and
+            # quotas are independent of any billing-provider API.
+            - name: BROWSER_JOB_METERING_PERIOD_SECONDS
+              value: '2592000'
+            - name: BROWSER_JOB_METERING_MAX_RUN_IDS_PER_PERIOD
+              value: '10000'
+            - name: BROWSER_JOB_CONTACT_EMAIL_SUBJECT
+              value: dd.remote.contact.email.send
+            # Optional JSON policy document. Keeping it in the existing protected
+            # agent secret prevents recipient addresses from entering Git.
+            - name: BROWSER_JOB_METERING_POLICIES_JSON
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: BROWSER_JOB_METERING_POLICIES_JSON
+                  optional: true
+            # The contact service enforces this value when its NATS auth gate is
+            # configured. It is used only on the mail request and never stored in
+            # usage events, logs, metrics, worker specs, or browser containers.
+            - name: BROWSER_JOB_CONTACT_NATS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-email-sms-contact-secrets
+                  key: NATS_SHARED_SECRET
+                  optional: true
             # Primary path: lease a warm worker from dd-container-pool over NATS
             # request/reply. The 'browser-jobs' pool is defined in the container-pool
             # app-config seed (remote/databases/pg/seeds/container-pool-app-config.sql).

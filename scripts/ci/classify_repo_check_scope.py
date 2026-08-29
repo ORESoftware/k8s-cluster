@@ -67,13 +67,27 @@ GOVERNANCE_PREFIXES = (
 # limited to this exact set has no dependency on remote/libs or private
 # deployment gitlinks, so the broad credential-backed jobs add no coverage.
 CREDENTIAL_FREE_CONTRACT_FILES = {
+    ".github/workflows/athleto-ui-tests.yml",
     ".github/workflows/ephemeral-google-chat-relay-cleanup.yml",
     ".github/workflows/google-chat-relay-contract.yml",
+    ".github/workflows/browser-mcp-external-smoke.yml",
+    ".github/workflows/browser-mcp-public-e2e.yml",
     ".github/workflows/den-319-private-fleet-contracts.yml",
+    ".github/workflows/github-app-submodule-auth.yml",
+    ".github/workflows/namespace-migration-contract.yml",
     ".github/workflows/repo-check-scope-contract.yml",
+    "catalog/namespaces/migration-manifest.json",
+    "config/ci/k8s-submodule-github-app-allowlist.json",
+    "remote/tests/general/browser-mcp-public-e2e.test.ts",
+    "remote/tests/general/github-app-submodule-token.test.ts",
+    "remote/tests/general/private-submodule-ci-contract.test.ts",
+    "remote/tests/general/scheduled-live-smoke-contract.test.mjs",
+    "remote/tests/ui/lib/harness.mjs",
+    "remote/tests/ui/lib/live-targets.mjs",
     "scripts/ops/repository_rename_alias_guard.py",
     "scripts/ops/test_repository_rename_alias_guard.py",
     "tools/google-chat-space-export/test_relay_workflows.py",
+    "tools/test_namespace_manifest.py",
 }
 
 

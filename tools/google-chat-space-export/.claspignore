@@ -4,4 +4,5 @@
 **/*
 !App.gs
 !EmailExport.gs
+!ScheduledTaskDigest.gs
 !appsscript.json

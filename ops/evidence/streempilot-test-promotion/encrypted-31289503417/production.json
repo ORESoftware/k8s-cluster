@@ -1,0 +1,61 @@
+{
+  "canonical_organization": "StreemPilot",
+  "expected_repositories": [
+    "StreemPilot/streempilot-compositor.rs",
+    "StreemPilot/streempilot-destinations",
+    "StreemPilot/streempilot-recording.rs",
+    "StreemPilot/streempilot-webrtc-adapter.rs"
+  ],
+  "generator_sha256": "a57b00961ee57ae09bf3bb2e2d09afbdd1ddbbbde832b027802f82a1fc5dfa84",
+  "repositories": [
+    {
+      "canonical_full_name": "StreemPilot/streempilot-compositor.rs",
+      "default_branch": "main",
+      "disposition": "preserved",
+      "expected_sealed_sha": "ea7c1c8042122b4e4a7689aee026113fb607421d",
+      "html_url": "https://github.com/StreemPilot/streempilot-compositor.rs",
+      "main_sha": "ea7c1c8042122b4e4a7689aee026113fb607421d",
+      "repository_id": 1328337087,
+      "target_full_name": "StreemPilot/streempilot-compositor.rs",
+      "visibility": "private"
+    },
+    {
+      "canonical_full_name": "StreemPilot/streempilot-destinations",
+      "default_branch": "main",
+      "disposition": "created-or-reconciled",
+      "expected_sealed_sha": "acaff0ab1fcbbae82eb52c72120a6edb10243a77",
+      "html_url": "https://github.com/StreemPilot/streempilot-destinations",
+      "main_sha": "acaff0ab1fcbbae82eb52c72120a6edb10243a77",
+      "repository_id": 1328341045,
+      "target_full_name": "StreemPilot/streempilot-destinations",
+      "visibility": "private"
+    },
+    {
+      "canonical_full_name": "StreemPilot/streempilot-recording.rs",
+      "default_branch": "main",
+      "disposition": "created-or-reconciled",
+      "expected_sealed_sha": "8145e4717a9906c759ada560bff28adbda68667c",
+      "html_url": "https://github.com/StreemPilot/streempilot-recording.rs",
+      "main_sha": "8145e4717a9906c759ada560bff28adbda68667c",
+      "repository_id": 1328341076,
+      "target_full_name": "StreemPilot/streempilot-recording.rs",
+      "visibility": "private"
+    },
+    {
+      "canonical_full_name": "StreemPilot/streempilot-webrtc-adapter.rs",
+      "default_branch": "main",
+      "disposition": "created-or-reconciled",
+      "expected_sealed_sha": "471360a2ceba65432e542f5ef58caac83b645210",
+      "html_url": "https://github.com/StreemPilot/streempilot-webrtc-adapter.rs",
+      "main_sha": "471360a2ceba65432e542f5ef58caac83b645210",
+      "repository_id": 1328341127,
+      "target_full_name": "StreemPilot/streempilot-webrtc-adapter.rs",
+      "visibility": "private"
+    }
+  ],
+  "schema_version": 1,
+  "sealed_source_repository": "ORESoftware/ai-agent-coordinator.rs",
+  "sealed_source_sha": "5d9a0c2cb44dff607bc3953954ce4b9af08e5789",
+  "target": "production",
+  "target_organization": "StreemPilot"
+}

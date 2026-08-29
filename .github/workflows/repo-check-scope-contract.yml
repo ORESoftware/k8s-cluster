@@ -3,12 +3,14 @@ name: Repository check scope contract
 on:
   pull_request:
     paths:
+      - .github/workflows/repo-checks.yml
       - .github/workflows/repo-check-scope-contract.yml
       - scripts/ci/classify_repo_check_scope.py
       - scripts/ci/test_classify_repo_check_scope.py
   push:
     branches: [main]
     paths:
+      - .github/workflows/repo-checks.yml
       - .github/workflows/repo-check-scope-contract.yml
       - scripts/ci/classify_repo_check_scope.py
       - scripts/ci/test_classify_repo_check_scope.py
@@ -46,6 +48,7 @@ jobs:
           set -euo pipefail
           git diff --check
           ! git grep -nE '^(<{7}|={7}|>{7})' -- \
+            .github/workflows/repo-checks.yml \
             .github/workflows/repo-check-scope-contract.yml \
             scripts/ci/classify_repo_check_scope.py \
             scripts/ci/test_classify_repo_check_scope.py

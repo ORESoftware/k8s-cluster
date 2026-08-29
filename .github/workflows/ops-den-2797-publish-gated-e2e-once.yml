@@ -1,0 +1,83 @@
+name: Publish gated Wave 7 E2E repositories once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-den-2797-publish-gated-e2e-once.yml
+      - scripts/den-2797-gated-e2e-*.sh
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: den-2797-wave7-gated-e2e-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      CONTROL_REPOSITORY: ${{ github.repository }}
+      CONTROL_BRANCH: main
+      CONTROL_TOKEN: ${{ github.token }}
+      HANDSHAKE_NONCE: 8c2f3e5a9b7d4c6e1f0a2b3c4d5e6f70
+      PUBLIC_KEY_PATH: .github/tmp/den-2797-gated-e2e-8c2f3e5a9b7d4c6e1f0a2b3c4d5e6f70.pub.pem
+      CIPHERTEXT_PATH: .github/tmp/den-2797-gated-e2e-8c2f3e5a9b7d4c6e1f0a2b3c4d5e6f70.enc.b64
+      WORKFLOW_PATH: .github/workflows/ops-den-2797-publish-gated-e2e-once.yml
+      EVIDENCE_PATH: docs/evidence/den-2797-gated-e2e-publication-2026-08-09.json
+      APOSTILLE_SOURCE_SHA: 2e9b51f20b2e95764ad56bc467f9b956a2a034db
+      EMBEDDED_SOURCE_SHA: 9b7f01145b475e13b10fb84f1ea8fce88054b5f6
+
+    steps:
+      - name: Check out exact trusted main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+          show-progress: false
+
+      - name: Validate fixed one-shot scope
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REPOSITORY" = ORESoftware/k8s-cluster
+          test "$GITHUB_REF" = refs/heads/main
+          test "$APOSTILLE_SOURCE_SHA" = 2e9b51f20b2e95764ad56bc467f9b956a2a034db
+          test "$EMBEDDED_SOURCE_SHA" = 9b7f01145b475e13b10fb84f1ea8fce88054b5f6
+          test -x scripts/den-2797-gated-e2e-prepare.sh
+          test -x scripts/den-2797-gated-e2e-receive.sh
+          test -x scripts/den-2797-gated-e2e-publish.sh
+          test -x scripts/den-2797-gated-e2e-finalize.sh
+          test -x scripts/den-2797-gated-e2e-scrub.sh
+          if grep -RIE --line-number --exclude='*.md' \
+            '(push[[:space:]]+--force|push[[:space:]]+-f|reset[[:space:]]+--hard|rebase|filter-branch|filter-repo)' \
+            scripts/den-2797-gated-e2e-*.sh; then
+            echo "prohibited history-rewrite operation found" >&2
+            exit 51
+          fi
+
+      - name: Prepare and validate immutable E2E sources
+        run: bash scripts/den-2797-gated-e2e-prepare.sh
+
+      - name: Receive one-time encrypted owner credential
+        run: bash scripts/den-2797-gated-e2e-receive.sh
+
+      - name: Create and publish exact targets without force
+        run: bash scripts/den-2797-gated-e2e-publish.sh
+
+      - name: Persist evidence and remove one-shot controls
+        if: success()
+        run: bash scripts/den-2797-gated-e2e-finalize.sh
+
+      - name: Scrub local credential and work material
+        if: always()
+        run: bash scripts/den-2797-gated-e2e-scrub.sh
