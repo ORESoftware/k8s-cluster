@@ -20,13 +20,19 @@ spec:
     metadata:
       annotations:
         dd.dev/telemetry-revision: '2026-06-07-gateway-quoted-regex'
-        dd.dev/gateway-config-revision: '2026-08-11-gha-budget-webhook'
+        dd.dev/gateway-config-revision: '2026-08-19-gha-webhook-no-retry'
       labels:
         app: dd-remote-gateway
     spec:
       priorityClassName: system-cluster-critical
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
+      securityContext:
+        # The main nginx master still starts as root so it can bind host ports
+        # 80/443, but the config renderer is non-root and needs a writable group
+        # on only the generated-template EmptyDir.
+        fsGroup: 101
+        fsGroupChangePolicy: OnRootMismatch
       tolerations:
         - key: node-role.kubernetes.io/control-plane
           operator: Exists
@@ -34,6 +40,76 @@ spec:
         - key: node-role.kubernetes.io/master
           operator: Exists
           effect: NoSchedule
+      initContainers:
+        - name: render-webhook-no-retry-config
+          image: docker.io/library/nginx:1.27-alpine
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-ceu"]
+          args:
+            - |
+              input=/config-source/default.conf.template
+              output=/config-rendered/default.conf.template
+              block=/config-rendered/gha-webhook.location
+
+              test "$(grep -Fxc '      location = /gha-webhooks/github {' "$input")" -eq 1
+              awk '
+                /^      location = \/gha-webhooks\/github \{$/ { capture = 1 }
+                /^      # Inbound webhooks from GitHub/ { capture = 0 }
+                capture { print }
+              ' "$input" >"$block"
+              test "$(grep -Fxc '        proxy_buffering off;' "$block")" -eq 1
+
+              request_buffering_count="$(grep -Fxc '        proxy_request_buffering off;' "$block" || true)"
+              retry_count="$(grep -Fxc '        proxy_next_upstream off;' "$block" || true)"
+              case "${request_buffering_count}:${retry_count}" in
+                0:0)
+                  awk '
+                    /^      location = \/gha-webhooks\/github \{$/ { in_webhook = 1 }
+                    /^      # Inbound webhooks from GitHub/ { in_webhook = 0 }
+                    { print }
+                    in_webhook && /^        proxy_buffering off;$/ {
+                      print "        proxy_request_buffering off;"
+                      print "        proxy_next_upstream off;"
+                      inserted += 1
+                    }
+                    END { if (inserted != 1) exit 42 }
+                  ' "$input" >"$output"
+                  ;;
+                1:1)
+                  cp "$input" "$output"
+                  ;;
+                *)
+                  echo 'partial or duplicate webhook no-retry directives; refusing to start' >&2
+                  exit 43
+                  ;;
+              esac
+
+              test -s "$output"
+              rm -f "$block"
+              chmod 0444 "$output"
+          resources:
+            requests:
+              cpu: 1m
+              memory: 8Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 101
+            runAsGroup: 101
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: config-source
+              mountPath: /config-source
+              readOnly: true
+            - name: config-rendered
+              mountPath: /config-rendered
       containers:
         - name: gateway
           image: docker.io/library/nginx:1.27-alpine
@@ -104,9 +180,10 @@ spec:
               cpu: 500m
               memory: 256Mi
           volumeMounts:
-            - name: config
+            - name: config-rendered
               mountPath: /etc/nginx/templates/default.conf.template
               subPath: default.conf.template
+              readOnly: true
             - name: tls
               mountPath: /etc/nginx/tls
               readOnly: true
@@ -114,9 +191,12 @@ spec:
               mountPath: /var/www/acme
               readOnly: true
       volumes:
-        - name: config
+        - name: config-source
           configMap:
             name: dd-remote-gateway-config
+        - name: config-rendered
+          emptyDir:
+            sizeLimit: 1Mi
         - name: tls
           secret:
             secretName: dd-remote-gateway-tls
