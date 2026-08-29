@@ -1158,6 +1158,201 @@
       "name": "dd-daedalus-api-server"
     },
     {
+      "declaration_count": 2,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "arc-systems-daedalus",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 1,
+          "manifest_path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "gha-runner-scale-set-controller",
+              "path": "",
+              "repo_url": "ghcr.io/actions/actions-runner-controller-charts",
+              "target_revision": "0.14.2"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        },
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "arc-systems-daedalus",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 1,
+          "manifest_path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "gha-runner-scale-set-controller",
+              "path": "",
+              "repo_url": "ghcr.io/actions/actions-runner-controller-charts",
+              "target_revision": "0.14.2"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": true,
+      "name": "dd-daedalus-ci-arc-controller"
+    },
+    {
+      "declaration_count": 2,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "arc-runners-daedalus",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/ci-runners/daedalus-fab/base",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": true,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        },
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "arc-runners-daedalus",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/ci-runners/daedalus-fab/base",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": true,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": true,
+      "name": "dd-daedalus-ci-runner-prereqs"
+    },
+    {
+      "declaration_count": 2,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "arc-runners-daedalus",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 2,
+          "manifest_path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "gha-runner-scale-set",
+              "path": "",
+              "repo_url": "ghcr.io/actions/actions-runner-controller-charts",
+              "target_revision": "0.14.2"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        },
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "arc-runners-daedalus",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 2,
+          "manifest_path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "gha-runner-scale-set",
+              "path": "",
+              "repo_url": "ghcr.io/actions/actions-runner-controller-charts",
+              "target_revision": "0.14.2"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": true,
+      "name": "dd-daedalus-ci-runner-set"
+    },
+    {
       "declaration_count": 1,
       "declarations": [
         {
@@ -1714,6 +1909,42 @@
       ],
       "duplicate_name": false,
       "name": "dd-gleamlang-ws-loadtest-gcs"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "ores-dev",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/apps/dd-grpc-pg-general-connect-server.application.yaml",
+          "project": "grpc-pg-contracts",
+          "sources": [
+            {
+              "chart": "",
+              "path": "deploy/k8s",
+              "repo_url": "git@github.com:ORESoftware/grpc-pg-general-connect-server.git",
+              "target_revision": "37ac95d7be22729bac4a46be99b56a8517abea44"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": false,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "PruneLast=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-grpc-pg-general-connect-server"
     },
     {
       "declaration_count": 1,
@@ -2596,6 +2827,42 @@
       ],
       "duplicate_name": false,
       "name": "dd-routing-server"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "default",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/aws/scheduled-task-digest.application.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/scheduled-task-digest",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": true,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-scheduled-task-digest"
     },
     {
       "declaration_count": 3,
@@ -4677,201 +4944,6 @@
       ],
       "duplicate_name": true,
       "name": "zed-tenant-bootstrap"
-    },
-    {
-      "declaration_count": 2,
-      "declarations": [
-        {
-          "application_namespace": "argocd",
-          "destination": {
-            "name": "",
-            "namespace": "arc-systems-daedalus",
-            "server": "https://kubernetes.default.svc"
-          },
-          "document_index": 1,
-          "manifest_path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
-          "project": "default",
-          "sources": [
-            {
-              "chart": "gha-runner-scale-set-controller",
-              "path": "",
-              "repo_url": "ghcr.io/actions/actions-runner-controller-charts",
-              "target_revision": "0.14.2"
-            }
-          ],
-          "sync_policy": {
-            "automated": false,
-            "create_namespace": true,
-            "prune": false,
-            "self_heal": false,
-            "sync_options": [
-              "CreateNamespace=true",
-              "ServerSideApply=true"
-            ]
-          }
-        },
-        {
-          "application_namespace": "argocd",
-          "destination": {
-            "name": "",
-            "namespace": "arc-systems-daedalus",
-            "server": "https://kubernetes.default.svc"
-          },
-          "document_index": 1,
-          "manifest_path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
-          "project": "default",
-          "sources": [
-            {
-              "chart": "gha-runner-scale-set-controller",
-              "path": "",
-              "repo_url": "ghcr.io/actions/actions-runner-controller-charts",
-              "target_revision": "0.14.2"
-            }
-          ],
-          "sync_policy": {
-            "automated": false,
-            "create_namespace": true,
-            "prune": false,
-            "self_heal": false,
-            "sync_options": [
-              "CreateNamespace=true",
-              "ServerSideApply=true"
-            ]
-          }
-        }
-      ],
-      "duplicate_name": true,
-      "name": "dd-daedalus-ci-arc-controller"
-    },
-    {
-      "declaration_count": 2,
-      "declarations": [
-        {
-          "application_namespace": "argocd",
-          "destination": {
-            "name": "",
-            "namespace": "arc-runners-daedalus",
-            "server": "https://kubernetes.default.svc"
-          },
-          "document_index": 0,
-          "manifest_path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
-          "project": "default",
-          "sources": [
-            {
-              "chart": "",
-              "path": "remote/argocd/ci-runners/daedalus-fab/base",
-              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
-              "target_revision": "dev"
-            }
-          ],
-          "sync_policy": {
-            "automated": true,
-            "create_namespace": true,
-            "prune": true,
-            "self_heal": true,
-            "sync_options": [
-              "CreateNamespace=true",
-              "ServerSideApply=true"
-            ]
-          }
-        },
-        {
-          "application_namespace": "argocd",
-          "destination": {
-            "name": "",
-            "namespace": "arc-runners-daedalus",
-            "server": "https://kubernetes.default.svc"
-          },
-          "document_index": 0,
-          "manifest_path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
-          "project": "default",
-          "sources": [
-            {
-              "chart": "",
-              "path": "remote/argocd/ci-runners/daedalus-fab/base",
-              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
-              "target_revision": "dev"
-            }
-          ],
-          "sync_policy": {
-            "automated": true,
-            "create_namespace": true,
-            "prune": true,
-            "self_heal": true,
-            "sync_options": [
-              "CreateNamespace=true",
-              "ServerSideApply=true"
-            ]
-          }
-        }
-      ],
-      "duplicate_name": true,
-      "name": "dd-daedalus-ci-runner-prereqs"
-    },
-    {
-      "declaration_count": 2,
-      "declarations": [
-        {
-          "application_namespace": "argocd",
-          "destination": {
-            "name": "",
-            "namespace": "arc-runners-daedalus",
-            "server": "https://kubernetes.default.svc"
-          },
-          "document_index": 2,
-          "manifest_path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
-          "project": "default",
-          "sources": [
-            {
-              "chart": "gha-runner-scale-set",
-              "path": "",
-              "repo_url": "ghcr.io/actions/actions-runner-controller-charts",
-              "target_revision": "0.14.2"
-            }
-          ],
-          "sync_policy": {
-            "automated": false,
-            "create_namespace": true,
-            "prune": false,
-            "self_heal": false,
-            "sync_options": [
-              "CreateNamespace=true",
-              "ServerSideApply=true"
-            ]
-          }
-        },
-        {
-          "application_namespace": "argocd",
-          "destination": {
-            "name": "",
-            "namespace": "arc-runners-daedalus",
-            "server": "https://kubernetes.default.svc"
-          },
-          "document_index": 2,
-          "manifest_path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
-          "project": "default",
-          "sources": [
-            {
-              "chart": "gha-runner-scale-set",
-              "path": "",
-              "repo_url": "ghcr.io/actions/actions-runner-controller-charts",
-              "target_revision": "0.14.2"
-            }
-          ],
-          "sync_policy": {
-            "automated": false,
-            "create_namespace": true,
-            "prune": false,
-            "self_heal": false,
-            "sync_options": [
-              "CreateNamespace=true",
-              "ServerSideApply=true"
-            ]
-          }
-        }
-      ],
-      "duplicate_name": true,
-      "name": "dd-daedalus-ci-runner-set"
     }
   ],
   "policy_violations": {
@@ -4884,12 +4956,12 @@
     "source": "tracked Argo CD Application manifests"
   },
   "summary": {
-    "application_documents": 141,
-    "applications": 102,
-    "default_destination_namespace_declarations": 55,
-    "default_project_declarations": 106,
-    "duplicate_names": 22,
+    "application_documents": 149,
+    "applications": 104,
+    "default_destination_namespace_declarations": 56,
+    "default_project_declarations": 113,
+    "duplicate_names": 25,
     "gitlink_render_path_violations": 0,
-    "in_repo_source_declarations": 93
+    "in_repo_source_declarations": 96
   }
 }

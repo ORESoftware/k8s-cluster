@@ -185,3 +185,7 @@
 	path = remote/deployments/push-notification-server.rs
 	url = git@github.com:ORESoftware/push-notification-server.rs.git
 	branch = main
+[submodule "remote/deployments/grpc-pg-general-connect-server"]
+	path = remote/deployments/grpc-pg-general-connect-server
+	url = git@github.com:ORESoftware/grpc-pg-general-connect-server.git
+	branch = main

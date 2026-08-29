@@ -1,0 +1,67 @@
+name: gRPC PostgreSQL contract fleet
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - '.github/workflows/grpc-pg-contract-fleet.yml'
+      - '.gitmodules'
+      - 'catalog/gitops/apps/dd-grpc-pg-general-connect-server.json'
+      - 'remote/api-contracts/upstream-pins/grpc-pg-general-connect-server.json'
+      - 'remote/argocd/apps/dd-grpc-pg-general-connect-server.application.yaml'
+      - 'remote/argocd/projects/grpc-pg-contracts.appproject.yaml'
+      - 'remote/config/api-contracts.json'
+      - 'remote/deployments/grpc-pg-general-connect-server'
+      - 'remote/libs'
+      - 'remote/tools/check-upstream-contract-pins.mjs'
+  push:
+    branches: [dev, main]
+    paths:
+      - '.github/workflows/grpc-pg-contract-fleet.yml'
+      - '.gitmodules'
+      - 'catalog/gitops/apps/dd-grpc-pg-general-connect-server.json'
+      - 'remote/api-contracts/upstream-pins/grpc-pg-general-connect-server.json'
+      - 'remote/argocd/apps/dd-grpc-pg-general-connect-server.application.yaml'
+      - 'remote/argocd/projects/grpc-pg-contracts.appproject.yaml'
+      - 'remote/config/api-contracts.json'
+      - 'remote/deployments/grpc-pg-general-connect-server'
+      - 'remote/libs'
+      - 'remote/tools/check-upstream-contract-pins.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: grpc-pg-contract-fleet-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Exact source and shared-definition pins
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout without private gitlinks
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Setup Node.js 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Validate exact source and dependency pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check remote/tools/check-upstream-contract-pins.mjs
+          node remote/tools/check-upstream-contract-pins.mjs \
+            --service grpc-pg-general-connect-server
+          test "$(git ls-files --stage remote/deployments/grpc-pg-general-connect-server | awk '{print $1}')" = '160000'
+          test "$(git ls-files --stage remote/libs | awk '{print $1}')" = '160000'
+          git diff --exit-code
+          test -z "$(git status --short)"

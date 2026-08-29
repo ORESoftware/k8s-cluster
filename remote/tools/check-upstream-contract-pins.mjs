@@ -12,6 +12,29 @@ const repoRoot = resolve(scriptDirectory, '..', '..');
 const pinsDirectory = resolve(repoRoot, 'remote/api-contracts/upstream-pins');
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
 const SERVICE_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
+const VERIFICATION_STATES = new Set([
+  'local-reproducible-upstream-ci-not-started',
+  'upstream-ci-verified-parent-digest-pending',
+]);
+
+function selectedServices(argv) {
+  const selected = new Set();
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    let service = null;
+    if (argument === '--service') {
+      index += 1;
+      service = argv[index];
+    } else if (argument.startsWith('--service=')) {
+      service = argument.slice('--service='.length);
+    } else {
+      assert.fail(`unsupported argument: ${argument}`);
+    }
+    assert.match(service ?? '', SERVICE_PATTERN, '--service must name a valid service');
+    selected.add(service);
+  }
+  return selected;
+}
 
 function git(args) {
   return execFileSync('git', args, {
@@ -62,10 +85,17 @@ function githubRepositoryFromUrl(rawUrl) {
 }
 
 async function main() {
+  const selected = selectedServices(process.argv.slice(2));
   assert.ok(existsSync(pinsDirectory), 'remote/api-contracts/upstream-pins is missing');
-  const files = (await readdir(pinsDirectory))
+  let files = (await readdir(pinsDirectory))
     .filter((name) => name.endsWith('.json'))
     .sort();
+  if (selected.size > 0) {
+    files = files.filter((name) => selected.has(name.slice(0, -'.json'.length)));
+    for (const service of selected) {
+      assert.ok(files.includes(`${service}.json`), `missing pin document for ${service}`);
+    }
+  }
   assert.ok(files.length > 0, 'no upstream contract pin documents were found');
 
   const gitmodules = await readFile(resolve(repoRoot, '.gitmodules'), 'utf8');
@@ -101,10 +131,9 @@ async function main() {
       document.rollbackCommit,
       `${document.service} accepted and rollback commits must differ`,
     );
-    assert.equal(
-      document.contractVerification,
-      'upstream-ci-verified-parent-digest-pending',
-      `${document.service} contract verification state drifted`,
+    assert.ok(
+      VERIFICATION_STATES.has(document.contractVerification),
+      `${document.service} contract verification state is unsupported`,
     );
 
     const sourcePr = new URL(document.sourcePullRequest);
@@ -141,6 +170,50 @@ async function main() {
       `${deploymentPath} .gitmodules URL drifted`,
     );
 
+    const contractDependencies = document.contractDependencies ?? [];
+    assert.ok(
+      Array.isArray(contractDependencies),
+      `${document.service}.contractDependencies must be an array`,
+    );
+    const seenDependencyPaths = new Set();
+    for (const [dependencyIndex, dependency] of contractDependencies.entries()) {
+      const label = `${document.service}.contractDependencies[${dependencyIndex}]`;
+      assert.equal(
+        typeof dependency,
+        'object',
+        `${label} must be an object`,
+      );
+      assert.ok(dependency !== null && !Array.isArray(dependency), `${label} must be an object`);
+      assert.match(dependency.role, SERVICE_PATTERN, `${label}.role is invalid`);
+      assertRepoPath(dependency.path, `${label}.path`);
+      assert.ok(
+        !seenDependencyPaths.has(dependency.path),
+        `${document.service} has duplicate dependency path ${dependency.path}`,
+      );
+      seenDependencyPaths.add(dependency.path);
+      assert.match(dependency.commit, SHA_PATTERN, `${label}.commit must be a Git SHA`);
+      assert.match(
+        dependency.repository,
+        /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/,
+        `${label}.repository must be a GitHub owner/repository`,
+      );
+
+      const dependencyEntry = stagedEntry(dependency.path);
+      assert.equal(dependencyEntry.mode, '160000', `${dependency.path} must remain a gitlink`);
+      assert.equal(
+        dependencyEntry.sha,
+        dependency.commit,
+        `${dependency.path} is not pinned to ${dependency.role} commit`,
+      );
+      const dependencyUrl = submoduleUrl(gitmodules, dependency.path);
+      assert.ok(dependencyUrl, `${dependency.path} is missing from .gitmodules`);
+      assert.equal(
+        githubRepositoryFromUrl(dependencyUrl),
+        dependency.repository,
+        `${dependency.path} .gitmodules URL drifted`,
+      );
+    }
+
     report.push({
       service: document.service,
       repository: document.repository,
@@ -151,6 +224,7 @@ async function main() {
       contractPath: document.contractPath,
       contractGitBlobSha: document.contractGitBlobSha,
       contractVerification: document.contractVerification,
+      contractDependencies,
     });
   }
 

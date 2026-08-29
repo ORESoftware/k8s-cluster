@@ -88,8 +88,9 @@ test('the narrow remote-libs job uses the dedicated read-only deploy key', () =>
   );
   assert.match(staticJob, /K8S_LIBS_DEPLOY_KEY:\s*\$\{\{ secrets\.K8S_LIBS_DEPLOY_KEY \}\}/);
   assert.match(staticJob, /ssh-key:\s*\$\{\{ secrets\.K8S_LIBS_DEPLOY_KEY \}\}/);
-  assert.match(staticJob, /SUBMODULE_AUTH_MODE:\s*ssh/);
-  assert.match(staticJob, /init-submodules-with-report\.sh remote\/libs/);
+  assert.match(staticJob, /uses: \.\/\.github\/actions\/checkout-remote-libs/);
+  assert.doesNotMatch(staticJob, /SUBMODULE_AUTH_MODE/);
+  assert.doesNotMatch(staticJob, /init-submodules-with-report\.sh remote\/libs/);
   assert.doesNotMatch(staticJob, /K8S_SUBMODULE_APP_PRIVATE_KEY/);
 });
 

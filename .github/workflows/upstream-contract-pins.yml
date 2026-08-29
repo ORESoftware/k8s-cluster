@@ -8,11 +8,16 @@ on:
       - '.gitmodules'
       - 'remote/api-contracts/upstream-pins/**'
       - 'remote/config/api-contracts.json'
+      - 'remote/deployments/grpc-pg-general-connect-server'
       - 'remote/deployments/dart-server'
       - 'remote/deployments/billing-server-rs'
       - 'remote/deployments/fiducia-customer.rs'
       - 'remote/deployments/gleam-lambda-runner'
       - 'remote/deployments/usacc-rest-api-backend-rs'
+      - 'remote/libs'
+      - 'catalog/gitops/apps/dd-grpc-pg-general-connect-server.json'
+      - 'remote/argocd/apps/dd-grpc-pg-general-connect-server.application.yaml'
+      - 'remote/argocd/projects/grpc-pg-contracts.appproject.yaml'
       - 'remote/tools/check-upstream-contract-pins.mjs'
   push:
     branches: [main]
@@ -21,11 +26,16 @@ on:
       - '.gitmodules'
       - 'remote/api-contracts/upstream-pins/**'
       - 'remote/config/api-contracts.json'
+      - 'remote/deployments/grpc-pg-general-connect-server'
       - 'remote/deployments/dart-server'
       - 'remote/deployments/billing-server-rs'
       - 'remote/deployments/fiducia-customer.rs'
       - 'remote/deployments/gleam-lambda-runner'
       - 'remote/deployments/usacc-rest-api-backend-rs'
+      - 'remote/libs'
+      - 'catalog/gitops/apps/dd-grpc-pg-general-connect-server.json'
+      - 'remote/argocd/apps/dd-grpc-pg-general-connect-server.application.yaml'
+      - 'remote/argocd/projects/grpc-pg-contracts.appproject.yaml'
       - 'remote/tools/check-upstream-contract-pins.mjs'
   workflow_dispatch:
 
@@ -86,6 +96,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git ls-files --stage remote/deployments/dart-server | awk '{print $1}')" = '160000'
+          test "$(git ls-files --stage remote/deployments/grpc-pg-general-connect-server | awk '{print $1}')" = '160000'
+          test "$(git ls-files --stage remote/libs | awk '{print $1}')" = '160000'
           if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- . ':!vendor'; then
             echo 'git conflict marker found' >&2
             exit 1

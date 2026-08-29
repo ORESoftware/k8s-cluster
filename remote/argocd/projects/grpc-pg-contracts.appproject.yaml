@@ -1,0 +1,25 @@
+# Apply this boundary before the inert Application is reviewed for a manual sync.
+# The workload package is namespace-scoped and the ores-dev Namespace remains
+# cluster-owned. Only the resource kinds presently rendered by the audited pin
+# are admitted.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: grpc-pg-contracts
+  namespace: argocd
+spec:
+  description: "Restricted project for the report-only PostgreSQL contract reconciler."
+  sourceRepos:
+    - "git@github.com:ORESoftware/grpc-pg-general-connect-server.git"
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: ores-dev
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - { group: "", kind: ConfigMap }
+    - { group: "", kind: Service }
+    - { group: "", kind: ServiceAccount }
+    - { group: apps, kind: Deployment }
+    - { group: external-secrets.io, kind: ExternalSecret }
+    - { group: networking.k8s.io, kind: NetworkPolicy }
+    - { group: policy, kind: PodDisruptionBudget }

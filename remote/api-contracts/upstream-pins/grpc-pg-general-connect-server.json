@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "service": "grpc-pg-general-connect-server",
+  "repository": "ORESoftware/grpc-pg-general-connect-server",
+  "deploymentPath": "remote/deployments/grpc-pg-general-connect-server",
+  "sourcePullRequest": "https://github.com/ORESoftware/grpc-pg-general-connect-server/pull/5",
+  "sourceHeadCommit": "37ac95d7be22729bac4a46be99b56a8517abea44",
+  "acceptedCommit": "37ac95d7be22729bac4a46be99b56a8517abea44",
+  "rollbackCommit": "3c620e6ce89c215e896a06d66444c5d82bfceea2",
+  "contractPath": "internal/contract/ledgerschema/grpc-pg-contract-ledger.v1.schema.json",
+  "contractGitBlobSha": "2a7add076dc44b63cd8636285888205d636f5616",
+  "contractVerification": "local-reproducible-upstream-ci-not-started",
+  "verificationNote": "The Draft 2020-12 ledger schema, protobuf descriptor, GORM/Bun/XORM witnesses, and bounded stream state machine pass local reproducible checks. Every upstream Actions job concluded before its first step and produced no job log, so exact-head hosted CI remains an explicit activation gate.",
+  "contractDependencies": [
+    {
+      "role": "shared-definitions",
+      "path": "remote/libs",
+      "repository": "ORESoftware/k8s-libs-and-shared-defs",
+      "commit": "46e307b133a85809957112157cadb0cdc2f2d39d"
+    }
+  ]
+}

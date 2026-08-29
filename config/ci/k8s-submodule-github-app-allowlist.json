@@ -12,6 +12,7 @@
     "ORESoftware": [
       "ai-agent-bridge.rs",
       "chat.vibe",
+      "grpc-pg-general-connect-server",
       "mip-solver-node.rs",
       "push-notification-server.rs",
       "t2v-v2t.rs",
@@ -63,7 +64,7 @@
       "shared-auth-monorepo"
     ],
     "sonus-auris": [
-      "sonus-auris-backend.rs",
+      "sonus-auris-api-server.rs",
       "sonus-auris-monorepo"
     ],
     "usa-acc": [

@@ -1,0 +1,103 @@
+# PostgreSQL gRPC contract reconciler audit — 2026-08-23
+
+## Outcome
+
+The audit converted the service into a report-only reconciler with independently
+compiled desired-SQL, protobuf, and ORM witnesses. It does not expose generic
+CRUD, apply DDL, or activate a fleet workload. The fleet registration is an
+inert, exact-commit pilot and cannot start a Pod as committed.
+
+| Boundary | Reviewed change | Immutable pin |
+| --- | --- | --- |
+| Shared SQL, JSON Schema, and generated ORM bindings | `ORESoftware/k8s-libs-and-shared-defs#49` (unioned with current `dev` `#50` enum contracts at k8s-libs `main`) | `46e307b133a85809957112157cadb0cdc2f2d39d` |
+| gRPC reconciliation server | `ORESoftware/grpc-pg-general-connect-server#5` | `37ac95d7be22729bac4a46be99b56a8517abea44` |
+| Fleet composition | this change | both pins above |
+
+## Material findings remediated upstream
+
+1. The fleet had no immutable inventory or Argo source registration for the
+   server.
+2. Ledger JSON was decoded but its schema was not compiled and enforced at the
+   server boundary.
+3. Generated ORM modules were not compiled together in CI. The first complete
+   pass found a GORM field/method collision, an Ent nullable-JSON generation
+   defect, and a Bun toolchain mismatch.
+4. Qualified PostgreSQL types such as `extensions.vector(1536)` and custom
+   `msgint.source_kind` values were losing identity in generated metadata.
+5. Stored generated columns were not represented consistently as read-only
+   across GORM, Bun, and XORM.
+6. The prior Go patch level had a reachable standard-library vulnerability in
+   the server call graph. CI, the module, and the build image now use Go 1.26.7
+   and run `govulncheck`.
+7. The deployment selected a ServiceAccount that did not exist. The audited
+   package now declares it with token automount disabled.
+8. A punctuated PostgreSQL enum label (`tar.gz`) produced illegal constructors
+   in six typed adapters. The generator now sanitizes enum identifiers without
+   changing their exact database/wire labels, with a regression test covering
+   Rust, Gleam, Haskell, OCaml, F#, and C++.
+9. A numeric PostgreSQL CHECK-enum (`shared_auth.sessions.auth_level`) retained
+   its required SQLx `i16` type but used a string-only validation API. Numeric
+   enums now compare typed constants, and the generated Rust crate compiles.
+10. Three fleet consumers used stale hard-coded shared-definition commits or
+    lost private-repository authentication after checkout. They now resolve the
+    exact `remote/libs` gitlink through the narrow deploy-key action, while the
+    existing wal-gateway provenance records advance to the same immutable pin.
+11. The generated SeaORM crate compiled but was not stable under a downstream
+    `cargo fmt --check`, so consumer CI stopped before type-checking. The shared
+    generator now emits rustfmt-stable module structure, tests that shape, and
+    format-checks SeaORM while compiling all three generated Rust adapters. The
+    fleet consumer formats its own crate plus that exact adapter instead of
+    sweeping unrelated local path dependencies into this contract gate.
+12. The reviewed GitHub App repository allowlist did not include the new gRPC
+    gitlink and still named a superseded Sonus Auris repository. The allowlist
+    now exactly matches every declared deployment gitlink, and the auth contract
+    validates the narrow shared-library checkout action rather than its retired
+    environment-mode implementation.
+
+## Consistency and formal-method boundary
+
+- The closed Draft 2020-12 ledger schema is compiled in Go and rejects unknown
+  fields, over-size input, trailing JSON values, unsafe identifiers, malformed
+  digests, invalid generated/read-only combinations, and non-contiguous primary
+  key positions.
+- GORM, Bun, and XORM are independent voting witnesses over all 204 canonical
+  tables. Their normalized projections must match the desired SQL ledger exactly
+  for database alias, schema, table, column, physical type, nullability, primary
+  key order, generated state, and read-only state.
+- Ent remains compiled as a non-voting witness because 34 canonical tables have
+  nonstandard or composite primary keys that Ent cannot model without changing
+  the database contract.
+- Reconciliation requires three lineages (desired SQL, protobuf descriptor, and
+  generated bindings), one vote per lineage, and distinct artifact digests.
+- The bidirectional stream is governed by a pure transition function. Exhaustive
+  bounded trace tests prove that terminal states are absorbing, observation
+  cannot precede selection, and at most one report follows each observation.
+
+## Activation gates
+
+The Application intentionally has no automated sync. Even a manual sync renders
+zero replicas and an all-zero image digest. Do not activate it until all gates
+below have independent review evidence:
+
+At audit time, each upstream GitHub Actions job concluded before its first step
+and produced no job log. Local checks are green, but the fleet pin records this
+as `local-reproducible-upstream-ci-not-started`; it must not be promoted as
+upstream-CI-verified evidence.
+
+1. Merge both upstream PRs and repin this repository to the resulting reviewed
+   commits if the merge commits differ.
+2. Build, sign, attest, scan, and pin an immutable image digest; remove the
+   all-zero sentinel only in that promotion change.
+3. Publish an immutable ledger bundle containing desired SQL plus GORM, Bun, and
+   XORM ledgers. The current bundle is about 1.8 MiB, so use an image layer,
+   object-store artifact, or split projection rather than one ConfigMap.
+4. Provision the ExternalSecret inputs and database users. Each database user
+   must be least-privilege and forced read-only (including
+   `default_transaction_read_only=on`).
+5. Prove TLS/mTLS through the pod or service-mesh path before bearer credentials
+   traverse the transport. Reconcile the health-probe design with that encrypted
+   path.
+6. Apply and review `grpc-pg-contracts.appproject.yaml`, then verify its exact
+   source, destination, and namespace-resource allowlist.
+7. Require exact-head CI, semantic review, security review, and a one-replica
+   canary whose first reconciliation remains report-only and balanced.
